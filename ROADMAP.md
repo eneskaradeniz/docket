@@ -35,6 +35,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 ## M3 — Evidence layer
 
 - [ ] `Forge` interface, GitHub implementation over `gh`
+- [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
+      run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
+- [ ] **Reconciliation** — re-read git and the forge on open, focus, after actions, on manual refresh and on
+      a background interval. Observation wins over what Docket last showed. Merged-outside-Docket is normal
+- [ ] `stage` derived from observed facts rather than stored (TD-008); `EvidenceStatus` gains `unknown`
+- [ ] A defined home in the decision store for architect verdicts and verifier reports (TD-009)
 - [ ] PR / head sha / check-run ingestion
 - [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
 - [ ] Gate engine: transitions absent, not disabled, when evidence is missing
