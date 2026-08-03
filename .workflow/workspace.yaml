@@ -1,0 +1,61 @@
+# Docket manages its own development. This is workspace #1 and the single-repo shape.
+# No absolute local paths here: the app maps `remote` -> local path in its own database.
+
+version: 1
+
+workspace:
+  id: docket
+  name: Docket
+
+repos:
+  - id: app
+    remote: git@github.com:eneskaradeniz/docket.git
+    default_branch: main
+    stack: electron-ts
+
+decision_store:
+  repo: app
+  paths:
+    work_orders: docs/work-orders
+    adr: docs/adr
+    contracts: null # single repo: no cross-repo contracts
+    roadmap: ROADMAP.md
+    tech_debt: docs/tech-debt.md
+
+roles:
+  architect:
+    working_repo: app
+    write_scope: ["docs/**", "ROADMAP.md"]
+    read_scope: ["app:**"]
+    session_lifetime: per_work_order
+  implementer:
+    session_lifetime: per_track
+    default_mode: plan # plan | direct, overridable per work order
+  verifier:
+    session_lifetime: per_review
+    inputs: [work_order, approved_plan, diff] # blind: no implementer transcript
+
+briefing:
+  architect: [work_order, linked_adrs, roadmap_section, open_tech_debt]
+  implementer: [work_order, approved_plan]
+  verifier: [work_order, approved_plan, diff]
+
+gates:
+  plan_approval:
+    requires: [architect_verdict, plan_committed]
+  pr_open:
+    requires: [pr_url, head_sha]
+  ci_green:
+    policy: all_required_checks_success
+    requires: [check_run_conclusions]
+  verification:
+    requires: [verifier_report, resolvable_pointers]
+  closure:
+    requires:
+      - all_tracks_merged
+      - doc_update:
+          paths: [ROADMAP.md, docs/tech-debt.md]
+          proof: commit_sha
+
+forge:
+  provider: github
