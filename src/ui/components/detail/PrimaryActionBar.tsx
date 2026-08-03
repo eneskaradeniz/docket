@@ -1,5 +1,5 @@
 import type { PrimaryAction } from '../../../core/types';
-import { ABSENT_REASON_LABELS, ACTION_LABELS } from '../../data/labels';
+import { ABSENT_REASON_LABELS, ACTION_LABELS, UI } from '../../data/labels';
 
 // AC3 in the flesh: when evidence is missing the action is ABSENT with a reason — no disabled control.
 export function PrimaryActionBar({ action }: { action: PrimaryAction }) {
@@ -14,7 +14,7 @@ export function PrimaryActionBar({ action }: { action: PrimaryAction }) {
         </button>
       ) : (
         <p className="text-sm text-slate-500">
-          <span className="font-medium text-slate-700">No action available.</span>{' '}
+          <span className="font-medium text-slate-700">{UI.noActionAvailable}</span>{' '}
           {ABSENT_REASON_LABELS[action.reason]}
         </p>
       )}

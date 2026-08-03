@@ -1,12 +1,5 @@
 import type { SourceLink } from '../../../core/types';
-import { UI } from '../../data/labels';
-
-const KIND_LABEL: Record<SourceLink['kind'], string> = {
-  adr: 'ADR',
-  tech_debt: 'tech-debt',
-  roadmap: 'ROADMAP',
-  contract: 'contract',
-};
+import { SOURCE_KIND_LABELS, UI } from '../../data/labels';
 
 // Referenced documents are links only (ccd463e). Non-functional in the prototype; they point at git.
 export function SourceLinks({ sources }: { sources: SourceLink[] }) {
@@ -17,7 +10,7 @@ export function SourceLinks({ sources }: { sources: SourceLink[] }) {
         {sources.map((s) => (
           <li key={s.ref} className="text-xs">
             <span className="text-slate-500">
-              {KIND_LABEL[s.kind]} · {s.label} ↗
+              {SOURCE_KIND_LABELS[s.kind]} · {s.label} ↗
             </span>
             <code className="ml-1 text-[11px] text-slate-400">{s.ref}</code>
           </li>

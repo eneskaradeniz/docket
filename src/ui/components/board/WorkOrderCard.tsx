@@ -1,5 +1,5 @@
 import type { BoardColumn, WorkOrderCardView } from '../../../core/types';
-import { cardReasonText, STAGE_LABELS, UI } from '../../data/labels';
+import { cardReasonText, formatUsd, STAGE_LABELS, UI } from '../../data/labels';
 import { Badge, type BadgeTone } from '../primitives/Badge';
 
 const COLUMN_TONE: Record<BoardColumn, BadgeTone> = {
@@ -22,11 +22,11 @@ export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onS
         <Badge tone={COLUMN_TONE[card.column]}>{card.id}</Badge>
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        {STAGE_LABELS[card.stage]} · {card.trackCount} track(s)
+        {STAGE_LABELS[card.stage]} · {card.trackCount} {UI.tracksUnit}
       </p>
       <p className="mt-2 text-xs font-medium text-slate-700">{cardReasonText(card.reason)}</p>
       <p className="mt-2 text-[11px] text-slate-400">
-        ${card.cost.usd.toFixed(2)} · {tokens.toLocaleString()} {UI.tokens}
+        {formatUsd(card.cost.usd)} · {tokens.toLocaleString()} {UI.tokens}
       </p>
     </button>
   );

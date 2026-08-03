@@ -1,5 +1,5 @@
 import type { StageRailStep } from '../../../core/types';
-import { EVIDENCE_LABELS, STAGE_LABELS } from '../../data/labels';
+import { needsText, STAGE_LABELS } from '../../data/labels';
 import { Badge } from '../primitives/Badge';
 
 const STATUS_DOT: Record<StageRailStep['status'], string> = {
@@ -30,7 +30,7 @@ export function StageRail({ steps }: { steps: StageRailStep[] }) {
               <div className="flex flex-wrap gap-1">
                 {s.needs.map((n) => (
                   <Badge key={n} tone="bad">
-                    needs {EVIDENCE_LABELS[n].toLowerCase()}
+                    {needsText(n)}
                   </Badge>
                 ))}
               </div>

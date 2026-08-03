@@ -6,8 +6,12 @@ import type {
   BoardColumn,
   CardReason,
   EvidenceKind,
+  EvidenceStatus,
+  SessionRef,
   SessionRole,
+  SourceKind,
   StageId,
+  TrackStage,
   TrackMergeAction,
 } from '../../core/types';
 
@@ -102,6 +106,68 @@ export function mergeActionText(a: TrackMergeAction): string {
   }
 }
 
+// AC1 (return-pass): display maps for the per-track stage, session status, mode and source
+// kind enums, plus the composers that turn them into phrases. With these in place no
+// component turns a code identifier into UI text via `.replace('_', ' ')` — every word a
+// translator would touch lives here, so a label change (or an `en`/`tr` split, ADR-0007) is
+// one edit, not a hunt through components.
+export const TRACK_STAGE_LABELS: Record<TrackStage, string> = {
+  not_started: 'Not started',
+  implementation: 'Implementation',
+  pr_opened: 'PR opened',
+  ci: 'CI',
+  merged: 'Merged',
+};
+
+export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
+  running: 'Running',
+  stopped_asking: 'Stopped asking',
+  idle: 'Idle',
+  none: 'None',
+};
+
+export const MODE_LABELS: Record<'plan' | 'direct', string> = {
+  plan: 'Plan',
+  direct: 'Direct',
+};
+
+export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
+  adr: 'ADR',
+  tech_debt: 'tech-debt',
+  roadmap: 'ROADMAP',
+  contract: 'contract',
+};
+
+export const EVIDENCE_MARK: Record<EvidenceStatus, string> = {
+  satisfied: '[x]',
+  unsatisfied: '[ ]',
+  exempt: '[~]',
+};
+
+export function trackSessionText(session: { status: SessionRef['status'] } | undefined | null): string {
+  return session ? `session · ${SESSION_STATUS_LABELS[session.status]}` : 'No session';
+}
+
+export function dependsOnText(count: number): string {
+  return `depends on ${count}`;
+}
+
+export function needsText(kind: EvidenceKind): string {
+  return `needs ${EVIDENCE_LABELS[kind].toLowerCase()}`;
+}
+
+export function modeText(mode: 'plan' | 'direct'): string {
+  return `${MODE_LABELS[mode]} mode`;
+}
+
+export function stoppedAtGate(gate: string): string {
+  return `stopped · ${gate}`;
+}
+
+export function formatUsd(usd: number): string {
+  return `$${usd.toFixed(2)}`;
+}
+
 // Chrome affordance strings — also routed through data so components carry no literal copy.
 export const UI = {
   productName: 'Docket',
@@ -119,4 +185,8 @@ export const UI = {
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   workOrders: 'work orders',
+  noActionAvailable: 'No action available.',
+  tracksUnit: 'track(s)',
+  missing: 'missing',
+  scopedToTrack: ' · track',
 } as const;

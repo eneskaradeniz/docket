@@ -1,10 +1,10 @@
 import type { TrackLaneView } from '../../../core/types';
-import { mergeActionText, UI } from '../../data/labels';
+import { dependsOnText, mergeActionText, TRACK_STAGE_LABELS, trackSessionText, UI } from '../../data/labels';
 import { Badge } from '../primitives/Badge';
 
 export function TrackLane({ lane }: { lane: TrackLaneView }) {
   const { track, session, mergeAction } = lane;
-  const sessionLabel = session ? `session · ${session.status.replace('_', ' ')}` : 'no session';
+  const sessionLabel = trackSessionText(session);
   return (
     <li className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-2">
@@ -12,10 +12,10 @@ export function TrackLane({ lane }: { lane: TrackLaneView }) {
           <span className="font-mono text-xs text-slate-600">{track.repo as string}</span>
           {track.ci.kind === 'exempt' && <Badge tone="provisional">{UI.ciExempt}</Badge>}
           {track.dependsOn.length > 0 && (
-            <Badge tone="info">depends on {track.dependsOn.length}</Badge>
+            <Badge tone="info">{dependsOnText(track.dependsOn.length)}</Badge>
           )}
         </div>
-        <span className="text-xs text-slate-400">{track.stage.replace('_', ' ')}</span>
+        <span className="text-xs text-slate-400">{TRACK_STAGE_LABELS[track.stage]}</span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-slate-500">{sessionLabel}</span>

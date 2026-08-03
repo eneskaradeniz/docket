@@ -1,5 +1,5 @@
 import type { StageId, WorkOrderDetailView } from '../../../core/types';
-import { STAGE_LABELS, UI } from '../../data/labels';
+import { modeText, STAGE_LABELS, UI } from '../../data/labels';
 import { Badge } from '../primitives/Badge';
 import { CostView } from './CostView';
 
@@ -24,7 +24,7 @@ export function Header({
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <Badge>{detail.id}</Badge>
           <Badge tone="info">{workspaceLabel}</Badge>
-          <Badge tone="neutral">{detail.mode} mode</Badge>
+          <Badge tone="neutral">{modeText(detail.mode)}</Badge>
           <Badge tone="neutral">{stageLabel ? STAGE_LABELS[stageLabel] : '—'}</Badge>
         </div>
       </div>
