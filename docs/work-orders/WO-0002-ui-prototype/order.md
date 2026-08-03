@@ -49,7 +49,8 @@ In scope:
   chrome (switching may be non-functional)
 - Work order detail: header, stage rail, track lanes, evidence panel, source links, role-tabbed session pane,
   single-primary-action bar
-- Read-only markdown rendering of `order.md` and `plan.md` from fixture strings
+- Read-only markdown rendering of `order.md` and `plan.md` from fixture strings. Referenced documents
+  (ADRs, tech-debt, ROADMAP, contracts) are links only — see the ownership table in ADR-0005.
 - Navigation between the two screens
 
 Out of scope: Electron, real sessions, xterm.js, git or `gh` calls, SQLite, settings screens,

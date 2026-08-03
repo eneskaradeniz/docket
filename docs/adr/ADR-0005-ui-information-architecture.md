@@ -30,8 +30,18 @@ valuable surface; it does not get hidden behind a click.
 
 ### Documents are rendered, never stored or edited
 
-`order.md`, `plan.md` and linked ADRs are read from disk and displayed read-only. Docket is a viewer, not
-a second copy and not an editor. Editing happens in the operator's editor, and git stays the source of truth.
+"Not copied" is a rule about storage, not about display. Docket may show a document; it may not own one.
+Every render reads from disk at view time. Nothing is cached in the database, nothing is editable in-app.
+
+The line between rendered and linked is **ownership**:
+
+| Document | Treatment | Why |
+| --- | --- | --- |
+| `order.md`, `plan.md` | rendered inline, read-only | Owned by this work order. Read constantly while working it. |
+| ADRs, tech-debt, contracts, ROADMAP | link out only | Referenced, not owned. Reading them properly means reading them in context, in the editor. |
+
+Rendering a referenced document inline invites reading it out of context and drifting toward becoming a
+document browser. Editing always happens in the operator's editor; git stays the source of truth.
 
 ### One session pane, tabbed by role
 
