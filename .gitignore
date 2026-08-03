@@ -7,3 +7,6 @@ out/
 .env
 .env.*
 !.env.example
+
+# Verification screenshots are evidence attached to the PR, not committed binary artifacts.
+docs/work-orders/*/screenshots/
