@@ -11,12 +11,14 @@ the plan-approval handoff are the most fragile parts of the design and the most 
 
 ## M1 — Clickable UI prototype
 
-React + Tailwind, no Electron yet, no real sessions. Draw once, keep the code: this becomes the renderer of
-the Electron shell. Blocked on M0 for the transcript and gate regions.
+React + Tailwind, no Electron yet, no real sessions. Draw once, keep the code: components live at `src/ui/`
+and do not move when the Electron shell arrives. Information architecture is settled in ADR-0005. The
+transcript and stop-and-ask regions stay provisional until M0 reports.
 
-- [ ] Work order board ("whose turn is it": YOURS / RUNNING / EXTERNAL)
-- [ ] Work order detail: header, stage rail, track lanes, session pane, single-primary-action bar
-- [ ] Red CI, stop-and-ask, and missing-evidence states
+- [ ] **WO-0002** — Board + work order detail, fixture-driven, six states covered
+
+Running ahead of M0 deliberately: the board, stage rail, track lanes and evidence panel do not depend on
+Claude Code's surface. Only the session pane does, and it is isolated for that reason.
 
 ## M2 — Electron shell and session runner
 
