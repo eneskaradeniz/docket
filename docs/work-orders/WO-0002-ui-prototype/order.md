@@ -33,18 +33,28 @@ fixture types become the app's view model in M3. Plan first.
 
 ## Layout constraint
 
-Components live at `src/ui/`. A Vite dev harness (`index.html`, `src/dev-main.tsx`) mounts them for now.
-M2 replaces the harness with the Electron shell and **must not move any file under `src/ui/`**. Nothing in
-`src/ui/` may import Electron, Node or filesystem APIs.
+Three layers with a one-way dependency rule (ADR-0006):
 
-All data enters through a single module, `src/ui/data/source.ts`, exposing typed read functions backed by
-fixtures. M3 swaps the implementation, not the call sites.
+```
+src/core/      domain: types, gate model, derivations. Pure — no React, no I/O, no Node.
+src/adapters/  the outside world: fixtures now. Implements ports defined in core.
+src/ui/        presentation: React components and screens. Imports core, never adapters.
+```
+
+A Vite dev harness (`index.html`, `src/dev-main.tsx`) is the composition root: it is the only file that may
+import an adapter. M2 replaces the harness with the Electron shell and **must not move any file under
+`src/core/` or `src/ui/`**.
+
+Nothing under `src/core/` or `src/ui/` may import Electron, Node or filesystem APIs. All data enters through
+a port declared in `src/core/`; M3 swaps the adapter, not the call sites.
 
 ## Scope
 
 In scope:
 
-- Vite + React + TypeScript + Tailwind scaffold
+- Vite + React + TypeScript + Tailwind scaffold, plus Vitest for the domain layer
+- `src/core/` written **test-first**: the gate model and every derivation
+  (`whoseTurn`, rail, evidence, primary action) has a failing test before it has an implementation
 - Board screen: three columns (your turn / running / external), work order cards, workspace switcher in the
   chrome (switching may be non-functional)
 - Work order detail: header, stage rail, track lanes, evidence panel, source links, role-tabbed session pane,
@@ -81,6 +91,12 @@ Fixtures must cover every state that matters, including the ones that are easy t
 7. The session pane and stop-and-ask card are visibly marked provisional and isolated in their own components,
    so WO-0001's outcome can replace them without touching the rest.
 8. `npm run build` passes with `tsc --noEmit` clean.
+9. `src/core/` has no import of React, Node, `fs`, Electron or any adapter, and its tests run without a DOM.
+10. Every derivation in `src/core/` has tests covering all six fixture states, plus these named cases:
+    an unsatisfied gate yields `{kind:'absent'}` and never a disabled control; a track whose `dependsOn` is
+    open has no `merge`; a CI-exempt track is never treated as passing; a work order that matches no
+    `whoseTurn` rule falls to `your_turn`.
+11. No type, field name or UI string names an agent vendor (ADR-0006).
 
 ## Evidence required
 

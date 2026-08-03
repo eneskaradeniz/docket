@@ -64,6 +64,10 @@ Each answer must be backed by a **verbatim captured excerpt**, not a description
    fence does not hold, single-repo role separation is nominal and ADR-0002 needs revision.
 7. **Interruption and persistence.** After the process is killed (SIGINT / hard kill), can the session be
    resumed? After an app restart, where is prior transcript read from?
+8. **Other providers — survey only.** For at least two other agent CLIs (e.g. Codex, Gemini): do they expose
+   a streaming event format, a resumable session id, and a programmatic permission channel? Documentation
+   level is sufficient; do not install, configure or drive them. The purpose is to know which of questions
+   1–5 are likely to generalise before M2 designs the session-runner port (ADR-0006). Half a page.
 
 ## Deliverables
 
