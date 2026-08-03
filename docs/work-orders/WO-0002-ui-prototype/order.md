@@ -91,12 +91,18 @@ Fixtures must cover every state that matters, including the ones that are easy t
 7. The session pane and stop-and-ask card are visibly marked provisional and isolated in their own components,
    so WO-0001's outcome can replace them without touching the rest.
 8. `npm run build` passes with `tsc --noEmit` clean.
-9. `src/core/` has no import of React, Node, `fs`, Electron or any adapter, and its tests run without a DOM.
+9. `src/core/` production source has no import of React, Node, `fs`, Electron or any adapter, and its tests
+   run without a DOM. Tests under `src/core/__tests__/` **may** import the fixture adapter, so that the six
+   states are defined once and the tests are pinned to the same data the UI renders.
 10. Every derivation in `src/core/` has tests covering all six fixture states, plus these named cases:
     an unsatisfied gate yields `{kind:'absent'}` and never a disabled control; a track whose `dependsOn` is
     open has no `merge`; a CI-exempt track is never treated as passing; a work order that matches no
     `whoseTurn` rule falls to `your_turn`.
 11. No type, field name or UI string names an agent vendor (ADR-0006).
+12. Evidence is three-valued (`satisfied` / `unsatisfied` / `exempt`), never boolean. An exempt requirement
+    is displayed with its reason and does not block the gate it belongs to.
+13. Every card in the board carries a reason for being in its column, including the default case where
+    nothing is running and no gate is open.
 
 ## Evidence required
 

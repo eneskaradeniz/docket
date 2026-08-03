@@ -26,7 +26,7 @@ Gates:
 | --- | --- |
 | plan_approval | architect verdict, plan committed to the decision store |
 | pr_open | PR URL, head sha |
-| ci_green | all required check runs concluded `success` |
+| ci_green | all required check runs concluded `success`, **or** the track is explicitly exempt |
 | verification | verifier report, **every `path:line` pointer resolves at head sha** |
 | closure | all tracks merged **and** roadmap + tech-debt updated, proven by commit sha |
 
@@ -37,6 +37,12 @@ Three consequences that make this real rather than decorative:
 2. **Evidence pointers are mechanically verified.** Claims of the form `src/Auth/TokenService.cs:142` are
    checked against the recorded sha. An unresolvable pointer is not evidence.
 3. **Merge is not closure.** The documentation gate is a stage, not a courtesy.
+
+**Evidence is three-valued, not two-valued.** A requirement is `satisfied`, `unsatisfied`, or `exempt`.
+Exempt is a decision someone made and must be displayed as such, carrying its reason. Modelling evidence as
+a boolean forces exemption to be encoded either as a silent pass — which is the failure this ADR exists to
+prevent — or as a permanent block, which strands work that legitimately has no CI. `ci_green` is the first
+place this bites; it will not be the last.
 
 Gate *existence* is not configurable. Gate *contents* are: a workspace declares which files its closure
 gate requires. A fully configurable pipeline is a workflow engine with no opinion, and that is not this
