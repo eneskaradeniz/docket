@@ -60,7 +60,11 @@ These are the input, not an exhaustive list. Findings 1, 2 and 6 are the substan
    dominating the lower half. Owned documents are reference material: secondary, collapsible, or scrollable
    within a bounded region.
 10. **Evidence and Tracks sit side by side at very different heights**, leaving a large empty area.
-11. **The primary action band reads like an error banner.** "No action available" as a full-width notice near
+11. **Evidence rows do not say which track they belong to** (`EvidencePanel.tsx:22`). The model carries
+    `scope: TrackId`; the UI prints a constant `· track`. In a multi-track work order two `PR open · track`
+    rows are indistinguishable. The data is already there; only the rendering discards it. Group or label
+    evidence by track.
+12. **The primary action band reads like an error banner.** "No action available" as a full-width notice near
     the top puts the most negative message in the most prominent position. An absent action still needs to be
     stated, but stating it is not the same as leading with it.
 
@@ -84,9 +88,10 @@ theme switching (M3.5), any change to the six fixture states.
    action.
 6. No English plural or grammar artifact reaches the screen (`1 track(s)`).
 7. Chrome names the workspace once.
-8. WO-0002 acceptance criteria 1-13 still hold; `npm test` unchanged and green; no file under `src/core/` or
+8. In a multi-track work order, every scoped evidence row identifies its track.
+9. WO-0002 acceptance criteria 1-13 still hold; `npm test` unchanged and green; no file under `src/core/` or
    `src/adapters/` is modified.
-9. Before-and-after screenshots of all six states.
+10. Before-and-after screenshots of all six states.
 
 ## Evidence required
 
