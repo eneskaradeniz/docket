@@ -16,6 +16,10 @@ and do not move when the Electron shell arrives. Information architecture is set
 transcript and stop-and-ask regions stay provisional until M0 reports.
 
 - [ ] **WO-0002** — Board + work order detail, fixture-driven, six states covered
+- [ ] **WO-0003** — Visual hierarchy pass. The prototype is structurally right and visually flat; nothing is
+      dominant, so the board does not answer "what needs me most" at a glance. Presentation only.
+- [ ] **WO-0004** — Workspace connection management: add, update, remove connections (ADR-0009). Replaces the
+      two hardcoded workspaces. Also the onboarding path a third party would use.
 
 Running ahead of M0 deliberately: the board, stage rail, track lanes and evidence panel do not depend on
 Claude Code's surface. Only the session pane does, and it is isolated for that reason.
