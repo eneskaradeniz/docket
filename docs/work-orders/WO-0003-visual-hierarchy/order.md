@@ -92,6 +92,9 @@ theme switching (M3.5), any change to the six fixture states.
 9. WO-0002 acceptance criteria 1-13 still hold; `npm test` unchanged and green; no file under `src/core/` or
    `src/adapters/` is modified.
 10. Before-and-after screenshots of all six states.
+11. `scripts/shot.mjs` runs on a machine other than the one it was written on: no hardcoded browser path,
+    no assumption about which address Vite binds (TD-011). The architect ruled that the capture recipe is
+    the durable evidence; that ruling is only true if the recipe is portable.
 
 ## Evidence required
 
