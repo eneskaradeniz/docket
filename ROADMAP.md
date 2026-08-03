@@ -35,11 +35,31 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 - [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
 - [ ] Gate engine: transitions absent, not disabled, when evidence is missing
 
+## M3.5 — Shell foundations
+
+Presentation-only, no domain change. Cheap because ADR-0006 kept `core` free of display strings and
+WO-0002 routed all copy through `labels.ts`.
+
+- [ ] Locale `en` / `tr`, keyed labels, `en` fallback, preference persisted (ADR-0007)
+- [ ] Theme light / dark / system via semantic tokens, preference persisted (ADR-0007)
+- [ ] Lint rule against hardcoded strings and literal colours in components
+
 ## M4 — Second workspace
 
 - [ ] DateApp onboarded (multi-repo, dedicated decision store, cross-repo tracks with `depends_on`)
 - [ ] Briefing bundle assembly, including cross-repo contracts
 - [ ] Workspace switcher
+
+## M5 — Workspace overview
+
+A read-only projection of the decision store, not a planning surface (ADR-0008). Third consumer of the same
+gate model, after the board and the detail view.
+
+- [ ] Milestone progress from work-order `milestone` front matter
+- [ ] Open work orders grouped by whose turn it is
+- [ ] Open tech debt linked to the work orders that opened it
+- [ ] "Ready to start" computed from closed dependencies and unsatisfied gates
+- [ ] Recently closed, with closing sha
 
 ## Later
 
