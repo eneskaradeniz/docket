@@ -2,7 +2,7 @@
 // without drilling it through BoardScreen/DetailScreen/WorkOrderDetail, which do not
 // use it. Only the session pane consumes it.
 import { createContext, useContext } from 'react';
-import type { SessionRunner } from '../../core/runner';
+import type { SessionRunner } from '../../../core/runner';
 
 export const RunnerContext = createContext<SessionRunner | null>(null);
 

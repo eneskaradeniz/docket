@@ -43,7 +43,7 @@ export function WorkOrderDetail({
               ))}
             </ul>
           </section>
-          <SessionPane sessions={detail.sessions} />
+          <SessionPane mode={detail.mode} />
           <SourceLinks sources={detail.sources} />
           {/* Owned documents render inline read-only (ccd463e); referenced docs are links above. */}
           <MarkdownDoc title={UI.orderDoc} content={docs.order} />

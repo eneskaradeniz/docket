@@ -107,8 +107,8 @@ describe('foldSessionEvent — live session state', () => {
     let s = foldSessionEvent(initialSessionState, { kind: 'tool_use', callId: 'c1', tool: 'Write', input: { file_path: '/a' } });
     s = foldSessionEvent(s, { kind: 'tool_result', callId: 'c1', summary: 'wrote 1 line', isError: false });
     expect(s.entries).toEqual([
-      { speaker: 'tool', label: 'Write', detail: '/a', isError: false },
-      { speaker: 'tool', label: 'result', detail: 'wrote 1 line', isError: false },
+      { speaker: 'tool_use', tool: 'Write', detail: '/a' },
+      { speaker: 'tool_result', summary: 'wrote 1 line', isError: false },
     ]);
   });
 
@@ -126,6 +126,15 @@ describe('foldSessionEvent — live session state', () => {
     const s = ev({ kind: 'plan_ready', planText: 'do the thing' });
     expect(s.status).toBe('plan_ready');
     expect(s.pendingPlan).toBe('do the thing');
+  });
+
+  it('a started drive supersedes a pending plan (approval resumes cleanly)', () => {
+    const s = foldSessionEvent(
+      foldSessionEvent(initialSessionState, { kind: 'plan_ready', planText: 'do the thing' }),
+      { kind: 'started', sessionId: 's2' },
+    );
+    expect(s.status).toBe('running');
+    expect(s.pendingPlan).toBeUndefined();
   });
 
   it('turn_complete sets done and records cost', () => {

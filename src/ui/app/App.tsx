@@ -6,7 +6,7 @@ import { toCardView, toDetailView } from '../../core/derive';
 import { AppChrome } from '../chrome/AppChrome';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
-import { RunnerContext } from '../session/runner-context';
+import { RunnerContext } from '../components/session/runner-context';
 
 // App receives the data port (WorkOrderSource) and the session-runner port
 // (SessionRunner), and never imports an adapter itself. Only the composition root

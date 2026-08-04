@@ -128,7 +128,8 @@ export function summarizeToolInput(input: Record<string, unknown>): string {
 // ===== Event → live-session-state fold (pure; the pane renders this) =====
 export type TranscriptLine =
   | { speaker: 'assistant'; text: string }
-  | { speaker: 'tool'; label: string; detail: string; isError: boolean }
+  | { speaker: 'tool_use'; tool: string; detail: string }
+  | { speaker: 'tool_result'; summary: string; isError: boolean }
   | { speaker: 'system'; text: string };
 
 export type LiveSessionStatus = 'idle' | 'running' | 'stopped_asking' | 'plan_ready' | 'done' | 'error';
@@ -137,7 +138,7 @@ export interface LiveSessionState {
   status: LiveSessionStatus;
   sessionId?: string;
   entries: TranscriptLine[];
-  pendingAsk?: { requestId: string; tool: string; title?: string; reason?: string };
+  pendingAsk?: { requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string };
   pendingPlan?: string;
   cost: CostSummary;
   lastError?: string;
@@ -161,15 +162,16 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
   const s = clearPendingAskIfResolved(state, event);
   switch (event.kind) {
     case 'started':
-      return { ...s, status: 'running', sessionId: event.sessionId };
+      // A new/resumed drive supersedes a pending plan (e.g. after approval).
+      return { ...s, status: 'running', sessionId: event.sessionId, pendingPlan: undefined };
     case 'assistant_text':
       return { ...s, status: s.status === 'idle' ? 'running' : s.status, entries: [...s.entries, { speaker: 'assistant', text: event.text }] };
     case 'tool_use':
-      return { ...s, entries: [...s.entries, { speaker: 'tool', label: event.tool, detail: summarizeToolInput(event.input), isError: false }] };
+      return { ...s, entries: [...s.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input) }] };
     case 'tool_result':
-      return { ...s, entries: [...s.entries, { speaker: 'tool', label: 'result', detail: event.summary, isError: event.isError }] };
+      return { ...s, entries: [...s.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError }] };
     case 'permission_request':
-      return { ...s, status: 'stopped_asking', pendingAsk: { requestId: event.requestId, tool: event.tool, title: event.title, reason: event.reason } };
+      return { ...s, status: 'stopped_asking', pendingAsk: { requestId: event.requestId, tool: event.tool, input: event.input, title: event.title, reason: event.reason } };
     case 'plan_ready':
       return { ...s, status: 'plan_ready', pendingPlan: event.planText };
     case 'turn_complete':
