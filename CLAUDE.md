@@ -26,7 +26,8 @@ rule restated with its reasons in two places is the duplication this repository 
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears
-  anywhere in `src/`. Sessions are vendor-neutral roles: `implementer`, `architect`, `verifier`.
+  anywhere in `src/` except the provider adapter (`src/adapters/`), the one place a provider SDK is named
+  (ADR-0006 line 74-75). Sessions are vendor-neutral roles: `implementer`, `architect`, `verifier`.
 
 ## Workspace identity — ADR-0003
 - Workspace, repo, work-order and track identities are constructed only in `src/adapters/`. `src/core/` and
