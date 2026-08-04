@@ -1,9 +1,20 @@
 // Renderer-side type for the preload bridge (electron/preload.ts). The exposed
-// surface is the WorkOrderSource port only — no Node surface leaks (ADR-0006/0001).
+// surface is two ports: the data port (`source`) and the session-runner port
+// (`runner`, callback form — the AsyncIterable is realised renderer-side off it,
+// because contextBridge does not preserve Symbol-keyed properties). No Node surface
+// leaks (ADR-0006/0001).
 import type { WorkOrderSource } from '../core/source';
+import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner';
+
+/** The runner as exposed across the contextBridge: callback `drive`, not AsyncIterable. */
+export type RunnerBridge = {
+  drive: (input: DriveInput, onEvent: (ev: RunnerEvent) => void) => Promise<void>;
+  decide: (requestId: string, decision: PermissionDecision) => Promise<void>;
+  interrupt: () => Promise<void>;
+};
 
 declare global {
   interface Window {
-    docket: { source: WorkOrderSource };
+    docket: { source: WorkOrderSource; runner: RunnerBridge; repoCwd: string };
   }
 }
