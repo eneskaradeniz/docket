@@ -2,6 +2,9 @@ node_modules/
 dist/
 out/
 .DS_Store
+
+# Local Claude Code permissions are machine-specific.
+.claude/settings.local.json
 *.log
 *.local
 .env

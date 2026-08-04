@@ -1,0 +1,152 @@
+#!/usr/bin/env node
+// WO-0005 boundary checks — mechanical enforcement of the layering and identity rules decided in the ADRs
+// referenced below. Each violation names the rule and its ADR. Runs in CI and locally
+// (`npm run check:boundaries`). See CLAUDE.md and ADR-0011.
+//
+// The checks are deliberately name-independent where the rule must outlive a data-source change: the
+// workspace-identity check matches the branded-identity *constructors* and a fixed historical literal, never a
+// list read from fixtures (ADR-0003).
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
+const SRC = join(ROOT, 'src');
+
+const VENDORS = ['claude', 'anthropic', 'cursor', 'copilot', 'gemini', 'openai', 'gpt'];
+// NOTE: `cursor`/`gpt` are short and may collide with non-vendor usage (a Tailwind `cursor-pointer` class;
+// base64 data). A hit on those is a stop-and-ask report (ADR-0011 gate 1), not a reason to narrow the list.
+const BRAND = ['wid', 'rid', 'woid', 'tid']; // branded-identity constructors, defined in src/adapters/
+const NODE_SPECIFIERS = ['electron', 'fs', 'path', 'child_process'];
+const COMPOSITION_ROOT = 'src/dev-main.tsx';
+
+const files = walk(SRC);
+const read = (f) => readFileSync(f, 'utf8').split('\n');
+const rel = (f) => relative(ROOT, f);
+const isTest = (r) => r.includes('/__tests__/') || /\.test\.[tj]sx?$/.test(r);
+const isComment = (t) => { const s = t.trimStart(); return s.startsWith('//') || s.startsWith('*') || s.startsWith('/*'); };
+const lineNo = (text, idx) => text.slice(0, idx).split('\n').length;
+// Captures a module specifier after `from`, `import(`, `require(`, or a bare side-effect `import 'x'`.
+const SPEC_RE = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g;
+const specOf = (m) => m[1] || m[2] || m[3] || m[4];
+// `adapters` as a path *segment*, not a substring: './adapters/fixtures' yes, './adaptershelpers' no.
+const importsAdapter = (spec) => spec.split('/').some((seg) => seg === 'adapters');
+
+function walk(dir, acc = []) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) walk(p, acc);
+    else if (/\.[tj]sx?$/.test(name)) acc.push(p);
+  }
+  return acc;
+}
+
+// 1 — no agent-vendor name anywhere in src/ (ADR-0006)
+const c1 = [];
+const VENDOR_RE = new RegExp(`(${VENDORS.join('|')})`, 'i');
+for (const f of files) read(f).forEach((ln, i) => {
+  const m = VENDOR_RE.exec(ln);
+  if (m) c1.push([f, i + 1, `agent-vendor name "${m[1].toLowerCase()}" (ADR-0006)`]);
+});
+
+// 2a — no branded-identity constructor outside src/adapters/ (ADR-0003); tests may build identities
+const c2a = [];
+const BRAND_RE = new RegExp(`\\b(${BRAND.join('|')})\\s*\\(`);
+for (const f of files) {
+  const r = rel(f);
+  if (r.startsWith('src/adapters/') || isTest(r)) continue;
+  read(f).forEach((ln, i) => {
+    const m = BRAND_RE.exec(ln);
+    if (m) c2a.push([f, i + 1, `branded-identity constructor '${m[1]}(' outside src/adapters/ (ADR-0003)`]);
+  });
+}
+
+// 2b — pilot project name 'dateapp' nowhere in src/core/ or src/ui/ (ADR-0003; WO-0002 AC5)
+const c2b = [];
+const DATEAPP_RE = /dateapp/i;
+for (const f of files) {
+  const r = rel(f);
+  if (!(r.startsWith('src/core/') || r.startsWith('src/ui/'))) continue;
+  read(f).forEach((ln, i) => {
+    if (DATEAPP_RE.test(ln)) c2b.push([f, i + 1, `pilot project name "dateapp" in core/ui (ADR-0003)`]);
+  });
+}
+
+// 3 — no Node/Electron import in src/core/ or src/ui/ (ADR-0006); specifier match, not substring
+const c3 = [];
+for (const f of files) {
+  const r = rel(f);
+  if (!(r.startsWith('src/core/') || r.startsWith('src/ui/'))) continue;
+  const text = readFileSync(f, 'utf8');
+  SPEC_RE.lastIndex = 0;
+  for (let m; (m = SPEC_RE.exec(text));) {
+    const spec = specOf(m);
+    if (spec && (spec.startsWith('node:') || NODE_SPECIFIERS.includes(spec))) {
+      c3.push([f, lineNo(text, m.index), `Node/Electron import "${spec}" in core/ui (ADR-0006)`]);
+    }
+  }
+}
+
+// 4 — no adapter import outside the composition root (ADR-0006); tests may import fixtures
+const c4 = [];
+for (const f of files) {
+  const r = rel(f);
+  if (r.startsWith('src/adapters/') || isTest(r) || r === COMPOSITION_ROOT) continue;
+  const text = readFileSync(f, 'utf8');
+  SPEC_RE.lastIndex = 0;
+  for (let m; (m = SPEC_RE.exec(text));) {
+    const spec = specOf(m);
+    if (spec && importsAdapter(spec)) {
+      c4.push([f, lineNo(text, m.index), `adapter import "${spec}" outside composition root (ADR-0006)`]);
+    }
+  }
+}
+
+// 5 — no disabled/aria-disabled control in src/ui/ (ADR-0001); excludes Tailwind `disabled:` variant
+const c5 = [];
+const DISABLED_RE = /(?<!-)\bdisabled\b(?!:)/; // not inside aria-disabled, not the Tailwind `disabled:` variant
+const ARIA_DISABLED_RE = /\baria-disabled\b(?!:)/;
+for (const f of files) {
+  if (!rel(f).startsWith('src/ui/')) continue;
+  read(f).forEach((ln, i) => {
+    if (isComment(ln)) return;
+    if (DISABLED_RE.test(ln) || ARIA_DISABLED_RE.test(ln))
+      c5.push([f, i + 1, `disabled/aria-disabled control in src/ui (ADR-0001)`]);
+  });
+}
+
+// 6 — .replace( in src/ui is a PROXY for "no raw identifier rendered as display text" (ADR-0007)
+const c6 = [];
+const REPLACE_RE = /\.replace\(/;
+const PROXY = `.replace( in src/ui — PROXY for ADR-0007 (no raw identifier rendered as display text; a \${value} template literal is another shape this does not catch). A legitimate use is an architect decision, not a workaround`;
+for (const f of files) {
+  if (!rel(f).startsWith('src/ui/')) continue;
+  read(f).forEach((ln, i) => {
+    if (isComment(ln)) return;
+    if (REPLACE_RE.test(ln)) c6.push([f, i + 1, PROXY]);
+  });
+}
+
+const checks = [
+  ['agent-vendor names (ADR-0006)', c1],
+  ['branded-identity constructors (ADR-0003)', c2a],
+  ['dateapp literal (ADR-0003)', c2b],
+  ['Node/Electron imports (ADR-0006)', c3],
+  ['adapter imports (ADR-0006)', c4],
+  ['disabled / aria-disabled (ADR-0001)', c5],
+  ['.replace( proxy (ADR-0007)', c6],
+];
+
+console.log('\nwo-0005 boundary checks');
+let total = 0;
+for (const [name, v] of checks) {
+  total += v.length;
+  if (v.length) {
+    console.log(`\n[FAIL] ${name}`);
+    for (const [f, line, msg] of v) console.log(`  ${rel(f)}:${line}  ${msg}`);
+  } else {
+    console.log(`[ ok ] ${name}`);
+  }
+}
+console.log(`\n${total === 0 ? 'boundary checks clean' : `${total} boundary violation(s)`}`);
+process.exit(total === 0 ? 0 : 1);

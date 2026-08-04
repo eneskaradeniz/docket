@@ -64,3 +64,17 @@ docs/work-orders/          work orders, one directory each
 docs/tech-debt.md          open debt, a closure-gate input
 ROADMAP.md                 milestones, a closure-gate input
 ```
+
+## Developing
+
+```sh
+npm install                  # install dependencies
+npm run dev                  # Vite dev server with HMR
+npm test                     # run the test suite once (vitest)
+npm run test:watch           # re-run tests on change
+npm run build                # tsc --noEmit, then vite build
+npm run check:boundaries     # the layering/identity greps CI runs
+```
+
+`check:boundaries` enforces the rules in `CLAUDE.md` mechanically; see
+`docs/adr/ADR-0011-repository-conventions-and-mechanical-enforcement.md`.
