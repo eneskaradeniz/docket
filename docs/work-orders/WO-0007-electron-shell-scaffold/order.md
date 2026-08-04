@@ -2,7 +2,7 @@
 id: WO-0007
 title: Electron shell scaffold — renderer is the M1 prototype
 workspace: docket
-status: planning # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: plan-review # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: plan # plan | direct
 tracks:
   - repo: app
