@@ -86,19 +86,26 @@ src/{core,ui,adapters}  unchanged. App still takes `source: WorkOrderSource`.
 
 ### Build & dev pipeline
 
-- Renderer: existing Vite (entry → `src/renderer/index.tsx` via `index.html`),
-  unchanged config, HMR in dev.
-- Main + preload: compiled by `esbuild` (a dev watcher + a prod build) to the module
-  format the pinned Electron version requires for a sandboxed preload (verify
-  CJS-vs-ESM against the version — sandboxed preloads have historically required
-  CJS). New devDeps: `electron`, `esbuild`, `concurrently`, `wait-on`.
-- `npm run dev`: `concurrently` → Vite (renderer) + esbuild watch (main/preload) +
-  Electron loading the Vite URL once `wait-on` sees the port. Renderer HMR preserved.
-- `npm run build`: Vite build (renderer → `dist/`) + esbuild build (main/preload →
-  `dist/`). A `start` script launches the built app (`electron .`).
-- Typecheck: a `tsconfig.electron.json` (Node lib, `electron` + `@types/node` types,
-  `include: ["electron"]`) for main/preload; the existing `tsconfig.json` keeps
-  `src`. CI's `tsc --noEmit` covers both.
+**Tooling choice (researched): `vite-plugin-electron/simple`.** It drops into the
+existing `vite.config.ts` — the repo's tool, not a new build-tool/CLI — accepts
+`electron/main.ts` + `electron/preload.ts` entries (so it does **not** impose a
+`src/main` layout), and is Vite-8 / rolldown compatible. Rejected: hand-rolling
+esbuild + a `concurrently`/`wait-on` orchestrator (fragile wiring to own for a
+one-time scaffold), and `electron-vite` standalone (replaces the build tool with its
+own CLI + config — the most magic, against the repo's plain-tools ethos). One new
+devDep beyond `electron`: `vite-plugin-electron`.
+
+- Renderer: existing Vite (entry → `src/renderer/index.tsx` via `index.html`), HMR.
+- Main + preload: built by the plugin (Vite's bundler) alongside the renderer. The
+  preload is emitted as CommonJS — required, because `sandbox: true` runs the
+  preload without an ESM context (Electron docs; confirmed). The bundler handles it.
+- `npm run dev` = `vite`: the plugin builds main/preload, spawns Electron on the Vite
+  URL, and rebuilds on change. Renderer HMR preserved.
+- `npm run build` = `vite build` (renderer → `dist/`, main/preload → `dist-electron/`);
+  `package.json` `"main": "dist-electron/main.js"`; `npm start` = `electron .`.
+- Typecheck: `tsconfig.electron.json` (Node lib, `@types/node`, `include: ["electron"]`)
+  for main/preload; the existing `tsconfig.json` keeps `src`. A `typecheck` script
+  runs `tsc --noEmit` over both; CI is updated to call it.
 
 ### Boundary-check changes (`scripts/check-boundaries.mjs`)
 
@@ -113,16 +120,19 @@ src/{core,ui,adapters}  unchanged. App still takes `source: WorkOrderSource`.
 
 ## Task breakdown
 
-1. Add devDeps (`electron`, `esbuild`, `concurrently`, `wait-on`) and the npm scripts
-   (`dev`, `build`, `start`).
+1. Add devDeps `electron` + `vite-plugin-electron`; add npm scripts `dev` (`vite`),
+   `build` (`vite build`), `start` (`electron .`), `typecheck`; set `package.json`
+   `"main": "dist-electron/main.js"`.
 2. `electron/main.ts`: window with the security defaults; `ipcMain` snapshot handler
    delegating to `createFixtureSource()`; dev-vs-prod load URL.
 3. `electron/preload.ts`: sendSync snapshot → `WorkOrderSource` wrapper →
    `contextBridge.exposeInMainWorld('docket', { source })`.
 4. `src/renderer/index.tsx` (replaces `src/dev-main.tsx`); `src/renderer/preload.d.ts`
    Window types; repoint `index.html` to `/src/renderer/index.tsx`.
-5. `tsconfig.electron.json`; ensure `tsc --noEmit` typechecks both projects.
-6. esbuild scripts for main/preload (dev watch + prod build).
+5. `tsconfig.electron.json`; `typecheck` runs `tsc --noEmit` over both projects; CI
+   updated to call `typecheck`.
+6. `vite.config.ts`: register `vite-plugin-electron/simple` with `main.entry` and
+   `preload.input` pointed at `electron/`.
 7. Update `scripts/check-boundaries.mjs` per above; `npm run check:boundaries` clean.
 8. Run: `npm run dev` (Electron shows the board), `npm run build` + launch, full CI
    locally (tsc / test / build / boundaries green).
@@ -141,15 +151,17 @@ src/{core,ui,adapters}  unchanged. App still takes `source: WorkOrderSource`.
 
 ## Risks
 
-- **Sandboxed-preload module format.** ESM preloads under `sandbox: true` have been
-  uneven across Electron versions; if the pinned version rejects ESM, compile the
-  preload to CJS (esbuild `format: 'cjs'`). Resolve empirically, not by assumption.
+- **Sandboxed-preload module format — RESOLVED by research.** `sandbox: true` runs
+  the preload without an ESM context (Electron docs); the plugin therefore emits the
+  preload as CommonJS. No empirical guessing — verify the emitted
+  `dist-electron/preload.js`.
 - **ESM main path handling.** `__dirname` is unavailable under ESM; use
-  `import.meta.url` (+ `fileURLToPath`) to resolve `dist/index.html`.
+  `import.meta.url` (+ `fileURLToPath`) to resolve `dist/` / `dist-electron/`.
 - **`sendSync` lifetime.** Must not survive past the SQLite WO; TD-017 pins the
   deletion.
-- **Dev orchestration fragility.** `wait-on` + `concurrently` is the usual pair; if
-  it proves flaky, a small node orchestrator replaces it.
+- **Plugin output paths / `electron .` wiring.** Confirm `dist-electron/{main,preload}.js`
+  are the plugin's actual outputs and that `package.json` `main` + the preload path in
+  `main.ts` agree; verify by running `npm start` on the build.
 
 ## Tech debt to open (closure gate)
 
