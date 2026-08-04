@@ -16,8 +16,9 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Display text — ADR-0007
 - Components carry no display copy: all fixed UI vocabulary lives in `src/ui/data/labels.ts`.
 - A raw identifier is never rendered as display text. CI bans `.replace(` in `src/ui/` as a **proxy** for this
-  rule (a `${value}` template literal is another shape it does not catch); a legitimate `.replace(` in `ui/` is
-  an architect decision, not a thing to work around.
+  rule: it catches only the `.replace(` shape and misses JSX interpolation (`{id}`), template literals,
+  `String()`/`.toString()`, concatenation, and `.replaceAll(`. A legitimate `.replace(` in `ui/` is an
+  architect decision, not a thing to work around.
 
 ## Absent, not disabled — ADR-0001
 - An action whose evidence is unmet is absent, with a line stating why — never a disabled control. CI: no
@@ -46,5 +47,4 @@ rule restated with its reasons in two places is the duplication this repository 
 ## CI — ADR-0011
 - `tsc --noEmit`, `npm test`, `npm run build`, and the boundary checks above run on every pull request and on
   every push to `main`. Run the boundary checks locally with one command: `npm run check:boundaries`.
-- `ci_green` is not exempt (TD-012). Without branch protection a green run is evidence the operator chooses to
-  observe, not a gate the forge holds.
+- `ci_green` is not exempt (TD-012).
