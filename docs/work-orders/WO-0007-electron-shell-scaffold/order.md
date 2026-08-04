@@ -2,7 +2,7 @@
 id: WO-0007
 title: Electron shell scaffold — renderer is the M1 prototype
 workspace: docket
-status: implementing # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: closed # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: plan # plan | direct
 tracks:
   - repo: app
@@ -122,3 +122,34 @@ Points where the implementer must stop and report rather than decide alone.
   closes.
 - The seam already exists: `WorkOrderSource` in `src/core/source.ts`, consumed by `App`. The scaffold's whole
   job is to move the *wiring* of that port across the process boundary without disturbing `core` or `ui`.
+
+## Closure record
+
+Merged `c1feaad` (PR #4). `ci_green`: the `check` job succeeded on run 30957990813; GitGuardian succeeded.
+ROADMAP: the M2 "Electron + TS scaffold" bullet is checked and annotated. tech-debt: TD-017 (sync IPC bridge,
+throwaway) and TD-018 (`shot.mjs` broken) opened.
+
+Verification (operator-covered, solo — no separate architect session; per ADR-0001 the reason is recorded
+here): the board renders inside the Electron window in both `npm run dev` and `npm start`, fixture-driven
+and visually identical to the M1 Vite board (screenshot waived by the operator). Adversarial review found no
+blocking defects. Resolving pointers at head `b1f9d02` (PR head; content unchanged by the merge):
+
+- **AC2** — fixture adapter imported only by the composition root: `electron/main.ts:9`
+  (`createFixtureSource`). No adapter import under `src/`; boundary check 4 clean.
+- **AC3** — no Electron/Node specifier in `core/`, `ui/`, `renderer/`: boundary check 3 clean
+  (`scripts/check-boundaries.mjs` extended to `src/renderer/`). The renderer entry `src/renderer/index.tsx`
+  imports only `react-dom`, `App`, and `index.css`.
+- **AC4** — `scripts/check-boundaries.mjs` treats `electron/main.ts` as the Node-legal composition root and
+  scans `electron/`; `npm run check:boundaries` clean (7/7).
+- **AC5** — security posture: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`
+  (`electron/main.ts:30-32`); the preload exposes exactly one surface — `{ source }` — and uses only the
+  `contextBridge`/`ipcRenderer` sandbox subset (`electron/preload.ts:7,26`). No Node surface leaks to the
+  renderer.
+- **AC6** — `npm run build` produces `dist/` (renderer) + `dist-electron/{main.js,preload.cjs}`; the built
+  app launches and shows the board.
+- **AC7** — `npm run typecheck` (both `tsconfig.json` and `tsconfig.electron.json`), `npm test` (75/75),
+  `npm run build`, `npm run check:boundaries`: green locally and on CI.
+
+Carried forward: the sync bridge is throwaway (TD-017); dev mode runs Electron with `--no-sandbox` (a
+vite-plugin-electron dev convention — the built app does not), which does not affect `webPreferences.sandbox:
+true` or AC5.

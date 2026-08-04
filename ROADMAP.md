@@ -38,8 +38,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 
 ## M2 — Electron shell and session runner
 
-- [ ] Electron + TS scaffold, renderer = M1 prototype
-- [ ] Session runner (CLI spawn or Agent SDK — decided by M0)
+- [x] **WO-0007** — Electron + TS scaffold, renderer = M1 prototype. Done (merged `c1feaad`): the
+      M1 prototype runs inside an Electron shell; the composition root moved from `src/dev-main.tsx`
+      to `electron/main.ts`, and the renderer reaches data only through the `WorkOrderSource` port
+      (`src/core/source.ts`) over a sandboxed preload. The sync IPC bridge is throwaway (TD-017); the
+      bare-Chromium screenshot path (`scripts/shot.mjs`) broke and is owed to WO-0003 (TD-018).
+- [ ] Session runner — Agent SDK (decided by WO-0001); WO-0008
 - [ ] xterm.js transcript, session persistence and resume
 - [ ] SQLite state: work orders, tracks, sessions, evidence pointers
 - [ ] Per-work-order token/cost accounting from stream usage data
