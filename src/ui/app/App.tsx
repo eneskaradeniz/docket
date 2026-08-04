@@ -7,7 +7,7 @@ import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 
 // App receives the data port (WorkOrderSource) and never imports an adapter itself.
-// The composition root (src/dev-main.tsx) is the only module that does.
+// Only the composition root (electron/main.ts) imports an adapter.
 export function App({ source }: { source: WorkOrderSource }) {
   const workspaces = source.getWorkspaces();
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId>(workspaces[0].id);

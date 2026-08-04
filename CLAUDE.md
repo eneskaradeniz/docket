@@ -6,9 +6,9 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Layering — ADR-0006
 - `src/core/` is pure: no React, no I/O, no Node. It imports nothing from `src/adapters/` or `src/ui/`.
 - `src/ui/` imports from `src/core/` and reaches the outside world only through a port defined in `core`.
-- Only the composition root (`src/dev-main.tsx`) imports an adapter. CI: no
-  `electron`/`fs`/`node:`/`path`/`child_process` import in `core/` or `ui/`, and no adapter import outside the
-  composition root.
+- Only the composition root (`electron/main.ts`) imports an adapter. CI: no
+  `electron`/`fs`/`node:`/`path`/`child_process` import in `core/`, `ui/` or `renderer/`, and no adapter import
+  outside the composition root.
 
 ## Test-first for `core` — ADR-0006
 - `src/core/` is written test-first. React components are not — they are verified by running them.
@@ -45,6 +45,7 @@ rule restated with its reasons in two places is the duplication this repository 
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
 
 ## CI — ADR-0011
-- `tsc --noEmit`, `npm test`, `npm run build`, and the boundary checks above run on every pull request and on
-  every push to `main`. Run the boundary checks locally with one command: `npm run check:boundaries`.
+- `npm run typecheck` (both `tsconfig.json` and `tsconfig.electron.json`), `npm test`, `npm run build`, and the
+  boundary checks above run on every pull request and on every push to `main`. Run the boundary checks locally
+  with one command: `npm run check:boundaries`.
 - `ci_green` is not exempt (TD-012).
