@@ -2,12 +2,15 @@
 
 Updating this file is a closure gate. A work order is not closed until its entry here is accurate.
 
-## M0 — Probe the ground (current)
+## M0 — Probe the ground
 
 Measure Claude Code's programmatic surface before any UI assumption is frozen. The stop-and-ask gate and
 the plan-approval handoff are the most fragile parts of the design and the most central parts of the screen.
 
-- [ ] **WO-0001** — Claude Code surface probe
+- [x] **WO-0001** — Claude Code surface probe. Done (merged `0d77313`): the Agent SDK (0.3.221) is a
+      contractual surface — `canUseTool` makes stop-and-ask observable + answerable (Q4 verdict a) and the
+      write-fence holds (Q6; TD-001 closed). SDK-primary ruled; M2's session-runner port is defined from these
+      findings. Re-measure on version bump (TD-016).
 
 ## M1 — Clickable UI prototype
 

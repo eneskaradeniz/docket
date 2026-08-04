@@ -110,3 +110,22 @@ Each answer must be backed by a **verbatim captured excerpt**, not a description
 The pipeline this work order describes is executed by hand: the tool that would run it does not exist yet
 (TD-004). Evidence is recorded in git and in the PR, not in an application database. This is a one-time
 bootstrap, not a precedent.
+
+## Closure
+
+Merged as `0d77313` (PR #3). `ci_green` — green for real: the order's "n/a — no CI yet" was stale (WO-0005
+added CI); the GitHub Actions run on the PR concluded `success` for tsc/tests/build/boundary checks. All five
+ACs met; every `raw/` citation resolves at head `ebc6649`.
+
+Gates: **Gate 1** fired (the SDK offers a contractual permission channel) → stopped, reported, and ruled
+**SDK-primary**; the remaining questions were measured against the SDK surface. **Gate 2** and **Gate 3** not
+triggered — stop-and-ask is observable (Q4 verdict a); the write-fence holds (Q6).
+
+**Verification + audit — operator-covered.** Verified in a session separate from the implementer
+(independence holds), but with no architect session available the operator covered the audit. Recorded here
+per ADR-0001. A defined home for verdicts/reports is still open (TD-009).
+
+Carries to M2: define the session-runner port in `core` from these findings, one Agent-SDK adapter
+(`canUseTool`, `setPermissionMode`, `SDKMessage` stream, `resume`/`forkSession`,
+`result.total_cost_usd`). TD-001 closed (fence holds via host `canUseTool` policy); TD-016 records that the
+surface is version-pinned — re-measure on bump.
