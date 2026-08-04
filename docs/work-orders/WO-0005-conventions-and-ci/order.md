@@ -46,7 +46,19 @@ belongs in an ADR and `CLAUDE.md` links to it instead.
 - `npm run build`
 - boundary checks, each failing the job with a message naming the rule and the ADR:
   - no agent-vendor name anywhere in `src/`
-  - no workspace name outside `src/adapters/fixtures/`
+  - **no workspace identity in `src/core/` or `src/ui/`**, expressed as two checks:
+    - *structural, name-independent:* no branded-identifier constructor (`wid(`, `rid(`, and any sibling)
+      is called outside `src/adapters/`. Only the adapter constructs identities; this is the durable form
+      of the rule and it keeps working when workspaces arrive from `workspace.yaml` instead of fixtures.
+    - *literal:* the pilot project name `dateapp` (case-insensitive) appears nowhere in `src/core/` or
+      `src/ui/`. This is a fixed historical check from WO-0002 AC5, not a list read from anywhere.
+
+    The check must **not** derive its list of names from the fixtures. A check whose input comes from the
+    thing it is checking will one day have an empty list and pass in silence.
+
+    `Docket` as a display string is explicitly allowed: it is the application's own name in chrome
+    (`labels.ts` `productName`), not a workspace identity. That the self-managed workspace happens to share
+    the name is a coincidence, and the two diverge as soon as workspaces come from configuration.
   - no `electron`, `fs`, `node:`, `path` or `child_process` import in `src/core/` or `src/ui/`
   - no adapter import outside the composition root
   - no `disabled` attribute in `src/ui/`
