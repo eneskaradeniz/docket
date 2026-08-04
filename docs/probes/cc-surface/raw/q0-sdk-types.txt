@@ -1,0 +1,128 @@
+# Verbatim excerpts from @anthropic-ai/claude-agent-sdk@0.3.221 sdk.d.ts
+# (installed in /tmp/cc-sdk-smoke; WO-0001 Q0 evidence)
+
+## PermissionMode (line 2092)
+export declare type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
+
+## CanUseTool (206-266)
+export declare type CanUseTool = (toolName: string, input: Record<string, unknown>, options: {
+    /** Signaled if the operation should be aborted. */
+    signal: AbortSignal;
+    /**
+     * Suggestions for updating permissions so that the user will not be
+     * prompted again for this tool during this session.
+     *
+     * Typically if presenting the user an option 'always allow' or similar,
+     * then this full set of suggestions should be returned as the
+     * `updatedPermissions` in the PermissionResult.
+     */
+    suggestions?: PermissionUpdate[];
+    /**
+     * The file path that triggered the permission request, if applicable.
+     * For example, when a Bash command tries to access a path outside allowed directories.
+     */
+    blockedPath?: string;
+    /** Explains why this permission request was triggered. */
+    decisionReason?: string;
+    /**
+     * Full permission prompt sentence rendered by the bridge (e.g.
+     * "Claude wants to read foo.txt"). Use this as the primary prompt
+     * text when present instead of reconstructing from toolName+input.
+     */
+    title?: string;
+    /**
+     * Short noun phrase for the tool action (e.g. "Read file"), suitable
+     * for button labels or compact UI.
+     */
+    displayName?: string;
+    /**
+     * Human-readable subtitle from the bridge (e.g. "Claude will have
+     * read and write access to files in ~/Downloads").
+     */
+    description?: string;
+    /**
+     * Unique identifier for this specific tool call within the assistant message.
+     * Multiple tool calls in the same assistant message will have different toolUseIDs.
+     */
+    toolUseID: string;
+    /** If running within the context of a sub-agent, the sub-agent's ID. */
+    agentID?: string;
+    /**
+     * The control_request envelope's `request_id`. A control_response sent
+     * out-of-band (e.g. a signed HTTP POST instead of the SDK's WS write)
+     * must echo this value for the worker to match it.
+     */
+    requestId: string;
+    /**
+     * Set when a user-configured ask RULE (permissions.ask) forced this
+     * prompt while the ask carries the tool's own decisionReason. Hosts
+     * making policy on the reason (e.g. auto-deny a safetyCheck) or
+     * running host-side auto-approval should treat asks carrying this
+     * field as rule-forced: the user's stated intent is a human prompt.
+     */
+    matchedAskRule?: {
+        source: string;
+        toolName: string;
+        ruleContent?: string;
+    };
+}) => Promise<PermissionResult | null>;
+
+## PermissionResult (2114-2128)
+export declare type PermissionResult = {
+    behavior: 'allow';
+    updatedInput?: Record<string, unknown>;
+    updatedPermissions?: PermissionUpdate[];
+    toolUseID?: string;
+    decisionClassification?: PermissionDecisionClassification;
+} | {
+    behavior: 'deny';
+    message: string;
+    interrupt?: boolean;
+    toolUseID?: string;
+    decisionClassification?: PermissionDecisionClassification;
+};
+
+export declare type PermissionRuleValue = {
+
+## Options fields (selected)
+50:    disallowedTools?: string[];
+75:    maxTurns?: number;
+91:    permissionMode?: PermissionMode;
+167:    cwd: string;
+1375:    allowedTools?: string[];
+1380:    canUseTool?: CanUseTool;
+1389:    cwd?: string;
+1395:    disallowedTools?: string[];
+1500:    forkSession?: boolean;
+1586:    persistSession?: boolean;
+1626:    includeHookEvents?: boolean;
+1678:    maxTurns?: number;
+1739:    permissionMode?: PermissionMode;
+1746:    planModeInstructions?: string;
+1803:    resume?: string;
+2665:    cwd?: string;
+3438:    planModeInstructions?: string;
+4381:    cwd?: string;
+4427:    permissionMode?: PermissionMode;
+4441:    cwd: string;
+4451:    permissionMode: PermissionMode;
+6761:    cwd?: string;
+
+## Query.setPermissionMode (2300) / query (2587-2590)
+    setPermissionMode(mode: PermissionMode): Promise<void>;
+export declare function query(_params: {
+    prompt: string | AsyncIterable<SDKUserMessage>;
+    options?: Options;
+}): Query;
+
+## SDKControlPermissionRequest (3619-...)
+declare type SDKControlPermissionRequest = {
+    subtype: 'can_use_tool';
+    tool_name: string;
+    input: Record<string, unknown>;
+    permission_suggestions?: coreTypes.PermissionUpdate[];
+    blocked_path?: string;
+    /**
+     * Human-readable reason the ask escalated, for the consent line of the host's dialog. For decision_reason_type "subcommandResults" (compound bash), this is the NESTED safety check's warning text — the wrapper itself has no text — preferring a check that requires manual approval (classifier_approvable false); treat it with the same display/policy care as a "safetyCheck" reason. May carry ANSI escapes; sanitize before rendering.
+     */
+    decision_reason?: string;

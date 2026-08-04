@@ -1,0 +1,5 @@
+$ claude --version
+2.1.220 (Claude Code)
+
+$ which claude
+/opt/homebrew/bin/claude
