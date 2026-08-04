@@ -15,7 +15,12 @@ React + Tailwind, no Electron yet, no real sessions. Draw once, keep the code: c
 and do not move when the Electron shell arrives. Information architecture is settled in ADR-0005. The
 transcript and stop-and-ask regions stay provisional until M0 reports.
 
-- [ ] **WO-0002** — Board + work order detail, fixture-driven, six states covered
+- [x] **WO-0002** — Board + work order detail, fixture-driven, six states covered. Merged `042231f`.
+      First work order to run the full pipeline. Two returns on acceptance-criteria misses, a blind
+      verification with mutation checks, and a reconstructed plan (TD-005). 75 tests; `src/core/` pure and
+      test-first; components carry no display copy. `ci_green` was exempt — see TD-012.
+- [ ] **WO-0005** — `CLAUDE.md`, CI, and watch scripts. Runs before WO-0003: it ends the `ci_green`
+      exemption and moves the mechanical half of verification off the operator
 - [ ] **WO-0003** — Visual hierarchy pass. The prototype is structurally right and visually flat; nothing is
       dominant, so the board does not answer "what needs me most" at a glance. Presentation only.
 - [ ] **WO-0004** — Workspace connection management: add, update, remove connections (ADR-0009). Replaces the
