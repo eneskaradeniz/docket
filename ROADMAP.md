@@ -19,8 +19,10 @@ transcript and stop-and-ask regions stay provisional until M0 reports.
       First work order to run the full pipeline. Two returns on acceptance-criteria misses, a blind
       verification with mutation checks, and a reconstructed plan (TD-005). 75 tests; `src/core/` pure and
       test-first; components carry no display copy. `ci_green` was exempt — see TD-012.
-- [ ] **WO-0005** — `CLAUDE.md`, CI, and watch scripts. Runs before WO-0003: it ends the `ci_green`
-      exemption and moves the mechanical half of verification off the operator
+- [x] **WO-0005** — `CLAUDE.md`, CI, and watch scripts. Ends the `ci_green` exemption and moves the
+      mechanical half of verification off the operator. Merged `b3860ba`; the green CI run on the PR was the
+      first real, non-exempt `ci_green` (TD-012 closed). Verification surfaced three pre-existing ADR
+      violations and detection gaps → WO-0006 (TD-014, TD-015); the branch-protection gap is TD-013.
 - [ ] **WO-0003** — Visual hierarchy pass. The prototype is structurally right and visually flat; nothing is
       dominant, so the board does not answer "what needs me most" at a glance. Presentation only.
 - [ ] **WO-0004** — Workspace connection management: add, update, remove connections (ADR-0009). Replaces the

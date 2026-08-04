@@ -101,3 +101,18 @@ on `main` at the time of the PR; branch protection settings; anything in `src/co
    until it passes. A check that is green because it stopped looking is worse than no check.
 2. **If making CI green requires changing `src/core/` or `src/adapters/`.** Stop — that is a finding about
    existing code, not part of this work order.
+
+## Closure
+
+Merged as `b3860ba` (PR #2, merge commit). `ci_green` satisfied for real: the GitHub Actions run on the PR
+concluded `success` for `tsc --noEmit`, tests, build, and boundary checks — the first non-exempt `ci_green`
+(TD-012 closed). Verification report is the verifier comment on PR #2, with `path:line` pointers at head sha
+`239d793` and the AC3 deliberate-violation demonstration in the PR body. All seven ACs pass.
+
+**`architect_audit` — operator-covered.** The architect session was unavailable, so the operator, as sole
+authority, performed the `review: light` spot-check against the verifier report and the green CI. Recorded
+here per ADR-0001: an override carries a written reason on the work order. A defined home in the decision
+store for verdicts and reports is still open (TD-009).
+
+Follow-up: WO-0006 (TD-014, TD-015) for the three pre-existing ADR violations and the detection gaps; TD-013
+for the branch-protection gap (`ci_green` observed, not enforced).
