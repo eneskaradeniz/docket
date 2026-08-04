@@ -7,6 +7,10 @@ out/
 .claude/settings.local.json
 *.log
 *.local
+
+# WO-0001 probe captures are verbatim evidence cited from findings.md — track them
+# despite the global *.log rule above.
+!docs/probes/cc-surface/raw/*.log
 .env
 .env.*
 !.env.example
