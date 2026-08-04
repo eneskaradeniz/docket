@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// WO-0005 boundary checks — mechanical enforcement of the layering and identity rules decided in the ADRs
-// referenced below. Each violation names the rule and its ADR. Runs in CI and locally
-// (`npm run check:boundaries`). See CLAUDE.md and ADR-0011.
+// Boundary checks — mechanical enforcement of the layering and identity rules (ADR-0006/0003/0001/0007).
+// Origin WO-0005; extended by WO-0007 to cover the Electron shell (electron/ + src/renderer/). Each
+// violation names the rule and its ADR. Runs in CI and locally (`npm run check:boundaries`). See
+// CLAUDE.md and ADR-0011.
 //
 // The checks are deliberately name-independent where the rule must outlive a data-source change: the
 // workspace-identity check matches the branded-identity *constructors* and a fixed historical literal, never a
@@ -18,9 +19,9 @@ const VENDORS = ['claude', 'anthropic', 'cursor', 'copilot', 'gemini', 'openai',
 // base64 data). A hit on those is a stop-and-ask report (ADR-0011 gate 1), not a reason to narrow the list.
 const BRAND = ['wid', 'rid', 'woid', 'tid']; // branded-identity constructors, defined in src/adapters/
 const NODE_SPECIFIERS = ['electron', 'fs', 'path', 'child_process'];
-const COMPOSITION_ROOT = 'src/dev-main.tsx';
+const COMPOSITION_ROOTS = new Set(['electron/main.ts']); // only the Electron main process imports an adapter (ADR-0006)
 
-const files = walk(SRC);
+const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))];
 const read = (f) => readFileSync(f, 'utf8').split('\n');
 const rel = (f) => relative(ROOT, f);
 const isTest = (r) => r.includes('/__tests__/') || /\.test\.[tj]sx?$/.test(r);
@@ -72,17 +73,17 @@ for (const f of files) {
   });
 }
 
-// 3 — no Node/Electron import in src/core/ or src/ui/ (ADR-0006); specifier match, not substring
+// 3 — no Node/Electron import in src/core/, src/ui/ or src/renderer/ (ADR-0006); specifier match, not substring
 const c3 = [];
 for (const f of files) {
   const r = rel(f);
-  if (!(r.startsWith('src/core/') || r.startsWith('src/ui/'))) continue;
+  if (!(r.startsWith('src/core/') || r.startsWith('src/ui/') || r.startsWith('src/renderer/'))) continue;
   const text = readFileSync(f, 'utf8');
   SPEC_RE.lastIndex = 0;
   for (let m; (m = SPEC_RE.exec(text));) {
     const spec = specOf(m);
     if (spec && (spec.startsWith('node:') || NODE_SPECIFIERS.includes(spec))) {
-      c3.push([f, lineNo(text, m.index), `Node/Electron import "${spec}" in core/ui (ADR-0006)`]);
+      c3.push([f, lineNo(text, m.index), `Node/Electron import "${spec}" in core/ui/renderer (ADR-0006)`]);
     }
   }
 }
@@ -91,7 +92,7 @@ for (const f of files) {
 const c4 = [];
 for (const f of files) {
   const r = rel(f);
-  if (r.startsWith('src/adapters/') || isTest(r) || r === COMPOSITION_ROOT) continue;
+  if (r.startsWith('src/adapters/') || isTest(r) || COMPOSITION_ROOTS.has(r)) continue;
   const text = readFileSync(f, 'utf8');
   SPEC_RE.lastIndex = 0;
   for (let m; (m = SPEC_RE.exec(text));) {
