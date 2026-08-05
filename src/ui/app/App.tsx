@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
@@ -69,6 +69,13 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     [workOrders, workspaceId],
   );
 
+  const refreshWorkspaces = useCallback(() => {
+    source.getWorkspaces().then((ws) => {
+      setWorkspaces(ws);
+      setWorkspaceId((prev) => (prev && ws.some((w) => w.id === prev) ? prev : (ws[0]?.id ?? null)));
+    });
+  }, [source]);
+
   const chrome = workspaceId ? (
     <AppChrome
       workspaces={workspaces}
@@ -76,6 +83,8 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
       onSwitch={setWorkspaceId}
       theme={theme}
       setTheme={setTheme}
+      source={source}
+      onWorkspacesChanged={refreshWorkspaces}
     />
   ) : null;
 

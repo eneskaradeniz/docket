@@ -174,3 +174,59 @@ describe('SQLite store — per-WO cost derived from session rows (WO-0011)', () 
     expect(wo!.cost).toEqual(deriveWorkOrderCost(wo!.sessions));
   });
 });
+
+describe('SQLite store — workspace CRUD (WO-0014)', () => {
+  it('createWorkspace persists definition + connection and survives reopen', async () => {
+    const p = freshDb();
+    const ws = await createStore(p).createWorkspace({
+      label: 'Test Project',
+      repos: [{ path: '/tmp/api' }, { path: '/tmp/mobile' }],
+    });
+    expect(ws.label).toBe('Test Project');
+    expect(ws.repos).toHaveLength(2);
+    const reopened = await createStore(p).getWorkspaces();
+    expect(reopened.some((w) => w.label === 'Test Project')).toBe(true);
+  });
+
+  it('connection rows survive reseedObserved (ADR-0010 contract extended to connection)', () => {
+    const p = freshDb();
+    const store = createStore(p);
+    store.createWorkspace({ label: 'Survivor', repos: [{ path: '/tmp/repo' }] });
+    const before = (store.db.prepare('SELECT COUNT(*) AS n FROM connection').get() as { n: number }).n;
+    expect(before).toBeGreaterThan(0);
+    store.reseedObserved();
+    const after = (store.db.prepare('SELECT COUNT(*) AS n FROM connection').get() as { n: number }).n;
+    expect(after).toBe(before);
+  });
+
+  it('deleteWorkspace removes definition + connection rows', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'ToRemove', repos: [{ path: '/tmp/x' }] });
+    store.deleteWorkspace(ws.id);
+    const n = (store.db.prepare('SELECT COUNT(*) AS n FROM workspace WHERE id = ?').get(ws.id) as { n: number }).n;
+    expect(n).toBe(0);
+  });
+
+  it('addRepoConnection + removeRepoConnection round-trip', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Repos', repos: [{ path: '/tmp/a' }] });
+    store.addRepoConnection(ws.id, { path: '/tmp/b' });
+    const ws2 = await store.getWorkspaces();
+    expect(ws2.find((w) => w.id === ws.id)!.repos).toHaveLength(2);
+    store.removeRepoConnection(ws.id, '/tmp/b');
+    const ws3 = await store.getWorkspaces();
+    expect(ws3.find((w) => w.id === ws.id)!.repos).toHaveLength(1);
+  });
+
+  it('updateWorkspace renames label + sets decision store', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'OldName', repos: [{ path: '/tmp/a' }, { path: '/tmp/b' }] });
+    store.updateWorkspace(ws.id, { label: 'NewName', decisionStorePath: '/tmp/b' });
+    const ws2 = await store.getWorkspaces();
+    const found = ws2.find((w) => w.id === ws.id)!;
+    expect(found.label).toBe('NewName');
+  });
+});

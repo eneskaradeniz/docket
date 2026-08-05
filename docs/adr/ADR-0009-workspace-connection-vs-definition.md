@@ -56,3 +56,23 @@ mechanism. Reconnecting the same folder restores everything, since nothing of va
 - **Full CRUD on the definition inside the app.** Convenient, and it makes Docket the owner of a file that
   belongs to the project. The first time the yaml is edited both in git and in Docket, one silently wins.
 - **Store the definition in the database and export to yaml.** The same failure with an extra step.
+
+## Addendum: M2 pragmatic CRUD (WO-0014, 2026-08-06)
+
+The M2 fixture era has no `workspace.yaml` scanner yet (that is M3). Strictly applying the ruling
+above — "the management UI operates on connections only; the definition is created/changed through git"
+— would mean the operator cannot create a workspace until M3. That blocks the product's core loop.
+
+**M2 decision (temporary departure):** the management UI (WO-0014) **authors definitions directly**
+into the observed `workspace`/`workspace_repo` tables **and** writes connections into the owned
+`connection` table. This makes Docket usable now. The seed-from-fixtures coexists with operator-created
+workspaces until the operator creates real ones.
+
+**M3 reconciliation:** when the git scanner lands, it re-observes definitions from `workspace.yaml`. At
+that point, operator-authored observed rows that are NOT backed by a yaml are orphaned (the scanner
+rebuilds from yaml). The owned **connection rows survive** — that is the observed|owned split's whole
+point (ADR-0010). The operator's local-path + GitHub-remote links persist across the reconciliation.
+
+This is a documented, time-boxed departure from the "definition through git only" ruling, not a
+reversal. The ruling's intent — "Docket does not own project facts; it observes them" — is preserved by
+making the observed rows discardable and the connection rows owned.

@@ -11,9 +11,10 @@
 // Seeded from the fixture constants on first run (empty DB). M3 replaces the seed with
 // live git/forge observation feeding reseedObserved().
 import { DatabaseSync } from 'node:sqlite';
+import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
-import type { WorkOrderSource } from '../../core/source';
+import type { CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrderDocs, workOrders, workspaces } from '../fixtures';
 import type {
@@ -28,6 +29,7 @@ import type {
   WorkOrder,
   WorkOrderId,
   Workspace,
+  WorkspaceId,
 } from '../../core/types';
 
 export interface RecordSessionInput {
@@ -275,6 +277,76 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
 }
 
+// --- Workspace + repo-connection CRUD (WO-0014) ---
+// Pragmatic M2 (ADR-0009 addendum): the UI authors definitions (observed workspace/workspace_repo) +
+// connections (owned connection table). M3 git scanner reconciles definitions from yaml; owned
+// connections persist.
+function gitRemote(path: string): string {
+  try {
+    return execFileSync('git', ['-C', path, 'remote', 'get-url', 'origin'], { encoding: 'utf-8', timeout: 2000 }).trim();
+  } catch {
+    return '';
+  }
+}
+function repoBase(path: string): string {
+  return path.replace(/\/+$/, '').split('/').pop() || 'repo';
+}
+function slugify(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'workspace';
+}
+
+function createWorkspaceRow(db: DatabaseSync, input: CreateWorkspaceInput): Workspace {
+  const id = wid(slugify(input.label));
+  const repos = input.repos.map((r) => {
+    const remote = r.remote ?? gitRemote(r.path);
+    return { id: rid(repoBase(r.path)), path: r.path, remote };
+  });
+  const decisionStore = input.decisionStorePath ? rid(repoBase(input.decisionStorePath)) : (repos[0]?.id ?? rid('repo'));
+  const now = new Date().toISOString();
+  db.prepare('INSERT OR REPLACE INTO workspace (id, label, decision_store, observed_at) VALUES (?,?,?,?)').run(
+    id, input.label, decisionStore, now,
+  );
+  db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
+  for (const r of repos) {
+    db.prepare('INSERT OR REPLACE INTO workspace_repo (workspace_id, repo_id) VALUES (?,?)').run(id, r.id);
+    db.prepare('INSERT OR REPLACE INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(
+      id, r.remote || r.id, r.path,
+    );
+  }
+  return { id, label: input.label, repos: repos.map((r) => r.id), decisionStore };
+}
+
+function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }): void {
+  if (patch.label !== undefined) db.prepare('UPDATE workspace SET label = ? WHERE id = ?').run(patch.label, id);
+  if (patch.decisionStorePath !== undefined) {
+    const ds = patch.decisionStorePath
+      ? rid(repoBase(patch.decisionStorePath))
+      : ((db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ? LIMIT 1').get(id) as { repo_id: string } | undefined)?.repo_id ?? 'repo');
+    db.prepare('UPDATE workspace SET decision_store = ? WHERE id = ?').run(ds, id);
+  }
+}
+
+function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
+  db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
+  db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
+  db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
+}
+
+function addRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, repo: RepoConnectionInput): void {
+  const remote = repo.remote ?? gitRemote(repo.path);
+  const repoId = rid(repoBase(repo.path));
+  db.prepare('INSERT OR REPLACE INTO workspace_repo (workspace_id, repo_id) VALUES (?,?)').run(id, repoId);
+  db.prepare('INSERT OR REPLACE INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(
+    id, remote || repoId, repo.path,
+  );
+}
+
+function removeRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, path: string): void {
+  const repoId = rid(repoBase(path));
+  db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ? AND repo_id = ?').run(id, repoId);
+  db.prepare('DELETE FROM connection WHERE workspace_id = ? AND local_path = ?').run(id, path);
+}
+
 export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
@@ -301,6 +373,14 @@ export function createStore(dbPath: string): Store {
     getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id)),
     getWorkOrderDocs: (id: WorkOrderId) => Promise.resolve(workOrderDocs[id] ?? { order: '', plan: '' }),
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    createWorkspace: (input: CreateWorkspaceInput) => Promise.resolve(createWorkspaceRow(db, input)),
+    updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
+      Promise.resolve(updateWorkspaceRow(db, id, patch)),
+    deleteWorkspace: (id: WorkspaceId) => Promise.resolve(deleteWorkspaceRow(db, id)),
+    addRepoConnection: (id: WorkspaceId, repo: RepoConnectionInput) =>
+      Promise.resolve(addRepoConnectionRow(db, id, repo)),
+    removeRepoConnection: (id: WorkspaceId, path: string) =>
+      Promise.resolve(removeRepoConnectionRow(db, id, path)),
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
       db.exec(SCHEMA_SQL);
