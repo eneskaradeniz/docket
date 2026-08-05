@@ -227,6 +227,8 @@ export const UI = {
   tracksUnit: 'track(s)',
   missing: 'missing',
   scopedToTrack: ' · track',
+  loading: 'Loading…',
+  loadError: 'Could not load work orders.',
   // Live session pane (WO-0008)
   permissionRequested: 'Permission requested',
   startSession: 'Start session',

@@ -1,11 +1,9 @@
-// Branding constructors + shared identities. The adapter is the only place that constructs
-// branded IDs (ADR-0003 rule 1: project-specific strings live here, never in core or ui).
-import type { RepoId, TrackId, WorkOrderId, WorkspaceId } from '../../core/types';
+// Fixture identity constants. The branding constructors live in the shared
+// src/adapters/ids.ts (also used by the SQLite store); re-exported here so existing
+// fixture modules keep importing from './ids'.
+import { rid, wid } from '../ids';
 
-export const wid = (id: string): WorkspaceId => id as WorkspaceId;
-export const rid = (id: string): RepoId => id as RepoId;
-export const woid = (id: string): WorkOrderId => id as WorkOrderId;
-export const tid = (id: string): TrackId => id as TrackId;
+export { wid, rid, woid, tid } from '../ids';
 
 export const WORKSPACES = {
   docket: wid('docket'),

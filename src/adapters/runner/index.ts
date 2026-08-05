@@ -146,7 +146,10 @@ export function createRunner(): SessionRunner {
   async function runDrive(input: DriveInput, queue: AsyncQueue<RunnerEvent>): Promise<void> {
     const permissionMode = resolvePermissionMode(input);
     const isPlanDrive = permissionMode === 'plan';
-    const roots: ScopeRoots = { repoRoot: input.cwd, decisionStore: resolve(input.cwd, DECISION_STORE_DIR) };
+    // The renderer omits cwd (it cannot know filesystem paths); the composition root fills
+    // it. Default to the process cwd as a pilot fallback (ADR-0003 per-track paths later).
+    const cwd = input.cwd ?? process.cwd();
+    const roots: ScopeRoots = { repoRoot: cwd, decisionStore: resolve(cwd, DECISION_STORE_DIR) };
     const scope = writeScopeFor(input.role, roots);
     let planReadyEmitted = false;
     const abort = new AbortController();
@@ -154,7 +157,7 @@ export function createRunner(): SessionRunner {
 
     const canUseTool: CanUseTool = (toolName, toolInput, o) =>
       new Promise<PermissionResult>((settle) => {
-        const attempt = classifyAttempt(toolName, toolInput, input.cwd);
+        const attempt = classifyAttempt(toolName, toolInput, cwd);
         const verdict = fenceDecision(scope, attempt);
         if (verdict === 'allow') return settle({ behavior: 'allow' });
         if (verdict === 'deny') {
@@ -224,7 +227,7 @@ export function createRunner(): SessionRunner {
     };
 
     const options: Options = {
-      cwd: input.cwd,
+      cwd,
       permissionMode,
       canUseTool,
       abortController: abort,

@@ -19,6 +19,7 @@ import type {
   TrackId,
   TrackLaneView,
   TrackMergeAction,
+  TrackStage,
   WorkOrder,
   WorkOrderCardView,
   WorkOrderDetailView,
@@ -90,6 +91,31 @@ function trackCiStatus(t: Track): EvidenceStatus {
 
 function allTracksMerged(wo: WorkOrder): boolean {
   return wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
+}
+
+// Stage is DERIVED from observed facts, never stored (ADR-0010 "no stage column on an
+// observed table" / TD-008). The store sets WorkOrder.stage by calling this at hydration;
+// every other function here then reads wo.stage as before. M2 derivation is coarse where
+// the observed facts available don't distinguish the finer plan/audit stages (written /
+// plan_requested / plan_ready / verification / architect_audit are not represented in the
+// seed) — M3 refines from live git/forge observation.
+export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks'>): StageId {
+  if (!wo.gateInputs.planApproved) return 'architect_approval';
+  const allMerged = wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
+  if (allMerged && wo.gateInputs.verifierReport?.resolvablePointers) {
+    return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
+  }
+  return 'implementation';
+}
+
+// A track's stage is forge-owned pr/ci/merge fact plus whether an implementer session is
+// actively scoped to it — derived, never stored (ADR-0010 rule 2 generalised: a track's
+// `stage` sat on the same row as pr_url/ci_kind/merged_at, i.e. derived data beside its
+// own inputs). `hasActiveSession` = a session scoped to this track with status != 'none'.
+export function deriveTrackStage(track: Pick<Track, 'pr' | 'merge'>, hasActiveSession: boolean): TrackStage {
+  if (track.merge) return 'merged';
+  if (track.pr) return 'ci';
+  return hasActiveSession ? 'implementation' : 'not_started';
 }
 
 // whoseTurn — first match wins; default your_turn (a work order matching no rule is on the operator).

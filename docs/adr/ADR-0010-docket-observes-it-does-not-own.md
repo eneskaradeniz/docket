@@ -29,6 +29,28 @@ Both reduce to: Docket is not the system of record, and must never behave as if 
 Docket's own state is deliberately tiny and, apart from live session ids, entirely reconstructible. Losing
 the database must cost the operator a re-scan, not a decision.
 
+### The schema encodes ownership
+
+When the state store is built, the ownership table above is not a comment — it is the schema's shape.
+
+Tables fall into exactly two categories:
+
+- **Observed.** A cache of what git and the forge said. Every row carries `observed_at`. Discardable by
+  definition: dropping every observed table and re-scanning must lose nothing but time.
+- **Owned.** Session ids with their role and scope, workspace connections, operator preferences, evidence
+  pointers. Small, and the only thing a backup would be for.
+
+Two rules follow, and both are testable:
+
+1. **Document text never enters the store.** `order.md`, `plan.md` and every referenced document are read at
+   view time and rendered (ADR-0005). Caching their text is the second copy this project refuses; it is also
+   the copy most likely to be stale, because the operator edits those files in an editor all day.
+2. **No observed table has a `stage` column.** Stage is derived (below). A column for it is a stored claim
+   wearing a schema.
+
+A work order in the store is therefore a thin record: identity, which repos and tracks, pointers to where its
+documents live, and when each observed fact was last seen. The substance stays in git.
+
 ### Stage is derived from observed facts, not stored
 
 A work order's position is computed from what git and the forge say, not from a field Docket mutates:
