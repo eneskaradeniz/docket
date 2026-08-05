@@ -2,7 +2,7 @@
 id: WO-0009
 title: SQLite state store — read foundation (async port, observed|owned schema, TD-017 paid)
 workspace: docket
-status: implementing # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: closed # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: direct # plan | direct
 tracks:
   - repo: app
@@ -113,4 +113,22 @@ B. **The seeding check did not respect the observed | owned split.** `createStor
 
 Out of scope this return (verifier-flagged for follow-up, recorded at closure): expose `reseedObserved` over IPC,
 transactions around reseed, foreign keys, `observed_at` on the junction tables (TD-021/TD-022).
+
+## Closure record
+
+Merged `2763be2` (PR #6, after the verifier return that derived `track.stage` and fixed the seeding split).
+`ci_green`: the `check` job passed; GitGuardian passed. ROADMAP: the M2 "SQLite state store" bullet is checked
+and annotated. tech-debt: TD-017 (sync bridge) and TD-008 (stage stored) **closed**; TD-021 (reseed happy-path
+only) and TD-022 (junction tables lack `observed_at`) opened.
+
+Verification (operator-covered, solo — per ADR-0001 the reason is recorded here and in the verifier-return
+section above): the store is proven by `src/adapters/store/store.test.ts` (seed/hydrate with derived stage;
+reseed loses no decision; seeding respects the observed | owned split — C1 partial-observed no crash, C2 no
+duplicate owned). `deriveStage` and `deriveTrackStage` are test-first (all six fixtures reproduced). `npm run
+typecheck` (both projects), `npm test` (110/110), `npm run build`, `npm run check:boundaries` green locally
+and on CI; the built app boots and seeds. The GUI load-from-SQLite check (delete DB → re-seed) is
+operator-pending — CI cannot drive the window.
+
+Carried forward: live session/cost writes + resume (TD-019); reseed is happy-path only and not IPC-exposed
+(TD-021); junction tables inherit `observed_at` (TD-022); xterm transcript (TD-020).
 

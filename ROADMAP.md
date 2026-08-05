@@ -51,7 +51,14 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       the transcript is a simple list, not xterm (TD-020); the SDK is pinned to 0.3.221
       (TD-016).
 - [ ] xterm.js transcript, session persistence and resume
-- [ ] SQLite state: work orders, tracks, sessions, evidence pointers
+- [x] **WO-0009** — SQLite state store (read foundation). Done (merged `2763be2`): a `node:sqlite`
+      store (built into Electron's Node, no native dep) with a visible observed | owned schema
+      (`observed_at`; no `stage` column — `WorkOrder` and `Track` stage both derived; no document
+      text), seeded from fixtures; `WorkOrderSource` is async and **TD-017 is paid** (the sync
+      `sendSync` bridge is deleted); `App` has loading/error states; a reseed property test makes
+      ADR-0010 a code property (the ADR gained a "schema encodes ownership" section). Live
+      session/cost writes + resume are the fast-follow (TD-019); reseed is happy-path only (TD-021);
+      junction tables lack `observed_at` (TD-022).
 - [ ] Per-work-order token/cost accounting from stream usage data
 
 ## M3 — Evidence layer
