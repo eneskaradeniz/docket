@@ -37,6 +37,9 @@ export type TrackStage = 'not_started' | 'implementation' | 'pr_opened' | 'ci' |
 
 export type EvidenceKind = 'plan_approval' | 'pr_open' | 'ci_green' | 'verification' | 'closure';
 export type BoardColumn = 'your_turn' | 'running' | 'external';
+// The approved redesign's two-bucket board + a collapsed "closed" drawer (WO-0013). Derived from
+// column + stage: 'external' (forge/CI work without you) folds into 'working'.
+export type BoardBucket = 'up' | 'working' | 'closed';
 
 // --- CI: discriminated union. Exempt is a required branch — never a silent skip (state 6). ---
 export interface CiCheck {
@@ -197,13 +200,24 @@ export type CardReason =
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };
 
+export type CardActionKind = 'permission' | 'plan' | 'closure' | 'link';
+/** The inline ▸ next-action on a card, derived from the work order's primary action + reason. */
+export interface CardAction {
+  kind: CardActionKind;
+  intent: ActionIntent;
+}
+
 export interface WorkOrderCardView {
   id: WorkOrderId;
   title: string;
   workspace: WorkspaceId;
   stage: StageId;
   column: BoardColumn;
+  bucket: BoardBucket;
   reason: CardReason;
+  action?: CardAction;
+  actionRank: number;
+  role?: SessionRole;
   primaryRepo: RepoId;
   trackCount: number;
   sessionCount: number;

@@ -1,12 +1,10 @@
-import type { BoardColumn, WorkOrderCardView } from '../../../core/types';
-import { cardReasonText, formatUsd, STAGE_LABELS, UI } from '../../data/labels';
-import { Badge, type BadgeTone } from '../primitives/Badge';
+import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
+import { cardActionText, cardReasonText, formatUsd, ROLE_LABELS, STAGE_LABELS } from '../../data/labels';
 
-const COLUMN_TONE: Record<BoardColumn, BadgeTone> = {
-  your_turn: 'warn',
-  running: 'info',
-  external: 'neutral',
-};
+// Evidence-ticket card (WO-0013). The strip colour comes from the bucket; the brass strip pulses
+// when the work order needs the operator. Keyboard-accessible (outer <button>).
+const STRIP: Record<BoardBucket, string> = { up: 'brass', working: 'denim', closed: 'sage' };
+const PULSE: Record<BoardBucket, string> = { up: ' pulse', working: '', closed: '' };
 
 export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onSelect: () => void }) {
   return (
@@ -14,21 +12,31 @@ export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onS
       type="button"
       onClick={onSelect}
       data-wo-id={card.id}
-      className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-slate-300 hover:shadow"
+      className="flex w-full items-stretch rounded-sm border border-rule bg-surface text-left transition-colors hover:bg-surface2"
     >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-900">{card.title}</h3>
-        <Badge tone={COLUMN_TONE[card.column]}>{card.id}</Badge>
+      <div className={`bar bar-${STRIP[card.bucket]}${PULSE[card.bucket]}`} />
+      <div className="perf" />
+      <div className="min-w-0 flex-1 px-3.5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[11px] text-inkdim">{card.id}</span>
+          <span className="font-mono text-[11px] uppercase tracking-wide text-inkdim">
+            {STAGE_LABELS[card.stage]}
+          </span>
+          <h3 className="truncate text-[14px] font-semibold text-ink">{card.title}</h3>
+          <span className="ml-auto flex items-center gap-2">
+            {card.role ? (
+              <span className="font-mono text-[11px] lowercase text-inkdim">{ROLE_LABELS[card.role]}</span>
+            ) : null}
+            <span className="font-mono text-[12px] text-inkdim">
+              {card.sessionCount > 0 ? formatUsd(card.cost.usd) : null}
+            </span>
+          </span>
+        </div>
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <p className="truncate text-[13px] text-inkdim">{cardReasonText(card.reason)}</p>
+          {card.action ? <span className="alink whitespace-nowrap text-[12px]">▸ {cardActionText(card.action)}</span> : null}
+        </div>
       </div>
-      <p className="mt-1 text-xs text-slate-500">
-        {STAGE_LABELS[card.stage]} · {card.trackCount} {UI.tracksUnit}
-      </p>
-      <p className="mt-2 text-xs font-medium text-slate-700">{cardReasonText(card.reason)}</p>
-      <p className="mt-2 text-[11px] text-slate-400">
-        {card.sessionCount > 0
-          ? `${formatUsd(card.cost.usd)} · ${(card.cost.tokensIn + card.cost.tokensOut).toLocaleString()} ${UI.tokens}`
-          : UI.costNoSessions}
-      </p>
     </button>
   );
 }

@@ -6,33 +6,30 @@ import {
   type LiveSessionState,
 } from '../../../core/runner';
 import type { SessionRef, SessionRole, WorkOrderId } from '../../../core/types';
-import type { BadgeTone } from '../primitives/Badge';
 import { formatUsd, LIVE_STATUS_LABELS, ROLE_LABELS, UI } from '../../data/labels';
-import { Badge } from '../primitives/Badge';
 import { useRunner } from './runner-context';
 import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
 
-// Live session pane (WO-0008). Replaces the provisional fixture-driven pane: it drives a
-// real session through the SessionRunner port, folds the event stream into state
-// (core's foldSessionEvent), and maps each event kind to a region — an xterm terminal
-// (WO-0012), stop-and-ask card, plan approval, cost. Sessions persist + resume (WO-0010).
+// Live session pane (WO-0008). Drives a real session through the SessionRunner port, folds the event
+// stream into state (core's foldSessionEvent), and maps each event kind to a region — an xterm
+// terminal (WO-0012), stop-and-ask card, plan approval, cost. Sessions persist + resume (WO-0010).
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
-function statusTone(s: LiveSessionState['status']): BadgeTone {
+function statusColor(s: LiveSessionState['status']): string {
   switch (s) {
     case 'running':
-      return 'info';
+      return 'text-denim';
     case 'stopped_asking':
-      return 'warn';
+      return 'text-brass';
     case 'plan_ready':
-      return 'info';
+      return 'text-brass';
     case 'done':
-      return 'ok';
+      return 'text-sage';
     case 'error':
-      return 'bad';
+      return 'text-clay';
     default:
-      return 'neutral';
+      return 'text-inkdim';
   }
 }
 
@@ -101,55 +98,42 @@ export function SessionPane({
   };
 
   return (
-    <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+    <section className="rounded-sm border border-rule bg-surface2 p-3">
       <header className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">{UI.session}</h2>
-        <Badge tone={statusTone(state.status)}>{LIVE_STATUS_LABELS[state.status]}</Badge>
-        {state.cost.usd > 0 ? <span className="text-xs text-slate-400">{formatUsd(state.cost.usd)}</span> : null}
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.sessionLog}</h2>
+        <span className={`font-mono text-[11px] ${statusColor(state.status)}`}>{LIVE_STATUS_LABELS[state.status]}</span>
+        {state.cost.usd > 0 ? <span className="ml-auto font-mono text-[12px] text-inkdim">{formatUsd(state.cost.usd)}</span> : null}
       </header>
 
-      <div className="mb-2 flex gap-1">
+      <div className="mb-2 flex gap-1 rounded bg-surface p-1">
         {ROLE_ORDER.map((r) => (
           <button
             key={r}
             type="button"
             onClick={() => setRole(r)}
-            className={`rounded-md px-2 py-1 text-xs ${
-              r === role
-                ? 'bg-slate-900 text-white'
-                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-            }`}
+            className={`flex-1 rounded px-2 py-1 text-xs ${r === role ? 'bg-bg text-ink' : 'text-inkdim'}`}
           >
             {ROLE_LABELS[r]}
           </button>
         ))}
       </div>
 
-      {/* Controls appear only when their precondition holds (ADR-0001): Start needs a
-          prompt and a non-running state; Approve appears only at plan_ready; Stop only
-          while running. An unmet action is absent, never a greyed-out control. */}
+      {/* Controls appear only when their precondition holds (ADR-0001): Start needs a non-running
+          state; Approve appears only at plan_ready; Stop only while running. Unmet → absent. */}
       {canStart ? (
         <div className="mb-2 flex gap-2">
           <textarea
-            className="flex-1 rounded-md border border-slate-300 bg-white p-2 text-xs text-slate-700"
+            className="flex-1 rounded border border-rule bg-bg p-2 text-xs text-ink outline-none"
             rows={2}
             placeholder={UI.promptPlaceholder}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
-          <button
-            type="button"
-            onClick={start}
-            className="self-stretch rounded-md bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700"
-          >
+          <button type="button" onClick={start} className="btn-primary self-stretch rounded px-3 py-1 text-xs">
             {UI.startSession}
           </button>
           {resumeSessionId ? (
-            <button
-              type="button"
-              onClick={resume}
-              className="self-stretch rounded-md border border-violet-300 bg-white px-3 py-1 text-xs font-medium text-violet-700 hover:bg-violet-50"
-            >
+            <button type="button" onClick={resume} className="btn-ghost self-stretch rounded px-3 py-1 text-xs">
               {UI.resumeSession}
             </button>
           ) : null}
@@ -157,15 +141,11 @@ export function SessionPane({
       ) : null}
 
       {showPlan ? (
-        <div className="mb-2 rounded-md border border-slate-300 bg-white p-2">
-          <p className="mb-1 text-xs text-slate-500">{UI.awaitingApproval}</p>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-slate-700">{state.pendingPlan}</pre>
+        <div className="mb-2 rounded border border-rule bg-surface p-2">
+          <p className="mb-1 text-xs text-inkdim">{UI.awaitingApproval}</p>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-ink">{state.pendingPlan}</pre>
           <div className="mt-2">
-            <button
-              type="button"
-              onClick={approve}
-              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
-            >
+            <button type="button" onClick={approve} className="btn-primary rounded px-3 py-1 text-xs">
               {UI.approve}
             </button>
           </div>
@@ -174,11 +154,7 @@ export function SessionPane({
 
       {running ? (
         <div className="mb-2">
-          <button
-            type="button"
-            onClick={stop}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
+          <button type="button" onClick={stop} className="btn-ghost rounded px-3 py-1 text-xs">
             {UI.interrupt}
           </button>
         </div>
@@ -197,10 +173,10 @@ export function SessionPane({
       {state.entries.length > 0 || state.status === 'running' || showAsk ? (
         <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
       ) : (
-        <p className="text-xs text-slate-400">{UI.noSession}</p>
+        <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}
 
-      {state.lastError ? <p className="mt-2 text-xs text-rose-600">{state.lastError}</p> : null}
+      {state.lastError ? <p className="mt-2 text-xs text-clay">{state.lastError}</p> : null}
     </section>
   );
 }

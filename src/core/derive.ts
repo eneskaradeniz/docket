@@ -4,7 +4,10 @@ import { GATES } from './gates';
 import type {
   AbsentReason,
   ActionIntent,
+  BoardBucket,
   BoardColumn,
+  CardAction,
+  CardActionKind,
   CardReason,
   CostSummary,
   EvidenceItem,
@@ -228,14 +231,50 @@ export function sessionForTrack(wo: WorkOrder, trackId: TrackId): SessionRef | u
   return wo.sessions.find((s) => s.role === 'implementer' && s.scope === trackId);
 }
 
+// The approved two-bucket board (WO-0013). 'external' (forge/CI work happening without the operator)
+// folds into 'working'; 'closed' work orders collapse into the drawer.
+export function deriveBucket(c: { column: BoardColumn; stage: StageId }): BoardBucket {
+  if (c.stage === 'closed') return 'closed';
+  if (c.column === 'running' || c.column === 'external') return 'working';
+  return 'up';
+}
+
+// The inline ▸ next-action on a card, derived from the primary action + card reason. Working states
+// (a running session / CI) surface no inline action — the card shows a working indicator instead.
+export function deriveCardAction(wo: WorkOrder): CardAction | undefined {
+  const reason = deriveCardReason(wo);
+  if (reason.kind === 'in_progress' || reason.kind === 'ci_running') return undefined;
+  if (reason.kind === 'stopped_asking') return { kind: 'permission', intent: 'resume' };
+  const primary = derivePrimaryAction(wo);
+  if (primary.kind === 'absent') return undefined;
+  const intent = primary.intent;
+  if (intent === 'approve_plan') return { kind: 'plan', intent };
+  if (intent === 'close') return { kind: 'closure', intent };
+  return { kind: 'link', intent };
+}
+
+/** Sort rank within the 'up' bucket (lower = needs you sooner). Working/closed cards have no action. */
+export function deriveCardActionRank(action: CardAction | undefined): number {
+  if (!action) return 4;
+  const rank: Record<CardActionKind, number> = { permission: 0, plan: 1, closure: 2, link: 3 };
+  return rank[action.kind];
+}
+
 export function toCardView(wo: WorkOrder): WorkOrderCardView {
+  const column = whoseTurn(wo);
+  const action = deriveCardAction(wo);
+  const active = wo.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking');
   return {
     id: wo.id,
     title: wo.title,
     workspace: wo.workspace,
     stage: wo.stage,
-    column: whoseTurn(wo),
+    column,
+    bucket: deriveBucket({ column, stage: wo.stage }),
     reason: deriveCardReason(wo),
+    action,
+    actionRank: deriveCardActionRank(action),
+    role: active?.role,
     primaryRepo: wo.tracks[0]?.repo ?? ('' as RepoId),
     trackCount: wo.tracks.length,
     sessionCount: wo.sessions.length,

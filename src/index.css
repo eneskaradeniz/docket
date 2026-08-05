@@ -1,1 +1,153 @@
 @import "tailwindcss";
+
+/* ===== Design tokens (the approved warm-dark "aged-paper-meets-terminal" system) =====
+   Tailwind v4 @theme: color tokens generate bg-/text-/border- utilities; font tokens generate font-.
+   Dark is the default (:root); html.light overrides the same vars so utilities follow. */
+@theme {
+  --color-bg: #15120e;
+  --color-surface: #1d1813;
+  --color-surface2: #241f1b;
+  --color-ink: #ece4d3;
+  --color-inkdim: #a59880;
+  --color-rule: #2c251d;
+  --color-brass: #d4a24c;
+  --color-denim: #6f9bb0;
+  --color-sage: #8aa172;
+  --color-clay: #c1665a;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html.light {
+  --color-bg: #f5efe2;
+  --color-surface: #fbf6ea;
+  --color-surface2: #efe7d4;
+  --color-ink: #2a2419;
+  --color-inkdim: #7a6f5c;
+  --color-rule: #ddd2b8;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* one global keyboard-focus ring (brass) */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-brass);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: var(--color-brass);
+  }
+  details > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@layer components {
+  /* the evidence-ticket signature: perforated binding strip + colored status bar */
+  .perf {
+    width: 22px;
+    align-self: stretch;
+    flex: none;
+    background-color: var(--color-rule);
+    background-image: radial-gradient(circle, var(--color-bg) 2px, transparent 2.4px);
+    background-size: 100% 11px;
+    background-position: 50% 5.5px;
+    background-repeat: repeat-y;
+  }
+  .bar {
+    width: 3px;
+    align-self: stretch;
+    flex: none;
+  }
+  .bar-brass {
+    background: var(--color-brass);
+  }
+  .bar-denim {
+    background: var(--color-denim);
+  }
+  .bar-sage {
+    background: var(--color-sage);
+  }
+  .pulse {
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.65;
+    }
+  }
+
+  /* brass underlined-mono action link — the inline ▸ affordance */
+  .alink {
+    color: var(--color-brass);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .alink:hover {
+    background: color-mix(in srgb, var(--color-brass) 14%, transparent);
+  }
+
+  .btn-primary {
+    background: var(--color-brass);
+    color: #15120e;
+    font-weight: 600;
+  }
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    border: 1px solid var(--color-rule);
+    color: var(--color-ink);
+  }
+  .btn-ghost:hover {
+    background: var(--color-surface2);
+  }
+
+  /* evidence marks — three-valued (satisfied / unsatisfied / exempt) */
+  .evx {
+    color: var(--color-sage);
+  }
+  .evblank {
+    color: var(--color-inkdim);
+  }
+  .evexempt {
+    color: var(--color-denim);
+  }
+  .err {
+    color: var(--color-clay);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

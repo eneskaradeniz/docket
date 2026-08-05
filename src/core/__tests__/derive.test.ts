@@ -16,6 +16,9 @@ import type {
   WorkOrderId,
 } from '../types';
 import {
+  deriveBucket,
+  deriveCardAction,
+  deriveCardActionRank,
   deriveCardReason,
   deriveEvidence,
   derivePrimaryAction,
@@ -434,5 +437,73 @@ describe('deriveWorkOrderCost — WO cost derived from sessions (ADR-0010 rule 2
       const w = workOrderById.get(id)!;
       expect(deriveWorkOrderCost(w.sessions)).toEqual(w.cost);
     }
+  });
+});
+
+describe('deriveBucket + card action — board buckets (WO-0013)', () => {
+  describe('deriveBucket', () => {
+    it('closed stage → closed', () => {
+      expect(deriveBucket({ column: 'your_turn', stage: 'closed' })).toBe('closed');
+      expect(deriveBucket({ column: 'running', stage: 'closed' })).toBe('closed');
+    });
+    it('running/external column → working (external work folds into working)', () => {
+      expect(deriveBucket({ column: 'running', stage: 'implementation' })).toBe('working');
+      expect(deriveBucket({ column: 'external', stage: 'implementation' })).toBe('working');
+    });
+    it('your_turn, not closed → up', () => {
+      expect(deriveBucket({ column: 'your_turn', stage: 'implementation' })).toBe('up');
+      expect(deriveBucket({ column: 'your_turn', stage: 'architect_approval' })).toBe('up');
+    });
+  });
+
+  describe('deriveCardAction', () => {
+    it('stopped-asking session → permission', () => {
+      expect(deriveCardAction(wo('WO-1001'))).toEqual({ kind: 'permission', intent: 'resume' });
+    });
+    it('a running session → undefined (working — no inline action)', () => {
+      expect(deriveCardAction(wo('WO-1006'))).toBeUndefined();
+    });
+    it('ci running (external) → undefined', () => {
+      expect(deriveCardAction(wo('WO-1005'))).toBeUndefined();
+    });
+    it('an unsatisfied gate (absent primary) → undefined', () => {
+      expect(deriveCardAction(wo('WO-1003'))).toBeUndefined();
+    });
+    it('ci failed at implementation → link/resume', () => {
+      expect(deriveCardAction(wo('WO-1002'))).toEqual({ kind: 'link', intent: 'resume' });
+    });
+    it('plan_ready (available primary) → plan/approve_plan', () => {
+      expect(deriveCardAction(aWorkOrder({ stage: 'plan_ready' }))).toEqual({ kind: 'plan', intent: 'approve_plan' });
+    });
+    it('closure with docs satisfied → closure/close', () => {
+      const w = aWorkOrder({
+        stage: 'closure',
+        gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'abc' },
+      });
+      expect(deriveCardAction(w)).toEqual({ kind: 'closure', intent: 'close' });
+    });
+  });
+
+  it('deriveCardActionRank — permission < plan < closure < link < none', () => {
+    const perm = deriveCardActionRank({ kind: 'permission', intent: 'resume' });
+    const plan = deriveCardActionRank({ kind: 'plan', intent: 'approve_plan' });
+    const closure = deriveCardActionRank({ kind: 'closure', intent: 'close' });
+    const link = deriveCardActionRank({ kind: 'link', intent: 'resume' });
+    const none = deriveCardActionRank(undefined);
+    expect(perm).toBeLessThan(plan);
+    expect(plan).toBeLessThan(closure);
+    expect(closure).toBeLessThan(link);
+    expect(link).toBeLessThan(none);
+  });
+
+  it('toCardView carries bucket + action + role on the fixtures', () => {
+    const c1001 = toCardView(wo('WO-1001'));
+    expect(c1001.bucket).toBe('up');
+    expect(c1001.action).toEqual({ kind: 'permission', intent: 'resume' });
+    expect(c1001.role).toBe('implementer');
+    const c1006 = toCardView(wo('WO-1006'));
+    expect(c1006.bucket).toBe('working');
+    expect(c1006.action).toBeUndefined();
+    expect(c1006.role).toBe('implementer');
   });
 });

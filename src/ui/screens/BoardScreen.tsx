@@ -4,18 +4,14 @@ import { Board } from '../components/board/Board';
 
 export function BoardScreen({
   cards,
-  workspaceLabel,
   onSelect,
 }: {
   cards: WorkOrderCardView[];
-  workspaceLabel: string;
   onSelect: (id: WorkOrderId) => void;
 }) {
   return (
-    <main className="mx-auto max-w-6xl px-4 py-4">
-      <p className="mb-3 text-xs text-slate-400">
-        {workspaceLabel} · {cards.length} {UI.workOrders}
-      </p>
+    <main className="mx-auto max-w-3xl px-6 py-8">
+      <p className="mb-5 text-[13px] text-inkdim">{UI.boardIntro}</p>
       <Board cards={cards} onSelect={onSelect} />
     </main>
   );

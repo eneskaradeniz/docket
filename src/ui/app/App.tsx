@@ -5,6 +5,7 @@ import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
 import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
+import { useTheme } from '../chrome/use-theme';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RunnerContext } from '../components/session/runner-context';
@@ -23,6 +24,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
   const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
+  const [theme, setTheme] = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -66,30 +68,34 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     () => workOrders.filter((w) => w.workspace === workspaceId).map(toCardView),
     [workOrders, workspaceId],
   );
-  const workspaceLabel = workspaces.find((w) => w.id === workspaceId)?.label ?? '';
 
   const chrome = workspaceId ? (
-    <AppChrome workspaces={workspaces} workspaceId={workspaceId} onSwitch={setWorkspaceId} />
+    <AppChrome
+      workspaces={workspaces}
+      workspaceId={workspaceId}
+      onSwitch={setWorkspaceId}
+      theme={theme}
+      setTheme={setTheme}
+    />
   ) : null;
 
   let main;
   if (load === 'loading') {
-    main = <p className="px-4 py-8 text-sm text-slate-400">{UI.loading}</p>;
+    main = <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>;
   } else if (load === 'error') {
-    main = <p className="px-4 py-8 text-sm text-rose-600">{UI.loadError}</p>;
+    main = <p className="px-4 py-8 text-sm text-clay">{UI.loadError}</p>;
   } else if (selectedId) {
     main = detail ? (
       <DetailScreen
         detail={toDetailView(detail.wo)}
         docs={detail.docs}
-        workspaceLabel={workspaceLabel}
         onBack={() => setSelectedId(null)}
       />
     ) : (
-      <p className="px-4 py-8 text-sm text-slate-400">{UI.loading}</p>
+      <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} workspaceLabel={workspaceLabel} onSelect={setSelectedId} />;
+    main = <BoardScreen cards={cards} onSelect={setSelectedId} />;
   }
 
   return <RunnerContext.Provider value={runner}>{chrome}{main}</RunnerContext.Provider>;
