@@ -95,3 +95,22 @@ management; M3 git/forge observation/reconciliation; `unknown` evidence state; f
   the seed with live git/forge observation and the work-order record thins toward "identity,
   tracks, doc pointers, observed_at" (ADR-0010).
 - Solo mode; gates operator-covered (ADR-0001).
+
+## Verifier return (blocking — both fixed)
+
+A. **`track.stage` was stored.** ADR-0010 rule 2 was written for `WorkOrder.stage` but its rationale is general:
+   a stored position cannot survive a change made outside Docket, and a track's stage IS the forge-owned
+   pr/ci/merge facts — derived data sitting on the same row as `pr_url`/`ci_kind`/`merged_at`. Resolution
+   (per the architect): derive it. `deriveTrackStage` in core (test-first) reproduces all seven fixture tracks
+   from `pr`/`merge`/scoped-session; the `track` table has no `stage` column. (Renaming the column or
+   documenting an exception were rejected — they dress up the problem / weaken the rule at the first hard case.)
+B. **The seeding check did not respect the observed | owned split.** `createStore` decided "seeded?" from
+   `work_order` alone and re-seeded both halves, so the schema's own designed state (observed empty, owned
+   populated) either crashed (`UNIQUE constraint failed: workspace.id`) or duplicated owned rows. Fix: the check
+   seeds each half from its own emptiness (`work_order` for observed, `session` for owned); `seedObserved` and
+   `seedOwned` clear their half first (idempotent). Tests C1 (partial observed, no crash) and C2 (observed empty,
+   owned populated, no duplicate owned) added.
+
+Out of scope this return (verifier-flagged for follow-up, recorded at closure): expose `reseedObserved` over IPC,
+transactions around reseed, foreign keys, `observed_at` on the junction tables (TD-021/TD-022).
+

@@ -12,7 +12,7 @@
 // live git/forge observation feeding reseedObserved().
 import { DatabaseSync } from 'node:sqlite';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage } from '../../core/derive';
+import { deriveStage, deriveTrackStage } from '../../core/derive';
 import type { WorkOrderSource } from '../../core/source';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrderDocs, workOrders, workspaces } from '../fixtures';
@@ -52,7 +52,6 @@ type TrackRow = {
   id: string;
   work_order_id: string;
   repo: string;
-  stage: Track['stage'];
   pr_url: string | null;
   pr_head_sha: string | null;
   ci_kind: 'run' | 'exempt';
@@ -70,7 +69,7 @@ type SessionRow = {
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
-function hydrateTracks(db: DatabaseSync, woId: string): Track[] {
+function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): Track[] {
   const rows = db.prepare('SELECT * FROM track WHERE work_order_id = ?').all(woId) as TrackRow[];
   return rows.map((r): Track => {
     const ci = JSON.parse(r.ci_blob) as { state?: 'running' | 'success' | 'failed'; checks?: CiCheck[]; reason?: string };
@@ -83,14 +82,17 @@ function hydrateTracks(db: DatabaseSync, woId: string): Track[] {
       r.ci_kind === 'exempt'
         ? { kind: 'exempt', reason: ci.reason ?? '' }
         : { kind: 'run', state: ci.state ?? 'running', checks: ci.checks ?? [] };
+    const pr = r.pr_url ? { url: r.pr_url, headSha: r.pr_head_sha ?? '' } : undefined;
+    const merge = r.merged_at ? { at: r.merged_at } : undefined;
+    const hasActiveSession = sessions.some((s) => s.scope === tid(r.id) && s.status !== 'none');
     return {
       id: tid(r.id),
       repo: rid(r.repo),
       dependsOn,
-      stage: r.stage,
+      stage: deriveTrackStage({ ...(pr ? { pr } : {}), ...(merge ? { merge } : {}) }, hasActiveSession),
       ci: trackCi,
-      ...(r.pr_url ? { pr: { url: r.pr_url, headSha: r.pr_head_sha ?? '' } } : {}),
-      ...(r.merged_at ? { merge: { at: r.merged_at } } : {}),
+      ...(pr ? { pr } : {}),
+      ...(merge ? { merge } : {}),
     };
   });
 }
@@ -125,7 +127,8 @@ function hydrateSources(db: DatabaseSync, woId: string): SourceLink[] {
 function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
   const r = db.prepare('SELECT * FROM work_order WHERE id = ?').get(id) as WoRow | undefined;
   if (!r) return undefined;
-  const tracks = hydrateTracks(db, id);
+  const sessions = hydrateSessions(db, id);
+  const tracks = hydrateTracks(db, id, sessions);
   const gateInputs = {
     planApproved: !!r.gate_plan_approved,
     verifierReport: r.gate_verifier_resolvable == null ? undefined : { resolvablePointers: !!r.gate_verifier_resolvable },
@@ -139,7 +142,7 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     mode: r.mode,
     stage: deriveStage({ gateInputs, tracks }),
     tracks,
-    sessions: hydrateSessions(db, id),
+    sessions,
     gateInputs,
     cost,
     sources: hydrateSources(db, id),
@@ -158,6 +161,9 @@ function readWorkspaces(db: DatabaseSync): Workspace[] {
 
 // ===== Seed (observed | owned) from fixture constants =====
 function seedObserved(db: DatabaseSync): void {
+  // Clear observed first so seeding is idempotent and survives a partially-seeded
+  // observed half (a crash mid-seed, or observed dropped while owned survived).
+  for (const t of OBSERVED_TABLES) db.exec(`DELETE FROM ${t}`);
   for (const ws of workspaces) {
     db.prepare('INSERT INTO workspace (id, label, decision_store, observed_at) VALUES (?, ?, ?, ?)').run(
       ws.id, ws.label, ws.decisionStore, SEED_OBSERVED_AT,
@@ -188,9 +194,9 @@ function seedObserved(db: DatabaseSync): void {
           ? JSON.stringify({ reason: t.ci.reason })
           : JSON.stringify({ state: t.ci.state, checks: t.ci.checks });
       db.prepare(
-        `INSERT INTO track (id, work_order_id, repo, stage, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ).run(t.id, wo.id, t.repo, t.stage, t.pr?.url ?? null, t.pr?.headSha ?? null, t.ci.kind, ciBlob, t.merge?.at ?? null, SEED_OBSERVED_AT);
+        `INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      ).run(t.id, wo.id, t.repo, t.pr?.url ?? null, t.pr?.headSha ?? null, t.ci.kind, ciBlob, t.merge?.at ?? null, SEED_OBSERVED_AT);
       for (const dep of t.dependsOn) {
         db.prepare('INSERT INTO track_depends_on (track_id, depends_on_track_id) VALUES (?, ?)').run(t.id, dep);
       }
@@ -199,6 +205,7 @@ function seedObserved(db: DatabaseSync): void {
 }
 
 function seedOwned(db: DatabaseSync): void {
+  db.exec('DELETE FROM session'); // idempotent: safe to re-run on an empty owned half
   for (const wo of workOrders) {
     for (const s of wo.sessions) {
       db.prepare(
@@ -214,11 +221,13 @@ function seedOwned(db: DatabaseSync): void {
 export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
-  const populated = (db.prepare('SELECT COUNT(*) AS n FROM work_order').get() as { n: number }).n > 0;
-  if (!populated) {
-    seedObserved(db);
-    seedOwned(db);
-  }
+  // Seed each half independently — the split's whole point (observed may be empty while
+  // owned survives). Checking only work_order conflated the two and either crashed on a
+  // partial observed half (UNIQUE workspace.id) or duplicated owned rows.
+  const observedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM work_order').get() as { n: number }).n === 0;
+  const ownedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n === 0;
+  if (observedEmpty) seedObserved(db);
+  if (ownedEmpty) seedOwned(db);
   return {
     db,
     getWorkspaces: () => Promise.resolve(readWorkspaces(db)),

@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS track (
   id TEXT PRIMARY KEY,
   work_order_id TEXT NOT NULL,
   repo TEXT NOT NULL,
-  stage TEXT NOT NULL CHECK (stage IN ('not_started','implementation','pr_opened','ci','merged')),
   pr_url TEXT,
   pr_head_sha TEXT,
   ci_kind TEXT NOT NULL CHECK (ci_kind IN ('run','exempt')),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { workOrderById } from '../../adapters/fixtures';
+import { workOrderById, workOrders } from '../../adapters/fixtures';
 import type {
   BoardColumn,
   CardReason,
@@ -21,6 +21,7 @@ import {
   deriveRail,
   deriveStage,
   deriveTrackMerge,
+  deriveTrackStage,
   sessionForTrack,
   toCardView,
   toDetailView,
@@ -354,5 +355,33 @@ describe('deriveStage — stage derived from observed facts (TD-008 / ADR-0010)'
         aWorkOrder({ gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'abc' }, tracks: [merged] }),
       ),
     ).toBe('closed');
+  });
+});
+
+describe('deriveTrackStage — track stage derived from pr/merge/scoped-session (ADR-0010 rule 2)', () => {
+  // The store drops the track.stage column; stage is re-derived at hydration. The seven
+  // fixture tracks are the contract — every stage must reproduce from its facts.
+  it('reproduces every fixture track stage from its facts', () => {
+    for (const w of workOrders) {
+      for (const t of w.tracks) {
+        const hasActive = w.sessions.some((s) => s.scope === t.id && s.status !== 'none');
+        expect(deriveTrackStage(t, hasActive)).toBe(t.stage);
+      }
+    }
+  });
+
+  it('merge present → merged (even with a PR)', () => {
+    expect(deriveTrackStage({ merge: { at: 'now' } }, true)).toBe('merged');
+    expect(deriveTrackStage({ merge: { at: 'now' }, pr: { url: 'u', headSha: 's' } }, true)).toBe('merged');
+  });
+
+  it('PR open, no merge → ci', () => {
+    expect(deriveTrackStage({ pr: { url: 'u', headSha: 's' } }, true)).toBe('ci');
+    expect(deriveTrackStage({ pr: { url: 'u', headSha: 's' } }, false)).toBe('ci');
+  });
+
+  it('no PR, no merge: active scoped session → implementation; otherwise not_started', () => {
+    expect(deriveTrackStage({}, true)).toBe('implementation');
+    expect(deriveTrackStage({}, false)).toBe('not_started');
   });
 });

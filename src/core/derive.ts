@@ -19,6 +19,7 @@ import type {
   TrackId,
   TrackLaneView,
   TrackMergeAction,
+  TrackStage,
   WorkOrder,
   WorkOrderCardView,
   WorkOrderDetailView,
@@ -105,6 +106,16 @@ export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks'>): Stage
     return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
   }
   return 'implementation';
+}
+
+// A track's stage is forge-owned pr/ci/merge fact plus whether an implementer session is
+// actively scoped to it — derived, never stored (ADR-0010 rule 2 generalised: a track's
+// `stage` sat on the same row as pr_url/ci_kind/merged_at, i.e. derived data beside its
+// own inputs). `hasActiveSession` = a session scoped to this track with status != 'none'.
+export function deriveTrackStage(track: Pick<Track, 'pr' | 'merge'>, hasActiveSession: boolean): TrackStage {
+  if (track.merge) return 'merged';
+  if (track.pr) return 'ci';
+  return hasActiveSession ? 'implementation' : 'not_started';
 }
 
 // whoseTurn — first match wins; default your_turn (a work order matching no rule is on the operator).
