@@ -3,13 +3,14 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
-import type { CostSummary, SessionRef, WorkOrderId } from '../src/core/types';
+import type { CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
+import type { CostSummary, SessionRef, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +45,19 @@ ipcMain.handle('docket:source:get-workspaces', () => store.getWorkspaces());
 ipcMain.handle('docket:source:get-work-orders', () => store.getWorkOrders());
 ipcMain.handle('docket:source:get-work-order', (_e, id: WorkOrderId) => store.getWorkOrder(id));
 ipcMain.handle('docket:source:get-work-order-docs', (_e, id: WorkOrderId) => store.getWorkOrderDocs(id));
+
+// --- Workspace + repo-connection CRUD (WO-0014) ---
+ipcMain.handle('docket:source:create-workspace', (_e, input: CreateWorkspaceInput) => store.createWorkspace(input));
+ipcMain.handle('docket:source:update-workspace', (_e, id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) => store.updateWorkspace(id, patch));
+ipcMain.handle('docket:source:delete-workspace', (_e, id: WorkspaceId) => store.deleteWorkspace(id));
+ipcMain.handle('docket:source:add-repo-connection', (_e, id: WorkspaceId, repo: RepoConnectionInput) => store.addRepoConnection(id, repo));
+ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, path: string) => store.removeRepoConnection(id, path));
+
+// --- Folder picker (WO-0014): native dialog, main-only ---
+ipcMain.handle('docket:pick-folder', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  return result.canceled || !result.filePaths.length ? null : result.filePaths[0]!;
+});
 
 // --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by
 //   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
