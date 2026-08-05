@@ -14,6 +14,7 @@ import type {
   TrackStage,
   TrackMergeAction,
 } from '../../core/types';
+import type { LiveSessionStatus } from '../../core/runner';
 
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
   your_turn: 'Your turn',
@@ -126,6 +127,43 @@ export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
   none: 'None',
 };
 
+// WO-0008: live session status (the runner's event fold), distinct from the fixture
+// SessionRef status above. No raw identifier is rendered (ADR-0007) — tool names map
+// through TOOL_LABELS, falling back to a generic rather than the raw id.
+export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
+  idle: 'Idle',
+  running: 'Working',
+  stopped_asking: 'Waiting for you',
+  plan_ready: 'Plan ready',
+  done: 'Done',
+  error: 'Errored',
+};
+
+export const TOOL_LABELS: Record<string, string> = {
+  Write: 'Write file',
+  Edit: 'Edit file',
+  MultiEdit: 'Edit files',
+  NotebookEdit: 'Edit notebook',
+  NotebookEditNew: 'Edit notebook',
+  Bash: 'Run command',
+  Read: 'Read file',
+  Grep: 'Search',
+  Glob: 'Find files',
+  Task: 'Delegate',
+  WebFetch: 'Fetch page',
+  WebSearch: 'Search web',
+  ExitPlanMode: 'Finish plan',
+};
+
+export function toolLabel(tool: string): string {
+  return TOOL_LABELS[tool] ?? 'Use tool';
+}
+
+export function permissionPrompt(tool: string, detail: string): string {
+  const label = toolLabel(tool);
+  return detail ? `${label} — ${detail}` : label;
+}
+
 export const MODE_LABELS: Record<'plan' | 'direct', string> = {
   plan: 'Plan',
   direct: 'Direct',
@@ -189,4 +227,15 @@ export const UI = {
   tracksUnit: 'track(s)',
   missing: 'missing',
   scopedToTrack: ' · track',
+  // Live session pane (WO-0008)
+  permissionRequested: 'Permission requested',
+  startSession: 'Start session',
+  resumeSession: 'Resume',
+  promptPlaceholder: 'What should this session do?',
+  allow: 'Allow',
+  deny: 'Deny',
+  approve: 'Approve plan',
+  interrupt: 'Stop',
+  awaitingApproval: 'Plan ready — review and approve to proceed.',
+  noSession: 'No session running.',
 } as const;

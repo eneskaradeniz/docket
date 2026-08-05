@@ -42,13 +42,20 @@ function walk(dir, acc = []) {
   return acc;
 }
 
-// 1 — no agent-vendor name anywhere in src/ (ADR-0006)
+// 1 — no agent-vendor name in src/ outside the provider-adapter layer (ADR-0006).
+//    ADR-0006 line 74-75 permits a vendor name "inside a provider adapter and its
+//    configuration"; `src/adapters/` is that layer — the one place a provider SDK is
+//    imported by its real package name. core/ui/renderer and electron/ stay vendor-neutral.
 const c1 = [];
 const VENDOR_RE = new RegExp(`(${VENDORS.join('|')})`, 'i');
-for (const f of files) read(f).forEach((ln, i) => {
-  const m = VENDOR_RE.exec(ln);
-  if (m) c1.push([f, i + 1, `agent-vendor name "${m[1].toLowerCase()}" (ADR-0006)`]);
-});
+for (const f of files) {
+  const r = rel(f);
+  if (r.startsWith('src/adapters/')) continue;
+  read(f).forEach((ln, i) => {
+    const m = VENDOR_RE.exec(ln);
+    if (m) c1.push([f, i + 1, `agent-vendor name "${m[1].toLowerCase()}" (ADR-0006)`]);
+  });
+}
 
 // 2a — no branded-identity constructor outside src/adapters/ (ADR-0003); tests may build identities
 const c2a = [];
