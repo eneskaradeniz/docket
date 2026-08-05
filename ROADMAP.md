@@ -63,7 +63,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       to the owned `session` table as a main side-effect of driving (provider id, role, scope, status,
       per-session cost); the session pane resumes by id. **TD-019 closed.** Per-WO cost aggregation is
       the next item; the xterm transcript remains (TD-020).
-- [ ] Per-work-order token/cost accounting from stream usage data
+- [x] **WO-0011** — Per-WO cost aggregation. Done (merged `f37d20a`): a work order's cost is DERIVED
+      from its session rows at hydrate (`deriveWorkOrderCost`, ADR-0010 rule 2 — same as `stage`/TD-008),
+      not read from the now-inert `work_order.cost_*` columns. `SessionRef.cost` is surfaced from the
+      `session` row; `seedOwned` persists fixture session cost; the card/detail show the aggregate with a
+      "No sessions yet" reason line. **TD-023 opened** (inert cost columns). The xterm transcript remains
+      (TD-020).
 
 ## M3 — Evidence layer
 

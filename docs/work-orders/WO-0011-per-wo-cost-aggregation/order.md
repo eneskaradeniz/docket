@@ -2,7 +2,7 @@
 id: WO-0011
 title: Per-work-order cost aggregation (make `cost` derived)
 workspace: docket
-status: draft # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: closed # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: direct # plan | direct
 review: light # light | full
 tracks:
@@ -101,3 +101,15 @@ Out of scope:
 - Solo mode; gates operator-covered. `mode: direct` — applies an existing ADR (ADR-0010 rule 2) via an
   existing pattern (`deriveStage`); no new architectural question is opened.
 - Does not touch `src/core/derive.ts:192` (the `'as RepoId'` cast — TD-014, WO-0006's `review: full`).
+
+## Closure
+
+Merged PR #8 (merge `f37d20a`). `WorkOrder.cost` is derived from session rows at hydrate
+(`deriveWorkOrderCost`, ADR-0010 rule 2 — same as `stage`/TD-008), not read from the now-inert
+`work_order.cost_*` columns (**TD-023** opened). The cost read path WO-0010 left half-done is complete:
+`SessionRef.cost` surfaced from the `session` row; `seedOwned` persists fixture session cost; the card
+and detail header show the aggregate, with a "No sessions yet" reason line when a WO has no sessions.
+Verification: operator-covered (solo) — derivation tests + a fixture contract test
+(`deriveWorkOrderCost(wo.sessions) === wo.cost`); store test proving the aggregate derives from session
+rows (inert columns `0`, aggregate non-zero); 121 tests, typecheck (both), build, 7/7 boundaries green.
+GUI card/header rendering is operator-pending.
