@@ -63,13 +63,12 @@ export function SessionPane({ mode }: { mode: 'plan' | 'direct' }) {
     }
   }
 
-  const cwd = window.docket.repoCwd;
   const start = (): void => {
-    void runDrive({ role, cwd, mode, prompt }, true);
+    void runDrive({ role, mode, prompt }, true);
   };
   const approve = (): void => {
     void runDrive(
-      { role, cwd, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
+      { role, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
       false,
     );
   };

@@ -15,6 +15,6 @@ export type RunnerBridge = {
 
 declare global {
   interface Window {
-    docket: { source: WorkOrderSource; runner: RunnerBridge; repoCwd: string };
+    docket: { source: WorkOrderSource; runner: RunnerBridge };
   }
 }

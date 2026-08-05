@@ -1,29 +1,21 @@
 // Electron main process — the composition root (ADR-0006). The only module under
-// electron/ or src/ that imports an adapter: it wires createFixtureSource and serves
-// the data to the renderer over IPC, through the WorkOrderSource port
-// (src/core/source.ts). WO-0007 scaffold: the session runner, SQLite and real adapters
-// arrive in later M2 work orders.
+// electron/ or src/ that imports an adapter: it wires the SQLite store (data) and the
+// SDK runner (sessions) and serves both to the renderer over IPC, through the ports
+// declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
+// snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { createFixtureSource } from '../src/adapters/fixtures';
+import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
+import { createStore } from '../src/adapters/store';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
+import type { WorkOrderId } from '../src/core/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// Fixture data is static, so the snapshot is built once and reused. This synchronous
-// bridge is throwaway (TD-017): when SQLite lands the port goes async and this handler
-// is deleted in favour of an invoke-based one.
-const snapshot = (() => {
-  const src = createFixtureSource();
-  const workOrders = src.getWorkOrders();
-  const docs: Record<string, { order: string; plan: string }> = {};
-  for (const w of workOrders) docs[w.id] = src.getWorkOrderDocs(w.id);
-  // repoCwd: where sessions run for the pilot (the docket repo itself). Proper per-track
-  // repo-path resolution is M3 (workspace config, ADR-0003 / WO-0004).
-  return { workspaces: src.getWorkspaces(), workOrders, docs, repoCwd: process.cwd() };
-})();
+// The state store. node:sqlite (built into Electron's Node); seeded from fixtures on first
+// run. The DB lives in the user-data dir — a machine-local, reconstructible cache (ADR-0010).
+const store = createStore(join(app.getPath('userData'), 'docket.db'));
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -47,20 +39,20 @@ function createWindow() {
   }
 }
 
-ipcMain.on('docket:get-source-snapshot', (event) => {
-  event.returnValue = snapshot;
-});
+// --- Data port (async; TD-017's sync sendSync bridge is gone). One invoke per method. ---
+ipcMain.handle('docket:source:get-workspaces', () => store.getWorkspaces());
+ipcMain.handle('docket:source:get-work-orders', () => store.getWorkOrders());
+ipcMain.handle('docket:source:get-work-order', (_e, id: WorkOrderId) => store.getWorkOrder(id));
+ipcMain.handle('docket:source:get-work-order-docs', (_e, id: WorkOrderId) => store.getWorkOrderDocs(id));
 
-// --- Session runner (WO-0008). Async channel alongside the throwaway sync snapshot
-//   bridge (TD-017). The renderer's runner.drive() (callback form, exposed by the
-//   preload) invokes here; main drives the adapter and forwards each RunnerEvent back
-//   over 'docket:runner:event' until the run completes. decide()/interrupt() are
-//   one-shot invokes. The adapter (and its provider) live behind the composition root. ---
+// --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by
+//   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
+//   and forwards each RunnerEvent back over 'docket:runner:event' until the run completes. ---
 const runner = createRunner();
 
 ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   try {
-    for await (const ev of runner.drive(input)) {
+    for await (const ev of runner.drive({ ...input, cwd: process.cwd() })) {
       event.sender.send('docket:runner:event', ev);
     }
   } catch (e) {

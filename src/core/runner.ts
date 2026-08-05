@@ -30,8 +30,13 @@ export type PermissionDecision = { allow: true } | { allow: false; reason: strin
 
 export interface DriveInput {
   role: SessionRole;
-  /** Working repo (ADR-0002). The provider session runs here; resume must originate here. */
-  cwd: string;
+  /**
+   * Working repo (ADR-0002); the provider session runs here and resume must originate here.
+   * Optional: the renderer cannot know filesystem paths, so it omits this and the composition
+   * root fills it (the pilot uses the docket repo; per-track paths come via the connection
+   * table in M3/M4, ADR-0003).
+   */
+  cwd?: string;
   /** Work-order mode — the adapter maps role + mode → provider permission mode (plan/approve/default). */
   mode: 'plan' | 'direct';
   prompt: string;

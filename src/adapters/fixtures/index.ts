@@ -1,18 +1,9 @@
-// Fixture adapter — implements the WorkOrderSource port declared in core (ADR-0006).
-// This is the only module the composition root imports; ui never imports it.
-import type { WorkOrderSource } from '../../core/source';
+// Fixture data — the seed for the SQLite store (WO-0009) and the source for core tests.
+// The createFixtureSource port impl is gone: the SQLite store (src/adapters/store) is the
+// data source now, seeded from these constants.
 import { workOrderDocs } from './docs';
 import { workOrderById, workOrders } from './work-orders';
 import { workspaces } from './workspaces';
 
-export function createFixtureSource(): WorkOrderSource {
-  return {
-    getWorkspaces: () => workspaces,
-    getWorkOrders: () => workOrders,
-    getWorkOrder: (id) => workOrderById.get(id),
-    getWorkOrderDocs: (id) => workOrderDocs[id] ?? { order: '', plan: '' },
-  };
-}
-
-// Re-exported so core tests (AC9 relaxed) and the composition root share one definition.
+// Re-exported so the store seed and core tests share one definition.
 export { workOrderDocs, workOrderById, workOrders, workspaces };

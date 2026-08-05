@@ -1,43 +1,93 @@
-import { useMemo, useState } from 'react';
-import type { WorkOrderId, WorkspaceId } from '../../core/types';
+import { useEffect, useMemo, useState } from 'react';
+import type { WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
+import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RunnerContext } from '../components/session/runner-context';
 
-// App receives the data port (WorkOrderSource) and the session-runner port
-// (SessionRunner), and never imports an adapter itself. Only the composition root
-// (electron/main.ts) imports an adapter. The runner is provided via context so the
-// session pane (deep in the detail tree) can reach it without prop drilling.
+type LoadState = 'loading' | 'ready' | 'error';
+
+// App receives the data port (WorkOrderSource) and the session-runner port (SessionRunner),
+// and never imports an adapter itself. Only the composition root (electron/main.ts) imports
+// an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
+// on mount, the selected work order + its docs load on selection, each with a state for the
+// in-flight/failed case. The runner is provided via context for the session pane.
 export function App({ source, runner }: { source: WorkOrderSource; runner: SessionRunner }) {
-  const workspaces = source.getWorkspaces();
-  const [workspaceId, setWorkspaceId] = useState<WorkspaceId>(workspaces[0].id);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [load, setLoad] = useState<LoadState>('loading');
+  const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
+  const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([source.getWorkspaces(), source.getWorkOrders()])
+      .then(([ws, wos]) => {
+        if (cancelled) return;
+        setWorkspaces(ws);
+        setWorkOrders(wos);
+        setWorkspaceId(ws[0]?.id ?? null);
+        setLoad('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setLoad('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source]);
+
+  // Load the work order + its docs when one is selected (docs are not stored — ADR-0010).
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId)])
+      .then(([wo, docs]) => {
+        if (cancelled || !wo) return;
+        setDetail({ wo, docs });
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source, selectedId]);
 
   const cards = useMemo(
-    () => source.getWorkOrders().filter((w) => w.workspace === workspaceId).map(toCardView),
-    [source, workspaceId],
+    () => workOrders.filter((w) => w.workspace === workspaceId).map(toCardView),
+    [workOrders, workspaceId],
   );
   const workspaceLabel = workspaces.find((w) => w.id === workspaceId)?.label ?? '';
 
-  const chrome = (
+  const chrome = workspaceId ? (
     <AppChrome workspaces={workspaces} workspaceId={workspaceId} onSwitch={setWorkspaceId} />
-  );
+  ) : null;
 
   let main;
-  if (selectedId) {
-    const wo = source.getWorkOrder(selectedId);
-    main = wo ? (
+  if (load === 'loading') {
+    main = <p className="px-4 py-8 text-sm text-slate-400">{UI.loading}</p>;
+  } else if (load === 'error') {
+    main = <p className="px-4 py-8 text-sm text-rose-600">{UI.loadError}</p>;
+  } else if (selectedId) {
+    main = detail ? (
       <DetailScreen
-        detail={toDetailView(wo)}
-        docs={source.getWorkOrderDocs(selectedId)}
+        detail={toDetailView(detail.wo)}
+        docs={detail.docs}
         workspaceLabel={workspaceLabel}
         onBack={() => setSelectedId(null)}
       />
-    ) : null;
+    ) : (
+      <p className="px-4 py-8 text-sm text-slate-400">{UI.loading}</p>
+    );
   } else {
     main = <BoardScreen cards={cards} workspaceLabel={workspaceLabel} onSelect={setSelectedId} />;
   }
