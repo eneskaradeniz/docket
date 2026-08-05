@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { createStore } from './index';
 import { OBSERVED_TABLES } from './schema';
 import { woid } from '../ids';
@@ -97,5 +98,47 @@ describe('SQLite store — seeding respects the observed | owned split (verifier
     const ownedAfter = (store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n;
     expect(ownedAfter).toBe(ownedBefore); // no duplicated owned rows
     expect((await store.getWorkOrders()).length).toBe(workOrders.length); // observed rebuilt
+  });
+});
+
+describe('SQLite store — live session persistence (WO-0010)', () => {
+  it('recordSession upserts by provider id (no duplicate) and hydrates providerSessionId/status', async () => {
+    const store = createStore(freshDb());
+    const id = woid('WO-1001');
+    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'running' });
+    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'stopped_asking' });
+    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'idle', cost: { tokensIn: 5, tokensOut: 6, usd: 0.2 } });
+
+    const wo = await store.getWorkOrder(id);
+    const live = wo!.sessions.find((s) => s.providerSessionId === 'sess-A');
+    expect(live).toBeDefined();
+    expect(live!.status).toBe('idle');
+    expect(live!.role).toBe('implementer');
+    const n = (store.db.prepare('SELECT COUNT(*) AS n FROM session WHERE provider_session_id = ?').get('sess-A') as { n: number }).n;
+    expect(n).toBe(1); // upsert — never duplicated
+  });
+
+  it('a persisted session survives a reopen (resume-by-id is reachable)', async () => {
+    const p = freshDb();
+    createStore(p).recordSession({ providerSessionId: 'sess-B', workOrderId: woid('WO-1001'), role: 'implementer', status: 'idle', cost: { tokensIn: 9, tokensOut: 9, usd: 0.9 } });
+    const wo = await createStore(p).getWorkOrder(woid('WO-1001'));
+    expect(wo!.sessions.some((s) => s.providerSessionId === 'sess-B' && s.status === 'idle')).toBe(true);
+  });
+
+  it('migrates a pre-WO-0010 DB: adds provider_session_id + cost columns, keeps existing rows', () => {
+    const p = freshDb();
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      'CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, work_order_id TEXT NOT NULL, role TEXT NOT NULL, scope_track_id TEXT, status TEXT NOT NULL, transcript TEXT NOT NULL, stop_and_ask TEXT)',
+    );
+    raw.prepare('INSERT INTO session (work_order_id, role, status, transcript) VALUES (?,?,?,?)').run('WO-1001', 'implementer', 'idle', '[]');
+    raw.close();
+
+    const store = createStore(p); // migrate adds the new columns; the row is owned, so it survives
+    const cols = (store.db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain('provider_session_id');
+    expect(cols).toContain('cost_usd');
+    const n = (store.db.prepare('SELECT COUNT(*) AS n FROM session WHERE work_order_id = ?').get('WO-1001') as { n: number }).n;
+    expect(n).toBeGreaterThanOrEqual(1);
   });
 });

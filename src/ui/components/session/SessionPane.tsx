@@ -5,7 +5,7 @@ import {
   type DriveInput,
   type LiveSessionState,
 } from '../../../core/runner';
-import type { SessionRole } from '../../../core/types';
+import type { SessionRef, SessionRole, WorkOrderId } from '../../../core/types';
 import type { BadgeTone } from '../primitives/Badge';
 import { formatUsd, LIVE_STATUS_LABELS, ROLE_LABELS, UI } from '../../data/labels';
 import { Badge } from '../primitives/Badge';
@@ -36,7 +36,15 @@ function statusTone(s: LiveSessionState['status']): BadgeTone {
   }
 }
 
-export function SessionPane({ mode }: { mode: 'plan' | 'direct' }) {
+export function SessionPane({
+  mode,
+  workOrderId,
+  sessions,
+}: {
+  mode: 'plan' | 'direct';
+  workOrderId: WorkOrderId;
+  sessions: SessionRef[];
+}) {
   const runner = useRunner();
   const [role, setRole] = useState<SessionRole>('implementer');
   const [prompt, setPrompt] = useState('');
@@ -64,11 +72,11 @@ export function SessionPane({ mode }: { mode: 'plan' | 'direct' }) {
   }
 
   const start = (): void => {
-    void runDrive({ role, mode, prompt }, true);
+    void runDrive({ role, workOrderId, mode, prompt }, true);
   };
   const approve = (): void => {
     void runDrive(
-      { role, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
+      { role, workOrderId, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
       false,
     );
   };
@@ -85,6 +93,12 @@ export function SessionPane({ mode }: { mode: 'plan' | 'direct' }) {
   const showPlan = state.status === 'plan_ready' && !!state.pendingPlan;
   const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
   const canStart = !running && !showPlan;
+  // A session persisted across restart (WO-0010) — offer resume only when one exists for the role.
+  const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
+  const resume = (): void => {
+    if (!resumeSessionId) return;
+    void runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, true);
+  };
 
   return (
     <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
@@ -130,6 +144,15 @@ export function SessionPane({ mode }: { mode: 'plan' | 'direct' }) {
           >
             {UI.startSession}
           </button>
+          {resumeSessionId ? (
+            <button
+              type="button"
+              onClick={resume}
+              className="self-stretch rounded-md border border-violet-300 bg-white px-3 py-1 text-xs font-medium text-violet-700 hover:bg-violet-50"
+            >
+              {UI.resumeSession}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

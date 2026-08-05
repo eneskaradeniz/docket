@@ -21,16 +21,29 @@ import type {
   CiCheck,
   CostSummary,
   SessionRef,
+  SessionRole,
   SourceLink,
   Track,
+  TrackId,
   WorkOrder,
   WorkOrderId,
   Workspace,
 } from '../../core/types';
 
+export interface RecordSessionInput {
+  providerSessionId: string;
+  workOrderId: WorkOrderId;
+  role: SessionRole;
+  scope?: TrackId;
+  status: SessionRef['status'];
+  cost?: CostSummary;
+}
+
 export interface Store extends WorkOrderSource {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
+  /** Persist (upsert) a live session row keyed by provider session id — main side-effect (WO-0010). */
+  recordSession(input: RecordSessionInput): void;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -60,6 +73,7 @@ type TrackRow = {
 };
 type SessionRow = {
   id: number;
+  provider_session_id: string | null;
   work_order_id: string;
   role: SessionRef['role'];
   scope_track_id: string | null;
@@ -102,15 +116,16 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
   return rows.map((r): SessionRef => {
     const transcript = JSON.parse(r.transcript) as SessionRef['transcript'];
     const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
+    const providerSessionId = r.provider_session_id ?? undefined;
     switch (r.status) {
       case 'stopped_asking':
-        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope };
+        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId };
       case 'running':
-        return { role: r.role, status: 'running', transcript, scope };
+        return { role: r.role, status: 'running', transcript, scope, providerSessionId };
       case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope };
+        return { role: r.role, status: 'idle', transcript, scope, providerSessionId };
       case 'none':
-        return { role: r.role, status: 'none', transcript, scope };
+        return { role: r.role, status: 'none', transcript, scope, providerSessionId };
     }
   });
 }
@@ -218,9 +233,44 @@ function seedOwned(db: DatabaseSync): void {
   }
 }
 
+// Upsert a live session row keyed by provider session id (WO-0010). The transcript is the
+// provider's (kept on disk by id); Docket stores the pointer + status + cost. For a
+// stopped_asking live session a placeholder gate is stored so deriveCardReason never reads a
+// missing field — the real question resurfaces on resume. Idempotent via DELETE+INSERT.
+function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
+  db.prepare('DELETE FROM session WHERE provider_session_id = ?').run(input.providerSessionId);
+  const stopAndAsk = input.status === 'stopped_asking' ? JSON.stringify({ question: '', gate: 'tool-permission' }) : null;
+  db.prepare(
+    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    input.providerSessionId,
+    input.workOrderId,
+    input.role,
+    input.scope ?? null,
+    input.status,
+    '[]',
+    stopAndAsk,
+    input.cost?.tokensIn ?? null,
+    input.cost?.tokensOut ?? null,
+    input.cost?.usd ?? null,
+  );
+}
+
+// Additive migration for DBs created before WO-0010. No UNIQUE constraint is added —
+// recordSessionRow upserts via DELETE+INSERT, so provider_session_id need not be UNIQUE.
+function migrate(db: DatabaseSync): void {
+  const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has('provider_session_id')) db.exec('ALTER TABLE session ADD COLUMN provider_session_id TEXT');
+  if (!cols.has('cost_tokens_in')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_in INTEGER');
+  if (!cols.has('cost_tokens_out')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_out INTEGER');
+  if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
+}
+
 export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
+  migrate(db);
   // Seed each half independently — the split's whole point (observed may be empty while
   // owned survives). Checking only work_order conflated the two and either crashed on a
   // partial observed half (UNIQUE workspace.id) or duplicated owned rows.
@@ -242,6 +292,7 @@ export function createStore(dbPath: string): Store {
     },
     getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id)),
     getWorkOrderDocs: (id: WorkOrderId) => Promise.resolve(workOrderDocs[id] ?? { order: '', plan: '' }),
+    recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
       db.exec(SCHEMA_SQL);
