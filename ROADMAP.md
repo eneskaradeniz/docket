@@ -43,7 +43,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       to `electron/main.ts`, and the renderer reaches data only through the `WorkOrderSource` port
       (`src/core/source.ts`) over a sandboxed preload. The sync IPC bridge is throwaway (TD-017); the
       bare-Chromium screenshot path (`scripts/shot.mjs`) broke and is owed to WO-0003 (TD-018).
-- [ ] Session runner — Agent SDK (decided by WO-0001); WO-0008
+- [x] **WO-0008** — Session runner (Agent SDK). Done (merged `228279b`): a vendor-neutral
+      `SessionRunner` port in `core` (test-first fence + event fold), one SDK adapter
+      (`canUseTool` holds a write until `decide()`; plan approval = resume + mode off plan;
+      cost from the `result` message), an async IPC bridge, and a live session pane. Boundary
+      check 1 now exempts `src/adapters/` (ADR-0006). Sessions are in-memory this WO (TD-019);
+      the transcript is a simple list, not xterm (TD-020); the SDK is pinned to 0.3.221
+      (TD-016).
 - [ ] xterm.js transcript, session persistence and resume
 - [ ] SQLite state: work orders, tracks, sessions, evidence pointers
 - [ ] Per-work-order token/cost accounting from stream usage data

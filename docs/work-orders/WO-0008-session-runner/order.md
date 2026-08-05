@@ -2,7 +2,7 @@
 id: WO-0008
 title: Session runner — Agent SDK (drive, stream, stop-and-ask fence, plan approval, cost)
 workspace: docket
-status: implementing # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: closed # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: plan # plan | direct
 tracks:
   - repo: app
@@ -147,3 +147,21 @@ Points where the implementer must stop and report rather than decide alone.
   recommended lightweight companion — WO-0007 flagged it as fitting this WO.
 - Solo mode (no separate architect session); gates operator-covered per ADR-0001, reasons recorded here and
   in `plan.md`.
+
+## Closure record
+
+Merged `228279b` (PR #5). `ci_green`: the `check` job passed on run 30961336804; GitGuardian passed.
+ROADMAP: the M2 "Session runner (Agent SDK)" bullet is checked and annotated. tech-debt: TD-019
+(in-memory session state) and TD-020 (non-xterm transcript) opened; TD-016 (SDK version pin) cited,
+not closed.
+
+Verification (operator-covered, solo — no separate verifier session; per ADR-0001 the reason is
+recorded here): the adapter is proven by a headless drive (`verify-drive.md`) — the event stream +
+cost (`started→assistant_text→turn_complete`) and the stop-and-ask hold (`Write→permission_request→
+decide→tool_result`); the fence deny paths and the event fold are unit-tested (96/96). The GUI path
+(click Start → stream → answer a card → approve a plan) is operator-pending — CI cannot drive a real
+session (no API key / CLI). `npm run typecheck` (both projects), `npm test` (96/96), `npm run build`,
+`npm run check:boundaries` (7/7) green locally and on CI.
+
+Carried forward: sessions are in-memory until the persistence WO (TD-019); the transcript is a simple
+list until the xterm WO (TD-020).
