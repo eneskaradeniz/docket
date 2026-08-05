@@ -50,7 +50,7 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       check 1 now exempts `src/adapters/` (ADR-0006). Sessions are in-memory this WO (TD-019);
       the transcript is a simple list, not xterm (TD-020); the SDK is pinned to 0.3.221
       (TD-016).
-- [ ] xterm.js transcript, session persistence and resume
+- [ ] xterm.js transcript (TD-020)
 - [x] **WO-0009** — SQLite state store (read foundation). Done (merged `2763be2`): a `node:sqlite`
       store (built into Electron's Node, no native dep) with a visible observed | owned schema
       (`observed_at`; no `stage` column — `WorkOrder` and `Track` stage both derived; no document
@@ -59,6 +59,10 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       ADR-0010 a code property (the ADR gained a "schema encodes ownership" section). Live
       session/cost writes + resume are the fast-follow (TD-019); reseed is happy-path only (TD-021);
       junction tables lack `observed_at` (TD-022).
+- [x] **WO-0010** — Session/cost persistence + resume. Done (merged `2cd596a`): live sessions persist
+      to the owned `session` table as a main side-effect of driving (provider id, role, scope, status,
+      per-session cost); the session pane resumes by id. **TD-019 closed.** Per-WO cost aggregation is
+      the next item; the xterm transcript remains (TD-020).
 - [ ] Per-work-order token/cost accounting from stream usage data
 
 ## M3 — Evidence layer

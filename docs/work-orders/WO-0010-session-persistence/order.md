@@ -2,7 +2,7 @@
 id: WO-0010
 title: Session/cost persistence + resume (live sessions survive restart)
 workspace: docket
-status: implementing # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
+status: closed # draft | planning | plan-review | implementing | review | audit | merging | closing | closed
 mode: plan # plan | direct
 tracks:
   - repo: app
@@ -86,3 +86,12 @@ Out of scope:
 
 - Solo mode; gates operator-covered (ADR-0001).
 - TD-019 closes with this WO. Per-WO cost aggregation and track-scoped sessions are explicit follow-ups.
+
+## Closure
+
+Merged PR #7 (merge `2cd596a`). Live sessions persist to the owned `session` table as a main
+side-effect of driving (provider id, role, scope, status, per-session cost); hydrate exposes
+`providerSessionId`; the session pane resumes by id. **TD-019 closed.** Per-WO cost aggregation is
+WO-0011; xterm transcript remains (TD-020). Verification: operator-covered (solo) — the
+upsert/hydrate test, pre-WO-0010 migrate, and a headless drive → persist → reopen → resume; GUI
+resume-across-restart is operator-pending.
