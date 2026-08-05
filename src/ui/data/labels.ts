@@ -1,9 +1,13 @@
-// All fixed UI vocabulary lives here (AC1: no hardcoded copy in components).
-// Domain enums map to display strings; dynamic fragments (check name, gate) come from data.
+// Tüm sabit arayüz metni burada (AC1: bileşenlerde gömlü metin yok).
+// Domain enum'ları görüntü dizgelerine eşlenir; dinamik parçalar (kontrol adı, kapı) veriden gelir.
+// ADR-0007: arayüz dili Türkçe'dir (WO-0013). en/tr seçici M3.5'te gelir.
 import type {
   AbsentReason,
   ActionIntent,
+  BoardBucket,
   BoardColumn,
+  CardAction,
+  CardActionKind,
   CardReason,
   EvidenceKind,
   EvidenceStatus,
@@ -16,147 +20,171 @@ import type {
 } from '../../core/types';
 import type { LiveSessionStatus } from '../../core/runner';
 
+// Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
-  your_turn: 'Your turn',
-  running: 'Running',
-  external: 'External',
+  your_turn: 'Sıra sende',
+  running: 'Çalışıyor',
+  external: 'Harici',
 };
 
 export const COLUMN_HELP: Record<BoardColumn, string> = {
-  your_turn: 'Waiting on you',
-  running: 'A session is working',
-  external: 'Waiting on an external system',
+  your_turn: 'Seni bekliyor',
+  running: 'Bir oturum çalışıyor',
+  external: 'Harici sistem bekleniyor',
+};
+
+// Yeni iki kovalı tahta (WO-0013).
+export const BUCKET_LABELS: Record<BoardBucket, string> = {
+  up: 'Sıra sende',
+  working: 'Çalışıyor',
+  closed: 'Kapalı',
+};
+
+export const BUCKET_HELP: Record<BoardBucket, string> = {
+  up: 'Seni bekleyenler',
+  working: 'Bir oturum çalışıyor',
+  closed: 'Tamamlananlar',
 };
 
 export const ROLE_LABELS: Record<SessionRole, string> = {
-  implementer: 'Implementer',
-  architect: 'Architect',
-  verifier: 'Verifier',
+  implementer: 'Uygulayıcı',
+  architect: 'Mimar',
+  verifier: 'Doğrulayıcı',
 };
 
 export const STAGE_LABELS: Record<StageId, string> = {
-  written: 'Written',
-  plan_requested: 'Plan requested',
-  plan_ready: 'Plan ready',
-  architect_approval: 'Architect approval',
-  implementation: 'Implementation',
-  verification: 'Verification',
-  architect_audit: 'Architect audit',
-  closure: 'Closure',
-  closed: 'Closed',
+  written: 'Yazıldı',
+  plan_requested: 'Plan istendi',
+  plan_ready: 'Plan hazır',
+  architect_approval: 'Mimar onayı',
+  implementation: 'Uygulama',
+  verification: 'Doğrulama',
+  architect_audit: 'Mimar denetimi',
+  closure: 'Kapanış',
+  closed: 'Kapalı',
 };
 
 export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
-  plan_approval: 'Plan approval',
-  pr_open: 'PR open',
-  ci_green: 'CI green',
-  verification: 'Verification report',
-  closure: 'Closure docs',
+  plan_approval: 'plan onayı',
+  pr_open: 'PR açık',
+  ci_green: 'CI yeşil',
+  verification: 'doğrulama raporu',
+  closure: 'kapanış belgeleri',
 };
 
 export const ACTION_LABELS: Record<ActionIntent, string> = {
-  request_plan: 'Request plan',
-  approve_plan: 'Approve plan',
-  resume: 'Resume session',
-  open_pr: 'Open PR',
-  merge_track: 'Merge track',
-  request_verification: 'Request verification',
-  audit: 'Run audit',
-  update_docs: 'Update docs',
-  close: 'Close work order',
+  request_plan: 'Plan iste',
+  approve_plan: 'Planı onayla',
+  resume: 'Oturumu sürdür',
+  open_pr: 'PR aç',
+  merge_track: "Track'i mergele",
+  request_verification: 'Doğrulama iste',
+  audit: 'Denetim çalıştır',
+  update_docs: 'Belgeleri güncelle',
+  close: 'İş emrini kapat',
 };
 
 export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
-  awaiting_plan_commit: 'Awaiting the committed plan',
-  docs_not_updated: 'ROADMAP and tech-debt are not yet updated',
-  depends_on_open: 'A dependency track has not merged',
-  verifier_report_missing: 'No verifier report yet',
-  pointers_unresolved: 'Evidence pointers do not resolve at head sha',
+  awaiting_plan_commit: 'Commitlenen plan bekleniyor',
+  docs_not_updated: 'ROADMAP ve tech-debt henüz güncellenmedi',
+  depends_on_open: 'Bağımlı track merge olmadı',
+  verifier_report_missing: 'Henüz doğrulayıcı raporu yok',
+  pointers_unresolved: 'Kanıt işaretçileri head sha’da çözülmüyor',
 };
 
 export function cardReasonText(r: CardReason): string {
   switch (r.kind) {
     case 'stopped_asking':
-      return `Stopped at ${r.gate}`;
+      return `Şurada durdu: ${r.gate}`;
     case 'ci_failed':
-      return `CI failing: ${r.checkName}`;
+      return `CI başarısız: ${r.checkName}`;
     case 'ci_running':
-      return 'CI running';
+      return 'CI çalışıyor';
     case 'in_progress':
-      return 'In progress';
+      return 'Devam ediyor';
     case 'awaiting_plan_commit':
-      return 'Awaiting plan commit';
+      return 'Plan commiti bekleniyor';
     case 'docs_not_updated':
-      return 'Docs not updated';
+      return 'Belgeler güncellenmedi';
     case 'awaiting_next_session':
-      return 'Awaiting next session';
+      return 'Sonraki oturum bekleniyor';
   }
 }
 
+// Kart üstündeki satır içi ▸ eylem (WO-0013). 'link' eylem niyetinden; diğerleri sabit.
+export const CARD_ACTION_AREA: Record<CardActionKind, string> = {
+  permission: 'İzin',
+  plan: 'Plan hazır',
+  closure: 'Kapanış',
+  link: 'Eylem',
+};
+
+export function cardActionText(a: CardAction): string {
+  if (a.kind === 'link') return ACTION_LABELS[a.intent];
+  return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Belgeleri güncelle' }[a.kind];
+}
+
 export function mergeActionText(a: TrackMergeAction): string {
-  if (a.kind === 'available') return 'Merge';
+  if (a.kind === 'available') return 'Mergele';
   switch (a.reason) {
     case 'depends_on_open':
-      return 'Merge blocked — dependency open';
+      return 'Merge engelli — bağımlılık açık';
     case 'ci_not_green':
-      return 'Merge blocked — CI not green';
+      return 'Merge engelli — CI yeşil değil';
     case 'pr_not_open':
-      return 'No PR yet';
+      return 'Henüz PR yok';
     case 'already_merged':
       return 'Merged';
   }
 }
 
-// AC1 (return-pass): display maps for the per-track stage, session status, mode and source
-// kind enums, plus the composers that turn them into phrases. With these in place no
-// component turns a code identifier into UI text via `.replace('_', ' ')` — every word a
-// translator would touch lives here, so a label change (or an `en`/`tr` split, ADR-0007) is
-// one edit, not a hunt through components.
+// AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
+// bunları tümceye çeviren besteciler. Bunlarla hiçbir bileşen bir kod tanımlayıcıyı `.replace` ile
+// arayüz metnine çevirmez; bir çevirmenin dokunacağı her kelime burada.
 export const TRACK_STAGE_LABELS: Record<TrackStage, string> = {
-  not_started: 'Not started',
-  implementation: 'Implementation',
-  pr_opened: 'PR opened',
+  not_started: 'Başlamadı',
+  implementation: 'Uygulama',
+  pr_opened: 'PR açıldı',
   ci: 'CI',
   merged: 'Merged',
 };
 
 export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
-  running: 'Running',
-  stopped_asking: 'Stopped asking',
-  idle: 'Idle',
-  none: 'None',
+  running: 'Çalışıyor',
+  stopped_asking: 'İzin istiyor',
+  idle: 'Boşta',
+  none: 'Yok',
 };
 
-// WO-0008: live session status (the runner's event fold), distinct from the fixture
-// SessionRef status above. No raw identifier is rendered (ADR-0007) — tool names map
-// through TOOL_LABELS, falling back to a generic rather than the raw id.
+// WO-0008: canlı oturum durumu (runner olay katlaması), yukarıdaki fixture SessionRef durumundan
+// farklı. Ham tanımlayıcı gösterilmez (ADR-0007) — araç adları TOOL_LABELS üzerinden eşlenir.
 export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
-  idle: 'Idle',
-  running: 'Working',
-  stopped_asking: 'Waiting for you',
-  plan_ready: 'Plan ready',
-  done: 'Done',
-  error: 'Errored',
+  idle: 'Boşta',
+  running: 'Çalışıyor',
+  stopped_asking: 'Seni bekliyor',
+  plan_ready: 'Plan hazır',
+  done: 'Bitti',
+  error: 'Hata',
 };
 
 export const TOOL_LABELS: Record<string, string> = {
-  Write: 'Write file',
-  Edit: 'Edit file',
-  MultiEdit: 'Edit files',
-  NotebookEdit: 'Edit notebook',
-  NotebookEditNew: 'Edit notebook',
-  Bash: 'Run command',
-  Read: 'Read file',
-  Grep: 'Search',
-  Glob: 'Find files',
-  Task: 'Delegate',
-  WebFetch: 'Fetch page',
-  WebSearch: 'Search web',
-  ExitPlanMode: 'Finish plan',
+  Write: 'Dosya yaz',
+  Edit: 'Dosya düzenle',
+  MultiEdit: 'Dosyaları düzenle',
+  NotebookEdit: 'Notebook düzenle',
+  NotebookEditNew: 'Notebook düzenle',
+  Bash: 'Komut çalıştır',
+  Read: 'Dosya oku',
+  Grep: 'Ara',
+  Glob: 'Dosya bul',
+  Task: 'Devret',
+  WebFetch: 'Sayfa getir',
+  WebSearch: "Web'de ara",
+  ExitPlanMode: 'Planı bitir',
 };
 
 export function toolLabel(tool: string): string {
-  return TOOL_LABELS[tool] ?? 'Use tool';
+  return TOOL_LABELS[tool] ?? 'Araç kullan';
 }
 
 export function permissionPrompt(tool: string, detail: string): string {
@@ -166,14 +194,14 @@ export function permissionPrompt(tool: string, detail: string): string {
 
 export const MODE_LABELS: Record<'plan' | 'direct', string> = {
   plan: 'Plan',
-  direct: 'Direct',
+  direct: 'Direkt',
 };
 
 export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   adr: 'ADR',
-  tech_debt: 'tech-debt',
+  tech_debt: 'teknik borç',
   roadmap: 'ROADMAP',
-  contract: 'contract',
+  contract: 'sözleşme',
 };
 
 export const EVIDENCE_MARK: Record<EvidenceStatus, string> = {
@@ -183,61 +211,85 @@ export const EVIDENCE_MARK: Record<EvidenceStatus, string> = {
 };
 
 export function trackSessionText(session: { status: SessionRef['status'] } | undefined | null): string {
-  return session ? `session · ${SESSION_STATUS_LABELS[session.status]}` : 'No session';
+  return session ? `oturum · ${SESSION_STATUS_LABELS[session.status]}` : 'Oturum yok';
 }
 
 export function dependsOnText(count: number): string {
-  return `depends on ${count}`;
+  return `${count} bağımlılığı var`;
 }
 
 export function needsText(kind: EvidenceKind): string {
-  return `needs ${EVIDENCE_LABELS[kind].toLowerCase()}`;
+  return `${EVIDENCE_LABELS[kind]} gerekli`;
 }
 
 export function modeText(mode: 'plan' | 'direct'): string {
-  return `${MODE_LABELS[mode]} mode`;
+  return `${MODE_LABELS[mode]} modu`;
 }
 
 export function stoppedAtGate(gate: string): string {
-  return `stopped · ${gate}`;
+  return `durdu · ${gate}`;
 }
 
+// tr-TR ondalık ayraç (virgül) — mock'taki "$0,94" ile uyumlu.
 export function formatUsd(usd: number): string {
-  return `$${usd.toFixed(2)}`;
+  const n = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd);
+  return `$${n}`;
 }
 
-// Chrome affordance strings — also routed through data so components carry no literal copy.
+// Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.
 export const UI = {
   productName: 'Docket',
-  backToBoard: '← Board',
-  evidence: 'Evidence',
-  tracks: 'Tracks',
-  session: 'Session',
-  sources: 'Sources',
-  noWorkOrders: 'No work orders',
-  noSessionForRole: 'No session for this role.',
-  provisional: 'provisional',
-  ciExempt: 'CI exempt',
-  tokens: 'tokens',
-  costNoSessions: 'No sessions yet',
+  backToBoard: '← İş emirleri',
+  evidence: 'Kanıtlar',
+  tracks: 'Track’ler',
+  session: 'Oturum',
+  sessionLog: 'Oturum günlüğü',
+  sources: 'Kaynaklar',
+  noWorkOrders: 'İş emri yok',
+  noSessionForRole: 'Bu rol için oturum yok.',
+  transcriptEmpty: '(transkript boş)',
+  provisional: 'geçici',
+  ciExempt: 'CI muaf',
+  tokens: 'token',
+  costNoSessions: 'Henüz oturum yok',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
-  workOrders: 'work orders',
-  noActionAvailable: 'No action available.',
-  tracksUnit: 'track(s)',
-  missing: 'missing',
+  workOrders: 'iş emri',
+  noActionAvailable: 'Eylem yok.',
+  tracksUnit: 'track',
+  missing: 'eksik',
   scopedToTrack: ' · track',
-  loading: 'Loading…',
-  loadError: 'Could not load work orders.',
-  // Live session pane (WO-0008)
-  permissionRequested: 'Permission requested',
-  startSession: 'Start session',
-  resumeSession: 'Resume',
-  promptPlaceholder: 'What should this session do?',
-  allow: 'Allow',
-  deny: 'Deny',
-  approve: 'Approve plan',
-  interrupt: 'Stop',
-  awaitingApproval: 'Plan ready — review and approve to proceed.',
-  noSession: 'No session running.',
+  loading: 'Yükleniyor…',
+  loadError: 'İş emirleri yüklenemedi.',
+  boardIntro: 'Şu an sana ne düşüyor ve her oturum ne yapıyor.',
+  inflightEmpty: 'Çalışan oturum yok.',
+  closedDrawer: 'Kapalı',
+  showPipeline: 'Akışı göster',
+  pipelineHint: '9 aşama rayı · track’ler · kaynaklar · order.md · plan.md',
+  metaSep: ' · ',
+  // Canlı oturum bölmesi (WO-0008)
+  permissionRequested: 'İzin istendi',
+  startSession: 'Oturumu başlat',
+  resumeSession: 'Sürdür',
+  promptPlaceholder: 'Bu oturum ne yapsın?',
+  allow: 'İzin ver',
+  deny: 'Reddet',
+  approve: 'Planı onayla',
+  interrupt: 'Durdur',
+  awaitingApproval: 'Plan hazır — devam etmek için incele ve onayla.',
+  noSession: 'Çalışan oturum yok.',
+  // Ayarlar modalı (WO-0013)
+  settings: 'Ayarlar',
+  theme: 'Tema',
+  themeLight: 'Açık',
+  themeDark: 'Koyu',
+  themeSystem: 'Sistem',
+  language: 'Dil',
+  langEn: 'English',
+  langTr: 'Türkçe',
+  close: 'Kapat',
+  workspace: 'Çalışma alanı',
+  // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)
+  actionNeeded: 'Ne lazım',
+  actionNotWired: 'Bu eylem oturum bölmesinden yapılır.',
 } as const;
