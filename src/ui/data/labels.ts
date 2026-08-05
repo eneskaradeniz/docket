@@ -220,6 +220,7 @@ export const UI = {
   provisional: 'provisional',
   ciExempt: 'CI exempt',
   tokens: 'tokens',
+  costNoSessions: 'No sessions yet',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   workOrders: 'work orders',

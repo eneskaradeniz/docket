@@ -9,7 +9,6 @@ const COLUMN_TONE: Record<BoardColumn, BadgeTone> = {
 };
 
 export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onSelect: () => void }) {
-  const tokens = card.cost.tokensIn + card.cost.tokensOut;
   return (
     <button
       type="button"
@@ -26,7 +25,9 @@ export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onS
       </p>
       <p className="mt-2 text-xs font-medium text-slate-700">{cardReasonText(card.reason)}</p>
       <p className="mt-2 text-[11px] text-slate-400">
-        {formatUsd(card.cost.usd)} · {tokens.toLocaleString()} {UI.tokens}
+        {card.sessionCount > 0
+          ? `${formatUsd(card.cost.usd)} · ${(card.cost.tokensIn + card.cost.tokensOut).toLocaleString()} ${UI.tokens}`
+          : UI.costNoSessions}
       </p>
     </button>
   );

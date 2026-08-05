@@ -3,6 +3,7 @@ import { workOrderById, workOrders } from '../../adapters/fixtures';
 import type {
   BoardColumn,
   CardReason,
+  CostSummary,
   EvidenceKind,
   EvidenceStatus,
   PrimaryAction,
@@ -22,6 +23,7 @@ import {
   deriveStage,
   deriveTrackMerge,
   deriveTrackStage,
+  deriveWorkOrderCost,
   sessionForTrack,
   toCardView,
   toDetailView,
@@ -310,11 +312,20 @@ describe('six-state coverage — every derivation (AC10)', () => {
       'WO-1005': 2,
       'WO-1006': 1,
     };
-    it.each(IDS)('%s card view (column + reason + trackCount)', (id) => {
+    const sessionCounts: Record<string, number> = {
+      'WO-1001': 1,
+      'WO-1002': 1,
+      'WO-1003': 1,
+      'WO-1004': 1,
+      'WO-1005': 2,
+      'WO-1006': 1,
+    };
+    it.each(IDS)('%s card view (column + reason + trackCount + sessionCount)', (id) => {
       const card = toCardView(wo(id));
       expect(card.column).toBe(columns[id]);
       expect(card.reason).toEqual(reasons[id]);
       expect(card.trackCount).toBe(trackCounts[id]);
+      expect(card.sessionCount).toBe(sessionCounts[id]);
     });
     it.each(IDS)('%s detail view (rail + tracks + primary action)', (id) => {
       const detail = toDetailView(wo(id));
@@ -383,5 +394,45 @@ describe('deriveTrackStage — track stage derived from pr/merge/scoped-session 
   it('no PR, no merge: active scoped session → implementation; otherwise not_started', () => {
     expect(deriveTrackStage({}, true)).toBe('implementation');
     expect(deriveTrackStage({}, false)).toBe('not_started');
+  });
+});
+
+describe('deriveWorkOrderCost — WO cost derived from sessions (ADR-0010 rule 2 / ROADMAP line 62)', () => {
+  const c = (tokensIn: number, tokensOut: number, usd: number): CostSummary => ({ tokensIn, tokensOut, usd });
+
+  it('an empty session list → zero', () => {
+    expect(deriveWorkOrderCost([])).toEqual(c(0, 0, 0));
+  });
+
+  it("a single session → that session's cost", () => {
+    expect(deriveWorkOrderCost([{ cost: c(100, 20, 0.42) }])).toEqual(c(100, 20, 0.42));
+  });
+
+  it('multiple sessions → sums tokens in/out and usd', () => {
+    expect(
+      deriveWorkOrderCost([{ cost: c(100, 20, 0.42) }, { cost: c(5, 5, 0.08) }, { cost: c(0, 0, 0) }]),
+    ).toEqual(c(105, 25, 0.5));
+  });
+
+  it('a session with undefined cost (live row, pre-turn_complete) counts as zero, never NaN', () => {
+    const sessions = [{ cost: c(100, 20, 0.42) }, {}, {}] as Array<Pick<SessionRef, 'cost'>>;
+    expect(deriveWorkOrderCost(sessions)).toEqual(c(100, 20, 0.42));
+  });
+
+  it('counts all roles (implementer + architect + verifier)', () => {
+    const sessions = (['implementer', 'architect', 'verifier'] as const).map((role) => ({
+      role,
+      cost: c(10, 10, 0.25),
+    }));
+    expect(deriveWorkOrderCost(sessions)).toEqual(c(30, 30, 0.75));
+  });
+
+  // Contract test — mirrors deriveStage's "reproduces every fixture stage" above. The six fixtures
+  // are the seed, so the derivation must reproduce each one's cost from its sessions exactly.
+  it('reproduces every fixture work order cost from its sessions', () => {
+    for (const id of ['WO-1001', 'WO-1002', 'WO-1003', 'WO-1004', 'WO-1005', 'WO-1006'] as WorkOrderId[]) {
+      const w = workOrderById.get(id)!;
+      expect(deriveWorkOrderCost(w.sessions)).toEqual(w.cost);
+    }
   });
 });

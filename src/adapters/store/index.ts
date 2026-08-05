@@ -12,7 +12,7 @@
 // live git/forge observation feeding reseedObserved().
 import { DatabaseSync } from 'node:sqlite';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveTrackStage } from '../../core/derive';
+import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
 import type { WorkOrderSource } from '../../core/source';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrderDocs, workOrders, workspaces } from '../fixtures';
@@ -80,6 +80,9 @@ type SessionRow = {
   status: SessionRef['status'];
   transcript: string;
   stop_and_ask: string | null;
+  cost_tokens_in: number | null;
+  cost_tokens_out: number | null;
+  cost_usd: number | null;
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
@@ -117,15 +120,17 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
     const transcript = JSON.parse(r.transcript) as SessionRef['transcript'];
     const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
     const providerSessionId = r.provider_session_id ?? undefined;
+    // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
+    const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
     switch (r.status) {
       case 'stopped_asking':
-        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId };
+        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId, ...(cost ? { cost } : {}) };
       case 'running':
-        return { role: r.role, status: 'running', transcript, scope, providerSessionId };
+        return { role: r.role, status: 'running', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
       case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope, providerSessionId };
+        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
       case 'none':
-        return { role: r.role, status: 'none', transcript, scope, providerSessionId };
+        return { role: r.role, status: 'none', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
     }
   });
 }
@@ -149,7 +154,9 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     verifierReport: r.gate_verifier_resolvable == null ? undefined : { resolvablePointers: !!r.gate_verifier_resolvable },
     closureDocsSha: r.gate_closure_docs_sha ?? undefined,
   };
-  const cost: CostSummary = { tokensIn: r.cost_tokens_in, tokensOut: r.cost_tokens_out, usd: r.cost_usd };
+  // Cost is DERIVED from the WO's session rows (ADR-0010 rule 2 — same as `stage`); the
+  // work_order.cost_* columns are inert (TD-023). `sessions` is hydrated just above.
+  const cost = deriveWorkOrderCost(sessions);
   return {
     id: woid(r.id),
     title: r.title,
@@ -196,7 +203,7 @@ function seedObserved(db: DatabaseSync): void {
       wo.gateInputs.planApproved ? 1 : 0,
       wo.gateInputs.verifierReport?.resolvablePointers ? 1 : null,
       wo.gateInputs.closureDocsSha ?? null,
-      wo.cost.tokensIn, wo.cost.tokensOut, wo.cost.usd, SEED_OBSERVED_AT,
+      0, 0, 0, SEED_OBSERVED_AT, // work_order.cost_* inert — derived from session rows at hydrate (TD-023)
     );
     wo.sources.forEach((s, idx) => {
       db.prepare('INSERT INTO work_order_source (work_order_id, idx, kind, label, ref) VALUES (?, ?, ?, ?, ?)').run(
@@ -224,10 +231,11 @@ function seedOwned(db: DatabaseSync): void {
   for (const wo of workOrders) {
     for (const s of wo.sessions) {
       db.prepare(
-        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(
         wo.id, s.role, s.scope ?? null, s.status, JSON.stringify(s.transcript),
         s.status === 'stopped_asking' ? JSON.stringify(s.stopAndAsk) : null,
+        s.cost?.tokensIn ?? null, s.cost?.tokensOut ?? null, s.cost?.usd ?? null,
       );
     }
   }

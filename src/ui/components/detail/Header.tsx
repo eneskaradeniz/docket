@@ -28,7 +28,7 @@ export function Header({
           <Badge tone="neutral">{stageLabel ? STAGE_LABELS[stageLabel] : '—'}</Badge>
         </div>
       </div>
-      <CostView cost={detail.cost} />
+      <CostView cost={detail.cost} hasSessions={detail.sessions.length > 0} />
     </header>
   );
 }

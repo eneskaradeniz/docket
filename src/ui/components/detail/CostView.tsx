@@ -1,7 +1,11 @@
 import type { CostSummary } from '../../../core/types';
 import { formatUsd, UI } from '../../data/labels';
 
-export function CostView({ cost }: { cost: CostSummary }) {
+export function CostView({ cost, hasSessions }: { cost: CostSummary; hasSessions: boolean }) {
+  // No sessions yet → a stated reason, not a misleading $0.00 (ADR-0001 spirit).
+  if (!hasSessions) {
+    return <div className="text-right text-xs text-slate-400">{UI.costNoSessions}</div>;
+  }
   const tokens = cost.tokensIn + cost.tokensOut;
   return (
     <div className="text-right text-xs text-slate-500">
