@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, SessionRole } from './types';
+import type { CostSummary, SessionRole, TrackId, WorkOrderId } from './types';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
@@ -30,6 +30,10 @@ export type PermissionDecision = { allow: true } | { allow: false; reason: strin
 
 export interface DriveInput {
   role: SessionRole;
+  /** The work order this session belongs to — main uses it to persist the association. */
+  workOrderId: WorkOrderId;
+  /** The track an implementer session is scoped to, if any (ADR-0002). Nullable: track selection is a future UI refinement. */
+  scope?: TrackId;
   /**
    * Working repo (ADR-0002); the provider session runs here and resume must originate here.
    * Optional: the renderer cannot know filesystem paths, so it omits this and the composition

@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
-import type { WorkOrderId } from '../src/core/types';
+import type { CostSummary, SessionRef, WorkOrderId } from '../src/core/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -51,15 +51,31 @@ ipcMain.handle('docket:source:get-work-order-docs', (_e, id: WorkOrderId) => sto
 const runner = createRunner();
 
 ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
+  // Persistence side-effect (WO-0010): record the live session as events flow so it survives
+  // restart and resume-by-id is reachable. The renderer never writes; the root orchestrates.
+  let providerSessionId: string | undefined;
+  const record = (status: SessionRef['status'], cost?: CostSummary): void => {
+    if (!providerSessionId) return;
+    store.recordSession({ providerSessionId, workOrderId: input.workOrderId, role: input.role, scope: input.scope, status, cost });
+  };
   try {
     for await (const ev of runner.drive({ ...input, cwd: process.cwd() })) {
       event.sender.send('docket:runner:event', ev);
+      if (ev.kind === 'started') {
+        providerSessionId = ev.sessionId;
+        record('running');
+      } else if (ev.kind === 'permission_request') {
+        record('stopped_asking');
+      } else if (ev.kind === 'turn_complete') {
+        record('idle', ev.cost);
+      }
     }
   } catch (e) {
     event.sender.send('docket:runner:event', {
       kind: 'error',
       message: (e as Error)?.message ?? String(e),
     });
+    record('idle');
   }
 });
 

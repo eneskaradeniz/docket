@@ -67,17 +67,20 @@ export interface StopAndAsk {
   gate: string;
 }
 
-export type SessionRef =
-  | { role: SessionRole; status: 'running'; transcript: TranscriptEntry[]; scope?: TrackId }
-  | {
-      role: SessionRole;
-      status: 'stopped_asking';
-      transcript: TranscriptEntry[];
-      stopAndAsk: StopAndAsk;
-      scope?: TrackId;
-    }
-  | { role: SessionRole; status: 'idle'; transcript: TranscriptEntry[]; scope?: TrackId }
-  | { role: SessionRole; status: 'none'; transcript: TranscriptEntry[]; scope?: TrackId };
+// Common fields live on every session; the status discriminates. `providerSessionId` is the
+// provider's session UUID (present on live sessions persisted by WO-0010; absent on fixture
+// examples). Docket owns the id/role/scope, not the transcript itself (ADR-0010).
+export type SessionRef = (
+  | { status: 'running' }
+  | { status: 'stopped_asking'; stopAndAsk: StopAndAsk }
+  | { status: 'idle' }
+  | { status: 'none' }
+) & {
+  role: SessionRole;
+  transcript: TranscriptEntry[];
+  scope?: TrackId;
+  providerSessionId?: string;
+};
 
 // --- Track (per-repo lane). No session field — sessions live once, on the work order. ---
 export interface PrRef {

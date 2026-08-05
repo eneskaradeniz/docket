@@ -58,12 +58,16 @@ CREATE TABLE IF NOT EXISTS track_depends_on (
 );
 CREATE TABLE IF NOT EXISTS session (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider_session_id TEXT,
   work_order_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')),
   scope_track_id TEXT,
   status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','none')),
   transcript TEXT NOT NULL,
-  stop_and_ask TEXT
+  stop_and_ask TEXT,
+  cost_tokens_in INTEGER,
+  cost_tokens_out INTEGER,
+  cost_usd REAL
 );
 CREATE TABLE IF NOT EXISTS connection (
   workspace_id TEXT NOT NULL,
