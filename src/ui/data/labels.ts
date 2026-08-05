@@ -216,7 +216,6 @@ export const UI = {
   sources: 'Sources',
   noWorkOrders: 'No work orders',
   noSessionForRole: 'No session for this role.',
-  transcriptEmpty: '(transcript empty)',
   provisional: 'provisional',
   ciExempt: 'CI exempt',
   tokens: 'tokens',

@@ -11,12 +11,12 @@ import { formatUsd, LIVE_STATUS_LABELS, ROLE_LABELS, UI } from '../../data/label
 import { Badge } from '../primitives/Badge';
 import { useRunner } from './runner-context';
 import { StopAndAskCard } from './StopAndAskCard';
-import { Transcript } from './Transcript';
+import { Terminal } from './Terminal';
 
 // Live session pane (WO-0008). Replaces the provisional fixture-driven pane: it drives a
 // real session through the SessionRunner port, folds the event stream into state
-// (core's foldSessionEvent), and maps each event kind to a region — transcript,
-// stop-and-ask card, plan approval, cost. No xterm, no persistence (deferred M2).
+// (core's foldSessionEvent), and maps each event kind to a region — an xterm terminal
+// (WO-0012), stop-and-ask card, plan approval, cost. Sessions persist + resume (WO-0010).
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
 function statusTone(s: LiveSessionState['status']): BadgeTone {
@@ -195,7 +195,7 @@ export function SessionPane({
       ) : null}
 
       {state.entries.length > 0 || state.status === 'running' || showAsk ? (
-        <Transcript entries={state.entries} />
+        <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
       ) : (
         <p className="text-xs text-slate-400">{UI.noSession}</p>
       )}
