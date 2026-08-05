@@ -6,6 +6,7 @@ import type {
   ActionIntent,
   BoardColumn,
   CardReason,
+  CostSummary,
   EvidenceItem,
   EvidenceKind,
   EvidenceStatus,
@@ -106,6 +107,26 @@ export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks'>): Stage
     return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
   }
   return 'implementation';
+}
+
+// Per-work-order cost, DERIVED from the WO's session list (ADR-0010 rule 2 — the same lesson as
+// deriveStage for `stage`: a stored aggregate is a claim wearing a schema). The store sets
+// WorkOrder.cost = deriveWorkOrderCost(sessions) at hydrate; undefined session costs (a live row
+// before turn_complete, or a fixture-less row) count as zero, never NaN. The session list is already
+// WO-scoped by the store query (WHERE work_order_id = ?).
+export function deriveWorkOrderCost(sessions: ReadonlyArray<Pick<SessionRef, 'cost'>>): CostSummary {
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let usd = 0;
+  for (const s of sessions) {
+    const c = s.cost;
+    if (c) {
+      tokensIn += c.tokensIn;
+      tokensOut += c.tokensOut;
+      usd += c.usd;
+    }
+  }
+  return { tokensIn, tokensOut, usd };
 }
 
 // A track's stage is forge-owned pr/ci/merge fact plus whether an implementer session is
@@ -217,6 +238,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
     reason: deriveCardReason(wo),
     primaryRepo: wo.tracks[0]?.repo ?? ('' as RepoId),
     trackCount: wo.tracks.length,
+    sessionCount: wo.sessions.length,
     cost: wo.cost,
   };
 }

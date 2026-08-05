@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS work_order (
   gate_plan_approved INTEGER NOT NULL,
   gate_verifier_resolvable INTEGER,
   gate_closure_docs_sha TEXT,
+  -- cost_* are inert (TD-023): a work order's cost is DERIVED from its session rows at hydrate
+  -- (ADR-0010 rule 2, same as stage), not stored here. Kept and seeded 0 because SQLite cannot
+  -- drop NOT NULL columns without a table rebuild.
   cost_tokens_in INTEGER NOT NULL,
   cost_tokens_out INTEGER NOT NULL,
   cost_usd REAL NOT NULL,

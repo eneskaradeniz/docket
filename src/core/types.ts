@@ -80,6 +80,7 @@ export type SessionRef = (
   transcript: TranscriptEntry[];
   scope?: TrackId;
   providerSessionId?: string;
+  cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows
 };
 
 // --- Track (per-repo lane). No session field — sessions live once, on the work order. ---
@@ -205,6 +206,7 @@ export interface WorkOrderCardView {
   reason: CardReason;
   primaryRepo: RepoId;
   trackCount: number;
+  sessionCount: number;
   cost: CostSummary;
 }
 

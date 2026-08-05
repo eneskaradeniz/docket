@@ -7,6 +7,7 @@ import { createStore } from './index';
 import { OBSERVED_TABLES } from './schema';
 import { woid } from '../ids';
 import { workOrderDocs, workOrders, workspaces } from '../fixtures';
+import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
 const freshDbs: string[] = [];
@@ -140,5 +141,36 @@ describe('SQLite store — live session persistence (WO-0010)', () => {
     expect(cols).toContain('cost_usd');
     const n = (store.db.prepare('SELECT COUNT(*) AS n FROM session WHERE work_order_id = ?').get('WO-1001') as { n: number }).n;
     expect(n).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('SQLite store — per-WO cost derived from session rows (WO-0011)', () => {
+  it('hydrates a recorded session cost onto the SessionRef', async () => {
+    const store = createStore(freshDb());
+    store.recordSession({
+      providerSessionId: 'sess-cost', workOrderId: woid('WO-1001'), role: 'architect', status: 'idle',
+      cost: { tokensIn: 7, tokensOut: 8, usd: 0.42 },
+    });
+    const wo = await store.getWorkOrder(woid('WO-1001'));
+    const live = wo!.sessions.find((s) => s.providerSessionId === 'sess-cost');
+    expect(live).toBeDefined();
+    expect(live!.cost).toEqual({ tokensIn: 7, tokensOut: 8, usd: 0.42 });
+  });
+
+  it("derives a work order's cost from its session rows, not the inert work_order columns", async () => {
+    const store = createStore(freshDb());
+    const id = woid('WO-1001');
+    // The work_order cost columns are inert (seeded 0) — cost must not be read from them.
+    const inert = store.db.prepare('SELECT cost_usd AS v FROM work_order WHERE id = ?').get(id) as { v: number };
+    expect(inert.v).toBe(0);
+    store.recordSession({
+      providerSessionId: 'sess-agg', workOrderId: id, role: 'verifier', status: 'idle',
+      cost: { tokensIn: 3, tokensOut: 4, usd: 0.1 },
+    });
+    const wo = await store.getWorkOrder(id);
+    // The recorded session's cost is in the aggregate, so wo.cost.usd > 0 despite the inert column.
+    expect(wo!.cost.usd).toBeGreaterThanOrEqual(0.1);
+    // And the aggregate is the derivation over the hydrated sessions (regression guard on hydrate).
+    expect(wo!.cost).toEqual(deriveWorkOrderCost(wo!.sessions));
   });
 });
