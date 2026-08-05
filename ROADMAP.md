@@ -2,6 +2,12 @@
 
 Updating this file is a closure gate. A work order is not closed until its entry here is accurate.
 
+> **Product spec:** [`docs/PRODUCT.md`](docs/PRODUCT.md) — the architect-led, plan-driven,
+> evidence-gated loop. This roadmap is being reordered toward that spec (2026-08-06): workspace +
+> repo management → work-order creation with context → plan-driven steps + architect review loop →
+> real forge (gh) for PR/CI/merge. The approved UI direction (warm-dark "evidence-ticket" design,
+> Turkish) lives in `design-mock/`.
+
 ## M0 — Probe the ground
 
 Measure Claude Code's programmatic surface before any UI assumption is frozen. The stop-and-ask gate and
