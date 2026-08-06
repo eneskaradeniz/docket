@@ -63,12 +63,16 @@ export function SessionPane({
   workOrderId,
   sessions,
   onApprovePlan,
+  pendingPlan,
 }: {
   mode: 'plan' | 'direct';
   stage: StageId;
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
   onApprovePlan: (planText: string) => Promise<void>;
+  /** A plan persisted to plan.md but not yet approved (e.g. restart mid-proposal, WO-0020/TD-025). Rendered like a
+   *  live plan_ready so the operator can still approve/object after a restart. */
+  pendingPlan?: string;
 }) {
   const runner = useRunner();
   // At architect_approval (e.g. restarted mid-plan), default to the architect tab so resume re-surfaces
@@ -83,7 +87,9 @@ export function SessionPane({
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
   const sessionId = useRef<string | undefined>(undefined);
 
-  const isPlanRequestStage = stage === 'written';
+  // During the plan stages (written = propose, architect_approval = approve/object) the only session is the
+  // architect's — role tabs are hidden. They show only past the plan stage (free-form implementer/verifier).
+  const isPlanRequestStage = stage === 'written' || stage === 'architect_approval';
 
   async function runDrive(input: DriveInput, reset: boolean): Promise<void> {
     if (running) return;
@@ -115,10 +121,10 @@ export function SessionPane({
   // then resets the live state so the reloaded detail (stage→implementation, plan rendered) is clean.
   // The architect session is done at plan_ready — it is NOT resumed off plan mode (steps are WO-0017).
   const approve = async (): Promise<void> => {
-    if (role === 'architect' && state.pendingPlan) {
+    if (role === 'architect' && effectivePlan) {
       setApproving(true);
       try {
-        await onApprovePlan(state.pendingPlan);
+        await onApprovePlan(effectivePlan);
         setState(initialSessionState);
       } finally {
         setApproving(false);
@@ -158,7 +164,11 @@ export function SessionPane({
     void runner.interrupt();
   };
 
-  const showPlan = state.status === 'plan_ready' && !!state.pendingPlan;
+  // A live plan_ready takes precedence; otherwise fall back to a plan persisted to plan.md (restart recovery,
+  // WO-0020/TD-025) so the operator can still approve after the live state was lost.
+  const livePlan = state.status === 'plan_ready' ? state.pendingPlan : undefined;
+  const effectivePlan = livePlan ?? pendingPlan;
+  const showPlan = !!effectivePlan;
   const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
   // The architect stopped without producing a plan (plan mode turn ended, no plan_ready). In plan mode
   // that almost always means it needs input — surface its last message as an answerable question. Walk
@@ -238,9 +248,9 @@ export function SessionPane({
         </div>
       ) : null}
 
-      {showPlan && state.pendingPlan ? (
+      {showPlan && effectivePlan ? (
         <PlanReadyCard
-          plan={state.pendingPlan}
+          plan={effectivePlan}
           cost={state.cost}
           approving={approving}
           objecting={objecting}

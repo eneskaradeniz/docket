@@ -401,4 +401,12 @@ export const UI = {
   stepScopeAll: 'hepsi',
   stepBlockedHint: 'kapsam bir track ile eşleşmiyor',
   noSteps: 'Onaylı plan çalışan bir adım listesi içermiyor — mimardan yeniden plan iste.',
+  // İş emri silme (WO-0020)
+  deleteWo: 'Sil',
+  deleteWoHint: 'Bu iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.',
+  deleteWoConfirm: 'Evet, sil',
+  deleteWoInFlight: 'Siliniyor…',
+  cancel: 'Vazgeç',
+  stepsAllDone: 'Tüm adımlar tamam',
+  stepsAllDoneHint: 'Plan uygulandı. Kapanış — PR açma, CI, merge ve karar deposu güncellemesi — M3 aşamasında geliyor; şimdilik elle commit/merge yapabilirsin.',
 } as const;

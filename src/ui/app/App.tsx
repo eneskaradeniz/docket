@@ -99,6 +99,12 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     },
     [source, selectedId, reloadDetail],
   );
+  const handleDeleteWorkOrder = useCallback(async () => {
+    if (!selectedId) return;
+    await source.deleteWorkOrder(selectedId);
+    setSelectedId(null);
+    refreshWorkOrders();
+  }, [source, selectedId, refreshWorkOrders]);
 
   const chrome = workspaceId ? (
     <AppChrome
@@ -151,6 +157,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
         onApprovePlan={handleApprovePlan}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
         reloadDetail={reloadDetail}
+        onDelete={handleDeleteWorkOrder}
       />
     ) : (
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>

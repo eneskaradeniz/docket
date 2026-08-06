@@ -67,6 +67,9 @@ ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: str
 ipcMain.handle('docket:source:get-work-order-steps', (_e, id: WorkOrderId) => store.getWorkOrderSteps(id));
 ipcMain.handle('docket:source:get-step-report', (_e, id: WorkOrderId, idx: number, role: StepRole) => store.getStepReport(id, idx, role));
 
+// --- Work-order deletion (WO-0020). Cascade-deletes DB rows + removes the decision-store folder. ---
+ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store.deleteWorkOrder(id));
+
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
@@ -121,6 +124,9 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
         if (stepIndex !== undefined) store.recordStep(input.workOrderId, stepIndex, { status: 'active' });
       } else if (ev.kind === 'permission_request') {
         record('stopped_asking');
+      } else if (ev.kind === 'plan_ready') {
+        // Persist the proposed plan to plan.md as PENDING so it survives restart (WO-0020, closes TD-025).
+        store.savePendingPlan(input.workOrderId, ev.planText);
       } else if (ev.kind === 'turn_complete') {
         record('idle', ev.cost);
         // Capture the step report at turn_complete (WO-0017): prefer the SDK's turn `result`, fall back to the

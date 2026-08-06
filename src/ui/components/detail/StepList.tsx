@@ -11,20 +11,12 @@ import { ROLE_LABELS, STEP_MARK, UI } from '../../data/labels';
 // one Çalıştır exists and steps run one at a time on the single runner.
 export function StepList({
   steps,
-  onRunStep,
   onOpenReport,
 }: {
   steps: StepView[];
-  onRunStep: (idx: number) => void;
   onOpenReport: (step: StepView) => void;
 }) {
   const done = steps.filter((s) => s.status === 'done').length;
-  let runnableIdx: number | undefined = undefined;
-  for (const s of steps) {
-    if (s.status === 'done') continue;
-    runnableIdx = s.status === 'pending' ? s.idx : undefined; // active/blocked halt the sequence
-    break;
-  }
 
   const markTone = (status: StepView['status']): string =>
     status === 'blocked' ? 'text-clay' : status === 'done' ? 'text-sage' : status === 'active' ? 'text-denim' : 'text-inkdim';
@@ -39,7 +31,6 @@ export function StepList({
       </header>
       <ul className="flex flex-col gap-1">
         {steps.map((s) => {
-          const isRunnable = s.idx === runnableIdx;
           const hasReport = s.status === 'done' && !!s.reportPath;
           const scopeText = s.scope.kind === 'all' ? UI.stepScopeAll : s.scope.ref;
           return (
@@ -47,15 +38,9 @@ export function StepList({
               key={s.idx}
               className={`flex items-center gap-2 rounded px-2 py-1 text-[13px] ${s.status === 'active' ? 'bg-surface' : ''}`}
             >
-              {isRunnable ? (
-                <button type="button" onClick={() => onRunStep(s.idx)} className="btn-primary rounded px-2 py-0.5 text-[11px]">
-                  {UI.stepRun}
-                </button>
-              ) : (
-                <span className={`w-4 text-center ${markTone(s.status)}`} aria-label={s.status}>
-                  {STEP_MARK[s.status]}
-                </span>
-              )}
+              <span className={`w-4 text-center ${markTone(s.status)}`} aria-label={s.status}>
+                {STEP_MARK[s.status]}
+              </span>
               <span className="font-mono text-[11px] text-inkdim">{s.idx}</span>
               {hasReport ? (
                 <button type="button" onClick={() => onOpenReport(s)} className="text-left text-ink hover:underline">

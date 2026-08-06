@@ -29,7 +29,7 @@ export function PlanReadyCard({
     <div className="mb-2 flex items-stretch rounded-sm border border-rule bg-surface">
       <div className={`bar bar-brass${inFlight ? '' : ' pulse'}`} />
       <div className="perf" />
-      <div className="flex-1 px-3.5 py-3">
+      <div className="min-w-0 flex-1 px-3.5 py-3">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.planReadyHeader}</p>
           <span className="ml-auto font-mono text-[11px] text-inkdim">mimar</span>

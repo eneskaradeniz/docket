@@ -68,4 +68,9 @@ export interface WorkOrderSource {
   // A step's report body, read from the decision store at view time (ADR-0010 — report text is in git, not
   // the DB). Lazy per-step read. '' when the report file is absent (step not yet run).
   getStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole): Promise<string>;
+
+  // Delete a work order (WO-0020): cascade-delete its DB rows (sessions, tracks, steps, sources) + remove its
+  // decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched. The operator
+  // confirms in the UI before this fires.
+  deleteWorkOrder(workOrderId: WorkOrderId): Promise<void>;
 }

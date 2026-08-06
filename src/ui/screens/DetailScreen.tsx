@@ -8,6 +8,7 @@ export function DetailScreen({
   onApprovePlan,
   onGetStepReport,
   reloadDetail,
+  onDelete,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -15,6 +16,7 @@ export function DetailScreen({
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   reloadDetail: () => void;
+  onDelete: () => Promise<void>;
 }) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
@@ -25,6 +27,7 @@ export function DetailScreen({
         onApprovePlan={onApprovePlan}
         onGetStepReport={onGetStepReport}
         reloadDetail={reloadDetail}
+        onDelete={onDelete}
       />
     </main>
   );
