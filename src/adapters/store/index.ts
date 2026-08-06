@@ -14,7 +14,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
-import type { CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
+import { buildOrderMd, nextWorkOrderNumber, writeOrderMd } from '../decision-store/decision-store';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrderDocs, workOrders, workspaces } from '../fixtures';
 import type {
@@ -164,7 +165,7 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     title: r.title,
     workspace: wid(r.workspace_id),
     mode: r.mode,
-    stage: deriveStage({ gateInputs, tracks }),
+    stage: deriveStage({ gateInputs, tracks, sessions }),
     tracks,
     sessions,
     gateInputs,
@@ -196,6 +197,15 @@ function seedObserved(db: DatabaseSync): void {
       db.prepare('INSERT INTO workspace_repo (workspace_id, repo_id) VALUES (?, ?)').run(ws.id, repo);
     }
   }
+}
+
+// The fixture work orders + their sessions are TEST DATA, not production seed (WO-0015: the board
+// starts empty — the operator creates work orders). Kept here as an explicit helper so the six-state
+// store coverage survives the un-seeding of the production path. Clears observed WO tables + session
+// first so it is safe to call on an already-seeded DB. Production createStore never calls this.
+export function seedFixtureWorkOrders(db: DatabaseSync): void {
+  db.exec('DELETE FROM session');
+  for (const t of ['track_depends_on', 'track', 'work_order_source', 'work_order']) db.exec(`DELETE FROM ${t}`);
   for (const wo of workOrders) {
     db.prepare(
       `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
@@ -226,10 +236,6 @@ function seedObserved(db: DatabaseSync): void {
       }
     }
   }
-}
-
-function seedOwned(db: DatabaseSync): void {
-  db.exec('DELETE FROM session'); // idempotent: safe to re-run on an empty owned half
   for (const wo of workOrders) {
     for (const s of wo.sessions) {
       db.prepare(
@@ -347,17 +353,57 @@ function removeRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, path: string
   db.prepare('DELETE FROM connection WHERE workspace_id = ? AND local_path = ?').run(id, path);
 }
 
+// --- Work-order creation (WO-0015) ---
+// Resolve the decision store's local working-tree path for a workspace. Workspace.decisionStore is a
+// RepoId slug; the real path lives in the owned connection table. Fixture workspaces have no
+// connection row, so fall back to process.cwd() (Docket manages itself from its own working tree).
+// The path never crosses to the renderer (ADR-0001). M3 reads workspace.yaml + connection instead.
+function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string {
+  const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(workspaceId) as
+    | { decision_store: string }
+    | undefined;
+  const dsSlug = ws?.decision_store ?? '';
+  const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(workspaceId) as {
+    local_path: string;
+  }[];
+  for (const r of rows) {
+    if (repoBase(r.local_path) === dsSlug) return r.local_path;
+  }
+  return process.cwd();
+}
+
+function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id: string }): WorkOrder {
+  const now = new Date().toISOString();
+  // A created work order sits at the start of the pipeline: plan not approved, no sessions → deriveStage
+  // yields 'written'. mode is 'plan' (the plan-driven flow). description/reviewMode/contextFiles are NOT
+  // stored (ADR-0010 rule 1) — they were written to order.md above by the orchestrator.
+  db.prepare(
+    `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
+     gate_closure_docs_sha, cost_tokens_in, cost_tokens_out, cost_usd, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(input.id, input.workspaceId, input.title, 'plan', 0, null, null, 0, 0, 0, now);
+  for (const repo of input.trackRepos) {
+    const repoSlug = repo as string;
+    // ci run/running/[] mirrors the fixture convention for an unobserved track (M3 forge observation
+    // replaces it; the Ci type has no 'unknown' state yet — TD-008). Inert at stage 'written'.
+    db.prepare(
+      `INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).run(`${input.id}-${repoSlug}`, input.id, repoSlug, null, null, 'run', JSON.stringify({ state: 'running', checks: [] }), null, now);
+  }
+  const wo = hydrateWorkOrder(db, input.id);
+  if (!wo) throw new Error(`createWorkOrder: failed to hydrate ${input.id}`);
+  return wo;
+}
+
 export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
-  // Seed each half independently — the split's whole point (observed may be empty while
-  // owned survives). Checking only work_order conflated the two and either crashed on a
-  // partial observed half (UNIQUE workspace.id) or duplicated owned rows.
-  const observedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM work_order').get() as { n: number }).n === 0;
-  const ownedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n === 0;
+  // Seed the observed half when empty. Work orders are NOT seeded (WO-0015: the board starts empty —
+  // the operator creates them); only the workspace fixtures are. Counting workspace (not work_order)
+  // gates the seed once and never again. Owned sessions are live rows (WO-0010), never fixture-seeded.
+  const observedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n === 0;
   if (observedEmpty) seedObserved(db);
-  if (ownedEmpty) seedOwned(db);
   return {
     db,
     getWorkspaces: () => Promise.resolve(readWorkspaces(db)),
@@ -381,6 +427,32 @@ export function createStore(dbPath: string): Store {
       Promise.resolve(addRepoConnectionRow(db, id, repo)),
     removeRepoConnection: (id: WorkspaceId, path: string) =>
       Promise.resolve(removeRepoConnectionRow(db, id, path)),
+    // Orchestrates creation (WO-0015): resolve the decision-store path → allocate the next WO number →
+    // author order.md into the working tree (no commit) → insert the observed row + tracks. The async
+    // wrapper turns fs/DB errors into a rejected promise the UI can surface (modal stays open).
+    createWorkOrder: async (input: CreateWorkOrderInput) => {
+      const dir = resolveDecisionStorePath(db, input.workspaceId);
+      const id = nextWorkOrderNumber(dir);
+      const slug = slugify(input.title);
+      const ws = db.prepare('SELECT id FROM workspace WHERE id = ?').get(input.workspaceId) as
+        | { id: string }
+        | undefined;
+      writeOrderMd(
+        dir,
+        id,
+        slug,
+        buildOrderMd({
+          id,
+          title: input.title,
+          workspaceSlug: ws?.id ?? 'workspace',
+          description: input.description,
+          trackRepos: input.trackRepos.map((r) => r as string),
+          reviewMode: input.reviewMode,
+          contextFiles: input.contextFiles,
+        }),
+      );
+      return createWorkOrderRow(db, { ...input, id });
+    },
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
       db.exec(SCHEMA_SQL);

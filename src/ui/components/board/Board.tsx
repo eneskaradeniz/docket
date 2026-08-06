@@ -19,9 +19,14 @@ export function Board({
     <div>
       <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{BUCKET_LABELS.up}</h2>
       <div className="mb-8 flex flex-col gap-2">
-        {up.map((c) => (
-          <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
-        ))}
+        {up.length ? (
+          up.map((c) => <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />)
+        ) : (
+          <div className="flex items-center gap-2 py-2 pl-1 text-[12px] text-inkdim">
+            <span className="font-mono">—</span>
+            <span>{UI.noWorkOrders}</span>
+          </div>
+        )}
       </div>
 
       <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-inkdim">
