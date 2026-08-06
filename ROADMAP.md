@@ -101,6 +101,15 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       `WorkOrderDetailView.stage`. `deriveStage` unchanged (`plan_requested`/`plan_ready` unrepresentable
       at restart → **TD-025**). Step-running + per-step review + `review_mode` branching are WO-0017;
       `plan_approval` is satisfied by the observed flag, not a commit sha (M3, TD-005).
+- [x] **WO-0017** — Step execution. Done: an approved plan's ```steps block is parsed into a validated
+      `StepSpec[]` (`core/plan-steps.ts`, test-first; `architectPrompt` produces the fence); each step runs as
+      an implementer/verifier session in sequence on the existing runner (`DriveInput.stepIndex`; main fills
+      the prompt + scope server-side via `stepPromptFor`); each step's final output is captured as
+      `reports/step-NN-<role>.md` at `turn_complete` (the report home settles **TD-009** ADR-0010-aligned:
+      text in git, status + pointer on a new observed `work_order_step` table + `session.step_idx`); the
+      detail renders a `StepList` + `StepPane` + per-step `StepReport`. The architect verdict (proceed/revise)
+      + `review_mode` loop branching are **WO-0018**; making `plan_requested`/`plan_ready`/`verification`/
+      `architect_audit` derivable from persisted facts stays M3 (**TD-025**).
 
 ## M3 — Evidence layer
 

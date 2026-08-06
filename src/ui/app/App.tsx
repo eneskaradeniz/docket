@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
+import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
@@ -26,7 +26,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const [load, setLoad] = useState<LoadState>('loading');
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
-  const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
+  const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string }; steps: StepView[] } | null>(null);
   const [detailNonce, setDetailNonce] = useState(0);
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [wsCreateOpen, setWsCreateOpen] = useState(false);
@@ -58,10 +58,10 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
       return;
     }
     let cancelled = false;
-    Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId)])
-      .then(([wo, docs]) => {
+    Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId), source.getWorkOrderSteps(selectedId)])
+      .then(([wo, docs, steps]) => {
         if (cancelled || !wo) return;
-        setDetail({ wo, docs });
+        setDetail({ wo, docs, steps });
       })
       .catch(() => {
         if (!cancelled) setDetail(null);
@@ -145,10 +145,12 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   } else if (selectedId) {
     main = detail ? (
       <DetailScreen
-        detail={toDetailView(detail.wo)}
+        detail={toDetailView(detail.wo, detail.steps)}
         docs={detail.docs}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
+        onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
+        reloadDetail={reloadDetail}
       />
     ) : (
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>

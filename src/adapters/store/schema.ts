@@ -70,7 +70,20 @@ CREATE TABLE IF NOT EXISTS session (
   stop_and_ask TEXT,
   cost_tokens_in INTEGER,
   cost_tokens_out INTEGER,
-  cost_usd REAL
+  cost_usd REAL,
+  step_idx INTEGER -- the plan step this session runs (WO-0017); NULL for the architect plan session + free-form runs
+);
+-- A plan step's RUN OUTCOME (WO-0017). Observed + discardable: the specs (role/aim/scope) are parsed from
+-- plan.md at view time (ADR-0010 rules 1 & 2 — no document text / no derived data stored), so this table
+-- holds only what isn't re-derivable — the status + report pointer. A row exists only for steps that have
+-- run; 'pending' is the absence of a row and 'blocked' is derived from an unresolvable scope.
+CREATE TABLE IF NOT EXISTS work_order_step (
+  work_order_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active','done')),
+  report_path TEXT,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (work_order_id, idx)
 );
 CREATE TABLE IF NOT EXISTS connection (
   workspace_id TEXT NOT NULL,
@@ -86,6 +99,7 @@ export const OBSERVED_TABLES = [
   'track_depends_on',
   'track',
   'work_order_source',
+  'work_order_step',
   'work_order',
   'workspace_repo',
   'workspace',

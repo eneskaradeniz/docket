@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { WorkOrderId, WorkspaceId } from '../src/core/types';
+import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
   getWorkspaces: () => ipcRenderer.invoke('docket:source:get-workspaces'),
@@ -25,6 +25,9 @@ const source: WorkOrderSource = {
     ipcRenderer.invoke('docket:source:remove-repo-connection', id, path),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
   approvePlan: (id: WorkOrderId, planText: string) => ipcRenderer.invoke('docket:source:approve-plan', id, planText),
+  getWorkOrderSteps: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-steps', id),
+  getStepReport: (id: WorkOrderId, idx: number, role: StepRole) =>
+    ipcRenderer.invoke('docket:source:get-step-report', id, idx, role),
 };
 
 const runner = {

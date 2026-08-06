@@ -173,3 +173,29 @@ export function readWoDocs(decisionStorePath: string, id: string): { order: stri
   };
   return { order: read('order.md'), plan: read('plan.md') };
 }
+
+// Write a step's report into the WO's reports/ dir (WO-0017). Docket writes this server-side at turn_complete
+// — the agent does NOT write its own report (mirrors writePlanMdById; the fence is never involved). No commit;
+// the operator commits reports alongside plan.md. Returns the path relative to the WO dir
+// ("reports/step-NN-<role>.md") so the store records a pointer, not an absolute path (ADR-0001).
+export function writeStepReport(decisionStorePath: string, id: string, idx: number, role: string, body: string): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) throw new Error(`writeStepReport: no work-order directory for ${id}`);
+  const reportsDir = join(dir, 'reports');
+  mkdirSync(reportsDir, { recursive: true });
+  const name = `step-${String(idx).padStart(2, '0')}-${role}.md`;
+  writeFileSync(join(reportsDir, name), body, 'utf8');
+  return `reports/${name}`;
+}
+
+// Read one step report from the WO's reports/ dir (WO-0017). Lazy per-step read at view time (ADR-0010 — the
+// report text lives in git, not the DB). Missing dir/file → ''.
+export function readStepReport(decisionStorePath: string, id: string, idx: number, role: string): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) return '';
+  try {
+    return readFileSync(join(dir, 'reports', `step-${String(idx).padStart(2, '0')}-${role}.md`), 'utf8');
+  } catch {
+    return '';
+  }
+}

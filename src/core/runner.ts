@@ -22,7 +22,7 @@ export type RunnerEvent =
   | { kind: 'tool_result'; callId: string; summary: string; isError: boolean }
   | { kind: 'permission_request'; requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string }
   | { kind: 'plan_ready'; planText: string }
-  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary }
+  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string }
   | { kind: 'error'; message: string };
 
 // The operator's answer to a surfaced `permission_request` (the stop-and-ask).
@@ -48,6 +48,10 @@ export interface DriveInput {
   resume?: string;
   /** Resume after a `plan_ready`: move the provider off plan mode + send an approval message. */
   approve?: boolean;
+  /** The 1-based index of the plan step this drive runs (WO-0017). When set, the composition root fills the
+   *  prompt server-side from the step's spec + writes the step's report at turn_complete. Omit for the
+   *  architect plan session and free-form runs. */
+  stepIndex?: number;
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the

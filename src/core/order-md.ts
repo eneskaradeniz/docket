@@ -5,6 +5,7 @@
 // identifier rendered as display text" — the renderer never parses document text. The composition root
 // (electron/main.ts) reads order.md from disk and fills the architect session's first prompt from these.
 import type { ReviewMode } from './source';
+import type { StepScope, StepSpec } from './types';
 
 export interface ParsedOrderMd {
   reviewMode: ReviewMode; // front-matter review_mode (default 'gates'); consumed by the architect runtime
@@ -60,6 +61,61 @@ export function architectPrompt(input: { objective: string; reviewMode: ReviewMo
     ``,
     `If you need clarification, ask ONE concise question as plain text, then end your turn. The operator answers in Docket and your session resumes with their answer. Do NOT call a question or ask-user tool — ask as text and stop.`,
     ``,
-    `Propose a plan: an ordered list of steps, each a role + aim + track scope. Call ExitPlanMode when the plan is ready for the operator to approve.`,
+    `Propose a plan: an ordered list of steps, each a role + aim + track scope. The plan has two parts — prose (the rationale the operator reads) and a machine-readable step list. END the plan with a fenced block:`,
+    ``,
+    '```steps',
+    `[`,
+    `  { "role": "implementer" | "verifier" | "architect", "aim": "<short label of what this step does>", "scope": "<track repo slug, or 'all' for the whole work order>" }`,
+    `]`,
+    '```',
+    ``,
+    `One object per step, in run order; the array is the exact list Docket will run. Call ExitPlanMode when the plan — including the steps block — is ready for the operator to approve. Without a valid steps block the plan has no runnable steps.`,
+  ].join('\n');
+}
+
+// A step session's first prompt (WO-0017). Like the architect's, it is assembled server-side (the renderer
+// never parses document text — ADR-0007) from order.md (objective) + plan.md (planText + the step's spec).
+// The body is agent-facing English (same precedent as architectPrompt); it is not UI chrome. Each step ends
+// its turn with a report — that final text is captured at turn_complete and written to the decision store.
+export interface StepPromptInput {
+  objective: string;
+  step: StepSpec;
+  planText: string;
+  orderMdPath: string;
+}
+
+function stepScopeText(scope: StepScope): string {
+  return scope.kind === 'all' ? 'all' : scope.ref;
+}
+
+export function implementerPrompt(input: StepPromptInput): string {
+  return [
+    `You are the implementer for step ${input.step.idx} of this work order.`,
+    `Read the full work order (objective, context, scope) at: ${input.orderMdPath}`,
+    ``,
+    `Objective: ${input.objective || '(see order.md)'}`,
+    ``,
+    `Your step: ${input.step.aim} (scope: ${stepScopeText(input.step.scope)}).`,
+    ``,
+    `The approved plan:`,
+    input.planText || '(see plan.md)',
+    ``,
+    `Work autonomously to implement this step within your scope. When you are done, end your turn with a concise report: what you changed, the files you touched, and any concerns for the verifier. That report is saved as this step's outcome.`,
+  ].join('\n');
+}
+
+export function verifierPrompt(input: StepPromptInput): string {
+  return [
+    `You are the verifier for step ${input.step.idx} of this work order.`,
+    `Read the full work order at: ${input.orderMdPath}`,
+    ``,
+    `Objective: ${input.objective || '(see order.md)'}`,
+    ``,
+    `Your verification focus: ${input.step.aim} (scope: ${stepScopeText(input.step.scope)}).`,
+    ``,
+    `The approved plan:`,
+    input.planText || '(see plan.md)',
+    ``,
+    `Verify the work for this step within your scope (read-only — you do not edit code). When you are done, end your turn with a concise report: what you checked, what passed, what failed or is uncertain, and any path:line evidence. That report is saved as this step's outcome.`,
   ].join('\n');
 }

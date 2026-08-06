@@ -144,6 +144,12 @@ describe('foldSessionEvent — live session state', () => {
     expect(s.cost).toEqual({ tokensIn: 100, tokensOut: 20, usd: 0.42 });
   });
 
+  it('turn_complete may carry a result (the step report text); the fold ignores it cleanly', () => {
+    // `result` is consumed by the composition root (report capture), not the live-state fold.
+    const s = ev({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0 }, result: 'changed src/x.ts' });
+    expect(s.status).toBe('done');
+  });
+
   it('error sets the error state with the message', () => {
     const s = ev({ kind: 'error', message: 'boom' });
     expect(s.status).toBe('error');
