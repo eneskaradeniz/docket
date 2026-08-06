@@ -8,7 +8,7 @@ import {
   type SimplePhase,
 } from '../../../core/runner';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
-import { formatUsd, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { formatCost, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
 import { useRunner } from './runner-context';
 import { PlanReadyCard } from './PlanReadyCard';
 import { StopAndAskCard } from './StopAndAskCard';
@@ -198,7 +198,7 @@ export function SessionPane({
               <button type="button" aria-pressed={viewMode === 'detail'} onClick={() => setViewMode('detail')} className={`rounded px-2 py-0.5 text-[11px] ${viewMode === 'detail' ? 'bg-bg text-ink' : 'text-inkdim'}`}>{UI.modeDetail}</button>
             </div>
           ) : null}
-          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatUsd(state.cost.usd)}</span> : null}
+          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatCost(state.cost)}</span> : null}
         </div>
       </header>
 

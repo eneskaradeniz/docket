@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { StepRole, StepView, WorkOrderDetailView } from '../../../core/types';
 import { derivePhase } from '../../../core/derive';
-import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatUsd, phaseLabelText } from '../../data/labels';
+import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatCost, phaseLabelText } from '../../data/labels';
 import { ActionCard } from './ActionCard';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
@@ -90,7 +90,7 @@ export function WorkOrderDetail({
     detail.id,
     activeRole ? ROLE_LABELS[activeRole] : null,
     stageStep ? STAGE_LABELS[stageStep.stage] : null,
-    formatUsd(detail.cost.usd),
+    formatCost(detail.cost),
   ]
     .filter(Boolean)
     .join(UI.metaSep);

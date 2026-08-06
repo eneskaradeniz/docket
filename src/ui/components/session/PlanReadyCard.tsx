@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CostSummary } from '../../../core/types';
 import { MarkdownBody } from '../detail/MarkdownBody';
-import { formatUsd, UI } from '../../data/labels';
+import { formatCost, UI } from '../../data/labels';
 
 // The plan-ready card (WO-0016 redesign): the architect proposed a plan — render it as markdown inside an
 // evidence-ticket shell, then Onayla (commit plan.md + flip the gate) or İtiraz et (send the architect back
@@ -33,7 +33,7 @@ export function PlanReadyCard({
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.planReadyHeader}</p>
           <span className="ml-auto font-mono text-[11px] text-inkdim">mimar</span>
-          {cost && cost.usd > 0 ? <span className="font-mono text-[11px] text-inkdim">{formatUsd(cost.usd)}</span> : null}
+          {cost && cost.usd > 0 ? <span className="font-mono text-[11px] text-inkdim">{formatCost(cost)}</span> : null}
         </div>
         <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.planReviewHint}</p>
         <MarkdownBody content={plan} />

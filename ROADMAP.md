@@ -135,6 +135,8 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       and the architect plan session's cost is always captured (`shouldSynthesiseTurnComplete` — a safe
       synthetic `turn_complete` when a plan-mode stream ends without a `result`, so the session cost is never
       NULL; no-op if the SDK does emit `result`).
+- [x] **WO-0022** — Cost display: token harcaması da. Done: `formatCost` (USD + giriş/çıkış token,
+      "68k→2k" kısaltması) tüm maliyet yüzeylerinde (kart, detay meta, oturum/plan/review/step panları).
 
 ## M3 — Evidence layer
 
