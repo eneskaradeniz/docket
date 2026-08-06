@@ -82,6 +82,9 @@ export interface WriteAttempt {
   targetPath?: string;
   /** A shell command, when the tool is a shell (the adapter pre-classifies it as a write). */
   command?: string;
+  /** True for a shell command with no recognised read verb and no redirect (e.g. `make`, `./s.sh`). Reads for
+   *  known verbs stay asymmetric; an ambiguous command COULD write, so the fence asks the verifier (WO-0019). */
+  ambiguous?: boolean;
 }
 
 export type FenceVerdict = 'allow' | 'deny' | 'ask';
@@ -113,8 +116,14 @@ export function isUnder(root: string, target: string): boolean {
 }
 
 export function fenceDecision(scope: WriteScope, attempt: WriteAttempt): FenceVerdict {
-  // Reads are always allowed — the fence is asymmetric (TD-001: reads retained).
-  if (!attempt.isWrite) return 'allow';
+  // Reads are always allowed for KNOWN read verbs — the fence is asymmetric (TD-001: reads retained). An
+  // ambiguous shell command (no recognised read verb, no redirect) could still write, so for the strictly
+  // read-only verifier we surface it as a question rather than silently allow (WO-0019 / TD-026). The
+  // architect/implementer are trusted to write in scope, so ambiguity stays allowed for them.
+  if (!attempt.isWrite) {
+    if (attempt.ambiguous && scope.kind === 'read_only') return 'ask';
+    return 'allow';
+  }
   switch (scope.kind) {
     case 'read_only': // verifier writes nothing.
       return 'deny';
@@ -127,6 +136,119 @@ export function fenceDecision(scope: WriteScope, attempt: WriteAttempt): FenceVe
       return isUnder(root, attempt.targetPath) ? 'ask' : 'deny';
     }
   }
+}
+
+// ===== Command classification (WO-0019 / TD-026) =====
+//
+// Pure shell-command classification — does this Bash command write, and to where? The adapter calls
+// `classifyCommandLine` and resolves any redirect target against cwd (core imports no Node path module; the
+// target is returned as an UNRESOLVED token). The fence is read-asymmetric; the classifier recognises KNOWN
+// reads (allow), clear writes + redirects (gate), and marks unknowns `ambiguous` (the fence asks the verifier
+// for those). Bash parsing is irreducibly heuristic (TD-001); this is the safest small policy. The only
+// behavior change vs. pre-WO-0019 is that UNKNOWN verbs now `ask` the verifier (was: silent allow — the hole
+// TD-026 fixes).
+
+export interface ShellCommandClassification {
+  isWrite: boolean;
+  command: string;
+  /** Unresolved redirect target token (present only for a real `>`/`>>`). The adapter resolves it against cwd. */
+  redirectTarget?: string;
+  /** True when no write was detected AND no read verb was recognised (e.g. `make`, `./s.sh`, `node`). */
+  ambiguous?: boolean;
+}
+
+// Verbs that mutate the filesystem by default. `sed` is always here (catches `sed -i`; `sed -n` read sacrificed).
+const WRITE_VERBS = new Set([
+  'cp', 'mv', 'rm', 'rmdir', 'mkdir', 'touch', 'tee', 'chmod', 'chown', 'chgrp', 'dd', 'install', 'rsync',
+  'sed', 'truncate', 'ln', 'unlink',
+]);
+
+// Known read-only verbs. A leading token here (with no redirect) => allow for every role.
+const READ_VERBS = new Set([
+  'cat', 'head', 'tail', 'less', 'more', 'od', 'hexdump', 'xxd', 'strings', 'wc', 'nl', 'cut', 'sort', 'uniq',
+  'tr', 'ls', 'find', 'file', 'stat', 'du', 'df', 'tree', 'locate', 'which', 'grep', 'egrep', 'fgrep', 'rg',
+  'ack', 'ag', 'echo', 'printf', 'test', 'pwd', 'whoami', 'id', 'uname', 'date', 'env', 'printenv', 'jq', 'yq',
+  'diff', 'cmp', 'comm', 'md5sum', 'sha256sum', 'shasum', 'cksum',
+]);
+
+// `git` subcommands that mutate. `git` itself is neither a read nor a write verb — it's a dispatcher.
+const GIT_WRITE_SUBS = new Set([
+  'push', 'commit', 'add', 'mv', 'rm', 'merge', 'rebase', 'reset', 'checkout', 'restore', 'switch', 'clean',
+  'apply', 'stash', 'fetch', 'pull', 'clone', 'init', 'gc', 'prune', 'tag', 'notes', 'cherry-pick', 'revert',
+  'bisect', 'update-ref', 'symbolic-ref', 'config', 'worktree', 'archive', 'branch',
+]);
+// Read-only `git` subcommands (so `git show`/`log` are not "ambiguous"). Note: `git config` is treated as a
+// WRITE above (mutating by default; `--get` reads are sacrificed for safety).
+const GIT_READ_SUBS = new Set([
+  'show', 'log', 'diff', 'blame', 'cat-file', 'ls-files', 'rev-parse', 'name-rev', 'describe', 'status',
+  'shortlog', 'reflog', 'ls-tree', 'grep', 'fsck', 'count-objects', 'remote', 'annotate',
+]);
+
+// Strip single/double-quoted spans so a `>` inside an argument isn't seen as a shell redirect.
+function stripQuoted(s: string): string {
+  let out = '';
+  let quote: '' | "'" | '"' = '';
+  for (const ch of s) {
+    if (quote) {
+      if (ch === quote) quote = '';
+      // else: drop the quoted char
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+// Prefixes that wrap a real command (`sudo rm`, `FOO=bar tee`, `env grep`).
+const COMMAND_PREFIX_RE = /^(?:(?:sudo|env|nice|nohup|time|command|stdbuf|exec)\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*/;
+
+// The leading command token, after stripping prefixes. '' for empty input.
+function leadingVerb(cmd: string): string {
+  const m = cmd.replace(COMMAND_PREFIX_RE, '').trim().match(/^(\S+)/);
+  return m ? m[1]! : '';
+}
+
+// The git subcommand: the first positional token after `git`, skipping global options that take a value
+// (`-C <path>`, `--git-dir`, `--work-tree`, `-c <conf>`, `-G`, `-S`). '' if none.
+function gitSubcommand(cmd: string): string {
+  const tokens = cmd.trim().split(/\s+/).slice(1); // drop "git"
+  const valueOpts = new Set(['-C', '--git-dir', '--work-tree', '-c', '--namespace', '--upload-pack', '-S', '-G']);
+  let i = 0;
+  for (; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t === '--') { i++; break; }
+    if (valueOpts.has(t)) { i++; continue; } // skip option + its value (loop's i++ consumes the value)
+    if (t.startsWith('-')) continue;          // flag, no value
+    break;                                    // first positional = subcommand
+  }
+  return tokens[i] ?? '';
+}
+
+/**
+ * Classify a shell command (pure; WO-0019 / TD-026). Recognises known reads (allow), clear writes + redirects
+ * (gate), and marks unknowns `ambiguous` (the fence asks the verifier). Bash parsing is heuristic (TD-001).
+ */
+export function classifyCommandLine(command: string): ShellCommandClassification {
+  const trimmed = command.trim();
+  // 1) Real shell redirect? Scan the quote-stripped form so `grep ">"` is NOT a redirect.
+  const redir = stripQuoted(trimmed).match(/(?:>>|>)\s*([^\s;&|()<>]+)/);
+  if (redir) return { isWrite: true, command: trimmed, redirectTarget: redir[1] };
+  // 2) Leading write verb?
+  const verb = leadingVerb(trimmed);
+  if (WRITE_VERBS.has(verb)) return { isWrite: true, command: trimmed };
+  // 3) git subcommand dispatch.
+  if (verb === 'git') {
+    const sub = gitSubcommand(trimmed);
+    if (GIT_WRITE_SUBS.has(sub)) return { isWrite: true, command: trimmed };
+    if (GIT_READ_SUBS.has(sub)) return { isWrite: false, command: trimmed }; // known git read
+    return { isWrite: false, command: trimmed, ambiguous: true };             // unmapped git sub — safe side
+  }
+  // 4) Known read verb?
+  if (READ_VERBS.has(verb)) return { isWrite: false, command: trimmed };
+  // 5) Ambiguous (could write): `make`, `./s.sh`, `node`, `python`, `npm …`. Empty input => plain read.
+  return { isWrite: false, command: trimmed, ambiguous: verb !== '' };
 }
 
 /** Human label for a tool-use input (a path/command when present) — keeps the UI off raw ids. */

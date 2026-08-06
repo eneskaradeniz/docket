@@ -114,8 +114,14 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       gaps, all fixed here — markdown overflow + GFM tables; short architect plans; **TD-025 narrowed** (the
       plan now survives restart via `savePendingPlan`); WO delete (cascade + confirm); plan shown once; role
       tabs hidden in the plan stage; **auto step sequencing** (`gates` cadence — no per-step click); "all
-      steps done" banner; report markdown prompts. Fence read bug → **TD-026**; verdict/review-mode loop →
-      WO-0019.
+      steps done" banner; report markdown prompts. Fence read bug → **TD-026** (fixed by WO-0019);
+      verdict/review-mode loop → WO-0020.
+- [x] **WO-0019** — Fence read fix (TD-026). Done: the command classifier moved from the untested adapter into
+      pure test-first core (`classifyCommandLine`, +27 tests) — quote-aware redirect (so `grep ">"`/
+      `git log --format='>'` aren't writes), leading write verb (not substring), git subcommand split (closes a
+      latent `git push`/`commit` false-negative), read allowlist. Unknown verbs now `ask` the verifier (was:
+      silent allow — the TD-026 hole); implementer/architect unchanged. **TD-026 closed.** Verifier reads
+      (`cat`/`git show`/`od`/`git log`/`grep`) now allow.
 
 ## M3 — Evidence layer
 

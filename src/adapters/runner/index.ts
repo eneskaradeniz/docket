@@ -24,6 +24,7 @@ import type {
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
+  classifyCommandLine,
   fenceDecision,
   summarizeToolInput,
   writeScopeFor,
@@ -85,14 +86,16 @@ type AnyMsg = {
   errors?: string[];
 };
 
-/** Heuristic: does this shell command write, and to where? (Bash is the TD-001 gap.) */
+// Shell-command write classification. Delegates the pure policy to core's `classifyCommandLine` (tested
+// there); this thin shim only resolves a redirect target against cwd (core imports no Node path module —
+// ADR-0006). The policy — quote-aware redirect, leading write verb, git subcommand split, read allowlist,
+// ambiguous→verifier ask — closes TD-026; the irreducible gap (arbitrary binaries/scripts) stays TD-001.
 function classifyShell(command: string, cwd: string): WriteAttempt {
-  const redir = command.match(/(?:>>|>)\s*(\S+)/);
-  if (redir) return { isWrite: true, command, targetPath: resolve(cwd, redir[1]) };
-  if (/\b(cp|mv|rm|mkdir|touch|tee|chmod|chown|dd|install|rsync|sed)\b/.test(command)) {
-    return { isWrite: true, command, targetPath: undefined };
+  const c = classifyCommandLine(command);
+  if (c.isWrite && c.redirectTarget !== undefined) {
+    return { isWrite: true, command: c.command, targetPath: resolve(cwd, c.redirectTarget) };
   }
-  return { isWrite: false, command };
+  return { isWrite: c.isWrite, command: c.command, ambiguous: c.ambiguous };
 }
 
 function classifyAttempt(toolName: string, input: Record<string, unknown>, cwd: string): WriteAttempt {
