@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyCommandLine,
   fenceDecision,
   foldSessionEvent,
   initialSessionState,
@@ -212,5 +213,128 @@ describe('simplePhaseFromState — SADE mode phase from the live state', () => {
   });
   it('error → errored', () => {
     expect(simplePhaseFromState(fold(started, { kind: 'error', message: 'boom' }))).toBe('errored');
+  });
+});
+
+// ===== Command classification (WO-0019 / TD-026) =====
+
+describe('classifyCommandLine — quote-aware redirect', () => {
+  const cl = classifyCommandLine;
+  it('cat file → read, no redirect', () => {
+    const c = cl('cat file');
+    expect(c.isWrite).toBe(false);
+    expect(c.redirectTarget).toBeUndefined();
+  });
+  it('echo "a>b" → read (double-quoted > stripped)', () => {
+    expect(cl('echo "a>b"').isWrite).toBe(false);
+  });
+  it('grep ">" file → read (single-quoted > stripped)', () => {
+    expect(cl('grep ">" file').isWrite).toBe(false);
+  });
+  it("git log --format='>%h %s' → read", () => {
+    expect(cl("git log --format='>%h %s'").isWrite).toBe(false);
+  });
+  it('printf x > /tmp/out → write, redirectTarget /tmp/out', () => {
+    const c = cl('printf x > /tmp/out');
+    expect(c.isWrite).toBe(true);
+    expect(c.redirectTarget).toBe('/tmp/out');
+  });
+  it('cat f >> /repo/out → write (append)', () => {
+    expect(cl('cat f >> /repo/out').redirectTarget).toBe('/repo/out');
+  });
+  it('git show HEAD:f > bar → write', () => {
+    expect(cl('git show HEAD:f > bar').redirectTarget).toBe('bar');
+  });
+  it('cmd 2>file → write (fd-prefixed)', () => {
+    expect(cl('cmd 2>file').isWrite).toBe(true);
+  });
+  it('cmd 2>&1 → read (fd-to-fd, not a file)', () => {
+    expect(cl('cmd 2>&1').isWrite).toBe(false);
+  });
+});
+
+describe('classifyCommandLine — write verbs (leading token only)', () => {
+  const cl = classifyCommandLine;
+  it('cp/mv/rm/mkdir/touch/chmod/rsync/install → write', () => {
+    for (const cmd of ['cp a b', 'mv a b', 'rm a', 'mkdir d', 'touch f', 'chmod +x f', 'rsync a b', 'install src dst']) {
+      expect(cl(cmd).isWrite).toBe(true);
+    }
+  });
+  it('sed -i → write; sed -n → write (conservative)', () => {
+    expect(cl("sed -i 's/a/b/' f").isWrite).toBe(true);
+    expect(cl('sed -n 1,5p f').isWrite).toBe(true);
+  });
+  it('npm install → NOT a write (verb npm)', () => {
+    expect(cl('npm install').isWrite).toBe(false);
+  });
+  it('npm run build → not a write', () => {
+    expect(cl('npm run build').isWrite).toBe(false);
+  });
+  it('xinstall --foo → NOT a write (verb xinstall)', () => {
+    expect(cl('xinstall --foo').isWrite).toBe(false);
+  });
+  it('sudo rm /x → write (prefix stripped)', () => {
+    expect(cl('sudo rm /x').isWrite).toBe(true);
+  });
+  it('FOO=bar tee f → write (env-assignment stripped)', () => {
+    expect(cl('FOO=bar tee f').isWrite).toBe(true);
+  });
+});
+
+describe('classifyCommandLine — reads, git subcommands, ambiguous', () => {
+  const cl = classifyCommandLine;
+  it('known read verbs → read, not ambiguous', () => {
+    for (const cmd of ['cat f', 'head f', 'tail f', 'od -c f', 'wc -l f', 'ls -la', 'find . -name x', 'grep x f', 'rg x', 'stat f', "jq '.x' f"]) {
+      const c = cl(cmd);
+      expect(c.isWrite).toBe(false);
+      expect(c.ambiguous).toBeFalsy();
+    }
+  });
+  it('git read subcommands (show/log/diff/blame/cat-file/ls-files/rev-parse/status) → read', () => {
+    for (const cmd of ['git show HEAD', 'git log', 'git diff', 'git blame f', 'git cat-file -p X', 'git ls-files', 'git rev-parse HEAD', 'git status']) {
+      const c = cl(cmd);
+      expect(c.isWrite).toBe(false);
+      expect(c.ambiguous).toBeFalsy();
+    }
+  });
+  it('git -C /r show / git --git-dir=x log → read (global option skipped)', () => {
+    expect(cl('git -C /r show').isWrite).toBe(false);
+    expect(cl('git --git-dir=x log').isWrite).toBe(false);
+  });
+  it('git push/commit/merge/reset --hard/restore/clean -fd/switch -c → write', () => {
+    for (const cmd of ['git push', 'git commit -m x', 'git merge feat', 'git reset --hard', 'git restore f', 'git clean -fd', 'git switch -c feat']) {
+      expect(cl(cmd).isWrite).toBe(true);
+    }
+  });
+  it('unmapped git frobnicate → ambiguous', () => {
+    const c = cl('git frobnicate');
+    expect(c.isWrite).toBe(false);
+    expect(c.ambiguous).toBe(true);
+  });
+  it('unknown verbs → ambiguous (make, ./s.sh, node, python, cargo)', () => {
+    for (const cmd of ['./script.sh', 'make target', 'python foo.py', 'node s.js', 'cargo build']) {
+      const c = cl(cmd);
+      expect(c.isWrite).toBe(false);
+      expect(c.ambiguous).toBe(true);
+    }
+  });
+});
+
+describe('fenceDecision — ambiguous policy (WO-0019 / TD-026)', () => {
+  const ev = (over: Partial<WriteAttempt> = {}): WriteAttempt => ({ isWrite: false, ...over });
+  it('verifier + ambiguous → ask', () => {
+    expect(fenceDecision(verifier, ev({ ambiguous: true }))).toBe('ask');
+  });
+  it('verifier + cat f (known read) → allow (the bug fix)', () => {
+    expect(fenceDecision(verifier, ev({ command: 'cat f' }))).toBe('allow');
+  });
+  it('verifier + git show HEAD → allow', () => {
+    expect(fenceDecision(verifier, ev({ command: 'git show HEAD' }))).toBe('allow');
+  });
+  it('implementer + ambiguous → allow (UX preserved)', () => {
+    expect(fenceDecision(implementer, ev({ ambiguous: true }))).toBe('allow');
+  });
+  it('architect + ambiguous → allow', () => {
+    expect(fenceDecision(architect, ev({ ambiguous: true }))).toBe('allow');
   });
 });
