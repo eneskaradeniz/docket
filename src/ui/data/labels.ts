@@ -20,6 +20,7 @@ import type {
   TrackMergeAction,
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
+import type { WoPhase } from '../../core/derive';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
@@ -420,7 +421,35 @@ export const UI = {
   devamStep: 'Devam et',
   rerunStep: 'Adımı yeniden çalıştır',
   stepVerdictMissing: '(karar henüz yok)',
+  // Pipeline faz göstergesi (WO-0021)
+  woPhaseJustWritten: 'İş emri yazıldı — plan iste',
+  woPhasePlanning: 'Mimar planı düşünüyor…',
+  woPhasePlanReady: 'Plan hazır — onayla',
+  woPhaseImplementing: 'Uygulama',
+  woPhaseClosing: 'Kapanış — belgeleri güncelle',
+  woPhaseDone: 'Tamamlandı',
 } as const;
+
+// WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;
+// 9-aşama rayı ikincil ("Akışı göster" arkasında).
+export function phaseLabelText(p: WoPhase): string {
+  switch (p.kind) {
+    case 'just_written':
+      return UI.woPhaseJustWritten;
+    case 'planning':
+      return UI.woPhasePlanning;
+    case 'plan_ready':
+      return UI.woPhasePlanReady;
+    case 'implementing':
+      return p.total > 0 ? `Uygulama · ${p.done}/${p.total} ${UI.stepsUnit}` : UI.woPhaseImplementing;
+    case 'reviewing':
+      return `${UI.reviewHeader} · ${UI.stepsUnit} ${p.stepIdx}`;
+    case 'closing':
+      return UI.woPhaseClosing;
+    case 'done':
+      return UI.woPhaseDone;
+  }
+}
 
 // Mimar karar işareti — done adımın yanında (WO-0020).
 export const VERDICT_MARK: Record<'proceed' | 'revise', string> = {

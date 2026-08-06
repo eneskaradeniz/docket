@@ -26,6 +26,7 @@ import type {
 import {
   classifyCommandLine,
   fenceDecision,
+  shouldSynthesiseTurnComplete,
   summarizeToolInput,
   writeScopeFor,
   type DriveInput,
@@ -155,6 +156,7 @@ export function createRunner(): SessionRunner {
     const roots: ScopeRoots = { repoRoot: cwd, decisionStore: resolve(cwd, DECISION_STORE_DIR) };
     const scope = writeScopeFor(input.role, roots);
     let planReadyEmitted = false;
+    let turnCompleteEmitted = false; // tracked to synthesise a turn_complete if the plan-mode stream ends without one (WO-0021)
     const abort = new AbortController();
     currentAbort = abort;
 
@@ -245,7 +247,10 @@ export function createRunner(): SessionRunner {
 
     try {
       for await (const msg of query({ prompt: input.prompt, options })) {
-        for (const e of translate(msg as unknown as AnyMsg)) queue.push(e);
+        for (const e of translate(msg as unknown as AnyMsg)) {
+          if (e.kind === 'turn_complete') turnCompleteEmitted = true;
+          queue.push(e);
+        }
       }
     } catch (e) {
       const err = e as { name?: string; message?: string };
@@ -255,6 +260,13 @@ export function createRunner(): SessionRunner {
       }
     } finally {
       currentAbort = undefined;
+      // If a plan-mode turn emitted plan_ready but the SDK ended the stream without a result (so no
+      // turn_complete), synthesise one — so the architect plan session still records cost + the main
+      // capture side-effects fire (WO-0021). Cost is honest zeros when the SDK gave none; result is left
+      // absent so main falls back to its accumulated assistantText for review verdicts.
+      if (shouldSynthesiseTurnComplete(planReadyEmitted, turnCompleteEmitted)) {
+        queue.push({ kind: 'turn_complete', stopReason: 'plan_exit_without_result', cost: { usd: 0, tokensIn: 0, tokensOut: 0 } });
+      }
       queue.close();
     }
   }
