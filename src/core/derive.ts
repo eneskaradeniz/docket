@@ -159,6 +159,8 @@ export function deriveTrackStage(track: Pick<Track, 'pr' | 'merge'>, hasActiveSe
 export interface ObservedStep {
   status?: StepStatus; // undefined when the step has not yet run
   reportPath?: string;
+  verdict?: 'proceed' | 'revise'; // the architect review outcome (WO-0020); undefined = not yet reviewed
+  verdictPath?: string;
   scopeTrackId?: TrackId; // the adapter's branded resolution; undefined for 'all' or an unmatched ref
 }
 
@@ -177,6 +179,8 @@ export function deriveSteps(specs: StepSpec[], observed: ReadonlyMap<number, Obs
       ...(scopeTrackId !== undefined ? { scopeTrackId } : {}),
       status: o?.status ?? 'pending',
       ...(o?.reportPath ? { reportPath: o.reportPath } : {}),
+      ...(o?.verdict ? { verdict: o.verdict } : {}),
+      ...(o?.verdictPath ? { verdictPath: o.verdictPath } : {}),
     };
   });
 }
@@ -322,7 +326,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
   };
 }
 
-export function toDetailView(wo: WorkOrder, steps: StepView[] = []): WorkOrderDetailView {
+export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 'gates' | 'every-step' = 'gates'): WorkOrderDetailView {
   return {
     id: wo.id,
     title: wo.title,
@@ -340,6 +344,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = []): WorkOrderDe
     evidence: deriveEvidence(wo),
     sessions: wo.sessions,
     steps,
+    reviewMode,
     primaryAction: derivePrimaryAction(wo),
     sources: wo.sources,
     cost: wo.cost,

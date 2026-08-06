@@ -200,6 +200,31 @@ export function readStepReport(decisionStorePath: string, id: string, idx: numbe
   }
 }
 
+// Write the architect's verdict for a step into the WO's verdicts/ dir (WO-0020). Docket writes this server-side
+// from the captured review result — the agent does NOT write its own verdict (mirrors writeStepReport). No
+// commit. Returns the path relative to the WO dir ("verdicts/step-NN.md") for the DB pointer (ADR-0001).
+export function writeStepVerdict(decisionStorePath: string, id: string, idx: number, body: string): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) throw new Error(`writeStepVerdict: no work-order directory for ${id}`);
+  const verdictsDir = join(dir, 'verdicts');
+  mkdirSync(verdictsDir, { recursive: true });
+  const name = `step-${String(idx).padStart(2, '0')}.md`;
+  writeFileSync(join(verdictsDir, name), body, 'utf8');
+  return `verdicts/${name}`;
+}
+
+// Read a step verdict from the WO's verdicts/ dir (WO-0020). Lazy per-step read at view time (ADR-0010). '' if
+// absent (step not yet reviewed).
+export function readStepVerdict(decisionStorePath: string, id: string, idx: number): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) return '';
+  try {
+    return readFileSync(join(dir, 'verdicts', `step-${String(idx).padStart(2, '0')}.md`), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 // Remove a work order's whole directory (order.md/plan.md/reports) by id (WO-0020). No-op if absent. A
 // working-tree delete only — Docket does NOT commit the removal (the operator commits), mirroring the
 // authoring helpers. Idempotent (force + recursive).

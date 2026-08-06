@@ -123,3 +123,37 @@ export function verifierPrompt(input: StepPromptInput): string {
     `Verify the work for this step within your scope (read-only — you do not edit code). When you are done, end your turn with a concise report in MARKDOWN (## headings, bullet lists, and a table for checklists): what you checked, what passed, what failed or is uncertain, and any path:line evidence. That report is saved as this step's outcome.`,
   ].join('\n');
 }
+
+// The architect's REVIEW prompt (WO-0020). After a step's report is written, an architect session reviews it
+// and ends with a single VERDICT line (proceed/revise). Docket captures the verdict from turn_complete and
+// writes the verdict file — the architect never writes its own output (mirrors implementerPrompt). Read-only on
+// code (its scope is decision_store); the report is read from the decision store.
+export interface ReviewPromptInput {
+  objective: string;
+  step: StepSpec;
+  reportBody: string;
+  planText: string;
+  orderMdPath: string;
+  reportPath: string; // relative, for the "read it at" line
+}
+
+export function architectReviewPrompt(input: ReviewPromptInput): string {
+  return [
+    `You are the architect reviewing step ${input.step.idx}'s report.`,
+    `Read the full work order at: ${input.orderMdPath}`,
+    ``,
+    `Objective: ${input.objective || '(see order.md)'}`,
+    ``,
+    `Your review focus — step ${input.step.idx} (${input.step.aim}, scope: ${stepScopeText(input.step.scope)}).`,
+    `The step's report is at: ${input.reportPath}`,
+    ``,
+    `The approved plan:`,
+    input.planText || '(see plan.md)',
+    ``,
+    `Assess whether the report demonstrates the step's aim was met — read the report, verify the claims, and note any gap or concern. You are reviewing only; do NOT edit code.`,
+    ``,
+    `End your turn with EXACTLY ONE verdict line, as the final line, and nothing after it:`,
+    `- VERDICT: proceed   — the step's aim is met; the next step may run.`,
+    `- VERDICT: revise    — the aim is not met; on the next line write REASON: then a short paragraph.`,
+  ].join('\n');
+}

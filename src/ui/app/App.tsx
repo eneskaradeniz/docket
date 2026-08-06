@@ -3,6 +3,7 @@ import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '.
 import type { WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
+import { parseOrderMd } from '../../core/order-md';
 import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
 import { useTheme } from '../chrome/use-theme';
@@ -105,6 +106,8 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     setSelectedId(null);
     refreshWorkOrders();
   }, [source, selectedId, refreshWorkOrders]);
+  const handleGetStepVerdict = useCallback((idx: number) => source.getStepVerdict(selectedId!, idx), [source, selectedId]);
+  const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
 
   const chrome = workspaceId ? (
     <AppChrome
@@ -151,11 +154,13 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   } else if (selectedId) {
     main = detail ? (
       <DetailScreen
-        detail={toDetailView(detail.wo, detail.steps)}
+        detail={toDetailView(detail.wo, detail.steps, parseOrderMd(detail.docs.order).reviewMode)}
         docs={detail.docs}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
+        onGetStepVerdict={handleGetStepVerdict}
+        onResetStep={handleResetStep}
         reloadDetail={reloadDetail}
         onDelete={handleDeleteWorkOrder}
       />

@@ -7,6 +7,8 @@ export function DetailScreen({
   onBack,
   onApprovePlan,
   onGetStepReport,
+  onGetStepVerdict,
+  onResetStep,
   reloadDetail,
   onDelete,
 }: {
@@ -15,6 +17,8 @@ export function DetailScreen({
   onBack: () => void;
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
+  onGetStepVerdict: (idx: number) => Promise<string>;
+  onResetStep: (idx: number) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -26,6 +30,8 @@ export function DetailScreen({
         onBack={onBack}
         onApprovePlan={onApprovePlan}
         onGetStepReport={onGetStepReport}
+        onGetStepVerdict={onGetStepVerdict}
+        onResetStep={onResetStep}
         reloadDetail={reloadDetail}
         onDelete={onDelete}
       />

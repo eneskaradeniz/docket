@@ -4,12 +4,14 @@ import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatUs
 import { ActionCard } from './ActionCard';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
+import { ReviewPane } from '../session/ReviewPane';
 import { EvidencePanel } from './EvidencePanel';
 import { MarkdownDoc } from './MarkdownDoc';
 import { SourceLinks } from './SourceLinks';
 import { StageRail } from './StageRail';
 import { StepList } from './StepList';
 import { StepReport } from './StepReport';
+import { VerdictCard } from './VerdictCard';
 import { TrackLane } from './TrackLane';
 
 // Session-centric detail (WO-0013). The session log is the spine; the action card surfaces the one
@@ -21,6 +23,8 @@ export function WorkOrderDetail({
   onBack,
   onApprovePlan,
   onGetStepReport,
+  onGetStepVerdict,
+  onResetStep,
   reloadDetail,
   onDelete,
 }: {
@@ -29,6 +33,8 @@ export function WorkOrderDetail({
   onBack: () => void;
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
+  onGetStepVerdict: (idx: number) => Promise<string>;
+  onResetStep: (idx: number) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -40,14 +46,32 @@ export function WorkOrderDetail({
     () => detail.steps.find((s) => s.status === 'active')?.idx ?? detail.steps.find((s) => s.status === 'pending')?.idx,
   );
   const [reportStep, setReportStep] = useState<StepView | undefined>(undefined);
-  // Advance: when the driven step becomes 'done', move to the next pending step (undefined when none remain).
+  const [reviewIdx, setReviewIdx] = useState<number | undefined>(undefined);
+  const [verdictFor, setVerdictFor] = useState<StepView | undefined>(undefined);
+  // Review-trigger (WO-0020): when the driven step becomes 'done' and has no verdict yet, hand it to the
+  // architect for review — instead of auto-advancing straight to the next step.
   useEffect(() => {
-    if (runIdx === undefined) return;
+    if (reviewIdx !== undefined || verdictFor || runIdx === undefined) return;
     const cur = detail.steps.find((s) => s.idx === runIdx);
-    if (cur?.status === 'done') {
-      setRunIdx(detail.steps.find((s) => s.status === 'pending')?.idx);
+    if (cur?.status === 'done' && !cur.verdict) {
+      setReviewIdx(cur.idx);
+      setRunIdx(undefined);
     }
-  }, [detail.steps, runIdx]);
+  }, [detail.steps, runIdx, reviewIdx, verdictFor]);
+  // Verdict-branch (WO-0020): once the reviewed step has a verdict, either auto-advance (gates + proceed) or
+  // surface the verdict card (gates + revise, every-step, or unknown → revise). This is review_mode branching.
+  useEffect(() => {
+    if (reviewIdx === undefined || verdictFor) return;
+    const cur = detail.steps.find((s) => s.idx === reviewIdx);
+    if (cur?.verdict) {
+      setReviewIdx(undefined);
+      if (detail.reviewMode === 'gates' && cur.verdict === 'proceed') {
+        setRunIdx(detail.steps.find((s) => s.status === 'pending')?.idx);
+      } else {
+        setVerdictFor(cur);
+      }
+    }
+  }, [detail.steps, reviewIdx, verdictFor, detail.reviewMode]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async (): Promise<void> => {
@@ -140,7 +164,29 @@ export function WorkOrderDetail({
       ) : hasSteps ? (
         <>
           <StepList steps={detail.steps} onOpenReport={setReportStep} />
-          {activeStep ? (
+          {reviewIdx !== undefined ? (
+            <ReviewPane
+              step={detail.steps.find((s) => s.idx === reviewIdx)!}
+              workOrderId={detail.id}
+              onReviewDone={reloadDetail}
+            />
+          ) : verdictFor ? (
+            <VerdictCard
+              step={verdictFor}
+              loadVerdict={() => onGetStepVerdict(verdictFor.idx)}
+              onContinue={() => {
+                setVerdictFor(undefined);
+                setRunIdx(detail.steps.find((s) => s.status === 'pending')?.idx);
+              }}
+              onRevise={async () => {
+                const idx = verdictFor.idx;
+                await onResetStep(idx);
+                setVerdictFor(undefined);
+                setRunIdx(idx);
+                reloadDetail();
+              }}
+            />
+          ) : activeStep ? (
             <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} onDone={reloadDetail} />
           ) : null}
           {reportStep ? (

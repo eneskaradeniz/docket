@@ -409,4 +409,21 @@ export const UI = {
   cancel: 'Vazgeç',
   stepsAllDone: 'Tüm adımlar tamam',
   stepsAllDoneHint: 'Plan uygulandı. Kapanış — PR açma, CI, merge ve karar deposu güncellemesi — M3 aşamasında geliyor; şimdilik elle commit/merge yapabilirsin.',
+  // Mimar denetim / karar (WO-0020)
+  reviewHeader: 'Mimar denetimi',
+  reviewHint: 'Mimar bu adımın raporunu inceliyor…',
+  verdictLabel: 'Karar',
+  verdictCardProceedTitle: 'Mimar devam dedi',
+  verdictCardReviseTitle: 'Mimar revize istiyor',
+  verdictCardUnknown: 'Mimar net karar vermedi — sen incele.',
+  verdictCardHint: 'Raporu oku, sonra devam et ya da adımı yeniden çalıştır.',
+  devamStep: 'Devam et',
+  rerunStep: 'Adımı yeniden çalıştır',
+  stepVerdictMissing: '(karar henüz yok)',
 } as const;
+
+// Mimar karar işareti — done adımın yanında (WO-0020).
+export const VERDICT_MARK: Record<'proceed' | 'revise', string> = {
+  proceed: '✓',
+  revise: '↻',
+};

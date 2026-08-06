@@ -1,5 +1,5 @@
 import type { StepView } from '../../../core/types';
-import { ROLE_LABELS, STEP_MARK, UI } from '../../data/labels';
+import { ROLE_LABELS, STEP_MARK, UI, VERDICT_MARK } from '../../data/labels';
 
 // The plan's step list (WO-0017) — the primary surface once a plan is approved. Mirrors the design mock's
 // renderPlan: a status mark (✓/►/○/⊘), `ROLE_LABELS[role] · aim`, and the scope right-aligned, with a
@@ -33,13 +33,18 @@ export function StepList({
         {steps.map((s) => {
           const hasReport = s.status === 'done' && !!s.reportPath;
           const scopeText = s.scope.kind === 'all' ? UI.stepScopeAll : s.scope.ref;
+          // Done step's mark reflects the verdict: revise ↻, proceed ✓, no-verdict '…' (review pending) (WO-0020).
+          const mark = s.status === 'done'
+            ? s.verdict === 'revise' ? VERDICT_MARK.revise : s.verdict === 'proceed' ? STEP_MARK.done : '…'
+            : STEP_MARK[s.status];
+          const tone = s.status === 'done' && s.verdict === 'revise' ? 'text-brass' : markTone(s.status);
           return (
             <li
               key={s.idx}
               className={`flex items-center gap-2 rounded px-2 py-1 text-[13px] ${s.status === 'active' ? 'bg-surface' : ''}`}
             >
-              <span className={`w-4 text-center ${markTone(s.status)}`} aria-label={s.status}>
-                {STEP_MARK[s.status]}
+              <span className={`w-4 text-center ${tone}`} aria-label={s.status}>
+                {mark}
               </span>
               <span className="font-mono text-[11px] text-inkdim">{s.idx}</span>
               {hasReport ? (
