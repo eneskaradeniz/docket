@@ -15,6 +15,7 @@ import type {
   SessionRole,
   SourceKind,
   StepStatus,
+  CostSummary,
   StageId,
   TrackStage,
   TrackMergeAction,
@@ -270,6 +271,18 @@ export function stoppedAtGate(gate: string): string {
 export function formatUsd(usd: number): string {
   const n = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd);
   return `$${n}`;
+}
+
+// Token sayısı kısaltması: 10k+ tam k, 1k+ bir ondalık, altı ham sayı (WO-0022).
+export function formatTokens(n: number): string {
+  if (n >= 10000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return `${n}`;
+}
+
+// Maliyet + token özeti: "$0,41 · 68k→2k" (giriş→çıkış). Oturum/WO maliyeti yanında token harcaması (WO-0022).
+export function formatCost(c: CostSummary): string {
+  return `${formatUsd(c.usd)} · ${formatTokens(c.tokensIn)}→${formatTokens(c.tokensOut)}`;
 }
 
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.

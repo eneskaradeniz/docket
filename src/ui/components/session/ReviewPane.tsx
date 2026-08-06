@@ -8,7 +8,7 @@ import {
   type SimplePhase,
 } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
-import { formatUsd, LIVE_STATUS_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { formatCost, LIVE_STATUS_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
 import { useRunner } from './runner-context';
 import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
@@ -116,7 +116,7 @@ export function ReviewPane({
               </button>
             </div>
           ) : null}
-          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatUsd(state.cost.usd)}</span> : null}
+          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatCost(state.cost)}</span> : null}
         </div>
       </header>
 
