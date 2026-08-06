@@ -5,7 +5,7 @@ import {
   type DriveInput,
   type LiveSessionState,
 } from '../../../core/runner';
-import type { SessionRef, SessionRole, WorkOrderId } from '../../../core/types';
+import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { formatUsd, LIVE_STATUS_LABELS, ROLE_LABELS, UI } from '../../data/labels';
 import { useRunner } from './runner-context';
 import { StopAndAskCard } from './StopAndAskCard';
@@ -14,6 +14,10 @@ import { Terminal } from './Terminal';
 // Live session pane (WO-0008). Drives a real session through the SessionRunner port, folds the event
 // stream into state (core's foldSessionEvent), and maps each event kind to a region — an xterm
 // terminal (WO-0012), stop-and-ask card, plan approval, cost. Sessions persist + resume (WO-0010).
+//
+// Stage-aware (WO-0016): a `written` work order shows a single "Plan iste" surface (architect implied,
+// prompt assembled server-side from order.md); plan approval writes plan.md via onApprovePlan rather
+// than resuming the architect off plan mode.
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
 function statusColor(s: LiveSessionState['status']): string {
@@ -35,19 +39,28 @@ function statusColor(s: LiveSessionState['status']): string {
 
 export function SessionPane({
   mode,
+  stage,
   workOrderId,
   sessions,
+  onApprovePlan,
 }: {
   mode: 'plan' | 'direct';
+  stage: StageId;
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
+  onApprovePlan: (planText: string) => Promise<void>;
 }) {
   const runner = useRunner();
-  const [role, setRole] = useState<SessionRole>('implementer');
+  // At architect_approval (e.g. restarted mid-plan), default to the architect tab so resume re-surfaces
+  // the proposed plan. At written the role tabs are hidden and the architect is implied.
+  const [role, setRole] = useState<SessionRole>(stage === 'architect_approval' ? 'architect' : 'implementer');
   const [prompt, setPrompt] = useState('');
   const [state, setState] = useState<LiveSessionState>(initialSessionState);
   const [running, setRunning] = useState(false);
+  const [approving, setApproving] = useState(false);
   const sessionId = useRef<string | undefined>(undefined);
+
+  const isPlanRequestStage = stage === 'written';
 
   async function runDrive(input: DriveInput, reset: boolean): Promise<void> {
     if (running) return;
@@ -68,14 +81,31 @@ export function SessionPane({
     }
   }
 
+  const requestPlan = (): void => {
+    // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
+    void runDrive({ role: 'architect', workOrderId, mode, prompt: '' }, true);
+  };
   const start = (): void => {
     void runDrive({ role, workOrderId, mode, prompt }, true);
   };
-  const approve = (): void => {
-    void runDrive(
-      { role, workOrderId, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
-      false,
-    );
+  // WO-0016: approving an architect's proposed plan commits plan.md + flips the gate (onApprovePlan),
+  // then resets the live state so the reloaded detail (stage→implementation, plan rendered) is clean.
+  // The architect session is done at plan_ready — it is NOT resumed off plan mode (steps are WO-0017).
+  const approve = async (): Promise<void> => {
+    if (role === 'architect' && state.pendingPlan) {
+      setApproving(true);
+      try {
+        await onApprovePlan(state.pendingPlan);
+        setState(initialSessionState);
+      } finally {
+        setApproving(false);
+      }
+    } else {
+      void runDrive(
+        { role, workOrderId, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
+        false,
+      );
+    }
   };
   const allow = (): void => {
     if (state.pendingAsk) void runner.decide(state.pendingAsk.requestId, { allow: true });
@@ -89,7 +119,7 @@ export function SessionPane({
 
   const showPlan = state.status === 'plan_ready' && !!state.pendingPlan;
   const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
-  const canStart = !running && !showPlan;
+  const canStart = !running && !showPlan && !approving;
   // A session persisted across restart (WO-0010) — offer resume only when one exists for the role.
   const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
   const resume = (): void => {
@@ -105,22 +135,33 @@ export function SessionPane({
         {state.cost.usd > 0 ? <span className="ml-auto font-mono text-[12px] text-inkdim">{formatUsd(state.cost.usd)}</span> : null}
       </header>
 
-      <div className="mb-2 flex gap-1 rounded bg-surface p-1">
-        {ROLE_ORDER.map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => setRole(r)}
-            className={`flex-1 rounded px-2 py-1 text-xs ${r === role ? 'bg-bg text-ink' : 'text-inkdim'}`}
-          >
-            {ROLE_LABELS[r]}
-          </button>
-        ))}
-      </div>
+      {/* Role tabs are hidden on a written work order — the only session is the architect plan session. */}
+      {isPlanRequestStage ? null : (
+        <div className="mb-2 flex gap-1 rounded bg-surface p-1">
+          {ROLE_ORDER.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRole(r)}
+              className={`flex-1 rounded px-2 py-1 text-xs ${r === role ? 'bg-bg text-ink' : 'text-inkdim'}`}
+            >
+              {ROLE_LABELS[r]}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Controls appear only when their precondition holds (ADR-0001): Start needs a non-running
-          state; Approve appears only at plan_ready; Stop only while running. Unmet → absent. */}
-      {canStart ? (
+      {/* Controls appear only when their precondition holds (ADR-0001). Written → single "Plan iste";
+           otherwise the prompt + start/resume controls. */}
+      {isPlanRequestStage && canStart ? (
+        <div className="mb-2">
+          <button type="button" onClick={requestPlan} className="btn-primary rounded px-3 py-1.5 text-xs">
+            {UI.requestPlan}
+          </button>
+        </div>
+      ) : null}
+
+      {!isPlanRequestStage && canStart ? (
         <div className="mb-2 flex gap-2">
           <textarea
             className="flex-1 rounded border border-rule bg-bg p-2 text-xs text-ink outline-none"
@@ -145,9 +186,14 @@ export function SessionPane({
           <p className="mb-1 text-xs text-inkdim">{UI.awaitingApproval}</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-ink">{state.pendingPlan}</pre>
           <div className="mt-2">
-            <button type="button" onClick={approve} className="btn-primary rounded px-3 py-1 text-xs">
-              {UI.approve}
-            </button>
+            {/* While committing, the approve control is absent — ADR-0001. */}
+            {approving ? (
+              <span className="text-xs text-inkdim">{UI.approvingPlan}</span>
+            ) : (
+              <button type="button" onClick={() => void approve()} className="btn-primary rounded px-3 py-1 text-xs">
+                {UI.approve}
+              </button>
+            )}
           </div>
         </div>
       ) : null}

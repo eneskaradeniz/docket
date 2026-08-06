@@ -96,3 +96,13 @@ is not caching in the store).
 Like the workspace addendum, this is a time-boxed departure, not a reversal: the observed row is
 discardable, the `order.md` is the system of record, and the operator's commit is what makes a created
 work order real.
+
+## Addendum: M2 plan.md authoring (WO-0016, 2026-08-06)
+
+The same working-tree-only stance extends to the architect's plan. Approving a proposed plan writes
+`plan.md` into the work order's decision-store directory (`<decisionStore>/docs/work-orders/WO-NNNN-*/plan.md`)
+and flips the observed `gate_plan_approved` flag; Docket does **not** commit — the operator reviews and
+commits, exactly as for `order.md`. **M2 ruling:** the `plan_approval` gate is satisfied by the observed
+flag, not by a commit sha — the "commit is the evidence" link (TD-005's structural fix) remains M3, where
+the git scanner re-observes `plan.md` and reconciliation ties the gate to a real commit. No plan text is
+cached in the DB (ADR-0010 rule 1 holds: writing to disk is not storing in the store).

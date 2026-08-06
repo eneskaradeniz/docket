@@ -237,6 +237,7 @@ export interface WorkOrderDetailView {
   title: string;
   workspace: WorkspaceId;
   mode: 'plan' | 'direct';
+  stage: StageId;
   rail: StageRailStep[];
   tracks: TrackLaneView[];
   evidence: EvidenceItem[]; // single left-column checklist: WO-level + per-track

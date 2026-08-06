@@ -90,6 +90,17 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       `seedFixtureWorkOrders`). `review_mode` is written to order.md front-matter for WO-0016 to consume.
       M3's git scanner re-observes `order.md` (operator-authored rows not yet committed are orphaned —
       TD-021).
+- [x] **WO-0016** — Plan-driven flow: the plan loop. Done: a `written` WO's "Plan iste" starts an architect
+      session (prompt assembled server-side from `order.md`); the architect's `ExitPlanMode` surfaces the
+      plan; the operator approves; Docket writes `plan.md` into the decision store + flips `planApproved`
+      → stage advances to "Uygulama" + the plan renders (PlanCard). New: pure `core/order-md.ts`
+      (`parseOrderMd`/`architectPrompt`); decision-store `findWorkOrderDir`/`writePlanMdById`/`readWoDocs`
+      (slug-free dir discovery); store `approvePlan` + real `getWorkOrderDocs` (working-tree reads, no
+      fixtures); `approve-plan` IPC + main architect-prompt fill; SessionPane plan surface (written →
+      single button; plan_ready → approve → `approvePlan` + reload — the architect is NOT resumed);
+      `WorkOrderDetailView.stage`. `deriveStage` unchanged (`plan_requested`/`plan_ready` unrepresentable
+      at restart → **TD-025**). Step-running + per-step review + `review_mode` branching are WO-0017;
+      `plan_approval` is satisfied by the observed flag, not a commit sha (M3, TD-005).
 
 ## M3 — Evidence layer
 

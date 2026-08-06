@@ -53,4 +53,10 @@ export interface WorkOrderSource {
   // observed work_order row + tracks. `description`/`reviewMode`/`contextFiles` transit to order.md,
   // never to the DB (ADR-0010 rule 1 — no document text in the store). M3 git scanner reconciles.
   createWorkOrder(input: CreateWorkOrderInput): Promise<WorkOrder>;
+
+  // Approve the architect's proposed plan (WO-0016). Writes plan.md into the decision-store working tree
+  // (no commit — operator commits; ADR-0009 M2 addendum) and flips gate_plan_approved. The plan text is
+  // the architect session's proposed plan (captured from the plan_ready event); it never enters the DB.
+  // M2 ruling: the plan_approval gate is satisfied by the observed flag, not a commit sha (TD-005/TD-025).
+  approvePlan(workOrderId: WorkOrderId, planText: string): Promise<void>;
 }

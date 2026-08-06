@@ -292,6 +292,7 @@ export function toDetailView(wo: WorkOrder): WorkOrderDetailView {
     title: wo.title,
     workspace: wo.workspace,
     mode: wo.mode,
+    stage: wo.stage,
     rail: deriveRail(wo),
     tracks: wo.tracks.map(
       (t): TrackLaneView => ({

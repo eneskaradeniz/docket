@@ -58,6 +58,10 @@ ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, pat
 //   renderer (ADR-0001). ---
 ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => store.createWorkOrder(input));
 
+// --- Plan approval (WO-0016). Writes plan.md into the working tree (no commit) + flips the
+//   plan_approval gate. Path resolution stays server-side (ADR-0001). ---
+ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: string) => store.approvePlan(id, planText));
+
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
@@ -83,8 +87,15 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
     if (!providerSessionId) return;
     store.recordSession({ providerSessionId, workOrderId: input.workOrderId, role: input.role, scope: input.scope, status, cost });
   };
+  // Fill the architect's first prompt from order.md when the renderer sent none (WO-0016) — mirrors the
+  // cwd fill. The renderer never parses document text (ADR-0007); main owns prompt assembly.
+  const driveInput: DriveInput = { ...input, cwd: process.cwd() };
+  if (input.role === 'architect' && !input.resume && !input.prompt) {
+    const prompt = store.architectPromptFor(input.workOrderId);
+    if (prompt) driveInput.prompt = prompt;
+  }
   try {
-    for await (const ev of runner.drive({ ...input, cwd: process.cwd() })) {
+    for await (const ev of runner.drive(driveInput)) {
       event.sender.send('docket:runner:event', ev);
       if (ev.kind === 'started') {
         providerSessionId = ev.sessionId;

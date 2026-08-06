@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createStore, seedFixtureWorkOrders } from './index';
 import { OBSERVED_TABLES } from './schema';
 import { woid } from '../ids';
-import { workOrderDocs, workspaces } from '../fixtures';
+import { workspaces } from '../fixtures';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -61,10 +61,11 @@ describe('SQLite store — seed + hydration', () => {
     expect(wo!.sessions.some((s) => s.status === 'stopped_asking')).toBe(true);
   });
 
-  it('serves document text from fixtures (never stored)', async () => {
+  it('serves documents from the working tree, not fixtures (WO-0016)', async () => {
     const store = fixtureStore();
     const docs = await store.getWorkOrderDocs(woid('WO-1001'));
-    expect(docs.order).toBe(workOrderDocs[woid('WO-1001')].order);
+    // Fixture WOs are test data with no on-disk order.md → empty (ADR-0010: docs read at view time).
+    expect(docs).toEqual({ order: '', plan: '' });
   });
 });
 
@@ -312,5 +313,51 @@ describe('SQLite store — work-order creation (WO-0015)', () => {
     const b = await store.createWorkOrder({ workspaceId: ws.id, title: 'Two', description: '', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
     expect(a.id).toBe('WO-0001');
     expect(b.id).toBe('WO-0002'); // max+1 from the directory listing after the first write
+  });
+});
+
+describe('SQLite store — plan approval + doc reads (WO-0016)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+
+  it('getWorkOrderDocs reads the authored order.md (plan empty until approved)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Doc read', description: 'the objective', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.order).toContain('the objective');
+    expect(docs.plan).toBe('');
+  });
+
+  it('approvePlan writes plan.md and flips the plan_approval gate → stage advances to implementation', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Approve me', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect((await store.getWorkOrder(wo.id))!.stage).toBe('written');
+
+    await store.approvePlan(wo.id, '# The plan\n1. do the thing');
+
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.plan).toBe('# The plan\n1. do the thing');
+    const approved = (store.db.prepare('SELECT gate_plan_approved AS v FROM work_order WHERE id = ?').get(wo.id) as { v: number }).v;
+    expect(approved).toBe(1);
+    const reloaded = await store.getWorkOrder(wo.id);
+    expect(reloaded!.gateInputs.planApproved).toBe(true);
+    expect(reloaded!.stage).toBe('implementation'); // planApproved + no merged tracks
+  });
+
+  it('approvePlan persists across a reopen (gate stays approved, plan.md on disk)', async () => {
+    const root = freshRoot();
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Test', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Persist plan', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# persisted plan');
+    const reloaded = await createStore(p).getWorkOrder(wo.id);
+    expect(reloaded!.gateInputs.planApproved).toBe(true);
+    expect((await createStore(p).getWorkOrderDocs(wo.id)).plan).toBe('# persisted plan');
   });
 });

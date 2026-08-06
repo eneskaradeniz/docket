@@ -25,6 +25,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
   const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
+  const [detailNonce, setDetailNonce] = useState(0);
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [theme, setTheme] = useTheme();
 
@@ -64,7 +65,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     return () => {
       cancelled = true;
     };
-  }, [source, selectedId]);
+  }, [source, selectedId, detailNonce]);
 
   const cards = useMemo(
     () => workOrders.filter((w) => w.workspace === workspaceId).map(toCardView),
@@ -82,6 +83,18 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const refreshWorkOrders = useCallback(() => {
     source.getWorkOrders().then(setWorkOrders);
   }, [source]);
+
+  // Re-load the selected work order + its docs (WO-0016): bumping the nonce re-runs the detail effect,
+  // so the detail view reflects a plan approval (stage advanced, plan.md rendered) without re-selection.
+  const reloadDetail = useCallback(() => setDetailNonce((n) => n + 1), []);
+  const handleApprovePlan = useCallback(
+    async (planText: string) => {
+      if (!selectedId) return;
+      await source.approvePlan(selectedId, planText);
+      reloadDetail();
+    },
+    [source, selectedId, reloadDetail],
+  );
 
   const chrome = workspaceId ? (
     <AppChrome
@@ -106,6 +119,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
         detail={toDetailView(detail.wo)}
         docs={detail.docs}
         onBack={() => setSelectedId(null)}
+        onApprovePlan={handleApprovePlan}
       />
     ) : (
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>

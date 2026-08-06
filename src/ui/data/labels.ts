@@ -333,4 +333,7 @@ export const UI = {
   woReviewGates: 'Sade — mimar otonom; plan onayı, revizyon ve merge’de sorar',
   woReviewEvery: 'Her adımda — her rapordan sonra bana sor',
   woCreateBtn: 'Oluştur',
+  // Plan döngüsü (WO-0016)
+  requestPlan: 'Plan iste',
+  approvingPlan: 'Plan işleniyor…',
 } as const;

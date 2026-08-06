@@ -15,10 +15,12 @@ export function WorkOrderDetail({
   detail,
   docs,
   onBack,
+  onApprovePlan,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
   onBack: () => void;
+  onApprovePlan: (planText: string) => Promise<void>;
 }) {
   const activeRole = detail.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking')?.role;
   const stageStep = detail.rail.find((s) => s.status === 'current' || s.status === 'locked');
@@ -51,7 +53,17 @@ export function WorkOrderDetail({
 
       <ActionCard detail={detail} />
 
-      <SessionPane mode={detail.mode} workOrderId={detail.id} sessions={detail.sessions} />
+      <SessionPane
+        mode={detail.mode}
+        stage={detail.stage}
+        workOrderId={detail.id}
+        sessions={detail.sessions}
+        onApprovePlan={onApprovePlan}
+      />
+
+      {/* Approved plan (WO-0016) — promoted above the expander once plan.md exists. Rendered as the
+          architect's markdown; a structured step list (status/role/aim/scope) comes with step-running. */}
+      {docs.plan ? <MarkdownDoc title={UI.planDoc} content={docs.plan} /> : null}
 
       {/* evidence prose — three-valued (the mock's boolean is not adopted) */}
       <p className="text-[12px] text-inkdim">

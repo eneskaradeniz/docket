@@ -15,9 +15,10 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
-import { buildOrderMd, nextWorkOrderNumber, writeOrderMd } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readWoDocs, writeOrderMd, writePlanMdById } from '../decision-store/decision-store';
+import { architectPrompt, parseOrderMd } from '../../core/order-md';
 import { rid, tid, wid, woid } from '../ids';
-import { workOrderDocs, workOrders, workspaces } from '../fixtures';
+import { workOrders, workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
@@ -47,6 +48,8 @@ export interface Store extends WorkOrderSource {
   reseedObserved(): void;
   /** Persist (upsert) a live session row keyed by provider session id — main side-effect (WO-0010). */
   recordSession(input: RecordSessionInput): void;
+  /** The architect session's first prompt, assembled from the work order's order.md (WO-0016). */
+  architectPromptFor(workOrderId: WorkOrderId): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -417,8 +420,33 @@ export function createStore(dbPath: string): Store {
       return out;
     },
     getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id)),
-    getWorkOrderDocs: (id: WorkOrderId) => Promise.resolve(workOrderDocs[id] ?? { order: '', plan: '' }),
+    // Real working-tree reads (WO-0016): resolve the WO's decision-store path and read order.md/plan.md
+    // from disk at view time (ADR-0010 — no document text cached in the DB). Missing dir/file → ''.
+    getWorkOrderDocs: (id: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) return Promise.resolve({ order: '', plan: '' });
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      return Promise.resolve(readWoDocs(dir, id));
+    },
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    // The architect's first prompt, assembled server-side from order.md (WO-0016). The composition root
+    // fills DriveInput.prompt with this when role==='architect' and the renderer sent none (mirrors the
+    // cwd fill). Returns undefined when there is no order.md yet (caller leaves the prompt untouched).
+    architectPromptFor: (workOrderId: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) return undefined;
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const { order } = readWoDocs(dir, workOrderId);
+      if (!order) return undefined;
+      const parsed = parseOrderMd(order);
+      const woDir = findWorkOrderDir(dir, workOrderId);
+      const orderMdPath = woDir ? `${woDir}/order.md` : '';
+      return architectPrompt({ ...parsed, orderMdPath });
+    },
     createWorkspace: (input: CreateWorkspaceInput) => Promise.resolve(createWorkspaceRow(db, input)),
     updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
       Promise.resolve(updateWorkspaceRow(db, id, patch)),
@@ -452,6 +480,17 @@ export function createStore(dbPath: string): Store {
         }),
       );
       return createWorkOrderRow(db, { ...input, id });
+    },
+    // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
+    // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.
+    approvePlan: async (workOrderId: WorkOrderId, planText: string) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) throw new Error(`approvePlan: work order ${workOrderId} not found`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      writePlanMdById(dir, workOrderId, planText);
+      db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
     },
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
