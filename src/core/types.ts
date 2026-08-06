@@ -196,6 +196,7 @@ export type CardReason =
   | { kind: 'ci_failed'; checkName: string }
   | { kind: 'ci_running' }
   | { kind: 'in_progress' }
+  | { kind: 'just_written' }
   | { kind: 'awaiting_plan_commit' }
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };

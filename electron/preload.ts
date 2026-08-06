@@ -6,7 +6,7 @@
 // Both are async (ipcRenderer.invoke). The sync sendSync snapshot bridge is deleted (TD-017).
 // No Node surface leaks to the renderer (ADR-0001).
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { WorkOrderId, WorkspaceId } from '../src/core/types';
 
@@ -23,6 +23,7 @@ const source: WorkOrderSource = {
     ipcRenderer.invoke('docket:source:add-repo-connection', id, repo),
   removeRepoConnection: (id: WorkspaceId, path: string) =>
     ipcRenderer.invoke('docket:source:remove-repo-connection', id, path),
+  createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
 };
 
 const runner = {
@@ -39,4 +40,9 @@ const runner = {
   interrupt: (): Promise<void> => ipcRenderer.invoke('docket:runner:interrupt'),
 };
 
-contextBridge.exposeInMainWorld('docket', { source, runner, pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder') });
+contextBridge.exposeInMainWorld('docket', {
+  source,
+  runner,
+  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
+  pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
+});

@@ -65,6 +65,18 @@ describe('deriveCardReason — every card states why it is in its column (AC13)'
   it('WO-1006 in progress (running)', () => expect(deriveCardReason(wo('WO-1006')).kind).toBe('in_progress'));
 });
 
+describe('deriveCardReason — freshly written work order (WO-0015)', () => {
+  it('a just-written WO (stage written, no sessions) → just_written', () => {
+    const w = aWorkOrder({ stage: 'written', sessions: [], gateInputs: { planApproved: false } });
+    expect(deriveCardReason(w)).toEqual({ kind: 'just_written' });
+  });
+
+  it('a just-written WO derives the request_plan action (▸ Plan iste)', () => {
+    const w = aWorkOrder({ stage: 'written', sessions: [], gateInputs: { planApproved: false } });
+    expect(deriveCardAction(w)).toEqual({ kind: 'link', intent: 'request_plan' });
+  });
+});
+
 describe('named invariant cases (AC10)', () => {
   it('a work order matching no whoseTurn rule falls to your_turn', () => {
     const idle = aWorkOrder({
@@ -349,8 +361,14 @@ describe('deriveStage — stage derived from observed facts (TD-008 / ADR-0010)'
     }
   });
 
-  it('plan not approved → architect_approval', () => {
-    expect(deriveStage(aWorkOrder({ gateInputs: { planApproved: false } }))).toBe('architect_approval');
+  it('no sessions and plan not approved → written (just authored, WO-0015)', () => {
+    expect(deriveStage(aWorkOrder({ gateInputs: { planApproved: false }, sessions: [] }))).toBe('written');
+  });
+
+  it('plan not approved but a session exists → architect_approval', () => {
+    expect(
+      deriveStage(aWorkOrder({ gateInputs: { planApproved: false }, sessions: [aSession({ role: 'architect', status: 'idle' })] })),
+    ).toBe('architect_approval');
   });
 
   it('plan approved, a track still in flight → implementation', () => {

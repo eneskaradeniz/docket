@@ -100,10 +100,13 @@ function allTracksMerged(wo: WorkOrder): boolean {
 // Stage is DERIVED from observed facts, never stored (ADR-0010 "no stage column on an
 // observed table" / TD-008). The store sets WorkOrder.stage by calling this at hydration;
 // every other function here then reads wo.stage as before. M2 derivation is coarse where
-// the observed facts available don't distinguish the finer plan/audit stages (written /
-// plan_requested / plan_ready / verification / architect_audit are not represented in the
-// seed) — M3 refines from live git/forge observation.
-export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks'>): StageId {
+// the observed facts available don't distinguish the finer plan/audit stages (plan_requested /
+// plan_ready / verification / architect_audit are not represented) — M3 refines from live
+// git/forge observation. `written` (WO-0015) is the freshly-authored state: order.md exists
+// but no session has run and the plan is not approved — distinct from `architect_approval`,
+// where a plan exists and awaits the operator's verdict.
+export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks' | 'sessions'>): StageId {
+  if (wo.sessions.length === 0 && !wo.gateInputs.planApproved) return 'written';
   if (!wo.gateInputs.planApproved) return 'architect_approval';
   const allMerged = wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
   if (allMerged && wo.gateInputs.verifierReport?.resolvablePointers) {
@@ -153,6 +156,7 @@ export function whoseTurn(wo: WorkOrder): BoardColumn {
 }
 
 export function deriveCardReason(wo: WorkOrder): CardReason {
+  if (wo.stage === 'written') return { kind: 'just_written' };
   const stopped = wo.sessions.find((s) => s.status === 'stopped_asking');
   if (stopped && stopped.status === 'stopped_asking') {
     return { kind: 'stopped_asking', gate: stopped.stopAndAsk.gate };

@@ -15,6 +15,11 @@ export type RunnerBridge = {
 
 declare global {
   interface Window {
-    docket: { source: WorkOrderSource; runner: RunnerBridge; pickFolder: () => Promise<string | null> };
+    docket: {
+      source: WorkOrderSource;
+      runner: RunnerBridge;
+      pickFolder: () => Promise<string | null>;
+      pickFiles: () => Promise<string[] | null>;
+    };
   }
 }

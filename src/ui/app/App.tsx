@@ -6,6 +6,7 @@ import { toCardView, toDetailView } from '../../core/derive';
 import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
 import { useTheme } from '../chrome/use-theme';
+import { WoCreateModal } from '../chrome/WoCreateModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RunnerContext } from '../components/session/runner-context';
@@ -24,6 +25,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
   const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
+  const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [theme, setTheme] = useTheme();
 
   useEffect(() => {
@@ -76,6 +78,11 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     });
   }, [source]);
 
+  // After creating a work order, re-fetch the list (mirrors refreshWorkspaces) so the new card appears.
+  const refreshWorkOrders = useCallback(() => {
+    source.getWorkOrders().then(setWorkOrders);
+  }, [source]);
+
   const chrome = workspaceId ? (
     <AppChrome
       workspaces={workspaces}
@@ -104,8 +111,27 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} onSelect={setSelectedId} />;
+    main = <BoardScreen cards={cards} onSelect={setSelectedId} onNewWorkOrder={() => setWoCreateOpen(true)} />;
   }
 
-  return <RunnerContext.Provider value={runner}>{chrome}{main}</RunnerContext.Provider>;
+  const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
+
+  return (
+    <RunnerContext.Provider value={runner}>
+      {chrome}
+      {main}
+      {woCreateOpen && currentWorkspace ? (
+        <WoCreateModal
+          workspace={currentWorkspace}
+          source={source}
+          onClose={() => setWoCreateOpen(false)}
+          onCreated={(wo) => {
+            setWoCreateOpen(false);
+            refreshWorkOrders();
+            setSelectedId(wo.id); // navigate to the new work order's detail
+          }}
+        />
+      ) : null}
+    </RunnerContext.Provider>
+  );
 }

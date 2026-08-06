@@ -102,6 +102,8 @@ export function cardReasonText(r: CardReason): string {
       return 'CI çalışıyor';
     case 'in_progress':
       return 'Devam ediyor';
+    case 'just_written':
+      return UI.cardJustWritten;
     case 'awaiting_plan_commit':
       return 'Plan commiti bekleniyor';
     case 'docs_not_updated':
@@ -313,4 +315,22 @@ export const UI = {
   wsListCreate: '▸ Yeni çalışma alanı',
   wsAll: 'Tümünü gör',
   wsRemove: "Docket'tan kaldır",
+  // Kart sebebi — yeni yazılmış iş emri (WO-0015)
+  cardJustWritten: 'İş emri yazıldı — bir plan isteyerek başla',
+  // İş emri oluşturma (WO-0015)
+  newWorkOrder: '▸ Yeni iş emri',
+  woCreate: 'Yeni iş emri',
+  woCreateSubtitle: 'Bir başlık ve hedef gir. Oluştur de, iş emri “yazıldı” aşamasında açılır ve kendi sayfasına gidersin.',
+  woTitleLabel: 'Başlık',
+  woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
+  woDescLabel: 'Açıklama / hedef',
+  woDescPlaceholder: 'Bu iş emri neyi başarmalı? İlk prompt olarak mimar oturumuna gider.',
+  woTracksLabel: "Track’ler (ilgili repolar)",
+  woTracksHint: 'Karar deposu bir track değildir; listede yer almaz.',
+  woContextLabel: 'Context (dosya)',
+  woContextAdd: '▸ Dosya ekle',
+  woReviewLabel: 'Denetim',
+  woReviewGates: 'Sade — mimar otonom; plan onayı, revizyon ve merge’de sorar',
+  woReviewEvery: 'Her adımda — her rapordan sonra bana sor',
+  woCreateBtn: 'Oluştur',
 } as const;

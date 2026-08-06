@@ -76,3 +76,23 @@ point (ADR-0010). The operator's local-path + GitHub-remote links persist across
 This is a documented, time-boxed departure from the "definition through git only" ruling, not a
 reversal. The ruling's intent — "Docket does not own project facts; it observes them" — is preserved by
 making the observed rows discardable and the connection rows owned.
+
+## Addendum: M2 work-order creation (WO-0015, 2026-08-06)
+
+The same tension reaches the work-order document. Strict ADR-0009/ADR-0010 say a work order's `order.md`
+is git-owned and Docket observes it; until M3's git scanner lands, the operator cannot create a work order
+through Docket without Docket authoring the document. **M2 decision (temporary departure, parallel to the
+workspace addendum above):** creating a work order in Docket **authors `order.md` into the decision-store
+working tree** (`<decisionStore>/docs/work-orders/WO-NNNN-<slug>/order.md`) **and** inserts a thin observed
+`work_order` row + tracks. **Docket does not commit** — the operator reviews and commits, exactly as for a
+scaffolded `workspace.yaml`. Review-mode selection lives in `order.md` front-matter
+(`review_mode: gates|every-step`), not in the DB.
+
+**M3 reconciliation:** the git scanner re-observes `work_order` from the committed `order.md`.
+Operator-authored observed rows whose `order.md` was never committed are orphaned (the scanner rebuilds
+from git) — TD-021 extended. No document text is cached in the DB (ADR-0010 rule 1 holds: authoring to disk
+is not caching in the store).
+
+Like the workspace addendum, this is a time-boxed departure, not a reversal: the observed row is
+discardable, the `order.md` is the system of record, and the operator's commit is what makes a created
+work order real.

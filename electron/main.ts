@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
-import type { CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
 import type { CostSummary, SessionRef, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,10 +53,21 @@ ipcMain.handle('docket:source:delete-workspace', (_e, id: WorkspaceId) => store.
 ipcMain.handle('docket:source:add-repo-connection', (_e, id: WorkspaceId, repo: RepoConnectionInput) => store.addRepoConnection(id, repo));
 ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, path: string) => store.removeRepoConnection(id, path));
 
+// --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
+//   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
+//   renderer (ADR-0001). ---
+ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => store.createWorkOrder(input));
+
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
   return result.canceled || !result.filePaths.length ? null : result.filePaths[0]!;
+});
+
+// --- File picker (WO-0015): context-file attachments, native dialog, main-only ---
+ipcMain.handle('docket:pick-files', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
+  return result.canceled || !result.filePaths.length ? null : result.filePaths;
 });
 
 // --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by

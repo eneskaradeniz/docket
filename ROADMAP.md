@@ -75,6 +75,21 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       `session` row; `seedOwned` persists fixture session cost; the card/detail show the aggregate with a
       "No sessions yet" reason line. **TD-023 opened** (inert cost columns). The xterm transcript remains
       (TD-020).
+- [x] **WO-0014** — Workspace + repo-connection management (create / edit / remove). Done (merged PR
+      #12): the UI authors definitions directly into the observed tables + connections into the owned
+      `connection` table (ADR-0009 M2 addendum); native folder picker; decision-store select. The
+      seed-from-fixtures coexists with operator-created workspaces.
+- [x] **WO-0015** — Work-order creation + context. Done: the operator creates a work order via a modal
+      (title, description/objective, track checkboxes, local context files, denetim = `gates`/`every-step`).
+      Docket authors `order.md` into the decision-store working tree (**does not commit** — operator
+      commits, ADR-0009 second M2 addendum) and inserts a thin observed `work_order` row + tracks; the
+      board shows the card at "Yazıldı" with "Plan iste". `deriveStage` gains `written` (no sessions +
+      plan not approved) and a `just_written` card reason; the new `src/adapters/decision-store` adapter
+      holds the first fs write (`nextWorkOrderNumber`/`buildOrderMd`/`writeOrderMd`, no git). Fixture
+      work orders are no longer seeded (board starts empty; the constants stay as test data via
+      `seedFixtureWorkOrders`). `review_mode` is written to order.md front-matter for WO-0016 to consume.
+      M3's git scanner re-observes `order.md` (operator-authored rows not yet committed are orphaned —
+      TD-021).
 
 ## M3 — Evidence layer
 
