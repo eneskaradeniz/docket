@@ -19,6 +19,9 @@ import type {
   StageId,
   StageRailStep,
   StageStatus,
+  StepSpec,
+  StepStatus,
+  StepView,
   Track,
   TrackId,
   TrackLaneView,
@@ -143,6 +146,39 @@ export function deriveTrackStage(track: Pick<Track, 'pr' | 'merge'>, hasActiveSe
   if (track.merge) return 'merged';
   if (track.pr) return 'ci';
   return hasActiveSession ? 'implementation' : 'not_started';
+}
+
+// The plan's steps, zipped with their resolved runtime state (WO-0017). The SPECS come from
+// `parsePlanSteps(plan.md)` (git-owned text, read at view time — ADR-0010); the RESOLUTION map is built by
+// the store: it resolves each `scope.ref` to a branded TrackId (the adapter's job — core never constructs
+// one) and carries the run status/reportPath from the observed `work_order_step` rows.
+//
+// Derivation rules: a track-scoped step whose ref matched no track (`scopeTrackId` undefined) is `blocked`
+// — it can never run, and that is shown honestly rather than silently running it as 'all'. An 'all'-scoped
+// step is always runnable. A step with no run row is `pending`; otherwise its observed status wins.
+export interface ObservedStep {
+  status?: StepStatus; // undefined when the step has not yet run
+  reportPath?: string;
+  scopeTrackId?: TrackId; // the adapter's branded resolution; undefined for 'all' or an unmatched ref
+}
+
+export function deriveSteps(specs: StepSpec[], observed: ReadonlyMap<number, ObservedStep>): StepView[] {
+  return specs.map((s): StepView => {
+    const o = observed.get(s.idx);
+    const scopeTrackId = o?.scopeTrackId;
+    if (s.scope.kind === 'track' && scopeTrackId === undefined) {
+      return { idx: s.idx, role: s.role, aim: s.aim, scope: s.scope, status: 'blocked' };
+    }
+    return {
+      idx: s.idx,
+      role: s.role,
+      aim: s.aim,
+      scope: s.scope,
+      ...(scopeTrackId !== undefined ? { scopeTrackId } : {}),
+      status: o?.status ?? 'pending',
+      ...(o?.reportPath ? { reportPath: o.reportPath } : {}),
+    };
+  });
 }
 
 // whoseTurn — first match wins; default your_turn (a work order matching no rule is on the operator).
@@ -286,7 +322,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
   };
 }
 
-export function toDetailView(wo: WorkOrder): WorkOrderDetailView {
+export function toDetailView(wo: WorkOrder, steps: StepView[] = []): WorkOrderDetailView {
   return {
     id: wo.id,
     title: wo.title,
@@ -303,6 +339,7 @@ export function toDetailView(wo: WorkOrder): WorkOrderDetailView {
     ),
     evidence: deriveEvidence(wo),
     sessions: wo.sessions,
+    steps,
     primaryAction: derivePrimaryAction(wo),
     sources: wo.sources,
     cost: wo.cost,

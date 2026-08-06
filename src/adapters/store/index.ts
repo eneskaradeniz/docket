@@ -13,10 +13,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
+import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, type ObservedStep } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readWoDocs, writeOrderMd, writePlanMdById } from '../decision-store/decision-store';
-import { architectPrompt, parseOrderMd } from '../../core/order-md';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readWoDocs, writeOrderMd, writePlanMdById, writeStepReport } from '../decision-store/decision-store';
+import { architectPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
+import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrders, workspaces } from '../fixtures';
 import type {
@@ -26,6 +27,8 @@ import type {
   SessionRef,
   SessionRole,
   SourceLink,
+  StepRole,
+  StepView,
   Track,
   TrackId,
   WorkOrder,
@@ -41,6 +44,7 @@ export interface RecordSessionInput {
   scope?: TrackId;
   status: SessionRef['status'];
   cost?: CostSummary;
+  stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session
 }
 
 export interface Store extends WorkOrderSource {
@@ -50,6 +54,13 @@ export interface Store extends WorkOrderSource {
   recordSession(input: RecordSessionInput): void;
   /** The architect session's first prompt, assembled from the work order's order.md (WO-0016). */
   architectPromptFor(workOrderId: WorkOrderId): string | undefined;
+  /** Upsert a step's run outcome (WO-0017) — status + report pointer. Main side-effect on started/turn_complete. */
+  recordStep(workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void;
+  /** Write a step's report to the decision store + mark the step done (WO-0017). Main side-effect at turn_complete. */
+  recordStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole, body: string): void;
+  /** A step session's prompt + resolved track scope, assembled server-side from order.md + plan.md (WO-0017).
+   *  Returns undefined when the plan/step is missing — main then leaves the prompt untouched. */
+  stepPromptFor(workOrderId: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -89,6 +100,7 @@ type SessionRow = {
   cost_tokens_in: number | null;
   cost_tokens_out: number | null;
   cost_usd: number | null;
+  step_idx: number | null;
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
@@ -126,17 +138,18 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
     const transcript = JSON.parse(r.transcript) as SessionRef['transcript'];
     const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
     const providerSessionId = r.provider_session_id ?? undefined;
+    const stepIdx = r.step_idx ?? undefined;
     // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
     const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
     switch (r.status) {
       case 'stopped_asking':
-        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
       case 'running':
-        return { role: r.role, status: 'running', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
       case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
       case 'none':
-        return { role: r.role, status: 'none', transcript, scope, providerSessionId, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
     }
   });
 }
@@ -260,8 +273,8 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   db.prepare('DELETE FROM session WHERE provider_session_id = ?').run(input.providerSessionId);
   const stopAndAsk = input.status === 'stopped_asking' ? JSON.stringify({ question: '', gate: 'tool-permission' }) : null;
   db.prepare(
-    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd, step_idx)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     input.workOrderId,
@@ -273,6 +286,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.cost?.tokensIn ?? null,
     input.cost?.tokensOut ?? null,
     input.cost?.usd ?? null,
+    input.stepIdx ?? null,
   );
 }
 
@@ -287,6 +301,7 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has('cost_tokens_in')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_in INTEGER');
   if (!cols.has('cost_tokens_out')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_out INTEGER');
   if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
+  if (!cols.has('step_idx')) db.exec('ALTER TABLE session ADD COLUMN step_idx INTEGER');
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {
     // Legacy pre-TD-008 dev schema: `track` carried a stored `stage` column (now derived at hydrate).
@@ -389,6 +404,90 @@ function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): s
     if (repoBase(r.local_path) === dsSlug) return r.local_path;
   }
   return process.cwd();
+}
+
+// ===== Plan steps (WO-0017) =====
+//
+// Steps are detail-only: the board never asks for them. The specs (role/aim/scope) are parsed from plan.md's
+// ```steps fence at view time (ADR-0010 — document text is never stored); only the run OUTCOME is persisted
+// (work_order_step). These helpers resolve the WO's decision-store dir server-side, parse the fence, resolve
+// each step's track scope (the adapter's branded construction — ADR-0003), and drive core's deriveSteps.
+
+// The decision-store working-tree dir for a work order. Resolves the workspace's path server-side; undefined
+// when the WO or its workspace is gone. The path never crosses to the renderer (ADR-0001).
+function woDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
+  const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
+  return wo ? resolveDecisionStorePath(db, wid(wo.workspace_id)) : undefined;
+}
+
+// Resolve a step's scope.ref to a branded TrackId by matching it against the WO's tracks (repo slug, then id).
+// 'all'-scoped steps need no resolution. Unresolved → undefined → deriveSteps marks the step 'blocked'.
+function resolveStepScope(db: DatabaseSync, woId: WorkOrderId, ref: string): TrackId | undefined {
+  const rows = db.prepare('SELECT id, repo FROM track WHERE work_order_id = ?').all(woId) as { id: string; repo: string }[];
+  const t = rows.find((r) => r.repo === ref || r.id === ref);
+  return t ? tid(t.id) : undefined;
+}
+
+// Build the plan's StepView[] for the detail: parse plan.md's ```steps fence + zip with observed run rows +
+// resolve each track scope. [] when there is no plan or no fence (honest degradation).
+function buildWorkOrderSteps(db: DatabaseSync, id: WorkOrderId): StepView[] {
+  const dir = woDir(db, id);
+  if (!dir) return [];
+  const { plan } = readWoDocs(dir, id);
+  const specs = parsePlanSteps(plan);
+  if (specs.length === 0) return [];
+  const runRows = db.prepare('SELECT idx, status, report_path FROM work_order_step WHERE work_order_id = ?').all(id) as
+    { idx: number; status: 'active' | 'done'; report_path: string | null }[];
+  const run = new Map(runRows.map((r) => [r.idx, r]));
+  const observed = new Map<number, ObservedStep>();
+  for (const s of specs) {
+    observed.set(s.idx, {
+      scopeTrackId: s.scope.kind === 'track' ? resolveStepScope(db, id, s.scope.ref) : undefined,
+      status: run.get(s.idx)?.status,
+      reportPath: run.get(s.idx)?.report_path ?? undefined,
+    });
+  }
+  return deriveSteps(specs, observed);
+}
+
+// Upsert a step's run outcome. Idempotent via DELETE+INSERT on (work_order_id, idx), mirroring recordSessionRow.
+// status is 'active' (on started) or 'done' (on turn_complete, with the report pointer).
+function recordStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void {
+  db.prepare('DELETE FROM work_order_step WHERE work_order_id = ? AND idx = ?').run(workOrderId, idx);
+  db.prepare(
+    'INSERT INTO work_order_step (work_order_id, idx, status, report_path, observed_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(workOrderId, idx, patch.status, patch.reportPath ?? null, new Date().toISOString());
+}
+
+// Write a step's report to the decision store (reports/step-NN-<role>.md) and mark the step done with the
+// pointer. Mirrors approvePlan: path resolution + the working-tree write stay store-internal (ADR-0001), and
+// the agent never writes its own report. Throws if the WO dir is missing (order.md must exist first).
+function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, role: StepRole, body: string): void {
+  const dir = woDir(db, workOrderId);
+  if (!dir) throw new Error(`recordStepReport: no decision-store dir for ${workOrderId}`);
+  const reportPath = writeStepReport(dir, workOrderId, idx, role, body);
+  recordStepRow(db, workOrderId, idx, { status: 'done', reportPath });
+}
+
+// Assemble a step session's prompt + resolved scope server-side, symmetric to architectPromptFor. Reads
+// order.md (objective) + plan.md (planText + the step's spec); resolves the step's track scope. Returns
+// undefined when the plan/step is missing — main then leaves the prompt untouched (no accidental free-form run).
+function buildStepPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined {
+  const dir = woDir(db, id);
+  if (!dir) return undefined;
+  const { order, plan } = readWoDocs(dir, id);
+  if (!plan) return undefined;
+  const parsed = parseOrderMd(order);
+  const spec = parsePlanSteps(plan).find((s) => s.idx === idx);
+  if (!spec) return undefined;
+  const scope = spec.scope.kind === 'track' ? resolveStepScope(db, id, spec.scope.ref) : undefined;
+  const woDirOnDisk = findWorkOrderDir(dir, id);
+  const orderMdPath = woDirOnDisk ? `${woDirOnDisk}/order.md` : '';
+  const input = { objective: parsed.objective, step: spec, planText: plan, orderMdPath };
+  const prompt = spec.role === 'verifier' ? verifierPrompt(input) : implementerPrompt(input);
+  const out: { prompt: string; scope?: TrackId } = { prompt };
+  if (scope) out.scope = scope;
+  return out;
 }
 
 function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id: string }): WorkOrder {
@@ -505,6 +604,22 @@ export function createStore(dbPath: string): Store {
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
     },
+    // The plan's steps (WO-0017) — specs parsed from plan.md + zipped with the observed run state. Detail-only.
+    getWorkOrderSteps: (id: WorkOrderId) => Promise.resolve(buildWorkOrderSteps(db, id)),
+    // A step report body, read from the decision store at view time (ADR-0010). '' when the report is absent.
+    getStepReport: (id: WorkOrderId, idx: number, role: StepRole) => {
+      const dir = woDir(db, id);
+      return Promise.resolve(dir ? readStepReport(dir, id, idx, role) : '');
+    },
+    // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
+    recordStep: (workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }) =>
+      recordStepRow(db, workOrderId, idx, patch),
+    // Write a step's report + mark the step done — main side-effect at turn_complete (WO-0017).
+    recordStepReport: (workOrderId: WorkOrderId, idx: number, role: StepRole, body: string) =>
+      recordStepReportRow(db, workOrderId, idx, role, body),
+    // A step session's prompt + resolved scope, assembled server-side from order.md + plan.md (WO-0017).
+    // Undefined when the plan/step is missing → main leaves the prompt untouched.
+    stepPromptFor: (workOrderId: WorkOrderId, idx: number) => buildStepPrompt(db, workOrderId, idx),
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);
       db.exec(SCHEMA_SQL);

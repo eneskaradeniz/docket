@@ -217,7 +217,13 @@ export function createRunner(): SessionRunner {
           if (msg.subtype && msg.subtype !== 'success') {
             out.push({ kind: 'error', message: msg.errors?.[0] ?? msg.subtype });
           }
-          out.push({ kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg) });
+          // `result` is the SDK's canonical turn answer (WO-0017) — the composition root captures it as the
+          // step report at turn_complete. Omitted when absent (the fold ignores it either way).
+          out.push(
+            msg.result
+              ? { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), result: msg.result }
+              : { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg) },
+          );
           break;
         }
         default:

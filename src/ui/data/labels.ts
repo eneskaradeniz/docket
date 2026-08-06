@@ -14,6 +14,7 @@ import type {
   SessionRef,
   SessionRole,
   SourceKind,
+  StepStatus,
   StageId,
   TrackStage,
   TrackMergeAction,
@@ -156,6 +157,21 @@ export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
   stopped_asking: 'İzin istiyor',
   idle: 'Boşta',
   none: 'Yok',
+};
+
+// Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘).
+export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
+  pending: 'Bekliyor',
+  active: 'Çalışıyor',
+  done: 'Tamam',
+  blocked: 'Engelli',
+};
+
+export const STEP_MARK: Record<StepStatus, string> = {
+  done: '✓',
+  active: '►',
+  pending: '○',
+  blocked: '⊘',
 };
 
 // WO-0008: canlı oturum durumu (runner olay katlaması), yukarıdaki fixture SessionRef durumundan
@@ -375,4 +391,14 @@ export const UI = {
   modeDetail: 'Detay',
   // Onboarding: ilk çalışma alanı (WO-0016)
   noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',
+  // Plan adımları (WO-0017)
+  stepsHeader: 'Plan',
+  stepsUnit: 'adım',
+  stepRun: 'Çalıştır',
+  stepResume: 'Sürdür',
+  stepReportTitle: 'Rapor',
+  stepReportMissing: '(rapor henüz yok)',
+  stepScopeAll: 'hepsi',
+  stepBlockedHint: 'kapsam bir track ile eşleşmiyor',
+  noSteps: 'Onaylı plan çalışan bir adım listesi içermiyor — mimardan yeniden plan iste.',
 } as const;

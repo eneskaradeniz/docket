@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { architectPrompt, parseOrderMd } from '../order-md';
+import { architectPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../order-md';
+import type { StepSpec } from '../types';
 
 // Mirrors the document WO-0015's buildOrderMd produces (front matter + Objective section).
 const sample = `---
@@ -89,5 +90,59 @@ describe('architectPrompt', () => {
   it('carries the objective into the prompt', () => {
     const p = architectPrompt({ objective: 'Make the avatar upload not crash.', reviewMode: 'gates', orderMdPath: '/p/order.md' });
     expect(p).toContain('Make the avatar upload not crash.');
+  });
+});
+
+// WO-0017: the architect must PRODUCE the ```steps block — otherwise parsePlanSteps always returns [].
+describe('architectPrompt — steps fence producer', () => {
+  it('instructs the architect to end the plan with a ```steps block', () => {
+    const p = architectPrompt({ objective: 'x', reviewMode: 'gates', orderMdPath: '/p/order.md' });
+    expect(p).toContain('```steps');
+  });
+});
+
+const implStep: StepSpec = { idx: 2, role: 'implementer', aim: 'core parser', scope: { kind: 'track', ref: 'app' } };
+
+describe('implementerPrompt', () => {
+  it('references the order.md path', () => {
+    const p = implementerPrompt({ objective: 'Fix the crash.', step: implStep, planText: '# Plan\nbody', orderMdPath: '/r/o.md' });
+    expect(p).toContain('/r/o.md');
+  });
+
+  it('carries the objective into the prompt', () => {
+    const p = implementerPrompt({ objective: 'Fix the crash.', step: implStep, planText: '', orderMdPath: '/r/o.md' });
+    expect(p).toContain('Fix the crash.');
+  });
+
+  it('names the step index, aim and scope', () => {
+    const p = implementerPrompt({ objective: 'x', step: implStep, planText: '', orderMdPath: '/r/o.md' });
+    expect(p).toContain('step 2');
+    expect(p).toContain('core parser');
+    expect(p).toContain('app');
+  });
+
+  it('includes the approved plan text verbatim', () => {
+    const p = implementerPrompt({ objective: 'x', step: implStep, planText: '# THE PLAN', orderMdPath: '/r/o.md' });
+    expect(p).toContain('# THE PLAN');
+  });
+
+  it('asks the implementer to end with a report', () => {
+    const p = implementerPrompt({ objective: 'x', step: implStep, planText: '', orderMdPath: '/r/o.md' });
+    expect(p.toLowerCase()).toContain('report');
+  });
+});
+
+describe('verifierPrompt', () => {
+  const vStep: StepSpec = { idx: 3, role: 'verifier', aim: 'security', scope: { kind: 'all' } };
+
+  it('names the verification focus and read-only constraint', () => {
+    const p = verifierPrompt({ objective: 'x', step: vStep, planText: '', orderMdPath: '/r/o.md' });
+    expect(p).toContain('security');
+    expect(p.toLowerCase()).toContain('read-only');
+  });
+
+  it('asks the verifier to end with a report', () => {
+    const p = verifierPrompt({ objective: 'x', step: vStep, planText: '', orderMdPath: '/r/o.md' });
+    expect(p.toLowerCase()).toContain('report');
   });
 });

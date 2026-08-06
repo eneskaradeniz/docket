@@ -84,7 +84,41 @@ export type SessionRef = (
   scope?: TrackId;
   providerSessionId?: string;
   cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows
+  stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
 };
+
+// --- Plan steps (WO-0017). A Plan is an ordered list of Steps (PRODUCT.md); each Step is a role + aim +
+//     track scope, runs as one session, and produces a report. The step SPECS are parsed from the ```steps
+//     fence in plan.md at view time (ADR-0010 — document text is never stored); only the run OUTCOME
+//     (status + report pointer) is persisted. Roles reuse SessionRole (ADR-0002). ---
+export type StepRole = SessionRole;
+
+// Scope is classified in core (all vs a track ref) but the ref is resolved + branded to a TrackId only in
+// the adapter (ADR-0003 rule 1 — core never constructs a branded identity).
+export type StepScope = { kind: 'all' } | { kind: 'track'; ref: string };
+
+// Static spec straight from the parser (pure text → struct). No branded ids.
+export interface StepSpec {
+  idx: number; // 1-based position in the ```steps fence
+  role: StepRole;
+  aim: string; // the "what" label, non-empty
+  scope: StepScope;
+}
+
+// Runtime status observed by Docket (mirrors the mock's done/active/pending/blocked).
+export type StepStatus = 'pending' | 'active' | 'done' | 'blocked';
+
+// The view shape the UI renders. `scopeTrackId` is branded by the adapter (undefined for 'all' or when the
+// ref matched no track → status 'blocked'). Composed in the adapter, never constructed in core.
+export interface StepView {
+  idx: number;
+  role: StepRole;
+  aim: string;
+  scope: StepScope;
+  scopeTrackId?: TrackId;
+  status: StepStatus;
+  reportPath?: string; // relative to the WO dir, e.g. "reports/step-02-implementer.md"
+}
 
 // --- Track (per-repo lane). No session field — sessions live once, on the work order. ---
 export interface PrRef {
@@ -242,6 +276,7 @@ export interface WorkOrderDetailView {
   tracks: TrackLaneView[];
   evidence: EvidenceItem[]; // single left-column checklist: WO-level + per-track
   sessions: SessionRef[];
+  steps: StepView[]; // the plan's steps (WO-0017); [] when plan.md has no ```steps fence or plan not approved
   primaryAction: PrimaryAction;
   sources: SourceLink[];
   cost: CostSummary;

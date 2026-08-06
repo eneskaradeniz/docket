@@ -4,7 +4,7 @@
 //
 // Async (WO-0009): the store is a real data source, so reads return Promises and the UI
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
-import type { RepoId, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
+import type { RepoId, StepRole, StepView, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 
 export interface RepoConnectionInput {
   path: string;
@@ -59,4 +59,13 @@ export interface WorkOrderSource {
   // the architect session's proposed plan (captured from the plan_ready event); it never enters the DB.
   // M2 ruling: the plan_approval gate is satisfied by the observed flag, not a commit sha (TD-005/TD-025).
   approvePlan(workOrderId: WorkOrderId, planText: string): Promise<void>;
+
+  // The plan's steps (WO-0017): specs parsed from plan.md's ```steps fence at view time, zipped with the
+  // observed run state. [] when the plan has no steps fence or isn't approved. Detail-only — the board never
+  // asks for steps (ADR-0010: specs are document text, never stored; only the run outcome is persisted).
+  getWorkOrderSteps(workOrderId: WorkOrderId): Promise<StepView[]>;
+
+  // A step's report body, read from the decision store at view time (ADR-0010 — report text is in git, not
+  // the DB). Lazy per-step read. '' when the report file is absent (step not yet run).
+  getStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole): Promise<string>;
 }
