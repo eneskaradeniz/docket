@@ -51,3 +51,25 @@ describe('deriveSteps', () => {
     expect(out[0]!.scopeTrackId).toBeUndefined();
   });
 });
+
+describe('deriveSteps — verdict pass-through (WO-0020)', () => {
+  it('a done step with verdict proceed carries verdict + verdictPath', () => {
+    const observed = new Map<number, ObservedStep>([[1, { status: 'done', reportPath: 'r', verdict: 'proceed', verdictPath: 'verdicts/step-01.md' }]]);
+    const out = deriveSteps([allSpec], observed);
+    expect(out[0]!.verdict).toBe('proceed');
+    expect(out[0]!.verdictPath).toBe('verdicts/step-01.md');
+  });
+
+  it('a done step with no verdict → verdict/verdictPath undefined (absent-not-disabled)', () => {
+    const observed = new Map<number, ObservedStep>([[1, { status: 'done', reportPath: 'r' }]]);
+    const out = deriveSteps([allSpec], observed);
+    expect(out[0]!.verdict).toBeUndefined();
+    expect(out[0]!.verdictPath).toBeUndefined();
+  });
+
+  it('a done step with verdict revise carries the revise outcome', () => {
+    const observed = new Map<number, ObservedStep>([[1, { status: 'done', verdict: 'revise' }]]);
+    const out = deriveSteps([allSpec], observed);
+    expect(out[0]!.verdict).toBe('revise');
+  });
+});

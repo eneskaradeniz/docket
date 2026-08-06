@@ -118,6 +118,8 @@ export interface StepView {
   scopeTrackId?: TrackId;
   status: StepStatus;
   reportPath?: string; // relative to the WO dir, e.g. "reports/step-02-implementer.md"
+  verdict?: 'proceed' | 'revise'; // the architect's review outcome (WO-0020); absent = not yet reviewed
+  verdictPath?: string; // relative to the WO dir, e.g. "verdicts/step-02.md"
 }
 
 // --- Track (per-repo lane). No session field — sessions live once, on the work order. ---
@@ -277,6 +279,7 @@ export interface WorkOrderDetailView {
   evidence: EvidenceItem[]; // single left-column checklist: WO-level + per-track
   sessions: SessionRef[];
   steps: StepView[]; // the plan's steps (WO-0017); [] when plan.md has no ```steps fence or plan not approved
+  reviewMode: 'gates' | 'every-step'; // the WO's review cadence (WO-0020) — gates auto-proceeds; every-step pauses
   primaryAction: PrimaryAction;
   sources: SourceLink[];
   cost: CostSummary;

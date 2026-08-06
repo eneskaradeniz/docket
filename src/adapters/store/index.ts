@@ -15,8 +15,8 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, type ObservedStep } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readWoDocs, removeWorkOrderDir, writeOrderMd, writePlanMdById, writeStepReport } from '../decision-store/decision-store';
-import { architectPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrders, workspaces } from '../fixtures';
@@ -64,6 +64,10 @@ export interface Store extends WorkOrderSource {
   /** A step session's prompt + resolved track scope, assembled server-side from order.md + plan.md (WO-0017).
    *  Returns undefined when the plan/step is missing — main then leaves the prompt untouched. */
   stepPromptFor(workOrderId: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined;
+  /** Write the architect's verdict for a step (WO-0020): verdicts/step-NN.md + UPDATE the verdict columns. */
+  recordStepVerdict(workOrderId: WorkOrderId, idx: number, verdict: 'proceed' | 'revise', body: string): void;
+  /** The architect's REVIEW prompt for a step, assembled server-side (WO-0020). Undefined when plan/step/report missing. */
+  stepReviewPromptFor(workOrderId: WorkOrderId, idx: number): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -318,6 +322,11 @@ function migrate(db: DatabaseSync): void {
     );
     db.exec('DROP TABLE track_legacy');
   }
+  // WO-0020: work_order_step gains the verdict columns on pre-existing DBs (additive ALTER — no CHECK needed;
+  // the store validates in TS, and observed tables are discardable so a reseed rebuilds any CHECK).
+  const stepCols = new Set((db.prepare('PRAGMA table_info(work_order_step)').all() as { name: string }[]).map((c) => c.name));
+  if (!stepCols.has('verdict')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict TEXT');
+  if (!stepCols.has('verdict_path')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict_path TEXT');
 }
 
 // --- Workspace + repo-connection CRUD (WO-0014) ---
@@ -439,8 +448,8 @@ function buildWorkOrderSteps(db: DatabaseSync, id: WorkOrderId): StepView[] {
   const { plan } = readWoDocs(dir, id);
   const specs = parsePlanSteps(plan);
   if (specs.length === 0) return [];
-  const runRows = db.prepare('SELECT idx, status, report_path FROM work_order_step WHERE work_order_id = ?').all(id) as
-    { idx: number; status: 'active' | 'done'; report_path: string | null }[];
+  const runRows = db.prepare('SELECT idx, status, report_path, verdict, verdict_path FROM work_order_step WHERE work_order_id = ?').all(id) as
+    { idx: number; status: 'active' | 'done'; report_path: string | null; verdict: 'proceed' | 'revise' | null; verdict_path: string | null }[];
   const run = new Map(runRows.map((r) => [r.idx, r]));
   const observed = new Map<number, ObservedStep>();
   for (const s of specs) {
@@ -448,6 +457,8 @@ function buildWorkOrderSteps(db: DatabaseSync, id: WorkOrderId): StepView[] {
       scopeTrackId: s.scope.kind === 'track' ? resolveStepScope(db, id, s.scope.ref) : undefined,
       status: run.get(s.idx)?.status,
       reportPath: run.get(s.idx)?.report_path ?? undefined,
+      verdict: run.get(s.idx)?.verdict ?? undefined,
+      verdictPath: run.get(s.idx)?.verdict_path ?? undefined,
     });
   }
   return deriveSteps(specs, observed);
@@ -460,6 +471,20 @@ function recordStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, 
   db.prepare(
     'INSERT INTO work_order_step (work_order_id, idx, status, report_path, observed_at) VALUES (?, ?, ?, ?, ?)',
   ).run(workOrderId, idx, patch.status, patch.reportPath ?? null, new Date().toISOString());
+}
+
+// Record the architect's verdict for a step (WO-0020): UPDATE verdict + verdict_path on the existing row
+// (preserves status/report_path; idempotent — a re-review overwrites). No-op if the row is absent (step must be
+// done first; main guarantees the ordering).
+function recordStepVerdictRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, verdict: 'proceed' | 'revise', verdictPath: string): void {
+  db.prepare('UPDATE work_order_step SET verdict = ?, verdict_path = ?, observed_at = ? WHERE work_order_id = ? AND idx = ?')
+    .run(verdict, verdictPath, new Date().toISOString(), workOrderId, idx);
+}
+
+// Reset a step to pending (the revise re-run path, WO-0020): DELETE its observed row (absence of a row IS
+// pending, per the schema comment). The report/verdict files are overwritten on re-run/re-review — no fs cleanup.
+function resetStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number): void {
+  db.prepare('DELETE FROM work_order_step WHERE work_order_id = ? AND idx = ?').run(workOrderId, idx);
 }
 
 // Write a step's report to the decision store (reports/step-NN-<role>.md) and mark the step done with the
@@ -504,6 +529,24 @@ function buildStepPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): { prom
   const out: { prompt: string; scope?: TrackId } = { prompt };
   if (scope) out.scope = scope;
   return out;
+}
+
+// Assemble the architect's REVIEW prompt for a step (WO-0020), symmetric to buildStepPrompt. Reads order.md
+// (objective) + plan.md (planText + the step's spec) + the step's report body, and builds architectReviewPrompt.
+// Returns undefined when the plan/step/report is missing — main then leaves the prompt untouched.
+function buildStepReviewPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): string | undefined {
+  const dir = woDir(db, id);
+  if (!dir) return undefined;
+  const { order, plan } = readWoDocs(dir, id);
+  if (!plan) return undefined;
+  const parsed = parseOrderMd(order);
+  const spec = parsePlanSteps(plan).find((s) => s.idx === idx);
+  if (!spec) return undefined;
+  const reportBody = readStepReport(dir, id, idx, spec.role);
+  const reportPath = `reports/step-${String(idx).padStart(2, '0')}-${spec.role}.md`;
+  const woDirOnDisk = findWorkOrderDir(dir, id);
+  const orderMdPath = woDirOnDisk ? `${woDirOnDisk}/order.md` : '';
+  return architectReviewPrompt({ objective: parsed.objective, step: spec, reportBody, planText: plan, orderMdPath, reportPath });
 }
 
 function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id: string }): WorkOrder {
@@ -633,6 +676,22 @@ export function createStore(dbPath: string): Store {
     // Write a step's report + mark the step done — main side-effect at turn_complete (WO-0017).
     recordStepReport: (workOrderId: WorkOrderId, idx: number, role: StepRole, body: string) =>
       recordStepReportRow(db, workOrderId, idx, role, body),
+    // Record the architect's verdict (WO-0020) — write verdicts/step-NN.md + UPDATE the verdict columns.
+    recordStepVerdict: (workOrderId: WorkOrderId, idx: number, verdict: 'proceed' | 'revise', body: string) => {
+      const dir = woDir(db, workOrderId);
+      if (!dir) return;
+      const verdictPath = writeStepVerdict(dir, workOrderId, idx, body);
+      recordStepVerdictRow(db, workOrderId, idx, verdict, verdictPath);
+    },
+    // The architect's review prompt for a step — assembled server-side (WO-0020). Undefined → main leaves prompt.
+    stepReviewPromptFor: (workOrderId: WorkOrderId, idx: number) => buildStepReviewPrompt(db, workOrderId, idx),
+    // A step verdict body, read at view time (WO-0020). '' when the verdict is absent.
+    getStepVerdict: (id: WorkOrderId, idx: number) => {
+      const dir = woDir(db, id);
+      return Promise.resolve(dir ? readStepVerdict(dir, id, idx) : '');
+    },
+    // Reset a step to pending (WO-0020 revise path) — deletes the observed row; files are overwritten on re-run.
+    resetStep: (id: WorkOrderId, idx: number) => Promise.resolve(resetStepRow(db, id, idx)),
     // Persist the proposed plan to plan.md as PENDING (gate 0) on plan_ready — survives restart (WO-0020/TD-025).
     // approvePlan re-writes + flips the gate; idempotent if called again with the same text.
     savePendingPlan: (workOrderId: WorkOrderId, planText: string) => {

@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS work_order_step (
   idx INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('active','done')),
   report_path TEXT,
+  verdict TEXT,          -- 'proceed' | 'revise' | NULL (the architect's review outcome; WO-0020)
+  verdict_path TEXT,     -- 'verdicts/step-NN.md' | NULL
   observed_at TEXT NOT NULL,
   PRIMARY KEY (work_order_id, idx)
 );

@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
+import { parseVerdict } from '../src/core/verdict';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
 import type { CostSummary, SessionRef, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
@@ -67,6 +68,10 @@ ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: str
 ipcMain.handle('docket:source:get-work-order-steps', (_e, id: WorkOrderId) => store.getWorkOrderSteps(id));
 ipcMain.handle('docket:source:get-step-report', (_e, id: WorkOrderId, idx: number, role: StepRole) => store.getStepReport(id, idx, role));
 
+// --- Step verdict + reset (WO-0020). The verdict text is read at view time; reset deletes the observed row. ---
+ipcMain.handle('docket:source:get-step-verdict', (_e, id: WorkOrderId, idx: number) => store.getStepVerdict(id, idx));
+ipcMain.handle('docket:source:reset-step', (_e, id: WorkOrderId, idx: number) => store.resetStep(id, idx));
+
 // --- Work-order deletion (WO-0020). Cascade-deletes DB rows + removes the decision-store folder. ---
 ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store.deleteWorkOrder(id));
 
@@ -92,11 +97,12 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // restart and resume-by-id is reachable. The renderer never writes; the root orchestrates.
   let providerSessionId: string | undefined;
   const stepIndex = input.stepIndex; // a step drive (WO-0017) when set
+  const reviewStepIndex = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
   // Accumulate assistant_text as a fallback report body (the SDK's `result` on turn_complete is preferred).
   let assistantText = '';
   const record = (status: SessionRef['status'], cost?: CostSummary): void => {
     if (!providerSessionId) return;
-    store.recordSession({ providerSessionId, workOrderId: input.workOrderId, role: input.role, scope: input.scope, status, cost, stepIdx: stepIndex });
+    store.recordSession({ providerSessionId, workOrderId: input.workOrderId, role: input.role, scope: input.scope, status, cost, stepIdx: stepIndex ?? reviewStepIndex });
   };
   // Fill the first prompt from the decision store when the renderer sent none. The architect (WO-0016) and a
   // step drive (WO-0017) both assemble server-side from order.md/plan.md — the renderer never parses document
@@ -111,6 +117,10 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
       driveInput.prompt = assembled.prompt;
       driveInput.scope = assembled.scope;
     }
+  } else if (reviewStepIndex !== undefined && !input.resume && !input.prompt) {
+    // An architect REVIEW drive (WO-0020): assemble the review prompt from the step's report + spec.
+    const prompt = store.stepReviewPromptFor(input.workOrderId, reviewStepIndex);
+    if (prompt) driveInput.prompt = prompt;
   }
   try {
     for await (const ev of runner.drive(driveInput)) {
@@ -137,6 +147,17 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
             ? body
             : `# Step ${stepIndex} (${input.role})\n\n_(no summary captured — the turn ended without assistant text)_`;
           store.recordStepReport(input.workOrderId, stepIndex, input.role, reportBody);
+        }
+        // Capture the architect's review verdict (WO-0020): parse the VERDICT suffix; unknown → revise (safe side —
+        // an absent verdict is never silently auto-proceed). Docket writes the verdict file (the agent doesn't).
+        if (reviewStepIndex !== undefined) {
+          const text = ev.result ?? assistantText;
+          const v = parseVerdict(text);
+          const outcome: 'proceed' | 'revise' = v.outcome === 'proceed' ? 'proceed' : 'revise';
+          const body = v.outcome === 'unknown'
+            ? `${text}\n\n_(the architect did not give a clear VERDICT — surfaced for the operator)_`
+            : text;
+          store.recordStepVerdict(input.workOrderId, reviewStepIndex, outcome, body);
         }
       }
     }

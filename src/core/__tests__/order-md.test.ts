@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { architectPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../order-md';
+import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../order-md';
 import type { StepSpec } from '../types';
 
 // Mirrors the document WO-0015's buildOrderMd produces (front matter + Objective section).
@@ -144,5 +144,22 @@ describe('verifierPrompt', () => {
   it('asks the verifier to end with a report', () => {
     const p = verifierPrompt({ objective: 'x', step: vStep, planText: '', orderMdPath: '/r/o.md' });
     expect(p.toLowerCase()).toContain('report');
+  });
+});
+
+describe('architectReviewPrompt (WO-0020)', () => {
+  const step: StepSpec = { idx: 1, role: 'implementer', aim: 'add the thing', scope: { kind: 'track', ref: 'app' } };
+  const base = { objective: 'x', step, reportBody: '', planText: '', orderMdPath: '/r/o.md', reportPath: 'reports/step-01-implementer.md' };
+
+  it('references the report path so the architect reads the report', () => {
+    expect(architectReviewPrompt(base)).toContain('reports/step-01-implementer.md');
+  });
+
+  it('names the step aim and the VERDICT instruction', () => {
+    const p = architectReviewPrompt(base);
+    expect(p).toContain('add the thing');
+    expect(p).toContain('VERDICT:');
+    expect(p).toContain('proceed');
+    expect(p).toContain('revise');
   });
 });

@@ -69,6 +69,14 @@ export interface WorkOrderSource {
   // the DB). Lazy per-step read. '' when the report file is absent (step not yet run).
   getStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole): Promise<string>;
 
+  // A step's verdict body (the architect's review), read from the decision store at view time (WO-0020).
+  // Lazy per-step read. '' when the verdict is absent (step not yet reviewed).
+  getStepVerdict(workOrderId: WorkOrderId, idx: number): Promise<string>;
+
+  // Reset a step so it can be re-run: deletes its observed row (status/report/verdict) so deriveSteps shows
+  // 'pending' again (WO-0020 revise path). The report/verdict files are overwritten on re-run/re-review.
+  resetStep(workOrderId: WorkOrderId, idx: number): Promise<void>;
+
   // Delete a work order (WO-0020): cascade-delete its DB rows (sessions, tracks, steps, sources) + remove its
   // decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched. The operator
   // confirms in the UI before this fires.

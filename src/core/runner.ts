@@ -52,6 +52,10 @@ export interface DriveInput {
    *  prompt server-side from the step's spec + writes the step's report at turn_complete. Omit for the
    *  architect plan session and free-form runs. */
   stepIndex?: number;
+  /** The 1-based index of the step whose report the architect is REVIEWING (WO-0020). role:'architect' + this
+   *  field = a review drive (distinct from the plan session): main fills the review prompt + captures the
+   *  verdict at turn_complete. */
+  reviewStepIndex?: number;
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the

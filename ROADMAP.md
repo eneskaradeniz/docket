@@ -122,6 +122,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       latent `git push`/`commit` false-negative), read allowlist. Unknown verbs now `ask` the verifier (was:
       silent allow — the TD-026 hole); implementer/architect unchanged. **TD-026 closed.** Verifier reads
       (`cat`/`git show`/`od`/`git log`/`grep`) now allow.
+- [x] **WO-0020** — Architect review loop. Done: after each step's report an architect session reviews it and
+      emits a verdict (proceed/revise); `review_mode` branches the loop — gates auto-proceeds on proceed and
+      surfaces the operator only on revise/uncertain; every-step shows the verdict card after every step.
+      Verdict home settles **TD-009** (text in `verdicts/step-NN.md`, outcome on `work_order_step`); verdict
+      captured via `parseVerdict` on `turn_complete.result` (unknown → revise, safe side); `DriveInput.reviewStepIndex`
+      + `ReviewPane` + `VerdictCard`; `deriveStage` unchanged (WO-level `architect_audit` stays M3/TD-025). The
+      plan-driven pipeline `docs/PRODUCT.md` describes is now complete end-to-end.
 
 ## M3 — Evidence layer
 
