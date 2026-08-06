@@ -326,6 +326,51 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
   };
 }
 
+// ===== WO-level phase (WO-0021) =====
+//
+// The plan-driven macro phase the operator is in — derived from the stage + the step list + whether a plan is
+// pending (docs.plan exists but the gate is unflipped). The primary surface (a one-line banner); the fixed
+// StageRail stays the secondary view behind "Akışı göster". A revise verdict is NOT its own phase (the
+// VerdictCard carries it; the macro phase stays `implementing`).
+export type WoPhase =
+  | { kind: 'just_written' }
+  | { kind: 'planning' } // architect_approval, no plan.md yet
+  | { kind: 'plan_ready' } // architect_approval, plan.md present (pending — TD-025 restart recovery)
+  | { kind: 'implementing'; done: number; total: number }
+  | { kind: 'reviewing'; stepIdx: number } // first done step with no verdict (the WO-0020 review trigger)
+  | { kind: 'closing' }
+  | { kind: 'done' };
+
+export function derivePhase(
+  wo: Pick<WorkOrder, 'stage'>,
+  steps: ReadonlyArray<Pick<StepView, 'idx' | 'status' | 'verdict'>>,
+  hasPendingPlan: boolean,
+): WoPhase {
+  switch (wo.stage) {
+    case 'written':
+      return { kind: 'just_written' };
+    case 'plan_requested':
+    case 'plan_ready':
+    case 'architect_approval':
+      // In M2 deriveStage collapses these to architect_approval; the plan_pending flag distinguishes them.
+      return hasPendingPlan ? { kind: 'plan_ready' } : { kind: 'planning' };
+    case 'implementation': {
+      const reviewing = steps.find((s) => s.status === 'done' && !s.verdict);
+      if (reviewing) return { kind: 'reviewing', stepIdx: reviewing.idx };
+      const done = steps.filter((s) => s.status === 'done').length;
+      return { kind: 'implementing', done, total: steps.length };
+    }
+    case 'verification':
+    case 'architect_audit':
+      // Not reached in M2 (deriveStage never yields these — TD-025); coerce to implementing if they ever are.
+      return { kind: 'implementing', done: 0, total: 0 };
+    case 'closure':
+      return { kind: 'closing' };
+    case 'closed':
+      return { kind: 'done' };
+  }
+}
+
 export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 'gates' | 'every-step' = 'gates'): WorkOrderDetailView {
   return {
     id: wo.id,

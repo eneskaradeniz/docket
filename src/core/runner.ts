@@ -255,6 +255,16 @@ export function classifyCommandLine(command: string): ShellCommandClassification
   return { isWrite: false, command: trimmed, ambiguous: verb !== '' };
 }
 
+/** Should the adapter synthesise a `turn_complete` when a plan-mode stream ended without one? Only when
+ *  `plan_ready` fired (ExitPlanMode) but no result message followed — the SDK can end the stream there, leaving
+ *  the architect plan session without a cost-carrying turn_complete (so its cost stays NULL → WO cost misses
+ *  it; WO-0021). If the result DOES arrive (turn_complete emitted) this returns false — no double-emit. Never
+ *  papers over a non-plan drive that ended without a result (planReadyEmitted false → false; that's the catch's
+ *  error path, not this). */
+export function shouldSynthesiseTurnComplete(planReadyEmitted: boolean, turnCompleteEmitted: boolean): boolean {
+  return planReadyEmitted && !turnCompleteEmitted;
+}
+
 /** Human label for a tool-use input (a path/command when present) — keeps the UI off raw ids. */
 export function summarizeToolInput(input: Record<string, unknown>): string {
   for (const k of ['file_path', 'path', 'command', 'notebook_path', 'url']) {

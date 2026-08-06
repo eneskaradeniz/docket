@@ -129,6 +129,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       captured via `parseVerdict` on `turn_complete.result` (unknown → revise, safe side); `DriveInput.reviewStepIndex`
       + `ReviewPane` + `VerdictCard`; `deriveStage` unchanged (WO-level `architect_audit` stays M3/TD-025). The
       plan-driven pipeline `docs/PRODUCT.md` describes is now complete end-to-end.
+- [x] **WO-0021** — UX debt: phase indicator + architect-plan cost. Done: a pure `derivePhase` → a one-line
+      denim phase banner ("Plan hazır — onayla" / "Uygulama · 2/5 adım" / "Mimar denetimi · adım N" /
+      "Tamamlandı") — the plan-driven macro phase is now the primary surface, the 9-stage rail stays secondary;
+      and the architect plan session's cost is always captured (`shouldSynthesiseTurnComplete` — a safe
+      synthetic `turn_complete` when a plan-mode stream ends without a `result`, so the session cost is never
+      NULL; no-op if the SDK does emit `result`).
 
 ## M3 — Evidence layer
 

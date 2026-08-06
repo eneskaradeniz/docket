@@ -5,6 +5,7 @@ import {
   foldSessionEvent,
   initialSessionState,
   isUnder,
+  shouldSynthesiseTurnComplete,
   simplePhaseFromState,
   summarizeToolInput,
   writeScopeFor,
@@ -317,6 +318,21 @@ describe('classifyCommandLine — reads, git subcommands, ambiguous', () => {
       expect(c.isWrite).toBe(false);
       expect(c.ambiguous).toBe(true);
     }
+  });
+});
+
+describe('shouldSynthesiseTurnComplete (WO-0021)', () => {
+  it('plan_ready emitted, no turn_complete → true (synthesise so cost is captured)', () => {
+    expect(shouldSynthesiseTurnComplete(true, false)).toBe(true);
+  });
+  it('turn_complete already emitted → false (no double-emit)', () => {
+    expect(shouldSynthesiseTurnComplete(true, true)).toBe(false);
+  });
+  it('no plan_ready, no turn_complete → false (non-plan drive — the catch handles it)', () => {
+    expect(shouldSynthesiseTurnComplete(false, false)).toBe(false);
+  });
+  it('no plan_ready but turn_complete → false', () => {
+    expect(shouldSynthesiseTurnComplete(false, true)).toBe(false);
   });
 });
 

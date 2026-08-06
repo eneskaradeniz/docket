@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { StepRole, StepView, WorkOrderDetailView } from '../../../core/types';
-import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatUsd } from '../../data/labels';
+import { derivePhase } from '../../../core/derive';
+import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatUsd, phaseLabelText } from '../../data/labels';
 import { ActionCard } from './ActionCard';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
@@ -141,6 +142,12 @@ export function WorkOrderDetail({
       <div>
         <p className="text-[12px] text-inkdim">{meta}</p>
         <h1 className="mt-0.5 text-[20px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+      </div>
+
+      {/* WO-level faz göstergesi (WO-0021) — plan-driven akışın birincil yüzeyi; ray ikincil (Akışı göster). */}
+      <div className="flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-denim pulse" />
+        <span className="text-[14px] text-ink">{phaseLabelText(derivePhase(detail, detail.steps, !!docs.plan))}</span>
       </div>
 
       {allStepsDone ? (
