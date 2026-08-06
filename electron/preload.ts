@@ -24,6 +24,7 @@ const source: WorkOrderSource = {
   removeRepoConnection: (id: WorkspaceId, path: string) =>
     ipcRenderer.invoke('docket:source:remove-repo-connection', id, path),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
+  approvePlan: (id: WorkOrderId, planText: string) => ipcRenderer.invoke('docket:source:approve-plan', id, planText),
 };
 
 const runner = {

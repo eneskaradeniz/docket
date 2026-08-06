@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildOrderMd, nextWorkOrderNumber, writeOrderMd } from './decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readWoDocs, writeOrderMd, writePlanMdById } from './decision-store';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -113,5 +113,56 @@ describe('writeOrderMd — writes into the working tree, no git', () => {
     // docs/work-orders absent entirely
     const path = writeOrderMd(r, 'WO-0001', 'first', '# body');
     expect(existsSync(path)).toBe(true);
+  });
+});
+
+describe('findWorkOrderDir — locate a WO dir by id prefix (WO-0016)', () => {
+  it('finds the WO-NNNN-<slug> directory matching the id', () => {
+    const r = root();
+    writeOrderMd(r, 'WO-0016', 'avatar-crash', '# body');
+    const dir = findWorkOrderDir(r, 'WO-0016');
+    expect(dir).toBe(join(r, 'docs', 'work-orders', 'WO-0016-avatar-crash'));
+  });
+
+  it('ignores a stray file whose name starts with the id', () => {
+    const r = root();
+    const woDir = join(r, 'docs', 'work-orders');
+    mkdirSync(woDir, { recursive: true });
+    writeFileSync(join(woDir, 'WO-0016-notes.txt'), 'x');
+    expect(findWorkOrderDir(r, 'WO-0016')).toBeUndefined();
+  });
+
+  it('returns undefined when no matching directory exists', () => {
+    expect(findWorkOrderDir(root(), 'WO-9999')).toBeUndefined();
+  });
+});
+
+describe('readWoDocs — read order.md + plan.md from the working tree', () => {
+  it('returns empty strings when the WO dir is absent', () => {
+    expect(readWoDocs(root(), 'WO-0016')).toEqual({ order: '', plan: '' });
+  });
+
+  it('reads both documents when present', () => {
+    const r = root();
+    writeOrderMd(r, 'WO-0016', 'avatar-crash', '# order body');
+    writePlanMdById(r, 'WO-0016', '# plan body');
+    expect(readWoDocs(r, 'WO-0016')).toEqual({ order: '# order body', plan: '# plan body' });
+  });
+
+  it('returns an empty plan when plan.md is not yet written', () => {
+    const r = root();
+    writeOrderMd(r, 'WO-0016', 'avatar-crash', '# order body');
+    expect(readWoDocs(r, 'WO-0016')).toEqual({ order: '# order body', plan: '' });
+  });
+});
+
+describe('writePlanMdById — write plan.md into the discovered WO dir', () => {
+  it('writes plan.md next to the existing order.md', () => {
+    const r = root();
+    writeOrderMd(r, 'WO-0016', 'avatar-crash', '# order');
+    const path = writePlanMdById(r, 'WO-0016', '# the plan');
+    expect(existsSync(path)).toBe(true);
+    expect(readFileSync(path, 'utf8')).toBe('# the plan');
+    expect(path).toBe(join(r, 'docs', 'work-orders', 'WO-0016-avatar-crash', 'plan.md'));
   });
 });

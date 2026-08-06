@@ -8,12 +8,15 @@ export function StopAndAskCard({
   tool,
   input,
   reason,
+  planContext,
   onAllow,
   onDeny,
 }: {
   tool: string;
   input: Record<string, unknown>;
   reason?: string;
+  /** In the architect plan flow a permission reads as "the architect wants to do X", not an alarm. */
+  planContext?: boolean;
   onAllow: () => void;
   onDeny: () => void;
 }) {
@@ -22,7 +25,7 @@ export function StopAndAskCard({
       <div className="bar bar-brass pulse" />
       <div className="perf" />
       <div className="w-full px-3.5 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.permissionRequested}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{planContext ? UI.architectRequest : UI.permissionRequested}</p>
         <p className="mt-1 text-sm text-ink">{permissionPrompt(tool, summarizeToolInput(input))}</p>
         {reason ? <p className="mt-1 text-xs text-inkdim">{reason}</p> : null}
         <div className="mt-2 flex gap-2">

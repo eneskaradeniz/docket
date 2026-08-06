@@ -5,14 +5,16 @@ export function DetailScreen({
   detail,
   docs,
   onBack,
+  onApprovePlan,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
   onBack: () => void;
+  onApprovePlan: (planText: string) => Promise<void>;
 }) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
-      <WorkOrderDetail detail={detail} docs={docs} onBack={onBack} />
+      <WorkOrderDetail detail={detail} docs={docs} onBack={onBack} onApprovePlan={onApprovePlan} />
     </main>
   );
 }

@@ -15,9 +15,10 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveTrackStage, deriveWorkOrderCost } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
-import { buildOrderMd, nextWorkOrderNumber, writeOrderMd } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readWoDocs, writeOrderMd, writePlanMdById } from '../decision-store/decision-store';
+import { architectPrompt, parseOrderMd } from '../../core/order-md';
 import { rid, tid, wid, woid } from '../ids';
-import { workOrderDocs, workOrders, workspaces } from '../fixtures';
+import { workOrders, workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
@@ -47,6 +48,8 @@ export interface Store extends WorkOrderSource {
   reseedObserved(): void;
   /** Persist (upsert) a live session row keyed by provider session id — main side-effect (WO-0010). */
   recordSession(input: RecordSessionInput): void;
+  /** The architect session's first prompt, assembled from the work order's order.md (WO-0016). */
+  architectPromptFor(workOrderId: WorkOrderId): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -275,12 +278,28 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
 
 // Additive migration for DBs created before WO-0010. No UNIQUE constraint is added —
 // recordSessionRow upserts via DELETE+INSERT, so provider_session_id need not be UNIQUE.
+// Also rebuilds the observed half if it predates the derive-at-hydrate model (a stored `track.stage`
+// column — the M2 dev schema drifted before TD-008 finalised; CREATE TABLE IF NOT EXISTS does not migrate
+// an existing table). Observed is discardable (ADR-0010), so drop + recreate + re-seed.
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('provider_session_id')) db.exec('ALTER TABLE session ADD COLUMN provider_session_id TEXT');
   if (!cols.has('cost_tokens_in')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_in INTEGER');
   if (!cols.has('cost_tokens_out')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_out INTEGER');
   if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
+  const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
+  if (trackCols.has('stage')) {
+    // Legacy pre-TD-008 dev schema: `track` carried a stored `stage` column (now derived at hydrate).
+    // SQLite cannot DROP a NOT NULL column directly, so rename → recreate (SCHEMA_SQL, no stage) → copy
+    // the other columns → drop the legacy table. Workspaces/work_orders are preserved.
+    db.exec('ALTER TABLE track RENAME TO track_legacy');
+    db.exec(SCHEMA_SQL);
+    db.exec(
+      'INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at) ' +
+        'SELECT id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at FROM track_legacy',
+    );
+    db.exec('DROP TABLE track_legacy');
+  }
 }
 
 // --- Workspace + repo-connection CRUD (WO-0014) ---
@@ -399,11 +418,8 @@ export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
-  // Seed the observed half when empty. Work orders are NOT seeded (WO-0015: the board starts empty —
-  // the operator creates them); only the workspace fixtures are. Counting workspace (not work_order)
-  // gates the seed once and never again. Owned sessions are live rows (WO-0010), never fixture-seeded.
-  const observedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n === 0;
-  if (observedEmpty) seedObserved(db);
+  // No fixture seeding: the app starts empty and the operator creates their own workspace(s) via the
+  // onboarding screen (ADR-0009 onboarding path). seedObserved remains a dev/test helper (reseedObserved).
   return {
     db,
     getWorkspaces: () => Promise.resolve(readWorkspaces(db)),
@@ -417,8 +433,33 @@ export function createStore(dbPath: string): Store {
       return out;
     },
     getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id)),
-    getWorkOrderDocs: (id: WorkOrderId) => Promise.resolve(workOrderDocs[id] ?? { order: '', plan: '' }),
+    // Real working-tree reads (WO-0016): resolve the WO's decision-store path and read order.md/plan.md
+    // from disk at view time (ADR-0010 — no document text cached in the DB). Missing dir/file → ''.
+    getWorkOrderDocs: (id: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) return Promise.resolve({ order: '', plan: '' });
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      return Promise.resolve(readWoDocs(dir, id));
+    },
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    // The architect's first prompt, assembled server-side from order.md (WO-0016). The composition root
+    // fills DriveInput.prompt with this when role==='architect' and the renderer sent none (mirrors the
+    // cwd fill). Returns undefined when there is no order.md yet (caller leaves the prompt untouched).
+    architectPromptFor: (workOrderId: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) return undefined;
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const { order } = readWoDocs(dir, workOrderId);
+      if (!order) return undefined;
+      const parsed = parseOrderMd(order);
+      const woDir = findWorkOrderDir(dir, workOrderId);
+      const orderMdPath = woDir ? `${woDir}/order.md` : '';
+      return architectPrompt({ ...parsed, orderMdPath });
+    },
     createWorkspace: (input: CreateWorkspaceInput) => Promise.resolve(createWorkspaceRow(db, input)),
     updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
       Promise.resolve(updateWorkspaceRow(db, id, patch)),
@@ -452,6 +493,17 @@ export function createStore(dbPath: string): Store {
         }),
       );
       return createWorkOrderRow(db, { ...input, id });
+    },
+    // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
+    // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.
+    approvePlan: async (workOrderId: WorkOrderId, planText: string) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) throw new Error(`approvePlan: work order ${workOrderId} not found`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      writePlanMdById(dir, workOrderId, planText);
+      db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
     },
     reseedObserved() {
       for (const t of OBSERVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${t}`);

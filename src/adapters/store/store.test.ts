@@ -6,7 +6,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { createStore, seedFixtureWorkOrders } from './index';
 import { OBSERVED_TABLES } from './schema';
 import { woid } from '../ids';
-import { workOrderDocs, workspaces } from '../fixtures';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -38,18 +37,18 @@ afterAll(() => {
   for (const p of freshRoots) if (existsSync(p)) rmSync(p, { recursive: true, force: true });
 });
 
-describe('SQLite store — seed + hydration', () => {
-  it('seeds workspaces from fixtures but NOT work orders (board starts empty — WO-0015)', async () => {
+describe('SQLite store — starts empty (no fixture seeding)', () => {
+  it('a fresh DB has no workspaces and no work orders (the operator creates them)', async () => {
     const store = createStore(freshDb());
-    expect((await store.getWorkspaces()).length).toBe(workspaces.length);
-    expect((await store.getWorkOrders()).length).toBe(0); // fixtures are test data, not production seed
+    expect((await store.getWorkspaces()).length).toBe(0);
+    expect((await store.getWorkOrders()).length).toBe(0);
   });
 
-  it('re-opening an already-seeded DB does not duplicate workspaces (idempotent)', async () => {
+  it('re-opening an empty DB stays empty (no auto-seed)', () => {
     const p = freshDb();
     createStore(p);
     const store = createStore(p);
-    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n).toBe(workspaces.length);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n).toBe(0);
   });
 
   it('hydrates a work order with DERIVED stage, tracks, sessions, sources', async () => {
@@ -61,10 +60,11 @@ describe('SQLite store — seed + hydration', () => {
     expect(wo!.sessions.some((s) => s.status === 'stopped_asking')).toBe(true);
   });
 
-  it('serves document text from fixtures (never stored)', async () => {
+  it('serves documents from the working tree, not fixtures (WO-0016)', async () => {
     const store = fixtureStore();
     const docs = await store.getWorkOrderDocs(woid('WO-1001'));
-    expect(docs.order).toBe(workOrderDocs[woid('WO-1001')].order);
+    // Fixture WOs are test data with no on-disk order.md → empty (ADR-0010: docs read at view time).
+    expect(docs).toEqual({ order: '', plan: '' });
   });
 });
 
@@ -88,22 +88,42 @@ describe('SQLite store — reseed loses no decision, only time (ADR-0010)', () =
   });
 });
 
-describe('SQLite store — seeding respects the observed | owned split (verifier block B)', () => {
-  it('C1: a workspace-populated, work-order-empty DB (the WO-0015 default) re-opens without re-seeding', () => {
+describe('SQLite store — migrates a legacy DB (rebuilds track without its stored stage column)', () => {
+  it('a pre-TD-008 dev DB (track has a NOT NULL stage column) is rebuilt, preserving rows', () => {
     const p = freshDb();
-    createStore(p); // seeds workspaces only; work_order empty by design
-    // The work_order half is observed/discardable — losing it must not crash or trigger a re-seed.
-    createStore(p).db.exec('DELETE FROM work_order');
-    const store = createStore(p);
-    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n).toBe(workspaces.length);
-    expect((store.db.prepare('SELECT COUNT(*) AS n FROM work_order').get() as { n: number }).n).toBe(0);
-  });
+    // Hand-build the legacy shape: a session table predating WO-0010 + a track table with stored stage + a row.
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      'CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, work_order_id TEXT, role TEXT, scope_track_id TEXT, status TEXT, transcript TEXT, stop_and_ask TEXT)',
+    );
+    raw.exec(
+      'CREATE TABLE track (id TEXT PRIMARY KEY, work_order_id TEXT NOT NULL, repo TEXT NOT NULL, stage TEXT NOT NULL, pr_url TEXT, pr_head_sha TEXT, ci_kind TEXT NOT NULL, ci_blob TEXT NOT NULL, merged_at TEXT, observed_at TEXT NOT NULL)',
+    );
+    raw
+      .prepare("INSERT INTO track (id, work_order_id, repo, stage, ci_kind, ci_blob, observed_at) VALUES (?,?,?,?,?,?,?)")
+      .run('t1', 'WO-1', 'app', 'implementation', 'run', '{}', '2026-01-01T00:00:00Z');
+    raw.close();
 
-  it('C2: observed empty, owned populated — re-open rebuilds observed (workspaces) without duplicating owned', async () => {
+    const store = createStore(p); // SCHEMA_SQL (IF NOT EXISTS no-ops the legacy tables) + migrate
+    const trackCols = (store.db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name);
+    expect(trackCols).not.toContain('stage'); // stage is derived, never stored
+    // The track row was preserved (minus the stage column); workspaces/work_orders are untouched.
+    const row = store.db.prepare('SELECT * FROM track WHERE id = ?').get('t1') as { repo: string; work_order_id: string };
+    expect(row.repo).toBe('app');
+    expect(row.work_order_id).toBe('WO-1');
+    // The session table gained the WO-0010 columns (the additive half still runs).
+    const sessionCols = (store.db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name);
+    expect(sessionCols).toContain('provider_session_id');
+    expect(sessionCols).toContain('cost_usd');
+  });
+});
+
+describe('SQLite store — observed | owned split (ADR-0010)', () => {
+  it('dropping every observed table leaves owned rows intact on re-open (no auto-seed)', async () => {
     const p = freshDb();
-    const store0 = createStore(p); // workspaces seeded; WOs empty
-    seedFixtureWorkOrders(store0.db); // test data
-    // Record an owned decision, then drop observed, leaving owned populated.
+    const store0 = createStore(p);
+    seedFixtureWorkOrders(store0.db); // observed WO data (test)
+    // An owned decision: an extra session for WO-1001.
     store0.db
       .prepare(
         'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES (?, ?, ?, ?, ?, ?)',
@@ -112,13 +132,11 @@ describe('SQLite store — seeding respects the observed | owned split (verifier
     const ownedBefore = (store0.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n;
     for (const t of OBSERVED_TABLES) store0.db.exec(`DELETE FROM ${t}`);
 
-    // Re-open: observed empty (workspace 0) → seedObserved rebuilds workspaces; owned untouched.
+    // Re-open: observed is empty (no fixture seeding); the owned session survived.
     const store = createStore(p);
     const ownedAfter = (store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n;
-    expect(ownedAfter).toBe(ownedBefore); // owned survived, not duplicated
-    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n).toBe(workspaces.length);
-    // Work orders are not auto-restored (operator-created in production; fixtures are test data).
-    expect((await store.getWorkOrders()).length).toBe(0);
+    expect(ownedAfter).toBe(ownedBefore);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n).toBe(0);
   });
 });
 
@@ -312,5 +330,51 @@ describe('SQLite store — work-order creation (WO-0015)', () => {
     const b = await store.createWorkOrder({ workspaceId: ws.id, title: 'Two', description: '', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
     expect(a.id).toBe('WO-0001');
     expect(b.id).toBe('WO-0002'); // max+1 from the directory listing after the first write
+  });
+});
+
+describe('SQLite store — plan approval + doc reads (WO-0016)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+
+  it('getWorkOrderDocs reads the authored order.md (plan empty until approved)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Doc read', description: 'the objective', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.order).toContain('the objective');
+    expect(docs.plan).toBe('');
+  });
+
+  it('approvePlan writes plan.md and flips the plan_approval gate → stage advances to implementation', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Approve me', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect((await store.getWorkOrder(wo.id))!.stage).toBe('written');
+
+    await store.approvePlan(wo.id, '# The plan\n1. do the thing');
+
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.plan).toBe('# The plan\n1. do the thing');
+    const approved = (store.db.prepare('SELECT gate_plan_approved AS v FROM work_order WHERE id = ?').get(wo.id) as { v: number }).v;
+    expect(approved).toBe(1);
+    const reloaded = await store.getWorkOrder(wo.id);
+    expect(reloaded!.gateInputs.planApproved).toBe(true);
+    expect(reloaded!.stage).toBe('implementation'); // planApproved + no merged tracks
+  });
+
+  it('approvePlan persists across a reopen (gate stays approved, plan.md on disk)', async () => {
+    const root = freshRoot();
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Test', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Persist plan', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# persisted plan');
+    const reloaded = await createStore(p).getWorkOrder(wo.id);
+    expect(reloaded!.gateInputs.planApproved).toBe(true);
+    expect((await createStore(p).getWorkOrderDocs(wo.id)).plan).toBe('# persisted plan');
   });
 });

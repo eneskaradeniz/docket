@@ -4,10 +4,11 @@ import {
   foldSessionEvent,
   initialSessionState,
   isUnder,
+  simplePhaseFromState,
   summarizeToolInput,
   writeScopeFor,
 } from '../runner';
-import type { RunnerEvent, WriteAttempt } from '../runner';
+import type { LiveSessionState, RunnerEvent, WriteAttempt } from '../runner';
 
 const ROOTS = { repoRoot: '/repo', decisionStore: '/repo/docs' };
 const architect = writeScopeFor('architect', ROOTS);
@@ -159,5 +160,51 @@ describe('foldSessionEvent — live session state', () => {
     expect(s.status).toBe('done');
     expect(s.entries).toHaveLength(1);
     expect(s.pendingAsk).toBeUndefined();
+  });
+});
+
+describe('simplePhaseFromState — SADE mode phase from the live state', () => {
+  const fold = (...events: RunnerEvent[]): LiveSessionState =>
+    events.reduce((s, e) => foldSessionEvent(s, e), initialSessionState);
+  const started: RunnerEvent = { kind: 'started', sessionId: 's1' };
+  const txt = (t: string): RunnerEvent => ({ kind: 'assistant_text', text: t });
+  const tool = (name: string): RunnerEvent => ({ kind: 'tool_use', callId: 'c', tool: name, input: {} });
+  const result: RunnerEvent = { kind: 'tool_result', callId: 'c', summary: 'ok', isError: false };
+  const plan = (p: string): RunnerEvent => ({ kind: 'plan_ready', planText: p });
+  const done: RunnerEvent = { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 0, tokensOut: 0, usd: 0 } };
+
+  it('idle with no entries → planning_started', () => {
+    expect(simplePhaseFromState(initialSessionState)).toBe('planning_started');
+  });
+  it('Read/Grep/Glob → scanning', () => {
+    expect(simplePhaseFromState(fold(started, tool('Read')))).toBe('scanning');
+    expect(simplePhaseFromState(fold(started, tool('Grep')))).toBe('scanning');
+  });
+  it('Write/Edit → writing_decisions', () => {
+    expect(simplePhaseFromState(fold(started, tool('Write')))).toBe('writing_decisions');
+    expect(simplePhaseFromState(fold(started, tool('Edit')))).toBe('writing_decisions');
+  });
+  it('Bash → running_command; Task → delegating; WebFetch → fetching', () => {
+    expect(simplePhaseFromState(fold(started, tool('Bash')))).toBe('running_command');
+    expect(simplePhaseFromState(fold(started, tool('Task')))).toBe('delegating');
+    expect(simplePhaseFromState(fold(started, tool('WebFetch')))).toBe('fetching');
+  });
+  it('assistant_text → thinking', () => {
+    expect(simplePhaseFromState(fold(started, txt('düşünüyorum')))).toBe('thinking');
+  });
+  it('a trailing tool_result keeps the prior phase (no flicker back to thinking)', () => {
+    expect(simplePhaseFromState(fold(started, tool('Read'), result))).toBe('scanning');
+  });
+  it('plan_ready → ready', () => {
+    expect(simplePhaseFromState(fold(started, plan('the plan')))).toBe('ready');
+  });
+  it('turn_complete with a pending plan → ready', () => {
+    expect(simplePhaseFromState(fold(started, plan('p'), done))).toBe('ready');
+  });
+  it('turn_complete with no plan (architect asked a question) → asking_input', () => {
+    expect(simplePhaseFromState(fold(started, txt('soru?'), done))).toBe('asking_input');
+  });
+  it('error → errored', () => {
+    expect(simplePhaseFromState(fold(started, { kind: 'error', message: 'boom' }))).toBe('errored');
   });
 });

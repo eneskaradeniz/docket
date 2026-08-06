@@ -6,12 +6,11 @@
 // Lives in src/adapters (not main) so electron/main.ts stays a 1:1 IPC delegate and fs sits beside the
 // store's existing gitRemote/execFileSync side-effect (boundary check permits node:fs in adapters).
 // Brand-clean: no woid/tid here — those stay in the store, which calls these helpers.
-import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ReviewMode } from '../../core/source';
 
 const WORK_ORDERS_DIR = ['docs', 'work-orders'];
-
-export type ReviewMode = 'gates' | 'every-step';
 
 /** Raised when the decision-store path is not set and cannot be resolved. */
 export class DecisionStoreUnavailable extends Error {
@@ -19,6 +18,28 @@ export class DecisionStoreUnavailable extends Error {
     super(`No decision-store path for workspace ${workspaceId}`);
     this.name = 'DecisionStoreUnavailable';
   }
+}
+
+// Locate a work order's directory by id prefix (e.g. 'WO-0016') without storing a slug. Scans the
+// work-orders dir for `${id}-*` directories — the same pattern nextWorkOrderNumber uses. First match
+// wins (single-operator desktop; a duplicate prefix is the operator's authoring error).
+export function findWorkOrderDir(decisionStorePath: string, id: string): string | undefined {
+  const dir = join(decisionStorePath, ...WORK_ORDERS_DIR);
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return undefined;
+  }
+  for (const name of entries) {
+    if (!name.startsWith(`${id}-`)) continue;
+    try {
+      if (statSync(join(dir, name)).isDirectory()) return join(dir, name);
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }
 
 // Scan <decisionStorePath>/docs/work-orders/ for /^WO-(\d{4})-/ and return max+1, zero-padded to 4.
@@ -125,4 +146,30 @@ export function writeOrderMd(decisionStorePath: string, id: string, slug: string
   const path = join(dir, 'order.md');
   writeFileSync(path, body, 'utf8');
   return path;
+}
+
+// Write plan.md into the WO's existing directory (discovered by id, not slug — robust to title edits).
+// On approval the architect's proposed plan lands here; Docket does not commit. Returns the written path,
+// or throws if the WO dir is missing (order.md must exist first).
+export function writePlanMdById(decisionStorePath: string, id: string, body: string): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) throw new Error(`writePlanMdById: no work-order directory for ${id}`);
+  const path = join(dir, 'plan.md');
+  writeFileSync(path, body, 'utf8');
+  return path;
+}
+
+// Read order.md + plan.md from the WO's directory. Missing dir or file → '' for that doc. No git; reads
+// the working tree at view time (ADR-0010 — document text is never stored in the DB).
+export function readWoDocs(decisionStorePath: string, id: string): { order: string; plan: string } {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) return { order: '', plan: '' };
+  const read = (name: string): string => {
+    try {
+      return readFileSync(join(dir, name), 'utf8');
+    } catch {
+      return '';
+    }
+  };
+  return { order: read('order.md'), plan: read('plan.md') };
 }
