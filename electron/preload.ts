@@ -28,6 +28,7 @@ const source: WorkOrderSource = {
   getWorkOrderSteps: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-steps', id),
   getStepReport: (id: WorkOrderId, idx: number, role: StepRole) =>
     ipcRenderer.invoke('docket:source:get-step-report', id, idx, role),
+  deleteWorkOrder: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:delete-work-order', id),
 };
 
 const runner = {

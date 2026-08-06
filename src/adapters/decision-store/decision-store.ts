@@ -6,7 +6,7 @@
 // Lives in src/adapters (not main) so electron/main.ts stays a 1:1 IPC delegate and fs sits beside the
 // store's existing gitRemote/execFileSync side-effect (boundary check permits node:fs in adapters).
 // Brand-clean: no woid/tid here — those stay in the store, which calls these helpers.
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReviewMode } from '../../core/source';
 
@@ -198,4 +198,13 @@ export function readStepReport(decisionStorePath: string, id: string, idx: numbe
   } catch {
     return '';
   }
+}
+
+// Remove a work order's whole directory (order.md/plan.md/reports) by id (WO-0020). No-op if absent. A
+// working-tree delete only — Docket does NOT commit the removal (the operator commits), mirroring the
+// authoring helpers. Idempotent (force + recursive).
+export function removeWorkOrderDir(decisionStorePath: string, id: string): void {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) return;
+  rmSync(dir, { recursive: true, force: true });
 }

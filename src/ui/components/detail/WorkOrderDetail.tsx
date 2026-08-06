@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { StepRole, StepView, WorkOrderDetailView } from '../../../core/types';
 import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatUsd } from '../../data/labels';
 import { ActionCard } from './ActionCard';
@@ -22,6 +22,7 @@ export function WorkOrderDetail({
   onApprovePlan,
   onGetStepReport,
   reloadDetail,
+  onDelete,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -29,11 +30,34 @@ export function WorkOrderDetail({
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   reloadDetail: () => void;
+  onDelete: () => Promise<void>;
 }) {
-  // The step currently shown in the StepPane. Default to an 'active' (interrupted) step so the operator can
-  // resume after a restart; otherwise undefined until the operator clicks Çalıştır on a step.
-  const [runIdx, setRunIdx] = useState<number | undefined>(() => detail.steps.find((s) => s.status === 'active')?.idx);
+  // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
+  // and when it completes the next pending step runs automatically — the operator does NOT click each step
+  // (review_mode gates = autonomous between steps; the operator engages at plan approval, revisions, merge).
+  // An 'active' step at restart offers "Sürdür" instead. every-step per-step pausing is WO-0018.
+  const [runIdx, setRunIdx] = useState<number | undefined>(
+    () => detail.steps.find((s) => s.status === 'active')?.idx ?? detail.steps.find((s) => s.status === 'pending')?.idx,
+  );
   const [reportStep, setReportStep] = useState<StepView | undefined>(undefined);
+  // Advance: when the driven step becomes 'done', move to the next pending step (undefined when none remain).
+  useEffect(() => {
+    if (runIdx === undefined) return;
+    const cur = detail.steps.find((s) => s.idx === runIdx);
+    if (cur?.status === 'done') {
+      setRunIdx(detail.steps.find((s) => s.status === 'pending')?.idx);
+    }
+  }, [detail.steps, runIdx]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async (): Promise<void> => {
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const activeRole = detail.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking')?.role;
   const stageStep = detail.rail.find((s) => s.status === 'current' || s.status === 'locked');
@@ -51,27 +75,58 @@ export function WorkOrderDetail({
   // otherwise fall back to the free-form session pane + a "no runnable steps" hint (honest degradation).
   const planStage = detail.stage === 'written' || detail.stage === 'architect_approval';
   const hasSteps = detail.steps.length > 0;
+  const allStepsDone = hasSteps && detail.steps.every((s) => s.status === 'done');
   const activeStep = runIdx !== undefined ? detail.steps.find((s) => s.idx === runIdx) : undefined;
 
   return (
     <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1 text-[12px] text-inkdim hover:text-ink"
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="currentColor" d="M15 18l-6-6l6-6z" />
-        </svg>
-        {UI.backToBoard}
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 text-[12px] text-inkdim hover:text-ink"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M15 18l-6-6l6-6z" />
+          </svg>
+          {UI.backToBoard}
+        </button>
+        <button type="button" onClick={() => setConfirmDelete(true)} className="text-[12px] text-clay hover:underline">
+          {UI.deleteWo}
+        </button>
+      </div>
+
+      {confirmDelete ? (
+        <div className="flex items-stretch rounded-sm border border-rule bg-surface">
+          <div className="w-1 self-stretch bg-clay" />
+          <div className="flex-1 px-3.5 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.deleteWo}</p>
+            <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+            {deleting ? (
+              <p className="text-right text-xs text-clay">{UI.deleteWoInFlight}</p>
+            ) : (
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirmDelete(false)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.cancel}</button>
+                <button type="button" onClick={() => void handleDelete()} className="rounded bg-clay px-3 py-1 text-xs text-bg">{UI.deleteWoConfirm}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div>
         <p className="text-[12px] text-inkdim">{meta}</p>
         <h1 className="mt-0.5 text-[20px] font-semibold tracking-tight text-ink">{detail.title}</h1>
       </div>
 
-      <ActionCard detail={detail} />
+      {allStepsDone ? (
+        <div className="rounded-sm border border-rule bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.stepsAllDone}</p>
+          <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
+        </div>
+      ) : (
+        <ActionCard detail={detail} />
+      )}
 
       {planStage ? (
         <SessionPane
@@ -80,10 +135,11 @@ export function WorkOrderDetail({
           workOrderId={detail.id}
           sessions={detail.sessions}
           onApprovePlan={onApprovePlan}
+          pendingPlan={docs.plan || undefined}
         />
       ) : hasSteps ? (
         <>
-          <StepList steps={detail.steps} onRunStep={setRunIdx} onOpenReport={setReportStep} />
+          <StepList steps={detail.steps} onOpenReport={setReportStep} />
           {activeStep ? (
             <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} onDone={reloadDetail} />
           ) : null}
@@ -108,9 +164,10 @@ export function WorkOrderDetail({
         </>
       )}
 
-      {/* Approved plan (WO-0016) — promoted above the expander once plan.md exists. The structured step list
-          (status/role/aim/scope) renders above when the plan has a ```steps fence (WO-0017). */}
-      {docs.plan ? <MarkdownDoc title={UI.planDoc} content={docs.plan} /> : null}
+      {/* Approved plan — shown as a reference once PAST the plan stage. During plan approval the PlanReadyCard in
+          the session pane already renders it; showing both is a duplicate. The structured step list renders
+          above (WO-0017) when the plan has a ```steps fence. */}
+      {docs.plan && !planStage ? <MarkdownDoc title={UI.planDoc} content={docs.plan} /> : null}
 
       {/* evidence prose — three-valued (the mock's boolean is not adopted) */}
       <p className="text-[12px] text-inkdim">

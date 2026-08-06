@@ -61,15 +61,19 @@ export function architectPrompt(input: { objective: string; reviewMode: ReviewMo
     ``,
     `If you need clarification, ask ONE concise question as plain text, then end your turn. The operator answers in Docket and your session resumes with their answer. Do NOT call a question or ask-user tool — ask as text and stop.`,
     ``,
-    `Propose a plan: an ordered list of steps, each a role + aim + track scope. The plan has two parts — prose (the rationale the operator reads) and a machine-readable step list. END the plan with a fenced block:`,
+    `Propose a SHORT plan (aim for under ~15 lines total). Two parts:`,
+    ``,
+    `1. A one-paragraph summary of the approach + any key decision. Do NOT write a full document — no Scope / Constraints / Acceptance-criteria / Verification sections; the operator already has the work order.`,
+    ``,
+    `2. The step list as a fenced block (the substantive part Docket runs):`,
     ``,
     '```steps',
     `[`,
-    `  { "role": "implementer" | "verifier" | "architect", "aim": "<short label of what this step does>", "scope": "<track repo slug, or 'all' for the whole work order>" }`,
+    `  { "role": "implementer" | "verifier" | "architect", "aim": "<short label>", "scope": "<track repo slug, or 'all' for the whole work order>" }`,
     `]`,
     '```',
     ``,
-    `One object per step, in run order; the array is the exact list Docket will run. Call ExitPlanMode when the plan — including the steps block — is ready for the operator to approve. Without a valid steps block the plan has no runnable steps.`,
+    `One object per step, in run order — include only the minimum steps the work needs. Call ExitPlanMode when the plan — including the steps block — is ready for the operator to approve. Without a valid steps block the plan has no runnable steps.`,
   ].join('\n');
 }
 
@@ -100,7 +104,7 @@ export function implementerPrompt(input: StepPromptInput): string {
     `The approved plan:`,
     input.planText || '(see plan.md)',
     ``,
-    `Work autonomously to implement this step within your scope. When you are done, end your turn with a concise report: what you changed, the files you touched, and any concerns for the verifier. That report is saved as this step's outcome.`,
+    `Work autonomously to implement this step within your scope. When you are done, end your turn with a concise report in MARKDOWN (use ## headings and bullet lists): what you changed, the files you touched, and any concerns for the verifier. That report is saved as this step's outcome.`,
   ].join('\n');
 }
 
@@ -116,6 +120,6 @@ export function verifierPrompt(input: StepPromptInput): string {
     `The approved plan:`,
     input.planText || '(see plan.md)',
     ``,
-    `Verify the work for this step within your scope (read-only — you do not edit code). When you are done, end your turn with a concise report: what you checked, what passed, what failed or is uncertain, and any path:line evidence. That report is saved as this step's outcome.`,
+    `Verify the work for this step within your scope (read-only — you do not edit code). When you are done, end your turn with a concise report in MARKDOWN (## headings, bullet lists, and a table for checklists): what you checked, what passed, what failed or is uncertain, and any path:line evidence. That report is saved as this step's outcome.`,
   ].join('\n');
 }

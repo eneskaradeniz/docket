@@ -110,6 +110,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       detail renders a `StepList` + `StepPane` + per-step `StepReport`. The architect verdict (proceed/revise)
       + `review_mode` loop branching are **WO-0018**; making `plan_requested`/`plan_ready`/`verification`/
       `architect_audit` derivable from persisted facts stays M3 (**TD-025**).
+- [x] **WO-0018** — Dogfooding polish. Done: the first live step-execution trial surfaced 9 UX/correctness
+      gaps, all fixed here — markdown overflow + GFM tables; short architect plans; **TD-025 narrowed** (the
+      plan now survives restart via `savePendingPlan`); WO delete (cascade + confirm); plan shown once; role
+      tabs hidden in the plan stage; **auto step sequencing** (`gates` cadence — no per-step click); "all
+      steps done" banner; report markdown prompts. Fence read bug → **TD-026**; verdict/review-mode loop →
+      WO-0019.
 
 ## M3 — Evidence layer
 

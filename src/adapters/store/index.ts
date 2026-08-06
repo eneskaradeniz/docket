@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, type ObservedStep } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readWoDocs, writeOrderMd, writePlanMdById, writeStepReport } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readWoDocs, removeWorkOrderDir, writeOrderMd, writePlanMdById, writeStepReport } from '../decision-store/decision-store';
 import { architectPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
@@ -58,6 +58,9 @@ export interface Store extends WorkOrderSource {
   recordStep(workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void;
   /** Write a step's report to the decision store + mark the step done (WO-0017). Main side-effect at turn_complete. */
   recordStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole, body: string): void;
+  /** Write the architect's proposed plan to plan.md as PENDING (gate stays 0) so it survives restart (WO-0020,
+   *  closes TD-025). Called by main on the plan_ready event; approvePlan later writes again + flips the gate. */
+  savePendingPlan(workOrderId: WorkOrderId, planText: string): void;
   /** A step session's prompt + resolved track scope, assembled server-side from order.md + plan.md (WO-0017).
    *  Returns undefined when the plan/step is missing — main then leaves the prompt untouched. */
   stepPromptFor(workOrderId: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined;
@@ -469,6 +472,19 @@ function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: nu
   recordStepRow(db, workOrderId, idx, { status: 'done', reportPath });
 }
 
+// Cascade-delete a work order (WO-0020): children-first DB deletes, then the work_order row, then remove the
+// decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched.
+function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
+  db.prepare('DELETE FROM work_order_step WHERE work_order_id = ?').run(id);
+  db.prepare('DELETE FROM session WHERE work_order_id = ?').run(id);
+  db.prepare('DELETE FROM track_depends_on WHERE track_id IN (SELECT id FROM track WHERE work_order_id = ?)').run(id);
+  db.prepare('DELETE FROM track WHERE work_order_id = ?').run(id);
+  db.prepare('DELETE FROM work_order_source WHERE work_order_id = ?').run(id);
+  db.prepare('DELETE FROM work_order WHERE id = ?').run(id);
+  const dir = woDir(db, id);
+  if (dir) removeWorkOrderDir(dir, id);
+}
+
 // Assemble a step session's prompt + resolved scope server-side, symmetric to architectPromptFor. Reads
 // order.md (objective) + plan.md (planText + the step's spec); resolves the step's track scope. Returns
 // undefined when the plan/step is missing — main then leaves the prompt untouched (no accidental free-form run).
@@ -617,6 +633,15 @@ export function createStore(dbPath: string): Store {
     // Write a step's report + mark the step done — main side-effect at turn_complete (WO-0017).
     recordStepReport: (workOrderId: WorkOrderId, idx: number, role: StepRole, body: string) =>
       recordStepReportRow(db, workOrderId, idx, role, body),
+    // Persist the proposed plan to plan.md as PENDING (gate 0) on plan_ready — survives restart (WO-0020/TD-025).
+    // approvePlan re-writes + flips the gate; idempotent if called again with the same text.
+    savePendingPlan: (workOrderId: WorkOrderId, planText: string) => {
+      const dir = woDir(db, workOrderId);
+      if (!dir) return; // no WO dir yet — nothing to persist to
+      writePlanMdById(dir, workOrderId, planText);
+    },
+    // Delete a work order — cascade DB rows + remove the decision-store folder (WO-0020).
+    deleteWorkOrder: (id: WorkOrderId) => Promise.resolve(deleteWorkOrderRow(db, id)),
     // A step session's prompt + resolved scope, assembled server-side from order.md + plan.md (WO-0017).
     // Undefined when the plan/step is missing → main leaves the prompt untouched.
     stepPromptFor: (workOrderId: WorkOrderId, idx: number) => buildStepPrompt(db, workOrderId, idx),
