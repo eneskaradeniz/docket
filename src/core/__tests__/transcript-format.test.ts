@@ -23,28 +23,28 @@ describe('formatTranscriptLine — TranscriptLine → ANSI for the terminal', ()
   });
 
   describe('tool_use', () => {
-    it('wraps the raw tool id in dim cyan when no labelFor is given', () => {
-      expect(formatTranscriptLine(toolUse('Write', 'src/a.ts'))).toBe(`${ESC}[2m${ESC}[36mWrite${ESC}[0m — src/a.ts`);
+    it('wraps the raw tool id in dim denim when no labelFor is given', () => {
+      expect(formatTranscriptLine(toolUse('Write', 'src/a.ts'))).toBe(`${ESC}[2m${ESC}[38;2;111;155;176mWrite${ESC}[0m — src/a.ts`);
     });
     it('uses the labelFor result in place of the raw id', () => {
       expect(formatTranscriptLine(toolUse('Write', 'src/a.ts'), { labelFor: () => 'Write file' })).toBe(
-        `${ESC}[2m${ESC}[36mWrite file${ESC}[0m — src/a.ts`,
+        `${ESC}[2m${ESC}[38;2;111;155;176mWrite file${ESC}[0m — src/a.ts`,
       );
     });
     it('omits the detail segment when detail is empty', () => {
-      expect(formatTranscriptLine(toolUse('Grep', ''))).toBe(`${ESC}[2m${ESC}[36mGrep${ESC}[0m`);
+      expect(formatTranscriptLine(toolUse('Grep', ''))).toBe(`${ESC}[2m${ESC}[38;2;111;155;176mGrep${ESC}[0m`);
     });
   });
 
   describe('tool_result', () => {
-    it('renders green with an arrow on success', () => {
-      expect(formatTranscriptLine(toolResult('1 file read'))).toBe(`${ESC}[32m→ 1 file read${ESC}[0m`);
+    it('renders sage with an arrow on success', () => {
+      expect(formatTranscriptLine(toolResult('1 file read'))).toBe(`${ESC}[38;2;138;161;114m→ 1 file read${ESC}[0m`);
     });
-    it('renders bright red on error', () => {
-      expect(formatTranscriptLine(toolResult('boom', true))).toBe(`${ESC}[91m→ boom${ESC}[0m`);
+    it('renders clay on error', () => {
+      expect(formatTranscriptLine(toolResult('boom', true))).toBe(`${ESC}[38;2;193;102;90m→ boom${ESC}[0m`);
     });
     it('preserves a multi-line summary verbatim', () => {
-      expect(formatTranscriptLine(toolResult('a\nb'))).toBe(`${ESC}[32m→ a\nb${ESC}[0m`);
+      expect(formatTranscriptLine(toolResult('a\nb'))).toBe(`${ESC}[38;2;138;161;114m→ a\nb${ESC}[0m`);
     });
   });
 

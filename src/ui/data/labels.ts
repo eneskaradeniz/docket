@@ -18,7 +18,7 @@ import type {
   TrackStage,
   TrackMergeAction,
 } from '../../core/types';
-import type { LiveSessionStatus } from '../../core/runner';
+import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
@@ -169,6 +169,23 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Hata',
 };
 
+// SADE modu: canlı durumdan türetilen tek-satır faz etiketleri (WO-0016). Detay akışının yerine sakin
+// bir ilerleme satırı — "Kod taranıyor…", "Plan düşünülüyor…". Faz core'da (simplePhaseFromState).
+export const SIMPLE_PHASE_LABELS: Record<SimplePhase, string> = {
+  planning_started: 'Plan oluşturuluyor…',
+  scanning: 'Kod taranıyor…',
+  thinking: 'Plan düşünülüyor…',
+  writing_decisions: 'Karar deposu yazılıyor…',
+  running_command: 'Komut çalıştırılıyor…',
+  delegating: 'Alt görev başlatıldı…',
+  fetching: 'Kaynaklar aranıyor…',
+  asking_input: 'Mimar seni bekliyor.',
+  asking_permission: 'Mimarın bir isteği var.',
+  ready: 'Plan hazır.',
+  errored: 'Bir hata oluştu.',
+  done: 'Bitti.',
+};
+
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Dosya yaz',
   Edit: 'Dosya düzenle',
@@ -302,9 +319,12 @@ export const UI = {
   wsReposLabel: 'Repo bağlantıları',
   wsReposHint: "Yerel klasörü seç — GitHub bilgisi .github/'dan otomatik bulunur.",
   wsRepoAdd: '▸ Repo ekle',
+  wsRepoAddManual: 'Ekle',
   wsRepoPick: 'Klasör',
   wsRepoPlaceholder: 'yerel repo yolu',
   wsDecisionStore: 'Karar deposu',
+  wsErrName: 'Ad gerekli.',
+  wsErrRepo: 'En az bir geçerli repo yolu ekle (örn. /Users/.../proje).',
   wsDecisionSameRepo: '— aynı reponun docs/ klasörü —',
   wsSave: 'Kaydet',
   wsCreateBtn: 'Oluştur',
@@ -336,4 +356,23 @@ export const UI = {
   // Plan döngüsü (WO-0016)
   requestPlan: 'Plan iste',
   approvingPlan: 'Plan işleniyor…',
+  planReadyHeader: 'Plan hazır',
+  planReviewHint: 'Planı oku, sonra onayla ya da itiraz et.',
+  object: 'İtiraz et',
+  objectPlaceholder: 'Neden itiraz ediyorsun? Mimar revize etsin.',
+  objectSend: 'Gönder',
+  objectCancel: 'Vazgeç',
+  objectingPlan: 'Plan revize ediliyor…',
+  // Mimar soru kartı (WO-0016)
+  architectWaiting: 'Mimar seni bekliyor',
+  architectQuestionHint: 'Mimar devam etmek için sana soru sordu.',
+  replyPlaceholder: 'Yanıtını yaz…',
+  reply: 'Yanıtla',
+  skipReply: 'Bilmiyorum',
+  architectRequest: 'Mimarın bir isteği var',
+  // SADE/Detay mod geçişi (WO-0016)
+  modeSimple: 'Sade',
+  modeDetail: 'Detay',
+  // Onboarding: ilk çalışma alanı (WO-0016)
+  noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',
 } as const;

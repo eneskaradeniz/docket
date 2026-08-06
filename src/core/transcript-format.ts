@@ -8,11 +8,13 @@
 // `.replace(` proxy is banned in src/ui/ (ADR-0007).
 import type { TranscriptLine } from './runner';
 
+// SGR codes. 24-bit foreground colours mirror the app's warm-dark tokens (src/index.css) so the DETAY
+// stream reads as one system with the rest of the UI: denim (tool use), sage (ok result), clay (error).
 const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
-const CYAN = '\x1b[36m';
-const GREEN = '\x1b[32m';
-const BRIGHT_RED = '\x1b[91m';
+const DENIM = '\x1b[38;2;111;155;176m'; // --color-denim #6f9bb0
+const SAGE = '\x1b[38;2;138;161;114m'; // --color-sage   #8aa172
+const CLAY = '\x1b[38;2;193;102;90m'; // --color-clay   #c1665a
 
 /** Display-label resolver for tool ids. Default is identity (the raw id). */
 export interface FormatOptions {
@@ -29,11 +31,11 @@ export function formatTranscriptLine(line: TranscriptLine, opts?: FormatOptions)
     case 'assistant':
       return line.text;
     case 'tool_use': {
-      const head = `${DIM}${CYAN}${labelFor(line.tool)}${RESET}`;
+      const head = `${DIM}${DENIM}${labelFor(line.tool)}${RESET}`;
       return line.detail ? `${head} — ${line.detail}` : head;
     }
     case 'tool_result':
-      return `${line.isError ? BRIGHT_RED : GREEN}→ ${line.summary}${RESET}`;
+      return `${line.isError ? CLAY : SAGE}→ ${line.summary}${RESET}`;
     case 'system':
       return `${DIM}${line.text}${RESET}`;
   }

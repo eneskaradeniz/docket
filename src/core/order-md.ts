@@ -58,6 +58,8 @@ export function architectPrompt(input: { objective: string; reviewMode: ReviewMo
     ``,
     `Review cadence: ${cadence}.`,
     ``,
+    `If you need clarification, ask ONE concise question as plain text, then end your turn. The operator answers in Docket and your session resumes with their answer. Do NOT call a question or ask-user tool — ask as text and stop.`,
+    ``,
     `Propose a plan: an ordered list of steps, each a role + aim + track scope. Call ExitPlanMode when the plan is ready for the operator to approve.`,
   ].join('\n');
 }

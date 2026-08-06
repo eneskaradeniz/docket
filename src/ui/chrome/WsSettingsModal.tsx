@@ -10,8 +10,8 @@ const base = (p: string): string => {
 };
 const valid = (p: string): boolean => p.startsWith('/') && p.length > 1 && !p.endsWith('/');
 
-// Workspace create/edit modal (WO-0014). Create = full form (name + folder-picked repos + decision
-// store). Edit = rename + set decision store + add repos. Mirrors AppSettingsModal's shell.
+// Workspace create/edit modal (WO-0014; refined WO-0016). Create = full form (name + folder-picked OR
+// typed repos + decision store). Edit = rename + set decision store + add repos. Mirrors AppSettingsModal's shell.
 export function WsSettingsModal({
   mode,
   workspace,
@@ -27,7 +27,9 @@ export function WsSettingsModal({
 }) {
   const [name, setName] = useState(workspace?.label ?? '');
   const [paths, setPaths] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
   const [decisionStore, setDecisionStore] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -35,20 +37,41 @@ export function WsSettingsModal({
     return () => document.removeEventListener('keydown', onEsc);
   }, [onClose]);
 
+  // Code repos known so far: the workspace's existing repos (edit mode) + the basenames of typed/picked
+  // paths. The decision store is one of these only when there are ≥2 (a dedicated docs repo); with one
+  // repo it is implicitly that repo's docs/ folder, so the selector is hidden (PRODUCT.md §Decisions 6).
   const allRepos = [
     ...(workspace?.repos.map((r) => r as string) ?? []),
     ...paths.map(base),
   ];
 
-  async function pick() {
-    const p = await window.docket.pickFolder();
-    if (p) setPaths((prev) => [...prev, p]);
+  function addDraft() {
+    const p = draft.trim();
+    if (!p) return;
+    setPaths((prev) => [...prev, p]);
+    setDraft('');
+    setError(null);
+  }
+  function updatePath(i: number, value: string) {
+    setPaths((prev) => prev.map((p, idx) => (idx === i ? value : p)));
+    setError(null);
   }
   function removePath(i: number) {
     setPaths((prev) => prev.filter((_, idx) => idx !== i));
+    setError(null);
   }
+  async function pick() {
+    const p = await window.docket.pickFolder();
+    if (p) {
+      setPaths((prev) => [...prev, p]);
+      setError(null);
+    }
+  }
+
   async function save() {
-    if (!name.trim()) return;
+    if (!name.trim()) { setError(UI.wsErrName); return; }
+    if (mode === 'create' && !paths.some(valid)) { setError(UI.wsErrRepo); return; }
+    setError(null);
     try {
       if (mode === 'create') {
         await source.createWorkspace({
@@ -65,7 +88,7 @@ export function WsSettingsModal({
       onSaved();
       onClose();
     } catch {
-      /* best-effort — the caller can retry */
+      /* best-effort — the modal stays open so the operator can retry */
     }
   }
 
@@ -81,7 +104,11 @@ export function WsSettingsModal({
         </div>
 
         <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsNameLabel}</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className="mb-4 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none" />
+        <input
+          value={name}
+          onChange={(e) => { setName(e.target.value); setError(null); }}
+          className="mb-4 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none"
+        />
 
         <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</label>
         <p className="mb-2 text-[11px] text-inkdim">{UI.wsReposHint}</p>
@@ -98,18 +125,42 @@ export function WsSettingsModal({
           {paths.map((p, i) => (
             <div key={i} className="flex items-center gap-1.5 rounded border border-rule bg-bg px-2 py-1.5">
               <span className={`text-[12px] ${valid(p) ? 'evx' : 'err'}`}>{valid(p) ? '✓' : '✕'}</span>
-              <span className="flex-1 font-mono text-[11px] text-inkdim">{p}</span>
+              <input
+                value={p}
+                onChange={(e) => updatePath(i, e.target.value)}
+                className="flex-1 rounded border border-rule bg-bg px-2 py-1 font-mono text-[11px] text-ink outline-none"
+              />
               <button type="button" onClick={() => removePath(i)} className="err px-1 text-[14px]">✕</button>
             </div>
           ))}
         </div>
-        <button type="button" onClick={pick} className="alink mb-4 text-[12px]">{UI.wsRepoAdd}</button>
+        {/* Path entry: type a path + Add, or pick a folder. Both append a (still-editable) row. */}
+        <div className="mb-4 flex gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDraft(); } }}
+            placeholder={UI.wsRepoPlaceholder}
+            className="flex-1 rounded border border-rule bg-bg px-3 py-2 font-mono text-[12px] text-ink outline-none"
+          />
+          <button type="button" onClick={addDraft} className="btn-ghost rounded px-3 py-1.5 text-[12px]">{UI.wsRepoAddManual}</button>
+          <button type="button" onClick={pick} className="btn-ghost rounded px-3 py-1.5 text-[12px]">{UI.wsRepoPick}</button>
+        </div>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsDecisionStore}</label>
-        <select value={decisionStore} onChange={(e) => setDecisionStore(e.target.value)} className="mb-5 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none">
-          <option value="">{UI.wsDecisionSameRepo}</option>
-          {allRepos.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
+        {allRepos.length >= 2 ? (
+          <>
+            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsDecisionStore}</label>
+            <select
+              value={decisionStore || allRepos[0]}
+              onChange={(e) => setDecisionStore(e.target.value)}
+              className="mb-5 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none"
+            >
+              {allRepos.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </>
+        ) : null}
+
+        {error ? <p className="mb-3 text-xs text-clay">{error}</p> : null}
 
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-ghost rounded px-4 py-1.5 text-[12px]">{UI.close}</button>

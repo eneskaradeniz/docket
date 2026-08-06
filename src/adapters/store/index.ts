@@ -278,12 +278,28 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
 
 // Additive migration for DBs created before WO-0010. No UNIQUE constraint is added —
 // recordSessionRow upserts via DELETE+INSERT, so provider_session_id need not be UNIQUE.
+// Also rebuilds the observed half if it predates the derive-at-hydrate model (a stored `track.stage`
+// column — the M2 dev schema drifted before TD-008 finalised; CREATE TABLE IF NOT EXISTS does not migrate
+// an existing table). Observed is discardable (ADR-0010), so drop + recreate + re-seed.
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('provider_session_id')) db.exec('ALTER TABLE session ADD COLUMN provider_session_id TEXT');
   if (!cols.has('cost_tokens_in')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_in INTEGER');
   if (!cols.has('cost_tokens_out')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_out INTEGER');
   if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
+  const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
+  if (trackCols.has('stage')) {
+    // Legacy pre-TD-008 dev schema: `track` carried a stored `stage` column (now derived at hydrate).
+    // SQLite cannot DROP a NOT NULL column directly, so rename → recreate (SCHEMA_SQL, no stage) → copy
+    // the other columns → drop the legacy table. Workspaces/work_orders are preserved.
+    db.exec('ALTER TABLE track RENAME TO track_legacy');
+    db.exec(SCHEMA_SQL);
+    db.exec(
+      'INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at) ' +
+        'SELECT id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at FROM track_legacy',
+    );
+    db.exec('DROP TABLE track_legacy');
+  }
 }
 
 // --- Workspace + repo-connection CRUD (WO-0014) ---
@@ -402,11 +418,8 @@ export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
-  // Seed the observed half when empty. Work orders are NOT seeded (WO-0015: the board starts empty —
-  // the operator creates them); only the workspace fixtures are. Counting workspace (not work_order)
-  // gates the seed once and never again. Owned sessions are live rows (WO-0010), never fixture-seeded.
-  const observedEmpty = (db.prepare('SELECT COUNT(*) AS n FROM workspace').get() as { n: number }).n === 0;
-  if (observedEmpty) seedObserved(db);
+  // No fixture seeding: the app starts empty and the operator creates their own workspace(s) via the
+  // onboarding screen (ADR-0009 onboarding path). seedObserved remains a dev/test helper (reseedObserved).
   return {
     db,
     getWorkspaces: () => Promise.resolve(readWorkspaces(db)),

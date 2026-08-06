@@ -1,11 +1,33 @@
 import { useEffect, useRef } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
+import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TranscriptLine } from '../../../core/runner';
 import { formatTranscriptLine } from '../../../core/transcript-format';
 import { toolLabel } from '../../data/labels';
+
+// xterm paints its own canvas and does NOT inherit CSS, so the terminal theme must be read from the app's
+// CSS tokens at construction (and re-read on a light/dark toggle). Values mirror src/index.css @theme; the
+// fallbacks keep it legible if a var is ever missing. No hard-coded white anywhere.
+function readTokens(): ITheme {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string): string => css.getPropertyValue(name).trim() || fallback;
+  return {
+    background: v('--color-bg', '#15120e'),
+    foreground: v('--color-ink', '#ece4d3'),
+    selectionBackground: 'rgba(212,162,76,0.22)',
+    black: v('--color-rule', '#2c251d'),
+    brightBlack: v('--color-inkdim', '#a59880'),
+    red: v('--color-clay', '#c1665a'),
+    green: v('--color-sage', '#8aa172'),
+    yellow: v('--color-brass', '#d4a24c'),
+    blue: v('--color-denim', '#6f9bb0'),
+    cyan: v('--color-denim', '#6f9bb0'),
+    white: v('--color-ink', '#ece4d3'),
+    brightWhite: v('--color-ink', '#ece4d3'),
+  };
+}
 
 // xterm.js terminal for the live session transcript (TD-020). Replaces the flat Transcript list.
 // The terminal is a read-only view of the same `LiveSessionState.entries` fold the list consumed;
@@ -36,9 +58,9 @@ export function Terminal({
     const term = new XTerm({
       scrollback: 5000,
       disableStdin: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontFamily: 'IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 12,
-      theme: { background: '#ffffff', foreground: '#1e293b' },
+      theme: readTokens(),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -61,7 +83,14 @@ export function Terminal({
     // A fresh terminal instance replays from the start (also covers a strict-mode remount).
     writtenCountRef.current = 0;
     lastResetKeyRef.current = undefined;
+    // Re-theme when the app toggles light/dark (the html.light class swaps the CSS vars). Re-apply in place
+    // so scrollback survives — no remount.
+    const observer = new MutationObserver(() => {
+      if (termRef.current) termRef.current.options.theme = readTokens();
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => {
+      observer.disconnect();
       window.removeEventListener('resize', onResize);
       term.dispose();
       termRef.current = null;
@@ -91,7 +120,7 @@ export function Terminal({
   }, [entries, resetKey]);
 
   return (
-    <div className="h-64 w-full overflow-hidden rounded-md border border-slate-200 bg-white">
+    <div className="h-64 w-full overflow-hidden rounded-md border border-rule bg-bg">
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

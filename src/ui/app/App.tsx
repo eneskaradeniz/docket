@@ -7,6 +7,8 @@ import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
 import { useTheme } from '../chrome/use-theme';
 import { WoCreateModal } from '../chrome/WoCreateModal';
+import { WsSettingsModal } from '../chrome/WsSettingsModal';
+import { AppSettingsModal } from '../chrome/AppSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RunnerContext } from '../components/session/runner-context';
@@ -27,6 +29,8 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
   const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string } } | null>(null);
   const [detailNonce, setDetailNonce] = useState(0);
   const [woCreateOpen, setWoCreateOpen] = useState(false);
+  const [wsCreateOpen, setWsCreateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [theme, setTheme] = useTheme();
 
   useEffect(() => {
@@ -113,6 +117,31 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     main = <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>;
   } else if (load === 'error') {
     main = <p className="px-4 py-8 text-sm text-clay">{UI.loadError}</p>;
+  } else if (workspaces.length === 0) {
+    // Onboarding (ADR-0009): no workspace yet → the only action is to create one. With no workspace the
+    // board has no context, so surface workspace creation directly instead of a dead-end empty board.
+    // Settings (theme/language) remain reachable: a minimal header carries the gear (AppChrome's gear only
+    // renders once a workspace exists).
+    main = (
+      <>
+        <header className="sticky top-0 z-20 border-b border-rule" style={{ background: 'color-mix(in srgb, var(--color-bg) 88%, transparent)', backdropFilter: 'blur(8px)' }}>
+          <div className="mx-auto flex max-w-3xl items-center justify-end px-6 py-3.5">
+            <button type="button" onClick={() => setSettingsOpen(true)} aria-label={UI.settings} className="rounded p-2 text-[16px] text-inkdim hover:bg-surface2 hover:text-ink">
+              ⚙
+            </button>
+          </div>
+        </header>
+        <main className="mx-auto max-w-3xl px-6 py-8">
+          <div className="rounded-sm border border-rule bg-surface p-6">
+            <h2 className="text-[15px] font-semibold text-ink">{UI.wsCreate}</h2>
+            <p className="mt-1 text-[13px] text-inkdim">{UI.noWorkspaceHint}</p>
+            <button type="button" onClick={() => setWsCreateOpen(true)} className="btn-primary mt-3 rounded px-4 py-1.5 text-[12px]">
+              {UI.wsCreate}
+            </button>
+          </div>
+        </main>
+      </>
+    );
   } else if (selectedId) {
     main = detail ? (
       <DetailScreen
@@ -146,6 +175,15 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
           }}
         />
       ) : null}
+      {wsCreateOpen ? (
+        <WsSettingsModal
+          mode="create"
+          source={source}
+          onClose={() => setWsCreateOpen(false)}
+          onSaved={refreshWorkspaces}
+        />
+      ) : null}
+      {settingsOpen ? <AppSettingsModal theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} /> : null}
     </RunnerContext.Provider>
   );
 }
