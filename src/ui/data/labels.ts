@@ -19,6 +19,7 @@ import type {
   StageId,
   TrackStage,
   TrackMergeAction,
+  WorkOrderId,
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
 import type { WoPhase } from '../../core/derive';
@@ -283,6 +284,13 @@ export function formatTokens(n: number): string {
 // Maliyet + token özeti: "$0,41 · 68k→2k" (giriş→çıkış). Oturum/WO maliyeti yanında token harcaması (WO-0022).
 export function formatCost(c: CostSummary): string {
   return `${formatUsd(c.usd)} · ${formatTokens(c.tokensIn)}→${formatTokens(c.tokensOut)}`;
+}
+
+// İş-emri numarası (örn. WO-0006) — operatörün kasten yarattığı bilet kimliğidir, anlamlı görüntüdür;
+// donuk bir iç kimlik (UUID/yol) değil. ADR-0007 carve-out: bir bilet kimliği yalnızca bu fonksiyon
+// arkasından gösterilir, asla ham {id} olarak değil. Bugün identity; biçim/yerel-arayüz buradan değişir.
+export function woIdLabel(id: WorkOrderId): string {
+  return id;
 }
 
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.

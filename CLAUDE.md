@@ -6,9 +6,8 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Layering — ADR-0006
 - `src/core/` is pure: no React, no I/O, no Node. It imports nothing from `src/adapters/` or `src/ui/`.
 - `src/ui/` imports from `src/core/` and reaches the outside world only through a port defined in `core`.
-- Only the composition root (`electron/main.ts`) imports an adapter. CI: no
-  `electron`/`fs`/`node:`/`path`/`child_process` import in `core/`, `ui/` or `renderer/`, and no adapter import
-  outside the composition root.
+- Only the composition root (`electron/main.ts`) imports an adapter. CI: no Node builtin or `node:` specifier
+  imported in `core/`, `ui/` or `renderer/`, and no adapter import outside the composition root.
 
 ## Test-first for `core` — ADR-0006
 - `src/core/` is written test-first. React components are not — they are verified by running them.
@@ -19,10 +18,13 @@ rule restated with its reasons in two places is the duplication this repository 
   rule: it catches only the `.replace(` shape and misses JSX interpolation (`{id}`), template literals,
   `String()`/`.toString()`, concatenation, and `.replaceAll(`. A legitimate `.replace(` in `ui/` is an
   architect decision, not a thing to work around.
+- The work-order number (`WO-NNNN`) is the one identifier permitted as display — rendered through `labels.ts`
+  (`woIdLabel`), never raw `{id}`. The carve-out lives in ADR-0007.
 
 ## Absent, not disabled — ADR-0001
 - An action whose evidence is unmet is absent, with a line stating why — never a disabled control. CI: no
-  `disabled` or `aria-disabled` attribute in `src/ui/`.
+  `disabled`, `aria-disabled`, or `data-disabled` attribute (incl. the `{...{ disabled: true }}` object-key
+  form) in `src/ui/`.
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

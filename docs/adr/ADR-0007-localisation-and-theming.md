@@ -31,6 +31,15 @@ the app's own database, never in `workspace.yaml` — it is a property of the op
 **Repository documents stay English** regardless of UI locale. A Turkish UI does not imply Turkish ADRs.
 The audience for the documents includes agent sessions and future contributors.
 
+**Ticket-reference identifiers are display, via `labels.ts`.** A work-order number (`WO-0006`) is the one kind
+of identifier permitted as display text: it is not an opaque internal id (a UUID, a repo or workspace id, a
+path) but the operator-authored reference the operator actually reads and cites — like an issue number. It is
+rendered through a `labels.ts` function (`woIdLabel`), never raw JSX interpolation (`{id}`), so the formatting
+and any future locale variant are owned by the vocabulary seam and components stay free of display copy. The
+number stays in the "Never translated" column — it is domain data, only the rendering is routed. Closed by
+WO-0006 (TD-014); the `.replace(` proxy check (c6) never caught `{id}` anyway, so enforcement stays on the
+"components carry no display copy" rule rather than a new grep.
+
 ## Decision — theming
 
 Light / dark / system, with system as the default. Implemented with semantic tokens (surface, text, border,
