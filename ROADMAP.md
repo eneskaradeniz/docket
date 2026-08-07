@@ -36,8 +36,12 @@ transcript and stop-and-ask regions stay provisional until M0 reports.
       dominant, so the board does not answer "what needs me most" at a glance. Presentation only.
 - [ ] **WO-0004** — Workspace connection management: add, update, remove connections (ADR-0009). Replaces the
       two hardcoded workspaces. Also the onboarding path a third party would use.
-- [ ] **WO-0006** — ADR-0007/0003 live violations and detection gaps (TD-014, TD-015). Follow-up to WO-0005
-      verification: three violations in WO-0002 code the checks miss, and the gaps that let them through.
+- [x] **WO-0006** — ADR-0007/0003 live violations and detection gaps (TD-014, TD-015). Done: the `'' as RepoId`
+      cast in `derive.ts` is gone (`primaryRepo` is now `RepoId | undefined`, an unused field); the work-order
+      number on the card is permitted as display via `labels.ts` (`woIdLabel`) with an ADR-0007 carve-out — no
+      raw `{id}`; boundary checks extended — a branded-type `as` cast ban (c2c), all Node builtins not just the
+      four-name list (c3), and the `{...{ disabled: true }}` / `data-disabled` forms (c5). Each new check is
+      demonstrated to fail on a deliberate violation. **TD-014 and TD-015 closed.**
 
 Running ahead of M0 deliberately: the board, stage rail, track lanes and evidence panel do not depend on
 Claude Code's surface. Only the session pane does, and it is isolated for that reason.

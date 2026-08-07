@@ -255,7 +255,7 @@ export interface WorkOrderCardView {
   action?: CardAction;
   actionRank: number;
   role?: SessionRole;
-  primaryRepo: RepoId;
+  primaryRepo: RepoId | undefined;
   trackCount: number;
   sessionCount: number;
   cost: CostSummary;

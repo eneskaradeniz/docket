@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Boundary checks — mechanical enforcement of the layering and identity rules (ADR-0006/0003/0001/0007).
-// Origin WO-0005; extended by WO-0007 to cover the Electron shell (electron/ + src/renderer/). Each
+// Origin WO-0005; extended by WO-0007 to cover the Electron shell (electron/ + src/renderer/); extended by
+// WO-0006 (branded-type cast ban, all Node builtins, disabled object-key/data-disabled forms). Each
 // violation names the rule and its ADR. Runs in CI and locally (`npm run check:boundaries`). See
 // CLAUDE.md and ADR-0011.
 //
@@ -8,6 +9,7 @@
 // workspace-identity check matches the branded-identity *constructors* and a fixed historical literal, never a
 // list read from fixtures (ADR-0003).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +20,10 @@ const VENDORS = ['claude', 'anthropic', 'cursor', 'copilot', 'gemini', 'openai',
 // NOTE: `cursor`/`gpt` are short and may collide with non-vendor usage (a Tailwind `cursor-pointer` class;
 // base64 data). A hit on those is a stop-and-ask report (ADR-0011 gate 1), not a reason to narrow the list.
 const BRAND = ['wid', 'rid', 'woid', 'tid']; // branded-identity constructors, defined in src/adapters/
-const NODE_SPECIFIERS = ['electron', 'fs', 'path', 'child_process'];
+// Node builtins as bare specifiers (the `node:` prefix is caught separately in c3). `electron` is the
+// runtime, not a Node builtin, so it rides along. WO-0006 widened this from a 4-name list to every builtin.
+const NODE_BUILTINS = new Set(builtinModules);
+const isNodeSpecifier = (spec) => spec.startsWith('node:') || NODE_BUILTINS.has(spec) || spec === 'electron';
 const COMPOSITION_ROOTS = new Set(['electron/main.ts']); // only the Electron main process imports an adapter (ADR-0006)
 
 const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))];
@@ -80,6 +85,19 @@ for (const f of files) {
   });
 }
 
+// 2c — no branded-type `as` cast outside src/adapters/ (ADR-0003); the cast form complements the
+//    constructor check (2a). core/ui must not construct OR forge an identity; tests may build identities.
+const c2c = [];
+const CAST_RE = /\bas\s+(WorkspaceId|RepoId|WorkOrderId|TrackId)\b/;
+for (const f of files) {
+  const r = rel(f);
+  if (r.startsWith('src/adapters/') || isTest(r)) continue;
+  read(f).forEach((ln, i) => {
+    const m = CAST_RE.exec(ln);
+    if (m) c2c.push([f, i + 1, `'as ${m[1]}' identity cast outside src/adapters/ (ADR-0003)`]);
+  });
+}
+
 // 3 — no Node/Electron import in src/core/, src/ui/ or src/renderer/ (ADR-0006); specifier match, not substring
 const c3 = [];
 for (const f of files) {
@@ -89,7 +107,7 @@ for (const f of files) {
   SPEC_RE.lastIndex = 0;
   for (let m; (m = SPEC_RE.exec(text));) {
     const spec = specOf(m);
-    if (spec && (spec.startsWith('node:') || NODE_SPECIFIERS.includes(spec))) {
+    if (spec && isNodeSpecifier(spec)) {
       c3.push([f, lineNo(text, m.index), `Node/Electron import "${spec}" in core/ui/renderer (ADR-0006)`]);
     }
   }
@@ -110,16 +128,18 @@ for (const f of files) {
   }
 }
 
-// 5 — no disabled/aria-disabled control in src/ui/ (ADR-0001); excludes Tailwind `disabled:` variant
+// 5 — no disabled/aria-disabled/data-disabled control in src/ui/ (ADR-0001); excludes Tailwind `disabled:` variant
 const c5 = [];
-const DISABLED_RE = /(?<!-)\bdisabled\b(?!:)/; // not inside aria-disabled, not the Tailwind `disabled:` variant
+const DISABLED_RE = /(?<!-)\bdisabled\b(?!:)/; // boolean shorthand `disabled` or prop `disabled=`; not aria-disabled, not Tailwind `disabled:`
 const ARIA_DISABLED_RE = /\baria-disabled\b(?!:)/;
+const DISABLED_KEY_RE = /\bdisabled\s*:\s*(?:true|false)\b/; // object-key form `{ disabled: true }` / `{...{ disabled: false }}` — a Tailwind variant is followed by a utility, never a boolean
+const DATA_DISABLED_RE = /\bdata-disabled\b/; // the `(?<!-)` lookbehind above lets `data-disabled` through on purpose; this closes it
 for (const f of files) {
   if (!rel(f).startsWith('src/ui/')) continue;
   read(f).forEach((ln, i) => {
     if (isComment(ln)) return;
-    if (DISABLED_RE.test(ln) || ARIA_DISABLED_RE.test(ln))
-      c5.push([f, i + 1, `disabled/aria-disabled control in src/ui (ADR-0001)`]);
+    if (DISABLED_RE.test(ln) || ARIA_DISABLED_RE.test(ln) || DISABLED_KEY_RE.test(ln) || DATA_DISABLED_RE.test(ln))
+      c5.push([f, i + 1, `disabled/aria-disabled/data-disabled control in src/ui (ADR-0001)`]);
   });
 }
 
@@ -138,10 +158,11 @@ for (const f of files) {
 const checks = [
   ['agent-vendor names (ADR-0006)', c1],
   ['branded-identity constructors (ADR-0003)', c2a],
+  ['branded-type casts (ADR-0003)', c2c],
   ['dateapp literal (ADR-0003)', c2b],
   ['Node/Electron imports (ADR-0006)', c3],
   ['adapter imports (ADR-0006)', c4],
-  ['disabled / aria-disabled (ADR-0001)', c5],
+  ['disabled / aria-disabled / data-disabled (ADR-0001)', c5],
   ['.replace( proxy (ADR-0007)', c6],
 ];
 

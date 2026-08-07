@@ -1,5 +1,5 @@
 import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
-import { cardActionText, cardReasonText, formatCost, ROLE_LABELS, STAGE_LABELS } from '../../data/labels';
+import { cardActionText, cardReasonText, formatCost, ROLE_LABELS, STAGE_LABELS, woIdLabel } from '../../data/labels';
 
 // Evidence-ticket card (WO-0013). The strip colour comes from the bucket; the brass strip pulses
 // when the work order needs the operator. Keyboard-accessible (outer <button>).
@@ -18,7 +18,7 @@ export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onS
       <div className="perf" />
       <div className="min-w-0 flex-1 px-3.5 py-3">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] text-inkdim">{card.id}</span>
+          <span className="font-mono text-[11px] text-inkdim">{woIdLabel(card.id)}</span>
           <span className="font-mono text-[11px] uppercase tracking-wide text-inkdim">
             {STAGE_LABELS[card.stage]}
           </span>
