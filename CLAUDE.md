@@ -6,8 +6,9 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Layering — ADR-0006
 - `src/core/` is pure: no React, no I/O, no Node. It imports nothing from `src/adapters/` or `src/ui/`.
 - `src/ui/` imports from `src/core/` and reaches the outside world only through a port defined in `core`.
-- Only the composition root (`electron/main.ts`) imports an adapter. CI: no Node builtin or `node:` specifier
-  imported in `core/`, `ui/` or `renderer/`, and no adapter import outside the composition root.
+- A composition root imports an adapter — the Electron main process (`electron/main.ts`) or the CLI entry
+  (`src/cli/index.ts`). CI: no Node builtin or `node:` specifier imported in `core/`, `ui/` or `renderer/`, and
+  no adapter import outside a composition root.
 
 ## Test-first for `core` — ADR-0006
 - `src/core/` is written test-first. React components are not — they are verified by running them.
