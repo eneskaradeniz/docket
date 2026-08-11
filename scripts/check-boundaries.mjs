@@ -24,7 +24,7 @@ const BRAND = ['wid', 'rid', 'woid', 'tid']; // branded-identity constructors, d
 // runtime, not a Node builtin, so it rides along. WO-0006 widened this from a 4-name list to every builtin.
 const NODE_BUILTINS = new Set(builtinModules);
 const isNodeSpecifier = (spec) => spec.startsWith('node:') || NODE_BUILTINS.has(spec) || spec === 'electron';
-const COMPOSITION_ROOTS = new Set(['electron/main.ts']); // only the Electron main process imports an adapter (ADR-0006)
+const COMPOSITION_ROOTS = new Set(['electron/main.ts', 'src/cli/index.ts']); // a composition root imports an adapter (ADR-0006; WO-0024 widened to the CLI)
 
 const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))];
 const read = (f) => readFileSync(f, 'utf8').split('\n');
@@ -67,7 +67,7 @@ const c2a = [];
 const BRAND_RE = new RegExp(`\\b(${BRAND.join('|')})\\s*\\(`);
 for (const f of files) {
   const r = rel(f);
-  if (r.startsWith('src/adapters/') || isTest(r)) continue;
+  if (r.startsWith('src/adapters/') || isTest(r) || COMPOSITION_ROOTS.has(r)) continue;
   read(f).forEach((ln, i) => {
     const m = BRAND_RE.exec(ln);
     if (m) c2a.push([f, i + 1, `branded-identity constructor '${m[1]}(' outside src/adapters/ (ADR-0003)`]);
@@ -91,7 +91,7 @@ const c2c = [];
 const CAST_RE = /\bas\s+(WorkspaceId|RepoId|WorkOrderId|TrackId)\b/;
 for (const f of files) {
   const r = rel(f);
-  if (r.startsWith('src/adapters/') || isTest(r)) continue;
+  if (r.startsWith('src/adapters/') || isTest(r) || COMPOSITION_ROOTS.has(r)) continue;
   read(f).forEach((ln, i) => {
     const m = CAST_RE.exec(ln);
     if (m) c2c.push([f, i + 1, `'as ${m[1]}' identity cast outside src/adapters/ (ADR-0003)`]);

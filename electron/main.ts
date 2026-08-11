@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { createRunner } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
+import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
-import { parseVerdict } from '../src/core/verdict';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
-import type { CostSummary, SessionRef, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -91,91 +91,32 @@ ipcMain.handle('docket:pick-files', async () => {
 //   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
 //   and forwards each RunnerEvent back over 'docket:runner:event' until the run completes. ---
 const runner = createRunner();
+// Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
+// in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
+const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });
 
 ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
-  // Persistence side-effect (WO-0010): record the live session as events flow so it survives
-  // restart and resume-by-id is reachable. The renderer never writes; the root orchestrates.
-  let providerSessionId: string | undefined;
-  const stepIndex = input.stepIndex; // a step drive (WO-0017) when set
-  const reviewStepIndex = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
-  // Accumulate assistant_text as a fallback report body (the SDK's `result` on turn_complete is preferred).
-  let assistantText = '';
-  const record = (status: SessionRef['status'], cost?: CostSummary): void => {
-    if (!providerSessionId) return;
-    store.recordSession({ providerSessionId, workOrderId: input.workOrderId, role: input.role, scope: input.scope, status, cost, stepIdx: stepIndex ?? reviewStepIndex });
-  };
-  // Fill the first prompt from the decision store when the renderer sent none. The architect (WO-0016) and a
-  // step drive (WO-0017) both assemble server-side from order.md/plan.md — the renderer never parses document
-  // text (ADR-0007); main owns prompt assembly. A step drive also fills the resolved track scope.
+  // The renderer cannot know filesystem paths; the composition root fills cwd. Everything else — prompt
+  // assembly, persistence side-effects (WO-0010/0017/0020), verdict capture, permission handling — lives in
+  // the host-agnostic pipeline (src/core/pipeline.ts, WO-0023), which drives the runner port and re-yields
+  // every event here for IPC. This handler is a thin forwarder; it owns no logic.
   const driveInput: DriveInput = { ...input, cwd: process.cwd() };
-  if (input.role === 'architect' && !input.resume && !input.prompt) {
-    const prompt = store.architectPromptFor(input.workOrderId);
-    if (prompt) driveInput.prompt = prompt;
-  } else if (stepIndex !== undefined && !input.resume && !input.prompt) {
-    const assembled = store.stepPromptFor(input.workOrderId, stepIndex);
-    if (assembled) {
-      driveInput.prompt = assembled.prompt;
-      driveInput.scope = assembled.scope;
-    }
-  } else if (reviewStepIndex !== undefined && !input.resume && !input.prompt) {
-    // An architect REVIEW drive (WO-0020): assemble the review prompt from the step's report + spec.
-    const prompt = store.stepReviewPromptFor(input.workOrderId, reviewStepIndex);
-    if (prompt) driveInput.prompt = prompt;
-  }
   try {
-    for await (const ev of runner.drive(driveInput)) {
+    for await (const ev of pipeline.drive(driveInput)) {
       event.sender.send('docket:runner:event', ev);
-      if (ev.kind === 'assistant_text' && ev.text) {
-        assistantText += ev.text;
-      } else if (ev.kind === 'started') {
-        providerSessionId = ev.sessionId;
-        record('running');
-        // A step is 'active' from the moment its session starts (WO-0017).
-        if (stepIndex !== undefined) store.recordStep(input.workOrderId, stepIndex, { status: 'active' });
-      } else if (ev.kind === 'permission_request') {
-        record('stopped_asking');
-      } else if (ev.kind === 'plan_ready') {
-        // Persist the proposed plan to plan.md as PENDING so it survives restart (WO-0020, closes TD-025).
-        store.savePendingPlan(input.workOrderId, ev.planText);
-      } else if (ev.kind === 'turn_complete') {
-        record('idle', ev.cost);
-        // Capture the step report at turn_complete (WO-0017): prefer the SDK's turn `result`, fall back to the
-        // accumulated assistant text, then a placeholder. Always written — never a missing file.
-        if (stepIndex !== undefined) {
-          const body = ev.result ?? assistantText;
-          const reportBody = body.trim()
-            ? body
-            : `# Step ${stepIndex} (${input.role})\n\n_(no summary captured — the turn ended without assistant text)_`;
-          store.recordStepReport(input.workOrderId, stepIndex, input.role, reportBody);
-        }
-        // Capture the architect's review verdict (WO-0020): parse the VERDICT suffix; unknown → revise (safe side —
-        // an absent verdict is never silently auto-proceed). Docket writes the verdict file (the agent doesn't).
-        if (reviewStepIndex !== undefined) {
-          const text = ev.result ?? assistantText;
-          const v = parseVerdict(text);
-          const outcome: 'proceed' | 'revise' = v.outcome === 'proceed' ? 'proceed' : 'revise';
-          const body = v.outcome === 'unknown'
-            ? `${text}\n\n_(the architect did not give a clear VERDICT — surfaced for the operator)_`
-            : text;
-          store.recordStepVerdict(input.workOrderId, reviewStepIndex, outcome, body);
-        }
-      }
     }
   } catch (e) {
-    event.sender.send('docket:runner:event', {
-      kind: 'error',
-      message: (e as Error)?.message ?? String(e),
-    });
-    record('idle');
+    // The pipeline catches drive errors itself; this is a last-resort guard for an IPC/send failure.
+    event.sender.send('docket:runner:event', { kind: 'error', message: (e as Error)?.message ?? String(e) });
   }
 });
 
 ipcMain.handle('docket:runner:decide', async (_event, requestId: string, decision: PermissionDecision) => {
-  await runner.decide(requestId, decision);
+  await pipeline.decide(requestId, decision);
 });
 
 ipcMain.handle('docket:runner:interrupt', async () => {
-  await runner.interrupt();
+  await pipeline.interrupt();
 });
 
 app.whenReady().then(() => {

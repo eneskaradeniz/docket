@@ -24,8 +24,9 @@ src/ui/         presentation: React components and screens.
 
 - `core` imports nothing from `adapters` or `ui`.
 - `ui` imports from `core`. It reaches the outside world only through a port defined in `core`.
-- `adapters` implement ports defined in `core`. Nothing imports an adapter except the composition root
-  (`src/dev-main.tsx` now, the Electron main process later).
+- `adapters` implement ports defined in `core`. Nothing imports an adapter except **a** composition root — the
+  Electron main process (`electron/main.ts`) or the CLI entry (`src/cli/index.ts`). (WO-0024 widened this from
+  the single Electron root; the earlier `src/dev-main.tsx` reference predated the Electron shell.)
 
 The rule this enforces: **the product's rules are testable without a browser, a repo, or an agent.**
 `whoseTurn`, the stage rail, the evidence checklist and the primary action are the product. They are pure

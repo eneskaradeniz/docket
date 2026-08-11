@@ -26,6 +26,7 @@ import type {
 import {
   classifyCommandLine,
   fenceDecision,
+  isPlanDrive,
   shouldSynthesiseTurnComplete,
   summarizeToolInput,
   writeScopeFor,
@@ -142,7 +143,7 @@ export function createRunner(): SessionRunner {
 
   function resolvePermissionMode(input: DriveInput): PermissionMode {
     if (input.approve) return 'default'; // resuming after plan_ready → implement (fence + ask active)
-    if (input.role === 'architect') return 'plan';
+    if (isPlanDrive(input)) return 'plan'; // ONLY the pure architect plan drive — not a review/step drive (WO-0023 / P1-1)
     if (input.role === 'verifier') return 'default'; // read-only is enforced by the fence
     return input.mode === 'plan' ? 'plan' : 'default';
   }

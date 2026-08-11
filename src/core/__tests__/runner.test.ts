@@ -4,13 +4,15 @@ import {
   fenceDecision,
   foldSessionEvent,
   initialSessionState,
+  isPlanDrive,
   isUnder,
   shouldSynthesiseTurnComplete,
   simplePhaseFromState,
   summarizeToolInput,
   writeScopeFor,
 } from '../runner';
-import type { LiveSessionState, RunnerEvent, WriteAttempt } from '../runner';
+import type { DriveInput, LiveSessionState, RunnerEvent, WriteAttempt } from '../runner';
+import type { WorkOrderId } from '../types';
 
 const ROOTS = { repoRoot: '/repo', decisionStore: '/repo/docs' };
 const architect = writeScopeFor('architect', ROOTS);
@@ -34,6 +36,27 @@ describe('writeScopeFor — ADR-0002 role → write scope', () => {
   });
   it('verifier is read-only', () => {
     expect(writeScopeFor('verifier', ROOTS)).toEqual({ kind: 'read_only' });
+  });
+});
+
+describe('isPlanDrive — only the pure architect plan drive (WO-0023 / P1-1)', () => {
+  const di = (over: Partial<DriveInput>): DriveInput =>
+    ({ role: 'architect', workOrderId: 'WO-T' as WorkOrderId, mode: 'plan', prompt: '', ...over });
+  it('pure architect plan drive → true', () => {
+    expect(isPlanDrive(di({}))).toBe(true);
+  });
+  it('architect REVIEW drive → false (the P1-1 case)', () => {
+    expect(isPlanDrive(di({ reviewStepIndex: 2 }))).toBe(false);
+  });
+  it('architect STEP drive → false', () => {
+    expect(isPlanDrive(di({ stepIndex: 1 }))).toBe(false);
+  });
+  it('architect approve-resume → false', () => {
+    expect(isPlanDrive(di({ approve: true }))).toBe(false);
+  });
+  it('implementer / verifier → false', () => {
+    expect(isPlanDrive(di({ role: 'implementer' }))).toBe(false);
+    expect(isPlanDrive(di({ role: 'verifier' }))).toBe(false);
   });
 });
 

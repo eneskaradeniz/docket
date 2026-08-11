@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, type ObservedStep } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
+import type { RecordSessionInput, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
@@ -23,9 +24,7 @@ import { workOrders, workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
-  CostSummary,
   SessionRef,
-  SessionRole,
   SourceLink,
   StepRole,
   StepView,
@@ -37,37 +36,13 @@ import type {
   WorkspaceId,
 } from '../../core/types';
 
-export interface RecordSessionInput {
-  providerSessionId: string;
-  workOrderId: WorkOrderId;
-  role: SessionRole;
-  scope?: TrackId;
-  status: SessionRef['status'];
-  cost?: CostSummary;
-  stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session
-}
+// RecordSessionInput + the eight drive-loop methods (record*/savePendingPlan/*PromptFor) live on the core
+// `SessionStore` port (src/core/session-store.ts); `Store` implements it. The drive loop (src/core/pipeline.ts)
+// depends on that port, not on this adapter (WO-0023).
 
-export interface Store extends WorkOrderSource {
+export interface Store extends WorkOrderSource, SessionStore {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
-  /** Persist (upsert) a live session row keyed by provider session id — main side-effect (WO-0010). */
-  recordSession(input: RecordSessionInput): void;
-  /** The architect session's first prompt, assembled from the work order's order.md (WO-0016). */
-  architectPromptFor(workOrderId: WorkOrderId): string | undefined;
-  /** Upsert a step's run outcome (WO-0017) — status + report pointer. Main side-effect on started/turn_complete. */
-  recordStep(workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void;
-  /** Write a step's report to the decision store + mark the step done (WO-0017). Main side-effect at turn_complete. */
-  recordStepReport(workOrderId: WorkOrderId, idx: number, role: StepRole, body: string): void;
-  /** Write the architect's proposed plan to plan.md as PENDING (gate stays 0) so it survives restart (WO-0020,
-   *  closes TD-025). Called by main on the plan_ready event; approvePlan later writes again + flips the gate. */
-  savePendingPlan(workOrderId: WorkOrderId, planText: string): void;
-  /** A step session's prompt + resolved track scope, assembled server-side from order.md + plan.md (WO-0017).
-   *  Returns undefined when the plan/step is missing — main then leaves the prompt untouched. */
-  stepPromptFor(workOrderId: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined;
-  /** Write the architect's verdict for a step (WO-0020): verdicts/step-NN.md + UPDATE the verdict columns. */
-  recordStepVerdict(workOrderId: WorkOrderId, idx: number, verdict: 'proceed' | 'revise', body: string): void;
-  /** The architect's REVIEW prompt for a step, assembled server-side (WO-0020). Undefined when plan/step/report missing. */
-  stepReviewPromptFor(workOrderId: WorkOrderId, idx: number): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
