@@ -46,6 +46,9 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Where things live — ADR-0003, ADR-0001
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
+- Session-drive orchestration (prompt assembly + persistence + permission handling) is host-agnostic in
+  `src/core/pipeline.ts`; the composition root wires `createPipeline({ runner, store, permission })`. The
+  `SessionStore` port is `src/core/session-store.ts`. The host contributes only `cwd` + a permission policy.
 
 ## CI — ADR-0011
 - `npm run typecheck` (both `tsconfig.json` and `tsconfig.electron.json`), `npm test`, `npm run build`, and the

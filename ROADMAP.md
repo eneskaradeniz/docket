@@ -141,6 +141,16 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       NULL; no-op if the SDK does emit `result`).
 - [x] **WO-0022** — Cost display: token harcaması da. Done: `formatCost` (USD + giriş/çıkış token,
       "68k→2k" kısaltması) tüm maliyet yüzeylerinde (kart, detay meta, oturum/plan/review/step panları).
+- [x] **WO-0023** — Host-agnostic session-drive pipeline (the testability spine). Done: the drive loop —
+      prompt assembly, persistence side-effects, verdict capture, permission handling — moved out of
+      `electron/main.ts` into `src/core/pipeline.ts` over injected ports (`SessionRunner` + a new `SessionStore`
+      port + a `PermissionPolicy`). `isPlanDrive` (core) fixes the dogfood-audit **P1-1** root cause — an
+      architect review/step drive is no longer run in plan mode, so it no longer overwrites the approved
+      `plan.md`; `prepareDriveInput` selects review/step before plan. A `FakeRunner` + `FakeStore` make the loop
+      unit-testable for the first time (+19 tests, 308 total). `main.ts` is a thin IPC forwarder; **P1-3** fixed
+      (a remount resumes an interrupted review, not skips it). The CLI host is WO-0024 (second composition root →
+      ADR-0006 amendment); P1-2 closure path + B1 API-key surface are WO-0025; audit findings tracked as
+      TD-027..031. Re-opens the dogfood trial.
 
 ## M3 — Evidence layer
 

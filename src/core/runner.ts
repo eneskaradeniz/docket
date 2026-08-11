@@ -69,6 +69,18 @@ export interface SessionRunner {
   interrupt(): Promise<void>;
 }
 
+/** Is this the pure architect PLAN drive — the one drive that proposes a plan and runs in the provider's plan
+ *  mode? A step drive (`stepIndex`), a review drive (`reviewStepIndex`), and an approve-resume are NOT plan
+ *  drives: they run in default mode. Pure (provider-agnostic) so the adapter's permission-mode resolution is
+ *  testable without dragging a provider type into core (WO-0023; this is the root fix for the P1-1 review-runs-
+ *  in-plan-mode corruption — the review drive is `role:'architect'` but must not be plan mode). */
+export function isPlanDrive(input: DriveInput): boolean {
+  return input.role === 'architect'
+    && input.stepIndex === undefined
+    && input.reviewStepIndex === undefined
+    && !input.approve;
+}
+
 // ===== Role write-scope fence (ADR-0002 / TD-001) =====
 //
 // Pure policy. The adapter classifies a provider tool call into a `WriteAttempt` and

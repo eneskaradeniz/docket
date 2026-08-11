@@ -42,9 +42,13 @@ export function WorkOrderDetail({
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
   // and when it completes the next pending step runs automatically — the operator does NOT click each step
   // (review_mode gates = autonomous between steps; the operator engages at plan approval, revisions, merge).
-  // An 'active' step at restart offers "Sürdür" instead. every-step per-step pausing is WO-0018.
+  // An 'active' step at restart offers "Sürdür" instead; a 'done' step whose review was interrupted (no verdict
+  // yet) resumes the review before any pending step runs (WO-0023 / P1-3 — restart no longer skips the review).
   const [runIdx, setRunIdx] = useState<number | undefined>(
-    () => detail.steps.find((s) => s.status === 'active')?.idx ?? detail.steps.find((s) => s.status === 'pending')?.idx,
+    () =>
+      detail.steps.find((s) => s.status === 'active')?.idx ??
+      detail.steps.find((s) => s.status === 'done' && !s.verdict)?.idx ??
+      detail.steps.find((s) => s.status === 'pending')?.idx,
   );
   const [reportStep, setReportStep] = useState<StepView | undefined>(undefined);
   const [reviewIdx, setReviewIdx] = useState<number | undefined>(undefined);
