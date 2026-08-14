@@ -58,3 +58,9 @@ Out of scope:
 ## Notes
 
 Created via Docket.
+
+## Closure
+
+44 docs dosyasına İçindekiler eklendi; PR #25 merge edildi. İlk gerçek-ajan tam döngü (plan→2 adım→2 review→close) — P1-1 düzeltmesi canlı kanıtlandı. Maliyet: $9.50 / 424k→123k token.
+
+_Closed 2026-08-14T21:43:26.112Z at ea1e67e4e319dab20982ed7070b57226c0d7263e_
