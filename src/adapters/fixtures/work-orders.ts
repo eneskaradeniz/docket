@@ -25,7 +25,7 @@ export const woStoppedAsking: WorkOrder = {
       status: 'stopped_asking',
       scope: tid('wo-1001-app'),
       transcript: [
-        { role: 'implementer', text: 'Refreshing the token requires touching the auth middleware.' },
+        { speaker: 'assistant', text: 'Refreshing the token requires touching the auth middleware.' },
       ],
       stopAndAsk: {
         question: 'Rotate the token on resume, or keep it and re-issue lazily on first use?',
@@ -71,7 +71,7 @@ export const woFailedCi: WorkOrder = {
       role: 'implementer',
       status: 'idle',
       scope: tid('wo-1002-app'),
-      transcript: [{ role: 'implementer', text: 'Opened PR #42; CI started.' }],
+      transcript: [{ speaker: 'assistant', text: 'Opened PR #42; CI started.' }],
       cost: { tokensIn: 96_000, tokensOut: 12_000, usd: 0.61 },
     },
   ],
@@ -100,7 +100,7 @@ export const woMissingEvidence: WorkOrder = {
     {
       role: 'architect',
       status: 'idle',
-      transcript: [{ role: 'architect', text: 'Plan is sound; awaiting the committed plan.md to approve.' }],
+      transcript: [{ speaker: 'assistant', text: 'Plan is sound; awaiting the committed plan.md to approve.' }],
       cost: { tokensIn: 142_000, tokensOut: 18_000, usd: 0.94 },
     },
   ],
@@ -132,7 +132,7 @@ export const woClosureOpen: WorkOrder = {
       role: 'architect',
       status: 'idle',
       transcript: [
-        { role: 'architect', text: 'Tracks merged. ROADMAP and tech-debt still need the closure commit.' },
+        { speaker: 'assistant', text: 'Tracks merged. ROADMAP and tech-debt still need the closure commit.' },
       ],
       cost: { tokensIn: 220_000, tokensOut: 26_000, usd: 1.48 },
     },
@@ -174,7 +174,7 @@ export const woMultitrack: WorkOrder = {
       role: 'implementer',
       status: 'idle',
       scope: tid('wo-1005-api'),
-      transcript: [{ role: 'implementer', text: 'API contract PR open; waiting on CI.' }],
+      transcript: [{ speaker: 'assistant', text: 'API contract PR open; waiting on CI.' }],
       cost: { tokensIn: 310_000, tokensOut: 39_000, usd: 2.07 },
     },
     { role: 'implementer', status: 'none', scope: tid('wo-1005-mobile'), transcript: [] },
@@ -206,7 +206,7 @@ export const woRunning: WorkOrder = {
       role: 'implementer',
       status: 'running',
       scope: tid('wo-1006-docs'),
-      transcript: [{ role: 'implementer', text: 'Building the search index from the markdown front-matter.' }],
+      transcript: [{ speaker: 'assistant', text: 'Building the search index from the markdown front-matter.' }],
       cost: { tokensIn: 73_000, tokensOut: 9_000, usd: 0.44 },
     },
   ],

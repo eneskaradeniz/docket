@@ -5,6 +5,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '../ui/app/App';
+import { ErrorBoundary } from '../ui/chrome/ErrorBoundary';
 import { createRunnerPort } from './runner';
 import '../index.css';
 
@@ -12,7 +13,9 @@ const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(
     <React.StrictMode>
-      <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
+      <ErrorBoundary>
+        <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 }

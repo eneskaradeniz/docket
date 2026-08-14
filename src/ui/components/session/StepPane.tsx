@@ -6,6 +6,7 @@ import {
   type DriveInput,
   type LiveSessionState,
   type SimplePhase,
+  seedLiveState,
 } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, formatCost, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
@@ -63,10 +64,13 @@ export function StepPane({
   onDone: () => void;
 }) {
   const runner = useRunner();
-  const [state, setState] = useState<LiveSessionState>(initialSessionState);
+  // F14 (WO-0026): seed from this step's persisted session — a reopened step pane shows prior activity.
+  const [state, setState] = useState<LiveSessionState>(() =>
+    seedLiveState(sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId) ?? { transcript: [] }),
+  );
   const [running, setRunning] = useState(false);
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
-  const sessionId = useRef<string | undefined>(undefined);
+  const sessionId = useRef<string | undefined>(state.sessionId); // seeded (F14)
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(resume?: string): void {

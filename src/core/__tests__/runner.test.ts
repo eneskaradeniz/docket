@@ -6,6 +6,7 @@ import {
   initialSessionState,
   isPlanDrive,
   isUnder,
+  seedLiveState,
   shouldSynthesiseTurnComplete,
   simplePhaseFromState,
   summarizeToolInput,
@@ -388,5 +389,26 @@ describe('foldSessionEvent — error code (WO-0025 / B1)', () => {
   it('an unclassified error leaves lastErrorCode unset', () => {
     const s = foldSessionEvent(initialSessionState, { kind: 'error', message: 'mystery' });
     expect(s.lastErrorCode).toBeUndefined();
+  });
+});
+
+describe('seedLiveState — resume seeding from a persisted session (WO-0026 / F14)', () => {
+  it('seeds entries, cost and the session id', () => {
+    const s = seedLiveState({
+      transcript: [
+        { speaker: 'assistant', text: 'once yapildi' },
+        { speaker: 'tool_use', tool: 'Write', detail: '/a' },
+      ],
+      cost: { tokensIn: 10, tokensOut: 2, usd: 0.5 },
+      providerSessionId: 'sess-9',
+    });
+    expect(s.entries).toHaveLength(2);
+    expect(s.cost).toEqual({ tokensIn: 10, tokensOut: 2, usd: 0.5 });
+    expect(s.sessionId).toBe('sess-9');
+    expect(s.status).toBe('idle');
+  });
+  it('an empty session seeds the initial state', () => {
+    const s = seedLiveState({ transcript: [], cost: undefined, providerSessionId: undefined });
+    expect(s).toEqual(initialSessionState);
   });
 });

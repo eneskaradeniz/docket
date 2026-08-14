@@ -28,6 +28,7 @@ import type {
 import type { ProviderErrorCode } from '../../core/runner';
 import type { ProviderStatus } from '../../core/app-settings';
 import {
+  PLAN_EXIT_WITHOUT_RESULT,
   classifyCommandLine,
   fenceDecision,
   isPlanDrive,
@@ -279,7 +280,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       // capture side-effects fire (WO-0021). Cost is honest zeros when the SDK gave none; result is left
       // absent so main falls back to its accumulated assistantText for review verdicts.
       if (shouldSynthesiseTurnComplete(planReadyEmitted, turnCompleteEmitted)) {
-        queue.push({ kind: 'turn_complete', stopReason: 'plan_exit_without_result', cost: { usd: 0, tokensIn: 0, tokensOut: 0 } });
+        queue.push({ kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { usd: 0, tokensIn: 0, tokensOut: 0 } });
       }
       queue.close();
     }

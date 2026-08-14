@@ -27,10 +27,12 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [load, setLoad] = useState<LoadState>('loading');
+  const [loadNonce, setLoadNonce] = useState(0); // B4: the board-load retry trigger (WO-0026)
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
   const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string }; steps: StepView[] } | null>(null);
   const [detailNonce, setDetailNonce] = useState(0);
+  const [detailError, setDetailError] = useState(false); // B3: a failed detail load must not render as loading (WO-0026)
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [wsCreateOpen, setWsCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -52,22 +54,32 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     return () => {
       cancelled = true;
     };
-  }, [source]);
+  }, [source, loadNonce]);
 
   // Load the work order + its docs when one is selected (docs are not stored — ADR-0010).
   useEffect(() => {
     if (!selectedId) {
       setDetail(null);
+      setDetailError(false);
       return;
     }
     let cancelled = false;
+    setDetailError(false);
     Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId), source.getWorkOrderSteps(selectedId)])
       .then(([wo, docs, steps]) => {
-        if (cancelled || !wo) return;
+        if (cancelled) return;
+        // A resolved-but-missing work order is the same surface as a failure: an honest error, not a spinner.
+        if (!wo) {
+          setDetailError(true);
+          return;
+        }
         setDetail({ wo, docs, steps });
       })
       .catch(() => {
-        if (!cancelled) setDetail(null);
+        if (!cancelled) {
+          setDetail(null);
+          setDetailError(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -137,7 +149,18 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   if (load === 'loading') {
     main = <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>;
   } else if (load === 'error') {
-    main = <p className="px-4 py-8 text-sm text-clay">{UI.loadError}</p>;
+    main = (
+      <div className="px-6 py-8">
+        <div className="rounded-sm border border-rule bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.loadError}</p>
+          <div className="mt-2 flex justify-end">
+            <button type="button" onClick={() => setLoadNonce((n) => n + 1)} className="btn-ghost rounded px-3 py-1 text-xs">
+              {UI.loadRetry}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   } else if (workspaces.length === 0) {
     // Onboarding (ADR-0009): no workspace yet → the only action is to create one. With no workspace the
     // board has no context, so surface workspace creation directly instead of a dead-end empty board.
@@ -164,7 +187,21 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       </>
     );
   } else if (selectedId) {
-    main = detail ? (
+    main = detailError ? (
+      <div className="px-6 py-8">
+        <div className="rounded-sm border border-rule bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.detailLoadError}</p>
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setSelectedId(null)} className="btn-ghost rounded px-3 py-1 text-xs">
+              {UI.backToBoard}
+            </button>
+            <button type="button" onClick={() => setDetailNonce((n) => n + 1)} className="btn-ghost rounded px-3 py-1 text-xs">
+              {UI.loadRetry}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : detail ? (
       <DetailScreen
         detail={toDetailView(detail.wo, detail.steps, parseOrderMd(detail.docs.order).reviewMode)}
         docs={detail.docs}

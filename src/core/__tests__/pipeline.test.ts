@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { askOperatorPolicy, autoAllowPolicy, createPipeline, prepareDriveInput } from '../pipeline';
+import { PLAN_EXIT_WITHOUT_RESULT } from '../runner';
 import type { SessionStore } from '../session-store';
 import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../runner';
 import type { CostSummary, WorkOrderId } from '../types';
@@ -218,5 +219,37 @@ describe('createPipeline — permission policy', () => {
     }
     expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'turn_complete']);
     expect(fr.decideCalls).toEqual([['r1', { allow: true }]]);
+  });
+});
+
+describe('createPipeline — WO-0026 hardening', () => {
+  it('a stream ending WITHOUT turn_complete still records idle (the finally guarantee)', async () => {
+    const fr = fakeRunner([started(), txt('yarida kaldi')]); // no turn_complete — the interrupt/crash shape
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const session = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { status: string };
+    expect(session.status).toBe('idle');
+  });
+
+  it('threads the folded transcript into every record (persisted checkpoint)', async () => {
+    const fr = fakeRunner([started(), txt('merhaba'), done('rapor')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { transcript: unknown[] };
+    expect(last.transcript).toEqual([
+      { speaker: 'assistant', text: 'merhaba' },
+    ]);
+  });
+
+  it('the synthesized plan-exit turn_complete records NO cost (honest NULL, TD-030)', async () => {
+    const synthetic: RunnerEvent = { kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { tokensIn: 0, tokensOut: 0, usd: 0 } };
+    const fr = fakeRunner([started(), plan('THE PLAN'), synthetic]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { cost?: unknown };
+    expect(last.cost).toBeUndefined();
   });
 });

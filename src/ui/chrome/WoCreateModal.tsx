@@ -34,6 +34,7 @@ export function WoCreateModal({
   const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(trackOptions);
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [contextFiles, setContextFiles] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish (WO-0026)
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -46,15 +47,23 @@ export function WoCreateModal({
   }
 
   async function pickContext() {
-    const picked = await window.docket.pickFiles();
-    if (picked) setContextFiles((prev) => [...prev, ...picked.filter((p) => !prev.includes(p))]);
+    try {
+      const picked = await window.docket.pickFiles();
+      if (picked) setContextFiles((prev) => [...prev, ...picked.filter((p) => !prev.includes(p))]);
+    } catch {
+      setError(UI.saveFailed);
+    }
   }
   function removeContext(i: number) {
     setContextFiles((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   async function save() {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setError(UI.woErrTitle);
+      return;
+    }
+    setError(null);
     try {
       const wo = await source.createWorkOrder({
         workspaceId: workspace.id,
@@ -67,7 +76,7 @@ export function WoCreateModal({
       onCreated(wo);
       onClose();
     } catch {
-      /* best-effort — the modal stays open so the operator can retry */
+      setError(UI.saveFailed); // B5: the modal stays open — now it also says WHY (WO-0026)
     }
   }
 
@@ -150,6 +159,9 @@ export function WoCreateModal({
           </label>
         </div>
 
+        {error ? <p className="mb-2 text-right text-xs text-clay">{error}</p> : null}
+
+        {error ? <p className="mb-2 text-xs text-clay">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="btn-ghost rounded px-4 py-1.5 text-[12px]">{UI.close}</button>
           <button type="button" onClick={save} className="btn-primary rounded px-4 py-1.5 text-[12px]">{UI.woCreateBtn}</button>

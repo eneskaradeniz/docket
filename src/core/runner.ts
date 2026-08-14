@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, SessionRole, TrackId, WorkOrderId } from './types';
+import type { CostSummary, SessionRef, SessionRole, TrackId, WorkOrderId, TranscriptLine } from './types';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
@@ -290,6 +290,11 @@ export function shouldSynthesiseTurnComplete(planReadyEmitted: boolean, turnComp
   return planReadyEmitted && !turnCompleteEmitted;
 }
 
+/** The stopReason of the SYNTHESISED plan-exit turn_complete (the adapter emits it when a plan stream ends
+ *  after ExitPlanMode with no result). The pipeline keys on it to record the session WITHOUT cost — the
+ *  synthesis has no cost data, and a fake $0.00 is a claim (WO-0026 / TD-030: honest NULL instead). */
+export const PLAN_EXIT_WITHOUT_RESULT = 'plan_exit_without_result';
+
 /** Human label for a tool-use input (a path/command when present) — keeps the UI off raw ids. */
 export function summarizeToolInput(input: Record<string, unknown>): string {
   for (const k of ['file_path', 'path', 'command', 'notebook_path', 'url']) {
@@ -300,11 +305,7 @@ export function summarizeToolInput(input: Record<string, unknown>): string {
 }
 
 // ===== Event → live-session-state fold (pure; the pane renders this) =====
-export type TranscriptLine =
-  | { speaker: 'assistant'; text: string }
-  | { speaker: 'tool_use'; tool: string; detail: string }
-  | { speaker: 'tool_result'; summary: string; isError: boolean }
-  | { speaker: 'system'; text: string };
+export type { TranscriptLine } from './types';
 
 export type LiveSessionStatus = 'idle' | 'running' | 'stopped_asking' | 'plan_ready' | 'done' | 'error';
 
@@ -332,6 +333,21 @@ function clearPendingAskIfResolved(state: LiveSessionState, event: RunnerEvent):
     return { ...state, status: 'running', pendingAsk: undefined };
   }
   return state;
+}
+
+/** Seed a live-session state from a PERSISTED session (WO-0026 / F14): the transcript the pipeline folded
+ *  and the store checkpointed, plus the recorded cost and provider id, so a resumed pane appends to what
+ *  already happened instead of opening blank. Pure; empty input → the initial state. */
+export function seedLiveState(
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId'>,
+): LiveSessionState {
+  if (!session.transcript.length && !session.cost && !session.providerSessionId) return initialSessionState;
+  return {
+    ...initialSessionState,
+    entries: session.transcript,
+    ...(session.cost ? { cost: session.cost } : {}),
+    ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
+  };
 }
 
 export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): LiveSessionState {

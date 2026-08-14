@@ -421,3 +421,41 @@ describe('closeWorkOrder — operator-attested closure (WO-0025 / P1-2)', () => 
     expect(await store.getProviderKey()).toBeUndefined();
   });
 });
+
+describe('WO-0026 — transcript persistence + startup sweep', () => {
+  const wsInRoot2 = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Hardening test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('recordSession persists the transcript; hydrate round-trips it', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot2(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Transcript', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({
+      providerSessionId: 'sess-t1', workOrderId: wo.id, role: 'implementer', status: 'idle',
+      cost: { tokensIn: 5, tokensOut: 1, usd: 0.1 }, stepIdx: 1,
+      transcript: [
+        { speaker: 'assistant', text: 'yapiliyor' },
+        { speaker: 'tool_use', tool: 'Write', detail: '/a' },
+        { speaker: 'tool_result', summary: 'ok', isError: false },
+      ],
+    });
+    const wo2 = await store.getWorkOrder(wo.id);
+    expect(wo2!.sessions[0]!.transcript).toEqual([
+      { speaker: 'assistant', text: 'yapiliyor' },
+      { speaker: 'tool_use', tool: 'Write', detail: '/a' },
+      { speaker: 'tool_result', summary: 'ok', isError: false },
+    ]);
+  });
+  it('the startup sweep flips leftover running rows to idle on reopen', async () => {
+    const db = freshDb();
+    const store = createStore(db);
+    const { ws } = await wsInRoot2(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Sweep', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'sess-r1', workOrderId: wo.id, role: 'architect', status: 'running' });
+    expect((await store.getWorkOrder(wo.id))!.sessions[0]!.status).toBe('running');
+    const reopened = createStore(db); // the process-kill emulation: a fresh open sweeps
+    expect((await reopened.getWorkOrder(wo.id))!.sessions[0]!.status).toBe('idle');
+  });
+});

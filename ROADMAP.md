@@ -171,6 +171,17 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       key + status + zero-token `Test et`; CLI `doctor [--verify]`), the key threaded into the runner env, and
       a non-fake `drive` preflight. **TD-027 + TD-028 closed** (TD-027 keeps an M3 attestation→observation
       upgrade note). The CLI also refuses `--fake` runs against the default (GUI) db.
+- [x] **WO-0026** — Daily-use hardening (TD-030/031 + B2–B5). Done: the pipeline's drive loop gained the
+      **completion guarantee** — a `finally` records `idle` whenever a started session never got a terminal
+      record (interrupt-without-turn_complete, consumer/window close; the audit's four stuck-`running` paths
+      close to zero-code) — and `createStore` sweeps leftover `running` rows on open (the process-kill path).
+      The transcript is now **persisted**: the pipeline folds every event (same `foldSessionEvent` as the panes)
+      and checkpoints it into the session row (`TranscriptLine[]` unified; the dead `TranscriptEntry` removed);
+      SessionPane/StepPane **seed from the persisted session** on open (F14 — resume appends instead of
+      blanking). The synthesized plan-exit turn records **no cost** (honest NULL instead of fake $0.00,
+      TD-030). UX blockers: the first **ErrorBoundary** (B2), detail-load failure shows an error card with
+      Geri/Yeniden dene instead of an eternal spinner (B3), board-load failure gets a retry (B4), and both
+      modals surface save errors instead of swallowing them (B5). +7 tests (335).
 
 ## M3 — Evidence layer
 

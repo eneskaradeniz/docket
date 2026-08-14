@@ -448,6 +448,14 @@ export const UI = {
   closeWoConfirm: 'Evet, kapat',
   closeWoInFlight: 'Kapatılıyor…',
   closeWoFailed: 'Kapatılamadı: ön koşullar karşılanmadı (adım/denetim eksik olabilir).',
+  // Sertleştirme dizgeleri (WO-0026)
+  errorBoundaryTitle: 'Bir şeyler ters gitti',
+  errorBoundaryHint: "Beklenmeyen bir hata oluştu. Yeniden yükleyebilirsin — kalıcı kayıtlar etkilenmez, yalnızca açık canlı oturum akışı kaybolur.",
+  reload: 'Yeniden yükle',
+  detailLoadError: 'İş emri yüklenemedi.',
+  loadRetry: 'Yeniden dene',
+  saveFailed: 'Kaydedilemedi — tekrar dene.',
+  woErrTitle: 'Başlık gerekli.',
   // Sağlayıcı ayarları (WO-0025 / B1)
   providerLabel: 'Agent sağlayıcısı',
   providerStatusOk: 'Hazır', // + source shown appended by the modal

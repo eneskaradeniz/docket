@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import {
   foldSessionEvent,
   initialSessionState,
+  seedLiveState,
   simplePhaseFromState,
   type DriveInput,
   type LiveSessionState,
@@ -79,13 +80,16 @@ export function SessionPane({
   // the proposed plan. At written the role tabs are hidden and the architect is implied.
   const [role, setRole] = useState<SessionRole>(stage === 'architect_approval' ? 'architect' : 'implementer');
   const [prompt, setPrompt] = useState('');
-  const [state, setState] = useState<LiveSessionState>(initialSessionState);
+  // F14 (WO-0026): seed from the persisted session for the initial role — a reopened pane shows what already
+  // happened instead of a blank terminal. Re-seeds when the role tab switches (same lookup as resume).
+  const seedFor = (r: SessionRole) => seedLiveState(sessions.find((s) => s.role === r && s.providerSessionId) ?? { transcript: [] });
+  const [state, setState] = useState<LiveSessionState>(() => seedFor(stage === 'architect_approval' ? 'architect' : 'implementer'));
   const [running, setRunning] = useState(false);
   const [approving, setApproving] = useState(false);
   const [objecting, setObjecting] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
-  const sessionId = useRef<string | undefined>(undefined);
+  const sessionId = useRef<string | undefined>(state.sessionId); // seeded (F14) — resume continues the same provider session
 
   // During the plan stages (written = propose, architect_approval = approve/object) the only session is the
   // architect's — role tabs are hidden. They show only past the plan stage (free-form implementer/verifier).
@@ -183,7 +187,8 @@ export function SessionPane({
   const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
   const resume = (): void => {
     if (!resumeSessionId) return;
-    void runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, true);
+    // reset=false (WO-0026/F14): keep the seeded transcript — the new stream appends to it.
+    void runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, false);
   };
 
   return (

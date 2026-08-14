@@ -61,10 +61,14 @@ export function WsSettingsModal({
     setError(null);
   }
   async function pick() {
-    const p = await window.docket.pickFolder();
-    if (p) {
-      setPaths((prev) => [...prev, p]);
-      setError(null);
+    try {
+      const p = await window.docket.pickFolder();
+      if (p) {
+        setPaths((prev) => [...prev, p]);
+        setError(null);
+      }
+    } catch {
+      setError(UI.saveFailed);
     }
   }
 
@@ -88,7 +92,7 @@ export function WsSettingsModal({
       onSaved();
       onClose();
     } catch {
-      /* best-effort — the modal stays open so the operator can retry */
+      setError(UI.saveFailed); // B5: surface, don't swallow (WO-0026)
     }
   }
 
