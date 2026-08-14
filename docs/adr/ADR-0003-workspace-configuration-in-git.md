@@ -1,5 +1,12 @@
 # ADR-0003 — Workspace configuration lives in git
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [v1 scope](#v1-scope)
+- [Consequences](#consequences)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

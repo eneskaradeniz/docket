@@ -12,6 +12,16 @@ tracks:
 
 # WO-0014 — Workspace + repo-connection management
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Replace the hardcoded fixture workspaces with real, operator-managed workspaces: **create / edit /

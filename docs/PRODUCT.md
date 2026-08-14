@@ -1,5 +1,18 @@
 # Docket — Product Spec
 
+## İçindekiler
+
+- [One line](#one-line)
+- [The end-to-end loop](#the-end-to-end-loop)
+- [Concepts](#concepts)
+- [Roles](#roles)
+- [The plan-driven pipeline](#the-plan-driven-pipeline)
+- [The review loop + review mode](#the-review-loop--review-mode)
+- [Decisions (agreed 2026-08-06)](#decisions-agreed-2026-08-06)
+- [Already in the model vs new](#already-in-the-model-vs-new)
+- [Open questions (to settle)](#open-questions-to-settle)
+- [Relationship to existing docs](#relationship-to-existing-docs)
+
 > Status: **draft for alignment** (2026-08-06). The single source of truth for *what* Docket is.
 > ROADMAP milestones, ADRs, and work orders are derived from this. English per ADR-0007; UI is
 > localized (en/tr) — copy terms shown below in `code`.

@@ -13,6 +13,16 @@ tracks:
 
 # WO-0018 — Dogfooding polish
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions / fixes (from the trial)](#decisions--fixes-from-the-trial)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 The first live dogfooding trial of WO-0017 (step execution) ran end-to-end — plan → approve → implementer

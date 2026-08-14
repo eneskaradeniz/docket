@@ -12,6 +12,17 @@ tracks:
 
 # WO-0003 — Visual hierarchy pass on board and detail
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Mode](#mode)
+- [Findings from the architect's review of the WO-0002 screenshots](#findings-from-the-architects-review-of-the-wo-0002-screenshots)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+
 ## Objective
 
 The WO-0002 prototype is structurally correct and visually flat. Every element carries the same weight, so

@@ -1,5 +1,18 @@
 # ADR-0010 — Docket observes; it does not own
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [Every fact has exactly one owner](#every-fact-has-exactly-one-owner)
+  - [The schema encodes ownership](#the-schema-encodes-ownership)
+  - [Stage is derived from observed facts, not stored](#stage-is-derived-from-observed-facts-not-stored)
+  - [Reconciliation is explicit and continuous](#reconciliation-is-explicit-and-continuous)
+  - [Unknown is a fourth evidence state](#unknown-is-a-fourth-evidence-state)
+  - [Health is a first-class, visible state](#health-is-a-first-class-visible-state)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

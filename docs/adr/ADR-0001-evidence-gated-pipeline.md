@@ -1,5 +1,12 @@
 # ADR-0001 — Evidence-gated work order pipeline
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

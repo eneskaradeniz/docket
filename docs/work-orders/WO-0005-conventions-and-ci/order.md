@@ -13,6 +13,17 @@ tracks:
 
 # WO-0005 — CLAUDE.md, CI, and watch scripts
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Mode and review weight](#mode-and-review-weight)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Closure](#closure)
+
 ## Objective
 
 Write down the rules every session must obey, and move the mechanical half of verification off the operator

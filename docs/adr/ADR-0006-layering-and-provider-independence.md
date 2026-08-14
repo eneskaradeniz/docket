@@ -1,5 +1,14 @@
 # ADR-0006 — Layering and provider independence
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision — layering](#decision--layering)
+- [Decision — test-first for the domain](#decision--test-first-for-the-domain)
+- [Decision — provider independence is a goal, not yet an interface](#decision--provider-independence-is-a-goal-not-yet-an-interface)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

@@ -1,5 +1,18 @@
 # ADR-0009 — Workspace connection is not workspace definition
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [Add](#add)
+  - [Update](#update)
+  - [Remove](#remove)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+- [Addendum: M2 pragmatic CRUD (WO-0014, 2026-08-06)](#addendum-m2-pragmatic-crud-wo-0014-2026-08-06)
+- [Addendum: M2 work-order creation (WO-0015, 2026-08-06)](#addendum-m2-work-order-creation-wo-0015-2026-08-06)
+- [Addendum: M2 plan.md authoring (WO-0016, 2026-08-06)](#addendum-m2-planmd-authoring-wo-0016-2026-08-06)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

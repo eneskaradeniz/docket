@@ -12,6 +12,17 @@ tracks:
 
 # WO-0011 — Per-work-order cost aggregation
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Decisions](#decisions)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+- [Closure](#closure)
+
 ## Objective
 
 Make a work order's `cost` a **derived** value: the sum of its sessions' observed per-session costs.

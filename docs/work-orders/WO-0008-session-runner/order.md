@@ -11,6 +11,17 @@ tracks:
 
 # WO-0008 — Session runner — Agent SDK
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+- [Closure record](#closure-record)
+
 ## Objective
 
 Stand up the session runner M2 rests on. A vendor-neutral **runner port** is declared in `src/core/` from

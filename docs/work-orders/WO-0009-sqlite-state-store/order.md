@@ -11,6 +11,17 @@ tracks:
 
 # WO-0009 — SQLite state store (read foundation)
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+- [Verifier return (blocking — both fixed)](#verifier-return-blocking--both-fixed)
+- [Closure record](#closure-record)
+
 ## Objective
 
 Replace the in-memory fixtures + throwaway sync IPC bridge with a persisted **SQLite** store

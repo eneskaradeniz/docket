@@ -13,6 +13,17 @@ tracks:
 
 # WO-0019 — Fence read fix (TD-026)
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Root cause (confirmed by reproducing the old classifier)](#root-cause-confirmed-by-reproducing-the-old-classifier)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Fix the role write-scope fence mis-classifying read-only shell commands as writes. The WO-0018 dogfooding

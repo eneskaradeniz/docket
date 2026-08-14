@@ -1,5 +1,22 @@
 # WO-0008 — plan
 
+## İçindekiler
+
+- [Objective (restated)](#objective-restated)
+- [Rulings — the four gates](#rulings--the-four-gates)
+  - [1. Port shape — ASYNC, vendor-neutral, product-named](#1-port-shape--async-vendor-neutral-product-named)
+  - [2. Fence policy (core, test-first) vs. canUseTool glue (adapter)](#2-fence-policy-core-test-first-vs-canusetool-glue-adapter)
+  - [3. Plan-mode approval handoff + stop-and-ask UI mapping](#3-plan-mode-approval-handoff--stop-and-ask-ui-mapping)
+  - [4. Vendor-name boundary check — EXEMPT `src/adapters/`](#4-vendor-name-boundary-check--exempt-srcadapters)
+- [Design](#design)
+  - [Process model](#process-model)
+  - [IPC contract (async, alongside the throwaway sync channel)](#ipc-contract-async-alongside-the-throwaway-sync-channel)
+  - [Mode/cost capture](#modecost-capture)
+- [Task breakdown](#task-breakdown)
+- [Verification (AC → how checked)](#verification-ac--how-checked)
+- [Risks](#risks)
+- [Tech debt to open (closure gate)](#tech-debt-to-open-closure-gate)
+
 > Rulings on the four stop-and-ask gates, the resulting design, and the implementation path. `mode: plan`;
 > solo mode — the operator covers the architect role, reasons recorded here (ADR-0001).
 

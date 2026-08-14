@@ -1,5 +1,11 @@
 # WO-0022 — deneme.md oluşturma
 
+## İçindekiler
+
+- [Context](#context)
+- [Plan](#plan)
+- [Verification](#verification)
+
 ## Context
 
 Trivial dogfood trial: validate the plan→implement→verify→merge loop end-to-end on a one-line artifact. The objective is literally to create `deneme.md` containing `merhaba dünya`. No path is given in the order, so the file lands at the repo root — consistent with how prior throwaway trial files (`dogfood-trial.md`, `probe-trial.md`) were treated. No code, no `core/`/`ui/` change, no boundary or display-text rule implicated.

@@ -1,6 +1,6 @@
 ---
-id: WO-0022
-title: deneme.md oluşturma
+id: WO-0023
+title: Doküman İçindekiler aracı
 workspace: docket
 status: draft
 mode: plan
@@ -11,7 +11,7 @@ tracks:
     depends_on: []
 ---
 
-# WO-0022 — deneme.md oluşturma
+# WO-0023 — Doküman İçindekiler aracı
 
 ## İçindekiler
 
@@ -24,7 +24,12 @@ tracks:
 
 ## Objective
 
-deneme.md dosyası oluştur ve merhaba dünya yaz.
+AMAÇ: docs/ klasöründeki her .md dosyasının başına otomatik bir İçindekiler (Table of Contents) bölümü ekle.
+
+KAPSAM: yalnızca docs/ altındaki .md dosyaları; kod, test ve yapılandırma dosyalarına dokunma.
+İÇİNDEKİLER: mevcut başlık (## ve ###) satırlarından üretilir; zaten İçindekiler varsa güncelle, yoksa başa ekle.
+DOĞRULAMA: her değişen dosyada başlık linklerinin gerçek başlıklara işaret ettiğini kontrol et.
+ÇIKTI: işlem sonrası değişen dosya listesini raporla.
 
 ## Context
 

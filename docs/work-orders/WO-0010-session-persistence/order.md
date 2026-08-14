@@ -11,6 +11,17 @@ tracks:
 
 # WO-0010 — Session/cost persistence + resume
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+- [Closure](#closure)
+
 ## Objective
 
 Make the runner's live sessions survive restart. WO-0008 drives real sessions but holds them in-memory
