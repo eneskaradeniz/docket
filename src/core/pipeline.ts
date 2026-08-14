@@ -14,7 +14,8 @@
 // unchanged; the persistence side-effects ride alongside, exactly as main.ts used to do.
 
 import type { CostSummary, SessionRef } from './types';
-import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from './runner';
+import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState } from './runner';
+import type { DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner } from './runner';
 import type { SessionStore } from './session-store';
 import { parseVerdict } from './verdict';
 
@@ -97,6 +98,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
     let providerSessionId: string | undefined;
     let assistantText = ''; // fallback body for the report/verdict when the SDK's `result` is absent
+    // The same fold the panes run (WO-0026/F6): accumulating the live state here lets every record() call
+    // checkpoint the transcript into the session row, so a resumed pane can seed from it instead of blanking.
+    let live: LiveSessionState = initialSessionState;
+    let terminated = false; // a terminal record already happened — the finally must not double-record
 
     const record = (status: SessionRef['status'], cost?: CostSummary): void => {
       if (!providerSessionId) return;
@@ -108,11 +113,13 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         status,
         cost,
         stepIdx: stepIdx ?? reviewIdx,
+        transcript: live.entries,
       });
     };
 
     try {
       for await (const ev of deps.runner.drive(di)) {
+        live = foldSessionEvent(live, ev);
         switch (ev.kind) {
           case 'assistant_text':
             if (ev.text) assistantText += ev.text;
@@ -148,7 +155,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             yield ev;
             break;
           case 'turn_complete':
-            record('idle', ev.cost);
+            terminated = true;
+            // The synthesized plan-exit turn carries NO cost data — record without one (a NULL row, an honest
+            // "no claim") instead of a fake $0.00 (WO-0026 / TD-030).
+            record('idle', ev.stopReason === PLAN_EXIT_WITHOUT_RESULT ? undefined : ev.cost);
             if (stepIdx !== undefined) {
               const body = ev.result ?? assistantText;
               const reportBody = body.trim()
@@ -173,8 +183,18 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         }
       }
     } catch (e) {
+      terminated = true;
       record('idle');
       yield { kind: 'error', message: (e as Error)?.message ?? String(e) };
+    } finally {
+      // The completion guarantee (WO-0026 / F5): a session that started but never got a terminal record —
+      // the stream ended without a turn_complete (an interrupt), or the consumer closed the generator (a
+      // window close) — must not stay `running` in the store. Runs on normal end, on throw, AND on the
+      // return-injection a consumer abort triggers; the `terminated` flag keeps it idempotent.
+      if (providerSessionId && !terminated) {
+        terminated = true;
+        record('idle');
+      }
     }
   };
 

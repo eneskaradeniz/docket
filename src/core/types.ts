@@ -60,10 +60,14 @@ export interface Merged {
 //     Single home: WorkOrder.sessions. `scope` disambiguates per-track implementer sessions. ---
 export type SessionRole = 'implementer' | 'architect' | 'verifier';
 
-export interface TranscriptEntry {
-  role: SessionRole;
-  text: string; // provisional shape
-}
+// The persisted + live transcript line (unified in WO-0026 — the old TranscriptEntry {role,text} had no
+// consumer). Lives in types.ts so both SessionRef (persisted) and LiveSessionState (live fold) share it
+// without a types↔runner import cycle; runner.ts re-exports it for existing importers.
+export type TranscriptLine =
+  | { speaker: 'assistant'; text: string }
+  | { speaker: 'tool_use'; tool: string; detail: string }
+  | { speaker: 'tool_result'; summary: string; isError: boolean }
+  | { speaker: 'system'; text: string };
 
 export interface StopAndAsk {
   question: string;
@@ -80,7 +84,7 @@ export type SessionRef = (
   | { status: 'none' }
 ) & {
   role: SessionRole;
-  transcript: TranscriptEntry[];
+  transcript: TranscriptLine[];
   scope?: TrackId;
   providerSessionId?: string;
   cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows

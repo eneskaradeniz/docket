@@ -270,7 +270,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.role,
     input.scope ?? null,
     input.status,
-    '[]',
+    JSON.stringify(input.transcript ?? []),
     stopAndAsk,
     input.cost?.tokensIn ?? null,
     input.cost?.tokensOut ?? null,
@@ -558,6 +558,11 @@ export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
+  // Startup sweep (WO-0026 / F5, the process-kill path): no session survives a process restart, so any row
+  // still claiming `running` is a leftover from a dead drive — make it idle. `stopped_asking` rows stay
+  // (their provider session is resumable and the ask is still the operator's to answer). Caveat: a second
+  // host starting while one drives would mislabel that live row until its next record — rare, accepted (TD-031).
+  db.prepare("UPDATE session SET status = 'idle' WHERE status = 'running'").run();
   // No fixture seeding: the app starts empty and the operator creates their own workspace(s) via the
   // onboarding screen (ADR-0009 onboarding path). seedObserved remains a dev/test helper (reseedObserved).
   return {
