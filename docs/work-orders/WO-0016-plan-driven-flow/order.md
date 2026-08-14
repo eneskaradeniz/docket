@@ -13,6 +13,16 @@ tracks:
 
 # WO-0016 — Plan-driven flow: the plan loop
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Wire the first half of the plan-driven pipeline: from a `written` work order, the operator clicks

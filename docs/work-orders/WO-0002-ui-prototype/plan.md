@@ -13,6 +13,16 @@ tracks:
 
 # WO-0002 — Plan (reconstructed)
 
+## İçindekiler
+
+- [Scope of the gate-1 approval](#scope-of-the-gate-1-approval)
+- [Approved type model](#approved-type-model)
+- [Corrections imposed at sign-off](#corrections-imposed-at-sign-off)
+- [Architecture constraint (ADR-0006, carried from order.md)](#architecture-constraint-adr-0006-carried-from-ordermd)
+- [Fixtures (the six states, AC2)](#fixtures-the-six-states-ac2)
+- [Test-first](#test-first)
+- [Out of scope (unchanged from order.md)](#out-of-scope-unchanged-from-ordermd)
+
 > **This plan was reconstructed and committed after the fact.** It was approved by the architect in a
 > Claude Code session on **2026-08-03** at the gate-1 stop-and-ask ("before writing the fixture types") and
 > transcribed into the decision store on **2026-08-04**. It was **not** committed at approval time — a

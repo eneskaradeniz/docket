@@ -1,5 +1,19 @@
 # ADR-0005 — UI information architecture
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [The board is partitioned by whose turn it is, not by stage](#the-board-is-partitioned-by-whose-turn-it-is-not-by-stage)
+  - [A locked stage states what it needs](#a-locked-stage-states-what-it-needs)
+  - [The evidence panel is always visible](#the-evidence-panel-is-always-visible)
+  - [Documents are rendered, never stored or edited](#documents-are-rendered-never-stored-or-edited)
+  - [One session pane, tabbed by role](#one-session-pane-tabbed-by-role)
+  - [The stop-and-ask card is pinned above the transcript](#the-stop-and-ask-card-is-pinned-above-the-transcript)
+  - [One primary action](#one-primary-action)
+  - [Per-work-order cost is displayed](#per-work-order-cost-is-displayed)
+- [Consequences](#consequences)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

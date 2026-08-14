@@ -11,6 +11,16 @@ tracks:
 
 # WO-0000 — <title>
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+
 ## Objective
 
 One paragraph. What changes and why. If this cannot be written in one paragraph, it is more than one work

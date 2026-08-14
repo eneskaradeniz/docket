@@ -12,6 +12,17 @@ tracks:
 
 # WO-0012 — xterm.js transcript
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Constraints (verified in code)](#constraints-verified-in-code)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Replace the session pane's flat transcript list (`Transcript.tsx`, a `<ul>` capped at `max-h-64`) with an

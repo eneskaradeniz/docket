@@ -1,5 +1,15 @@
 # ADR-0008 — The workspace overview is derived, not a planning surface
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [What it shows](#what-it-shows)
+  - ["Ready to start" is computed, not suggested](#ready-to-start-is-computed-not-suggested)
+  - [Roadmap progress without machine-readable roadmaps](#roadmap-progress-without-machine-readable-roadmaps)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

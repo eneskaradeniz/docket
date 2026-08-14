@@ -12,6 +12,16 @@ tracks:
 
 # WO-0013 — UI redesign port
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Decisions](#decisions)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Port the approved UI direction (`design-mock/index.html`, PR #10) into the real React renderer on the

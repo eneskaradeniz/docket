@@ -1,5 +1,11 @@
 # Q8 — other agent CLIs (survey, docs level only; not installed or driven)
 
+## İçindekiler
+
+- [OpenAI Codex CLI](#openai-codex-cli)
+- [Google Gemini CLI](#google-gemini-cli)
+- [How this maps to Q1–Q5 (does it generalise?)](#how-this-maps-to-q1q5-does-it-generalise)
+
 Collected via web search on 2026-08-05. Per ADR-0006 / WO-0001 scope: documentation
 level only — purpose is to know which of Q1–Q5 generalise before M2 designs the
 session-runner port. No CLI was installed or driven.

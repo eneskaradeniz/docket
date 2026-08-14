@@ -13,6 +13,16 @@ tracks:
 
 # WO-0015 — Work-order creation + context
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Let the operator create a work order. A "Yeni iş emri" modal (title, description/objective, track

@@ -11,6 +11,19 @@ tracks:
 
 # WO-0002 — Clickable UI prototype
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Mode](#mode)
+- [Layout constraint](#layout-constraint)
+- [Scope](#scope)
+- [Fixture data](#fixture-data)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+
 ## Objective
 
 Build a clickable prototype of the two screens that carry the whole product: the board and the work order

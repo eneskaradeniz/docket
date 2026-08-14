@@ -1,5 +1,12 @@
 # ADR-0004 — Technology stack
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+- [Open — decided by WO-0001](#open--decided-by-wo-0001)
+- [Consequences](#consequences)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator)

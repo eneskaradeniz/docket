@@ -13,6 +13,15 @@ tracks:
 
 # WO-0021 — UX debt: phase indicator + cost
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Gap 1 — phase indicator (no new domain model)](#gap-1--phase-indicator-no-new-domain-model)
+- [Gap 2 — architect-plan cost (probe → safe H2 fix)](#gap-2--architect-plan-cost-probe--safe-h2-fix)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Close two UX gaps the WO-0018 dogfooding trial left open, now that the plan-driven pipeline is complete

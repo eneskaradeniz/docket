@@ -1,5 +1,22 @@
 # WO-0010 — plan
 
+## İçindekiler
+
+- [Objective (restated)](#objective-restated)
+- [Rulings — the three gates](#rulings--the-three-gates)
+  - [1. Write path — MAIN SIDE-EFFECT](#1-write-path--main-side-effect)
+  - [2. What persists — ID/ROLE/SCOPE/STATUS/COST; NOT THE TRANSCRIPT](#2-what-persists--idrolescopestatuscost-not-the-transcript)
+  - [3. Resume + cwd — MAIN FILLS CWD; PANE OFFERS RESUME](#3-resume--cwd--main-fills-cwd-pane-offers-resume)
+- [Design](#design)
+  - [Data model changes](#data-model-changes)
+  - [Store (`src/adapters/store/index.ts`)](#store-srcadaptersstoreindexts)
+  - [main (`electron/main.ts`)](#main-electronmaints)
+  - [UI (`src/ui/components/session/SessionPane.tsx`, `WorkOrderDetail.tsx`)](#ui-srcuicomponentssessionsessionpanetsx-workorderdetailtsx)
+- [Task breakdown](#task-breakdown)
+- [Verification (AC → how checked)](#verification-ac--how-checked)
+- [Risks](#risks)
+- [Tech debt](#tech-debt)
+
 > Rulings on the three gates and the resulting design. `mode: plan`; solo — the operator covers the
 > architect role (ADR-0001), reasons recorded here.
 

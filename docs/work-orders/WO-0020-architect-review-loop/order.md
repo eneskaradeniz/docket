@@ -13,6 +13,16 @@ tracks:
 
 # WO-0020 — Architect review loop
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Insert the architect review between steps (the last piece deferred from WO-0017). After each step's report, an

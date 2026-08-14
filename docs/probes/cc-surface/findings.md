@@ -1,5 +1,21 @@
 # WO-0001 — Claude Code programmatic surface probe: findings
 
+## İçindekiler
+
+- [Measured versions](#measured-versions)
+- [Q0 — CLI or SDK?](#q0--cli-or-sdk)
+  - [What was measured](#what-was-measured)
+  - [Recommendation (for the ruling)](#recommendation-for-the-ruling)
+- [Q1 — Stream schema](#q1--stream-schema)
+- [Q2 — Plan mode](#q2--plan-mode)
+- [Q3 — Plan approval](#q3--plan-approval)
+- [Q4 — Permission prompts (the stop-and-ask question)](#q4--permission-prompts-the-stop-and-ask-question)
+- [Q5 — Resume](#q5--resume)
+- [Q6 — Write fencing (TD-001)](#q6--write-fencing-td-001)
+- [Q7 — Interruption and persistence](#q7--interruption-and-persistence)
+- [Q8 — Other providers (survey only)](#q8--other-providers-survey-only)
+- [Summary & recommendation](#summary--recommendation)
+
 > Throwaway measurement, not application code. Every claim about observed output
 > cites a file under `raw/`. Status: all eight questions measured; Q4 verdict (a)
 > observable; Q6 fence holds; ready for verification.

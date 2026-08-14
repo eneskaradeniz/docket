@@ -11,6 +11,17 @@ tracks:
 
 # WO-0007 — Electron shell scaffold — renderer is the M1 prototype
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+- [Closure record](#closure-record)
+
 ## Objective
 
 Wrap the M1 React prototype in an Electron shell and move the composition root out of `src/dev-main.tsx`

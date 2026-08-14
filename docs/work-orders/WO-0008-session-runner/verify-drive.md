@@ -1,5 +1,9 @@
 # WO-0008 — headless adapter drive (verification)
 
+## İçindekiler
+
+- [Stop-and-ask path (canUseTool → permission_request → decide → hold released)](#stop-and-ask-path-canusetool--permission_request--decide--hold-released)
+
 Run: `npx vite-node src/adapters/runner/_drive.ts` (throwaway script, not committed).
 Drive input: `{ role:'implementer', cwd:<repo>, mode:'direct', prompt:'Reply with exactly one word: pong' }`.
 

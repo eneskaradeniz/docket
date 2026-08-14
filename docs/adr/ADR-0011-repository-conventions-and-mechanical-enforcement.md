@@ -1,5 +1,14 @@
 # ADR-0011 — Repository conventions and mechanical enforcement
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision — `CLAUDE.md` carries rules, not reasons](#decision--claudemd-carries-rules-not-reasons)
+- [Decision — mechanical acceptance criteria run in CI](#decision--mechanical-acceptance-criteria-run-in-ci)
+- [Decision — process weight scales with the work order](#decision--process-weight-scales-with-the-work-order)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-04
 - Deciders: Enes (operator), architect session

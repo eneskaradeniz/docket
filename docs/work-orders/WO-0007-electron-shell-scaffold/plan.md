@@ -1,5 +1,22 @@
 # WO-0007 — plan
 
+## İçindekiler
+
+- [Objective (restated)](#objective-restated)
+- [Architect rulings — the three gates](#architect-rulings--the-three-gates)
+  - [1. Port synchronicity — STAY SYNCHRONOUS](#1-port-synchronicity--stay-synchronous)
+  - [2. Disk layout — `electron/` at the repo root](#2-disk-layout--electron-at-the-repo-root)
+  - [3. `src/dev-main.tsx` — DELETE; Electron is the sole entry](#3-srcdev-maintsx--delete-electron-is-the-sole-entry)
+- [Design](#design)
+  - [Process model](#process-model)
+  - [IPC contract (throwaway, synchronous)](#ipc-contract-throwaway-synchronous)
+  - [Build & dev pipeline](#build--dev-pipeline)
+  - [Boundary-check changes (`scripts/check-boundaries.mjs`)](#boundary-check-changes-scriptscheck-boundariesmjs)
+- [Task breakdown](#task-breakdown)
+- [Verification (AC → how checked)](#verification-ac--how-checked)
+- [Risks](#risks)
+- [Tech debt to open (closure gate)](#tech-debt-to-open-closure-gate)
+
 > Architect rulings on the three stop-and-ask gates, the resulting design, and the
 > implementation path. `mode: plan`; this plan awaits the architect verdict before
 > any code is written.

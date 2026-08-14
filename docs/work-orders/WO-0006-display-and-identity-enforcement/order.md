@@ -13,6 +13,16 @@ tracks:
 
 # WO-0006 — ADR-0007/0003 live violations and detection gaps
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Mode and review weight](#mode-and-review-weight)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+
 ## Objective
 
 Close the three ADR violations WO-0005's verification found in WO-0002 code, and extend the boundary checks to

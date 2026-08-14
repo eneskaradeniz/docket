@@ -13,6 +13,16 @@ tracks:
 
 # WO-0017 — Step execution
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Decisions](#decisions)
+- [Scope](#scope)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Notes](#notes)
+
 ## Objective
 
 Open the dogfooding gate between an approved plan and running its steps. Today Docket plans but does not

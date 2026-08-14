@@ -1,5 +1,13 @@
 # ADR-0007 — Localisation and theming
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision — localisation](#decision--localisation)
+- [Decision — theming](#decision--theming)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

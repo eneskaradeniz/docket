@@ -1,5 +1,17 @@
 # ADR-0002 — Session roles and lifetimes
 
+## İçindekiler
+
+- [Context](#context)
+- [Decision](#decision)
+  - [Roles and isolation](#roles-and-isolation)
+  - [Session lifecycle is decided by the app](#session-lifecycle-is-decided-by-the-app)
+  - [Verifier independence](#verifier-independence)
+  - [Fresh architect and the briefing bundle](#fresh-architect-and-the-briefing-bundle)
+  - [Mode is an explicit field](#mode-is-an-explicit-field)
+- [Consequences](#consequences)
+- [Alternatives rejected](#alternatives-rejected)
+
 - Status: accepted
 - Date: 2026-08-03
 - Deciders: Enes (operator), architect session

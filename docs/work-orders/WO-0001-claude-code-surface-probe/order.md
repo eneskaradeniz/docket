@@ -11,6 +11,20 @@ tracks:
 
 # WO-0001 — Claude Code programmatic surface probe
 
+## İçindekiler
+
+- [Objective](#objective)
+- [Context](#context)
+- [Mode](#mode)
+- [Scope](#scope)
+- [Questions to answer](#questions-to-answer)
+- [Deliverables](#deliverables)
+- [Acceptance criteria](#acceptance-criteria)
+- [Evidence required](#evidence-required)
+- [Stop-and-ask gates](#stop-and-ask-gates)
+- [Notes](#notes)
+- [Closure](#closure)
+
 ## Objective
 
 Measure how Claude Code can be driven programmatically, before any UI assumption depends on it. Two points
