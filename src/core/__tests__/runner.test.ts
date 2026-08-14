@@ -377,3 +377,16 @@ describe('fenceDecision — ambiguous policy (WO-0019 / TD-026)', () => {
     expect(fenceDecision(architect, ev({ ambiguous: true }))).toBe('allow');
   });
 });
+
+describe('foldSessionEvent — error code (WO-0025 / B1)', () => {
+  it('carries the provider error code onto the state', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'error', message: 'raw provider string', code: 'auth_missing' });
+    expect(s.status).toBe('error');
+    expect(s.lastError).toBe('raw provider string');
+    expect(s.lastErrorCode).toBe('auth_missing');
+  });
+  it('an unclassified error leaves lastErrorCode unset', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'error', message: 'mystery' });
+    expect(s.lastErrorCode).toBeUndefined();
+  });
+});

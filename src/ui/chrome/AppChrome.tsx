@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
+import type { AppSettings } from '../../core/app-settings';
 import { UI } from '../data/labels';
 import { AppSettingsModal } from './AppSettingsModal';
 import type { ThemeMode } from './use-theme';
@@ -15,6 +16,7 @@ export function AppChrome({
   theme,
   setTheme,
   source,
+  settings,
   onWorkspacesChanged,
 }: {
   workspaces: Workspace[];
@@ -23,6 +25,7 @@ export function AppChrome({
   theme: ThemeMode;
   setTheme: (m: ThemeMode) => void;
   source: WorkOrderSource;
+  settings: AppSettings;
   onWorkspacesChanged: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -56,7 +59,7 @@ export function AppChrome({
         </div>
       </header>
       {settingsOpen ? (
-        <AppSettingsModal theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} />
+        <AppSettingsModal theme={theme} setTheme={setTheme} settings={settings} onClose={() => setSettingsOpen(false)} />
       ) : null}
       {wsModal !== 'closed' ? (
         <WsSettingsModal

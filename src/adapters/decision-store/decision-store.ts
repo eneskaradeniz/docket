@@ -159,6 +159,16 @@ export function writePlanMdById(decisionStorePath: string, id: string, body: str
   return path;
 }
 
+// Overwrite order.md in the WO's EXISTING directory (discovered by id — WO-0025 closure note append).
+// The caller supplies the full body (front matter preserved by the reader); throws if the dir is missing.
+export function writeOrderMdById(decisionStorePath: string, id: string, body: string): string {
+  const dir = findWorkOrderDir(decisionStorePath, id);
+  if (!dir) throw new Error(`writeOrderMdById: no work-order directory for ${id}`);
+  const path = join(dir, 'order.md');
+  writeFileSync(path, body, 'utf8');
+  return path;
+}
+
 // Read order.md + plan.md from the WO's directory. Missing dir or file → '' for that doc. No git; reads
 // the working tree at view time (ADR-0010 — document text is never stored in the DB).
 export function readWoDocs(decisionStorePath: string, id: string): { order: string; plan: string } {

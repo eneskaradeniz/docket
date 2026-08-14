@@ -8,6 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
+import type { AppSettings } from '../src/core/app-settings';
 import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
@@ -31,6 +32,15 @@ const source: WorkOrderSource = {
   getStepVerdict: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:get-step-verdict', id, idx),
   resetStep: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:reset-step', id, idx),
   deleteWorkOrder: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:delete-work-order', id),
+  closeWorkOrder: (id: WorkOrderId, note: string) => ipcRenderer.invoke('docket:source:close-work-order', id, note),
+};
+
+// Operator app settings (WO-0025 / B1): the provider key + check. The key never crosses to the renderer
+// except through getProviderKey (the settings modal); the check runs main-side.
+const settings: AppSettings = {
+  getProviderKey: () => ipcRenderer.invoke('docket:settings:get-provider-key'),
+  setProviderKey: (key: string | undefined) => ipcRenderer.invoke('docket:settings:set-provider-key', key),
+  checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
 };
 
 const runner = {
@@ -49,6 +59,7 @@ const runner = {
 
 contextBridge.exposeInMainWorld('docket', {
   source,
+  settings,
   runner,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),

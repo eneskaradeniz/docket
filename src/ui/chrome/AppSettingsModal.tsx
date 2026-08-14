@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { UI } from '../data/labels';
+import { useEffect, useState } from 'react';
+import type { AppSettings, ProviderStatus } from '../../core/app-settings';
+import { PROVIDER_ERROR_LABELS, UI } from '../data/labels';
 import { VERSION } from '../data/version';
 import type { ThemeMode } from './use-theme';
 
@@ -15,12 +16,45 @@ const THEME_LABEL: Record<ThemeMode, string> = {
 export function AppSettingsModal({
   theme,
   setTheme,
+  settings,
   onClose,
 }: {
   theme: ThemeMode;
   setTheme: (m: ThemeMode) => void;
+  settings: AppSettings;
   onClose: () => void;
 }) {
+  // Provider block state (WO-0025 / B1): the stored key draft + the last check result. The quick check on
+  // open tells the operator where auth stands before the first "Plan iste" throws.
+  const [keyDraft, setKeyDraft] = useState('');
+  const [status, setStatus] = useState<ProviderStatus | undefined>(undefined);
+  const [testing, setTesting] = useState(false);
+  useEffect(() => {
+    void settings.getProviderKey().then((k) => setKeyDraft(k ?? ''));
+    void settings.checkProvider().then(setStatus).catch(() => setStatus(undefined));
+  }, [settings]);
+  const saveKey = async (): Promise<void> => {
+    await settings.setProviderKey(keyDraft.trim() || undefined);
+    setStatus(undefined);
+  };
+  const clearKey = async (): Promise<void> => {
+    setKeyDraft('');
+    await settings.setProviderKey(undefined);
+    setStatus(undefined);
+  };
+  const runTest = async (): Promise<void> => {
+    setTesting(true);
+    try {
+      if (keyDraft.trim()) await settings.setProviderKey(keyDraft.trim());
+      setStatus(await settings.checkProvider());
+    } finally {
+      setTesting(false);
+    }
+  };
+  const statusText =
+    status === undefined ? UI.providerStatusUnknown : status.ok ? `${UI.providerStatusOk} (${status.source})` : PROVIDER_ERROR_LABELS[status.code];
+  const statusTone = status?.ok ? 'text-sage' : 'text-clay';
+
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -76,6 +110,36 @@ export function AppSettingsModal({
           <button type="button" className="flex-1 rounded bg-bg px-2 py-1.5 text-[12px] font-medium text-ink">
             {UI.langTr}
           </button>
+        </div>
+
+        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">
+          {UI.providerLabel}
+        </label>
+        <div className="mb-4 rounded-sm border border-rule bg-surface2 p-2.5">
+          <p className={`text-[12px] ${statusTone}`}>
+            {statusText}
+          </p>
+          <div className="mt-2 flex gap-1.5">
+            <input
+              type="password"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder={UI.providerKeyPlaceholder}
+              className="min-w-0 flex-1 rounded-sm border border-rule bg-bg px-2 py-1 font-mono text-[12px] text-ink"
+            />
+            <button type="button" onClick={() => void saveKey()} className="btn-ghost shrink-0 rounded px-2.5 py-1 text-xs">
+              {UI.providerKeySave}
+            </button>
+            <button type="button" onClick={() => void clearKey()} className="btn-ghost shrink-0 rounded px-2.5 py-1 text-xs">
+              {UI.providerKeyClear}
+            </button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={() => void runTest()} className="alink text-[12px]">
+              {testing ? UI.providerTesting : UI.providerTest}
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] text-inkdim">{UI.providerHint}</p>
         </div>
 
         <div className="my-4 border-t border-rule" />

@@ -6,7 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { createRunner } from '../src/adapters/runner';
+import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import type { DriveInput, PermissionDecision } from '../src/core/runner';
@@ -75,6 +75,19 @@ ipcMain.handle('docket:source:reset-step', (_e, id: WorkOrderId, idx: number) =>
 // --- Work-order deletion (WO-0020). Cascade-deletes DB rows + removes the decision-store folder. ---
 ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store.deleteWorkOrder(id));
 
+// --- Work-order closure (WO-0025 / P1-2). Operator-attested: appends the ## Closure note to order.md and
+//   records merged_at + verifier + closure-sha facts. Preconditions re-checked server-side. ---
+ipcMain.handle('docket:source:close-work-order', (_e, id: WorkOrderId, note: string) => store.closeWorkOrder(id, note));
+
+// --- Operator app settings (WO-0025 / B1): the provider key lives in the shared DB (both hosts see it);
+//   the provider check runs in the runner adapter — the only place that may touch the provider. ---
+ipcMain.handle('docket:settings:get-provider-key', () => store.getProviderKey());
+ipcMain.handle('docket:settings:set-provider-key', (_e, key: string | undefined) => store.setProviderKey(key));
+ipcMain.handle('docket:settings:check-provider', async () => {
+  const key = await store.getProviderKey();
+  return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
+});
+
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
@@ -90,7 +103,10 @@ ipcMain.handle('docket:pick-files', async () => {
 // --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by
 //   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
 //   and forwards each RunnerEvent back over 'docket:runner:event' until the run completes. ---
-const runner = createRunner();
+// The stored provider key (WO-0025 / B1) becomes the subprocess env — Options.env REPLACES the env, so
+// process.env is spread (the SDK's own login files must keep working when no key is stored).
+const providerKey = await store.getProviderKey();
+const runner = createRunner(providerKey !== undefined ? { env: providerEnvForKey(providerKey) } : {});
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });

@@ -378,3 +378,46 @@ describe('SQLite store — plan approval + doc reads (WO-0016)', () => {
     expect((await createStore(p).getWorkOrderDocs(wo.id)).plan).toBe('# persisted plan');
   });
 });
+
+describe('closeWorkOrder — operator-attested closure (WO-0025 / P1-2)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Close test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('rejects when a step lacks a verdict (preconditions from the DB)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Not reviewable', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'active' });
+    await expect(store.closeWorkOrder(wo.id, 'note')).rejects.toThrow('step_not_done');
+  });
+
+  it('closes: order.md gains ## Closure, gates + merged_at set, stage closed, key settings round-trip', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Close me', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+
+    await store.closeWorkOrder(wo.id, 'deneme kapanis');
+
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.order).toContain('## Closure');
+    expect(docs.order).toContain('deneme kapanis');
+    const row = store.db.prepare('SELECT gate_verifier_resolvable AS v, gate_closure_docs_sha AS s FROM work_order WHERE id = ?').get(wo.id) as { v: number; s: string };
+    expect(row.v).toBe(1);
+    expect(row.s).toBeTruthy(); // 'uncommitted' in a non-git tmp root, a real sha in a git repo
+    const merged = store.db.prepare('SELECT COUNT(*) AS n FROM track WHERE work_order_id = ? AND merged_at IS NOT NULL').get(wo.id) as { n: number };
+    expect(merged.n).toBeGreaterThan(0);
+    const reloaded = await store.getWorkOrder(wo.id);
+    expect(reloaded!.stage).toBe('closed');
+
+    await store.setProviderKey('sk-test-123');
+    expect(await store.getProviderKey()).toBe('sk-test-123');
+    await store.setProviderKey(undefined);
+    expect(await store.getProviderKey()).toBeUndefined();
+  });
+});

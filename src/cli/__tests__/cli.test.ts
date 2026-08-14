@@ -131,3 +131,6 @@ describe('formatEvent — output formatter', () => {
     expect(formatEvent(perm(), 'stream')).toMatch(/ask/);
   });
 });
+// The CLI's `close` command is a thin store.closeWorkOrder call — covered by store.test.ts's
+// closeWorkOrder describe (preconditions, ## Closure note, gates/merged_at, stage → closed) and
+// core's can-close.test.ts; `doctor` wraps quickProviderCheck/checkProvider (adapter-side).

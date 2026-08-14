@@ -13,10 +13,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, type ObservedStep } from '../../core/derive';
+import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
@@ -40,11 +40,18 @@ import type {
 // `SessionStore` port (src/core/session-store.ts); `Store` implements it. The drive loop (src/core/pipeline.ts)
 // depends on that port, not on this adapter (WO-0023).
 
-export interface Store extends WorkOrderSource, SessionStore {
+export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
+}
+
+/** The DB-backed half of the AppSettings port (WO-0025): the provider key in the `app_setting` table. The
+ *  check-half (checkProvider) lives in the runner adapter — only it may touch the provider. */
+export interface AppSettingsData {
+  getProviderKey(): Promise<string | undefined>;
+  setProviderKey(key: string | undefined): Promise<void>;
 }
 
 // --- row shapes (node:sqlite returns untyped rows) ---
@@ -638,12 +645,59 @@ export function createStore(dbPath: string): Store {
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
     },
+    // Close a finished work order (WO-0025 / P1-2). The M2 floor is OPERATOR-ATTESTED closure — the mirror of
+    // the plan gate's M2 ruling (observed flag, not a sha; TD-005): the operator confirms merges are done and
+    // Docket records the three facts deriveStage needs (track merged_at, verifier gate, closure sha = the
+    // decision-store HEAD at close time). order.md gains a `## Closure` note. M3's forge observation replaces
+    // the attestations with observed PR/CI/merge + a docs-commit sha.
+    closeWorkOrder: async (workOrderId: WorkOrderId, note: string) => {
+      const wo = db.prepare('SELECT workspace_id, gate_plan_approved FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string; gate_plan_approved: number }
+        | undefined;
+      if (!wo) throw new Error(`closeWorkOrder: work order ${workOrderId} not found`);
+      const stepRows = db.prepare('SELECT status, verdict FROM work_order_step WHERE work_order_id = ?').all(workOrderId) as Array<
+        { status: string; verdict: string | null }
+      >;
+      const check = canClose({
+        planApproved: !!wo.gate_plan_approved,
+        steps: stepRows.map((r) => ({ status: r.status as 'pending' | 'active' | 'done' | 'blocked', verdict: (r.verdict ?? undefined) as 'proceed' | 'revise' | undefined })),
+      });
+      if (!check.ok) throw new Error(`closeWorkOrder: preconditions unmet (${check.reason})`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      // The closure sha = the decision-store HEAD at close time ("closed at this commit" — an attestation of
+      // WHERE the work stands, not yet the M3 docs-commit gate).
+      let sha = '';
+      try {
+        sha = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf-8', timeout: 2000 }).trim();
+      } catch {
+        sha = 'uncommitted'; // decision store not a git repo — honest placeholder, M3 observe replaces it
+      }
+      const { order } = readWoDocs(dir, workOrderId);
+      if (!order) throw new Error(`closeWorkOrder: order.md not found for ${workOrderId}`);
+      const closedAt = new Date().toISOString();
+      const withClosure = `${order.trimEnd()}\n\n## Closure\n\n${note}\n\n_Closed ${closedAt} at ${sha}_\n`;
+      writeOrderMdById(dir, workOrderId, withClosure);
+      const now = closedAt;
+      db.prepare('UPDATE track SET merged_at = ? WHERE work_order_id = ?').run(now, workOrderId);
+      db.prepare('UPDATE work_order SET gate_verifier_resolvable = 1, gate_closure_docs_sha = ? WHERE id = ?').run(sha, workOrderId);
+    },
     // The plan's steps (WO-0017) — specs parsed from plan.md + zipped with the observed run state. Detail-only.
     getWorkOrderSteps: (id: WorkOrderId) => Promise.resolve(buildWorkOrderSteps(db, id)),
     // A step report body, read from the decision store at view time (ADR-0010). '' when the report is absent.
     getStepReport: (id: WorkOrderId, idx: number, role: StepRole) => {
       const dir = woDir(db, id);
       return Promise.resolve(dir ? readStepReport(dir, id, idx, role) : '');
+    },
+    // Operator app preferences (WO-0025) — the provider key lives in the shared DB so BOTH hosts (GUI + CLI)
+    // see it; never returned to the renderer except through this port's get. undefined clears it.
+    getProviderKey: () =>
+      Promise.resolve(
+        (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('provider_key') as { value: string } | undefined)?.value,
+      ),
+    setProviderKey: (key: string | undefined) => {
+      if (key === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run('provider_key');
+      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('provider_key', key);
+      return Promise.resolve();
     },
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
     recordStep: (workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }) =>

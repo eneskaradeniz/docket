@@ -3,6 +3,7 @@
 // (`runner`, callback form — the AsyncIterable is realised renderer-side off it,
 // because contextBridge does not preserve Symbol-keyed properties). No Node surface
 // leaks (ADR-0006/0001).
+import type { AppSettings } from '../core/app-settings';
 import type { WorkOrderSource } from '../core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner';
 
@@ -17,6 +18,7 @@ declare global {
   interface Window {
     docket: {
       source: WorkOrderSource;
+    settings: AppSettings;
       runner: RunnerBridge;
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;

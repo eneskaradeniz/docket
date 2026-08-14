@@ -15,14 +15,18 @@
 //   anything reaches the operator: out-of-scope writes deny with no prompt.
 // - plan approval is resume + a move off plan mode (findings Q2/Q3); cost is read
 //   from the result message (findings Q1).
-import { resolve } from 'node:path';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type {
   CanUseTool,
   Options,
   PermissionMode,
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { ProviderErrorCode } from '../../core/runner';
+import type { ProviderStatus } from '../../core/app-settings';
 import {
   classifyCommandLine,
   fenceDecision,
@@ -136,7 +140,13 @@ function planTextFromInput(input: Record<string, unknown> | undefined): string {
   return summarizeToolInput(input) || JSON.stringify(input, null, 2);
 }
 
-export function createRunner(): SessionRunner {
+/** Optional runner construction (WO-0025 / B1): `env` REPLACES the subprocess env (SDK semantics), so the
+ *  host spreads process.env itself — see `providerEnvForKey`. */
+export interface RunnerOptions {
+  env?: Record<string, string>;
+}
+
+export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
   // Pending stop-and-asks: requestId → resolver. The SDK's canUseTool awaits the resolver.
   const pending = new Map<string, (d: PermissionResult) => void>();
   let currentAbort: AbortController | undefined;
@@ -244,6 +254,8 @@ export function createRunner(): SessionRunner {
       canUseTool,
       abortController: abort,
     };
+    // Options.env REPLACES the subprocess env — compose over process.env so PATH/HOME survive.
+    if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
     if (input.resume) options.resume = input.resume;
 
     try {
@@ -257,7 +269,8 @@ export function createRunner(): SessionRunner {
       const err = e as { name?: string; message?: string };
       // An interrupt is intentional — end the stream without an error event.
       if (err?.name !== 'AbortError') {
-        queue.push({ kind: 'error', message: err?.message ?? String(e) });
+        const raw = err?.message ?? String(e);
+        queue.push({ kind: 'error', message: raw, ...(classifyProviderError(raw) ? { code: classifyProviderError(raw) } : {}) });
       }
     } finally {
       currentAbort = undefined;
@@ -298,4 +311,69 @@ export function createRunner(): SessionRunner {
       currentAbort?.abort();
     },
   };
+}
+
+// ===== Provider surface (WO-0025 / B1) — the vendor vocabulary lives HERE ONLY (c1 / ADR-0006) =====
+// Core speaks ProviderErrorCode/ProviderStatus; this module classifies the provider's raw strings, builds
+// the env-var map, and can run a token-free handshake check. Everything crossing the boundary is neutral.
+
+/** The provider's API-key env var name. Only this module (and hosts wiring env) may spell it. */
+const PROVIDER_KEY_ENV = 'ANTHROPIC_API_KEY';
+/** The provider CLI's login directory (auth present when it exists). */
+const PROVIDER_LOGIN_DIR = '.claude';
+
+/** Build the env map for a stored key. NOTE: Options.env REPLACES the subprocess env — the host MUST
+ *  spread process.env when composing: { ...process.env, ...providerEnvForKey(key) }. */
+export function providerEnvForKey(key: string): Record<string, string> {
+  return { [PROVIDER_KEY_ENV]: key };
+}
+
+/** A cheap, spawn-free readiness hint: the key env var is set, or the provider CLI's login dir exists.
+ *  Unknown ('unknown', never a guess) otherwise — the same honesty rule as M3 health checks. */
+export function quickProviderCheck(env: NodeJS.ProcessEnv = process.env): 'env' | 'login' | 'unknown' {
+  if (env[PROVIDER_KEY_ENV]) return 'env';
+  try {
+    if (existsSync(join(homedir(), PROVIDER_LOGIN_DIR))) return 'login';
+  } catch {
+    // fall through
+  }
+  return 'unknown';
+}
+
+/** Map a raw provider error string onto the neutral code. String matching is heuristic — the messages are
+ *  the SDK's own (extracted from its bundle); unknown shapes return undefined (the UI shows the raw text). */
+export function classifyProviderError(message: string): ProviderErrorCode | undefined {
+  const m = message.toLowerCase();
+  if (m.includes('could not resolve authentication') || m.includes('api key') && m.includes('required')) return 'auth_missing';
+  if (m.includes('authentication') || m.includes('credentials') || m.includes('401') || m.includes('unauthorized')) return 'auth_failed';
+  if (m.includes('timed out') || m.includes('timeout') || m.includes('did not complete within')) return 'timeout';
+  if (m.includes('executable not found') || m.includes('claude code executable')) return 'executable_missing';
+  return undefined;
+}
+
+/** Full provider check (WO-0025): pre-spawn the provider subprocess and complete the initialize handshake
+ *  WITHOUT sending a prompt — zero tokens — then close. Reports the auth source on success; classifies the
+ *  throw on failure. Used by the settings "Test" button and `docket doctor --verify`. */
+export async function checkProvider(env?: Record<string, string>): Promise<ProviderStatus> {
+  try {
+    const warm = await startup({
+      options: {
+        cwd: process.cwd(),
+        // Same replace-semantics as runDrive: compose over process.env.
+        ...(env ? { env: { ...process.env, ...env } } : {}),
+      },
+    });
+    let source = 'handshake';
+    try {
+      const acc = await (warm as unknown as { accountInfo?: () => Promise<{ tokenSource?: string; apiKeySource?: string }> }).accountInfo?.();
+      if (acc?.tokenSource ?? acc?.apiKeySource) source = String(acc?.tokenSource ?? acc?.apiKeySource);
+    } catch {
+      // accountInfo may not exist on a bare warm handle — the handshake itself succeeding is the check.
+    }
+    await warm.close();
+    return { ok: true, source };
+  } catch (e) {
+    const message = (e as Error)?.message ?? String(e);
+    return { ok: false, code: classifyProviderError(message) ?? 'auth_missing', message };
+  }
 }

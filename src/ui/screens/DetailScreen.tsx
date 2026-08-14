@@ -11,6 +11,7 @@ export function DetailScreen({
   onResetStep,
   reloadDetail,
   onDelete,
+  onCloseWorkOrder,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -20,6 +21,7 @@ export function DetailScreen({
   onGetStepVerdict: (idx: number) => Promise<string>;
   onResetStep: (idx: number) => Promise<void>;
   reloadDetail: () => void;
+  onCloseWorkOrder: (note: string) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   return (
@@ -33,6 +35,7 @@ export function DetailScreen({
         onGetStepVerdict={onGetStepVerdict}
         onResetStep={onResetStep}
         reloadDetail={reloadDetail}
+        onCloseWorkOrder={onCloseWorkOrder}
         onDelete={onDelete}
       />
     </main>

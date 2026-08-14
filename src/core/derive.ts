@@ -394,3 +394,22 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
     cost: wo.cost,
   };
 }
+
+// ===== Work-order closure (WO-0025 / P1-2) =====
+//
+// A work order is CLOSEABLE when the plan was approved and every plan step finished AND was reviewed —
+// exactly the state the "Tüm adımlar tamam" card already celebrates (WorkOrderDetail's allStepsDone plus the
+// verdicts the review loop records). Pure: the store re-checks the same facts from the DB before writing.
+
+/** The minimum step facts closure needs — satisfied by both `StepView` and a DB row projection. */
+export type CloseableStep = Pick<StepView, 'status' | 'verdict'>;
+
+export type CloseCheck = { ok: true } | { ok: false; reason: 'plan_not_approved' | 'no_steps' | 'step_not_done' | 'step_not_reviewed' };
+
+export function canClose(input: { planApproved: boolean; steps: CloseableStep[] }): CloseCheck {
+  if (!input.planApproved) return { ok: false, reason: 'plan_not_approved' };
+  if (input.steps.length === 0) return { ok: false, reason: 'no_steps' };
+  if (input.steps.some((s) => s.status !== 'done')) return { ok: false, reason: 'step_not_done' };
+  if (input.steps.some((s) => !s.verdict)) return { ok: false, reason: 'step_not_reviewed' };
+  return { ok: true };
+}

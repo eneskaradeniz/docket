@@ -23,6 +23,7 @@ import type {
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
 import type { WoPhase } from '../../core/derive';
+import type { ProviderErrorCode } from '../../core/runner';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 export const COLUMN_LABELS: Record<BoardColumn, string> = {
@@ -293,6 +294,14 @@ export function woIdLabel(id: WorkOrderId): string {
   return id;
 }
 
+// Sağlayıcı hata dizgeleri (WO-0025 / B1) — koda göre Türkçe metin; kod yoksa ham mesaj gösterilir.
+export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
+  auth_missing: "Sağlayıcı kimliği bulunamadı — Ayarlar → Agent sağlayıcısı'ndan anahtar kaydet veya sağlayıcı girişi yap.",
+  auth_failed: "Sağlayıcı kimliği reddedildi — Ayarlar → Agent sağlayıcısı'ndan anahtarı kontrol et.",
+  timeout: 'Sağlayıcı bağlantısı zaman aşımına uğradı — ağ/ağ geçidi durumunu kontrol et.',
+  executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
+};
+
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.
 export const UI = {
   productName: 'Docket',
@@ -430,7 +439,26 @@ export const UI = {
   deleteWoInFlight: 'Siliniyor…',
   cancel: 'Vazgeç',
   stepsAllDone: 'Tüm adımlar tamam',
-  stepsAllDoneHint: 'Plan uygulandı. Kapanış — PR açma, CI, merge ve karar deposu güncellemesi — M3 aşamasında geliyor; şimdilik elle commit/merge yapabilirsin.',
+  stepsAllDoneHint: "Plan uygulandı, tüm adımlar mimar denetiminden geçti. Kapanış: iş emrini kapat — merge'ler senin onayınla kayda geçer, kapanış notu order.md'ye yazılır.",
+  // İş emri kapanışı (WO-0025)
+  closeWo: 'İş emrini kapat',
+  closeWoHint: "Tüm adımlar tamam ve denetimli. Kapatınca: merge'ler yapıldı olarak kayda geçer (M3'e kadar operatör onayı), kapanış notu order.md'ye eklenir ve iş emri 'Kapalı' çekencesine taşınır.",
+  closeNoteLabel: 'Kapanış notu',
+  closeNotePlaceholder: "Kısa bir kapanış notu — order.md'ye yazılır",
+  closeWoConfirm: 'Evet, kapat',
+  closeWoInFlight: 'Kapatılıyor…',
+  closeWoFailed: 'Kapatılamadı: ön koşullar karşılanmadı (adım/denetim eksik olabilir).',
+  // Sağlayıcı ayarları (WO-0025 / B1)
+  providerLabel: 'Agent sağlayıcısı',
+  providerStatusOk: 'Hazır', // + source shown appended by the modal
+  providerStatusUnknown: 'Durum bilinmiyor — anahtar kaydet ya da Test et',
+  providerKeyLabel: 'API anahtarı',
+  providerKeyPlaceholder: 'sk-… (yoksa sağlayıcı girişi kullanılır)',
+  providerKeySave: 'Kaydet',
+  providerKeyClear: 'Temizle',
+  providerTest: 'Test et',
+  providerTesting: 'Sınanıyor…',
+  providerHint: 'Anahtar paylaşılan veritabanına kaydedilir; GUI ve CLI birlikte görür. Sağlayıcı girişi varsa anahtar gerekmez.',
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',
