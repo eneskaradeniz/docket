@@ -7,6 +7,7 @@ import { parseOrderMd } from '../../core/order-md';
 import { UI } from '../data/labels';
 import { AppChrome } from '../chrome/AppChrome';
 import { useTheme } from '../chrome/use-theme';
+import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { AppSettingsModal } from '../chrome/AppSettingsModal';
@@ -21,7 +22,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 // an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
 // on mount, the selected work order + its docs load on selection, each with a state for the
 // in-flight/failed case. The runner is provided via context for the session pane.
-export function App({ source, runner }: { source: WorkOrderSource; runner: SessionRunner }) {
+export function App({ source, settings, runner }: { source: WorkOrderSource;
+  settings: AppSettings; runner: SessionRunner }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [load, setLoad] = useState<LoadState>('loading');
@@ -100,6 +102,15 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
     },
     [source, selectedId, reloadDetail],
   );
+  const handleCloseWorkOrder = useCallback(
+    async (note: string) => {
+      if (!selectedId) return;
+      await source.closeWorkOrder(selectedId, note);
+      reloadDetail();
+      refreshWorkOrders();
+    },
+    [source, selectedId, reloadDetail, refreshWorkOrders],
+  );
   const handleDeleteWorkOrder = useCallback(async () => {
     if (!selectedId) return;
     await source.deleteWorkOrder(selectedId);
@@ -116,6 +127,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
       onSwitch={setWorkspaceId}
       theme={theme}
       setTheme={setTheme}
+      settings={settings}
       source={source}
       onWorkspacesChanged={refreshWorkspaces}
     />
@@ -158,6 +170,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
         docs={detail.docs}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
+        onCloseWorkOrder={handleCloseWorkOrder}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
         onGetStepVerdict={handleGetStepVerdict}
         onResetStep={handleResetStep}
@@ -197,7 +210,7 @@ export function App({ source, runner }: { source: WorkOrderSource; runner: Sessi
           onSaved={refreshWorkspaces}
         />
       ) : null}
-      {settingsOpen ? <AppSettingsModal theme={theme} setTheme={setTheme} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? <AppSettingsModal theme={theme} setTheme={setTheme} settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
     </RunnerContext.Provider>
   );
 }

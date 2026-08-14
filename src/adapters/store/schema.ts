@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS connection (
   local_path TEXT NOT NULL,
   PRIMARY KEY (workspace_id, repo_remote)
 );
+-- Operator app preferences (WO-0025): a third ADR-0010 category — neither a git-observed fact nor a
+-- decision about work; machine-local app configuration (e.g. the provider API key). Key-value rows.
+CREATE TABLE IF NOT EXISTS app_setting (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 // Drop order respects dependencies (children first). Foreign keys are documented, not

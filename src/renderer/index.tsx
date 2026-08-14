@@ -12,7 +12,7 @@ const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(
     <React.StrictMode>
-      <App source={window.docket.source} runner={createRunnerPort(window.docket.runner)} />
+      <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
     </React.StrictMode>,
   );
 }

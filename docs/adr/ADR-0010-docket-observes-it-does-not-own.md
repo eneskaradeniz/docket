@@ -64,6 +64,11 @@ Consequence: **architect verdicts must be recorded as artifacts in git, not held
 that exists only in a session transcript is unrecoverable and unverifiable — which is exactly how TD-005
 happened. The verdict is committed alongside the plan it approves.
 
+**Addendum (WO-0025): a third category — operator preferences.** The observed|owned split covers facts about
+work; an operator preference (e.g. the stored provider key) is neither. It lives in a tiny `app_setting`
+key-value table: machine-local app configuration, backup-worthy like owned rows, but never projected into any
+observed/derived model. Theme stays renderer-local storage — presentation, not configuration.
+
 ### Reconciliation is explicit and continuous
 
 Docket re-reads the world: on workspace open, on window focus, after any action it takes, on a manual

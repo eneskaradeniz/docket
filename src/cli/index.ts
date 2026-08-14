@@ -8,7 +8,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRunner } from '../adapters/runner';
+import { checkProvider, createRunner, providerEnvForKey, quickProviderCheck } from '../adapters/runner';
 import { createStore } from '../adapters/store';
 import { woid } from '../adapters/ids';
 import { askOperatorPolicy, autoAllowPolicy, createPipeline } from '../core/pipeline';
@@ -56,7 +56,18 @@ async function driveCommand(woIdArg: string | undefined, opts: Record<string, st
   }
   const woId = woid(woIdArg);
   const format: DriveFormat = opts.format === 'jsonl' || opts.format === 'quiet' ? opts.format : 'stream';
-  const runner = typeof opts.fake === 'string' ? createFakeRunner(opts.fake).runner : createRunner();
+  const usingFake = typeof opts.fake === 'string';
+  if (!usingFake) {
+    // Preflight (WO-0025 / B1): fail fast with guidance instead of a raw provider throw mid-drive.
+    const quick = quickProviderCheck();
+    if (quick === 'unknown') {
+      process.stderr.write('✗ provider auth not found (no key set, no provider login) — set a key via `npm run cli -- doctor` or the GUI settings, or log in to the provider CLI.\n');
+      return 2;
+    }
+  }
+  const runner = usingFake
+    ? createFakeRunner(opts.fake as string).runner
+    : createRunner((await store.getProviderKey()) !== undefined ? { env: providerEnvForKey((await store.getProviderKey())!) } : {});
   // Headless default is auto-allow (the agent is fully privileged; the fence is a tripwire, not a boundary).
   // Interactive `--policy ask` is a follow-up; for now it falls back to auto-allow with a warning.
   const permission = opts.policy === 'ask' ? askOperatorPolicy() : autoAllowPolicy();
@@ -105,6 +116,35 @@ async function approvePlanCommand(woIdArg: string | undefined, store: ReturnType
   return 0;
 }
 
+async function closeCommand(woIdArg: string | undefined, opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  if (!woIdArg) {
+    process.stderr.write('usage: close <woId> [--note TXT]\n');
+    return 2;
+  }
+  const note = typeof opts.note === 'string' && opts.note.trim() ? opts.note.trim() : 'closed';
+  try {
+    await store.closeWorkOrder(woid(woIdArg), note);
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+  process.stdout.write(`closed ${woIdArg}: order.md ## Closure note written; merges attested; stage → closed\n`);
+  return 0;
+}
+
+async function doctorCommand(opts: Record<string, string | true>, dbPath: string, store: ReturnType<typeof createStore> | undefined): Promise<number> {
+  process.stdout.write(`db: ${dbPath}${store ? '' : ' (NOT FOUND — GUI once, or --db)'}\n`);
+  const quick = quickProviderCheck();
+  process.stdout.write(`provider (quick): ${quick}\n`);
+  if (opts.verify === true || opts.verify === 'true') {
+    const key = store ? await store.getProviderKey() : undefined;
+    const full = await checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
+    process.stdout.write(full.ok ? `provider (full handshake): ok (${full.source}) — zero tokens spent\n` : `provider (full handshake): FAILED (${full.code}) — ${full.message}\n`);
+    return full.ok ? 0 : 1;
+  }
+  return quick === 'unknown' ? 1 : 0;
+}
+
 async function lsCommand(store: ReturnType<typeof createStore>): Promise<number> {
   const wos = await store.getWorkOrders();
   if (!wos.length) {
@@ -142,6 +182,8 @@ function help(): number {
       '  drive <woId> [--plan | --step N | --review N | --prompt TXT] [--cwd PATH] [--fake SCRIPT]\n' +
       '          [--policy auto|ask] [--format stream|jsonl|quiet] [--approve-plan auto] [--resume SID]\n' +
       '  approve-plan <woId>                      approve the pending plan\n' +
+      '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
+      '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +
       '  ls                                       list work orders\n' +
       '  show <woId>                              show a work order + its steps\n' +
       'global: --db PATH (default the GUI app userData docket.db)\n',
@@ -155,20 +197,34 @@ export async function main(argv: string[]): Promise<number> {
   if (!cmd) return help();
 
   const dbPath = typeof opts.db === 'string' ? opts.db : defaultDbPath();
-  if (!existsSync(dbPath)) {
+  // A `--fake` run is deterministic/testing traffic — it must NOT write the operator's real (GUI) db unless
+  // the operator explicitly aims it there with --db. The default path IS the GUI's db, so refuse instead.
+  if (typeof opts.fake === 'string' && typeof opts.db !== 'string' && dbPath === defaultDbPath()) {
+    process.stderr.write(
+      'refusing to run --fake against the default (GUI) db — pass an explicit --db <path> (e.g. a scratch db)\n',
+    );
+    return 2;
+  }
+  if (!existsSync(dbPath) && cmd !== 'doctor') {
     process.stderr.write(
       `no docket db at ${dbPath}\n` +
         `pass --db <path>, or set it to the GUI app's userData/docket.db (run the GUI once first to create it).\n`,
     );
     return 2;
   }
-  const store = createStore(dbPath);
+  const store = existsSync(dbPath) ? createStore(dbPath) : undefined;
+  if (!store) {
+    if (cmd === 'doctor') return await doctorCommand(opts, dbPath, undefined);
+    return 2; // unreachable (guarded above) — kept for type completeness
+  }
 
   switch (cmd) {
-    case 'drive': return await driveCommand(positional[1], opts, store);
-    case 'approve-plan': return await approvePlanCommand(positional[1], store);
-    case 'ls': return await lsCommand(store);
-    case 'show': return await showCommand(positional[1], store);
+    case 'drive': return await driveCommand(positional[1], opts, store!);
+    case 'approve-plan': return await approvePlanCommand(positional[1], store!);
+    case 'close': return await closeCommand(positional[1], opts, store!);
+    case 'doctor': return await doctorCommand(opts, dbPath, store);
+    case 'ls': return await lsCommand(store!);
+    case 'show': return await showCommand(positional[1], store!);
     default:
       process.stderr.write(`unknown command: ${cmd}\n`);
       return help();

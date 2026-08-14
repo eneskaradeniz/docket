@@ -161,6 +161,16 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       exemptions updated. Delivers the "GUI olmadan test" goal — the verdict/review loop is now drivable and
       assertable from the CLI, deterministically (FakeRunner) or against the real SDK. CLI bootstrap
       (create-workspace / create-work-order) + interactive `--policy ask` are deferred (TD-032).
+- [x] **WO-0025** — Closure path (P1-2) + provider/auth surface (B1). Done: `closeWorkOrder` (port + store +
+      IPC + CLI `close` + the all-steps-done card's "İş emrini kapat" flow) closes a finished WO the M2 way —
+      **operator-attested**, the mirror of the plan gate's ruling: preconditions re-checked from the DB
+      (`canClose` in core, test-first), a `## Closure` note appended to order.md, merges recorded as attested,
+      closure sha = decision-store HEAD → stage `closed`. Provider surface: a neutral `ProviderErrorCode` on
+      error events (adapter classifies; `PROVIDER_ERROR_LABELS` render Turkish in all three panes), an
+      `AppSettings` port with the provider key stored in the shared `app_setting` table (GUI settings modal:
+      key + status + zero-token `Test et`; CLI `doctor [--verify]`), the key threaded into the runner env, and
+      a non-fake `drive` preflight. **TD-027 + TD-028 closed** (TD-027 keeps an M3 attestation→observation
+      upgrade note). The CLI also refuses `--fake` runs against the default (GUI) db.
 
 ## M3 — Evidence layer
 

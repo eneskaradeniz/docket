@@ -142,7 +142,9 @@ export interface Track {
 export interface WoGateInputs {
   planApproved: boolean;
   verifierReport?: { resolvablePointers: boolean };
-  closureDocsSha?: string; // present => ROADMAP + tech-debt updated this commit
+  // present => closed. M2 (WO-0025): the decision-store HEAD at close time, set with the operator's
+  // attestation — "closed at this commit". M3 replaces it with the docs-commit sha the forge observes.
+  closureDocsSha?: string;
 }
 
 // --- Primary action: absent, never disabled (AC3 / invariant 1).

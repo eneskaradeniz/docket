@@ -33,6 +33,12 @@ pipeline** across one or more git repos, under the operator's control.
    single preview, and the operator **Approve / Edit / Skip**. On approve, the updates commit to the
    decision store; that commit sha satisfies the closure gate, and the work order closes.
 
+   **M2 floor (WO-0025):** until the forge arrives (M3), closure is **operator-attested** — the mirror of
+   the plan gate's M2 ruling. One action (`closeWorkOrder`) verifies every step is done + reviewed, appends
+   the closure note to `order.md`, records the merges as attested, and takes the decision-store HEAD as the
+   closure sha ("closed at this commit"). M3's forge observation replaces the attestations with observed
+   PR/CI/merge facts and the auto-drafted docs commit.
+
 ## Concepts
 
 | Term | Meaning |

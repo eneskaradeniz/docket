@@ -23,7 +23,20 @@ export type RunnerEvent =
   | { kind: 'permission_request'; requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string }
   | { kind: 'plan_ready'; planText: string }
   | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string }
-  | { kind: 'error'; message: string };
+  // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
+  // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
+  // UI can render Turkish copy instead of a raw English string.
+  | { kind: 'error'; message: string; code?: ProviderErrorCode };
+
+/**
+ * Why a provider session could not run, vendor-neutrally. The runner adapter maps the provider's own error
+ * strings/typed signals onto these; core/UI never name the vendor (c1). Unknown failures carry no code.
+ */
+export type ProviderErrorCode =
+  | 'auth_missing' // no credentials available to the provider
+  | 'auth_failed' // credentials present but rejected
+  | 'timeout' // subprocess handshake/connection timed out
+  | 'executable_missing'; // the provider CLI binary was not found
 
 // The operator's answer to a surfaced `permission_request` (the stop-and-ask).
 export type PermissionDecision = { allow: true } | { allow: false; reason: string };
@@ -303,6 +316,8 @@ export interface LiveSessionState {
   pendingPlan?: string;
   cost: CostSummary;
   lastError?: string;
+  /** The vendor-neutral classification of `lastError`, when the adapter could classify it (WO-0025). */
+  lastErrorCode?: ProviderErrorCode;
 }
 
 export const initialSessionState: LiveSessionState = {
@@ -338,7 +353,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
     case 'turn_complete':
       return { ...s, status: 'done', cost: event.cost, pendingAsk: undefined };
     case 'error':
-      return { ...s, status: 'error', lastError: event.message };
+      return { ...s, status: 'error', lastError: event.message, ...(event.code ? { lastErrorCode: event.code } : {}) };
   }
 }
 

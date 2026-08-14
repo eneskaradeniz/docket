@@ -26,6 +26,7 @@ export function WorkOrderDetail({
   onGetStepReport,
   onGetStepVerdict,
   onResetStep,
+  onCloseWorkOrder,
   reloadDetail,
   onDelete,
 }: {
@@ -36,6 +37,7 @@ export function WorkOrderDetail({
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   onGetStepVerdict: (idx: number) => Promise<string>;
   onResetStep: (idx: number) => Promise<void>;
+  onCloseWorkOrder: (note: string) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -79,6 +81,21 @@ export function WorkOrderDetail({
   }, [detail.steps, reviewIdx, verdictFor, detail.reviewMode]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [closeNote, setCloseNote] = useState('');
+  const [closeError, setCloseError] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const handleClose = async (): Promise<void> => {
+    setClosing(true);
+    setCloseError(false);
+    try {
+      await onCloseWorkOrder(closeNote.trim() || detail.title);
+    } catch {
+      setCloseError(true);
+    } finally {
+      setClosing(false);
+    }
+  };
   const handleDelete = async (): Promise<void> => {
     setDeleting(true);
     try {
@@ -158,6 +175,31 @@ export function WorkOrderDetail({
         <div className="rounded-sm border border-rule bg-surface p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.stepsAllDone}</p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
+          {confirmClose ? (
+            <div className="mt-2">
+              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
+              <input
+                value={closeNote}
+                onChange={(e) => setCloseNote(e.target.value)}
+                placeholder={UI.closeNotePlaceholder}
+                className="mb-2 w-full rounded-sm border border-rule bg-bg px-2 py-1 text-[12px] text-ink"
+              />
+              <p className="mb-2 text-[12px] text-inkdim">{UI.closeWoHint}</p>
+              {closeError ? <p className="mb-2 text-xs text-clay">{UI.closeWoFailed}</p> : null}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setConfirmClose(false)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.cancel}</button>
+                {closing ? (
+                  <span className="text-xs text-sage">{UI.closeWoInFlight}</span>
+                ) : (
+                  <button type="button" onClick={() => void handleClose()} className="rounded bg-sage px-3 py-1 text-xs text-bg">{UI.closeWoConfirm}</button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirmClose(true)} className="btn-ghost mt-2 rounded px-3 py-1 text-xs text-sage">
+              {UI.closeWo}
+            </button>
+          )}
         </div>
       ) : (
         <ActionCard detail={detail} />

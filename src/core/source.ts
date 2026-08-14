@@ -81,4 +81,11 @@ export interface WorkOrderSource {
   // decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched. The operator
   // confirms in the UI before this fires.
   deleteWorkOrder(workOrderId: WorkOrderId): Promise<void>;
+
+  // Close a finished work order (WO-0025 / P1-2): every step done + reviewed and the plan approved, else it
+  // throws. Appends a `## Closure` note to order.md and records the three facts deriveStage needs. M2 ruling —
+  // OPERATOR-ATTESTED closure, the mirror of the plan gate's ruling above: track merges are attested by the
+  // operator (merged_at), the verifier gate is set, and the closure sha is the decision-store HEAD at close
+  // time ("closed at this commit"), not yet an M3 docs-commit sha. Stage becomes `closed`.
+  closeWorkOrder(workOrderId: WorkOrderId, note: string): Promise<void>;
 }
