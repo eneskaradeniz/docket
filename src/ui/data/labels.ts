@@ -20,6 +20,7 @@ import type {
   TrackStage,
   TrackMergeAction,
   WorkOrderId,
+  WoEventKind,
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
 import type { WoPhase } from '../../core/derive';
@@ -303,6 +304,27 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
 };
 
+// Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8)
+export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
+  created: 'Oluşturuldu',
+  plan_saved: 'Plan önerildi (pending)',
+  plan_approved: 'Plan onaylandı',
+  step_started: 'Adım başladı',
+  step_done: 'Adım tamamlandı',
+  step_verdict: 'Mimar kararı',
+  verdict_overridden: 'Karar geçersiz kılındı (operatör)',
+  closed: 'Kapatıldı',
+};
+
+const MONTHS_TR = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+/** "15 Ağu 17:15" — audit satırlarının zaman damgası (WO-0030). */
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getDate()} ${MONTHS_TR[d.getMonth()]} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // Rol-farkında izin satırı (WO-0027 / Bulgu 8) — ekTürkçe ekler sabit tablada, kural değil.
 const ASKING_ROLE: Record<SessionRole, string> = {
   implementer: 'Uygulayıcının bir isteği var.',
@@ -478,6 +500,8 @@ export const UI = {
   permModeAuto: 'Otomatik',
   permModeHint: 'Otomatik: kapsam-içi her istek onaylı sayılır; kapsam-dışı yazmalar yine engellenir. Sor: her istekte kart çıkar.',
   verdictOverrideDone: 'Geçersiz kılındı — adım proceed sayıldı.',
+  timelineTitle: 'Zaman çizelgesi',
+  timelineLegacyNote: 'Bu iş emri olay günlüğünden önce açılmış.',
   allowAll: 'Tümüne izin ver',
   // Rol-farkında askı satırı (Bulgu 8): 'Mimarın bir isteği var' sabitti; isteyen rol hangisiyse o.
   askingRole: (role: SessionRole) => ASKING_ROLE[role],

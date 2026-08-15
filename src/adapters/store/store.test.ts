@@ -542,3 +542,45 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     expect(await store.getPermissionMode()).toBe('auto');
   });
 });
+
+describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
+  const wsInRoot5 = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'W30 test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('the full lifecycle writes ordered events; legacy WOs read []', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Audit', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'active' });
+    store.recordStepReport(wo.id, 1, 'implementer', 'r');
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    await store.closeWorkOrder(wo.id, 'n');
+    const kinds = (await store.getWorkOrderEvents(wo.id)).map((e) => e.kind);
+    expect(kinds).toEqual(['created', 'plan_approved', 'step_started', 'step_done', 'step_verdict', 'closed']);
+    // a legacy WO (created before the log) reads [] — no backfill by design
+    const legacy = createStore(freshDb());
+    const { ws: lws } = await wsInRoot5(legacy);
+    // simulate legacy: delete the events of a fresh WO, then read
+    const lwo = await legacy.createWorkOrder({ workspaceId: lws.id, title: 'L', description: 'x', trackRepos: lws.repos, reviewMode: 'gates', contextFiles: [] });
+    legacy.db.prepare('DELETE FROM wo_event WHERE work_order_id = ?').run(lwo.id);
+    expect(await legacy.getWorkOrderEvents(lwo.id)).toEqual([]);
+  });
+  it('plan_saved + override events land too; delete cascades the log', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'A2', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.savePendingPlan(wo.id, '# plan');
+    await store.approvePlan(wo.id, '# plan');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'r' });
+    store.recordStepVerdict(wo.id, 1, 'revise', 'eksik');
+    await store.overrideStepVerdict(wo.id, 1);
+    const kinds = (await store.getWorkOrderEvents(wo.id)).map((e) => e.kind);
+    expect(kinds).toContain('plan_saved');
+    expect(kinds).toContain('verdict_overridden');
+    await store.deleteWorkOrder(wo.id);
+    expect(await store.getWorkOrderEvents(wo.id)).toEqual([]);
+  });
+});

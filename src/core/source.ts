@@ -4,7 +4,7 @@
 //
 // Async (WO-0009): the store is a real data source, so reads return Promises and the UI
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
-import type { RepoId, StepRole, StepView, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
+import type { RepoId, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 
 export interface RepoConnectionInput {
   path: string;
@@ -92,4 +92,8 @@ export interface WorkOrderSource {
   // WO-0029 / B19: the operator's override on a revise verdict ("Devam et") — the step's row flips to
   // proceed; the architect's original text stays in the verdict file. Idempotent (no-op when not revise).
   overrideStepVerdict(workOrderId: WorkOrderId, idx: number): Promise<void>;
+
+  // WO-0030 / İstek 8: the work order's lifecycle audit (append-only, written by the store's own
+  // mutations). [] for work orders created before the event log existed (legacy — no backfill).
+  getWorkOrderEvents(workOrderId: WorkOrderId): Promise<WoEvent[]>;
 }

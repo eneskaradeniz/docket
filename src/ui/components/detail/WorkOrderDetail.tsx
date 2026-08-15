@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { StepRole, StepView, WorkOrderDetailView } from '../../../core/types';
+import type { StepRole, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
 import { derivePhase } from '../../../core/derive';
-import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, formatCost, phaseLabelText } from '../../data/labels';
+import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, WO_EVENT_LABELS, formatCost, formatDateTime, phaseLabelText } from '../../data/labels';
 import { ActionCard } from './ActionCard';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
@@ -21,6 +21,7 @@ import { TrackLane } from './TrackLane';
 export function WorkOrderDetail({
   detail,
   docs,
+  events,
   onBack,
   onApprovePlan,
   onGetStepReport,
@@ -33,6 +34,7 @@ export function WorkOrderDetail({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
+  events: WoEvent[];
   onBack: () => void;
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
@@ -328,6 +330,22 @@ export function WorkOrderDetail({
             </ul>
           </section>
           <SourceLinks sources={detail.sources} />
+          <div className="mt-3">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.timelineTitle}</p>
+            {events.length === 0 ? (
+              <p className="text-[12px] text-inkdim">{UI.timelineLegacyNote}</p>
+            ) : (
+              <ol className="flex flex-col gap-0.5">
+                {events.map((e, i) => (
+                  <li key={i} className="flex items-baseline gap-2 text-[12px]">
+                    <span className="font-mono text-[11px] text-inkdim">{formatDateTime(e.at)}</span>
+                    <span className="text-ink">{WO_EVENT_LABELS[e.kind]}</span>
+                    {e.detail ? <span className="font-mono text-[11px] text-inkdim">{e.detail}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
           <MarkdownDoc title={UI.orderDoc} content={docs.order} />
           <MarkdownDoc title={UI.planDoc} content={docs.plan} />
         </div>
