@@ -159,8 +159,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       reusable core (`buildDriveInput`/`runDrive`/`formatEvent`) is testable; +11 tests (319 total). ADR-0006
       widened to "a composition root" (Electron main **or** the CLI); the boundary `COMPOSITION_ROOTS` + c2a/c2c
       exemptions updated. Delivers the "GUI olmadan test" goal — the verdict/review loop is now drivable and
-      assertable from the CLI, deterministically (FakeRunner) or against the real SDK. CLI bootstrap
-      (create-workspace / create-work-order) + interactive `--policy ask` are deferred (TD-032).
+      assertable from the CLI, deterministically (FakeRunner) or against the real SDK. **Bootstrap (second pass,
+      same WO):** `create-workspace` / `create-work-order` added — pure argv→input mappers in `src/cli/create.ts`
+      (validation mirrors WoCreateModal; repeatable `--repo`/`--track`), handlers + id branding in `index.ts`
+      (`--workspace` by id or label; tracks default to code repos minus the decision store; a fresh `--db` is
+      created + migrated; unknown command → rc 2) — the CLI now spans workspace → WO → drive without the GUI.
+      Only interactive `--policy ask` remains deferred (TD-032).
 - [x] **WO-0025** — Closure path (P1-2) + provider/auth surface (B1). Done: `closeWorkOrder` (port + store +
       IPC + CLI `close` + the all-steps-done card's "İş emrini kapat" flow) closes a finished WO the M2 way —
       **operator-attested**, the mirror of the plan gate's ruling: preconditions re-checked from the DB
