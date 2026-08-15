@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  foldSessionEvent,
   initialSessionState,
   simplePhaseFromState,
-  type DriveInput,
   type LiveSessionState,
   type SimplePhase,
 } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, formatCost, LIVE_STATUS_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
-import { useRunner } from './runner-context';
+import { useDrive, useDriveStore } from './drive-store';
 import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
 
@@ -53,37 +51,21 @@ function phaseTone(p: SimplePhase): string {
 export function ReviewPane({
   step,
   workOrderId,
-  onReviewDone,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
-  onReviewDone: () => void;
 }) {
-  const runner = useRunner();
-  const [state, setState] = useState<LiveSessionState>(initialSessionState);
-  const [running, setRunning] = useState(false);
+  const store = useDriveStore();
+  // WO-0028 / Bulgu 12: review drives live in the app-level store like every other drive — the pane is
+  // just a window onto them; the store's onEnd refreshes the detail when the review completes.
+  const driveKey = `${workOrderId}:review:${step.idx}`;
+  const state = useDrive(store, driveKey, () => initialSessionState);
+  const running = store.get(driveKey)?.running ?? false;
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
-  const sessionId = useRef<string | undefined>(undefined);
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(): void {
-    if (running) return;
-    setRunning(true);
-    setState(initialSessionState);
-    const input: DriveInput = { role: 'architect', workOrderId, mode: 'direct', reviewStepIndex: step.idx, prompt: '' };
-    void (async () => {
-      try {
-        for await (const ev of runner.drive(input)) {
-          if (ev.kind === 'started') sessionId.current = ev.sessionId;
-          setState((s) => foldSessionEvent(s, ev));
-        }
-      } catch (e) {
-        setState((s) => ({ ...s, status: 'error', lastError: (e as Error)?.message ?? String(e) }));
-      } finally {
-        setRunning(false);
-        onReviewDone();
-      }
-    })();
+    store.start(driveKey, { role: 'architect', workOrderId, mode: 'direct', reviewStepIndex: step.idx, prompt: '' }, initialSessionState);
   }
 
   useEffect(() => {
@@ -124,21 +106,32 @@ export function ReviewPane({
 
       {running ? (
         <div className="mb-2">
-          <button type="button" onClick={() => void runner.interrupt()} className="btn-ghost rounded px-3 py-1 text-xs">
+          <button type="button" onClick={() => void store.interrupt()} className="btn-ghost rounded px-3 py-1 text-xs">
             {UI.interrupt}
           </button>
         </div>
       ) : null}
 
-      {showAsk && state.pendingAsks[0]! ? (
-        <StopAndAskCard
-          tool={state.pendingAsks[0]!.tool}
-          input={state.pendingAsks[0]!.input}
-          reason={state.pendingAsks[0]!.reason}
-          planContext={false}
-          onAllow={() => void runner.decide(state.pendingAsks[0]!!.requestId, { allow: true })}
-          onDeny={() => void runner.decide(state.pendingAsks[0]!!.requestId, { allow: false, reason: 'Denied by operator' })}
-        />
+      {showAsk ? (
+        <div className="mb-2">
+          {state.pendingAsks.length > 1 ? (
+            <div className="mb-1 flex items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.asksPending(state.pendingAsks.length)}</p>
+              <button type="button" onClick={() => { for (const a of state.pendingAsks) void store.decide(a.requestId, { allow: true }); }} className="alink text-[11px]">{UI.allowAll}</button>
+            </div>
+          ) : null}
+          {state.pendingAsks.map((a) => (
+            <StopAndAskCard
+              key={a.requestId}
+              tool={a.tool}
+              input={a.input}
+              reason={a.reason}
+              planContext={false}
+              onAllow={() => void store.decide(a.requestId, { allow: true })}
+              onDeny={() => void store.decide(a.requestId, { allow: false, reason: 'Denied by operator' })}
+            />
+          ))}
+        </div>
       ) : null}
 
       {hasStream ? (

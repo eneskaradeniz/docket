@@ -1,6 +1,5 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import {
-  foldSessionEvent,
   initialSessionState,
   seedLiveState,
   simplePhaseFromState,
@@ -10,7 +9,7 @@ import {
 } from '../../../core/runner';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, formatCost, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
-import { useRunner } from './runner-context';
+import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { PlanReadyCard } from './PlanReadyCard';
 import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
@@ -64,7 +63,6 @@ export function SessionPane({
   workOrderId,
   sessions,
   onApprovePlan,
-  onSessionEnd,
   pendingPlan,
 }: {
   mode: 'plan' | 'direct';
@@ -72,60 +70,44 @@ export function SessionPane({
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
   onApprovePlan: (planText: string) => Promise<void>;
-  onSessionEnd?: () => void;
   /** A plan persisted to plan.md but not yet approved (e.g. restart mid-proposal, WO-0020/TD-025). Rendered like a
    *  live plan_ready so the operator can still approve/object after a restart. */
   pendingPlan?: string;
 }) {
-  const runner = useRunner();
+  const store: DriveStore = useDriveStore();
+  // WO-0028 / Bulgu 12: the drive lives in the app-level store, NOT this pane — navigating away keeps the
+  // session running in the background; a remounted pane re-binds to the live fold state instantly.
+  const driveKey = `${workOrderId}:free`;
   // At architect_approval (e.g. restarted mid-plan), default to the architect tab so resume re-surfaces
   // the proposed plan. At written the role tabs are hidden and the architect is implied.
   const [role, setRole] = useState<SessionRole>(stage === 'architect_approval' ? 'architect' : 'implementer');
   const [prompt, setPrompt] = useState('');
-  // F14 (WO-0026): seed from the persisted session for the initial role — a reopened pane shows what already
-  // happened instead of a blank terminal. Re-seeds when the role tab switches (same lookup as resume).
+  // F14 (WO-0026): the persisted-session seed is the FALLBACK when this key has no live drive in the store
+  // (fresh mount after a restart). While a background drive exists, the store's state wins.
   const seedFor = (r: SessionRole) => seedLiveState(sessions.find((s) => s.role === r && s.providerSessionId) ?? { transcript: [] });
-  const [state, setState] = useState<LiveSessionState>(() => seedFor(stage === 'architect_approval' ? 'architect' : 'implementer'));
-  const [running, setRunning] = useState(false);
+  const state = useDrive(store, driveKey, () => seedFor(role));
+  const running = store.get(driveKey)?.running ?? false;
   const [approving, setApproving] = useState(false);
   const [objecting, setObjecting] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
-  const sessionId = useRef<string | undefined>(state.sessionId); // seeded (F14) — resume continues the same provider session
+  const sessionId = (reset: boolean): string | undefined => (reset ? undefined : store.sessionId(driveKey) ?? state.sessionId);
 
   // During the plan stages (written = propose, architect_approval = approve/object) the only session is the
   // architect's — role tabs are hidden. They show only past the plan stage (free-form implementer/verifier).
   const isPlanRequestStage = stage === 'written' || stage === 'architect_approval';
 
-  async function runDrive(input: DriveInput, reset: boolean): Promise<void> {
-    if (running) return;
-    setRunning(true);
-    // WO-0027 / Bulgu 5: when the turn ends, the WO-level aggregates (cost/stage/steps) went stale until a
-    // navigation — tell the host to reload so the meta line is honest without exit-re-enter.
-    const notifyEnd = (): void => onSessionEnd?.();
-    if (reset) {
-      sessionId.current = undefined;
-      setState(initialSessionState);
-    }
-    try {
-      for await (const ev of runner.drive(input)) {
-        if (ev.kind === 'started') sessionId.current = ev.sessionId;
-        setState((s) => foldSessionEvent(s, ev));
-      }
-    } catch (e) {
-      setState((s) => ({ ...s, status: 'error', lastError: (e as Error)?.message ?? String(e) }));
-    } finally {
-      setRunning(false);
-      notifyEnd();
-    }
-  }
+  // WO-0028: start() hands the drive to the app-level store. Completion refresh (WO-0027 / Bulgu 5) is
+  // the store's onEnd → the App reloads detail + board wherever the operator is.
+  const runDrive = (input: DriveInput, reset: boolean): boolean =>
+    store.start(driveKey, input, reset ? initialSessionState : state);
 
   const requestPlan = (): void => {
     // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
-    void runDrive({ role: 'architect', workOrderId, mode, prompt: '' }, true);
+    store.start(driveKey, { role: 'architect', workOrderId, mode, prompt: '' }, initialSessionState);
   };
   const start = (): void => {
-    void runDrive({ role, workOrderId, mode, prompt }, true);
+    store.start(driveKey, { role, workOrderId, mode, prompt }, initialSessionState);
   };
   // WO-0016: approving an architect's proposed plan commits plan.md + flips the gate (onApprovePlan),
   // then resets the live state so the reloaded detail (stage→implementation, plan rendered) is clean.
@@ -135,13 +117,12 @@ export function SessionPane({
       setApproving(true);
       try {
         await onApprovePlan(effectivePlan);
-        setState(initialSessionState);
       } finally {
         setApproving(false);
       }
     } else {
-      void runDrive(
-        { role, workOrderId, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId.current, approve: true },
+      runDrive(
+        { role, workOrderId, mode, prompt: 'Approved — proceed with the plan.', resume: sessionId(false), approve: true },
         false,
       );
     }
@@ -150,31 +131,26 @@ export function SessionPane({
   // resolvePermissionMode keeps an architect resume in 'plan', so the next ExitPlanMode yields a new plan.
   const objectPlan = (feedback: string): void => {
     setObjecting(true);
-    void runDrive(
-      { role: 'architect', workOrderId, mode, prompt: feedback, resume: sessionId.current },
-      false,
-    ).finally(() => setObjecting(false));
+    runDrive({ role: 'architect', workOrderId, mode, prompt: feedback, resume: sessionId(false) }, false);
+    setObjecting(false); // the drive now lives in the store — no promise to await here
   };
   // Reply to an architect clarifying question (plan mode turn that ended without a plan): resume the
   // architect with the operator's answer. "Bilmiyorum" lets the architect decide on its own.
   const reply = (answer: string): void => {
-    void runDrive(
-      { role: 'architect', workOrderId, mode, prompt: answer, resume: sessionId.current },
-      false,
-    );
+    runDrive({ role: 'architect', workOrderId, mode, prompt: answer, resume: sessionId(false) }, false);
     setReplyText('');
   };
   const allowAsk = (requestId: string): void => {
-    void runner.decide(requestId, { allow: true });
+    void store.decide(requestId, { allow: true });
   };
   const denyAsk = (requestId: string): void => {
-    void runner.decide(requestId, { allow: false, reason: 'Denied by operator' });
+    void store.decide(requestId, { allow: false, reason: 'Denied by operator' });
   };
   const allowAllAsks = (): void => {
     for (const a of state.pendingAsks) allowAsk(a.requestId);
   };
   const stop = (): void => {
-    void runner.interrupt();
+    void store.interrupt();
   };
 
   // A live plan_ready takes precedence; otherwise fall back to a plan persisted to plan.md (restart recovery,
@@ -199,7 +175,7 @@ export function SessionPane({
   const resume = (): void => {
     if (!resumeSessionId) return;
     // reset=false (WO-0026/F14): keep the seeded transcript — the new stream appends to it.
-    void runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, false);
+    runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, false);
   };
 
   return (

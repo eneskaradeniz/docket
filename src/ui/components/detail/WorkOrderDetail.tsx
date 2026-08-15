@@ -220,7 +220,6 @@ export function WorkOrderDetail({
           workOrderId={detail.id}
           sessions={detail.sessions}
           onApprovePlan={onApprovePlan}
-          onSessionEnd={reloadDetail}
           pendingPlan={docs.plan || undefined}
         />
       ) : hasSteps ? (
@@ -230,7 +229,7 @@ export function WorkOrderDetail({
             <ReviewPane
               step={detail.steps.find((s) => s.idx === reviewIdx)!}
               workOrderId={detail.id}
-              onReviewDone={reloadDetail}
+              
             />
           ) : verdictFor ? (
             <VerdictCard
@@ -249,7 +248,7 @@ export function WorkOrderDetail({
               }}
             />
           ) : activeStep ? (
-            <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} onDone={reloadDetail} />
+            <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions}  />
           ) : null}
           {reportStep ? (
             <StepReport
