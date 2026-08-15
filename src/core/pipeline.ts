@@ -102,8 +102,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // checkpoint the transcript into the session row, so a resumed pane can seed from it instead of blanking.
     let live: LiveSessionState = initialSessionState;
     let terminated = false; // a terminal record already happened — the finally must not double-record
+    let startedAtIso: string | undefined; // preserved across every record of the drive (İstek 7)
 
-    const record = (status: SessionRef['status'], cost?: CostSummary): void => {
+    const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
       if (!providerSessionId) return;
       deps.store.recordSession({
         providerSessionId,
@@ -114,6 +115,11 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         cost,
         stepIdx: stepIdx ?? reviewIdx,
         transcript: live.entries,
+        // The unanswered asks ride the stopped_asking row (WO-0027 / Bulgu 9): a remounted pane re-seeds
+        // its cards from them while the host's runner still holds the resolvers.
+        ...(status === 'stopped_asking' ? { asks: live.pendingAsks } : {}),
+        startedAt: startedAtIso,
+        endedAt,
       });
     };
 
@@ -127,12 +133,13 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             break;
           case 'started':
             providerSessionId = ev.sessionId;
+            startedAtIso = new Date().toISOString();
             record('running');
             if (stepIdx !== undefined) deps.store.recordStep(input.workOrderId, stepIdx, { status: 'active' });
             yield ev;
             break;
           case 'permission_request':
-            record('stopped_asking');
+            record('stopped_asking'); // asks included (post-fold: contains this one)
             {
               const outcome = deps.permission.onAsk({
                 requestId: ev.requestId,
@@ -154,11 +161,16 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             deps.store.savePendingPlan(input.workOrderId, ev.planText);
             yield ev;
             break;
+          case 'ask_resolved':
+            // The operator answered ONE ask; if none remain, the session is un-blocked — say so in the row.
+            if (live.pendingAsks.length === 0) record('running');
+            yield ev;
+            break;
           case 'turn_complete':
             terminated = true;
             // The synthesized plan-exit turn carries NO cost data — record without one (a NULL row, an honest
             // "no claim") instead of a fake $0.00 (WO-0026 / TD-030).
-            record('idle', ev.stopReason === PLAN_EXIT_WITHOUT_RESULT ? undefined : ev.cost);
+            record('idle', ev.stopReason === PLAN_EXIT_WITHOUT_RESULT ? undefined : ev.cost, new Date().toISOString());
             if (stepIdx !== undefined) {
               const body = ev.result ?? assistantText;
               const reportBody = body.trim()
@@ -184,7 +196,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       }
     } catch (e) {
       terminated = true;
-      record('idle');
+      record('idle', undefined, new Date().toISOString());
       yield { kind: 'error', message: (e as Error)?.message ?? String(e) };
     } finally {
       // The completion guarantee (WO-0026 / F5): a session that started but never got a terminal record —
@@ -193,7 +205,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       // return-injection a consumer abort triggers; the `terminated` flag keeps it idempotent.
       if (providerSessionId && !terminated) {
         terminated = true;
-        record('idle');
+        record('idle', undefined, new Date().toISOString());
       }
     }
   };

@@ -7,7 +7,7 @@
 // No Node surface leaks to the renderer (ADR-0001).
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
-import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
+import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { AppSettings } from '../src/core/app-settings';
 import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
@@ -54,6 +54,7 @@ const runner = {
   },
   decide: (requestId: string, decision: PermissionDecision): Promise<void> =>
     ipcRenderer.invoke('docket:runner:decide', requestId, decision),
+  pendingAsks: (): Promise<PermissionAsk[]> => ipcRenderer.invoke('docket:runner:pending-asks'),
   interrupt: (): Promise<void> => ipcRenderer.invoke('docket:runner:interrupt'),
 };
 

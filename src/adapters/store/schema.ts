@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS session (
   cost_tokens_in INTEGER,
   cost_tokens_out INTEGER,
   cost_usd REAL,
+  started_at TEXT,          -- ISO drive start (WO-0027 / İstek 7)
+  ended_at TEXT,            -- ISO terminal end; NULL while live
   step_idx INTEGER -- the plan step this session runs (WO-0017); NULL for the architect plan session + free-form runs
 );
 -- A plan step's RUN OUTCOME (WO-0017). Observed + discardable: the specs (role/aim/scope) are parsed from

@@ -135,6 +135,10 @@ ipcMain.handle('docket:runner:interrupt', async () => {
   await pipeline.interrupt();
 });
 
+// WO-0027 / Bulgu 9: a remounted pane re-attaches to the asks this runner still holds — the resolvers are
+// alive in the runner, so decide() on these ids works immediately. The pipeline forwards to the runner.
+ipcMain.handle('docket:runner:pending-asks', () => runner.pendingAsks());
+
 app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => {

@@ -5,7 +5,7 @@
 // core port so the pipeline depends on an interface, not an adapter — and so the drive loop is testable with
 // a fake store, without SQLite or an agent (ADR-0006 line 30). The adapter's `Store implements SessionStore`;
 // the UI's `WorkOrderSource` stays the read/CRUD half.
-import type { CostSummary, SessionRef, SessionRole, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
 
 export interface RecordSessionInput {
   providerSessionId: string;
@@ -16,6 +16,9 @@ export interface RecordSessionInput {
   cost?: CostSummary;
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session
   transcript?: TranscriptLine[]; // the folded live transcript checkpoint (WO-0026/F6) — rewritten per record
+  asks?: PermissionAsk[]; // the unanswered asks at a stopped_asking record (WO-0027/Bulgu 9) — persisted for re-attach
+  startedAt?: string; // ISO — preserved across every record of the drive (WO-0027 / İstek 7)
+  endedAt?: string; // ISO — set only on the terminal record
 }
 
 /** Server-side persistence + prompt assembly the drive loop needs. The composition root injects the

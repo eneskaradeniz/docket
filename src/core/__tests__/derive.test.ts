@@ -351,6 +351,20 @@ describe('six-state coverage — every derivation (AC10)', () => {
   });
 });
 
+describe("whoseTurn — a fresh track's seeded CI is not 'external' (WO-0027 / TD-024)", () => {
+  it('no PR + no sessions → your_turn even though the seeded ci claims running', () => {
+    const wo = aWorkOrder({ tracks: [aTrack({ id: 't1', repo: 'app', ci: { kind: 'run', state: 'running', checks: [] } })], sessions: [] });
+    expect(whoseTurn(wo)).toBe('your_turn');
+  });
+  it('a real PR with running CI stays external', () => {
+    const wo = aWorkOrder({
+      tracks: [aTrack({ id: 't1', repo: 'app', ci: { kind: 'run', state: 'running', checks: [] }, pr: { url: 'https://x', headSha: 's' } })],
+      sessions: [],
+    });
+    expect(whoseTurn(wo)).toBe('external');
+  });
+});
+
 describe('deriveStage — stage derived from observed facts (TD-008 / ADR-0010)', () => {
   // No stage column is stored; the store hydrates `stage` from these facts. The six
   // fixtures are the seed, so the derivation must reproduce each one's stage exactly.

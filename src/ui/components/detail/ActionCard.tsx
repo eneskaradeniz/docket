@@ -14,12 +14,17 @@ export function ActionCard({ detail }: { detail: WorkOrderDetailView }) {
   if (stopped) {
     area = CARD_ACTION_AREA.permission;
     prompt = UI.permissionRequested;
+  } else if (running) {
+    // A live session means there is nothing for the operator to click — the old "Oturumu sürdür" here
+    // was a no-op while a drive was already in flight (WO-0027 / Bulgu 6). Absent, with the honest state.
+    area = UI.actionRunning;
+    prompt = primary.kind === 'absent' ? ABSENT_REASON_LABELS[primary.reason] : ACTION_LABELS[primary.intent];
   } else if (primary.kind === 'available') {
     const i = primary.intent;
     area = i === 'approve_plan' ? CARD_ACTION_AREA.plan : i === 'close' ? CARD_ACTION_AREA.closure : CARD_ACTION_AREA.link;
     prompt = ACTION_LABELS[i];
   } else {
-    area = running ? 'Çalışıyor' : UI.actionNeeded;
+    area = UI.actionNeeded;
     prompt = ABSENT_REASON_LABELS[primary.reason];
   }
 

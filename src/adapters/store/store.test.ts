@@ -459,3 +459,37 @@ describe('WO-0026 — transcript persistence + startup sweep', () => {
     expect((await reopened.getWorkOrder(wo.id))!.sessions[0]!.status).toBe('idle');
   });
 });
+
+describe('WO-0027 — askı kalıcılığı + süreler', () => {
+  const wsInRoot3 = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Ask test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('a stopped_asking record persists its asks; hydrate round-trips them (Bulgu 9)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot3(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Asks', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({
+      providerSessionId: 'sess-a1', workOrderId: wo.id, role: 'implementer', status: 'stopped_asking', stepIdx: 1,
+      asks: [
+        { requestId: 'r1', tool: 'Write', input: { file_path: '/a' } },
+        { requestId: 'r2', tool: 'Edit', input: { file_path: '/b' } },
+      ],
+    });
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.status).toBe('stopped_asking');
+    if (s.status !== 'stopped_asking') throw new Error('unreachable');
+    expect(s.stopAndAsk.asks?.map((a) => a.requestId)).toEqual(['r1', 'r2']);
+  });
+  it('started_at/ended_at round-trip (İstek 7)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot3(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Durations', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'sess-d1', workOrderId: wo.id, role: 'architect', status: 'running', startedAt: '2026-08-15T10:00:00.000Z' });
+    store.recordSession({ providerSessionId: 'sess-d1', workOrderId: wo.id, role: 'architect', status: 'idle', startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:04:12.000Z' });
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.startedAt).toBe('2026-08-15T10:00:00.000Z');
+    expect(s.endedAt).toBe('2026-08-15T10:04:12.000Z');
+  });
+});

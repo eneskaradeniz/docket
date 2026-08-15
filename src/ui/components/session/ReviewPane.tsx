@@ -94,7 +94,7 @@ export function ReviewPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.idx]);
 
-  const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
+  const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
 
@@ -130,14 +130,14 @@ export function ReviewPane({
         </div>
       ) : null}
 
-      {showAsk && state.pendingAsk ? (
+      {showAsk && state.pendingAsks[0]! ? (
         <StopAndAskCard
-          tool={state.pendingAsk.tool}
-          input={state.pendingAsk.input}
-          reason={state.pendingAsk.reason}
+          tool={state.pendingAsks[0]!.tool}
+          input={state.pendingAsks[0]!.input}
+          reason={state.pendingAsks[0]!.reason}
           planContext={false}
-          onAllow={() => void runner.decide(state.pendingAsk!.requestId, { allow: true })}
-          onDeny={() => void runner.decide(state.pendingAsk!.requestId, { allow: false, reason: 'Denied by operator' })}
+          onAllow={() => void runner.decide(state.pendingAsks[0]!!.requestId, { allow: true })}
+          onDeny={() => void runner.decide(state.pendingAsks[0]!!.requestId, { allow: false, reason: 'Denied by operator' })}
         />
       ) : null}
 
@@ -145,7 +145,7 @@ export function ReviewPane({
         viewMode === 'sade' ? (
           <div className="flex items-center gap-2 py-2">
             <span className={`h-1.5 w-1.5 rounded-full ${phaseTone(phase)} pulse`} />
-            <span className="text-[13px] text-inkdim">{SIMPLE_PHASE_LABELS[phase]}</span>
+            <span className="text-[13px] text-inkdim">{phase === 'asking_permission' ? UI.askingRole('architect') : SIMPLE_PHASE_LABELS[phase]}</span>
           </div>
         ) : (
           <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
