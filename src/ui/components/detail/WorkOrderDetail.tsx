@@ -107,11 +107,19 @@ export function WorkOrderDetail({
 
   const activeRole = detail.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking')?.role;
   const stageStep = detail.rail.find((s) => s.status === 'current' || s.status === 'locked');
+  // WO-0027 / Bulgu 2 + İstek 7: cost is claimed only when some session actually carries one (a NULL-cost
+  // plan row is "unknown", not $0.00), and the summed wall-clock of finished sessions joins it.
+  const anyCost = detail.sessions.some((s) => s.cost);
+  const durationMs = detail.sessions.reduce((acc, s) => {
+    if (!s.startedAt || !s.endedAt) return acc;
+    return acc + (new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime());
+  }, 0);
   const meta = [
     detail.id,
     activeRole ? ROLE_LABELS[activeRole] : null,
     stageStep ? STAGE_LABELS[stageStep.stage] : null,
-    formatCost(detail.cost),
+    anyCost ? formatCost(detail.cost) : null,
+    durationMs > 0 ? UI.formatDuration(durationMs) : null,
   ]
     .filter(Boolean)
     .join(UI.metaSep);
@@ -212,6 +220,7 @@ export function WorkOrderDetail({
           workOrderId={detail.id}
           sessions={detail.sessions}
           onApprovePlan={onApprovePlan}
+          onSessionEnd={reloadDetail}
           pendingPlan={docs.plan || undefined}
         />
       ) : hasSteps ? (

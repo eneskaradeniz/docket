@@ -3,6 +3,7 @@
 // (`runner`, callback form — the AsyncIterable is realised renderer-side off it,
 // because contextBridge does not preserve Symbol-keyed properties). No Node surface
 // leaks (ADR-0006/0001).
+import type { PermissionAsk } from '../core/runner';
 import type { AppSettings } from '../core/app-settings';
 import type { WorkOrderSource } from '../core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner';
@@ -11,6 +12,7 @@ import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner
 export type RunnerBridge = {
   drive: (input: DriveInput, onEvent: (ev: RunnerEvent) => void) => Promise<void>;
   decide: (requestId: string, decision: PermissionDecision) => Promise<void>;
+  pendingAsks: () => Promise<PermissionAsk[]>;
   interrupt: () => Promise<void>;
 };
 

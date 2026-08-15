@@ -86,6 +86,8 @@ type SessionRow = {
   status: SessionRef['status'];
   transcript: string;
   stop_and_ask: string | null;
+  started_at: string | null;
+  ended_at: string | null;
   cost_tokens_in: number | null;
   cost_tokens_out: number | null;
   cost_usd: number | null;
@@ -128,17 +130,30 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
     const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
     const providerSessionId = r.provider_session_id ?? undefined;
     const stepIdx = r.step_idx ?? undefined;
+    const startedAt = r.started_at ?? undefined;
+    const endedAt = r.ended_at ?? undefined;
     // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
     const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
     switch (r.status) {
       case 'stopped_asking':
-        return { role: r.role, status: 'stopped_asking', transcript, stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}'), scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
+        return {
+          role: r.role,
+          status: 'stopped_asking',
+          transcript,
+          stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}') as SessionRef extends never ? never : import('../../core/types').StopAndAsk,
+          scope,
+          providerSessionId,
+          stepIdx,
+          startedAt,
+          endedAt,
+          ...(cost ? { cost } : {}),
+        };
       case 'running':
-        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
       case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
       case 'none':
-        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
     }
   });
 }
@@ -260,10 +275,15 @@ export function seedFixtureWorkOrders(db: DatabaseSync): void {
 // missing field — the real question resurfaces on resume. Idempotent via DELETE+INSERT.
 function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   db.prepare('DELETE FROM session WHERE provider_session_id = ?').run(input.providerSessionId);
-  const stopAndAsk = input.status === 'stopped_asking' ? JSON.stringify({ question: '', gate: 'tool-permission' }) : null;
+  // The asks ride the stopped_asking row (WO-0027 / Bulgu 9) — persisted for re-attach, replacing the
+  // old `{question:'',gate:'tool-permission'}` placeholder that told the board nothing (F7).
+  const stopAndAsk =
+    input.status === 'stopped_asking'
+      ? JSON.stringify({ question: '', gate: 'tool-permission', asks: input.asks ?? [] })
+      : null;
   db.prepare(
-    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd, step_idx)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     input.workOrderId,
@@ -275,6 +295,8 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.cost?.tokensIn ?? null,
     input.cost?.tokensOut ?? null,
     input.cost?.usd ?? null,
+    input.startedAt ?? null,
+    input.endedAt ?? null,
     input.stepIdx ?? null,
   );
 }
@@ -291,6 +313,10 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has('cost_tokens_out')) db.exec('ALTER TABLE session ADD COLUMN cost_tokens_out INTEGER');
   if (!cols.has('cost_usd')) db.exec('ALTER TABLE session ADD COLUMN cost_usd REAL');
   if (!cols.has('step_idx')) db.exec('ALTER TABLE session ADD COLUMN step_idx INTEGER');
+  // WO-0027 / İstek 7: session durations (additive; CREATE TABLE covers fresh dbs).
+  if (!cols.has('started_at')) db.exec('ALTER TABLE session ADD COLUMN started_at TEXT');
+  if (!cols.has('ended_at')) db.exec('ALTER TABLE session ADD COLUMN ended_at TEXT');
+
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {
     // Legacy pre-TD-008 dev schema: `track` carried a stored `stage` column (now derived at hydrate).

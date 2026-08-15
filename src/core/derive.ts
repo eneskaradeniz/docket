@@ -85,7 +85,9 @@ function unsatisfiedGateKinds(wo: WorkOrder): EvidenceKind[] {
 
 function ciActivelyRunning(wo: WorkOrder): boolean {
   return wo.tracks.some((t) => {
-    if (t.ci.kind !== 'run') return false;
+    // No PR yet ⇒ nothing is actually running (WO-0027 / TD-024): a freshly-created track's seeded
+    // `running` CI claim is a placeholder until the forge observes a real check run (M3).
+    if (t.ci.kind !== 'run' || !t.pr) return false;
     return t.ci.state === 'running' || t.ci.checks.some((c) => c.conclusion === 'pending');
   });
 }

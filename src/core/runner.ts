@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, SessionRef, SessionRole, TrackId, WorkOrderId, TranscriptLine } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, TrackId, WorkOrderId, TranscriptLine } from './types';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
@@ -21,6 +21,10 @@ export type RunnerEvent =
   | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown> }
   | { kind: 'tool_result'; callId: string; summary: string; isError: boolean }
   | { kind: 'permission_request'; requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string }
+  // The runner emits this when decide() answers a requestId (WO-0027): with PARALLEL asks, nothing else can
+  // identify which held ask was answered (tool_result carries callId, not requestId) — the old fold guessed
+  // "any event clears the ask" and made sibling cards vanish while still held (Bulgu 10).
+  | { kind: 'ask_resolved'; requestId: string }
   | { kind: 'plan_ready'; planText: string }
   | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
@@ -76,8 +80,12 @@ export interface DriveInput {
 export interface SessionRunner {
   /** Open or resume a session, yielding its events until the turn completes or errors. */
   drive(input: DriveInput): AsyncIterable<RunnerEvent>;
-  /** Answer a surfaced `permission_request`. Resolves the held permission callback. */
+  /** Answer a surfaced `permission_request`. Resolves the held permission callback and emits `ask_resolved`. */
   decide(requestId: string, decision: PermissionDecision): Promise<void>;
+  /** The asks currently held (unanswered) by this runner — the re-attach surface (WO-0027 / Bulgu 9): a
+   *  remounted pane re-seeds its cards from this, and decide() still works (the resolver is still held).
+   *  Async: across IPC the answer travels a round-trip. */
+  pendingAsks(): Promise<PermissionAsk[]>;
   /** Controlled stop of the current run. */
   interrupt(): Promise<void>;
 }
@@ -309,11 +317,18 @@ export type { TranscriptLine } from './types';
 
 export type LiveSessionStatus = 'idle' | 'running' | 'stopped_asking' | 'plan_ready' | 'done' | 'error';
 
+/** One surfaced permission ask. The agent may issue SEVERAL in parallel (multiple tool calls in one
+ *  message) — each carries its own requestId and is answered independently (WO-0027 / Bulgu 10). */
+export type { PermissionAsk } from './types';
+
 export interface LiveSessionState {
   status: LiveSessionStatus;
   sessionId?: string;
   entries: TranscriptLine[];
-  pendingAsk?: { requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string };
+  /** Every unanswered ask, in arrival order. A single `pendingAsk` could hold only one of a parallel
+   *  batch — the rest became invisible-but-held (WO-0027 / Bulgu 10). Removed only by `ask_resolved`
+   *  (the runner emits it when `decide` answers THAT id), by turn end, or by an error. */
+  pendingAsks: PermissionAsk[];
   pendingPlan?: string;
   cost: CostSummary;
   lastError?: string;
@@ -324,52 +339,64 @@ export interface LiveSessionState {
 export const initialSessionState: LiveSessionState = {
   status: 'idle',
   entries: [],
+  pendingAsks: [],
   cost: { tokensIn: 0, tokensOut: 0, usd: 0 },
 };
 
-/** Clear a resolved stop-and-ask: any non-request event means the operator answered. */
-function clearPendingAskIfResolved(state: LiveSessionState, event: RunnerEvent): LiveSessionState {
-  if (state.pendingAsk && event.kind !== 'permission_request') {
-    return { ...state, status: 'running', pendingAsk: undefined };
-  }
-  return state;
-}
-
 /** Seed a live-session state from a PERSISTED session (WO-0026 / F14): the transcript the pipeline folded
  *  and the store checkpointed, plus the recorded cost and provider id, so a resumed pane appends to what
- *  already happened instead of opening blank. Pure; empty input → the initial state. */
+ *  already happened instead of opening blank. `asks` re-seeds persisted-but-unanswered permission asks
+ *  (WO-0027 / Bulgu 9) — the pane offers to answer them; the resolver is still held in the host's runner.
+ *  Pure; empty input → the initial state. */
 export function seedLiveState(
   session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId'>,
+  asks: PermissionAsk[] = [],
 ): LiveSessionState {
-  if (!session.transcript.length && !session.cost && !session.providerSessionId) return initialSessionState;
+  if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0) {
+    return initialSessionState;
+  }
   return {
     ...initialSessionState,
     entries: session.transcript,
+    ...(asks.length ? { status: 'stopped_asking' as const, pendingAsks: asks } : {}),
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
   };
 }
 
 export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): LiveSessionState {
-  const s = clearPendingAskIfResolved(state, event);
   switch (event.kind) {
     case 'started':
-      // A new/resumed drive supersedes a pending plan (e.g. after approval).
-      return { ...s, status: 'running', sessionId: event.sessionId, pendingPlan: undefined };
+      // A new/resumed drive supersedes a pending plan (e.g. after approval) and any stale asks.
+      return { ...state, status: 'running', sessionId: event.sessionId, pendingPlan: undefined, pendingAsks: [] };
     case 'assistant_text':
-      return { ...s, status: s.status === 'idle' ? 'running' : s.status, entries: [...s.entries, { speaker: 'assistant', text: event.text }] };
+      return { ...state, status: state.status === 'idle' ? 'running' : state.status, entries: [...state.entries, { speaker: 'assistant', text: event.text }] };
     case 'tool_use':
-      return { ...s, entries: [...s.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input) }] };
+      return { ...state, entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input) }] };
     case 'tool_result':
-      return { ...s, entries: [...s.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError }] };
+      // NOTE: a tool_result does NOT clear asks — with parallel asks we cannot know WHICH ask it answers
+      // (the result carries callId, the ask carries requestId). Only `ask_resolved` removes an ask.
+      return { ...state, entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError }] };
     case 'permission_request':
-      return { ...s, status: 'stopped_asking', pendingAsk: { requestId: event.requestId, tool: event.tool, input: event.input, title: event.title, reason: event.reason } };
+      if (state.pendingAsks.some((a) => a.requestId === event.requestId)) return state; // dedupe on resume replays
+      return {
+        ...state,
+        status: 'stopped_asking',
+        pendingAsks: [...state.pendingAsks, { requestId: event.requestId, tool: event.tool, input: event.input, title: event.title, reason: event.reason }],
+      };
+    case 'ask_resolved':
+      // The runner emits this when decide() answers THAT requestId — the only honest removal signal.
+      return {
+        ...state,
+        pendingAsks: state.pendingAsks.filter((a) => a.requestId !== event.requestId),
+        status: state.pendingAsks.length > 1 ? 'stopped_asking' : state.status === 'stopped_asking' ? 'running' : state.status,
+      };
     case 'plan_ready':
-      return { ...s, status: 'plan_ready', pendingPlan: event.planText };
+      return { ...state, status: 'plan_ready', pendingPlan: event.planText };
     case 'turn_complete':
-      return { ...s, status: 'done', cost: event.cost, pendingAsk: undefined };
+      return { ...state, status: 'done', cost: event.cost, pendingAsks: [] };
     case 'error':
-      return { ...s, status: 'error', lastError: event.message, ...(event.code ? { lastErrorCode: event.code } : {}) };
+      return { ...state, status: 'error', lastError: event.message, pendingAsks: [], ...(event.code ? { lastErrorCode: event.code } : {}) };
   }
 }
 

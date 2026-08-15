@@ -25,7 +25,7 @@ import type {
   PermissionMode,
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { ProviderErrorCode } from '../../core/runner';
+import type { PermissionAsk, ProviderErrorCode } from '../../core/runner';
 import type { ProviderStatus } from '../../core/app-settings';
 import {
   PLAN_EXIT_WITHOUT_RESULT,
@@ -150,6 +150,10 @@ export interface RunnerOptions {
 export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
   // Pending stop-and-asks: requestId → resolver. The SDK's canUseTool awaits the resolver.
   const pending = new Map<string, (d: PermissionResult) => void>();
+  // The ask's surfaced details, keyed like `pending` (WO-0027): `pendingAsks()` reads this so a remounted
+  // pane can re-render its cards (Bulgu 9) — the resolvers in `pending` are still held and still answerable.
+  const askDetails = new Map<string, PermissionAsk>();
+  let currentQueue: AsyncQueue<RunnerEvent> | undefined;
   let currentAbort: AbortController | undefined;
 
   function resolvePermissionMode(input: DriveInput): PermissionMode {
@@ -170,6 +174,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     let planReadyEmitted = false;
     let turnCompleteEmitted = false; // tracked to synthesise a turn_complete if the plan-mode stream ends without one (WO-0021)
     const abort = new AbortController();
+    currentQueue = queue;
     currentAbort = abort;
 
     const canUseTool: CanUseTool = (toolName, toolInput, o) =>
@@ -183,6 +188,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         // 'ask' — surface to the operator and hold until decide().
         const requestId = o.requestId;
         pending.set(requestId, settle);
+        askDetails.set(requestId, { requestId, tool: toolName, input: toolInput, title: o.title, reason: o.decisionReason });
         queue.push({
           kind: 'permission_request',
           requestId,
@@ -274,7 +280,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         queue.push({ kind: 'error', message: raw, ...(classifyProviderError(raw) ? { code: classifyProviderError(raw) } : {}) });
       }
     } finally {
+      currentQueue = undefined;
       currentAbort = undefined;
+      pending.clear();
+      askDetails.clear();
       // If a plan-mode turn emitted plan_ready but the SDK ended the stream without a result (so no
       // turn_complete), synthesise one — so the architect plan session still records cost + the main
       // capture side-effects fire (WO-0021). Cost is honest zeros when the SDK gave none; result is left
@@ -302,11 +311,18 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       const settle = pending.get(requestId);
       if (!settle) return;
       pending.delete(requestId);
+      askDetails.delete(requestId);
       settle(
         decision.allow
           ? { behavior: 'allow' }
           : { behavior: 'deny', message: decision.reason || 'denied by operator' },
       );
+      // WO-0027 / Bulgu 10: with PARALLEL asks nothing else identifies which held ask was answered —
+      // emit the explicit resolution so folds/UI remove exactly this one.
+      currentQueue?.push({ kind: 'ask_resolved', requestId });
+    },
+    async pendingAsks(): Promise<PermissionAsk[]> {
+      return [...askDetails.values()];
     },
     async interrupt(): Promise<void> {
       currentAbort?.abort();

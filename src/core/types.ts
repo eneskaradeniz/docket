@@ -69,9 +69,21 @@ export type TranscriptLine =
   | { speaker: 'tool_result'; summary: string; isError: boolean }
   | { speaker: 'system'; text: string };
 
+/** One surfaced permission ask (moved to types.ts in WO-0027 so SessionRef/StopAndAsk and the live fold
+ *  share it without a types↔runner cycle; runner.ts re-exports). */
+export interface PermissionAsk {
+  requestId: string;
+  tool: string;
+  input: Record<string, unknown>;
+  title?: string;
+  reason?: string;
+}
+
 export interface StopAndAsk {
   question: string;
   gate: string;
+  /** The unanswered asks at the time the session paused (WO-0027 / Bulgu 9) — re-seeded on remount. */
+  asks?: PermissionAsk[];
 }
 
 // Common fields live on every session; the status discriminates. `providerSessionId` is the
@@ -89,6 +101,8 @@ export type SessionRef = (
   providerSessionId?: string;
   cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
+  startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)
+  endedAt?: string; // ISO — when it terminally ended (turn complete / abort / error); absent while live
 };
 
 // --- Plan steps (WO-0017). A Plan is an ordered list of Steps (PRODUCT.md); each Step is a role + aim +

@@ -30,13 +30,18 @@ function fakeRunner(script: RunnerEvent[]) {
   const decideCalls: Array<[string, PermissionDecision]> = [];
   const drivenInputs: DriveInput[] = [];
   const pending = new Map<string, () => void>();
+  const resolved: string[] = []; // WO-0027: ask_resolved is emitted back into the stream, like the real adapter
   const drive = async function* (input: DriveInput): AsyncIterable<RunnerEvent> {
     drivenInputs.push(input);
+    const seen = new Set<string>();
     for (const ev of script) {
       if (ev.kind === 'permission_request') {
+        if (seen.has(ev.requestId)) continue; // resume replay dedupe
+        seen.add(ev.requestId);
         const latch = new Promise<void>((resolve) => pending.set(ev.requestId, resolve));
         yield ev;
         await latch;
+        yield { kind: 'ask_resolved', requestId: ev.requestId };
       } else {
         yield ev;
       }
@@ -47,7 +52,9 @@ function fakeRunner(script: RunnerEvent[]) {
     async decide(requestId: string, decision: PermissionDecision) {
       decideCalls.push([requestId, decision]);
       pending.get(requestId)?.();
+      resolved.push(requestId);
     },
+    pendingAsks: async () => [],
     async interrupt() {},
   } as SessionRunner;
   return { runner, decideCalls, drivenInputs };
@@ -62,6 +69,7 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
       throw new Error(message);
     },
     async decide() {},
+    pendingAsks: async () => [],
     async interrupt() {},
   } as SessionRunner;
   return { runner, drivenInputs };
@@ -204,7 +212,8 @@ describe('createPipeline — permission policy', () => {
     const fs = fakeStore({ step: { prompt: 'do step 1' } });
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
     const events = await collect(p, stepDrive());
-    expect(events.map((e) => e.kind)).toEqual(['started', 'turn_complete']); // no permission_request
+    // no permission_request surfaced (resolved internally) — but the resolution signal still flows (WO-0027)
+    expect(events.map((e) => e.kind)).toEqual(['started', 'ask_resolved', 'turn_complete']);
     expect(fr.decideCalls).toEqual([['r1', { allow: true }]]);
   });
 
@@ -217,7 +226,7 @@ describe('createPipeline — permission policy', () => {
       events.push(ev);
       if (ev.kind === 'permission_request') await p.decide(ev.requestId, { allow: true });
     }
-    expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'turn_complete']);
+    expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'ask_resolved', 'turn_complete']);
     expect(fr.decideCalls).toEqual([['r1', { allow: true }]]);
   });
 });

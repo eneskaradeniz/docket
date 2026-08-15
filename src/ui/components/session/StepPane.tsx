@@ -112,7 +112,7 @@ export function StepPane({
   }, [step.idx, step.status]);
 
   const resumeId = sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId)?.providerSessionId;
-  const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
+  const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
 
@@ -154,22 +154,33 @@ export function StepPane({
         </div>
       ) : null}
 
-      {showAsk && state.pendingAsk ? (
-        <StopAndAskCard
-          tool={state.pendingAsk.tool}
-          input={state.pendingAsk.input}
-          reason={state.pendingAsk.reason}
-          planContext={false}
-          onAllow={() => void runner.decide(state.pendingAsk!.requestId, { allow: true })}
-          onDeny={() => void runner.decide(state.pendingAsk!.requestId, { allow: false, reason: 'Denied by operator' })}
-        />
+      {showAsk ? (
+        <div className="mb-2">
+          {state.pendingAsks.length > 1 ? (
+            <div className="mb-1 flex items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.asksPending(state.pendingAsks.length)}</p>
+              <button type="button" onClick={() => { for (const a of state.pendingAsks) void runner.decide(a.requestId, { allow: true }); }} className="alink text-[11px]">{UI.allowAll}</button>
+            </div>
+          ) : null}
+          {state.pendingAsks.map((a) => (
+            <StopAndAskCard
+              key={a.requestId}
+              tool={a.tool}
+              input={a.input}
+              reason={a.reason}
+              planContext={false}
+              onAllow={() => void runner.decide(a.requestId, { allow: true })}
+              onDeny={() => void runner.decide(a.requestId, { allow: false, reason: 'Denied by operator' })}
+            />
+          ))}
+        </div>
       ) : null}
 
       {hasStream ? (
         viewMode === 'sade' ? (
           <div className="flex items-center gap-2 py-2">
             <span className={`h-1.5 w-1.5 rounded-full ${phaseTone(phase)} pulse`} />
-            <span className="text-[13px] text-inkdim">{SIMPLE_PHASE_LABELS[phase]}</span>
+            <span className="text-[13px] text-inkdim">{phase === 'asking_permission' ? UI.askingRole(step.role) : SIMPLE_PHASE_LABELS[phase]}</span>
           </div>
         ) : (
           <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />

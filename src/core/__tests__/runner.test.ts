@@ -139,14 +139,61 @@ describe('foldSessionEvent — live session state', () => {
     ]);
   });
 
-  it('permission_request stops at the gate; a later event resolves it back to running', () => {
+  it('permission_request stops at the gate; ask_resolved (not tool_result) clears it back to running', () => {
     let s = foldSessionEvent(initialSessionState, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
     expect(s.status).toBe('stopped_asking');
-    expect(s.pendingAsk?.requestId).toBe('r1');
-    // the operator allowed it → the tool runs → a tool_result arrives and clears the ask
+    expect(s.pendingAsks.map((a) => a.requestId)).toEqual(['r1']);
+    // a tool_result does NOT clear the ask (WO-0027): with parallel asks it cannot say WHICH ask it answers
     s = foldSessionEvent(s, { kind: 'tool_result', callId: 'c1', summary: 'ok', isError: false });
+    expect(s.pendingAsks).toHaveLength(1);
+    // the runner's explicit resolution signal does
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r1' });
     expect(s.status).toBe('running');
-    expect(s.pendingAsk).toBeUndefined();
+    expect(s.pendingAsks).toHaveLength(0);
+  });
+
+  it('PARALLEL asks all survive (WO-0027 / Bulgu 10) and resolve one by one', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r2', tool: 'Edit', input: {} });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r3', tool: 'Write', input: {} });
+    expect(s.pendingAsks.map((a) => a.requestId)).toEqual(['r1', 'r2', 'r3']);
+    expect(s.status).toBe('stopped_asking');
+    // an interleaved event no longer wipes the batch (the old single-pendingAsk bug)
+    s = foldSessionEvent(s, { kind: 'tool_use', callId: 'c9', tool: 'Read', input: {} });
+    expect(s.pendingAsks).toHaveLength(3);
+    // answering the middle one keeps the others held
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r2' });
+    expect(s.pendingAsks.map((a) => a.requestId)).toEqual(['r1', 'r3']);
+    expect(s.status).toBe('stopped_asking');
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r1' });
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r3' });
+    expect(s.status).toBe('running');
+    expect(s.pendingAsks).toHaveLength(0);
+  });
+
+  it('a duplicate ask id (resume replay) does not double-card', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
+    expect(s.pendingAsks).toHaveLength(1);
+  });
+
+  it('turn_complete and error clear any held asks', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 0, tokensOut: 0, usd: 0 } });
+    expect(s.pendingAsks).toHaveLength(0);
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r2', tool: 'Write', input: {} });
+    s = foldSessionEvent(s, { kind: 'error', message: 'x' });
+    expect(s.pendingAsks).toHaveLength(0);
+  });
+
+  it('seedLiveState re-seeds persisted asks as stopped_asking (WO-0027 / Bulgu 9)', () => {
+    const s = seedLiveState(
+      { transcript: [], cost: undefined, providerSessionId: 'sess-1' },
+      [{ requestId: 'r1', tool: 'Write', input: { file_path: '/a' } }],
+    );
+    expect(s.status).toBe('stopped_asking');
+    expect(s.pendingAsks[0]!.requestId).toBe('r1');
+    expect(s.sessionId).toBe('sess-1');
   });
 
   it('plan_ready holds the plan for approval', () => {
@@ -191,7 +238,7 @@ describe('foldSessionEvent — live session state', () => {
     s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
     expect(s.status).toBe('done');
     expect(s.entries).toHaveLength(1);
-    expect(s.pendingAsk).toBeUndefined();
+    expect(s.pendingAsks).toHaveLength(0);
   });
 });
 

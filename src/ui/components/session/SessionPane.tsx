@@ -64,6 +64,7 @@ export function SessionPane({
   workOrderId,
   sessions,
   onApprovePlan,
+  onSessionEnd,
   pendingPlan,
 }: {
   mode: 'plan' | 'direct';
@@ -71,6 +72,7 @@ export function SessionPane({
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
   onApprovePlan: (planText: string) => Promise<void>;
+  onSessionEnd?: () => void;
   /** A plan persisted to plan.md but not yet approved (e.g. restart mid-proposal, WO-0020/TD-025). Rendered like a
    *  live plan_ready so the operator can still approve/object after a restart. */
   pendingPlan?: string;
@@ -98,6 +100,9 @@ export function SessionPane({
   async function runDrive(input: DriveInput, reset: boolean): Promise<void> {
     if (running) return;
     setRunning(true);
+    // WO-0027 / Bulgu 5: when the turn ends, the WO-level aggregates (cost/stage/steps) went stale until a
+    // navigation — tell the host to reload so the meta line is honest without exit-re-enter.
+    const notifyEnd = (): void => onSessionEnd?.();
     if (reset) {
       sessionId.current = undefined;
       setState(initialSessionState);
@@ -111,6 +116,7 @@ export function SessionPane({
       setState((s) => ({ ...s, status: 'error', lastError: (e as Error)?.message ?? String(e) }));
     } finally {
       setRunning(false);
+      notifyEnd();
     }
   }
 
@@ -158,11 +164,14 @@ export function SessionPane({
     );
     setReplyText('');
   };
-  const allow = (): void => {
-    if (state.pendingAsk) void runner.decide(state.pendingAsk.requestId, { allow: true });
+  const allowAsk = (requestId: string): void => {
+    void runner.decide(requestId, { allow: true });
   };
-  const deny = (): void => {
-    if (state.pendingAsk) void runner.decide(state.pendingAsk.requestId, { allow: false, reason: 'Denied by operator' });
+  const denyAsk = (requestId: string): void => {
+    void runner.decide(requestId, { allow: false, reason: 'Denied by operator' });
+  };
+  const allowAllAsks = (): void => {
+    for (const a of state.pendingAsks) allowAsk(a.requestId);
   };
   const stop = (): void => {
     void runner.interrupt();
@@ -173,7 +182,7 @@ export function SessionPane({
   const livePlan = state.status === 'plan_ready' ? state.pendingPlan : undefined;
   const effectivePlan = livePlan ?? pendingPlan;
   const showPlan = !!effectivePlan;
-  const showAsk = state.status === 'stopped_asking' && !!state.pendingAsk;
+  const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   // The architect stopped without producing a plan (plan mode turn ended, no plan_ready). In plan mode
   // that almost always means it needs input — surface its last message as an answerable question. Walk
   // back to the last assistant message in case the turn ended with a tool_result (e.g. a timed-out tool).
@@ -181,7 +190,9 @@ export function SessionPane({
   const showQuestion = isPlanRequestStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
   const canStart = !running && !showPlan && !approving && !showQuestion;
   // SADE mode derives one calm phase from the live state; DETAY shows the raw themed terminal.
-  const phase = simplePhaseFromState(state);
+  // WO-0027 / Bulgu 3: a seeded pane (idle + entries) derived "Plan düşünülüyor…" even when the plan IS
+  // ready — the plan context outranks the last-entry heuristic whenever nothing is running.
+  const phase: SimplePhase = showPlan && !running && state.status !== 'error' ? 'ready' : simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
   // A session persisted across restart (WO-0010) — offer resume only when one exists for the role.
   const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
@@ -297,22 +308,33 @@ export function SessionPane({
         </div>
       ) : null}
 
-      {showAsk && state.pendingAsk ? (
-        <StopAndAskCard
-          tool={state.pendingAsk.tool}
-          input={state.pendingAsk.input}
-          reason={state.pendingAsk.reason}
-          planContext={isPlanRequestStage}
-          onAllow={allow}
-          onDeny={deny}
-        />
+      {showAsk ? (
+        <div className="mb-2">
+          {state.pendingAsks.length > 1 ? (
+            <div className="mb-1 flex items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.asksPending(state.pendingAsks.length)}</p>
+              <button type="button" onClick={allowAllAsks} className="alink text-[11px]">{UI.allowAll}</button>
+            </div>
+          ) : null}
+          {state.pendingAsks.map((a) => (
+            <StopAndAskCard
+              key={a.requestId}
+              tool={a.tool}
+              input={a.input}
+              reason={a.reason}
+              planContext={isPlanRequestStage}
+              onAllow={() => allowAsk(a.requestId)}
+              onDeny={() => denyAsk(a.requestId)}
+            />
+          ))}
+        </div>
       ) : null}
 
       {hasStream ? (
         viewMode === 'sade' ? (
           <div className="flex items-center gap-2 py-2">
             <span className={`h-1.5 w-1.5 rounded-full ${phaseTone(phase)} pulse`} />
-            <span className="text-[13px] text-inkdim">{SIMPLE_PHASE_LABELS[phase]}</span>
+            <span className="text-[13px] text-inkdim">{phase === 'asking_permission' ? UI.askingRole(role) : SIMPLE_PHASE_LABELS[phase]}</span>
           </div>
         ) : (
           <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />

@@ -3,8 +3,9 @@
 // directly. Run via `npm run cli -- <command> ...` (tsx). This is what lets the pipeline run without Electron,
 // without a human at the keyboard for permission asks, and — with `--fake` — without SDK cost.
 //
-// Commands are primitives (`drive` / `approve-plan` / `ls` / `show`); a whole-WO run is sequenced by the caller
-// (a test or shell script). The reusable, testable core lives in ./drive.ts; this file is I/O + wiring only.
+// Commands are primitives (`drive` / `approve-plan` / `close` / `doctor` / `ls` / `show`);
+// a whole-WO run is sequenced by the caller (a test or shell script). The reusable, testable cores live in
+// ./drive.ts; this file is I/O + wiring only.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

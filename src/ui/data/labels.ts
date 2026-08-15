@@ -90,7 +90,7 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
 };
 
 export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
-  awaiting_plan_commit: 'Commitlenen plan bekleniyor',
+  awaiting_plan_commit: 'Plan onayı bekleniyor', // M2 wording (WO-0027/Bulgu 11): approval is the act; the commit-as-evidence link is M3
   docs_not_updated: 'ROADMAP ve tech-debt henüz güncellenmedi',
   depends_on_open: 'Bağımlı track merge olmadı',
   verifier_report_missing: 'Henüz doğrulayıcı raporu yok',
@@ -302,6 +302,13 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
 };
 
+// Rol-farkında izin satırı (WO-0027 / Bulgu 8) — ekTürkçe ekler sabit tablada, kural değil.
+const ASKING_ROLE: Record<SessionRole, string> = {
+  implementer: 'Uygulayıcının bir isteği var.',
+  architect: 'Mimarın bir isteği var.',
+  verifier: 'Doğrulayıcının bir isteği var.',
+};
+
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.
 export const UI = {
   productName: 'Docket',
@@ -456,6 +463,22 @@ export const UI = {
   loadRetry: 'Yeniden dene',
   saveFailed: 'Kaydedilemedi — tekrar dene.',
   woErrTitle: 'Başlık gerekli.',
+  // Çoklu askı (WO-0027 / Bulgu 10): başlıkta sayı + toplu onay
+  asksPending: (n: number) => `${n} istek bekliyor`,
+  actionRunning: 'Çalışıyor',
+  allowAll: 'Tümüne izin ver',
+  // Rol-farkında askı satırı (Bulgu 8): 'Mimarın bir isteği var' sabitti; isteyen rol hangisiyse o.
+  askingRole: (role: SessionRole) => ASKING_ROLE[role],
+  // Süre (İstek 7)
+  formatDuration: (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}sn`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}dk ${sec % 60}sn`;
+    const h = Math.floor(min / 60);
+    return `${h}s ${min % 60}dk`;
+  },
   // Sağlayıcı ayarları (WO-0025 / B1)
   providerLabel: 'Agent sağlayıcısı',
   providerStatusOk: 'Hazır', // + source shown appended by the modal

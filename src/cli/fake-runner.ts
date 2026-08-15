@@ -31,6 +31,7 @@ export function createFakeRunner(scriptPath: string): { runner: SessionRunner; d
       decideCalls.push([requestId, decision]);
       pending.get(requestId)?.();
     },
+    pendingAsks: async () => [],
     async interrupt() { /* no-op for a scripted runner */ },
   };
 
