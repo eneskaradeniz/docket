@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  foldSessionEvent,
   initialSessionState,
   simplePhaseFromState,
   type DriveInput,
@@ -10,7 +9,7 @@ import {
 } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, formatCost, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
-import { useRunner } from './runner-context';
+import { useDrive, useDriveStore } from './drive-store';
 import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
 
@@ -56,27 +55,23 @@ export function StepPane({
   step,
   workOrderId,
   sessions,
-  onDone,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
-  onDone: () => void;
 }) {
-  const runner = useRunner();
-  // F14 (WO-0026): seed from this step's persisted session — a reopened step pane shows prior activity.
-  const [state, setState] = useState<LiveSessionState>(() =>
-    seedLiveState(sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId) ?? { transcript: [] }),
-  );
-  const [running, setRunning] = useState(false);
+  const store = useDriveStore();
+  // WO-0028 / Bulgu 12: the drive lives in the app-level store — navigation keeps it running; this pane
+  // re-binds to the LIVE fold state on remount, falling back to the persisted seed (F14) after a restart.
+  const driveKey = `${workOrderId}:step:${step.idx}`;
+  const seed = (): LiveSessionState =>
+    seedLiveState(sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId) ?? { transcript: [] });
+  const state = useDrive(store, driveKey, seed);
+  const running = store.get(driveKey)?.running ?? false;
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
-  const sessionId = useRef<string | undefined>(state.sessionId); // seeded (F14)
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(resume?: string): void {
-    if (running) return;
-    setRunning(true);
-    if (!resume) setState(initialSessionState);
     const input: DriveInput = {
       role: step.role,
       workOrderId,
@@ -86,19 +81,8 @@ export function StepPane({
       prompt: '',
       ...(resume ? { resume } : {}),
     };
-    void (async () => {
-      try {
-        for await (const ev of runner.drive(input)) {
-          if (ev.kind === 'started') sessionId.current = ev.sessionId;
-          setState((s) => foldSessionEvent(s, ev));
-        }
-      } catch (e) {
-        setState((s) => ({ ...s, status: 'error', lastError: (e as Error)?.message ?? String(e) }));
-      } finally {
-        setRunning(false);
-        onDone();
-      }
-    })();
+    // A resume seeds from the CURRENT state so the new stream appends (F14); a fresh drive resets.
+    store.start(driveKey, input, resume ? state : initialSessionState);
   }
 
   // Auto-drive a pending step once when it becomes the active step. An 'active' step (interrupted) does not
@@ -148,7 +132,7 @@ export function StepPane({
 
       {running ? (
         <div className="mb-2">
-          <button type="button" onClick={() => void runner.interrupt()} className="btn-ghost rounded px-3 py-1 text-xs">
+          <button type="button" onClick={() => void store.interrupt()} className="btn-ghost rounded px-3 py-1 text-xs">
             {UI.interrupt}
           </button>
         </div>
@@ -159,7 +143,7 @@ export function StepPane({
           {state.pendingAsks.length > 1 ? (
             <div className="mb-1 flex items-center gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.asksPending(state.pendingAsks.length)}</p>
-              <button type="button" onClick={() => { for (const a of state.pendingAsks) void runner.decide(a.requestId, { allow: true }); }} className="alink text-[11px]">{UI.allowAll}</button>
+              <button type="button" onClick={() => { for (const a of state.pendingAsks) void store.decide(a.requestId, { allow: true }); }} className="alink text-[11px]">{UI.allowAll}</button>
             </div>
           ) : null}
           {state.pendingAsks.map((a) => (
@@ -169,8 +153,8 @@ export function StepPane({
               input={a.input}
               reason={a.reason}
               planContext={false}
-              onAllow={() => void runner.decide(a.requestId, { allow: true })}
-              onDeny={() => void runner.decide(a.requestId, { allow: false, reason: 'Denied by operator' })}
+              onAllow={() => void store.decide(a.requestId, { allow: true })}
+              onDeny={() => void store.decide(a.requestId, { allow: false, reason: 'Denied by operator' })}
             />
           ))}
         </div>

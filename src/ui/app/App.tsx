@@ -14,6 +14,7 @@ import { AppSettingsModal } from '../chrome/AppSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RunnerContext } from '../components/session/runner-context';
+import { createDriveStore, DriveStoreContext } from '../components/session/drive-store';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -223,8 +224,20 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
 
+  // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. When ANY drive ends
+  // (wherever the operator is), the board aggregates refresh and the open detail (if any) reloads, so
+  // cost/stage/steps are honest without navigating anywhere.
+  const driveStore = useMemo(() => createDriveStore(runner), [runner]);
+  useEffect(() => {
+    driveStore.onEnd = () => {
+      refreshWorkOrders();
+      setDetailNonce((n) => n + 1);
+    };
+  }, [driveStore, refreshWorkOrders]);
+
   return (
     <RunnerContext.Provider value={runner}>
+      <DriveStoreContext.Provider value={driveStore}>
       {chrome}
       {main}
       {woCreateOpen && currentWorkspace ? (
@@ -248,6 +261,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         />
       ) : null}
       {settingsOpen ? <AppSettingsModal theme={theme} setTheme={setTheme} settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
+      </DriveStoreContext.Provider>
     </RunnerContext.Provider>
   );
 }
