@@ -3,18 +3,21 @@
 // directly. Run via `npm run cli -- <command> ...` (tsx). This is what lets the pipeline run without Electron,
 // without a human at the keyboard for permission asks, and — with `--fake` — without SDK cost.
 //
-// Commands are primitives (`drive` / `approve-plan` / `close` / `doctor` / `ls` / `show`);
-// a whole-WO run is sequenced by the caller (a test or shell script). The reusable, testable cores live in
-// ./drive.ts; this file is I/O + wiring only.
+// Commands are primitives (`drive` / `approve-plan` / `close` / `doctor` / `ls` / `show`, plus the
+// bootstrap pair `create-workspace` / `create-work-order` — TD-032's first half: with them the CLI spans
+// workspace → WO → drive end-to-end, GUI never opened); a whole-WO run is sequenced by the caller (a test
+// or shell script). The reusable, testable cores live in ./drive.ts and ./create.ts; this file is I/O +
+// wiring only — the one place outside adapters/ that brands identities (widened composition root).
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkProvider, createRunner, providerEnvForKey, quickProviderCheck } from '../adapters/runner';
 import { createStore } from '../adapters/store';
-import { woid } from '../adapters/ids';
+import { rid, woid } from '../adapters/ids';
 import { askOperatorPolicy, autoAllowPolicy, createPipeline } from '../core/pipeline';
 import type { SessionRole } from '../core/types';
 import { buildDriveInput, formatEvent, runDrive, type DriveFormat, type DriveOptions } from './drive';
+import { parseCreateWorkOrderArgs, parseCreateWorkspaceArgs, resolveTracks } from './create';
 import { createFakeRunner } from './fake-runner';
 
 // --- tiny argv parser (no commander/yargs — a test harness, small surface) ---
@@ -133,6 +136,64 @@ async function closeCommand(woIdArg: string | undefined, opts: Record<string, st
   return 0;
 }
 
+// --- bootstrap commands (WO-0024 / TD-032): the mappers in ./create.ts shape argv (pure); these
+//     handlers own the store + identity side — branding (rid) and the data-dependent resolutions the
+//     mappers can't do: --workspace by id then label, --track slugs against the workspace's repos. ---
+
+async function createWorkspaceCommand(argv: string[], store: ReturnType<typeof createStore>): Promise<number> {
+  const parsed = parseCreateWorkspaceArgs(argv);
+  if (!parsed.ok) {
+    process.stderr.write(`✗ ${parsed.error}\nusage: create-workspace --label <text> --repo <path> [--repo <path>]... [--decision-store <path>]\n`);
+    return 2;
+  }
+  let ws;
+  try {
+    ws = await store.createWorkspace(parsed.input);
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+  process.stdout.write(`created workspace ${ws.id} "${ws.label}" — repos: ${ws.repos.join(', ')}; decision store: ${ws.decisionStore}\n`);
+  return 0;
+}
+
+async function createWorkOrderCommand(argv: string[], store: ReturnType<typeof createStore>): Promise<number> {
+  const parsed = parseCreateWorkOrderArgs(argv);
+  if (!parsed.ok) {
+    process.stderr.write(`✗ ${parsed.error}\nusage: create-work-order --workspace <id-or-label> --title <text> [--description <text>] [--track <repo-slug>]... [--review-mode gates|every-step]\n`);
+    return 2;
+  }
+  const draft = parsed.input;
+  const workspaces = await store.getWorkspaces();
+  // --workspace accepts the id (slug) or the label — exact id first, label as the friendly spelling.
+  const ws = workspaces.find((w) => w.id === draft.workspace) ?? workspaces.find((w) => w.label === draft.workspace);
+  if (!ws) {
+    const known = workspaces.map((w) => `${w.id} (${w.label})`).join(', ') || 'none yet — run create-workspace first';
+    process.stderr.write(`✗ no workspace "${draft.workspace}" — known: ${known}\n`);
+    return 1;
+  }
+  const tracks = resolveTracks(ws.repos, ws.decisionStore, draft.tracks);
+  if (!tracks.ok) {
+    process.stderr.write(`✗ ${tracks.error}\n`);
+    return 1;
+  }
+  try {
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id,
+      title: draft.title,
+      description: draft.description,
+      trackRepos: tracks.tracks.map((t) => rid(t)),
+      reviewMode: draft.reviewMode,
+      contextFiles: draft.contextFiles,
+    });
+    process.stdout.write(`created ${wo.id} "${wo.title}" — workspace ${ws.id}; tracks: ${tracks.tracks.join(', ')}; review: ${draft.reviewMode}\n`);
+    return 0;
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+}
+
 async function doctorCommand(opts: Record<string, string | true>, dbPath: string, store: ReturnType<typeof createStore> | undefined): Promise<number> {
   process.stdout.write(`db: ${dbPath}${store ? '' : ' (NOT FOUND — GUI once, or --db)'}\n`);
   const quick = quickProviderCheck();
@@ -176,19 +237,26 @@ async function showCommand(woIdArg: string | undefined, store: ReturnType<typeof
   return 0;
 }
 
+const HELP_TEXT =
+  'docket CLI — drive the plan-driven pipeline headlessly (WO-0024)\n' +
+  'commands:\n' +
+  '  create-workspace --label L --repo PATH [--repo PATH]... [--decision-store PATH]\n' +
+  '          create a workspace (a fresh --db works: the file is created + migrated)\n' +
+  '  create-work-order --workspace W --title T [--description D] [--track SLUG]...\n' +
+  '          [--review-mode gates|every-step]\n' +
+  '          author a work order into the workspace decision store (W = id or label;\n' +
+  '          tracks default to all code repos — the decision store excluded)\n' +
+  '  drive <woId> [--plan | --step N | --review N | --prompt TXT] [--cwd PATH] [--fake SCRIPT]\n' +
+  '          [--policy auto|ask] [--format stream|jsonl|quiet] [--approve-plan auto] [--resume SID]\n' +
+  '  approve-plan <woId>                      approve the pending plan\n' +
+  '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
+  '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +
+  '  ls                                       list work orders\n' +
+  '  show <woId>                              show a work order + its steps\n' +
+  'global: --db PATH (default the GUI app userData docket.db)\n';
+
 function help(): number {
-  process.stdout.write(
-    'docket CLI — drive the plan-driven pipeline headlessly (WO-0024)\n' +
-      'commands:\n' +
-      '  drive <woId> [--plan | --step N | --review N | --prompt TXT] [--cwd PATH] [--fake SCRIPT]\n' +
-      '          [--policy auto|ask] [--format stream|jsonl|quiet] [--approve-plan auto] [--resume SID]\n' +
-      '  approve-plan <woId>                      approve the pending plan\n' +
-      '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
-      '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +
-      '  ls                                       list work orders\n' +
-      '  show <woId>                              show a work order + its steps\n' +
-      'global: --db PATH (default the GUI app userData docket.db)\n',
-  );
+  process.stdout.write(HELP_TEXT);
   return 0;
 }
 
@@ -206,29 +274,35 @@ export async function main(argv: string[]): Promise<number> {
     );
     return 2;
   }
-  if (!existsSync(dbPath) && cmd !== 'doctor') {
+  // `create-workspace` bootstraps a db as easily as it bootstraps a workspace: createStore creates +
+  // migrates a fresh file, so a not-yet-existing --db is exactly the headless starting point (TD-032).
+  if (!existsSync(dbPath) && cmd !== 'doctor' && cmd !== 'create-workspace') {
     process.stderr.write(
       `no docket db at ${dbPath}\n` +
         `pass --db <path>, or set it to the GUI app's userData/docket.db (run the GUI once first to create it).\n`,
     );
     return 2;
   }
-  const store = existsSync(dbPath) ? createStore(dbPath) : undefined;
+  const store = cmd === 'create-workspace' || existsSync(dbPath) ? createStore(dbPath) : undefined;
   if (!store) {
     if (cmd === 'doctor') return await doctorCommand(opts, dbPath, undefined);
     return 2; // unreachable (guarded above) — kept for type completeness
   }
 
   switch (cmd) {
+    case 'create-workspace': return await createWorkspaceCommand(argv, store!);
+    case 'create-work-order': return await createWorkOrderCommand(argv, store!);
     case 'drive': return await driveCommand(positional[1], opts, store!);
     case 'approve-plan': return await approvePlanCommand(positional[1], store!);
     case 'close': return await closeCommand(positional[1], opts, store!);
     case 'doctor': return await doctorCommand(opts, dbPath, store);
     case 'ls': return await lsCommand(store!);
     case 'show': return await showCommand(positional[1], store!);
+    case 'help': return help();
     default:
-      process.stderr.write(`unknown command: ${cmd}\n`);
-      return help();
+      // An unknown command is a usage error: say so on stderr, show the usage, exit non-zero (WO item 3).
+      process.stderr.write(`unknown command: ${cmd}\n\n${HELP_TEXT}`);
+      return 2;
   }
 }
 
