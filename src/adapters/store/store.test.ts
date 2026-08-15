@@ -493,3 +493,52 @@ describe('WO-0027 — askı kalıcılığı + süreler', () => {
     expect(s.endedAt).toBe('2026-08-15T10:04:12.000Z');
   });
 });
+
+describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () => {
+  const wsInRoot4 = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'W29 test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('a RESUMED session accumulates cost across turns and keeps the earliest start (B17)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot4(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Accum', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'sess-x', workOrderId: wo.id, role: 'architect', status: 'idle', cost: { tokensIn: 1000, tokensOut: 200, usd: 0.10 }, startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:02:00.000Z' });
+    store.recordSession({ providerSessionId: 'sess-x', workOrderId: wo.id, role: 'architect', status: 'idle', cost: { tokensIn: 3000, tokensOut: 600, usd: 0.20 }, startedAt: '2026-08-15T11:00:00.000Z', endedAt: '2026-08-15T11:01:00.000Z' });
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.cost!.tokensIn).toBe(4000);
+    expect(s.cost!.tokensOut).toBe(800);
+    expect(s.cost!.usd).toBeCloseTo(0.3, 10); // float sum
+    expect(s.startedAt).toBe('2026-08-15T10:00:00.000Z'); // earliest survives the resume
+    expect(s.endedAt).toBe('2026-08-15T11:01:00.000Z');
+  });
+  it('closing twice refuses the second time (B21)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot4(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Idem', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    await store.closeWorkOrder(wo.id, 'n');
+    await expect(store.closeWorkOrder(wo.id, 'n')).rejects.toThrow('already closed');
+  });
+  it('a revise verdict blocks close until overridden (B19)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot4(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Revise', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+    store.recordStepVerdict(wo.id, 1, 'revise', 'eksik');
+    await expect(store.closeWorkOrder(wo.id, 'n')).rejects.toThrow('step_not_resolved');
+    await store.overrideStepVerdict(wo.id, 1);
+    await store.closeWorkOrder(wo.id, 'n'); // now closes
+    expect((await store.getWorkOrder(wo.id))!.stage).toBe('closed');
+  });
+  it('permission mode round-trips (B18)', async () => {
+    const store = createStore(freshDb());
+    expect(await store.getPermissionMode()).toBe('ask');
+    await store.setPermissionMode('auto');
+    expect(await store.getPermissionMode()).toBe('auto');
+  });
+});

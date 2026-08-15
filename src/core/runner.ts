@@ -73,6 +73,10 @@ export interface DriveInput {
    *  field = a review drive (distinct from the plan session): main fills the review prompt + captures the
    *  verdict at turn_complete. */
   reviewStepIndex?: number;
+  /** The ask cadence for THIS drive (WO-0029 / B18): 'auto' resolves every in-scope ask internally; 'ask'
+   *  (or omitted — the injected policy decides) surfaces them to the operator. The fence denies out-of-scope
+   *  writes in both modes; this is cadence, not scope. */
+  permissions?: 'ask' | 'auto';
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the

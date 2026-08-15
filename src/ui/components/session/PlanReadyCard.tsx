@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CostSummary } from '../../../core/types';
 import { MarkdownBody } from '../detail/MarkdownBody';
+import { parsePlanSteps } from '../../../core/plan-steps';
 import { formatCost, UI } from '../../data/labels';
 
 // The plan-ready card (WO-0016 redesign): the architect proposed a plan — render it as markdown inside an
@@ -24,16 +25,21 @@ export function PlanReadyCard({
   const [objectMode, setObjectMode] = useState(false);
   const [feedback, setFeedback] = useState('');
   const inFlight = approving || objecting;
+  // WO-0029 / B15: a plan without a ```steps fence would silently fall to the free-form flow on approval —
+  // warn BEFORE the operator clicks (the run's first plan had exactly this).
+  const noSteps = parsePlanSteps(plan).length === 0;
 
   return (
     <div className="mb-2 flex items-stretch rounded-sm border border-rule bg-surface">
       <div className={`bar bar-brass${inFlight ? '' : ' pulse'}`} />
       <div className="perf" />
       <div className="min-w-0 flex-1 px-3.5 py-3">
+        {noSteps ? <p className="mb-2 text-xs text-clay">{UI.planNoStepsWarn}</p> : null}
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.planReadyHeader}</p>
           <span className="ml-auto font-mono text-[11px] text-inkdim">mimar</span>
           {cost && cost.usd > 0 ? <span className="font-mono text-[11px] text-inkdim">{formatCost(cost)}</span> : null}
+          {objecting ? <span className="font-mono text-[11px] text-brass">{UI.objectingLine}</span> : null}
         </div>
         <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.planReviewHint}</p>
         <MarkdownBody content={plan} />

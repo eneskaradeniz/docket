@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { checkProvider, createRunner, providerEnvForKey, quickProviderCheck } from '../adapters/runner';
 import { createStore } from '../adapters/store';
 import { rid, woid } from '../adapters/ids';
-import { askOperatorPolicy, autoAllowPolicy, createPipeline } from '../core/pipeline';
+import { autoAllowPolicy, createPipeline } from '../core/pipeline';
 import type { SessionRole } from '../core/types';
 import { buildDriveInput, formatEvent, runDrive, type DriveFormat, type DriveOptions } from './drive';
 import { parseCreateWorkOrderArgs, parseCreateWorkspaceArgs, resolveTracks } from './create';
@@ -72,10 +72,9 @@ async function driveCommand(woIdArg: string | undefined, opts: Record<string, st
   const runner = usingFake
     ? createFakeRunner(opts.fake as string).runner
     : createRunner((await store.getProviderKey()) !== undefined ? { env: providerEnvForKey((await store.getProviderKey())!) } : {});
-  // Headless default is auto-allow (the agent is fully privileged; the fence is a tripwire, not a boundary).
-  // Interactive `--policy ask` is a follow-up; for now it falls back to auto-allow with a warning.
-  const permission = opts.policy === 'ask' ? askOperatorPolicy() : autoAllowPolicy();
-  if (opts.policy === 'ask') process.stderr.write('note: --policy ask is not interactive yet in this build; permission asks will hang if any surfaces — prefer the default auto for headless runs.\n');
+  // Headless default is auto (the agent is fully privileged; the fence is a tripwire, not a boundary).
+  // WO-0029 / B18: cadence is per-drive now — the GUI resolves its stored setting the same way in main.
+  const permission = autoAllowPolicy();
   const pipeline = createPipeline({ runner, store, permission });
 
   const driveOpts: DriveOptions = {
@@ -88,6 +87,7 @@ async function driveCommand(woIdArg: string | undefined, opts: Record<string, st
     resume: typeof opts.resume === 'string' ? opts.resume : undefined,
   };
   const input = await buildDriveInput(woId, driveOpts, store);
+  if (opts.policy === 'ask') input.permissions = 'ask';
   const summary = await runDrive(input, pipeline, (ev) => {
     const line = formatEvent(ev, format);
     if (line !== undefined) process.stdout.write(line + '\n');

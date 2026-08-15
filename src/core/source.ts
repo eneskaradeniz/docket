@@ -88,4 +88,8 @@ export interface WorkOrderSource {
   // operator (merged_at), the verifier gate is set, and the closure sha is the decision-store HEAD at close
   // time ("closed at this commit"), not yet an M3 docs-commit sha. Stage becomes `closed`.
   closeWorkOrder(workOrderId: WorkOrderId, note: string): Promise<void>;
+
+  // WO-0029 / B19: the operator's override on a revise verdict ("Devam et") — the step's row flips to
+  // proceed; the architect's original text stays in the verdict file. Idempotent (no-op when not revise).
+  overrideStepVerdict(workOrderId: WorkOrderId, idx: number): Promise<void>;
 }

@@ -115,6 +115,14 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     },
     [source, selectedId, reloadDetail],
   );
+  const handleOverrideVerdict = useCallback(
+    async (idx: number) => {
+      if (!selectedId) return;
+      await source.overrideStepVerdict(selectedId, idx);
+      reloadDetail();
+    },
+    [source, selectedId, reloadDetail],
+  );
   const handleCloseWorkOrder = useCallback(
     async (note: string) => {
       if (!selectedId) return;
@@ -209,6 +217,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
         onCloseWorkOrder={handleCloseWorkOrder}
+        onOverrideVerdict={handleOverrideVerdict}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
         onGetStepVerdict={handleGetStepVerdict}
         onResetStep={handleResetStep}
@@ -233,6 +242,11 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       refreshWorkOrders();
       setDetailNonce((n) => n + 1);
     };
+    // WO-0029 / B13+B14: the board flips to "Çalışıyor" the moment a background drive starts, and to
+    // "Seni bekliyor" when an ask surfaces — the card derives both from the recorded rows; the refresh
+    // was the missing half.
+    driveStore.onStarted = () => refreshWorkOrders();
+    driveStore.onAsk = () => refreshWorkOrders();
   }, [driveStore, refreshWorkOrders]);
 
   return (

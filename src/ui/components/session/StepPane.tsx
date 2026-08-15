@@ -96,6 +96,20 @@ export function StepPane({
   }, [step.idx, step.status]);
 
   const resumeId = sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId)?.providerSessionId;
+  // WO-0029 / 7b+7c: per-step session duration + live ticking elapsed while the step runs.
+  const matchedSession = sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const liveStart = store.get(driveKey)?.startedAt;
+  const durationText = running && liveStart
+    ? UI.formatDuration(Math.max(0, now - liveStart))
+    : matchedSession?.startedAt && matchedSession?.endedAt
+      ? UI.formatDuration(new Date(matchedSession.endedAt).getTime() - new Date(matchedSession.startedAt).getTime())
+      : undefined;
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
@@ -118,7 +132,13 @@ export function StepPane({
               </button>
             </div>
           ) : null}
-          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatCost(state.cost)}</span> : null}
+          {state.cost.usd > 0 || durationText ? (
+            <span className="font-mono text-[12px] text-inkdim">
+              {state.cost.usd > 0 ? formatCost(state.cost) : null}
+              {state.cost.usd > 0 && durationText ? ' · ' : ''}
+              {durationText ? `⏱ ${durationText}` : null}
+            </span>
+          ) : null}
         </div>
       </header>
 

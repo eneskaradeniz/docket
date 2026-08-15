@@ -27,6 +27,7 @@ export function WorkOrderDetail({
   onGetStepVerdict,
   onResetStep,
   onCloseWorkOrder,
+  onOverrideVerdict,
   reloadDetail,
   onDelete,
 }: {
@@ -38,6 +39,7 @@ export function WorkOrderDetail({
   onGetStepVerdict: (idx: number) => Promise<string>;
   onResetStep: (idx: number) => Promise<void>;
   onCloseWorkOrder: (note: string) => Promise<void>;
+  onOverrideVerdict: (idx: number) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
 }) {
@@ -130,6 +132,9 @@ export function WorkOrderDetail({
   const planStage = detail.stage === 'written' || detail.stage === 'architect_approval';
   const hasSteps = detail.steps.length > 0;
   const allStepsDone = hasSteps && detail.steps.every((s) => s.status === 'done');
+  // WO-0029 / B19: a revise verdict is an OPEN decision — on mount (the live flow may have come and gone)
+  // it must still be surfaced: override (Devam et) or re-run. Closing is blocked until resolved.
+  const unresolvedRevise = detail.steps.find((s) => s.verdict === 'revise' && s.status === 'done');
   const activeStep = runIdx !== undefined ? detail.steps.find((s) => s.idx === runIdx) : undefined;
 
   return (
@@ -179,7 +184,23 @@ export function WorkOrderDetail({
         <span className="text-[14px] text-ink">{phaseLabelText(derivePhase(detail, detail.steps, !!docs.plan))}</span>
       </div>
 
-      {allStepsDone ? (
+      {detail.stage === 'closed' ? (
+        <div className="rounded-sm border border-rule bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.closeWoDoneTitle}</p>
+          <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
+        </div>
+      ) : unresolvedRevise && allStepsDone ? (
+        <div className="rounded-sm border border-rule bg-surface p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.verdictCardReviseTitle}</p>
+          <p className="mt-1 text-[12px] text-inkdim">
+            {UI.overrideVerdictHint} — <span className="font-mono">adım {unresolvedRevise.idx}</span>
+          </p>
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => void onResetStep(unresolvedRevise.idx)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.rerunStep}</button>
+            <button type="button" onClick={() => void onOverrideVerdict(unresolvedRevise.idx).then(reloadDetail)} className="rounded bg-sage px-3 py-1 text-xs text-bg">{UI.overrideVerdictBtn}</button>
+          </div>
+        </div>
+      ) : allStepsDone ? (
         <div className="rounded-sm border border-rule bg-surface p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.stepsAllDone}</p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>

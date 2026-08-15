@@ -17,8 +17,15 @@ export type Verdict =
   | { outcome: 'revise'; reason: string }
   | { outcome: 'unknown' };
 
-const VERDICT_LINE_RE = /^\s*VERDICT:\s*(proceed|revise)\b/i;
-const REASON_LINE_RE = /^\s*REASON:\s*/i;
+// The canonical marker is `VERDICT:`; `KARAR:` is a robustness alias (WO-0029 / B20 — a live architect
+// translated the marker into the session's Turkish and its honest decision was coerced to the safe side).
+// Outcomes accept the English pair plus the Turkish aliases the run actually produced.
+const VERDICT_LINE_RE = /^\s*(?:VERDICT|KARAR):\s*(proceed|revise|devam(?:\s+et)?|revize|düzelt)\b/i;
+const REASON_LINE_RE = /^\s*(?:REASON|GEREKÇE):\s*/i;
+const CANONICAL_VERDICT_RE = /^\s*VERDICT:\s*(?:proceed|revise)\b/i;
+
+const toOutcome = (raw: string): 'proceed' | 'revise' =>
+  /^proceed$/i.test(raw) || /^devam/i.test(raw) ? 'proceed' : 'revise';
 
 /**
  * Parse the LAST `VERDICT:` line in the text (a draft earlier one is superseded). `proceed` → proceed;
@@ -30,11 +37,16 @@ export function parseVerdict(text: string): Verdict {
   let vIdx = -1;
   let outcome: 'proceed' | 'revise' | null = null;
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = VERDICT_LINE_RE.exec(lines[i]!);
+    const line = lines[i]!;
+    const m = VERDICT_LINE_RE.exec(line);
+    // A canonical VERDICT: line anywhere beats aliases — the last canonical wins; if none exists, the
+    // last alias (KARAR:) line is used.
     if (m) {
-      vIdx = i;
-      outcome = m[1]!.toLowerCase() as 'proceed' | 'revise';
-      break;
+      if (CANONICAL_VERDICT_RE.test(line) || outcome === null) {
+        vIdx = i;
+        outcome = toOutcome(m[1]!);
+        if (CANONICAL_VERDICT_RE.test(line)) break;
+      }
     }
   }
   if (outcome === null) return { outcome: 'unknown' };

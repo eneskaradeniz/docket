@@ -183,7 +183,8 @@ export type AbsentReason =
   | 'docs_not_updated'
   | 'depends_on_open'
   | 'verifier_report_missing'
-  | 'pointers_unresolved';
+  | 'pointers_unresolved'
+  | 'step_not_resolved';
 
 export type PrimaryAction =
   | { kind: 'available'; intent: ActionIntent }
@@ -300,6 +301,7 @@ export interface WorkOrderDetailView {
   sessions: SessionRef[];
   steps: StepView[]; // the plan's steps (WO-0017); [] when plan.md has no ```steps fence or plan not approved
   reviewMode: 'gates' | 'every-step'; // the WO's review cadence (WO-0020) — gates auto-proceeds; every-step pauses
+  gateInputs: WoGateInputs; // for the closed card's sha display (WO-0029 / B21)
   primaryAction: PrimaryAction;
   sources: SourceLink[];
   cost: CostSummary;

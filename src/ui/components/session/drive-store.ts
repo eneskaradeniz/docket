@@ -21,6 +21,7 @@ import type { SessionRunner } from '../../../core/runner';
 export interface DriveHandle {
   state: LiveSessionState;
   running: boolean;
+  startedAt?: number; // epoch ms of store.start() — the live ticker's anchor (WO-0029 / 7c)
 }
 
 type Listener = () => void;
@@ -30,6 +31,10 @@ export function createDriveStore(runner: SessionRunner) {
   const sessionIds = new Map<string, string | undefined>(); // per-key provider session id (resume/approve)
   const listeners = new Set<Listener>();
   let onEnd: ((key: string) => void) | undefined;
+  // WO-0029 / B13+B14: fired from the fold loop so the App can refresh the board the moment a drive
+  // starts (the card flips to "Çalışıyor") or an ask surfaces in the background ("Seni bekliyor").
+  let onStarted: ((key: string) => void) | undefined;
+  let onAsk: ((key: string) => void) | undefined;
   let active: string | undefined; // the one running key (one drive at a time)
 
   const notify = (): void => {
@@ -55,14 +60,18 @@ export function createDriveStore(runner: SessionRunner) {
   function start(key: string, input: DriveInput, seed: LiveSessionState = initialSessionState): boolean {
     if (active !== undefined) return active === key; // already running this key → no-op true; another → false
     active = key;
-    drives.set(key, { state: seed, running: true });
+    drives.set(key, { state: seed, running: true, startedAt: Date.now() });
     sessionIds.set(key, seed.sessionId);
     notify();
     void (async () => {
       try {
         for await (const ev of runner.drive(input)) {
-          if (ev.kind === 'started') sessionIds.set(key, ev.sessionId);
-          const cur = drives.get(key) ?? { state: initialSessionState, running: true };
+          if (ev.kind === 'started') {
+            sessionIds.set(key, ev.sessionId);
+            onStarted?.(key);
+          }
+          if (ev.kind === 'permission_request') onAsk?.(key);
+          const cur = drives.get(key) ?? { state: initialSessionState, running: true, startedAt: Date.now() };
           drives.set(key, { ...cur, state: foldSessionEvent(cur.state, ev) });
           notify();
         }
@@ -96,6 +105,12 @@ export function createDriveStore(runner: SessionRunner) {
     sessionId,
     set onEnd(cb: (key: string) => void) {
       onEnd = cb;
+    },
+    set onStarted(cb: (key: string) => void) {
+      onStarted = cb;
+    },
+    set onAsk(cb: (key: string) => void) {
+      onAsk = cb;
     },
   };
 }

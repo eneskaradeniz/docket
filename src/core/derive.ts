@@ -391,6 +391,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
     sessions: wo.sessions,
     steps,
     reviewMode,
+    gateInputs: wo.gateInputs,
     primaryAction: derivePrimaryAction(wo),
     sources: wo.sources,
     cost: wo.cost,
@@ -406,12 +407,17 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
 /** The minimum step facts closure needs — satisfied by both `StepView` and a DB row projection. */
 export type CloseableStep = Pick<StepView, 'status' | 'verdict'>;
 
-export type CloseCheck = { ok: true } | { ok: false; reason: 'plan_not_approved' | 'no_steps' | 'step_not_done' | 'step_not_reviewed' };
+export type CloseCheck =
+  | { ok: true }
+  | { ok: false; reason: 'plan_not_approved' | 'no_steps' | 'step_not_done' | 'step_not_reviewed' | 'step_not_resolved' };
 
 export function canClose(input: { planApproved: boolean; steps: CloseableStep[] }): CloseCheck {
   if (!input.planApproved) return { ok: false, reason: 'plan_not_approved' };
   if (input.steps.length === 0) return { ok: false, reason: 'no_steps' };
   if (input.steps.some((s) => s.status !== 'done')) return { ok: false, reason: 'step_not_done' };
   if (input.steps.some((s) => !s.verdict)) return { ok: false, reason: 'step_not_reviewed' };
+  // WO-0029 / B19: a revise verdict is an OPEN decision — the operator overrides it (Devam et) or re-runs
+  // the step; a work order never closes with an unresolved revise silently absorbed.
+  if (input.steps.some((s) => s.verdict !== 'proceed')) return { ok: false, reason: 'step_not_resolved' };
   return { ok: true };
 }

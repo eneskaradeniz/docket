@@ -33,6 +33,7 @@ const source: WorkOrderSource = {
   resetStep: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:reset-step', id, idx),
   deleteWorkOrder: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:delete-work-order', id),
   closeWorkOrder: (id: WorkOrderId, note: string) => ipcRenderer.invoke('docket:source:close-work-order', id, note),
+  overrideStepVerdict: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:override-step-verdict', id, idx),
 };
 
 // Operator app settings (WO-0025 / B1): the provider key + check. The key never crosses to the renderer
@@ -41,6 +42,8 @@ const settings: AppSettings = {
   getProviderKey: () => ipcRenderer.invoke('docket:settings:get-provider-key'),
   setProviderKey: (key: string | undefined) => ipcRenderer.invoke('docket:settings:set-provider-key', key),
   checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
+  getPermissionMode: () => ipcRenderer.invoke('docket:settings:get-permission-mode'),
+  setPermissionMode: (mode: 'ask' | 'auto') => ipcRenderer.invoke('docket:settings:set-permission-mode', mode),
 };
 
 const runner = {
