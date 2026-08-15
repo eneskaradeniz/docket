@@ -78,11 +78,14 @@ ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store
 // --- Work-order closure (WO-0025 / P1-2). Operator-attested: appends the ## Closure note to order.md and
 //   records merged_at + verifier + closure-sha facts. Preconditions re-checked server-side. ---
 ipcMain.handle('docket:source:close-work-order', (_e, id: WorkOrderId, note: string) => store.closeWorkOrder(id, note));
+ipcMain.handle('docket:source:override-step-verdict', (_e, id: WorkOrderId, idx: number) => store.overrideStepVerdict(id, idx));
 
 // --- Operator app settings (WO-0025 / B1): the provider key lives in the shared DB (both hosts see it);
 //   the provider check runs in the runner adapter — the only place that may touch the provider. ---
 ipcMain.handle('docket:settings:get-provider-key', () => store.getProviderKey());
 ipcMain.handle('docket:settings:set-provider-key', (_e, key: string | undefined) => store.setProviderKey(key));
+ipcMain.handle('docket:settings:get-permission-mode', () => store.getPermissionMode());
+ipcMain.handle('docket:settings:set-permission-mode', (_e, mode: 'ask' | 'auto') => store.setPermissionMode(mode));
 ipcMain.handle('docket:settings:check-provider', async () => {
   const key = await store.getProviderKey();
   return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
@@ -116,7 +119,10 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // assembly, persistence side-effects (WO-0010/0017/0020), verdict capture, permission handling — lives in
   // the host-agnostic pipeline (src/core/pipeline.ts, WO-0023), which drives the runner port and re-yields
   // every event here for IPC. This handler is a thin forwarder; it owns no logic.
-  const driveInput: DriveInput = { ...input, cwd: process.cwd() };
+  // WO-0029 / B18: the ask cadence is the operator's choice — the stored mode applies unless the drive
+  // explicitly carries one (the CLI's --policy sets it per drive). The fence behaves identically in both.
+  const permissionMode = input.permissions ?? (await store.getPermissionMode());
+  const driveInput: DriveInput = { ...input, cwd: process.cwd(), permissions: permissionMode };
   try {
     for await (const ev of pipeline.drive(driveInput)) {
       event.sender.send('docket:runner:event', ev);

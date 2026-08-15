@@ -94,6 +94,7 @@ export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
   docs_not_updated: 'ROADMAP ve tech-debt henüz güncellenmedi',
   depends_on_open: 'Bağımlı track merge olmadı',
   verifier_report_missing: 'Henüz doğrulayıcı raporu yok',
+  step_not_resolved: 'Bir adımda revize kararı açık — Devam et ya da yeniden çalıştır',
   pointers_unresolved: 'Kanıt işaretçileri head sha’da çözülmüyor',
 };
 
@@ -466,6 +467,17 @@ export const UI = {
   // Çoklu askı (WO-0027 / Bulgu 10): başlıkta sayı + toplu onay
   asksPending: (n: number) => `${n} istek bekliyor`,
   actionRunning: 'Çalışıyor',
+  // WO-0029 cila dizgeleri
+  closeWoDoneTitle: 'Kapandı',
+  planNoStepsWarn: 'Planda adım listesi (```steps) yok — onaylarsan adım akışı ve denetimler çalışmaz. İtiraz etmeyi düşün.',
+  objectingLine: 'Mimar yeniden planlıyor…',
+  overrideVerdictBtn: 'Devam et (geçersiz kıl)',
+  overrideVerdictHint: "Mimarın 'revize' kararını geçersiz kılıp proceed yapar — mimarın özgün metni verdict dosyasında kalır.",
+  permModeLabel: 'İzin modu',
+  permModeAsk: 'Sor',
+  permModeAuto: 'Otomatik',
+  permModeHint: 'Otomatik: kapsam-içi her istek onaylı sayılır; kapsam-dışı yazmalar yine engellenir. Sor: her istekte kart çıkar.',
+  verdictOverrideDone: 'Geçersiz kılındı — adım proceed sayıldı.',
   allowAll: 'Tümüne izin ver',
   // Rol-farkında askı satırı (Bulgu 8): 'Mimarın bir isteği var' sabitti; isteyen rol hangisiyse o.
   askingRole: (role: SessionRole) => ASKING_ROLE[role],

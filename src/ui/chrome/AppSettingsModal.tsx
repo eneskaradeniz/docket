@@ -27,10 +27,12 @@ export function AppSettingsModal({
   // Provider block state (WO-0025 / B1): the stored key draft + the last check result. The quick check on
   // open tells the operator where auth stands before the first "Plan iste" throws.
   const [keyDraft, setKeyDraft] = useState('');
+  const [permMode, setPermMode] = useState<'ask' | 'auto'>('ask');
   const [status, setStatus] = useState<ProviderStatus | undefined>(undefined);
   const [testing, setTesting] = useState(false);
   useEffect(() => {
     void settings.getProviderKey().then((k) => setKeyDraft(k ?? ''));
+    void settings.getPermissionMode?.().then((m) => setPermMode(m ?? 'ask'));
     void settings.checkProvider().then(setStatus).catch(() => setStatus(undefined));
   }, [settings]);
   const saveKey = async (): Promise<void> => {
@@ -141,6 +143,23 @@ export function AppSettingsModal({
           </div>
           <p className="mt-1.5 text-[11px] text-inkdim">{UI.providerHint}</p>
         </div>
+
+        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">
+          {UI.permModeLabel}
+        </label>
+        <div className="mb-2 flex gap-1 rounded bg-surface2 p-1">
+          {(['ask', 'auto'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setPermMode(m); void settings.setPermissionMode?.(m); }}
+              className={`flex-1 rounded px-2 py-1.5 text-[12px] font-medium ${m === permMode ? 'bg-bg text-ink' : 'text-inkdim'}`}
+            >
+              {m === 'ask' ? UI.permModeAsk : UI.permModeAuto}
+            </button>
+          ))}
+        </div>
+        <p className="mb-4 text-[11px] text-inkdim">{UI.permModeHint}</p>
 
         <div className="my-4 border-t border-rule" />
         <p className="font-mono text-[11px] text-inkdim">

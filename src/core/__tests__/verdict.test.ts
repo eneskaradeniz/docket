@@ -36,3 +36,18 @@ describe('parseVerdict', () => {
     expect(parseVerdict('The verdict is unclear here.')).toEqual({ outcome: 'unknown' });
   });
 });
+
+describe('parseVerdict — KARAR alias (WO-0029 / B20)', () => {
+  it('KARAR: devam → proceed (the run-breaking case)', () => {
+    expect(parseVerdict('Inceleme tamam.\n\nKARAR: devam')).toEqual({ outcome: 'proceed' });
+  });
+  it('KARAR: revize + GEREKÇE: → revise with reason', () => {
+    expect(parseVerdict('KARAR: revize\nGEREKÇE:\nTestler eksik.')).toEqual({ outcome: 'revise', reason: 'Testler eksik.' });
+  });
+  it('KARAR: devam et → proceed (spaced variant)', () => {
+    expect(parseVerdict('KARAR: devam et')).toEqual({ outcome: 'proceed' });
+  });
+  it('VERDICT: stays canonical and wins over a draft KARAR', () => {
+    expect(parseVerdict('KARAR: revize\n\nVERDICT: proceed')).toEqual({ outcome: 'proceed' });
+  });
+});

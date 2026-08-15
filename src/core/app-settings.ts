@@ -17,6 +17,10 @@ export interface AppSettings {
   getProviderKey(): Promise<string | undefined>;
   /** Store (or clear, on undefined) the provider API key. */
   setProviderKey(key: string | undefined): Promise<void>;
+  /** The ask cadence (WO-0029 / B18): 'ask' (default) surfaces in-scope asks; 'auto' resolves them — the
+   *  fence keeps denying out-of-scope writes in BOTH modes. Scope is the boundary; asks are cadence. */
+  getPermissionMode(): Promise<'ask' | 'auto'>;
+  setPermissionMode(mode: 'ask' | 'auto'): Promise<void>;
   /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
   checkProvider(): Promise<ProviderStatus>;
 }

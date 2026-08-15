@@ -52,6 +52,8 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
 export interface AppSettingsData {
   getProviderKey(): Promise<string | undefined>;
   setProviderKey(key: string | undefined): Promise<void>;
+  getPermissionMode(): Promise<'ask' | 'auto'>;
+  setPermissionMode(mode: 'ask' | 'auto'): Promise<void>;
 }
 
 // --- row shapes (node:sqlite returns untyped rows) ---
@@ -274,7 +276,24 @@ export function seedFixtureWorkOrders(db: DatabaseSync): void {
 // stopped_asking live session a placeholder gate is stored so deriveCardReason never reads a
 // missing field — the real question resurfaces on resume. Idempotent via DELETE+INSERT.
 function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
+  // WO-0029 / B17: a RESUMED session is the same row — accumulate the cost across its turns and keep the
+  // EARLIEST start (the old DELETE+INSERT kept only the last turn's cost, so a resumed plan session's
+  // earlier $2.15 vanished from the WO aggregate).
+  const prior = db
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at FROM session WHERE provider_session_id = ?')
+    .get(input.providerSessionId) as
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null }
+    | undefined;
   db.prepare('DELETE FROM session WHERE provider_session_id = ?').run(input.providerSessionId);
+  const acc = (() => {
+    if (!input.cost) return prior?.cost_usd == null ? undefined : { tokensIn: prior.cost_tokens_in ?? 0, tokensOut: prior.cost_tokens_out ?? 0, usd: prior.cost_usd };
+    if (prior?.cost_usd == null) return input.cost;
+    return {
+      tokensIn: input.cost.tokensIn + (prior.cost_tokens_in ?? 0),
+      tokensOut: input.cost.tokensOut + (prior.cost_tokens_out ?? 0),
+      usd: input.cost.usd + prior.cost_usd,
+    };
+  })();
   // The asks ride the stopped_asking row (WO-0027 / Bulgu 9) — persisted for re-attach, replacing the
   // old `{question:'',gate:'tool-permission'}` placeholder that told the board nothing (F7).
   const stopAndAsk =
@@ -292,11 +311,11 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.status,
     JSON.stringify(input.transcript ?? []),
     stopAndAsk,
-    input.cost?.tokensIn ?? null,
-    input.cost?.tokensOut ?? null,
-    input.cost?.usd ?? null,
-    input.startedAt ?? null,
-    input.endedAt ?? null,
+    acc?.tokensIn ?? null,
+    acc?.tokensOut ?? null,
+    acc?.usd ?? null,
+    (prior?.started_at && input.startedAt && prior.started_at < input.startedAt ? prior.started_at : input.startedAt) ?? prior?.started_at ?? null,
+    (prior?.ended_at && input.endedAt && prior.ended_at > input.endedAt ? prior.ended_at : input.endedAt) ?? prior?.ended_at ?? null,
     input.stepIdx ?? null,
   );
 }
@@ -682,10 +701,12 @@ export function createStore(dbPath: string): Store {
     // decision-store HEAD at close time). order.md gains a `## Closure` note. M3's forge observation replaces
     // the attestations with observed PR/CI/merge + a docs-commit sha.
     closeWorkOrder: async (workOrderId: WorkOrderId, note: string) => {
-      const wo = db.prepare('SELECT workspace_id, gate_plan_approved FROM work_order WHERE id = ?').get(workOrderId) as
-        | { workspace_id: string; gate_plan_approved: number }
+      const wo = db.prepare('SELECT workspace_id, gate_plan_approved, gate_closure_docs_sha FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string; gate_plan_approved: number; gate_closure_docs_sha: string | null }
         | undefined;
       if (!wo) throw new Error(`closeWorkOrder: work order ${workOrderId} not found`);
+      // WO-0029 / B21: closing twice appended duplicate ## Closure notes — refuse when already closed.
+      if (wo.gate_closure_docs_sha != null) throw new Error(`closeWorkOrder: ${workOrderId} is already closed`);
       const stepRows = db.prepare('SELECT status, verdict FROM work_order_step WHERE work_order_id = ?').all(workOrderId) as Array<
         { status: string; verdict: string | null }
       >;
@@ -719,6 +740,13 @@ export function createStore(dbPath: string): Store {
       const dir = woDir(db, id);
       return Promise.resolve(dir ? readStepReport(dir, id, idx, role) : '');
     },
+    // WO-0029 / B19: the operator's transparent "Devam et" — flips a revise verdict to proceed. The
+    // architect's original words stay in verdicts/step-NN.md (the file is the evidence; the row is loop state).
+    overrideStepVerdict: (id: WorkOrderId, idx: number) => {
+      db.prepare("UPDATE work_order_step SET verdict = 'proceed' WHERE work_order_id = ? AND idx = ? AND verdict = 'revise'").run(id, idx);
+      return Promise.resolve();
+    },
+
     // Operator app preferences (WO-0025) — the provider key lives in the shared DB so BOTH hosts (GUI + CLI)
     // see it; never returned to the renderer except through this port's get. undefined clears it.
     getProviderKey: () =>
@@ -728,6 +756,16 @@ export function createStore(dbPath: string): Store {
     setProviderKey: (key: string | undefined) => {
       if (key === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run('provider_key');
       else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('provider_key', key);
+      return Promise.resolve();
+    },
+    getPermissionMode: () =>
+      Promise.resolve(
+        (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_mode') as { value: string } | undefined)?.value === 'auto'
+          ? 'auto'
+          : 'ask',
+      ),
+    setPermissionMode: (mode: 'ask' | 'auto') => {
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_mode', mode);
       return Promise.resolve();
     },
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).

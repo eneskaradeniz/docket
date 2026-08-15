@@ -155,5 +155,6 @@ export function architectReviewPrompt(input: ReviewPromptInput): string {
     `End your turn with EXACTLY ONE verdict line, as the final line, and nothing after it:`,
     `- VERDICT: proceed   — the step's aim is met; the next step may run.`,
     `- VERDICT: revise    — the aim is not met; on the next line write REASON: then a short paragraph.`,
+    `The marker is literal English — never translate or localise it (KARAR:/DECISION: are invalid and will be treated as no verdict).`,
   ].join('\n');
 }

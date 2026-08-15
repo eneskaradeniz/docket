@@ -94,6 +94,11 @@ export interface Pipeline {
 export function createPipeline(deps: PipelineDeps): Pipeline {
   const drive = async function* (input: DriveInput): AsyncGenerator<RunnerEvent> {
     const di = prepareDriveInput(input, deps.store);
+    // WO-0029 / B18: per-drive cadence — 'auto' answers every in-scope ask internally for this drive;
+    // otherwise the injected policy (the GUI's ask-operator, the CLI's chosen default) governs.
+    const policy = di.permissions === 'auto'
+      ? ({ onAsk: () => ({ kind: 'resolve' as const, decision: { allow: true as const } }) satisfies ReturnType<PermissionPolicy['onAsk']> } satisfies PermissionPolicy)
+      : deps.permission;
     const stepIdx = input.stepIndex; // a step drive (WO-0017) when set
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
     let providerSessionId: string | undefined;
@@ -141,7 +146,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
           case 'permission_request':
             record('stopped_asking'); // asks included (post-fold: contains this one)
             {
-              const outcome = deps.permission.onAsk({
+              const outcome = policy.onAsk({
                 requestId: ev.requestId,
                 tool: ev.tool,
                 input: ev.input,

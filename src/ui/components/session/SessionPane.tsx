@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   initialSessionState,
   seedLiveState,
@@ -88,7 +88,6 @@ export function SessionPane({
   const state = useDrive(store, driveKey, () => seedFor(role));
   const running = store.get(driveKey)?.running ?? false;
   const [approving, setApproving] = useState(false);
-  const [objecting, setObjecting] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
   const sessionId = (reset: boolean): string | undefined => (reset ? undefined : store.sessionId(driveKey) ?? state.sessionId);
@@ -130,9 +129,7 @@ export function SessionPane({
   // İtiraz et (WO-0016 redesign): send the architect back to revise, in plan mode (no approve flag).
   // resolvePermissionMode keeps an architect resume in 'plan', so the next ExitPlanMode yields a new plan.
   const objectPlan = (feedback: string): void => {
-    setObjecting(true);
     runDrive({ role: 'architect', workOrderId, mode, prompt: feedback, resume: sessionId(false) }, false);
-    setObjecting(false); // the drive now lives in the store — no promise to await here
   };
   // Reply to an architect clarifying question (plan mode turn that ended without a plan): resume the
   // architect with the operator's answer. "Bilmiyorum" lets the architect decide on its own.
@@ -164,6 +161,9 @@ export function SessionPane({
   // back to the last assistant message in case the turn ended with a tool_result (e.g. a timed-out tool).
   const lastAssistant = [...state.entries].reverse().find((e) => e.speaker === 'assistant');
   const showQuestion = isPlanRequestStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
+  // WO-0029 / B16: an objection drive is live (plan stage, no pending plan yet) — the card shows the
+  // "yeniden planlıyor" line and hides its buttons INSTANTLY (derived from the store, not a local flag).
+  const objecting = running && isPlanRequestStage && !state.pendingPlan;
   const canStart = !running && !showPlan && !approving && !showQuestion;
   // SADE mode derives one calm phase from the live state; DETAY shows the raw themed terminal.
   // WO-0027 / Bulgu 3: a seeded pane (idle + entries) derived "Plan düşünülüyor…" even when the plan IS
@@ -172,6 +172,20 @@ export function SessionPane({
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
   // A session persisted across restart (WO-0010) — offer resume only when one exists for the role.
   const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
+  // WO-0029 / 7b+7c: the session's own duration (persisted span) + a live ticking elapsed while running.
+  const matchedSession = sessions.find((s) => s.providerSessionId === state.sessionId || (state.sessionId === undefined && s.role === role));
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const liveStart = store.get(driveKey)?.startedAt;
+  const durationText = running && liveStart
+    ? UI.formatDuration(Math.max(0, now - liveStart))
+    : matchedSession?.startedAt && matchedSession.endedAt
+      ? UI.formatDuration(new Date(matchedSession.endedAt).getTime() - new Date(matchedSession.startedAt).getTime())
+      : undefined;
   const resume = (): void => {
     if (!resumeSessionId) return;
     // reset=false (WO-0026/F14): keep the seeded transcript — the new stream appends to it.
@@ -190,7 +204,13 @@ export function SessionPane({
               <button type="button" aria-pressed={viewMode === 'detail'} onClick={() => setViewMode('detail')} className={`rounded px-2 py-0.5 text-[11px] ${viewMode === 'detail' ? 'bg-bg text-ink' : 'text-inkdim'}`}>{UI.modeDetail}</button>
             </div>
           ) : null}
-          {state.cost.usd > 0 ? <span className="font-mono text-[12px] text-inkdim">{formatCost(state.cost)}</span> : null}
+          {state.cost.usd > 0 || durationText ? (
+            <span className="font-mono text-[12px] text-inkdim">
+              {state.cost.usd > 0 ? formatCost(state.cost) : null}
+              {state.cost.usd > 0 && durationText ? ' · ' : ''}
+              {durationText ? `⏱ ${durationText}` : null}
+            </span>
+          ) : null}
         </div>
       </header>
 
