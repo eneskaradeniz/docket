@@ -79,6 +79,7 @@ ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store
 //   records merged_at + verifier + closure-sha facts. Preconditions re-checked server-side. ---
 ipcMain.handle('docket:source:close-work-order', (_e, id: WorkOrderId, note: string) => store.closeWorkOrder(id, note));
 ipcMain.handle('docket:source:override-step-verdict', (_e, id: WorkOrderId, idx: number) => store.overrideStepVerdict(id, idx));
+ipcMain.handle('docket:source:get-work-order-events', (_e, id: WorkOrderId) => store.getWorkOrderEvents(id));
 
 // --- Operator app settings (WO-0025 / B1): the provider key lives in the shared DB (both hosts see it);
 //   the provider check runs in the runner adapter — the only place that may touch the provider. ---

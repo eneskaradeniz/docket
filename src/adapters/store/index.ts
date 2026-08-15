@@ -25,6 +25,8 @@ import type {
   Ci,
   CiCheck,
   SessionRef,
+  WoEvent,
+  WoEventKind,
   SourceLink,
   StepRole,
   StepView,
@@ -275,6 +277,11 @@ export function seedFixtureWorkOrders(db: DatabaseSync): void {
 // provider's (kept on disk by id); Docket stores the pointer + status + cost. For a
 // stopped_asking live session a placeholder gate is stored so deriveCardReason never reads a
 // missing field — the real question resurfaces on resume. Idempotent via DELETE+INSERT.
+// WO-0030 / İstek 8: append-only lifecycle audit. Written by the store's own mutations; never updated.
+function appendEvent(db: DatabaseSync, woId: string, kind: WoEventKind, detail = ''): void {
+  db.prepare('INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?,?,?,?)').run(woId, kind, detail, new Date().toISOString());
+}
+
 function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WO-0029 / B17: a RESUMED session is the same row — accumulate the cost across its turns and keep the
   // EARLIEST start (the old DELETE+INSERT kept only the last turn's cost, so a resumed plan session's
@@ -498,6 +505,7 @@ function recordStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, 
   db.prepare(
     'INSERT INTO work_order_step (work_order_id, idx, status, report_path, observed_at) VALUES (?, ?, ?, ?, ?)',
   ).run(workOrderId, idx, patch.status, patch.reportPath ?? null, new Date().toISOString());
+  appendEvent(db, workOrderId as string, patch.status === 'active' ? 'step_started' : 'step_done', `adım ${idx}`);
 }
 
 // Record the architect's verdict for a step (WO-0020): UPDATE verdict + verdict_path on the existing row
@@ -506,6 +514,7 @@ function recordStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, 
 function recordStepVerdictRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number, verdict: 'proceed' | 'revise', verdictPath: string): void {
   db.prepare('UPDATE work_order_step SET verdict = ?, verdict_path = ?, observed_at = ? WHERE work_order_id = ? AND idx = ?')
     .run(verdict, verdictPath, new Date().toISOString(), workOrderId, idx);
+  appendEvent(db, workOrderId as string, 'step_verdict', `adım ${idx} · ${verdict}`);
 }
 
 // Reset a step to pending (the revise re-run path, WO-0020): DELETE its observed row (absence of a row IS
@@ -527,6 +536,7 @@ function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: nu
 // Cascade-delete a work order (WO-0020): children-first DB deletes, then the work_order row, then remove the
 // decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched.
 function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
+  db.prepare('DELETE FROM wo_event WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order_step WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM session WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM track_depends_on WHERE track_id IN (SELECT id FROM track WHERE work_order_id = ?)').run(id);
@@ -682,7 +692,9 @@ export function createStore(dbPath: string): Store {
           contextFiles: input.contextFiles,
         }),
       );
-      return createWorkOrderRow(db, { ...input, id });
+      const created = createWorkOrderRow(db, { ...input, id });
+      appendEvent(db, id as string, 'created', input.title);
+      return created;
     },
     // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
     // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.
@@ -694,6 +706,7 @@ export function createStore(dbPath: string): Store {
       const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
+      appendEvent(db, workOrderId as string, 'plan_approved');
     },
     // Close a finished work order (WO-0025 / P1-2). The M2 floor is OPERATOR-ATTESTED closure — the mirror of
     // the plan gate's M2 ruling (observed flag, not a sha; TD-005): the operator confirms merges are done and
@@ -732,6 +745,7 @@ export function createStore(dbPath: string): Store {
       const now = closedAt;
       db.prepare('UPDATE track SET merged_at = ? WHERE work_order_id = ?').run(now, workOrderId);
       db.prepare('UPDATE work_order SET gate_verifier_resolvable = 1, gate_closure_docs_sha = ? WHERE id = ?').run(sha, workOrderId);
+      appendEvent(db, workOrderId as string, 'closed', sha);
     },
     // The plan's steps (WO-0017) — specs parsed from plan.md + zipped with the observed run state. Detail-only.
     getWorkOrderSteps: (id: WorkOrderId) => Promise.resolve(buildWorkOrderSteps(db, id)),
@@ -742,8 +756,19 @@ export function createStore(dbPath: string): Store {
     },
     // WO-0029 / B19: the operator's transparent "Devam et" — flips a revise verdict to proceed. The
     // architect's original words stay in verdicts/step-NN.md (the file is the evidence; the row is loop state).
+    // WO-0030 / İstek 8: the lifecycle audit (append-only). [] for legacy WOs — no backfill by design.
+    getWorkOrderEvents: (id: WorkOrderId) =>
+      Promise.resolve(
+        (db.prepare('SELECT kind, detail, at FROM wo_event WHERE work_order_id = ? ORDER BY at, id').all(id) as Array<{
+          kind: WoEventKind;
+          detail: string;
+          at: string;
+        }>).map((r): WoEvent => ({ kind: r.kind, detail: r.detail, at: r.at })),
+      ),
+
     overrideStepVerdict: (id: WorkOrderId, idx: number) => {
       db.prepare("UPDATE work_order_step SET verdict = 'proceed' WHERE work_order_id = ? AND idx = ? AND verdict = 'revise'").run(id, idx);
+      appendEvent(db, id as string, 'verdict_overridden', `adım ${idx}`);
       return Promise.resolve();
     },
 
@@ -793,9 +818,11 @@ export function createStore(dbPath: string): Store {
     // Persist the proposed plan to plan.md as PENDING (gate 0) on plan_ready — survives restart (WO-0020/TD-025).
     // approvePlan re-writes + flips the gate; idempotent if called again with the same text.
     savePendingPlan: (workOrderId: WorkOrderId, planText: string) => {
+      // (event appended after the write below)
       const dir = woDir(db, workOrderId);
       if (!dir) return; // no WO dir yet — nothing to persist to
       writePlanMdById(dir, workOrderId, planText);
+      appendEvent(db, workOrderId as string, 'plan_saved');
     },
     // Delete a work order — cascade DB rows + remove the decision-store folder (WO-0020).
     deleteWorkOrder: (id: WorkOrderId) => Promise.resolve(deleteWorkOrderRow(db, id)),

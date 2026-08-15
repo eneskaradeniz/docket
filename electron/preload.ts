@@ -34,6 +34,7 @@ const source: WorkOrderSource = {
   deleteWorkOrder: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:delete-work-order', id),
   closeWorkOrder: (id: WorkOrderId, note: string) => ipcRenderer.invoke('docket:source:close-work-order', id, note),
   overrideStepVerdict: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:override-step-verdict', id, idx),
+  getWorkOrderEvents: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-events', id),
 };
 
 // Operator app settings (WO-0025 / B1): the provider key + check. The key never crosses to the renderer

@@ -156,6 +156,23 @@ export interface Track {
   merge?: Merged; // post-merge state only; absent until merged
 }
 
+// --- WO lifecycle event (WO-0030 / İstek 8): one append-only audit row per lifecycle action. ---
+export type WoEventKind =
+  | 'created'
+  | 'plan_saved'
+  | 'plan_approved'
+  | 'step_started'
+  | 'step_done'
+  | 'step_verdict'
+  | 'verdict_overridden'
+  | 'closed';
+
+export interface WoEvent {
+  kind: WoEventKind;
+  detail: string; // short context, e.g. 'adım 2 · revise' or the closure sha — never display copy
+  at: string; // ISO
+}
+
 // --- WO-level gate inputs (drive plan_approval / verification / closure) ---
 export interface WoGateInputs {
   planApproved: boolean;

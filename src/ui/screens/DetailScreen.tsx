@@ -1,9 +1,11 @@
 import type { StepRole, WorkOrderDetailView } from '../../core/types';
+import type { WoEvent } from '../../core/types';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
 export function DetailScreen({
   detail,
   docs,
+  events,
   onBack,
   onApprovePlan,
   onGetStepReport,
@@ -16,6 +18,7 @@ export function DetailScreen({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
+  events: WoEvent[];
   onBack: () => void;
   onApprovePlan: (planText: string) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
@@ -31,6 +34,7 @@ export function DetailScreen({
       <WorkOrderDetail
         detail={detail}
         docs={docs}
+        events={events}
         onBack={onBack}
         onApprovePlan={onApprovePlan}
         onGetStepReport={onGetStepReport}
