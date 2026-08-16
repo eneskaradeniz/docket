@@ -63,11 +63,16 @@ export type SessionRole = 'implementer' | 'architect' | 'verifier';
 // The persisted + live transcript line (unified in WO-0026 — the old TranscriptEntry {role,text} had no
 // consumer). Lives in types.ts so both SessionRef (persisted) and LiveSessionState (live fold) share it
 // without a types↔runner import cycle; runner.ts re-exports it for existing importers.
+// `note` (WO-0031c) is the OPERATOR-side synthetic line — the Durdur wind-down, the session-close cost
+// freeze, the force kill. It is appended to the live fold only; a persisted transcript never carries it,
+// so a resumed session replays provider history without Docket's own commentary.
+export type TranscriptNoteKind = 'interrupt_sent' | 'session_closed' | 'force_killed';
 export type TranscriptLine =
   | { speaker: 'assistant'; text: string }
   | { speaker: 'tool_use'; tool: string; detail: string }
   | { speaker: 'tool_result'; summary: string; isError: boolean }
-  | { speaker: 'system'; text: string };
+  | { speaker: 'system'; text: string }
+  | { speaker: 'note'; kind: TranscriptNoteKind; detail?: string };
 
 /** One surfaced permission ask (moved to types.ts in WO-0027 so SessionRef/StopAndAsk and the live fold
  *  share it without a types↔runner cycle; runner.ts re-exports). */

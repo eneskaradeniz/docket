@@ -1,19 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { initialSessionState, simplePhaseFromState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
-import { PROVIDER_ERROR_LABELS, formatCost, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
-import { Button } from '../../kit';
-import { CostReadout, PaneError, PaneHeader, PaneShell, PhaseLine, ViewModeToggle } from './pane-chrome';
+import { PROVIDER_ERROR_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { PaneError, PaneShell, PhaseLine } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
-import { StopAndAskCard } from './StopAndAskCard';
 import { Terminal } from './Terminal';
+import { useViewMode } from '../../data/view-mode';
 
-// The architect REVIEW pane (WO-0020). After a step's report is written, this drives the architect to review
-// it and emit a VERDICT. Sibling to StepPane: reuses the event fold, Terminal, StopAndAskCard and the SADE/DETAY
-// toggle, but drives role:'architect' + reviewStepIndex (main fills the review prompt + captures the verdict).
-// Auto-drives on mount (the review was triggered because the step is done + has no verdict); on turn_complete
-// the drive ends and onReviewDone reloads the detail so the step's verdict shows + the loop branches.
-
+// The architect REVIEW instrument (WO-0020 → WO-0031c). After a step's report is written, this drives
+// the architect to review it and emit a VERDICT (role:'architect' + reviewStepIndex; main fills the
+// review prompt + captures the verdict). Chrome moved out (strip/rail/controller, as StepPane); what
+// remains is the auto-drive, the fold subscription, and the instrument. On turn_complete the App-level
+// onEnd reloads the detail so the step's verdict shows + the loop branches.
 export function ReviewPane({
   step,
   workOrderId,
@@ -26,8 +24,7 @@ export function ReviewPane({
   // just a window onto them; the store's onEnd refreshes the detail when the review completes.
   const driveKey = `${workOrderId}:review:${step.idx}`;
   const state = useDrive(store, driveKey, () => initialSessionState);
-  const running = store.get(driveKey)?.running ?? false;
-  const [viewMode, setViewMode] = useState<'sade' | 'detail'>('sade');
+  const { mode: viewMode } = useViewMode();
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(): void {
@@ -48,49 +45,7 @@ export function ReviewPane({
 
   return (
     <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
-      <PaneHeader
-        title={`${UI.reviewHeader} · ${step.idx}`}
-        status={state.status}
-        right={
-          <>
-            {running ? <Button variant="ghost" size="sm" onClick={stop}>{UI.interrupt}</Button> : null}
-            {hasStream ? <ViewModeToggle value={viewMode} onValueChange={setViewMode} /> : null}
-            <CostReadout cost={state.cost.usd > 0 ? formatCost(state.cost) : undefined} />
-          </>
-        }
-      />
-
       {!hasStream ? <p className="text-xs text-inkdim">{UI.reviewHint}</p> : null}
-
-      {running ? (
-        <div className="mb-2">
-          <button type="button" onClick={() => void store.interrupt()} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
-            {UI.interrupt}
-          </button>
-        </div>
-      ) : null}
-
-      {showAsk ? (
-        <div className="mb-2">
-          {state.pendingAsks.length > 1 ? (
-            <div className="mb-1 flex items-center gap-2">
-              <p className="readout text-signal">{UI.asksPending(state.pendingAsks.length)}</p>
-              <Button variant="signal" size="sm" onClick={() => { for (const a of state.pendingAsks) void store.decide(a.requestId, { allow: true }); }}>{UI.allowAll}</Button>
-            </div>
-          ) : null}
-          {state.pendingAsks.map((a) => (
-            <StopAndAskCard
-              key={a.requestId}
-              tool={a.tool}
-              input={a.input}
-              reason={a.reason}
-              planContext={false}
-              onAllow={() => void store.decide(a.requestId, { allow: true })}
-              onDeny={() => void store.decide(a.requestId, { allow: false, reason: 'Denied by operator' })}
-            />
-          ))}
-        </div>
-      ) : null}
 
       {hasStream ? (
         viewMode === 'sade' ? (

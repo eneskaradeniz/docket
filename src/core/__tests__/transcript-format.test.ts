@@ -8,6 +8,8 @@ const assistant = (text: string): TranscriptLine => ({ speaker: 'assistant', tex
 const toolUse = (tool: string, detail: string): TranscriptLine => ({ speaker: 'tool_use', tool, detail });
 const toolResult = (summary: string, isError = false): TranscriptLine => ({ speaker: 'tool_result', summary, isError });
 const system = (text: string): TranscriptLine => ({ speaker: 'system', text });
+const note = (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string): TranscriptLine =>
+  ({ speaker: 'note', kind, ...(detail !== undefined ? { detail } : {}) });
 
 describe('formatTranscriptLine — TranscriptLine → ANSI for the terminal', () => {
   describe('assistant', () => {
@@ -51,6 +53,26 @@ describe('formatTranscriptLine — TranscriptLine → ANSI for the terminal', ()
   describe('system', () => {
     it('renders dim', () => {
       expect(formatTranscriptLine(system('session started'))).toBe(`${ESC}[2msession started${ESC}[0m`);
+    });
+  });
+
+  describe('note (WO-0031c — synthetic operator-side notes: interrupt wind-down, session close, force kill)', () => {
+    it('renders the noteFor result dim (display copy injected from labels, never core)', () => {
+      expect(formatTranscriptLine(note('interrupt_sent'), { noteFor: () => '⏸ kesme sinyali gönderildi' })).toBe(
+        `${ESC}[2m⏸ kesme sinyali gönderildi${ESC}[0m`,
+      );
+    });
+    it('falls back to the raw kind when no noteFor is given', () => {
+      expect(formatTranscriptLine(note('session_closed', '$3.60 · 00:14'))).toBe(
+        `${ESC}[2msession_closed — $3.60 · 00:14${ESC}[0m`,
+      );
+    });
+    it('the detail rides through noteFor (kind + detail in, one display string out)', () => {
+      const noteFor = (kind: string, detail?: string): string => `■ ${kind}${detail ? ` — ${detail}` : ''}`;
+      expect(formatTranscriptLine(note('session_closed', '$3.60 · 00:14'), { noteFor })).toBe(
+        `${ESC}[2m■ session_closed — $3.60 · 00:14${ESC}[0m`,
+      );
+      expect(formatTranscriptLine(note('force_killed'), { noteFor })).toBe(`${ESC}[2m■ force_killed${ESC}[0m`);
     });
   });
 

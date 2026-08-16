@@ -2,6 +2,9 @@ import type { StepRole, WorkOrderDetailView } from '../../core/types';
 import type { WoEvent } from '../../core/types';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
+// The console FRAME (WO-0031c / v4): the detail fills the viewport below the 48px AppShell bar — the
+// rail pins to the window bottom and the body row scrolls internally (the mockup's `.console` grid,
+// strip / substrip / body / rail). The board keeps its normal page scroll; only the detail is a console.
 export function DetailScreen({
   detail,
   docs,
@@ -30,7 +33,7 @@ export function DetailScreen({
   onDelete: () => Promise<void>;
 }) {
   return (
-    <main className="mx-auto w-full max-w-[1240px] px-6 py-6">
+    <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1240px] flex-col overflow-hidden px-6 pb-4 pt-3">
       <WorkOrderDetail
         detail={detail}
         docs={docs}

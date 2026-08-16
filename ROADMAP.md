@@ -186,6 +186,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       TD-030). UX blockers: the first **ErrorBoundary** (B2), detail-load failure shows an error card with
       Geri/Yeniden dene instead of an eternal spinner (B3), board-load failure gets a retry (B4), and both
       modals surface save errors instead of swallowing them (B5). +7 tests (335).
+- [ ] **WO-0031c** — Kontrol Konsolu v2: the operator-approved v4 mockup becomes the detail screen —
+      content-aware strip/substrip/body/rail spine (980×620), global SADE/DETAY, DETAY tabs <1080px /
+      250px rack ≥1080px, card language, per-WO permission rule ("Riskli hariç" incl. sensitive files),
+      `updateWorkOrder` + inline WO/plan editing, audit surfaces (⏱/$ + session ledger), toast +
+      window-title + OS notification contract, stop wind-down/force-kill, diff peek, esc=geri; P0/P1
+      repairs (dead Durdur, contrast, empty sections, aria-live) and the E2E harness repair. Two PRs
+      (c1 spine, c2 rules/data/notifications). Spec: `docs/work-orders/WO-0031c-kompakt-detay/order.md`.
 
 ## M3 — Evidence layer
 

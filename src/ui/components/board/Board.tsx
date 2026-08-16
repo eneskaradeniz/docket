@@ -68,9 +68,12 @@ export function Board({
 
       <details className="mt-10">
         <summary className="readout">{UI.closedDrawer} · {closed.length}</summary>
-        <div className="mt-2 flex flex-col gap-2 opacity-60">
+        {/* WO-0031c / B4: the closed drawer used to fade the whole column (opacity-60 ≈2.9:1 on the
+            reason line — AA fail). The quiet card keeps every line readable; the drawer whispers by
+            structure, not by contrast theft. */}
+        <div className="mt-2 flex flex-col gap-2">
           {closed.map((c) => (
-            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
+            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
           ))}
         </div>
       </details>
