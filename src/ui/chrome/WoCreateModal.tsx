@@ -109,7 +109,7 @@ export function WoCreateModal({
             <p className="mb-2 text-[11px] text-inkdim">{UI.woTracksHint}</p>
             <div className="flex flex-wrap gap-2">
               {trackOptions.map((r) => {
-                const checked = selectedTracks.includes(r as RepoId);
+                const checked = selectedTracks.includes(r);
                 return (
                   <button
                     type="button"
