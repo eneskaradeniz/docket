@@ -1,10 +1,17 @@
 import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
-import { cardActionText, cardReasonText, formatCost, ROLE_LABELS, STAGE_LABELS, woIdLabel } from '../../data/labels';
+import { Badge } from '../../kit';
+import { cardActionText, cardReasonText, formatCost, STAGE_LABELS, woIdLabel } from '../../data/labels';
 
-// Evidence-ticket card (WO-0013). The strip colour comes from the bucket; the brass strip pulses
-// when the work order needs the operator. Keyboard-accessible (outer <button>).
-const STRIP: Record<BoardBucket, string> = { up: 'brass', working: 'denim', closed: 'sage' };
-const PULSE: Record<BoardBucket, string> = { up: ' pulse', working: '', closed: '' };
+// The dispatch card (WO-0031 "Kontrol Konsolu"): a 3px signal lamp on the left edge — amber breathing
+// when the operator is needed, info pulse while a session runs, steady green when closed — over a calm
+// surface. Row 1: id (mono, via woIdLabel — ADR-0007) + stage; row 2: title; row 3: reason + cost.
+// Keyboard-accessible (outer <button>); the whole card is one target.
+const LAMP: Record<BoardBucket, string> = {
+  up: 'lamp-signal-breathe',
+  working: 'lamp-run',
+  closed: 'lamp-done',
+};
+const STAGE_TONE: Record<BoardBucket, 'signal' | 'info' | 'proceed'> = { up: 'signal', working: 'info', closed: 'proceed' };
 
 export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onSelect: () => void }) {
   return (
@@ -12,29 +19,25 @@ export function WorkOrderCard({ card, onSelect }: { card: WorkOrderCardView; onS
       type="button"
       onClick={onSelect}
       data-wo-id={card.id}
-      className="flex w-full items-stretch rounded-sm border border-rule bg-surface text-left transition-colors hover:bg-surface2"
+      className="flex w-full items-stretch overflow-hidden rounded-md border border-hairline bg-surface text-left shadow-sm transition-all hover:-translate-y-px hover:border-inkdim/50 hover:bg-raised/60"
     >
-      <div className={`bar bar-${STRIP[card.bucket]}${PULSE[card.bucket]}`} />
-      <div className="perf" />
-      <div className="min-w-0 flex-1 px-3.5 py-3">
+      <div className={`lamp ${LAMP[card.bucket]}`} />
+      <div className="min-w-0 flex-1 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] text-inkdim">{woIdLabel(card.id)}</span>
-          <span className="font-mono text-[11px] uppercase tracking-wide text-inkdim">
-            {STAGE_LABELS[card.stage]}
-          </span>
-          <h3 className="truncate text-[14px] font-semibold text-ink">{card.title}</h3>
-          <span className="ml-auto flex items-center gap-2">
-            {card.role ? (
-              <span className="font-mono text-[11px] lowercase text-inkdim">{ROLE_LABELS[card.role]}</span>
-            ) : null}
-            <span className="font-mono text-[12px] text-inkdim">
-              {card.sessionCount > 0 ? formatCost(card.cost) : null}
-            </span>
+          <Badge tone={STAGE_TONE[card.bucket]}>{STAGE_LABELS[card.stage]}</Badge>
+          <span className="ml-auto font-mono text-[11px] text-inkdim">
+            {card.sessionCount > 0 ? formatCost(card.cost) : null}
           </span>
         </div>
-        <div className="mt-1 flex items-end justify-between gap-3">
-          <p className="truncate text-[13px] text-inkdim">{cardReasonText(card.reason)}</p>
-          {card.action ? <span className="alink whitespace-nowrap text-[12px]">▸ {cardActionText(card.action)}</span> : null}
+        <h3 className="mt-0.5 truncate text-[13.5px] font-semibold tracking-tight text-ink">{card.title}</h3>
+        <div className="mt-0.5 flex items-end justify-between gap-3">
+          <p className="truncate text-[12px] text-inkdim">{cardReasonText(card.reason)}</p>
+          {card.action ? (
+            <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-info">
+              ▸ {cardActionText(card.action)}
+            </span>
+          ) : null}
         </div>
       </div>
     </button>

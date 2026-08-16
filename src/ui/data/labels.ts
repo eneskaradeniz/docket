@@ -383,6 +383,7 @@ export const UI = {
   language: 'Dil',
   langEn: 'English',
   langTr: 'Türkçe',
+  langHint: 'Arayüz dili — İngilizce M3.5 aşamasında geliyor.',
   close: 'Kapat',
   workspace: 'Çalışma alanı',
   // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)
@@ -449,6 +450,7 @@ export const UI = {
   architectRequest: 'Mimarın bir isteği var',
   // SADE/Detay mod geçişi (WO-0016)
   modeSimple: 'Sade',
+  modeEveryStep: 'Her adımda',
   modeDetail: 'Detay',
   // Onboarding: ilk çalışma alanı (WO-0016)
   noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',

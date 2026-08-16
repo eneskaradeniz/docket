@@ -2,23 +2,19 @@ import type { WorkOrderCardView, WorkOrderId } from '../../core/types';
 import { UI } from '../data/labels';
 import { Board } from '../components/board/Board';
 
+// The board screen (WO-0031): the new-WO action moved into the AppShell bar (one primary action, one
+// place); this screen is the queues themselves. Content column is capped (880px) with a centered gutter —
+// a queue reads vertically; full-bleed width would only stretch the eye.
 export function BoardScreen({
   cards,
   onSelect,
-  onNewWorkOrder,
 }: {
   cards: WorkOrderCardView[];
   onSelect: (id: WorkOrderId) => void;
-  onNewWorkOrder: () => void;
 }) {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <p className="text-[13px] text-inkdim">{UI.boardIntro}</p>
-        <button type="button" onClick={onNewWorkOrder} className="alink shrink-0 text-[12px]">
-          {UI.newWorkOrder}
-        </button>
-      </div>
+    <main className="mx-auto w-full max-w-[880px] px-6 py-6">
+      <p className="readout mb-4">{UI.boardIntro}</p>
       <Board cards={cards} onSelect={onSelect} />
     </main>
   );

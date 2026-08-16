@@ -5,8 +5,7 @@ import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
 import { parseOrderMd } from '../../core/order-md';
 import { UI } from '../data/labels';
-import { AppChrome } from '../chrome/AppChrome';
-import { useTheme } from '../chrome/use-theme';
+import { AppShell } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
@@ -37,7 +36,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [wsCreateOpen, setWsCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -142,15 +140,14 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
 
   const chrome = workspaceId ? (
-    <AppChrome
+    <AppShell
       workspaces={workspaces}
       workspaceId={workspaceId}
       onSwitch={setWorkspaceId}
-      theme={theme}
-      setTheme={setTheme}
       settings={settings}
       source={source}
       onWorkspacesChanged={refreshWorkspaces}
+      onNewWorkOrder={() => setWoCreateOpen(true)}
     />
   ) : null;
 
@@ -177,9 +174,12 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     // renders once a workspace exists).
     main = (
       <>
-        <header className="sticky top-0 z-20 border-b border-rule" style={{ background: 'color-mix(in srgb, var(--color-bg) 88%, transparent)', backdropFilter: 'blur(8px)' }}>
-          <div className="mx-auto flex max-w-3xl items-center justify-end px-6 py-3.5">
-            <button type="button" onClick={() => setSettingsOpen(true)} aria-label={UI.settings} className="rounded p-2 text-[16px] text-inkdim hover:bg-surface2 hover:text-ink">
+        <header
+          className="sticky top-0 z-20 flex h-12 shrink-0 items-center justify-end border-b border-hairline bg-surface/85 px-4 backdrop-blur-md"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button type="button" onClick={() => setSettingsOpen(true)} aria-label={UI.settings} className="rounded-md p-2 text-inkdim transition-colors hover:bg-raised hover:text-ink">
               ⚙
             </button>
           </div>
@@ -229,7 +229,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} onSelect={setSelectedId} onNewWorkOrder={() => setWoCreateOpen(true)} />;
+    main = <BoardScreen cards={cards} onSelect={setSelectedId} />;
   }
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
@@ -275,7 +275,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
           onSaved={refreshWorkspaces}
         />
       ) : null}
-      {settingsOpen ? <AppSettingsModal theme={theme} setTheme={setTheme} settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
       </DriveStoreContext.Provider>
     </RunnerContext.Provider>
   );
