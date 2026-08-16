@@ -78,6 +78,42 @@ await spec('new-work-order dialog opens and ESC closes it', async () => {
   assert.equal(after, 0, 'dialog did not close on ESC');
 });
 
+await spec('detail: two-pane at 1400 (rail beside session)', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1400, 900));
+  await page.waitForTimeout(300);
+  const grid = await page.evaluate(() => {
+    const el = document.querySelector('main .grid');
+    return el ? getComputedStyle(el).gridTemplateColumns : '';
+  });
+  assert.ok(grid.includes('320px'), `expected a 320px rail column, got: ${grid}`);
+  await page.screenshot({ path: join(SHOTS, 'detail@1400.png') });
+});
+
+await spec('detail: stacked at 980 (rail below session)', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(980, 620));
+  await page.waitForTimeout(300);
+  const grid = await page.evaluate(() => {
+    const el = document.querySelector('main .grid');
+    return el ? getComputedStyle(el).gridTemplateColumns : '';
+  });
+  assert.ok(!grid.includes('320px'), `expected stacked at 980, got: ${grid}`);
+  await page.screenshot({ path: join(SHOTS, 'detail@980.png') });
+});
+
+await spec('detail rail: steps + evidence sections render on a stepped WO', async () => {
+  // we are on the FIRST card's detail (written WO — no steps). Back to the board, open the stepped WO.
+  await page.getByText('← İş emirleri').first().click();
+  await page.waitForTimeout(400);
+  await page.getByText('Uygulama sürüyor').first().click();
+  await page.waitForTimeout(450);
+  // the steps header carries an aside count in the same h2 (exact match won't hit) — assert the count
+  // aside (1/1) and the evidence header instead.
+  const stepsCount = await page.getByText('1/1', { exact: true }).count();
+  const evidence = await page.getByText('Kanıtlar', { exact: true }).count();
+  assert.ok(stepsCount >= 1, 'no steps section (1/1 aside missing)');
+  assert.ok(evidence >= 1, 'no Kanıtlar section');
+});
+
 await spec('dialog FULLY visible at min window size (760×480)', async () => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(760, 480));
   await page.waitForTimeout(250);

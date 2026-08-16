@@ -29,13 +29,13 @@ store.savePendingPlan(wo2.id, ['# E2E plan', '', '```steps', '[{"role":"implemen
 
 // 3) implementation — step done + verdict, so the detail has content
 const wo3 = await mk('Uygulama sürüyor', 'E2E: one step done with a proceed verdict.');
-await store.approvePlan(wo3.id, '# E2E plan', );
+await store.approvePlan(wo3.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
 store.recordStep(wo3.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo3.id, 1, 'proceed', 'ok');
 
 // 4) closed — the drawer
 const wo4 = await mk('Kapandı', 'E2E: a closed work order.');
-await store.approvePlan(wo4.id, '# E2E plan');
+await store.approvePlan(wo4.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
 store.recordStep(wo4.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo4.id, 1, 'proceed', 'ok');
 await store.closeWorkOrder(wo4.id, 'e2e closed');

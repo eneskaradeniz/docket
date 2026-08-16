@@ -14,18 +14,18 @@ function readTokens(): ITheme {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string, fallback: string): string => css.getPropertyValue(name).trim() || fallback;
   return {
-    background: v('--color-bg', '#15120e'),
-    foreground: v('--color-ink', '#ece4d3'),
-    selectionBackground: 'rgba(212,162,76,0.22)',
-    black: v('--color-rule', '#2c251d'),
-    brightBlack: v('--color-inkdim', '#a59880'),
-    red: v('--color-clay', '#c1665a'),
-    green: v('--color-sage', '#8aa172'),
-    yellow: v('--color-brass', '#d4a24c'),
-    blue: v('--color-denim', '#6f9bb0'),
-    cyan: v('--color-denim', '#6f9bb0'),
-    white: v('--color-ink', '#ece4d3'),
-    brightWhite: v('--color-ink', '#ece4d3'),
+    background: v('--color-bg', '#0e1520'),
+    foreground: v('--color-ink', '#e7edf4'),
+    selectionBackground: 'rgba(245,181,68,0.22)',
+    black: v('--color-hairline', '#263349'),
+    brightBlack: v('--color-inkdim', '#8b95a7'),
+    red: v('--color-error', '#e5484d'),
+    green: v('--color-proceed', '#4cc38a'),
+    yellow: v('--color-signal', '#f5b544'),
+    blue: v('--color-info', '#6ca0ce'),
+    cyan: v('--color-info', '#6ca0ce'),
+    white: v('--color-ink', '#e7edf4'),
+    brightWhite: v('--color-ink', '#e7edf4'),
   };
 }
 
@@ -120,7 +120,7 @@ export function Terminal({
   }, [entries, resetKey]);
 
   return (
-    <div className="h-64 w-full overflow-hidden rounded-md border border-rule bg-bg">
+    <div className="h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg">
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

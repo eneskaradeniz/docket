@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { StepView } from '../../../core/types';
 import { UI } from '../../data/labels';
+import { Button } from '../../kit';
 import { MarkdownBody } from './MarkdownBody';
 
 // The architect's verdict card (WO-0020). Shown when a review needs the operator: gates+revise (the architect
@@ -32,14 +33,14 @@ export function VerdictCard({
 
   const revise = step.verdict === 'revise';
   const title = revise ? UI.verdictCardReviseTitle : step.verdict === 'proceed' ? UI.verdictCardProceedTitle : UI.verdictCardUnknown;
-  const barTone = revise ? 'bg-brass' : step.verdict === 'proceed' ? 'bg-sage' : 'bg-clay';
-  const titleTone = revise ? 'text-brass' : step.verdict === 'proceed' ? 'text-sage' : 'text-clay';
+  const lampTone = revise ? 'lamp-signal' : step.verdict === 'proceed' ? 'lamp-done' : 'lamp-error';
+  const titleTone = revise ? 'text-signal' : step.verdict === 'proceed' ? 'text-proceed' : 'text-error';
 
   return (
-    <div className="flex items-stretch rounded-sm border border-rule bg-surface">
-      <div className={`w-1 self-stretch ${barTone}`} />
+    <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
+      <div className={`lamp ${lampTone}`} />
       <div className="flex-1 px-3.5 py-3">
-        <p className={`text-[11px] font-semibold uppercase tracking-wider ${titleTone}`}>{title}</p>
+        <p className={`readout ${titleTone}`}>{title}</p>
         <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.verdictCardHint}</p>
         {body === null ? (
           <p className="text-xs text-inkdim">{UI.loading}</p>
@@ -49,12 +50,8 @@ export function VerdictCard({
           <p className="text-xs text-inkdim">{UI.stepVerdictMissing}</p>
         )}
         <div className="mt-3 flex justify-end gap-2">
-          <button type="button" onClick={onRevise} className="btn-ghost rounded px-3 py-1 text-xs">
-            {UI.rerunStep}
-          </button>
-          <button type="button" onClick={onContinue} className="btn-primary rounded px-3 py-1 text-xs">
-            {UI.devamStep}
-          </button>
+          <Button variant="secondary" size="sm" onClick={onRevise}>{UI.rerunStep}</Button>
+          <Button variant="primary" size="sm" onClick={onContinue}>{UI.devamStep}</Button>
         </div>
       </div>
     </div>

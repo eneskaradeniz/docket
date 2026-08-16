@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Check, FolderOpen, X } from 'lucide-react';
 import type { Workspace } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import { UI } from '../data/labels';
+import { Button, Dialog, Field, Input } from '../kit';
 
 const base = (p: string): string => {
   let s = p;
@@ -10,8 +12,8 @@ const base = (p: string): string => {
 };
 const valid = (p: string): boolean => p.startsWith('/') && p.length > 1 && !p.endsWith('/');
 
-// Workspace create/edit modal (WO-0014; refined WO-0016). Create = full form (name + folder-picked OR
-// typed repos + decision store). Edit = rename + set decision store + add repos. Mirrors AppSettingsModal's shell.
+// Workspace create/edit modal (WO-0014; WO-0031b kit restyle). Create = full form (name + folder-picked
+// OR typed repos + decision store). Edit = rename + set decision store + add repos.
 export function WsSettingsModal({
   mode,
   workspace,
@@ -30,12 +32,6 @@ export function WsSettingsModal({
   const [draft, setDraft] = useState('');
   const [decisionStore, setDecisionStore] = useState('');
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onEsc);
-    return () => document.removeEventListener('keydown', onEsc);
-  }, [onClose]);
 
   // Code repos known so far: the workspace's existing repos (edit mode) + the basenames of typed/picked
   // paths. The decision store is one of these only when there are ≥2 (a dedicated docs repo); with one
@@ -57,7 +53,7 @@ export function WsSettingsModal({
     setError(null);
   }
   function removePath(i: number) {
-    setPaths((prev) => prev.filter((_, idx) => idx !== i));
+    setPaths((prev) => prev.filter((_p, idx) => idx !== i));
     setError(null);
   }
   async function pick() {
@@ -97,80 +93,79 @@ export function WsSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center px-4 pt-24" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-lg rounded-md border border-rule bg-surface p-5 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-[15px] font-semibold text-ink">{mode === 'create' ? UI.wsCreate : UI.wsSettings}</h2>
-            <p className="mt-0.5 text-[12px] text-inkdim">{UI.wsSettingsSubtitle}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label={UI.close} className="-mr-1.5 -mt-1.5 grid h-7 w-7 place-items-center rounded text-[14px] text-inkdim hover:bg-surface2 hover:text-ink">✕</button>
-        </div>
+    <Dialog
+      open
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={mode === 'create' ? UI.wsCreate : UI.wsSettings}
+      footer={
+        <>
+          {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
+          <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
+          <Button variant="primary" size="sm" onClick={() => void save()}>{mode === 'create' ? UI.wsCreateBtn : UI.wsSave}</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="-mt-1 text-[12px] text-inkdim">{UI.wsSettingsSubtitle}</p>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsNameLabel}</label>
-        <input
-          value={name}
-          onChange={(e) => { setName(e.target.value); setError(null); }}
-          className="mb-4 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none"
-        />
+        <Field label={UI.wsNameLabel}>
+          <Input value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
+        </Field>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</label>
-        <p className="mb-2 text-[11px] text-inkdim">{UI.wsReposHint}</p>
-        {mode === 'edit' && workspace ? (
-          <div className="mb-2 flex flex-col gap-1">
-            {workspace.repos.map((r) => (
-              <div key={r as string} className="flex items-center gap-2 rounded border border-rule bg-bg px-2 py-1.5">
-                <span className="font-mono text-[12px] text-inkdim">↳ {r as string}</span>
+        <section>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</span>
+          <p className="mb-2 text-[11px] text-inkdim">{UI.wsReposHint}</p>
+          {mode === 'edit' && workspace ? (
+            <div className="mb-2 flex flex-col gap-1">
+              {workspace.repos.map((r) => (
+                <div key={r as string} className="flex items-center gap-2 rounded-md border border-hairline bg-bg px-2 py-1.5">
+                  <span className="font-mono text-[12px] text-inkdim">{r as string}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="mb-2 flex flex-col gap-1.5">
+            {paths.map((p, i) => (
+              <div key={i} className="flex items-center gap-1.5 rounded-md border border-hairline bg-bg px-2 py-1.5">
+                <span className={`shrink-0 ${valid(p) ? 'text-proceed' : 'text-error'}`}>
+                  {valid(p) ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <X className="h-3.5 w-3.5" aria-hidden="true" />}
+                </span>
+                <Input value={p} onChange={(e) => updatePath(i, e.target.value)} className="flex-1 border-0 bg-transparent px-0 py-0 font-mono text-[11px] focus-visible:border-0" />
+                <button type="button" onClick={() => removePath(i)} className="shrink-0 px-1 text-error" aria-label="kaldır">
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
               </div>
             ))}
           </div>
-        ) : null}
-        <div className="mb-2 flex flex-col gap-1.5">
-          {paths.map((p, i) => (
-            <div key={i} className="flex items-center gap-1.5 rounded border border-rule bg-bg px-2 py-1.5">
-              <span className={`text-[12px] ${valid(p) ? 'evx' : 'err'}`}>{valid(p) ? '✓' : '✕'}</span>
-              <input
-                value={p}
-                onChange={(e) => updatePath(i, e.target.value)}
-                className="flex-1 rounded border border-rule bg-bg px-2 py-1 font-mono text-[11px] text-ink outline-none"
-              />
-              <button type="button" onClick={() => removePath(i)} className="err px-1 text-[14px]">✕</button>
-            </div>
-          ))}
-        </div>
-        {/* Path entry: type a path + Add, or pick a folder. Both append a (still-editable) row. */}
-        <div className="mb-4 flex gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDraft(); } }}
-            placeholder={UI.wsRepoPlaceholder}
-            className="flex-1 rounded border border-rule bg-bg px-3 py-2 font-mono text-[12px] text-ink outline-none"
-          />
-          <button type="button" onClick={addDraft} className="btn-ghost rounded px-3 py-1.5 text-[12px]">{UI.wsRepoAddManual}</button>
-          <button type="button" onClick={pick} className="btn-ghost rounded px-3 py-1.5 text-[12px]">{UI.wsRepoPick}</button>
-        </div>
+          {/* Path entry: type a path + Add, or pick a folder. Both append a (still-editable) row. */}
+          <div className="flex gap-1.5">
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDraft(); } }}
+              placeholder={UI.wsRepoPlaceholder}
+              className="flex-1 font-mono text-[12px]"
+            />
+            <Button variant="secondary" size="sm" onClick={addDraft}>{UI.wsRepoAddManual}</Button>
+            <Button variant="ghost" size="sm" onClick={() => void pick()}>
+              <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              {UI.wsRepoPick}
+            </Button>
+          </div>
+        </section>
 
         {allRepos.length >= 2 ? (
-          <>
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.wsDecisionStore}</label>
+          <Field label={UI.wsDecisionStore}>
             <select
               value={decisionStore || allRepos[0]}
               onChange={(e) => setDecisionStore(e.target.value)}
-              className="mb-5 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none"
+              className="w-full rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus-visible:border-signal focus-visible:outline-none"
             >
               {allRepos.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-          </>
+          </Field>
         ) : null}
-
-        {error ? <p className="mb-3 text-xs text-clay">{error}</p> : null}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-ghost rounded px-4 py-1.5 text-[12px]">{UI.close}</button>
-          <button type="button" onClick={save} className="btn-primary rounded px-4 py-1.5 text-[12px]">{mode === 'create' ? UI.wsCreateBtn : UI.wsSave}</button>
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

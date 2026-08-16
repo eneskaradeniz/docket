@@ -325,6 +325,11 @@ export function formatDateTime(iso: string): string {
   return `${d.getDate()} ${MONTHS_TR[d.getMonth()]} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// Rol-farkında byline (WO-0031b): 'mimar'/'uygulayıcı'/'doğrulayıcı' — hardcode değil.
+export function askingRole(role: SessionRole): string {
+  return ASKING_ROLE[role];
+}
+
 // Rol-farkında izin satırı (WO-0027 / Bulgu 8) — ekTürkçe ekler sabit tablada, kural değil.
 const ASKING_ROLE: Record<SessionRole, string> = {
   implementer: 'Uygulayıcının bir isteği var.',
@@ -349,6 +354,7 @@ export const UI = {
   tokens: 'token',
   costNoSessions: 'Henüz oturum yok',
   orderDoc: 'order.md',
+  docsSection: 'Belgeler',
   planDoc: 'plan.md',
   workOrders: 'iş emri',
   noActionAvailable: 'Eylem yok.',

@@ -4,11 +4,12 @@ import {
   seedLiveState,
   simplePhaseFromState,
   type DriveInput,
-  type LiveSessionState,
   type SimplePhase,
 } from '../../../core/runner';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
-import { PROVIDER_ERROR_LABELS, formatCost, LIVE_STATUS_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { PROVIDER_ERROR_LABELS, formatCost, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { Button, Segmented, Textarea } from '../../kit';
+import { CostReadout, PaneError, PaneHeader, PaneShell, PhaseLine, ViewModeToggle } from './pane-chrome';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { PlanReadyCard } from './PlanReadyCard';
 import { StopAndAskCard } from './StopAndAskCard';
@@ -22,40 +23,6 @@ import { Terminal } from './Terminal';
 // prompt assembled server-side from order.md); plan approval writes plan.md via onApprovePlan rather
 // than resuming the architect off plan mode.
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
-
-function statusColor(s: LiveSessionState['status']): string {
-  switch (s) {
-    case 'running':
-      return 'text-denim';
-    case 'stopped_asking':
-      return 'text-brass';
-    case 'plan_ready':
-      return 'text-brass';
-    case 'done':
-      return 'text-sage';
-    case 'error':
-      return 'text-clay';
-    default:
-      return 'text-inkdim';
-  }
-}
-
-// SADE mode dot tone by phase — working (denim), writing/asking (brass), ready (sage), error (clay).
-function phaseTone(p: SimplePhase): string {
-  switch (p) {
-    case 'ready':
-    case 'done':
-      return 'bg-sage';
-    case 'errored':
-      return 'bg-clay';
-    case 'writing_decisions':
-    case 'asking_input':
-    case 'asking_permission':
-      return 'bg-brass';
-    default:
-      return 'bg-denim';
-  }
-}
 
 export function SessionPane({
   mode,
@@ -193,69 +160,49 @@ export function SessionPane({
   };
 
   return (
-    <section className="rounded-sm border border-rule bg-surface2 p-3">
-      <header className="mb-2 flex items-center gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.sessionLog}</h2>
-        <span className={`font-mono text-[11px] ${statusColor(state.status)}`}>{LIVE_STATUS_LABELS[state.status]}</span>
-        <div className="ml-auto flex items-center gap-2">
-          {hasStream ? (
-            <div className="flex gap-1 rounded bg-surface p-1">
-              <button type="button" aria-pressed={viewMode === 'sade'} onClick={() => setViewMode('sade')} className={`rounded px-2 py-0.5 text-[11px] ${viewMode === 'sade' ? 'bg-bg text-ink' : 'text-inkdim'}`}>{UI.modeSimple}</button>
-              <button type="button" aria-pressed={viewMode === 'detail'} onClick={() => setViewMode('detail')} className={`rounded px-2 py-0.5 text-[11px] ${viewMode === 'detail' ? 'bg-bg text-ink' : 'text-inkdim'}`}>{UI.modeDetail}</button>
-            </div>
-          ) : null}
-          {state.cost.usd > 0 || durationText ? (
-            <span className="font-mono text-[12px] text-inkdim">
-              {state.cost.usd > 0 ? formatCost(state.cost) : null}
-              {state.cost.usd > 0 && durationText ? ' · ' : ''}
-              {durationText ? `⏱ ${durationText}` : null}
-            </span>
-          ) : null}
-        </div>
-      </header>
+    <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' || state.status === 'plan_ready' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
+      <PaneHeader
+        title={UI.sessionLog}
+        status={state.status}
+        right={
+          <>
+            {running ? <Button variant="ghost" size="sm" onClick={stop}>{UI.interrupt}</Button> : null}
+            {hasStream ? <ViewModeToggle value={viewMode} onValueChange={setViewMode} /> : null}
+            <CostReadout cost={state.cost.usd > 0 ? formatCost(state.cost) : undefined} duration={durationText} />
+          </>
+        }
+      />
 
       {/* Role tabs are hidden on a written work order — the only session is the architect plan session. */}
       {isPlanRequestStage ? null : (
-        <div className="mb-2 flex gap-1 rounded bg-surface p-1">
-          {ROLE_ORDER.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRole(r)}
-              className={`flex-1 rounded px-2 py-1 text-xs ${r === role ? 'bg-bg text-ink' : 'text-inkdim'}`}
-            >
-              {ROLE_LABELS[r]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          className="mb-2"
+          value={role}
+          onValueChange={setRole}
+          options={ROLE_ORDER.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+        />
       )}
 
       {/* Controls appear only when their precondition holds (ADR-0001). Written → single "Plan iste";
            otherwise the prompt + start/resume controls. */}
       {isPlanRequestStage && canStart ? (
         <div className="mb-2">
-          <button type="button" onClick={requestPlan} className="btn-primary rounded px-3 py-1.5 text-xs">
-            {UI.requestPlan}
-          </button>
+          <Button variant="primary" onClick={requestPlan}>{UI.requestPlan}</Button>
         </div>
       ) : null}
 
       {!isPlanRequestStage && canStart ? (
         <div className="mb-2 flex gap-2">
-          <textarea
-            className="flex-1 rounded border border-rule bg-bg p-2 text-xs text-ink outline-none"
+          <Textarea
+            className="flex-1 font-sans text-[13px]"
             rows={2}
             placeholder={UI.promptPlaceholder}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
-          <button type="button" onClick={start} className="btn-primary self-stretch rounded px-3 py-1 text-xs">
-            {UI.startSession}
-          </button>
+          <Button variant="primary" className="self-stretch" onClick={start}>{UI.startSession}</Button>
           {resumeSessionId ? (
-            <button type="button" onClick={resume} className="btn-ghost self-stretch rounded px-3 py-1 text-xs">
-              {UI.resumeSession}
-            </button>
+            <Button variant="secondary" className="self-stretch" onClick={resume}>{UI.resumeSession}</Button>
           ) : null}
         </div>
       ) : null}
@@ -272,35 +219,20 @@ export function SessionPane({
       ) : null}
 
       {showQuestion && lastAssistant ? (
-        <div className="mb-2 flex items-stretch rounded-sm border border-rule bg-surface">
-          <div className="bar bar-brass" />
-          <div className="perf" />
+        <div className="mb-2 flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
+          <div className="lamp lamp-signal" />
           <div className="flex-1 px-3.5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.architectWaiting}</p>
+            <p className="readout text-signal">{UI.architectWaiting}</p>
             <p className="mb-1 mt-0.5 text-[12px] text-inkdim">{UI.architectQuestionHint}</p>
             <p className="mb-2 text-[14px] text-ink">{lastAssistant.text}</p>
             <div className="flex flex-col gap-2">
-              <textarea
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                rows={2}
-                placeholder={UI.replyPlaceholder}
-                className="rounded border border-rule bg-bg p-2 text-xs text-ink outline-none"
-              />
+              <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={2} placeholder={UI.replyPlaceholder} className="font-sans text-[13px]" />
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => reply(replyText.trim() || 'Devam et.')} className="btn-primary rounded px-3 py-1 text-xs">{UI.reply}</button>
-                <button type="button" onClick={() => reply('Bilmiyorum, kendin karar ver.')} className="btn-ghost rounded px-3 py-1 text-xs">{UI.skipReply}</button>
+                <Button variant="ghost" size="sm" onClick={() => reply('Bilmiyorum, kendin karar ver.')}>{UI.skipReply}</Button>
+                <Button variant="primary" size="sm" onClick={() => reply(replyText.trim() || 'Devam et.')}>{UI.reply}</Button>
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {running ? (
-        <div className="mb-2">
-          <button type="button" onClick={stop} className="btn-ghost rounded px-3 py-1 text-xs">
-            {UI.interrupt}
-          </button>
         </div>
       ) : null}
 
@@ -308,8 +240,8 @@ export function SessionPane({
         <div className="mb-2">
           {state.pendingAsks.length > 1 ? (
             <div className="mb-1 flex items-center gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.asksPending(state.pendingAsks.length)}</p>
-              <button type="button" onClick={allowAllAsks} className="alink text-[11px]">{UI.allowAll}</button>
+              <p className="readout text-signal">{UI.asksPending(state.pendingAsks.length)}</p>
+              <Button variant="signal" size="sm" onClick={allowAllAsks}>{UI.allowAll}</Button>
             </div>
           ) : null}
           {state.pendingAsks.map((a) => (
@@ -328,10 +260,7 @@ export function SessionPane({
 
       {hasStream ? (
         viewMode === 'sade' ? (
-          <div className="flex items-center gap-2 py-2">
-            <span className={`h-1.5 w-1.5 rounded-full ${phaseTone(phase)} pulse`} />
-            <span className="text-[13px] text-inkdim">{phase === 'asking_permission' ? UI.askingRole(role) : SIMPLE_PHASE_LABELS[phase]}</span>
-          </div>
+          <PhaseLine phase={phase} label={phase === 'asking_permission' ? UI.askingRole(role) : SIMPLE_PHASE_LABELS[phase]} />
         ) : (
           <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
         )
@@ -340,10 +269,8 @@ export function SessionPane({
       )}
 
       {state.lastError ? (
-        <p className="mt-2 text-xs text-clay">
-          {state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError}
-        </p>
+        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError} />
       ) : null}
-    </section>
+    </PaneShell>
   );
 }
