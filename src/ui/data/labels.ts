@@ -552,6 +552,49 @@ export const UI = {
   woPhaseImplementing: 'Uygulama',
   woPhaseClosing: 'Kapanış — belgeleri güncelle',
   woPhaseDone: 'Tamamlandı',
+  // ===== Kontrol Konsolu v2 (WO-0031c / v4 mockup) =====
+  // Görünüm modu — global, hatırlanır; strip'teki mono segment.
+  viewModeSimple: 'SADE',
+  viewModeDetail: 'DETAY',
+  viewModeAria: 'Görünüm — Sade veya Detay',
+  // Sıra durumu (deriveTurnState çıktısı) — substrip satırı.
+  turnYours: 'Sıra sende',
+  turnRunning: 'Çalışıyor — sana iş yok',
+  turnStopped: 'Durduruldu — istersen sürdür',
+  turnRetry: 'Yeniden dene',
+  // Klavye ipuçları (substrip sağı).
+  hintEscBack: 'esc geri',
+  // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin).
+  railApprove: 'Onayla',
+  railApproveHint: 'Onayla — adımlar sırayla koşar.',
+  railWorking: 'Çalışıyor. Hazır olunca haber veririm.',
+  railCloseHint: 'Kapat — arşive gider, not bırakabilirsin.',
+  railAskHint: 'Oturum durdu — maliyet işlemez.',
+  railResume: '▶ Sürdür',
+  railStopping: 'Durduruluyor…',
+  railRetry: 'Yeniden dene',
+  // Adım kartı durum satırı (kart dili).
+  stepQueued: 'sırada',
+  stepWorking: 'çalışıyor',
+  stepWorkingAsk: 'çalışıyor · izin bekliyor',
+  stepReady: 'hazır',
+  stepDoneMeta: (duration: string, cost?: string) =>
+    cost ? `tamam · ⏱ ${duration} · ${cost}` : `tamam · ⏱ ${duration}`,
+  // Plan onayı: kart yüzü ("Mimar N adım önerdi").
+  planProposedSteps: (n: number) => `Mimar ${n} adım önerdi`,
+  // DETAY bölüm yüzeyleri — sekme adları @<1080 ve raf başlıkları @≥1080 aynı dili kullanır.
+  secTerminal: 'Terminal',
+  secSteps: 'Adımlar',
+  secEvidence: 'Kanıt',
+  secTimeline: 'Çizelge',
+  secDocs: 'Belgeler',
+  secSources: 'Kaynaklar',
+  secTracks: 'Track’ler',
+  // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
+  noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
+    const base = { interrupt_sent: '⏸ kesme sinyali gönderildi', session_closed: '■ oturum kapandı', force_killed: '■ zorla kesildi' }[kind];
+    return detail ? `${base} — ${detail}` : base;
+  },
 } as const;
 
 // WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;

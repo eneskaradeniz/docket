@@ -1,13 +1,15 @@
 // Button — the kit's action control (WO-0031). Variants instead of boolean props (composition rule);
 // NO inactive variant exists — an unavailable action is absent at the call site (ADR-0001), never a
-// greyed button. `busy` swaps the label for a spinner (an honest in-flight state, not a lock).
+// greyed button. `busy` swaps the label for a spinner (an honest in-flight state, not a lock);
+// `locked` (WO-0031c) is the same honesty after the press: the action was taken, the button is spent
+// until it resolves (double-click impossible). `:active` scale = the instant tactile response (v4).
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Loader2 } from 'lucide-react';
 import { cn } from './cn';
 
 const buttonVariants = cva(
-  'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal',
+  'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.955]',
   {
     variants: {
       variant: {
@@ -30,14 +32,25 @@ const buttonVariants = cva(
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   busy?: boolean;
+  /** WO-0031c: the in-flight lock — class dims it and the click handler is detached, so neither mouse
+   *  nor keyboard (Enter on a focused button) can re-fire it. Availability is still ADR-0001: an
+   *  action whose evidence is unmet is ABSENT at the call site, never a locked button. */
+  locked?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant, size, busy, children, ...props },
+  { className, variant, size, busy, locked, children, onClick, ...props },
   ref,
 ) {
   return (
-    <button ref={ref} type="button" className={cn(buttonVariants({ variant, size }), className)} {...(busy ? { 'aria-busy': true } : {})} {...props}>
+    <button
+      ref={ref}
+      type="button"
+      className={cn(buttonVariants({ variant, size }), locked && 'pointer-events-none opacity-45', className)}
+      {...(busy ? { 'aria-busy': true } : {})}
+      {...props}
+      onClick={locked ? undefined : onClick}
+    >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
       {children}
     </button>

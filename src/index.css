@@ -10,8 +10,8 @@
 /* ===== "Kontrol Konsolu" design tokens (WO-0031) =====
    A dispatch console for one operator: dark room, calm layered surfaces, data in mono, and ONE lamp
    color that means "this needs you". Dark-only by ruling (ADR-0012 pending in Phase C). Tailwind v4
-   @theme tokens generate bg-/text-/border- utilities. Old token names (surface2/brass/denim/sage/clay)
-   are kept as ALIASES so the not-yet-restyled screens keep working through the migration phases. */
+   @theme tokens generate bg-/text-/border- utilities. The migration-era aliases (surface2/brass/
+   denim/sage/clay) are GONE — the last user (ErrorBoundary's bg-clay) was restyled in WO-0031c. */
 @theme {
   --color-bg: #0e1520;
   --color-surface: #16202e;
@@ -172,12 +172,69 @@
   .alink:hover {
     background: color-mix(in srgb, var(--color-info) 14%, transparent);
   }
+
+  /* ===== Ambient glow (WO-0031c / v4 "durum ışığı") =====
+     A static radial wash behind the console content, one hue per turn state: amber = waiting on the
+     operator, blue = a session runs, green = done/closed, red = crashed. No animation at all — the
+     wash is reduced-motion safe by construction, not by exemption. */
+  .glow-signal {
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245, 181, 68, 0.14), transparent 62%),
+      var(--color-bg);
+  }
+  .glow-run {
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108, 160, 206, 0.11), transparent 62%),
+      var(--color-bg);
+  }
+  .glow-done {
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(76, 195, 138, 0.1), transparent 62%),
+      var(--color-bg);
+  }
+  .glow-error {
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(229, 72, 77, 0.14), transparent 62%),
+      var(--color-bg);
+  }
+
+  /* ===== Step-card state flash (WO-0031c) — one brief wash when a card's status flips ===== */
+  .flash {
+    animation: flash 0.8s ease-out;
+  }
+  @keyframes flash {
+    from {
+      background: color-mix(in srgb, var(--color-proceed) 16%, transparent);
+    }
+    to {
+      background: transparent;
+    }
+  }
+  .flash-err {
+    animation: flash-err 0.8s ease-out;
+  }
+  @keyframes flash-err {
+    from {
+      background: color-mix(in srgb, var(--color-error) 16%, transparent);
+    }
+    to {
+      background: transparent;
+    }
+  }
+
+  /* ===== Step card (WO-0031c) — the plan's card language; hover lifts it a hair ===== */
+  .stepcard {
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .stepcard:hover {
+    transform: translateY(-1px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lamp-signal-breathe,
   .lamp-run,
-  .rise {
+  .rise,
+  .flash,
+  .flash-err,
+  .stepcard {
     animation: none;
+    transition: none;
   }
 }
