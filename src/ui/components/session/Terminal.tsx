@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TranscriptLine } from '../../../core/runner';
 import { formatTranscriptLine } from '../../../core/transcript-format';
-import { toolLabel } from '../../data/labels';
+import { toolLabel, UI } from '../../data/labels';
 
 // xterm paints its own canvas and does NOT inherit CSS, so the terminal theme must be read from the app's
 // CSS tokens at construction (and re-read on a light/dark toggle). Values mirror src/index.css @theme; the
@@ -49,9 +49,11 @@ export function Terminal({
   const writtenCountRef = useRef(0);
   const lastResetKeyRef = useRef<string | undefined>(undefined);
 
-  // Create the terminal once; refit on resize; dispose on unmount. `disableStdin` keeps it
-  // read-only (input stays the prompt + drive controls). No marker-style options are set — the
-  // boundary check's vendor-name regex matches a bare word that overlaps xterm option names.
+  // Create the terminal once; refit whenever the CONTAINER resizes; dispose on unmount. `disableStdin`
+  // keeps it read-only (input stays the prompt + drive controls). A ResizeObserver (WO-0031c) — not the
+  // old window listener — covers the tab-switch case: a forceMount-hidden tab panel collapses to 0 and
+  // re-expands on return, and only the element's own box tells that story. No marker-style options are
+  // set — the boundary check's vendor-name regex matches a bare word that overlaps xterm option names.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -71,14 +73,14 @@ export function Terminal({
     } catch {
       // The container can be zero-sized in a layout race; safe to skip the first fit.
     }
-    const onResize = (): void => {
+    const resizeObserver = new ResizeObserver(() => {
       try {
         fit.fit();
       } catch {
-        // ignore — a transient zero-size during resize
+        // ignore — a transient zero-size while a tab panel is hidden or mid-layout
       }
-    };
-    window.addEventListener('resize', onResize);
+    });
+    resizeObserver.observe(el);
     termRef.current = term;
     // A fresh terminal instance replays from the start (also covers a strict-mode remount).
     writtenCountRef.current = 0;
@@ -91,7 +93,7 @@ export function Terminal({
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', onResize);
+      resizeObserver.disconnect();
       term.dispose();
       termRef.current = null;
     };
@@ -99,6 +101,7 @@ export function Terminal({
 
   // Diff new entries into the terminal; clear on a resetKey change. Splitting on `\n` and
   // writeln-ing each piece gives CR+LF per source row (no staircase). convertEol stays off.
+  // WO-0031c: operator-side notes (interrupt/close/force-kill) render through UI.noteFor.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
@@ -113,7 +116,7 @@ export function Terminal({
       writtenCountRef.current = 0;
     }
     for (let i = writtenCountRef.current; i < entries.length; i++) {
-      const formatted = formatTranscriptLine(entries[i], { labelFor: toolLabel });
+      const formatted = formatTranscriptLine(entries[i], { labelFor: toolLabel, noteFor: UI.noteFor });
       for (const piece of formatted.split('\n')) term.writeln(piece);
     }
     writtenCountRef.current = entries.length;
