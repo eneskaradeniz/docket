@@ -28,14 +28,6 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
-
-  /* migration aliases (Phase A/B: old classnames → new tokens) */
-  --color-surface2: #1d2938;
-  --color-rule: #263349;
-  --color-brass: #f5b544;
-  --color-denim: #6ca0ce;
-  --color-sage: #4cc38a;
-  --color-clay: #e5484d;
 }
 
 @layer base {
@@ -169,34 +161,6 @@
     }
   }
 
-  /* legacy aliases kept for Phase-B/C screens still using them */
-  .perf {
-    width: 22px;
-    align-self: stretch;
-    flex: none;
-    background-color: var(--color-hairline);
-    background-image: radial-gradient(circle, var(--color-bg) 2px, transparent 2.4px);
-    background-size: 100% 11px;
-    background-position: 50% 5.5px;
-    background-repeat: repeat-y;
-  }
-  .bar {
-    width: 3px;
-    align-self: stretch;
-    flex: none;
-  }
-  .bar-brass {
-    background: var(--color-signal);
-  }
-  .bar-denim {
-    background: var(--color-info);
-  }
-  .bar-sage {
-    background: var(--color-proceed);
-  }
-  .pulse {
-    animation: breathe 2.4s ease-in-out infinite;
-  }
   .alink {
     color: var(--color-info);
     font-family: var(--font-mono);
@@ -208,39 +172,11 @@
   .alink:hover {
     background: color-mix(in srgb, var(--color-info) 14%, transparent);
   }
-  .btn-primary {
-    background: var(--color-ink);
-    color: #0e1520;
-    font-weight: 600;
-  }
-  .btn-primary:hover {
-    filter: brightness(1.08);
-  }
-  .btn-ghost {
-    border: 1px solid var(--color-hairline);
-    color: var(--color-ink);
-  }
-  .btn-ghost:hover {
-    background: var(--color-raised);
-  }
-  .evx {
-    color: var(--color-proceed);
-  }
-  .evblank {
-    color: var(--color-inkdim);
-  }
-  .evexempt {
-    color: var(--color-info);
-  }
-  .err {
-    color: var(--color-error);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lamp-signal-breathe,
   .lamp-run,
-  .pulse,
   .rise {
     animation: none;
   }

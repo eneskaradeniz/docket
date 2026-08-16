@@ -19,10 +19,10 @@ export function StepList({
   const done = steps.filter((s) => s.status === 'done').length;
 
   const markTone = (status: StepView['status']): string =>
-    status === 'blocked' ? 'text-clay' : status === 'done' ? 'text-sage' : status === 'active' ? 'text-denim' : 'text-inkdim';
+    status === 'blocked' ? 'text-error' : status === 'done' ? 'text-proceed' : status === 'active' ? 'text-info' : 'text-inkdim';
 
   return (
-    <section className="rounded-sm border border-rule bg-surface2 p-3">
+    <section className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
       <header className="mb-2 flex items-center gap-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.stepsHeader}</h2>
         <span className="font-mono text-[11px] text-inkdim">
@@ -37,7 +37,7 @@ export function StepList({
           const mark = s.status === 'done'
             ? s.verdict === 'revise' ? VERDICT_MARK.revise : s.verdict === 'proceed' ? STEP_MARK.done : '…'
             : STEP_MARK[s.status];
-          const tone = s.status === 'done' && s.verdict === 'revise' ? 'text-brass' : markTone(s.status);
+          const tone = s.status === 'done' && s.verdict === 'revise' ? 'text-signal' : markTone(s.status);
           return (
             <li
               key={s.idx}
@@ -52,9 +52,9 @@ export function StepList({
                   {ROLE_LABELS[s.role]} · {s.aim}
                 </button>
               ) : (
-                <span className={s.status === 'blocked' ? 'text-clay' : 'text-ink'}>
+                <span className={s.status === 'blocked' ? 'text-error' : 'text-ink'}>
                   {ROLE_LABELS[s.role]} · {s.aim}
-                  {s.status === 'blocked' ? <span className="ml-2 text-[11px] text-clay">— {UI.stepBlockedHint}</span> : null}
+                  {s.status === 'blocked' ? <span className="ml-2 text-[11px] text-error">— {UI.stepBlockedHint}</span> : null}
                 </span>
               )}
               <span className="ml-auto font-mono text-[11px] text-inkdim">{scopeText}</span>

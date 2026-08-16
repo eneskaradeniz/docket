@@ -30,7 +30,7 @@ export function DetailScreen({
   onDelete: () => Promise<void>;
 }) {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <main className="mx-auto w-full max-w-[1240px] px-6 py-6">
       <WorkOrderDetail
         detail={detail}
         docs={docs}

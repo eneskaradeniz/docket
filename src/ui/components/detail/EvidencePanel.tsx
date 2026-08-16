@@ -2,14 +2,14 @@ import type { EvidenceItem } from '../../../core/types';
 import { EVIDENCE_LABELS, EVIDENCE_MARK, UI } from '../../data/labels';
 
 const TONE: Record<EvidenceItem['status'], string> = {
-  satisfied: 'evx',
-  unsatisfied: 'evblank',
-  exempt: 'evexempt',
+  satisfied: 'text-proceed',
+  unsatisfied: 'text-inkdim',
+  exempt: 'text-info',
 };
 
 export function EvidencePanel({ items }: { items: EvidenceItem[] }) {
   return (
-    <section className="rounded-sm border border-rule bg-surface p-3">
+    <section className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
       <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.evidence}</h2>
       <ul className="flex flex-col gap-1.5">
         {items.map((it, i) => (
@@ -22,7 +22,7 @@ export function EvidencePanel({ items }: { items: EvidenceItem[] }) {
               </span>
             </div>
             {it.status === 'exempt' && it.exemption ? (
-              <p className="ml-6 text-[11px] text-denim">{it.exemption.reason}</p>
+              <p className="ml-6 text-[11px] text-info">{it.exemption.reason}</p>
             ) : null}
             {it.status === 'unsatisfied' ? <p className="ml-6 text-[11px] text-inkdim">{UI.missing}</p> : null}
           </li>

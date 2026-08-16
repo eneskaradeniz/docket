@@ -1,23 +1,21 @@
 import { useEffect, useState } from 'react';
 import type { StepRole, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
 import { derivePhase } from '../../../core/derive';
-import { EVIDENCE_LABELS, EVIDENCE_MARK, ROLE_LABELS, STAGE_LABELS, UI, WO_EVENT_LABELS, formatCost, formatDateTime, phaseLabelText } from '../../data/labels';
+import { UI } from '../../data/labels';
+import { Button, Input } from '../../kit';
 import { ActionCard } from './ActionCard';
+import { ContextRail } from './ContextRail';
+import { DetailHeader } from './DetailHeader';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
 import { ReviewPane } from '../session/ReviewPane';
-import { EvidencePanel } from './EvidencePanel';
-import { MarkdownDoc } from './MarkdownDoc';
-import { SourceLinks } from './SourceLinks';
-import { StageRail } from './StageRail';
-import { StepList } from './StepList';
 import { StepReport } from './StepReport';
 import { VerdictCard } from './VerdictCard';
-import { TrackLane } from './TrackLane';
 
-// Session-centric detail (WO-0013). The session log is the spine; the action card surfaces the one
-// thing that matters up top (read-only); stages/evidence/tracks/sources/docs are demoted behind a
-// "Akışı göster" expander. Evidence keeps its three values (satisfied/unsatisfied/exempt).
+// Session-centric detail, Kontrol Konsolu layout (WO-0031b): the merged DetailHeader readout, the
+// action/decision card, the session instrument as the primary column, and the ContextRail (steps,
+// evidence, tracks, timeline, docs, sources) beside it — the old "Akışı göster" expander and the
+// dead StageRail are gone (audit P2-6). All drive/verdict/close logic is unchanged from WO-0020..0030.
 export function WorkOrderDetail({
   detail,
   docs,
@@ -110,23 +108,13 @@ export function WorkOrderDetail({
   };
 
   const activeRole = detail.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking')?.role;
-  const stageStep = detail.rail.find((s) => s.status === 'current' || s.status === 'locked');
   // WO-0027 / Bulgu 2 + İstek 7: cost is claimed only when some session actually carries one (a NULL-cost
-  // plan row is "unknown", not $0.00), and the summed wall-clock of finished sessions joins it.
-  const anyCost = detail.sessions.some((s) => s.cost);
+  // plan row is "unknown", not $0.00); the summed wall-clock rides the header readout.
   const durationMs = detail.sessions.reduce((acc, s) => {
     if (!s.startedAt || !s.endedAt) return acc;
     return acc + (new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime());
   }, 0);
-  const meta = [
-    detail.id,
-    activeRole ? ROLE_LABELS[activeRole] : null,
-    stageStep ? STAGE_LABELS[stageStep.stage] : null,
-    anyCost ? formatCost(detail.cost) : null,
-    durationMs > 0 ? UI.formatDuration(durationMs) : null,
-  ]
-    .filter(Boolean)
-    .join(UI.metaSep);
+  const durationText = durationMs > 0 ? UI.formatDuration(durationMs) : undefined;
 
   // At written/architect_approval the plan flow owns the session pane (architect proposes, operator approves).
   // Once approved (implementation+): if the plan has steps, the step list + step pane own the session region;
@@ -139,98 +127,61 @@ export function WorkOrderDetail({
   const unresolvedRevise = detail.steps.find((s) => s.verdict === 'revise' && s.status === 'done');
   const activeStep = runIdx !== undefined ? detail.steps.find((s) => s.idx === runIdx) : undefined;
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-1 text-[12px] text-inkdim hover:text-ink"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M15 18l-6-6l6-6z" />
-          </svg>
-          {UI.backToBoard}
-        </button>
-        <button type="button" onClick={() => setConfirmDelete(true)} className="text-[12px] text-clay hover:underline">
-          {UI.deleteWo}
-        </button>
-      </div>
+  const phase = derivePhase(detail, detail.steps, !!docs.plan);
 
-      {confirmDelete ? (
-        <div className="flex items-stretch rounded-sm border border-rule bg-surface">
-          <div className="w-1 self-stretch bg-clay" />
+  // The primary column: the action/decision card + the session instrument (and the no-steps hint).
+  const sessionColumn = (
+    <div className="flex min-w-0 flex-col gap-4">
+      {detail.stage === 'closed' ? (
+        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+          <div className="lamp lamp-done" />
           <div className="flex-1 px-3.5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.deleteWo}</p>
-            <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.deleteWoHint}</p>
-            {deleting ? (
-              <p className="text-right text-xs text-clay">{UI.deleteWoInFlight}</p>
-            ) : (
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setConfirmDelete(false)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.cancel}</button>
-                <button type="button" onClick={() => void handleDelete()} className="rounded bg-clay px-3 py-1 text-xs text-bg">{UI.deleteWoConfirm}</button>
-              </div>
-            )}
+            <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
+            <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
           </div>
         </div>
-      ) : null}
-
-      <div>
-        <p className="text-[12px] text-inkdim">{meta}</p>
-        <h1 className="mt-0.5 text-[20px] font-semibold tracking-tight text-ink">{detail.title}</h1>
-      </div>
-
-      {/* WO-level faz göstergesi (WO-0021) — plan-driven akışın birincil yüzeyi; ray ikincil (Akışı göster). */}
-      <div className="flex items-center gap-2">
-        <span className="h-1.5 w-1.5 rounded-full bg-denim pulse" />
-        <span className="text-[14px] text-ink">{phaseLabelText(derivePhase(detail, detail.steps, !!docs.plan))}</span>
-      </div>
-
-      {detail.stage === 'closed' ? (
-        <div className="rounded-sm border border-rule bg-surface p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.closeWoDoneTitle}</p>
-          <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
-        </div>
       ) : unresolvedRevise && allStepsDone ? (
-        <div className="rounded-sm border border-rule bg-surface p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{UI.verdictCardReviseTitle}</p>
-          <p className="mt-1 text-[12px] text-inkdim">
-            {UI.overrideVerdictHint} — <span className="font-mono">adım {unresolvedRevise.idx}</span>
-          </p>
-          <div className="mt-2 flex justify-end gap-2">
-            <button type="button" onClick={() => void onResetStep(unresolvedRevise.idx)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.rerunStep}</button>
-            <button type="button" onClick={() => void onOverrideVerdict(unresolvedRevise.idx).then(reloadDetail)} className="rounded bg-sage px-3 py-1 text-xs text-bg">{UI.overrideVerdictBtn}</button>
+        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+          <div className="lamp lamp-signal" />
+          <div className="flex-1 px-3.5 py-3">
+            <p className="readout text-signal">{UI.verdictCardReviseTitle}</p>
+            <p className="mt-1 text-[12px] text-inkdim">
+              {UI.overrideVerdictHint} — <span className="font-mono">adım {unresolvedRevise.idx}</span>
+            </p>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => void onResetStep(unresolvedRevise.idx)}>{UI.rerunStep}</Button>
+              <Button variant="primary" size="sm" onClick={() => void onOverrideVerdict(unresolvedRevise.idx).then(reloadDetail)}>{UI.overrideVerdictBtn}</Button>
+            </div>
           </div>
         </div>
       ) : allStepsDone ? (
-        <div className="rounded-sm border border-rule bg-surface p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-sage">{UI.stepsAllDone}</p>
-          <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
-          {confirmClose ? (
-            <div className="mt-2">
-              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
-              <input
-                value={closeNote}
-                onChange={(e) => setCloseNote(e.target.value)}
-                placeholder={UI.closeNotePlaceholder}
-                className="mb-2 w-full rounded-sm border border-rule bg-bg px-2 py-1 text-[12px] text-ink"
-              />
-              <p className="mb-2 text-[12px] text-inkdim">{UI.closeWoHint}</p>
-              {closeError ? <p className="mb-2 text-xs text-clay">{UI.closeWoFailed}</p> : null}
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setConfirmClose(false)} className="btn-ghost rounded px-3 py-1 text-xs">{UI.cancel}</button>
-                {closing ? (
-                  <span className="text-xs text-sage">{UI.closeWoInFlight}</span>
-                ) : (
-                  <button type="button" onClick={() => void handleClose()} className="rounded bg-sage px-3 py-1 text-xs text-bg">{UI.closeWoConfirm}</button>
-                )}
+        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+          <div className="lamp lamp-done" />
+          <div className="flex-1 px-3.5 py-3">
+            <p className="readout text-proceed">{UI.stepsAllDone}</p>
+            <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
+            {confirmClose ? (
+              <div className="mt-2">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
+                <Input
+                  value={closeNote}
+                  onChange={(e) => setCloseNote(e.target.value)}
+                  placeholder={UI.closeNotePlaceholder}
+                  className="mb-2"
+                />
+                <p className="mb-2 text-[12px] text-inkdim">{UI.closeWoHint}</p>
+                {closeError ? <p className="mb-2 text-xs text-error">{UI.closeWoFailed}</p> : null}
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
+                  <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <button type="button" onClick={() => setConfirmClose(true)} className="btn-ghost mt-2 rounded px-3 py-1 text-xs text-sage">
-              {UI.closeWo}
-            </button>
-          )}
+            ) : (
+              <Button variant="secondary" size="sm" className="mt-2" onClick={() => setConfirmClose(true)}>
+                {UI.closeWo}
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <ActionCard detail={detail} />
@@ -247,12 +198,10 @@ export function WorkOrderDetail({
         />
       ) : hasSteps ? (
         <>
-          <StepList steps={detail.steps} onOpenReport={setReportStep} />
           {reviewIdx !== undefined ? (
             <ReviewPane
               step={detail.steps.find((s) => s.idx === reviewIdx)!}
               workOrderId={detail.id}
-              
             />
           ) : verdictFor ? (
             <VerdictCard
@@ -271,7 +220,7 @@ export function WorkOrderDetail({
               }}
             />
           ) : activeStep ? (
-            <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions}  />
+            <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} />
           ) : null}
           {reportStep ? (
             <StepReport
@@ -290,66 +239,45 @@ export function WorkOrderDetail({
             sessions={detail.sessions}
             onApprovePlan={onApprovePlan}
           />
-          {docs.plan ? <p className="text-xs text-clay">{UI.noSteps}</p> : null}
+          {docs.plan ? <p className="text-xs text-error">{UI.noSteps}</p> : null}
         </>
       )}
+    </div>
+  );
 
-      {/* Approved plan — shown as a reference once PAST the plan stage. During plan approval the PlanReadyCard in
-          the session pane already renders it; showing both is a duplicate. The structured step list renders
-          above (WO-0017) when the plan has a ```steps fence. */}
-      {docs.plan && !planStage ? <MarkdownDoc title={UI.planDoc} content={docs.plan} /> : null}
+  return (
+    <div className="flex flex-col gap-4">
+      <DetailHeader
+        detail={detail}
+        phase={phase}
+        activeRole={activeRole}
+        duration={durationText}
+        onBack={onBack}
+        onDelete={() => setConfirmDelete(true)}
+      />
 
-      {/* evidence prose — three-valued (the mock's boolean is not adopted) */}
-      <p className="text-[12px] text-inkdim">
-        {UI.evidence}:&nbsp;&nbsp;
-        {detail.evidence.map((e, i) => (
-          <span key={i} className="font-mono">
-            {i > 0 ? '   ' : null}
-            {EVIDENCE_LABELS[e.kind]}
-            {e.scope ? ` (${e.scope})` : ''}{' '}
-            <span className={e.status === 'satisfied' ? 'evx' : e.status === 'exempt' ? 'evexempt' : 'evblank'}>
-              {EVIDENCE_MARK[e.status]}
-            </span>
-          </span>
-        ))}
-      </p>
-
-      <details className="border-t border-rule pt-4">
-        <summary className="text-[12px] text-inkdim hover:text-ink">
-          ▾ {UI.showPipeline} · {UI.pipelineHint}
-        </summary>
-        <div className="mt-3 flex flex-col gap-4">
-          <StageRail steps={detail.rail} />
-          <EvidencePanel items={detail.evidence} />
-          <section>
-            <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.tracks}</h2>
-            <ul className="flex flex-col gap-2">
-              {detail.tracks.map((ln) => (
-                <TrackLane key={ln.track.id as string} lane={ln} />
-              ))}
-            </ul>
-          </section>
-          <SourceLinks sources={detail.sources} />
-          <div className="mt-3">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.timelineTitle}</p>
-            {events.length === 0 ? (
-              <p className="text-[12px] text-inkdim">{UI.timelineLegacyNote}</p>
+      {confirmDelete ? (
+        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+          <div className="lamp lamp-error" />
+          <div className="flex-1 px-3.5 py-3">
+            <p className="readout text-error">{UI.deleteWo}</p>
+            <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+            {deleting ? (
+              <p className="text-right text-xs text-error">{UI.deleteWoInFlight}</p>
             ) : (
-              <ol className="flex flex-col gap-0.5">
-                {events.map((e, i) => (
-                  <li key={i} className="flex items-baseline gap-2 text-[12px]">
-                    <span className="font-mono text-[11px] text-inkdim">{formatDateTime(e.at)}</span>
-                    <span className="text-ink">{WO_EVENT_LABELS[e.kind]}</span>
-                    {e.detail ? <span className="font-mono text-[11px] text-inkdim">{e.detail}</span> : null}
-                  </li>
-                ))}
-              </ol>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{UI.cancel}</Button>
+                <Button variant="danger" size="sm" onClick={() => void handleDelete()}>{UI.deleteWoConfirm}</Button>
+              </div>
             )}
           </div>
-          <MarkdownDoc title={UI.orderDoc} content={docs.order} />
-          <MarkdownDoc title={UI.planDoc} content={docs.plan} />
         </div>
-      </details>
+      ) : null}
+
+      <div className="grid items-start gap-x-6 gap-y-5 min-[1120px]:grid-cols-[minmax(0,1fr)_320px]">
+        {sessionColumn}
+        <ContextRail detail={detail} steps={detail.steps} events={events} docs={docs} onOpenReport={setReportStep} />
+      </div>
     </div>
   );
 }

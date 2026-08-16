@@ -29,12 +29,11 @@ export function ActionCard({ detail }: { detail: WorkOrderDetailView }) {
   }
 
   return (
-    <div className="flex items-stretch rounded-sm border border-rule bg-surface">
-      <div className={`bar bar-brass${running ? '' : ' pulse'}`} />
-      <div className="perf" />
-      <div className="px-3.5 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-brass">{area}</p>
-        <p className="mt-1 text-[14px] text-ink">{prompt}</p>
+    <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
+      <div className={running ? 'lamp lamp-run' : 'lamp lamp-signal-breathe'} />
+      <div className="min-w-0 flex-1 px-3.5 py-2.5">
+        <p className="readout text-inkdim">{area}</p>
+        <p className="mt-0.5 truncate text-[13.5px] font-medium text-ink">{prompt}</p>
       </div>
     </div>
   );

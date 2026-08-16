@@ -157,10 +157,10 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   } else if (load === 'error') {
     main = (
       <div className="px-6 py-8">
-        <div className="rounded-sm border border-rule bg-surface p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.loadError}</p>
+        <div className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-error">{UI.loadError}</p>
           <div className="mt-2 flex justify-end">
-            <button type="button" onClick={() => setLoadNonce((n) => n + 1)} className="btn-ghost rounded px-3 py-1 text-xs">
+            <button type="button" onClick={() => setLoadNonce((n) => n + 1)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
               {UI.loadRetry}
             </button>
           </div>
@@ -185,10 +185,10 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
           </div>
         </header>
         <main className="mx-auto max-w-3xl px-6 py-8">
-          <div className="rounded-sm border border-rule bg-surface p-6">
+          <div className="rounded-md border border-hairline bg-surface p-6 shadow-sm">
             <h2 className="text-[15px] font-semibold text-ink">{UI.wsCreate}</h2>
             <p className="mt-1 text-[13px] text-inkdim">{UI.noWorkspaceHint}</p>
-            <button type="button" onClick={() => setWsCreateOpen(true)} className="btn-primary mt-3 rounded px-4 py-1.5 text-[12px]">
+            <button type="button" onClick={() => setWsCreateOpen(true)} className="mt-3 rounded-md bg-ink px-4 py-1.5 text-[12px] font-semibold text-bg transition-colors hover:brightness-110">
               {UI.wsCreate}
             </button>
           </div>
@@ -198,13 +198,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   } else if (selectedId) {
     main = detailError ? (
       <div className="px-6 py-8">
-        <div className="rounded-sm border border-rule bg-surface p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-clay">{UI.detailLoadError}</p>
+        <div className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-error">{UI.detailLoadError}</p>
           <div className="mt-2 flex justify-end gap-2">
-            <button type="button" onClick={() => setSelectedId(null)} className="btn-ghost rounded px-3 py-1 text-xs">
+            <button type="button" onClick={() => setSelectedId(null)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
               {UI.backToBoard}
             </button>
-            <button type="button" onClick={() => setDetailNonce((n) => n + 1)} className="btn-ghost rounded px-3 py-1 text-xs">
+            <button type="button" onClick={() => setDetailNonce((n) => n + 1)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
               {UI.loadRetry}
             </button>
           </div>

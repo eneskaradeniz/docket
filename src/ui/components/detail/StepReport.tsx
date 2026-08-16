@@ -30,7 +30,7 @@ export function StepReport({
   }, [loadReport]);
 
   return (
-    <section className="rounded-sm border border-rule bg-surface p-3">
+    <section className="overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
       <header className="mb-2 flex items-center gap-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-inkdim">
           {UI.stepReportTitle} · {step.idx}
