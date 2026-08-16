@@ -1,6 +1,7 @@
 // The product rules (ADR-0005 consequence): pure functions over WorkOrder state. No React, no I/O.
 // `whoseTurn` is the gate engine from ADR-0001 read in the other direction.
 import { GATES } from './gates';
+import type { LiveSessionStatus } from './runner'; // type-only — runner imports only types.ts, no cycle
 import type {
   AbsentReason,
   ActionIntent,
@@ -396,6 +397,30 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
     sources: wo.sources,
     cost: wo.cost,
   };
+}
+
+// ===== Turn state (WO-0031c) =====
+//
+// ONE classifier for the three ambient surfaces of the console: the substrip turn line ("Sıra sende"),
+// the glow wash and the action rail's lamp. Precedence mirrors where the operator's attention must go:
+// a dead session (retry) outranks a pending ask, which outranks a running drive; the wind-down
+// (`stopping` — interrupt sent, session still open) is still a running (spending) session; `stopped` is
+// the controller's memory that a wind-down COMPLETED and Sürdür has not been clicked yet.
+export type TurnState = 'yours' | 'running' | 'stopped' | 'retry';
+
+export function deriveTurnState(input: {
+  phase: WoPhase;
+  liveStatus: LiveSessionStatus; // the active drive's fold; 'idle' when no drive ran in this app session
+  hasPendingAsks: boolean; // the runner holds unanswered permission asks
+  stopping?: boolean; // interrupt sent, session not yet closed (Durduruluyor…)
+  stopped?: boolean; // wind-down completed, awaiting Sürdür (controller-owned; cleared on resume)
+}): TurnState {
+  if (input.liveStatus === 'error') return 'retry';
+  if (input.hasPendingAsks || input.liveStatus === 'stopped_asking') return 'yours';
+  if (input.liveStatus === 'plan_ready') return 'yours';
+  if (input.liveStatus === 'running' || input.stopping) return 'running';
+  if (input.stopped) return 'stopped';
+  return 'yours';
 }
 
 // ===== Work-order closure (WO-0025 / P1-2) =====
