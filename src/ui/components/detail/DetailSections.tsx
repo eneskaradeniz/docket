@@ -3,8 +3,10 @@
 // nothing to show is ABSENT — no header, no tab. Evidence always shows (three WO-level items are
 // ever-present by model); Timeline only with events; the rest on presence.
 import type { ReactNode } from 'react';
+import { parsePlanSteps } from '../../../core/plan-steps';
 import type { StepView, TrackLaneView, WoEvent, WorkOrderDetailView } from '../../../core/types';
-import { UI, formatDateTime, WO_EVENT_LABELS } from '../../data/labels';
+import { eventDetailText, UI, formatDateTime, WO_EVENT_LABELS } from '../../data/labels';
+import { AuditTable } from './AuditTable';
 import { StepList } from './StepList';
 import { EvidencePanel } from './EvidencePanel';
 import { TrackLane } from './TrackLane';
@@ -31,13 +33,14 @@ export function buildDetailSections({
   docs: { order: string; plan: string };
   onOpenReport: (step: StepView) => void;
 }): DetailSection[] {
+  // WO-0031c: a running WO's ledger lives in DETAY's Denetim section (the archive shows it by default).
   const sections: DetailSection[] = [];
   if (steps.length > 0) {
     sections.push({
       id: 'steps',
       title: UI.secSteps,
       aside: `${steps.filter((s) => s.status === 'done').length}/${steps.length}`,
-      node: <StepList steps={steps} onOpenReport={onOpenReport} />,
+      node: <StepList steps={steps} sessions={detail.sessions} onOpenReport={onOpenReport} />,
     });
   }
   sections.push({ id: 'evidence', title: UI.secEvidence, node: <EvidencePanel items={detail.evidence} /> });
@@ -64,7 +67,7 @@ export function buildDetailSections({
             <li key={i} className="flex items-baseline gap-2 text-[12px]">
               <span className="shrink-0 font-mono text-[11px] text-inkdim">{formatDateTime(e.at)}</span>
               <span className="text-ink">{WO_EVENT_LABELS[e.kind]}</span>
-              {e.detail ? <span className="truncate font-mono text-[11px] text-inkdim">{e.detail}</span> : null}
+              {e.detail ? <span className="truncate font-mono text-[11px] text-inkdim">{eventDetailText(e.kind, e.detail)}</span> : null}
             </li>
           ))}
         </ol>
@@ -85,6 +88,13 @@ export function buildDetailSections({
   }
   if (detail.sources.length > 0) {
     sections.push({ id: 'sources', title: UI.secSources, node: <SourceLinks sources={detail.sources} /> });
+  }
+  if (detail.sessions.length > 0 && detail.stage !== 'closed') {
+    sections.push({
+      id: 'audit',
+      title: UI.auditTitle,
+      node: <AuditTable sessions={detail.sessions} steps={parsePlanSteps(docs.plan)} />,
+    });
   }
   return sections;
 }

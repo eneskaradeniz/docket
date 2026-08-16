@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StepView, WoEvent, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
-import type { WorkOrderSource } from '../../core/source';
+import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
-import { parseOrderMd } from '../../core/order-md';
-import { UI } from '../data/labels';
+import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
+import { UI, woIdLabel } from '../data/labels';
 import { AppShell } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
@@ -14,6 +14,7 @@ import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { createDriveStore, DriveStoreContext } from '../components/session/drive-store';
 import { ViewModeProvider } from '../data/view-mode';
+import { ToastHost, toast } from '../chrome/ToastHost';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -106,13 +107,38 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // so the detail view reflects a plan approval (stage advanced, plan.md rendered) without re-selection.
   const reloadDetail = useCallback(() => setDetailNonce((n) => n + 1), []);
   const handleApprovePlan = useCallback(
-    async (planText: string) => {
+    async (planText: string, opts?: { editedCount?: number }) => {
       if (!selectedId) return;
-      await source.approvePlan(selectedId, planText);
+      await source.approvePlan(selectedId, planText, opts);
       reloadDetail();
     },
     [source, selectedId, reloadDetail],
   );
+  // WO-0031c: inline WO editing (title/description/reviewMode/permissionRule) + the ask-card decisions.
+  const handleUpdateWorkOrder = useCallback(
+    async (patch: UpdateWorkOrderInput) => {
+      if (!selectedId) return;
+      await source.updateWorkOrder(selectedId, patch);
+      reloadDetail();
+      refreshWorkOrders();
+    },
+    [source, selectedId, reloadDetail, refreshWorkOrders],
+  );
+  const handleRecordPermissionDecision = useCallback(
+    async (input: { allowed: boolean; tool: string; target: string }) => {
+      if (!selectedId) return;
+      await source.recordPermissionDecision(selectedId, input);
+      reloadDetail();
+    },
+    [source, selectedId, reloadDetail],
+  );
+  // The Settings DEFAULT rule (the strip badge's fallback for pre-rule work orders; the create modal's default).
+  const [defaultRule, setDefaultRule] = useState<PermissionRule>('risky_excluded');
+  useEffect(() => {
+    void settings.getPermissionRule?.().then((r) => setDefaultRule(r ?? 'risky_excluded'));
+  }, [settings]);
+  // "Oluştur ve plan iste" (WO-0031c): after creating, navigate AND auto-start the architect.
+  const [autoPlanFor, setAutoPlanFor] = useState<WorkOrderId | null>(null);
   const handleOverrideVerdict = useCallback(
     async (idx: number) => {
       if (!selectedId) return;
@@ -215,8 +241,11 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         detail={toDetailView(detail.wo, detail.steps, parseOrderMd(detail.docs.order).reviewMode)}
         docs={detail.docs}
         events={detail.events}
+        permissionRule={orderMdCarriesRule(detail.docs.order) ? parseOrderMd(detail.docs.order).permissionRule : defaultRule}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
+        onUpdateWorkOrder={handleUpdateWorkOrder}
+        onRecordPermissionDecision={handleRecordPermissionDecision}
         onCloseWorkOrder={handleCloseWorkOrder}
         onOverrideVerdict={handleOverrideVerdict}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
@@ -224,6 +253,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         onResetStep={handleResetStep}
         reloadDetail={reloadDetail}
         onDelete={handleDeleteWorkOrder}
+        autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
       />
     ) : (
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
@@ -237,33 +267,87 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. When ANY drive ends
   // (wherever the operator is), the board aggregates refresh and the open detail (if any) reloads, so
   // cost/stage/steps are honest without navigating anywhere.
+  // WO-0031c — the notification contract, all in ONE place: an event from a work order you are NOT
+  // looking at toasts (haber amber / hata red); the SAME rule keeps on-screen results as screen changes,
+  // never toasts. The window title carries the waiting counter; a background ask also raises the OS
+  // notification (click → focus + go).
   const driveStore = useMemo(() => createDriveStore(runner), [runner]);
+  const selectedIdRef = useRef<WorkOrderId | null>(null);
+  selectedIdRef.current = selectedId;
   useEffect(() => {
-    driveStore.onEnd = () => {
+    // key → branded WO id lives in the store (captured at start — no ui-side cast, ADR-0003)
+    const woOf = (key: string): WorkOrderId | undefined => driveStore.woId(key);
+    const isBackground = (key: string): boolean => {
+      const wo = woOf(key);
+      return wo !== undefined && selectedIdRef.current !== wo;
+    };
+    const goTo = (key: string): void => {
+      const wo = woOf(key);
+      if (wo !== undefined) setSelectedId(wo);
+    };
+    driveStore.onEnd = (key) => {
       refreshWorkOrders();
       setDetailNonce((n) => n + 1);
+      const wo = woOf(key);
+      if (isBackground(key) && wo !== undefined) {
+        toast.push({ kind: 'news', title: woIdLabel(wo), body: UI.toastAskBody, onActivate: () => goTo(key) });
+      }
     };
     // WO-0029 / B13+B14: the board flips to "Çalışıyor" the moment a background drive starts, and to
     // "Seni bekliyor" when an ask surfaces — the card derives both from the recorded rows; the refresh
     // was the missing half.
     driveStore.onStarted = () => refreshWorkOrders();
-    driveStore.onAsk = () => refreshWorkOrders();
+    driveStore.onAsk = (key) => {
+      refreshWorkOrders();
+      const wo = woOf(key);
+      if (isBackground(key) && wo !== undefined) {
+        const title = UI.toastAskTitle(woIdLabel(wo));
+        toast.push({ kind: 'news', title, body: UI.toastAskBody, onActivate: () => goTo(key) });
+        try {
+          if (typeof Notification !== 'undefined') {
+            const n = new Notification(title, { body: UI.toastAskBody });
+            n.onclick = () => {
+              window.focus();
+              goTo(key);
+            };
+          }
+        } catch {
+          // notification surface unavailable — the toast + title already carry the news
+        }
+      }
+    };
+    driveStore.onError = (key) => {
+      refreshWorkOrders();
+      const wo = woOf(key);
+      if (isBackground(key) && wo !== undefined) {
+        toast.push({ kind: 'error', title: UI.toastErrTitle(woIdLabel(wo)) });
+      }
+    };
   }, [driveStore, refreshWorkOrders]);
+
+  // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator.
+  useEffect(() => {
+    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking')).length;
+    document.title = waiting > 0 ? UI.titlePending(waiting) : UI.productName;
+  }, [workOrders]);
 
   return (
     <ViewModeProvider>
       <DriveStoreContext.Provider value={driveStore}>
       {chrome}
       {main}
+      <ToastHost />
       {woCreateOpen && currentWorkspace ? (
         <WoCreateModal
           workspace={currentWorkspace}
           source={source}
+          defaultRule={defaultRule}
           onClose={() => setWoCreateOpen(false)}
-          onCreated={(wo) => {
+          onCreated={(wo, withPlan) => {
             setWoCreateOpen(false);
             refreshWorkOrders();
             setSelectedId(wo.id); // navigate to the new work order's detail
+            if (withPlan) setAutoPlanFor(wo.id); // "Oluştur ve plan iste": the architect starts on arrival
           }}
         />
       ) : null}

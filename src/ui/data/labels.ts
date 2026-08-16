@@ -661,7 +661,7 @@ export const UI = {
   reviewModeLabel: 'İnceleme',
   reviewModeGatesShort: 'Kapılarda',
   reviewModeEveryShort: 'Her adımda',
-  woEditAria: 'Düzenle',
+  woEditAria: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
   woEditTitleLabel: 'Başlık',
   woEditDescLabel: 'Açıklama / hedef',
@@ -677,6 +677,7 @@ export const UI = {
   editMoveUpAria: 'Yukarı taşı',
   editMoveDownAria: 'Aşağı taşı',
   editRemoveAria: 'Adımı sil',
+  editRoleAria: (role: SessionRole) => `Rol: ${ROLE_LABELS[role]} — değiştirmek için tıkla`,
   // Denetim (oturum dökümü tablosu).
   auditTitle: 'Oturum dökümü',
   auditColSession: 'Oturum',

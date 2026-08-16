@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { LiveSessionState } from '../../../core/runner';
-import { initialSessionState, seedLiveState } from '../../../core/runner';
-import type { StepRole, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
+import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
+import type { StepRole, StepSpec, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
 import { derivePhase, deriveTurnState } from '../../../core/derive';
-import { UI } from '../../data/labels';
+import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
+import { parseOrderMd } from '../../../core/order-md';
+import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, UI } from '../../data/labels';
 import { Button, Input, cn } from '../../kit';
+import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
 import { ActionRail, type RailAction } from './ActionRail';
+import { AuditTable } from './AuditTable';
 import { DetailBody } from './DetailBody';
 import { buildDetailSections } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
@@ -30,12 +35,19 @@ import { useViewMode } from '../../data/view-mode';
 // to the strip (ONE ticker), stop/resume/plan-approval actions to the rail (the panes' dead
 // `onClick={stop}` is deleted with them), ask cards pinned above the instrument, and SADE/DETAY is the
 // global view mode.
+//
+// c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
+// "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
+// primary, permission decisions into the timeline, and the Denetim surfaces.
 export function WorkOrderDetail({
   detail,
   docs,
   events,
+  permissionRule,
   onBack,
   onApprovePlan,
+  onUpdateWorkOrder,
+  onRecordPermissionDecision,
   onGetStepReport,
   onGetStepVerdict,
   onResetStep,
@@ -43,12 +55,16 @@ export function WorkOrderDetail({
   onOverrideVerdict,
   reloadDetail,
   onDelete,
+  autoRequestPlan,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
   events: WoEvent[];
+  permissionRule: PermissionRule;
   onBack: () => void;
-  onApprovePlan: (planText: string) => Promise<void>;
+  onApprovePlan: (planText: string, opts?: { editedCount?: number }) => Promise<void>;
+  onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
+  onRecordPermissionDecision: (input: { allowed: boolean; tool: string; target: string }) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   onGetStepVerdict: (idx: number) => Promise<string>;
   onResetStep: (idx: number) => Promise<void>;
@@ -56,6 +72,7 @@ export function WorkOrderDetail({
   onOverrideVerdict: (idx: number) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
+  autoRequestPlan?: boolean;
 }) {
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
   // and when it completes the next pending step runs automatically — the operator does NOT click each step
@@ -105,6 +122,16 @@ export function WorkOrderDetail({
   const [objectionOpen, setObjectionOpen] = useState(false);
   const [objectionText, setObjectionText] = useState('');
   const [approving, setApproving] = useState(false);
+  // The Durdur wind-down (c2): interrupt sent → Durduruluyor; the drive's end closes it; 5s stuck arms
+  // Zorla kes. `stopped` feeds deriveTurnState until Sürdür resumes.
+  const [stopping, setStopping] = useState(false);
+  const [forceArmed, setForceArmed] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  // Pre-approval plan editing (c2): editSteps mirrors the parsed plan; editCount is the honest diff.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSteps, setEditSteps] = useState<StepSpec[]>([]);
+  // "Bu iş emri için hep otomatik" in flight.
+  const [liftingRule, setLiftingRule] = useState(false);
   const handleClose = async (): Promise<void> => {
     setClosing(true);
     setCloseError(false);
@@ -170,7 +197,33 @@ export function WorkOrderDetail({
   const lastAssistant = [...state.entries].reverse().find((e) => e.speaker === 'assistant');
   const showQuestion = planStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
 
-  const turn = deriveTurnState({ phase, liveStatus: state.status, hasPendingAsks: state.pendingAsks.length > 0 });
+  const turn = deriveTurnState({
+    phase,
+    liveStatus: state.status,
+    hasPendingAsks: state.pendingAsks.length > 0,
+    ...(stopping ? { stopping: true } : {}),
+    ...(stopped ? { stopped: true } : {}),
+  });
+
+  // The wind-down's bookkeeping: when the drive ends after an interrupt, freeze visibly (the close note
+  // carries the last known cost + elapsed) and hold the `stopped` turn state until Sürdür.
+  useEffect(() => {
+    if (!stopping || running) return;
+    setStopping(false);
+    setForceArmed(false);
+    setStopped(true);
+    const cost = state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0);
+    const liveStart = store.get(driveKey)?.startedAt;
+    const elapsed = liveStart ? UI.formatDuration(Math.max(0, Date.now() - liveStart)) : UI.auditCostNone;
+    store.note(driveKey, { speaker: 'note', kind: 'session_closed', detail: `${cost} · ${elapsed}` });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, stopping]);
+  // 5s stuck → arm Zorla kes.
+  useEffect(() => {
+    if (!(stopping && running)) return;
+    const t = setTimeout(() => setForceArmed(true), 5000);
+    return () => clearTimeout(t);
+  }, [stopping, running]);
 
   // ONE ticker for the whole console (Faz B had three, one per pane): the strip's live duration.
   const [now, setNow] = useState(Date.now());
@@ -192,7 +245,13 @@ export function WorkOrderDetail({
     if (!effectivePlan) return;
     setApproving(true);
     try {
-      await onApprovePlan(effectivePlan);
+      if (editOpen && editSteps.length > 0) {
+        const editedCount = planEditCount;
+        await onApprovePlan(applyStepEdits(effectivePlan, editSteps), { editedCount });
+        setEditOpen(false);
+      } else {
+        await onApprovePlan(effectivePlan);
+      }
     } finally {
       setApproving(false);
     }
@@ -203,14 +262,37 @@ export function WorkOrderDetail({
     setObjectionText('');
   };
   const requestPlan = (): void => {
+    setStopped(false);
     // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
     store.start(driveKey, { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '' }, initialSessionState);
   };
-  const allowAsk = (requestId: string): void => {
-    void store.decide(requestId, { allow: true });
+  // "Oluştur ve plan iste" (c2): fire once on arrival, then hand control back to the operator.
+  const autoPlanDone = useRef(false);
+  useEffect(() => {
+    if (!autoRequestPlan || autoPlanDone.current) return;
+    autoPlanDone.current = true;
+    requestPlan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRequestPlan]);
+
+  // Ask answers: decide resolves the held ask; the timeline records WHAT was decided and on what target.
+  const answerAsk = (a: PermissionAsk, allowed: boolean): void => {
+    void store.decide(a.requestId, allowed ? { allow: true } : { allow: false, reason: 'Denied by operator' });
+    void onRecordPermissionDecision({ allowed, tool: a.tool, target: summarizeToolInput(a.input) });
   };
-  const denyAsk = (requestId: string): void => {
-    void store.decide(requestId, { allow: false, reason: 'Denied by operator' });
+  const allowAsk = (a: PermissionAsk): void => answerAsk(a, true);
+  const denyAsk = (a: PermissionAsk): void => answerAsk(a, false);
+  // "Bu iş emri için hep otomatik": lift the WO to full_auto AND allow the current ask — one promise,
+  // both facts land (rule_changed + permission_decision on the timeline; the strip badge flips).
+  const alwaysAuto = async (a: PermissionAsk): Promise<void> => {
+    setLiftingRule(true);
+    try {
+      await onUpdateWorkOrder({ permissionRule: 'full_auto' });
+      answerAsk(a, true);
+      toast.push({ kind: 'confirm', title: UI.toastRuleSaved, body: UI.toastRuleSavedBody });
+    } finally {
+      setLiftingRule(false);
+    }
   };
   // An interrupted step ('active' at restart, not running) — the rail's Sürdür resumes it (F14 append).
   const stepResumeId =
@@ -219,46 +301,128 @@ export function WorkOrderDetail({
       : undefined;
   const resumeStep = (): void => {
     if (!activeStep || stepResumeId === undefined) return;
+    setStopped(false);
     store.start(
       driveKey,
       { role: activeStep.role, workOrderId: detail.id, mode: 'direct', scope: activeStep.scopeTrackId, stepIndex: activeStep.idx, prompt: '', resume: stepResumeId },
       state,
     );
   };
+  // Zorla kes: the 5s-stuck escape hatch — the generator's injected return runs the completion guarantee.
+  const forceKill = (): void => {
+    void store.abort();
+    store.note(driveKey, { speaker: 'note', kind: 'force_killed' });
+    setStopping(false);
+    setForceArmed(false);
+    setStopped(true);
+  };
+  // The wind-down: one click, no confirm dialog — the note lands in the terminal, the glow flips amber.
+  const stop = (): void => {
+    setStopping(true);
+    store.note(driveKey, { speaker: 'note', kind: 'interrupt_sent' });
+    void store.interrupt();
+  };
+  // Retry after a dead session: re-drive — resume when a session survived, fresh otherwise.
+  const retry = (): void => {
+    setStopped(false);
+    if (planStage || !hasSteps) {
+      requestPlan();
+      return;
+    }
+    if (runIdx === undefined) return;
+    const step = detail.steps.find((s) => s.idx === runIdx);
+    if (!step) return;
+    const resumeId = detail.sessions.find((s) => s.stepIdx === runIdx && s.providerSessionId)?.providerSessionId;
+    store.start(
+      driveKey,
+      { role: step.role, workOrderId: detail.id, mode: 'direct', scope: step.scopeTrackId, stepIndex: runIdx, prompt: '', ...(resumeId ? { resume: resumeId } : {}) },
+      resumeId ? state : initialSessionState,
+    );
+  };
+
+  // --- Pre-approval plan editing: the count is the honest diff against the proposed plan. ---
+  const proposedSteps = useMemo(() => (effectivePlan !== undefined ? parsePlanSteps(effectivePlan) : []), [effectivePlan]);
+  const planEditCount = useMemo(() => {
+    if (!editOpen) return 0;
+    let n = Math.abs(editSteps.length - proposedSteps.length);
+    const shared = Math.min(editSteps.length, proposedSteps.length);
+    for (let i = 0; i < shared; i++) {
+      if (editSteps[i]!.aim !== proposedSteps[i]!.aim || editSteps[i]!.role !== proposedSteps[i]!.role) n++;
+    }
+    return n;
+  }, [editOpen, editSteps, proposedSteps]);
+  const editEmptyAim = editOpen && editSteps.some((s) => !s.aim.trim());
+  const openEditor = (): void => {
+    setEditSteps(proposedSteps.map((s) => ({ ...s })));
+    setEditOpen(true);
+  };
 
   // --- The rail contract. Absent when closed ("arşivde ray yok"); quiet (message only) when nothing is
-  //     asked of the operator; the ONE Durdur lives here.
+  //     asked of the operator; the ONE Durdur lives here; ⏎ fires the primary (never on close — v4).
   const railTone: LampTone = turn === 'yours' ? 'signal' : turn === 'running' ? 'run' : turn === 'retry' ? 'error' : 'idle';
   let railMessage: string | undefined;
   let railActions: RailAction[] | undefined;
+  let railPrimary: (() => void) | undefined;
   if (phase.kind !== 'done') {
     if (showAsk) {
       railMessage = UI.railAskHint;
+    } else if (turn === 'retry') {
+      railActions = [{ id: 'retry', label: UI.railRetry, variant: 'primary', onActivate: retry }];
+      railPrimary = retry;
     } else if (running) {
       // While running the rail carries ONLY the stop — no filler line ("Çalışıyor" already lives in the
       // substrip; the operator's copy-trim rule bans reassurance sentences).
-      railActions = [{ id: 'stop', label: UI.interrupt, variant: 'secondary', onActivate: () => void store.interrupt() }];
+      railActions = forceArmed
+        ? [
+            { id: 'force', label: UI.railForceKill, variant: 'danger', onActivate: forceKill },
+            { id: 'stop', label: UI.railStopping, variant: 'secondary', busy: stopping, locked: true, onActivate: () => undefined },
+          ]
+        : [{ id: 'stop', label: stopping ? UI.railStopping : UI.interrupt, variant: 'secondary', busy: stopping, locked: stopping, onActivate: stop }];
+    } else if (stopped) {
+      railActions = [{ id: 'resume', label: UI.railResume, variant: 'primary', onActivate: stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry }];
+      railPrimary = stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry;
+      railMessage = UI.railStoppedMsg;
     } else if (planStage && effectivePlan) {
-      railMessage = UI.railApproveHint;
-      railActions = [
-        { id: 'object', label: UI.object, variant: 'ghost', locked: approving, onActivate: () => setObjectionOpen(true) },
-        { id: 'approve', label: UI.railApprove, variant: 'primary', busy: approving, locked: approving, onActivate: () => void approvePlan() },
-      ];
+      if (editOpen) {
+        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : UI.editNoChanges;
+        railActions = [
+          { id: 'edit-done', label: UI.editPlanDone, variant: 'secondary', onActivate: () => setEditOpen(false) },
+          ...(editEmptyAim
+            ? []
+            : [{ id: 'approve', label: UI.railApprove, variant: 'primary' as const, busy: approving, locked: approving, onActivate: () => void approvePlan() }]),
+        ];
+        if (!editEmptyAim) railPrimary = () => void approvePlan();
+      } else {
+        railMessage = UI.railApproveHint;
+        railActions = [
+          { id: 'object', label: UI.object, variant: 'ghost', locked: approving, onActivate: () => setObjectionOpen(true) },
+          { id: 'edit', label: UI.editPlan, variant: 'secondary', locked: approving, onActivate: openEditor },
+          { id: 'approve', label: UI.railApprove, variant: 'primary', busy: approving, locked: approving, onActivate: () => void approvePlan() },
+        ];
+        railPrimary = () => void approvePlan();
+      }
     } else if (planStage && !effectivePlan && !showQuestion) {
       // "Plan iste" covers BOTH plan stages — written (fresh) and architect_approval after an
       // interrupted plan drive (the stage flips on the first recorded session, Faz B's isPlanRequestStage).
       railActions = [{ id: 'request-plan', label: UI.requestPlan, variant: 'primary', onActivate: requestPlan }];
+      railPrimary = requestPlan;
     } else if (stepResumeId !== undefined) {
       railActions = [{ id: 'resume', label: UI.railResume, variant: 'primary', onActivate: resumeStep }];
+      railPrimary = resumeStep;
     } else if (allStepsDone) {
-      railMessage = UI.railCloseHint;
+      railMessage = UI.railCloseHint; // the close card owns the action; close has NO ⏎ (v4)
     }
   }
 
-  // --- Esc layering: peel one inline layer at a time; only a bare esc leaves the screen. ---
+  // --- Esc layering + ⏎: peel one inline layer at a time; only a bare esc leaves the screen; Enter
+  //     (outside inputs) fires the rail's primary when one exists. ---
   const closeTopLayer = (): boolean => {
     if (objectionOpen) {
       setObjectionOpen(false);
+      return true;
+    }
+    if (editOpen) {
+      setEditOpen(false);
       return true;
     }
     if (confirmClose) {
@@ -271,21 +435,23 @@ export function WorkOrderDetail({
     }
     return false;
   };
-  useDetailKeys({ closeTopLayer, onBack });
+  useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
 
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
+  const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
   const sections = useMemo(
     () => buildDetailSections({ detail, steps: detail.steps, events, docs, onOpenReport: setReportStep }),
     [detail, events, docs],
   );
 
-  // Ask cards are pinned above everything in every mode (v4: the amber moment outranks).
+  // Ask cards are pinned above everything in every mode (v4: the amber moment outranks). Rule lift +
+  // the diff peek ride them; risky writes wear the tag (core/risky decides).
   const askCards = showAsk ? (
     <div className="flex flex-col gap-2">
       {state.pendingAsks.length > 1 ? (
         <div className="flex items-center gap-2">
           <p className="readout text-signal">{UI.asksPending(state.pendingAsks.length)}</p>
-          <Button variant="signal" size="sm" onClick={() => { for (const a of state.pendingAsks) allowAsk(a.requestId); }}>{UI.allowAll}</Button>
+          <Button variant="signal" size="sm" onClick={() => { for (const a of state.pendingAsks) allowAsk(a); }}>{UI.allowAll}</Button>
         </div>
       ) : null}
       {state.pendingAsks.map((a) => (
@@ -295,17 +461,34 @@ export function WorkOrderDetail({
           input={a.input}
           reason={a.reason}
           planContext={planStage}
-          onAllow={() => allowAsk(a.requestId)}
-          onDeny={() => denyAsk(a.requestId)}
+          onAllow={() => allowAsk(a)}
+          onDeny={() => denyAsk(a)}
+          {...(permissionRule === 'full_auto' ? {} : { onAlwaysAuto: () => void alwaysAuto(a), alwaysAutoBusy: liftingRule })}
+          diffPeek={window.docket.diffPeek}
         />
       ))}
     </div>
   ) : null;
 
+  // The failed-session card (c2): the error is a one-button stop, not a dead end. The sub-line is the
+  // honest "spent so far" — the record survived.
+  const failCard =
+    turn === 'retry' ? (
+      <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
+        <div className="lamp lamp-error" />
+        <div className="flex-1 px-3.5 py-3">
+          <p className="readout text-error">{state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : UI.failTitle}</p>
+          <p className="mt-1 text-[12px] text-inkdim">{UI.failSpent(state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0))}</p>
+          {state.lastError && !state.lastErrorCode ? <p className="mt-1 break-words text-[11px] text-inkdim">{state.lastError}</p> : null}
+        </div>
+      </div>
+    ) : null;
+
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).
   const decision = (
     <div className="flex flex-col gap-3">
       {askCards}
+      {failCard}
 
       {confirmDelete ? (
         <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
@@ -355,7 +538,37 @@ export function WorkOrderDetail({
         </div>
       ) : null}
 
-      {planStage && effectivePlan ? <PlanApprovalCards plan={effectivePlan} /> : null}
+      {planStage && effectivePlan ? (
+        <PlanApprovalCards
+          plan={editOpen ? undefined : effectivePlan}
+          editing={editOpen}
+          steps={editSteps}
+          hint={editOpen ? UI.editHint : undefined}
+          onAimChange={(idx, aim) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, aim } : s)))}
+          onRoleCycle={(idx) =>
+            setEditSteps((ss) =>
+              ss.map((s) =>
+                s.idx === idx
+                  ? { ...s, role: s.role === 'implementer' ? 'architect' : s.role === 'architect' ? 'verifier' : 'implementer' }
+                  : s,
+              ),
+            )
+          }
+          onMove={(idx, dir) =>
+            setEditSteps((ss) => {
+              const at = ss.findIndex((s) => s.idx === idx);
+              const to = at + dir;
+              if (at < 0 || to < 0 || to >= ss.length) return ss;
+              const next = [...ss];
+              const [moved] = next.splice(at, 1);
+              next.splice(to, 0, moved!);
+              return next.map((s, i) => ({ ...s, idx: i + 1 }));
+            })
+          }
+          onRemove={(idx) => setEditSteps((ss) => (ss.length <= 1 ? ss : ss.filter((s) => s.idx !== idx).map((s, i) => ({ ...s, idx: i + 1 }))))}
+          onAdd={() => setEditSteps((ss) => [...ss, { idx: ss.length + 1, role: 'implementer', aim: '', scope: { kind: 'all' } }])}
+        />
+      ) : null}
 
       {!planStage || !effectivePlan ? (
         detail.stage === 'closed' ? (
@@ -399,6 +612,7 @@ export function WorkOrderDetail({
                   {closeError ? <p className="mb-2 text-xs text-error">{UI.closeWoFailed}</p> : null}
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
+                    {/* No ⏎ here by design (v4: kapat ⏎'süz — deliberate friction on the irreversible). */}
                     <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
                   </div>
                 </div>
@@ -453,20 +667,34 @@ export function WorkOrderDetail({
     <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} />
   ) : null;
 
+  // The archive's default body is the session ledger (v4 §4: "Tablo arşivde varsayılan").
+  const auditTable = detail.sessions.length > 0 ? <AuditTable sessions={detail.sessions} steps={parsePlanSteps(docs.plan)} /> : null;
+  const bodyDecision = phase.kind === 'done' && auditTable ? (
+    <div className="flex flex-col gap-3">
+      {decision}
+      {auditTable}
+    </div>
+  ) : (
+    decision
+  );
+
   return (
     <div className={cn('flex h-full min-h-0 flex-col', turnGlowClass(turn, phase.kind === 'done'))}>
       <DetailStrip
         detail={detail}
+        objective={objective}
         phase={phase}
         duration={durationText}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onBack={onBack}
         onDelete={() => setConfirmDelete(true)}
+        permissionRule={permissionRule}
+        onUpdateWorkOrder={onUpdateWorkOrder}
       />
       <Substrip turn={turn} />
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        <DetailBody viewMode={viewMode} decision={decision} instrument={instrument} sections={sections} />
+        <DetailBody viewMode={viewMode} decision={bodyDecision} instrument={instrument} sections={sections} />
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />
     </div>

@@ -27,17 +27,72 @@ await mk('Yeni iş emri örneği', 'E2E: freshly created, awaiting a plan reques
 const wo2 = await mk('Plan bekliyor', 'E2E: plan proposed, awaiting approval.');
 store.savePendingPlan(wo2.id, ['# E2E plan', '', '```steps', '[{"role":"implementer","aim":"a","scope":"all"}]', '```', ''].join('\n'));
 
-// 3) implementation — step done + verdict, so the detail has content
+// 3) implementation — step done + verdict, so the detail has content (+ costed/timed sessions: the
+//    per-step ⏱/$ meta and the Denetim ledger have real numbers to show)
 const wo3 = await mk('Uygulama sürüyor', 'E2E: one step done with a proceed verdict.');
 await store.approvePlan(wo3.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
 store.recordStep(wo3.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo3.id, 1, 'proceed', 'ok');
+store.recordSession({
+  providerSessionId: 'e2e-wo3-run',
+  workOrderId: wo3.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [{ speaker: 'assistant', text: 'E2E: did the work.' }],
+  cost: { tokensIn: 12_000, tokensOut: 3_400, usd: 0.96 },
+  startedAt: new Date('2026-08-16T14:22:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:28:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo3-review',
+  workOrderId: wo3.id,
+  role: 'architect',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 5_000, tokensOut: 900, usd: 0.41 },
+  startedAt: new Date('2026-08-16T14:29:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:31:00Z').toISOString(),
+});
 
-// 4) closed — the drawer
+// 4) closed — the drawer (+ the three-session ledger the archive table renders by default)
 const wo4 = await mk('Kapandı', 'E2E: a closed work order.');
 await store.approvePlan(wo4.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
 store.recordStep(wo4.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo4.id, 1, 'proceed', 'ok');
+store.recordSession({
+  providerSessionId: 'e2e-wo4-plan',
+  workOrderId: wo4.id,
+  role: 'architect',
+  status: 'idle',
+  transcript: [],
+  cost: { tokensIn: 20_000, tokensOut: 4_000, usd: 1.84 },
+  startedAt: new Date('2026-08-16T14:09:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:14:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo4-run',
+  workOrderId: wo4.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 30_000, tokensOut: 8_000, usd: 2.4 },
+  startedAt: new Date('2026-08-16T14:16:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:34:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo4-verify',
+  workOrderId: wo4.id,
+  role: 'verifier',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 24_000, tokensOut: 5_000, usd: 2.03 },
+  startedAt: new Date('2026-08-16T15:10:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T15:29:00Z').toISOString(),
+});
 await store.closeWorkOrder(wo4.id, 'e2e closed');
 
 // 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment

@@ -54,5 +54,6 @@ export function createRunnerPort(bridge: RunnerBridge): SessionRunner {
     decide: (requestId: string, decision: PermissionDecision) => bridge.decide(requestId, decision),
     pendingAsks: () => bridge.pendingAsks(),
     interrupt: () => bridge.interrupt(),
+    abort: () => bridge.abort(),
   };
 }

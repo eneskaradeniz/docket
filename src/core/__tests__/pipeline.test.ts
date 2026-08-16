@@ -56,6 +56,7 @@ function fakeRunner(script: RunnerEvent[]) {
     },
     pendingAsks: async () => [],
     async interrupt() {},
+    async abort() {},
   } as SessionRunner;
   return { runner, decideCalls, drivenInputs };
 }
@@ -71,6 +72,7 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
     async decide() {},
     pendingAsks: async () => [],
     async interrupt() {},
+    async abort() {},
   } as SessionRunner;
   return { runner, drivenInputs };
 }

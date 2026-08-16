@@ -57,6 +57,16 @@ const backToBoard = async () => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(350);
 };
+// gates cadence chains drives (step → review → verdict → next step…): stop whatever is running
+// until the chain rests, or the one-drive-at-a-time rule blocks the next spec.
+const stopAllDrives = async () => {
+  for (let i = 0; i < 4; i++) {
+    const btn = page.getByRole('button', { name: 'Durdur', exact: true });
+    if ((await btn.count()) === 0) return;
+    await btn.first().click();
+    await page.waitForTimeout(700);
+  }
+};
 
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(700); // board load effect
@@ -129,7 +139,9 @@ await spec('fake runner: Plan iste runs, rail owns the one Durdur (no filler lin
   assert.equal((stopRailText ?? '').trim(), 'Durdur', `rail carries more than the stop while running: ${stopRailText}`);
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();
   await page.waitForTimeout(700); // wind-down + onEnd detail reload
-  assert.ok((await page.getByRole('button', { name: 'Plan iste' }).count()) >= 1, 'rail did not revert after stop');
+  // v4: the stopped state offers Sürdür (the interrupted session resumes), not a fresh Plan iste
+  assert.ok((await page.getByRole('button', { name: /Sürdür/ }).count()) >= 1, 'no Sürdür after the wind-down');
+  assert.ok((await page.getByText('Durduruldu. Rapor kısmi kalır.').count()) >= 1, 'no stopped rail message');
   await backToBoard();
 });
 
@@ -183,7 +195,7 @@ await spec('SADE/DETAY is remembered across a reload (global view mode)', async 
   await backToBoard();
 });
 
-await spec('closed WO: green glow, closure card, and NO rail (arşivde ray yok)', async () => {
+await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the body (v4 §4)', async () => {
   // the closed cards live in the collapsed drawer — open it first
   await page.locator('details > summary').click();
   await page.waitForTimeout(250);
@@ -191,6 +203,114 @@ await spec('closed WO: green glow, closure card, and NO rail (arşivde ray yok)'
   assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow on a closed WO');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no closure card');
   assert.equal(await page.locator('[data-rail]').count(), 0, 'a closed WO rendered a rail');
+  // the session ledger renders by default in the archive: 3 rows + the Toplam line
+  assert.ok((await page.locator('[data-audit-table] tbody tr').count()) >= 4, 'no audit table rows on the closed WO');
+  assert.ok((await page.getByText('Toplam', { exact: true }).count()) >= 1, 'no Toplam row');
+  assert.ok((await page.getByText('$6,27', { exact: true }).count()) >= 1, 'the total cost is not the honest sum');
+  await backToBoard();
+});
+
+// ===== WO-0031c c2 specs (rules, editing, notifications) =====
+
+await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline records the decision', async () => {
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(500);
+  // a RISKY write ask (the settings default is risky_excluded → only risky asks surface)
+  await page.evaluate(() => window.docket.e2e?.emit({
+    kind: 'permission_request',
+    requestId: 'r-e2e-risky',
+    tool: 'Write',
+    input: { file_path: '.github/workflows/check.yml', content: 'name: ci\n' },
+  }));
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByText('riskli yazım').count()) >= 1, 'no risky tag on the ask card');
+  assert.ok((await page.getByRole('button', { name: 'Bu iş emri için hep otomatik' }).count()) >= 1, 'no always-auto lift');
+  assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no asking rail line');
+  await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
+  await page.waitForTimeout(400);
+  // end the turn, then check the timeline entry
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(350);
+  await page.getByRole('tab', { name: /Çizelge/ }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await page.getByText('İzin kararı').count()) >= 1, 'no permission_decision in the timeline');
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
+  await backToBoard();
+});
+
+await spec('rule lift from the ask card: badge flips, timeline logs, confirm toast', async () => {
+  await openDetail('Yeni iş emri örneği');
+  // the strip badge shows the default (risky_excluded) before the lift
+  assert.ok((await page.locator('[data-permission-rule="risky_excluded"]').count()) >= 1, 'no default rule badge');
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.docket.e2e?.emit({
+    kind: 'permission_request',
+    requestId: 'r-e2e-lift',
+    tool: 'Write',
+    input: { file_path: '.github/workflows/check.yml', content: 'x' },
+  }));
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Bu iş emri için hep otomatik' }).click();
+  await page.waitForTimeout(600);
+  assert.ok((await page.locator('[data-permission-rule="full_auto"]').count()) >= 1, 'the badge did not flip to full_auto');
+  assert.ok((await page.getByText('Kural kaydedildi').count()) >= 1, 'no confirm toast');
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(500);
+  await backToBoard();
+});
+
+await spec('plan editing: Düzenle → role cycle → aim edit → add → counter → edited approval lands', async () => {
+  await openDetail('Plan bekliyor');
+  await page.locator('[data-rail]').getByRole('button', { name: 'Düzenle' }).click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.getByText('+ Adım ekle').count()) >= 1, 'the editor did not open');
+  // cycle step 1's role chip: implementer → architect
+  await page.locator('[data-plan-cards] button[aria-label^="Rol:"]').first().click();
+  await page.waitForTimeout(150);
+  // edit step 1's aim
+  await page.locator('[data-plan-cards] input').first().fill('düzenlenmiş adım');
+  // add a second step and type into it
+  await page.getByRole('button', { name: '+ Adım ekle' }).click();
+  await page.waitForTimeout(150);
+  await page.locator('[data-plan-cards] input').nth(1).fill('eklenen adım');
+  await page.waitForTimeout(250);
+  // the count is per-STEP (aim+role on one step = one change): step-1 edited + one added = 2
+  assert.ok((await page.getByText('2 değişiklik', { exact: false }).count()) >= 1, 'no change counter in the rail');
+  await page.getByRole('button', { name: 'Onayla', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  // the plan is approved; the timeline says "düzenlenmiş onay"
+  assert.ok((await page.getByText('Plan hazır', { exact: true }).count()) === 0, 'approval did not land');
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(350);
+  await page.getByRole('tab', { name: /Çizelge/ }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await page.getByText('düzenlenmiş onay · 2 değişiklik').count()) >= 1, 'no edited-approval timeline entry');
+  // gates cadence: approval chained the drives ("Onayla — adımlar sırayla koşar") — stop the whole
+  // chain (step + the auto-review it triggers) before leaving.
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
+  await stopAllDrives();
+  await backToBoard();
+});
+
+await spec('create + plan in one step: Oluştur ve plan iste starts the architect on arrival', async () => {
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  assert.ok((await page.getByText('İzin kuralı — ajan sizden ne zaman izin istesin').count()) >= 1, 'no rule field in create modal');
+  assert.ok((await page.getByRole('button', { name: 'Kapılarda', exact: true }).count()) >= 1, 'review options not renamed');
+  await page.locator('[role="dialog"] input').first().fill('Tek adımda oluşturulan iş emri');
+  await page.getByRole('button', { name: 'Oluştur ve plan iste' }).click();
+  await page.waitForTimeout(2000);
+  const live = await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count();
+  assert.ok(live >= 1, 'the architect did not auto-start after create+plan');
+  // stop the drive and clean up: delete the throwaway WO
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(600);
   await backToBoard();
 });
 

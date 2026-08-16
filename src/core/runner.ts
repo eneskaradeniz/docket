@@ -93,6 +93,10 @@ export interface SessionRunner {
   pendingAsks(): Promise<PermissionAsk[]>;
   /** Controlled stop of the current run. */
   interrupt(): Promise<void>;
+  /** FORCED stop (WO-0031c, Zorla kes): the 5s-stuck escape hatch after an interrupt that did not land.
+   *  Hosts with a harder mechanism use it (the GUI aborts the pipeline generator — its finally still
+   *  records the terminal state); hosts without one alias interrupt. */
+  abort(): Promise<void>;
 }
 
 /** Is this the pure architect PLAN drive — the one drive that proposes a plan and runs in the provider's plan

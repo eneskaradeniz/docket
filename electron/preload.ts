@@ -28,7 +28,8 @@ const source: WorkOrderSource = {
   updateWorkOrder: (id: WorkOrderId, patch: UpdateWorkOrderInput) => ipcRenderer.invoke('docket:source:update-work-order', id, patch),
   recordPermissionDecision: (id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) =>
     ipcRenderer.invoke('docket:source:record-permission-decision', id, input),
-  approvePlan: (id: WorkOrderId, planText: string) => ipcRenderer.invoke('docket:source:approve-plan', id, planText),
+  approvePlan: (id: WorkOrderId, planText: string, opts?: { editedCount?: number }) =>
+    ipcRenderer.invoke('docket:source:approve-plan', id, planText, opts),
   getWorkOrderSteps: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-steps', id),
   getStepReport: (id: WorkOrderId, idx: number, role: StepRole) =>
     ipcRenderer.invoke('docket:source:get-step-report', id, idx, role),

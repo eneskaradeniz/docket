@@ -66,6 +66,10 @@ export function createE2eRunner(): E2eRunner {
       push?.({ kind: 'turn_complete', stopReason: 'interrupted', cost: { tokensIn: 120, tokensOut: 24, usd: 0.02 } });
       finish?.();
     },
+    async abort(): Promise<void> {
+      // Zorla kes: no synthesized turn — the stream just ends (the pipeline's finally records idle).
+      finish?.();
+    },
     emit(ev: RunnerEvent): void {
       if (ev.kind === 'permission_request') {
         // Hold it like the provider would: the card shows, decide() answers, ask_resolved streams.
