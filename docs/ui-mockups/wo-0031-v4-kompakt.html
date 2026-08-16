@@ -165,6 +165,19 @@
   .minibtn { font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; background: transparent; color: var(--inkdim); border: 1px solid var(--hairline); border-radius: 5px; padding: 3px 8px; cursor: pointer; }
   .minibtn:hover { color: var(--ink); border-color: #33445f; }
 
+  /* ===== juice — his animasyonları (hepsi <400ms, reduced-motion dostu) ===== */
+  .checkmark { stroke-dasharray: 20; stroke-dashoffset: 20; animation: draw .35s ease forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .pop { animation: pop .38s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes pop { 0% { transform: scale(.92); } 55% { transform: scale(1.045); } 100% { transform: none; } }
+  .newline { animation: newline .8s ease; }
+  @keyframes newline { 0% { background: color-mix(in srgb, var(--proceed) 18%, transparent); } 100% { background: transparent; } }
+  .sealpop { animation: seal .6s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes seal { 0% { transform: scale(1.6) rotate(-8deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  .hairline { height: 2px; background: var(--hairline); overflow: hidden; }
+  .hairline .fill { height: 100%; background: var(--signal); width: 33%; transition: width .6s ease; }
+  @media (prefers-reduced-motion: reduce) { .pop, .checkmark, .sealpop, .newline { animation: none; } .hairline .fill { transition: none; } }
+
   /* compact strip (760) */
   .w760 .strip { gap: 8px; padding: 8px 10px; }
   .w760 .strip .hide-s { display: none; }
@@ -245,6 +258,7 @@
     <a href="#audit">4 Denetim</a>
     <a href="#ozgurluk">5 Özgürlük &amp; haber</a>
     <a href="#metin">6 Kısa metin</a>
+    <a href="#juice">7 Juice</a>
   </nav>
 </div>
 
@@ -580,6 +594,16 @@
               <div class="body">
                 <p class="ttl">Bağlantı koptu</p>
                 <p class="sub">Oturum 14:12'de düştü. Harcanan: $0.84 — kayıt korundu.</p>
+                <details style="margin-top: 8px;">
+                  <summary class="readout" style="cursor: pointer; color: var(--error);">▸ ayrıntı</summary>
+                  <pre class="mono" style="font-size: 10px; line-height: 1.6; color: var(--inkdim); margin-top: 6px; white-space: pre-wrap;">Sağlayıcı hatası ECONNRESET · 14:12:07
+  at fold (core/pipeline.ts:203)
+  at drive (electron/main.ts:188)
+son transkript:
+  14:11:58 ● Read docs/PRODUCT.md
+  14:12:06 ⋯ bağlantı kuruluyor…</pre>
+                  <button class="btn btn-ghost" style="margin-top: 6px; font-size: 11px;">Kopyala</button>
+                </details>
               </div>
             </div>
           </div>
@@ -763,6 +787,59 @@
       diff önizleme, kapat ⏎'süz. Hepsi E2E'de sınanır (çift tık, yükleme, durdur, 760/980/1240).
       <strong>Not gönderirsen</strong> mockup'a işleyip yine önüne koyarım.</p>
     </div>
+  <!-- ================= 7 · JUICE ================= -->
+  <section class="ph" id="juice">
+    <div class="ph-head"><span class="ph-num">07</span><h2>Juice — oyunlaştırma hissi, meta-oyun yok</h2></div>
+    <p class="ph-desc">Puan/rozet değil, <b>his</b>: tamamlanan adım kartı yeşile pop'lar ve ✓ çizilir,
+    şeridin altındaki ince ilerleme çizgisi doluşur, terminalde yeni satır parıltıyla düşer, kapanış bir
+    <b>sonuç ekranı</b> olur (süre · maliyet · kanıt — oyun sonu istatistiği gibi). Her animasyon
+    &lt;400ms, <b>prefers-reduced-motion</b> saygılı, maliyet sayacı asla animasyonlu değil.
+    Raydaki "Adımı bitir (demo)" ve "Kapanışı gör" ile dene.</p>
+
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · juice</span><span class="w">980 × 620</span></div>
+      <div class="console h520 glow-run" id="d7">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase" id="d7-phase"><i class="dot dot-run"></i>Adım 2 · Uygulayıcı</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$2.40</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:18</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" id="d7-fill"></div></div>
+        <div class="substrip"><span class="readout" id="d7-sub">Çalışıyor</span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody">
+          <div class="cmain" id="d7-body">
+            <div class="term">
+              <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$2.40 · 00:18</span></div>
+              <pre class="term-body" id="d7-term">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm test -- --run — <span class="ok">412/412</span>
+<span class="c">14:32</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+18 −4)</span>
+<span class="c">14:33</span>  <span class="warn">⋯ rapor yazılıyor…</span></pre>
+            </div>
+            <ul class="steps">
+              <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+              <li class="step" id="d7-step2"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor</p></div></li>
+            </ul>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-run" id="d7-lamp"></div>
+          <span class="msg" id="d7-msg">Çalışıyor.</span>
+          <div class="acts">
+            <button class="btn btn-secondary" id="d7-close" style="display:none;">Kapanışı gör</button>
+            <button class="btn btn-primary" id="d7-done" style="min-width: 120px;">Adımı bitir (demo)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Juice kuralları.</b> Başarı sesi/rostası yok — geri bildirim görsel ve kısa: kart
+    pop + flaş, ✓ çizimi, ilerleme çizgisi, kapanış mührü. SADE sakin kalır; juice DETAY ve sonuç
+    anlarında yaşar. "Sana iş yok" gibi doldurma cümleler de gidiyor: çalışan durumda yalnız
+    <b>Çalışıyor</b> + canlı satır.</p>
   </section>
 
 </div>
@@ -993,6 +1070,49 @@
   });
   document.getElementById('t-ok').addEventListener('click', function () {
     toast('<i class="dot dot-done" style="margin-top:4px"></i><div><p class="t">Kural kaydedildi</p><p class="d">bu iş emrinde tam otomatik</p></div>', { ms: 2600 });
+  });
+
+  // ---- DEMO 7 · JUICE ----
+  var d7done = document.getElementById('d7-done');
+  d7done.addEventListener('click', function () {
+    d7done.classList.add('busy');
+    var term = document.getElementById('d7-term');
+    term.appendChild(document.createTextNode('\n'));
+    var span = document.createElement('span');
+    span.className = 'ok newline';
+    span.textContent = '✓ adım 2 tamamlandı — rapor yazıldı';
+    term.appendChild(span);
+    var card = document.getElementById('d7-step2');
+    card.classList.add('pop', 'flash');
+    card.querySelector('.dot').className = 'dot dot-done';
+    card.querySelector('.step-meta').textContent = 'tamam · ⏱ 00:18 · $2.40';
+    document.getElementById('d7-fill').style.width = '66%';
+    document.getElementById('d7-sub').textContent = 'Adım 2 tamam ✓';
+    document.getElementById('d7-msg').innerHTML = '<b>Adım 2 tamam.</b> Sıradaki hazır.';
+    d7done.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" style="flex:none;"><path class="checkmark" d="M2 8.5 L6.5 13 L14 3" fill="none" stroke="#20180a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> Tamam';
+    setTimeout(function () {
+      d7done.classList.remove('busy');
+      d7done.classList.add('locked');
+      document.getElementById('d7-close').style.display = '';
+    }, 600);
+  });
+  document.getElementById('d7-close').addEventListener('click', function () {
+    document.getElementById('d7-body').innerHTML =
+      '<div class="focuscard" style="max-width: 560px; width: 100%; margin: 0 auto; border-color: color-mix(in srgb, var(--proceed) 35%, transparent);">' +
+      '<div class="lamp lamp-done"></div><div class="body" style="text-align: center; padding: 30px 24px;">' +
+      '<div class="sealpop" style="display: inline-flex; align-items: center; gap: 8px;"><i class="dot dot-done" style="width: 12px; height: 12px;"></i><span class="readout" style="color: var(--proceed); font-size: 12px;">Tamamlandı</span></div>' +
+      '<p style="font-size: 17px; font-weight: 800; margin-top: 10px;">4 adım · 3 inceleme · tamam</p>' +
+      '<div class="mono" style="display: flex; gap: 30px; justify-content: center; margin-top: 16px;">' +
+      '<div><span class="readout" style="display: block;">Süre</span><span style="font-size: 14px;">01:12</span></div>' +
+      '<div><span class="readout" style="display: block;">Maliyet</span><span style="font-size: 14px;">$9.50</span></div>' +
+      '<div><span class="readout" style="display: block;">Kanıt</span><span style="font-size: 14px; color: var(--proceed);">CI ✓ · ×3 ✓</span></div>' +
+      '</div></div></div>';
+    document.getElementById('d7-fill').style.width = '100%';
+    document.getElementById('d7-phase').innerHTML = '<i class="dot dot-done"></i>Tamamlandı';
+    document.getElementById('d7-sub').textContent = 'Sonuç ekranı';
+    document.getElementById('d7-lamp').className = 'lamp lamp-done';
+    document.getElementById('d7-msg').innerHTML = '<b>Kapandı.</b> Sonuç ekranı hazır.';
+    document.getElementById('d7').classList.replace('glow-run', 'glow-done');
   });
 })();
 </script>
