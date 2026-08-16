@@ -51,13 +51,17 @@ function walk(dir, acc = []) {
 //    ADR-0006 line 74-75 permits a vendor name "inside a provider adapter and its
 //    configuration"; `src/adapters/` is that layer — the one place a provider SDK is
 //    imported by its real package name. core/ui/renderer and electron/ stay vendor-neutral.
+//    WO-0031c carve-out (architect ruling): the agent-CONFIGURATION surface literals `CLAUDE.md` and
+//    `.claude/` are stripped before the test — core/risky.ts matches those exact paths to classify
+//    writes; naming the config file is not naming the vendor's product in code.
 const c1 = [];
 const VENDOR_RE = new RegExp(`(${VENDORS.join('|')})`, 'i');
 for (const f of files) {
   const r = rel(f);
   if (r.startsWith('src/adapters/')) continue;
   read(f).forEach((ln, i) => {
-    const m = VENDOR_RE.exec(ln);
+    const stripped = ln.replace(/claude\.md/gi, '').replace(/\.claude/g, '');
+    const m = VENDOR_RE.exec(stripped);
     if (m) c1.push([f, i + 1, `agent-vendor name "${m[1].toLowerCase()}" (ADR-0006)`]);
   });
 }

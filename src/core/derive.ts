@@ -16,6 +16,7 @@ import type {
   EvidenceStatus,
   PrimaryAction,
   SessionRef,
+  SessionRole,
   StageId,
   StageRailStep,
   StageStatus,
@@ -421,6 +422,67 @@ export function deriveTurnState(input: {
   if (input.liveStatus === 'running' || input.stopping) return 'running';
   if (input.stopped) return 'stopped';
   return 'yours';
+}
+
+// ===== Session ledger / Denetim (WO-0031c) =====
+//
+// One row per session in the same language the step cards speak: the architect's plan session is
+// "Plan", an architect session on a step is that step's REVIEW ("İnceleme N"), and implementer/verifier
+// sessions are the step run ("Adım N · aim"). Names are STRUCTURED — labels render them (ADR-0007).
+// Rows sort by start time; a live session (no endedAt) contributes zero duration, never NaN; an absent
+// cost stays undefined (the ledger shows "—", not a fake $0,00 — the same honesty as TD-030).
+
+export type SessionAuditName =
+  | { kind: 'plan' }
+  | { kind: 'step'; idx: number; aim?: string }
+  | { kind: 'review'; idx: number };
+
+export interface SessionAuditRow {
+  name: SessionAuditName;
+  role: SessionRole;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs: number;
+  costUsd?: number;
+}
+
+export function deriveSessionAudit(
+  sessions: ReadonlyArray<Pick<SessionRef, 'role' | 'stepIdx' | 'startedAt' | 'endedAt' | 'cost'>>,
+  steps: ReadonlyArray<Pick<StepSpec, 'idx' | 'aim'>> = [],
+): { rows: SessionAuditRow[]; total: { startAt?: string; endAt?: string; durationMs: number; costUsd: number } } {
+  const rows = [...sessions]
+    .sort((x, y) => (x.startedAt ?? '').localeCompare(y.startedAt ?? ''))
+    .map((s): SessionAuditRow => {
+      const name: SessionAuditName =
+        s.role === 'architect'
+          ? s.stepIdx === undefined
+            ? { kind: 'plan' }
+            : { kind: 'review', idx: s.stepIdx }
+          : { kind: 'step', idx: s.stepIdx ?? 0, ...(s.stepIdx !== undefined ? { aim: steps.find((st) => st.idx === s.stepIdx)?.aim } : {}) };
+      const durationMs =
+        s.startedAt && s.endedAt
+          ? Math.max(0, new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime())
+          : 0;
+      return {
+        name,
+        role: s.role,
+        ...(s.startedAt ? { startedAt: s.startedAt } : {}),
+        ...(s.endedAt ? { endedAt: s.endedAt } : {}),
+        durationMs,
+        ...(s.cost ? { costUsd: s.cost.usd } : {}),
+      };
+    });
+  const withStart = rows.filter((r) => r.startedAt !== undefined);
+  const withEnd = rows.filter((r) => r.endedAt !== undefined);
+  return {
+    rows,
+    total: {
+      ...(withStart.length > 0 ? { startAt: withStart.map((r) => r.startedAt)!.sort()[0] } : {}),
+      ...(withEnd.length > 0 ? { endAt: withEnd.map((r) => r.endedAt)!.sort().at(-1) } : {}),
+      durationMs: rows.reduce((acc, r) => acc + r.durationMs, 0),
+      costUsd: rows.reduce((acc, r) => acc + (r.costUsd ?? 0), 0),
+    },
+  };
 }
 
 // ===== Work-order closure (WO-0025 / P1-2) =====

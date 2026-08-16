@@ -87,7 +87,8 @@ async function driveCommand(woIdArg: string | undefined, opts: Record<string, st
     resume: typeof opts.resume === 'string' ? opts.resume : undefined,
   };
   const input = await buildDriveInput(woId, driveOpts, store);
-  if (opts.policy === 'ask') input.permissions = 'ask';
+  // WO-0031c: --policy carries the per-drive permission rule (ask=ask_every, auto=risky_excluded default).
+  if (opts.policy === 'ask') input.permissionRule = 'ask_every';
   const summary = await runDrive(input, pipeline, (ev) => {
     const line = formatEvent(ev, format);
     if (line !== undefined) process.stdout.write(line + '\n');

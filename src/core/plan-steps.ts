@@ -70,3 +70,18 @@ export function parsePlanSteps(md: string): StepSpec[] {
   }
   return out;
 }
+
+/**
+ * The EDIT half of the fence contract (WO-0031c): rewrite the LAST ```steps fence body with the given
+ * steps, preserving every other line of the plan. No fence → the text is returned UNCHANGED (the caller
+ * guards: editing requires a parsed plan, i.e. a fence). Serializes one compact object per line, keys in
+ * the producer's role/aim/scope order, scope serialized back to its raw token form.
+ */
+export function applyStepEdits(planText: string, steps: StepSpec[]): string {
+  const re = /```steps\s*\n[\s\S]*?```/g;
+  let last: { start: number; end: number } | null = null;
+  for (let m: RegExpExecArray | null; (m = re.exec(planText));) last = { start: m.index, end: m.index + m[0].length };
+  if (!last) return planText;
+  const body = ['[', steps.map((s) => `  ${JSON.stringify({ role: s.role, aim: s.aim, scope: s.scope.kind === 'all' ? 'all' : s.scope.ref })}`).join(',\n'), ']'].join('\n');
+  return planText.slice(0, last.start) + '```steps\n' + body + '\n```' + planText.slice(last.end);
+}

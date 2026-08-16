@@ -14,10 +14,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../../core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
-import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, verifierPrompt } from '../../core/order-md';
+import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
 import { workOrders, workspaces } from '../fixtures';
@@ -54,8 +54,12 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
 export interface AppSettingsData {
   getProviderKey(): Promise<string | undefined>;
   setProviderKey(key: string | undefined): Promise<void>;
-  getPermissionMode(): Promise<'ask' | 'auto'>;
-  setPermissionMode(mode: 'ask' | 'auto'): Promise<void>;
+  getPermissionRule(): Promise<PermissionRule>;
+  setPermissionRule(rule: PermissionRule): Promise<void>;
+  /** Resolve the EFFECTIVE rule for a drive (WO-0031c): the work order's own order.md rule when it
+   *  carries one, else the Settings default (a pre-c2 work order has no key — its behavior follows the
+   *  operator's default, with the legacy ask/auto values mapped). */
+  getPermissionRuleFor(workOrderId: WorkOrderId): Promise<PermissionRule>;
 }
 
 // --- row shapes (node:sqlite returns untyped rows) ---
@@ -361,6 +365,21 @@ function migrate(db: DatabaseSync): void {
   const stepCols = new Set((db.prepare('PRAGMA table_info(work_order_step)').all() as { name: string }[]).map((c) => c.name));
   if (!stepCols.has('verdict')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict TEXT');
   if (!stepCols.has('verdict_path')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict_path TEXT');
+
+  // WO-0031c: wo_event's kind CHECK widens (wo_edited/rule_changed/permission_decision). A CHECK lives in
+  // the table definition, so — like the legacy track.stage rebuild above — rename → recreate (the widened
+  // SCHEMA_SQL) → id-preserving copy (append order is the audit's meaning) → drop.
+  const woEventSql =
+    (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wo_event'").get() as { sql: string } | undefined)?.sql ?? '';
+  if (woEventSql && !woEventSql.includes("'wo_edited'")) {
+    db.exec('ALTER TABLE wo_event RENAME TO wo_event_legacy');
+    db.exec(SCHEMA_SQL);
+    db.exec(
+      'INSERT INTO wo_event (id, work_order_id, kind, detail, at) ' +
+        'SELECT id, work_order_id, kind, detail, at FROM wo_event_legacy ORDER BY id',
+    );
+    db.exec('DROP TABLE wo_event_legacy');
+  }
 }
 
 // --- Workspace + repo-connection CRUD (WO-0014) ---
@@ -464,6 +483,28 @@ function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): s
 function woDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
   const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
   return wo ? resolveDecisionStorePath(db, wid(wo.workspace_id)) : undefined;
+}
+
+// The Settings DEFAULT permission rule (WO-0031c): the new `permission_rule` key, falling back to the
+// legacy `permission_mode` value ('ask'→ask_every, 'auto'→risky_excluded) so a pre-c2 operator's stored
+// choice keeps its meaning. Absent both → risky_excluded (the v4 default).
+function settingPermissionRule(db: DatabaseSync): PermissionRule {
+  const rule = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_rule') as { value: string } | undefined)?.value;
+  if (rule === 'ask_every' || rule === 'risky_excluded' || rule === 'full_auto') return rule;
+  const legacy = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_mode') as { value: string } | undefined)?.value;
+  return legacy === 'ask' ? 'ask_every' : legacy === 'auto' ? 'risky_excluded' : 'risky_excluded';
+}
+
+// The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
+// Settings default. A pre-c2 work order (no key) follows the operator's default — behavior never jumps
+// just because the app learned about rules.
+function effectivePermissionRule(db: DatabaseSync, id: WorkOrderId): PermissionRule {
+  const dir = woDir(db, id);
+  if (dir) {
+    const { order } = readWoDocs(dir, id);
+    if (order && orderMdCarriesRule(order)) return parseOrderMd(order).permissionRule;
+  }
+  return settingPermissionRule(db);
 }
 
 // Resolve a step's scope.ref to a branded TrackId by matching it against the WO's tracks (repo slug, then id).
@@ -690,6 +731,7 @@ export function createStore(dbPath: string): Store {
           trackRepos: input.trackRepos.map((r) => r as string),
           reviewMode: input.reviewMode,
           contextFiles: input.contextFiles,
+          ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
         }),
       );
       const created = createWorkOrderRow(db, { ...input, id });
@@ -698,7 +740,7 @@ export function createStore(dbPath: string): Store {
     },
     // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
     // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.
-    approvePlan: async (workOrderId: WorkOrderId, planText: string) => {
+    approvePlan: async (workOrderId: WorkOrderId, planText: string, opts?: { editedCount?: number }) => {
       const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
         | { workspace_id: string }
         | undefined;
@@ -706,7 +748,35 @@ export function createStore(dbPath: string): Store {
       const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
-      appendEvent(db, workOrderId as string, 'plan_approved');
+      appendEvent(db, workOrderId as string, 'plan_approved', opts?.editedCount !== undefined ? `edited:${opts.editedCount}` : '');
+    },
+    // Edit a work order after creation (WO-0031c): surgical order.md rewrite (applyOrderMdEdits preserves
+    // everything else — Closure notes included), the DB title follows, and the timeline records what
+    // changed (wo_edited, plus rule_changed when the permission rule moved).
+    updateWorkOrder: async (workOrderId: WorkOrderId, patch: UpdateWorkOrderInput) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) throw new Error(`updateWorkOrder: work order ${workOrderId} not found`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const { order } = readWoDocs(dir, workOrderId);
+      if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);
+      const next = applyOrderMdEdits(order, patch);
+      if (next !== order) writeOrderMdById(dir, workOrderId, next);
+      if (patch.title !== undefined) db.prepare('UPDATE work_order SET title = ? WHERE id = ?').run(patch.title, workOrderId);
+      const fields = [
+        patch.title !== undefined ? 'title' : null,
+        patch.description !== undefined ? 'description' : null,
+        patch.reviewMode !== undefined ? 'review_mode' : null,
+      ].filter((f): f is string => f !== null);
+      if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
+      if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
+    },
+    // The operator's answer on an ask card, into the timeline (WO-0031c). The pipeline knows the
+    // requestId, not the work order — the UI, which knows both, writes this as it resolves the ask.
+    recordPermissionDecision: (workOrderId: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) => {
+      appendEvent(db, workOrderId as string, 'permission_decision', `${input.allowed ? 'allowed' : 'denied'} · ${input.target}`);
+      return Promise.resolve();
     },
     // Close a finished work order (WO-0025 / P1-2). The M2 floor is OPERATOR-ATTESTED closure — the mirror of
     // the plan gate's M2 ruling (observed flag, not a sha; TD-005): the operator confirms merges are done and
@@ -783,16 +853,12 @@ export function createStore(dbPath: string): Store {
       else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('provider_key', key);
       return Promise.resolve();
     },
-    getPermissionMode: () =>
-      Promise.resolve(
-        (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_mode') as { value: string } | undefined)?.value === 'auto'
-          ? 'auto'
-          : 'ask',
-      ),
-    setPermissionMode: (mode: 'ask' | 'auto') => {
-      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_mode', mode);
+    getPermissionRule: () => Promise.resolve(settingPermissionRule(db)),
+    setPermissionRule: (rule: PermissionRule) => {
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_rule', rule);
       return Promise.resolve();
     },
+    getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
     recordStep: (workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }) =>
       recordStepRow(db, workOrderId, idx, patch),

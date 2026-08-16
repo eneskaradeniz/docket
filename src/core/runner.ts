@@ -12,6 +12,7 @@
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
 import type { CostSummary, PermissionAsk, SessionRef, SessionRole, TrackId, WorkOrderId, TranscriptLine } from './types';
+import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
@@ -73,10 +74,10 @@ export interface DriveInput {
    *  field = a review drive (distinct from the plan session): main fills the review prompt + captures the
    *  verdict at turn_complete. */
   reviewStepIndex?: number;
-  /** The ask cadence for THIS drive (WO-0029 / B18): 'auto' resolves every in-scope ask internally; 'ask'
-   *  (or omitted — the injected policy decides) surfaces them to the operator. The fence denies out-of-scope
-   *  writes in both modes; this is cadence, not scope. */
-  permissions?: 'ask' | 'auto';
+  /** The permission RULE for this drive (WO-0031c), resolved from the work order (or the Settings
+   *  default) by the composition root. Omitted → the pipeline's injected policy governs (tests,
+   *  scripted runners). The fence denies out-of-scope writes under every rule; this is cadence, not scope. */
+  permissionRule?: PermissionRule;
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the

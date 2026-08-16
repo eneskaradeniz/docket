@@ -535,11 +535,17 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     await store.closeWorkOrder(wo.id, 'n'); // now closes
     expect((await store.getWorkOrder(wo.id))!.stage).toBe('closed');
   });
-  it('permission mode round-trips (B18)', async () => {
+  it('permission rule round-trips; the legacy ask/auto values keep their meaning (WO-0031c)', async () => {
     const store = createStore(freshDb());
-    expect(await store.getPermissionMode()).toBe('ask');
-    await store.setPermissionMode('auto');
-    expect(await store.getPermissionMode()).toBe('auto');
+    expect(await store.getPermissionRule()).toBe('risky_excluded'); // no key → the v4 default
+    await store.setPermissionRule('full_auto');
+    expect(await store.getPermissionRule()).toBe('full_auto');
+    // legacy mapping: a pre-c2 operator's stored choice (ask) must not silently change behavior
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('permission_mode', 'ask')").run();
+    store.db.prepare("DELETE FROM app_setting WHERE key = 'permission_rule'").run();
+    expect(await store.getPermissionRule()).toBe('ask_every');
+    store.db.prepare("UPDATE app_setting SET value = 'auto' WHERE key = 'permission_mode'").run();
+    expect(await store.getPermissionRule()).toBe('risky_excluded');
   });
 });
 
@@ -582,5 +588,70 @@ describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
     expect(kinds).toContain('verdict_overridden');
     await store.deleteWorkOrder(wo.id);
     expect(await store.getWorkOrderEvents(wo.id)).toEqual([]);
+  });
+
+  it('WO-0031c: an old-schema wo_event (narrow CHECK) migrates — rows survive in order, new kinds insert', async () => {
+    const dbPath = freshDb();
+    const bootstrap = createStore(dbPath); // create the store's tables first, then swap wo_event for the old shape
+    bootstrap.db.exec('DROP TABLE wo_event');
+    bootstrap.db.exec(`CREATE TABLE wo_event (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      work_order_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed')),
+      detail TEXT NOT NULL DEFAULT '',
+      at TEXT NOT NULL
+    )`);
+    bootstrap.db.prepare('INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?,?,?,?)').run('WO-X', 'created', 't', '2026-01-01T00:00:00.000Z');
+    bootstrap.db.prepare('INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?,?,?,?)').run('WO-X', 'closed', '', '2026-01-02T00:00:00.000Z');
+    bootstrap.db.close?.();
+    const store = createStore(dbPath); // migrate() runs here
+    const events = store.db.prepare('SELECT kind FROM wo_event ORDER BY id').all() as { kind: string }[];
+    expect(events.map((e) => e.kind)).toEqual(['created', 'closed']); // order preserved through the copy
+    // the widened CHECK now accepts the new kinds
+    store.db.prepare('INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?,?,?,?)').run('WO-X', 'wo_edited', 'title', '2026-01-03T00:00:00.000Z');
+    expect((store.db.prepare('SELECT COUNT(*) c FROM wo_event').get() as { c: number }).c).toBe(3);
+  });
+
+  it('WO-0031c: updateWorkOrder rewrites order.md + DB title, and logs wo_edited/rule_changed', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Old', description: 'first goal', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.updateWorkOrder(wo.id, { title: 'New', description: 'second goal', reviewMode: 'every-step', permissionRule: 'full_auto' });
+    expect((await store.getWorkOrder(wo.id))!.title).toBe('New');
+    const { order } = await store.getWorkOrderDocs(wo.id);
+    expect(order).toContain('title: New');
+    expect(order).toContain('permission_rule: full_auto');
+    expect(order).toContain('review_mode: every-step');
+    expect(order).toContain('second goal');
+    const events = await store.getWorkOrderEvents(wo.id);
+    const last = events.slice(-2);
+    expect(last.map((e) => e.kind)).toEqual(['wo_edited', 'rule_changed']);
+    expect(last[0]!.detail).toBe('title · description · review_mode');
+    expect(last[1]!.detail).toBe('full_auto');
+  });
+
+  it('WO-0031c: approvePlan carries the edited count; permission decisions land in the log', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'P', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p', { editedCount: 3 });
+    await store.recordPermissionDecision(wo.id, { allowed: true, tool: 'Write', target: 'check.yml' });
+    const events = await store.getWorkOrderEvents(wo.id);
+    const approved = events.find((e) => e.kind === 'plan_approved')!;
+    expect(approved.detail).toBe('edited:3');
+    const decision = events.find((e) => e.kind === 'permission_decision')!;
+    expect(decision.detail).toBe('allowed · check.yml');
+  });
+
+  it('WO-0031c: a created WO carries its rule; a pre-rule WO follows the Settings default', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'R', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], permissionRule: 'ask_every' });
+    expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every');
+    const legacy = await store.createWorkOrder({ workspaceId: ws.id, title: 'L2', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect(await store.getPermissionRuleFor(legacy.id)).toBe('risky_excluded'); // no rule → the default
+    await store.setPermissionRule('full_auto');
+    expect(await store.getPermissionRuleFor(legacy.id)).toBe('full_auto'); // the default moved
+    expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every'); // …but the WO's own rule wins
   });
 });

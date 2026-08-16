@@ -23,6 +23,13 @@ export interface CreateWorkspaceInput {
 // every step. Written to order.md front-matter; consumed by the architect runtime (WO-0016).
 export type ReviewMode = 'gates' | 'every-step';
 
+// The per-WORK-ORDER permission rule (WO-0031c / v4 "iş-emrine-izin-kuralı"). Settings holds only the
+// DEFAULT; the rule lives on the work order — chosen at creation, changeable from the ask card, always
+// visible as the strip badge, logged to the timeline. `ask_every` = Her seferinde sor; `risky_excluded`
+// = Riskli hariç (the default — auto-approve in-scope asks except the risky set, see core/risky.ts);
+// `full_auto` = Tam otomatik. The fence (scope) is unchanged in all three — this is cadence, not scope.
+export type PermissionRule = 'ask_every' | 'risky_excluded' | 'full_auto';
+
 export interface CreateWorkOrderInput {
   workspaceId: WorkspaceId;
   title: string;
@@ -30,6 +37,16 @@ export interface CreateWorkOrderInput {
   trackRepos: RepoId[]; // workspace code repos MINUS the decision-store repo
   reviewMode: ReviewMode; // → order.md front-matter (review_mode); not stored in the DB
   contextFiles: string[]; // local file paths → order.md Context
+  permissionRule?: PermissionRule; // → order.md front-matter (permission_rule, WO-0031c); omit = the Settings default
+}
+
+/** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
+ *  switch its review cadence or permission rule at any time — every edit is logged to the timeline. */
+export interface UpdateWorkOrderInput {
+  title?: string;
+  description?: string; // → order.md Objective
+  reviewMode?: ReviewMode;
+  permissionRule?: PermissionRule;
 }
 
 export interface WorkOrderSource {
@@ -58,7 +75,22 @@ export interface WorkOrderSource {
   // (no commit — operator commits; ADR-0009 M2 addendum) and flips gate_plan_approved. The plan text is
   // the architect session's proposed plan (captured from the plan_ready event); it never enters the DB.
   // M2 ruling: the plan_approval gate is satisfied by the observed flag, not a commit sha (TD-005/TD-025).
-  approvePlan(workOrderId: WorkOrderId, planText: string): Promise<void>;
+  // WO-0031c: when the operator EDITED the steps before approving, `editedCount` rides the plan_approved
+  // event (the "düzenlenmiş onay" — the timeline says what changed, not just that it happened).
+  approvePlan(workOrderId: WorkOrderId, planText: string, opts?: { editedCount?: number }): Promise<void>;
+
+  // Edit a work order after creation (WO-0031c): title/description → order.md (+ the DB title), review
+  // mode / permission rule → order.md front-matter. Every edit appends a `wo_edited` event; a permission
+  // rule change additionally appends `rule_changed`. Throws when the WO or its order.md is missing.
+  updateWorkOrder(workOrderId: WorkOrderId, patch: UpdateWorkOrderInput): Promise<void>;
+
+  // Record the operator's answer on a permission ask card (WO-0031c): the timeline carries what was
+  // allowed/denied and on what target. The pipeline knows the requestId, not the work order — the UI,
+  // which knows both, writes this at the same moment it resolves the ask.
+  recordPermissionDecision(
+    workOrderId: WorkOrderId,
+    input: { allowed: boolean; tool: string; target: string },
+  ): Promise<void>;
 
   // The plan's steps (WO-0017): specs parsed from plan.md's ```steps fence at view time, zipped with the
   // observed run state. [] when the plan has no steps fence or isn't approved. Detail-only — the board never

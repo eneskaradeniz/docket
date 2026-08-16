@@ -5,6 +5,7 @@
 // ADR-0010's observed|owned split gains a third, tiny category here: an operator preference is neither a
 // git-observed fact nor a decision about work — it is machine-local app configuration.
 import type { ProviderErrorCode } from './runner';
+import type { PermissionRule } from './source';
 
 /** Vendor-neutral provider readiness: the happy path names the auth SOURCE (e.g. 'oauth', 'env'); the
  *  failure path carries the classification + the raw message (shown only as a fallback). */
@@ -17,10 +18,12 @@ export interface AppSettings {
   getProviderKey(): Promise<string | undefined>;
   /** Store (or clear, on undefined) the provider API key. */
   setProviderKey(key: string | undefined): Promise<void>;
-  /** The ask cadence (WO-0029 / B18): 'ask' (default) surfaces in-scope asks; 'auto' resolves them — the
-   *  fence keeps denying out-of-scope writes in BOTH modes. Scope is the boundary; asks are cadence. */
-  getPermissionMode(): Promise<'ask' | 'auto'>;
-  setPermissionMode(mode: 'ask' | 'auto'): Promise<void>;
+  /** The DEFAULT permission rule (WO-0031c): Settings holds only the default — each work order carries
+   *  its own rule (order.md front-matter; changeable from the ask card). 'ask'/'auto' legacy values map
+   *  to ask_every/risky_excluded at the store. The fence keeps denying out-of-scope writes under every
+   *  rule; scope is the boundary, the rule is cadence. */
+  getPermissionRule(): Promise<PermissionRule>;
+  setPermissionRule(rule: PermissionRule): Promise<void>;
   /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
   checkProvider(): Promise<ProviderStatus>;
 }

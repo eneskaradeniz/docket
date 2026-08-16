@@ -18,6 +18,8 @@ import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState } from 
 import type { DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner } from './runner';
 import type { SessionStore } from './session-store';
 import { parseVerdict } from './verdict';
+import { isRiskyPermission } from './risky';
+import type { PermissionRule } from './source';
 
 /**
  * Fill the first prompt + track scope server-side, from the decision store. The renderer never parses
@@ -72,6 +74,33 @@ export function askOperatorPolicy(): PermissionPolicy {
   return { onAsk: () => ({ kind: 'defer' }) };
 }
 
+/** "Riskli hariç" (WO-0031c): auto-approve every in-scope ask EXCEPT the risky set — those still surface
+ *  to the operator. The classifier is injected so tests can script it; production uses core/risky. */
+export function riskyExcludedPolicy(
+  isRisky: (tool: string, input: Record<string, unknown>) => boolean,
+): PermissionPolicy {
+  return {
+    onAsk: (req) =>
+      isRisky(req.tool, req.input) ? { kind: 'defer' } : { kind: 'resolve', decision: { allow: true } },
+  };
+}
+
+/** The per-work-order rule → policy mapping (WO-0031c). The GUI resolves the rule main-side and carries it
+ *  on the DriveInput; this is the single place a rule becomes behavior. */
+export function policyForRule(
+  rule: PermissionRule,
+  isRisky: (tool: string, input: Record<string, unknown>) => boolean = isRiskyPermission,
+): PermissionPolicy {
+  switch (rule) {
+    case 'ask_every':
+      return askOperatorPolicy();
+    case 'full_auto':
+      return autoAllowPolicy();
+    case 'risky_excluded':
+      return riskyExcludedPolicy(isRisky);
+  }
+}
+
 // ===== The pipeline =====
 
 export interface PipelineDeps {
@@ -94,11 +123,10 @@ export interface Pipeline {
 export function createPipeline(deps: PipelineDeps): Pipeline {
   const drive = async function* (input: DriveInput): AsyncGenerator<RunnerEvent> {
     const di = prepareDriveInput(input, deps.store);
-    // WO-0029 / B18: per-drive cadence — 'auto' answers every in-scope ask internally for this drive;
-    // otherwise the injected policy (the GUI's ask-operator, the CLI's chosen default) governs.
-    const policy = di.permissions === 'auto'
-      ? ({ onAsk: () => ({ kind: 'resolve' as const, decision: { allow: true as const } }) satisfies ReturnType<PermissionPolicy['onAsk']> } satisfies PermissionPolicy)
-      : deps.permission;
+    // WO-0031c: the work order's permission rule (resolved main-side) becomes the drive's policy; when the
+    // drive carries none (tests, scripted runners) the injected policy governs. The fence behaves identically
+    // under every rule — this chooses the CADENCE (auto-approve vs ask), never the scope.
+    const policy = di.permissionRule !== undefined ? policyForRule(di.permissionRule) : deps.permission;
     const stepIdx = input.stepIndex; // a step drive (WO-0017) when set
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
     let providerSessionId: string | undefined;

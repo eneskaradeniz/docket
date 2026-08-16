@@ -4,13 +4,14 @@
 // testable without I/O, and because ADR-0007's UI rule bans `.replace(` in src/ui/ as a proxy for "no raw
 // identifier rendered as display text" — the renderer never parses document text. The composition root
 // (electron/main.ts) reads order.md from disk and fills the architect session's first prompt from these.
-import type { ReviewMode } from './source';
+import type { PermissionRule, ReviewMode } from './source';
 import type { StepScope, StepSpec } from './types';
 
 export interface ParsedOrderMd {
   reviewMode: ReviewMode; // front-matter review_mode (default 'gates'); consumed by the architect runtime
   objective: string; // the ## Objective section body — the architect session's first prompt
   title: string; // front-matter title
+  permissionRule: PermissionRule; // front-matter permission_rule (default 'risky_excluded', WO-0031c)
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -33,17 +34,78 @@ function sectionBody(body: string, heading: string): string {
   return out.join('\n').trim();
 }
 
+/** Does this order.md carry an EXPLICIT permission_rule key? (WO-0031c) — distinguishes "the work order
+ *  chose its rule" from "created before rules existed, fall back to the Settings default". */
+export function orderMdCarriesRule(md: string): boolean {
+  const m = FRONT_MATTER_RE.exec(md);
+  return m !== null && frontValue(m[1]!, 'permission_rule') !== '';
+}
+
 export function parseOrderMd(md: string): ParsedOrderMd {
   const m = FRONT_MATTER_RE.exec(md);
   const front = m ? m[1] : '';
   const body = m ? m[2] : md;
   const reviewModeValue = frontValue(front, 'review_mode');
   const reviewMode: ReviewMode = reviewModeValue === 'every-step' ? 'every-step' : 'gates';
+  const ruleValue = frontValue(front, 'permission_rule');
+  const permissionRule: PermissionRule =
+    ruleValue === 'ask_every' || ruleValue === 'full_auto' ? ruleValue : 'risky_excluded';
   return {
     reviewMode,
     title: frontValue(front, 'title'),
     objective: sectionBody(body, 'Objective'),
+    permissionRule,
   };
+}
+
+/** The editable fields of a work order (WO-0031c): title/description live in order.md (title also in
+ *  the DB); reviewMode + permissionRule live in the front-matter. All optional; absent = untouched. */
+export interface OrderMdEdit {
+  title?: string;
+  description?: string; // → the ## Objective body (the architect's first prompt material)
+  reviewMode?: ReviewMode;
+  permissionRule?: PermissionRule;
+}
+
+/**
+ * Apply an edit surgically to order.md (WO-0031c): rewrite the named front-matter keys (inserting a
+ * missing one at the end of the front-matter block) and replace the ## Objective body. Everything else
+ * — Scope, Context, the operator's Closure note — is preserved byte-for-byte. No front-matter → the
+ * text is returned UNCHANGED (the guard; every Docket-authored order.md has front-matter).
+ */
+export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
+  const m = FRONT_MATTER_RE.exec(orderMd);
+  if (!m) return orderMd;
+  const front = m[1]!;
+  const body = m[2]!;
+
+  const setKey = (text: string, key: string, value: string): string => {
+    const lines = text.split(/\r?\n/);
+    const at = lines.findIndex((l) => l.startsWith(`${key}:`));
+    if (at >= 0) lines[at] = `${key}: ${value}`;
+    else lines.push(`${key}: ${value}`);
+    return lines.join('\n');
+  };
+
+  let nextFront = front;
+  if (patch.title !== undefined) nextFront = setKey(nextFront, 'title', patch.title);
+  if (patch.reviewMode !== undefined) nextFront = setKey(nextFront, 'review_mode', patch.reviewMode);
+  if (patch.permissionRule !== undefined) nextFront = setKey(nextFront, 'permission_rule', patch.permissionRule);
+
+  let nextBody = body;
+  if (patch.description !== undefined) {
+    const lines = body.split(/\r?\n/);
+    const start = lines.findIndex((l) => l.trim() === '## Objective' || l.startsWith('## Objective '));
+    if (start >= 0) {
+      let rest = start + 1;
+      while (rest < lines.length && !lines[rest]!.startsWith('## ')) rest++;
+      const out: string[] = [...lines.slice(0, start + 1), '', patch.description, '', ...lines.slice(rest)];
+      nextBody = out.join('\n');
+    }
+  }
+
+  if (nextFront === front && nextBody === body) return orderMd;
+  return `---\n${nextFront}\n---\n${nextBody}`;
 }
 
 export function architectPrompt(input: { objective: string; reviewMode: ReviewMode; orderMdPath: string }): string {
