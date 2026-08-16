@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docket — Detay v3 · Sade &amp; Detay (WO-0031c mockup turu)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0e1520; --surface: #16202e; --raised: #1d2938; --hairline: #263349;
+    --ink: #e7edf4; --inkdim: #8b95a7; --signal: #f5b544; --proceed: #4cc38a;
+    --info: #6ca0ce; --error: #e5484d;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 13px; letter-spacing: 0.01em; -webkit-font-smoothing: antialiased; }
+  a { color: var(--info); text-decoration: none; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 3px; }
+  section { scroll-margin-top: 64px; }
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); }
+  .mono { font-family: var(--mono); }
+
+  .lamp { width: 3px; align-self: stretch; flex: none; border-radius: 0 2px 2px 0; }
+  .lamp-idle { background: var(--hairline); }
+  .lamp-signal { background: var(--signal); }
+  .lamp-signal-breathe { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .lamp-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .lamp-done { background: var(--proceed); }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot-signal { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .dot-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .dot-done { background: var(--proceed); }
+  .dot-idle { background: var(--hairline); }
+
+  .btn { font-family: var(--sans); font-size: 12.5px; font-weight: 600; border-radius: 6px; border: 1px solid transparent; padding: 6px 14px; cursor: pointer; }
+  .btn-primary { background: var(--signal); color: #20180a; }
+  .btn-primary:hover { background: #ffc95e; }
+  .btn-secondary { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  .btn-secondary:hover { background: var(--raised); }
+  .btn-ghost { background: transparent; color: var(--inkdim); }
+  .btn-ghost:hover { color: var(--ink); background: var(--raised); }
+  .kbd { font-family: var(--mono); font-size: 10px; color: var(--inkdim); border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px; background: color-mix(in srgb, var(--raised) 60%, transparent); }
+
+  /* review page */
+  .topnav { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hairline); padding: 10px 24px; }
+  .topnav .brand { font-weight: 800; font-size: 13px; }
+  .topnav nav { display: flex; gap: 12px; flex-wrap: wrap; }
+  .topnav nav a { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .topnav .legend { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--inkdim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px 80px; }
+  .intro { padding: 40px 8px 30px; max-width: 860px; }
+  .intro h1 { font-size: 25px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.25; }
+  .intro h1 em { font-style: normal; color: var(--signal); }
+  .intro p { color: var(--inkdim); margin-top: 12px; line-height: 1.65; font-size: 13.5px; }
+  .intro p strong { color: var(--ink); font-weight: 600; }
+  .rules3 { display: flex; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
+  .rules3 div { flex: 1; min-width: 230px; border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; background: var(--surface); }
+  .rules3 .readout { display: block; margin-bottom: 6px; color: var(--signal); }
+  .rules3 p { color: var(--inkdim); font-size: 12.5px; line-height: 1.55; margin: 0 !important; }
+
+  /* lifecycle step header */
+  .ph { border-top: 1px solid var(--hairline); padding-top: 36px; margin-top: 52px; }
+  .ph-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .ph-num { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--signal); letter-spacing: 0.1em; }
+  .ph-head h2 { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .ph-head .who { color: var(--inkdim); font-size: 12.5px; }
+  .ph-desc { color: var(--inkdim); font-size: 12.5px; line-height: 1.6; margin: 10px 0 26px; max-width: 760px; }
+  .ph-desc b { color: var(--ink); }
+
+  .frame { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--bg); box-shadow: 0 18px 50px -20px rgba(0,0,0,0.55); margin-bottom: 8px; }
+  .frame + .frame { margin-top: 26px; }
+  .frame + .connector, .connector + .frame { margin-top: 10px; }
+  .tbar { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 70%, var(--bg)); }
+  .tbar i { width: 11px; height: 11px; border-radius: 50%; background: var(--hairline); }
+  .tbar i:nth-child(1) { background: #de5d51; } .tbar i:nth-child(2) { background: #d8a03e; } .tbar i:nth-child(3) { background: #58b464; }
+  .tbar .t { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin-left: 10px; }
+  .tbar .w { font-family: var(--mono); font-size: 10px; color: var(--inkdim); opacity: 0.6; margin-left: auto; }
+  .cap { font-size: 12px; color: var(--inkdim); margin: 8px 4px 0; line-height: 1.5; }
+  .cap b { color: var(--ink); font-weight: 600; }
+  .connector { display: flex; align-items: center; gap: 10px; justify-content: center; color: var(--inkdim); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .connector::before, .connector::after { content: ""; width: 60px; height: 1px; background: var(--hairline); }
+
+  /* shared components */
+  .backlink { display: inline-flex; align-items: center; gap: 6px; color: var(--inkdim); font-size: 12.5px; cursor: pointer; }
+  .badge { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--hairline); color: var(--inkdim); border-radius: 5px; padding: 2.5px 7px; }
+  .badge-amber { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); }
+  .badge-green { color: var(--proceed); border-color: color-mix(in srgb, var(--proceed) 45%, transparent); }
+  .badge-rule { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+
+  /* step CARDS — the plan's steps, never JSON */
+  .stepcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .stepcard { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .stepcard .top { display: flex; align-items: center; gap: 8px; }
+  .stepcard .no { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); letter-spacing: 0.08em; }
+  .rolechip { font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; }
+  .role-impl { color: #20180a; background: color-mix(in srgb, var(--info) 75%, white 10%); }
+  .role-arch { color: #20180a; background: color-mix(in srgb, var(--signal) 80%, white 10%); }
+  .role-verif { color: #08130c; background: color-mix(in srgb, var(--proceed) 75%, white 10%); }
+  .stepcard .aim { font-size: 13px; font-weight: 600; line-height: 1.4; }
+  .stepcard .scope { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); }
+  .stepcard .st { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); margin-top: auto; }
+
+  /* strip + rail — the one design's spine */
+  .console { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 640px; }
+  .console.tall { height: 720px; }
+  .console.short { height: 540px; }
+  .strip { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 80%, var(--bg)); }
+  .strip .phase { font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 9px; }
+  .strip .metrics { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+  .strip .metrics .v { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  .viewseg { display: flex; gap: 2px; border: 1px solid var(--hairline); border-radius: 6px; padding: 2px; }
+  .viewseg button { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; background: transparent; color: var(--inkdim); border: 0; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  .viewseg button.on { background: var(--raised); color: var(--ink); }
+  .substrip { display: flex; gap: 10px; align-items: center; padding: 7px 18px; border-bottom: 1px solid var(--hairline); }
+  .substrip .right { margin-left: auto; }
+  .cbody { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  @media (min-width: 1080px) { .cbody.with-rack { grid-template-columns: minmax(0, 1fr) 264px; } }
+  .cmain { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+  .rack { border-left: 1px solid var(--hairline); padding: 16px 14px; overflow: hidden; display: flex; flex-direction: column; gap: 18px; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); }
+  .rack .readout { display: block; margin-bottom: 8px; }
+  .rail { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--hairline); padding: 12px 18px; background: color-mix(in srgb, var(--raised) 55%, var(--bg)); }
+  .rail .msg { font-size: 12.5px; color: var(--inkdim); line-height: 1.5; }
+  .rail .msg b { color: var(--ink); font-weight: 700; }
+  .rail .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .rail.quiet { background: transparent; }
+  .rail.quiet .msg { opacity: 0.85; }
+
+  .term { display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; background: #0b111b; flex: 1; min-height: 0; }
+  .term-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--hairline); background: var(--surface); }
+  .term-head .costline { margin-left: auto; }
+  .term-body { font-family: var(--mono); font-size: 11.5px; line-height: 1.75; padding: 12px 14px; color: var(--inkdim); overflow: hidden; flex: 1; }
+  .term-body .c { color: #5f6b80; } .term-body .ok { color: var(--proceed); } .term-body .inf { color: var(--info); }
+  .term-body .amt { color: var(--ink); } .term-body .warn { color: var(--signal); }
+  .costline { font-family: var(--mono); font-size: 11px; color: var(--inkdim); }
+
+  /* SADE one-line session status */
+  .sa-line { display: flex; align-items: center; gap: 12px; border: 1px solid var(--hairline); border-radius: 8px; background: #0b111b; padding: 12px 14px; font-family: var(--mono); font-size: 11.5px; color: var(--inkdim); }
+  .sa-line .last { color: var(--ink); }
+  .sa-line .when { margin-left: auto; }
+
+  .steps { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .step { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface); padding: 9px 12px 9px 10px; }
+  .step .dot { margin-top: 5px; }
+  .step-idx { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin-top: 2px; width: 14px; }
+  .step-aim { font-size: 12.5px; font-weight: 600; }
+  .step-meta { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--inkdim); margin-top: 3px; }
+  .step-meta .lnk { color: var(--info); cursor: pointer; }
+
+  .evd { display: flex; flex-wrap: wrap; gap: 8px; }
+  .evd span { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 8px; color: var(--inkdim); display: inline-flex; gap: 6px; align-items: center; }
+  .evd .ok { color: var(--proceed); }
+
+  .tl { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .tl li { display: flex; gap: 10px; font-size: 12px; align-items: baseline; }
+  .tl .at { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); width: 60px; flex: none; }
+  .tl .d { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); opacity: 0.75; }
+
+  .doc { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .doc-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+  .doc-body { padding: 16px 18px; }
+  .doc-body h3 { font-size: 14.5px; font-weight: 700; margin: 14px 0 6px; }
+  .doc-body h3:first-child { margin-top: 0; }
+  .doc-body p { color: var(--inkdim); line-height: 1.65; font-size: 12.5px; }
+  .doc-body strong { color: var(--ink); }
+  .doc-scroll { overflow: hidden; flex: 1; padding: 16px 18px; }
+
+  .askcard { display: flex; overflow: hidden; border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 8px; background: var(--surface); }
+  .askcard .body { flex: 1; padding: 13px 15px; }
+  .askcard .ttl { font-size: 13.5px; font-weight: 700; }
+  .askcard .p { font-family: var(--mono); font-size: 11.5px; color: var(--inkdim); margin: 5px 0 4px; }
+  .askcard .note { font-size: 11.5px; color: var(--inkdim); margin-bottom: 10px; }
+  .askcard .acts { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+
+  /* create modal */
+  .board-dim { padding: 40px 60px; background: repeating-linear-gradient(-45deg, transparent 0 26px, rgba(139,149,167,0.03) 26px 52px); }
+  .modal { max-width: 560px; margin: 0 auto; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); box-shadow: 0 30px 80px -30px rgba(0,0,0,0.7); overflow: hidden; }
+  .modal-head { padding: 14px 18px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; gap: 10px; }
+  .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .field label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--inkdim); margin-bottom: 6px; }
+  .field .inp { border: 1px solid var(--hairline); border-radius: 6px; padding: 8px 11px; font-size: 13px; color: var(--ink); background: var(--bg); }
+  .field .inp.mono { font-family: var(--mono); font-size: 12px; color: var(--inkdim); }
+  .field .hint { font-size: 11px; color: var(--inkdim); margin-top: 5px; line-height: 1.5; }
+  .seg3 { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg3 button { flex: 1; min-width: 140px; text-align: center; border: 1px solid var(--hairline); background: var(--bg); color: var(--inkdim); border-radius: 6px; padding: 8px 10px; font-family: var(--sans); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .seg3 button small { display: block; font-weight: 400; font-size: 10.5px; color: var(--inkdim); margin-top: 2px; }
+  .seg3 button.on { border-color: var(--signal); color: var(--ink); background: color-mix(in srgb, var(--signal) 8%, var(--bg)); }
+  .modal-foot { padding: 13px 18px; border-top: 1px solid var(--hairline); display: flex; justify-content: flex-end; gap: 8px; }
+
+  table.cmp { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12.5px; }
+  table.cmp th, table.cmp td { border: 1px solid var(--hairline); padding: 9px 12px; text-align: left; vertical-align: top; line-height: 1.5; }
+  table.cmp th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); background: var(--surface); }
+  table.cmp td { color: var(--inkdim); }
+  table.cmp td:first-child { color: var(--ink); font-weight: 700; white-space: nowrap; }
+  .verdict { border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 10px; padding: 18px 20px; margin-top: 24px; background: color-mix(in srgb, var(--signal) 5%, var(--surface)); }
+  .verdict h3 { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
+  .verdict p { color: var(--inkdim); line-height: 1.65; font-size: 13px; margin-top: 8px; }
+  .verdict p strong { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) { .lamp-signal-breathe, .lamp-run, .dot-signal, .dot-run { animation: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <span class="brand">Docket · v3 — Sade &amp; Detay</span>
+  <nav>
+    <a href="#s1">1 Oluştur</a>
+    <a href="#s2">2 Plan</a>
+    <a href="#s3">3 Onay</a>
+    <a href="#s4">4 Adım+İzin</a>
+    <a href="#s5">5 Verdikt</a>
+    <a href="#s6">6 Kapat</a>
+    <a href="#s7">7 Arşiv</a>
+  </nav>
+  <div class="legend">
+    <span><i class="dot dot-signal"></i> seni bekliyor</span>
+    <span><i class="dot dot-run"></i> çalışıyor</span>
+    <span><i class="dot dot-done"></i> tamam</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="intro">
+    <h1>Tek tasarım, iki görünüm: <em>Sade</em> ve <em>Detay</em></h1>
+    <p>
+      Üç yönlü deneme yerine tek sade akış: üstte ince bir durum şeridi, ortada içerik, altta (eylem varsa)
+      aksiyon rayı. Ekranda ne kadar şey göründüğü <strong>SADE / DETAY düğmesiyle</strong> belirlenir —
+      her ekranda sağ üstte, hep aynı yerde. Planın adımları artık <strong>kart olarak</strong> görünür;
+      makine formatı (JSON, steps bloğu) ekrana asla gelmez.
+    </p>
+    <div class="rules3">
+      <div>
+        <span class="readout">SADE</span>
+        <p>Şu an önemli olan tek şey: bekleyen karar, koşan adımın son satırı, özet künye. Kalabalık yok;
+        ayrıntı istenince DETAY'a geçilir. Varsayılan görünüm bu.</p>
+      </div>
+      <div>
+        <span class="readout">DETAY</span>
+        <p>Her şey: canlı terminal, adım kartları, kanıtlar, zaman çizelgesi, belgeler, kaynaklar.
+        Sağda 264px'lik raf; dar pencerede alta iner.</p>
+      </div>
+      <div>
+        <span class="readout">İzin kuralı → iş emrine</span>
+        <p>Ayarlar yalnız <strong>varsayılanı</strong> belirler. Kural asıl iş emrinde yaşar: oluştururken
+        seçilir, izin kartından tek tıkla değiştirilir, üst şeritte her zaman görünür rozet olur.</p>
+      </div>
+    </div>
+    <p style="margin-top:16px; font-size:12px;">
+      Aşağıda sürecin adım adım: her adım önce SADE, altında DETAY. Aynı iş emri boyunca (WO-0005) ilerliyor.
+    </p>
+  </header>
+
+  <!-- ============ 1 · OLUŞTUR ============ -->
+  <section class="ph" id="s1">
+    <div class="ph-head">
+      <span class="ph-num">01</span>
+      <h2>İş emri oluştur</h2>
+      <span class="who">sen · tahta → yeni iş emri</span>
+    </div>
+    <p class="ph-desc">
+      Tek değişiklik: <b>İnceleme</b> ayarının yanına <b>İzin kuralı</b> eklendi. İkisi de iş emrine ait —
+      tıpkı inceleme modu (kapılarda / her adımda) gibi. Varsayılan Ayarlar'dan gelir; burada yalnız bu iş
+      emri için değiştirilir. Değişiklik zaman çizelgesine işlenir.
+    </p>
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — e2e · iş emirleri</span><span class="w">yeni iş emri</span></div>
+      <div class="board-dim">
+        <div class="modal">
+          <div class="modal-head">
+            <span style="font-size:14.5px; font-weight:800;">Yeni iş emri</span>
+            <span class="costline" style="margin-left:auto;">wo-0005</span>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label>Başlık</label>
+              <div class="inp">Detay ekranı v2 — sade &amp; detay</div>
+            </div>
+            <div class="field">
+              <label>Açıklama</label>
+              <div class="inp" style="color: var(--inkdim);">Detay ekranını iki görünümlü yap: SADE yalnız önemliyi gösterir…</div>
+            </div>
+            <div class="field">
+              <label>Depo</label>
+              <div class="inp mono">~/source/docket · main</div>
+            </div>
+            <div class="field">
+              <label>İnceleme — mimar hangi sıklıkla baksın</label>
+              <div class="seg3">
+                <button class="on">Kapılarda<small>plan + verdiktlerde durur</small></button>
+                <button>Her adımda<small>her adım sonunda inceleme</small></button>
+              </div>
+            </div>
+            <div class="field">
+              <label>İzin kuralı — ajan sizden ne zaman izin istesin</label>
+              <div class="seg3">
+                <button>Her seferinde sor<small>her dosya/komut için</small></button>
+                <button class="on">Otomatik<small>riskli olanlar hariç</small></button>
+                <button>Tam otomatik<small>hiç sormaz</small></button>
+              </div>
+              <p class="hint">Varsayılan: Ayarlar'daki kural. Bu seçim yalnız bu iş emri için geçerli;
+              ileride izin kartından değiştirilebilir.</p>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn btn-ghost">Vazgeç</button>
+            <button class="btn btn-primary">Oluştur ve plan iste <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Oluştur.</b> "Oluştur ve plan iste" tek adımda mimarı başlatır — iki ayrı tık yok.
+    İzin kuralı artık iş emrinin bir özelliği; üst şeritte rozet olarak her zaman görünür olacak.</p>
+  </section>
+
+  <!-- ============ 2 · PLAN YAZILIYOR ============ -->
+  <section class="ph" id="s2">
+    <div class="ph-head">
+      <span class="ph-num">02</span>
+      <h2>Plan yazılıyor</h2>
+      <span class="who">mimar çalışıyor · sana iş yok</span>
+    </div>
+    <p class="ph-desc">
+      Mimara alan bırakılır. SADE'de ekranda <b>tek bir sakin kart</b> var: kim çalışıyor, son hareket ne,
+      şu ana kadar maliyet. DETAY'da mimarın terminali ve iş emrinin belgeleri açılır.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · SADE</span></div>
+      <div class="console">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-run"></i>Plan yazılıyor</span>
+          <span class="readout">Mimar</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$0.84</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:03:41</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout">Uygulama hazır — plan bekleniyor</span>
+          <span class="readout right">esc geri</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content: center;">
+            <div style="display:flex; overflow:hidden; border:1px solid var(--hairline); border-radius:9px; background: var(--surface); max-width: 620px; width: 100%; margin: 0 auto;">
+              <div class="lamp lamp-run"></div>
+              <div style="flex:1; padding: 18px 20px;">
+                <p style="font-size: 15px; font-weight: 800;">Mimar planı yazıyor</p>
+                <p style="color: var(--inkdim); font-size: 12.5px; margin-top: 6px; line-height: 1.6;">
+                  Depoyu ve iş emri belgesini inceliyor. Plan hazır olduğunda onayın istenecek —
+                  o zamana kadar bir şey yapmana gerek yok.
+                </p>
+                <div class="sa-line" style="margin-top: 14px; border-color: transparent; background: var(--bg); padding: 9px 12px;">
+                  <span class="inf">●</span>
+                  <span class="last">Read</span>
+                  <span>docs/PRODUCT.md</span>
+                  <span class="when">az önce · $0.84 · 00:03:41</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg"><b>Plan hazırlanıyor.</b> Seni bir şeye çağırmadı — tahtaya dönebilirsin, hazır olunca bildiririm.</span>
+          <div class="acts"><button class="btn btn-ghost">Tahtaya dön</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE.</b> Bir kart, bir satır canlı hareket, bir cümle. "Tahtaya dön" — operatörü
+    bekletmek yerine serbest bırakır; iş emri hazır olunca tahtada amber ışıkla haber verir.</p>
+
+    <div class="connector">aynı an · detay</div>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · DETAY</span></div>
+      <div class="console">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-run"></i>Plan yazılıyor</span>
+          <span class="readout">Mimar</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$0.84</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:03:41</div></div>
+            <div class="viewseg"><button>Sade</button><button class="on">Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout">Mimar oturumu</span>
+          <span class="readout right">⏯ izle · esc geri</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head">
+                <span class="readout">Mimar · canlı</span>
+                <span class="costline">$0.84 · 00:03:41</span>
+              </div>
+              <pre class="term-body">
+<span class="c">14:12:08</span>  <span class="inf">● Read</span>  <span class="amt">docs/PRODUCT.md</span> <span class="c">(1-140)</span>
+<span class="c">14:12:35</span>  <span class="inf">● Read</span>  <span class="amt">docs/work-orders/WO-0031c-*/order.md</span>
+<span class="c">14:13:02</span>  <span class="inf">● Grep</span>  <span class="amt">"DetailScreen" src/ui</span> <span class="c">— 6 eşleşme</span>
+<span class="c">14:13:40</span>  <span class="inf">● Read</span>  <span class="amt">src/ui/screens/DetailScreen.tsx</span>
+<span class="c">14:14:15</span>  <span class="warn">⋯ plan taslağı yazılıyor…</span></pre>
+            </div>
+          </div>
+          <aside class="rack">
+            <div>
+              <span class="readout">Zaman çizelgesi</span>
+              <ul class="tl">
+                <li><span class="at">14:08</span><span>İş emri açıldı</span></li>
+                <li><span class="at">14:09</span><span>Plan istendi</span></li>
+                <li><span class="at">14:12</span><span>Mimar çalışıyor</span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout">Belgeler</span>
+              <div class="evd"><span>iş emri.md ↗</span></div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg"><b>Plan hazırlanıyor.</b> Seni bir şeye çağırmadı.</span>
+          <div class="acts"><button class="btn btn-ghost">Tahtaya dön</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>DETAY.</b> Mimarın terminali canlı + sağda raf (çizelge, belgeler). SADE'deki
+    "az önce Read…" satırı bu terminalin son satırıdır — iki görünüm aynı gerçeğin iki yoğunluğu.</p>
+  </section>
+
+  <!-- ============ 3 · PLAN ONAYI ============ -->
+  <section class="ph" id="s3">
+    <div class="ph-head">
+      <span class="ph-num">03</span>
+      <h2>Plan hazır — onay</h2>
+      <span class="who">sıra sende · karar anı</span>
+    </div>
+    <p class="ph-desc">
+      Karar anı: SADE'de ekranda <b>yalnızca adım kartları ve iki buton</b>. Adımlar kart olarak —
+      kim, neyi, nerede. JSON yok, steps bloğu yok; o iş emrinin makine formatı, ekranda insan biçimi var.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · SADE</span></div>
+      <div class="console">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-signal"></i>Plan onayını bekliyor</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$1.84</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:06:12</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — plan onayı</span>
+          <span class="readout right">⏎ onayla · esc itiraz</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain">
+            <div style="max-width: 760px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 14px;">
+              <div style="display:flex; gap:12px; align-items:baseline;">
+                <p style="font-size: 15.5px; font-weight: 800;">Mimar 3 adımlı bir plan önerdi</p>
+                <span class="readout">özet: iki görünüm, tek akış</span>
+              </div>
+              <div class="stepcards">
+                <div class="stepcard">
+                  <div class="top"><span class="no">ADIM 1</span><span class="rolechip role-arch">Mimar</span></div>
+                  <p class="aim">Yerleşimi duruma bağla</p>
+                  <p class="scope">yerleşim kararı · çekirdek</p>
+                  <div class="st"><i class="dot dot-idle"></i>sırada</div>
+                </div>
+                <div class="stepcard">
+                  <div class="top"><span class="no">ADIM 2</span><span class="rolechip role-impl">Uygulayıcı</span></div>
+                  <p class="aim">Sade görünümü kur</p>
+                  <p class="scope">arayüz · kartlar</p>
+                  <div class="st"><i class="dot dot-idle"></i>sırada</div>
+                </div>
+                <div class="stepcard">
+                  <div class="top"><span class="no">ADIM 3</span><span class="rolechip role-impl">Uygulayıcı</span></div>
+                  <p class="aim">Detay rafını kur</p>
+                  <p class="scope">arayüz · raf</p>
+                  <div class="st"><i class="dot dot-idle"></i>sırada</div>
+                </div>
+                <div class="stepcard">
+                  <div class="top"><span class="no">ADIM 4</span><span class="rolechip role-verif">Doğrulayıcı</span></div>
+                  <p class="aim">İki görünümü sına</p>
+                  <p class="scope">tümü · erişilebilirlik</p>
+                  <div class="st"><i class="dot dot-idle"></i>sırada</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-signal-breathe"></div>
+          <span class="msg"><b>Onaylarsan adımlar sırayla koşar</b> — her biri bitince durup rapor verir.</span>
+          <div class="acts">
+            <button class="btn btn-ghost">İtiraz et <span class="kbd">esc</span></button>
+            <button class="btn btn-primary">Onayla <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE.</b> Karar ekrandan taşınmaz: kartlar + iki buton. Rol renkleri (Mimar amber,
+    Uygulayıcı mavi, Doğrulayıcı yeşil) adım kartlarının dilidir — lamba grameriyle aynı aile.</p>
+
+    <div class="connector">aynı an · detay</div>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · DETAY</span></div>
+      <div class="console">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-signal"></i>Plan onayını bekliyor</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$1.84</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:06:12</div></div>
+            <div class="viewseg"><button>Sade</button><button class="on">Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — plan onayı</span>
+          <span class="readout right">⏎ onayla · esc itiraz</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="doc" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+              <div class="doc-head">
+                <span class="readout">Plan · Mimar</span>
+                <span class="costline">plan.md · 2.1 KB</span>
+                <span style="margin-left:auto;" class="readout" style="color: var(--signal);">adım listesi kilitli</span>
+              </div>
+              <div class="doc-scroll">
+                <h3>Amaç</h3>
+                <p>Detay ekranını iki görünümlü yap: <strong>Sade</strong> yalnız önemli olanı, <strong>Detay</strong>
+                her şeyi gösterir. Yerleşim iş emrinin durumundan türesin.</p>
+                <h3>Adımlar</h3>
+                <div class="stepcards" style="margin-top:8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 1</span><span class="rolechip role-arch">Mimar</span></div><p class="aim">Yerleşimi duruma bağla</p><p class="scope">yerleşim kararı · çekirdek</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 2</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Sade görünümü kur</p><p class="scope">arayüz · kartlar</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 3</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Detay rafını kur</p><p class="scope">arayüz · raf</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 4</span><span class="rolechip role-verif">Doğrulayıcı</span></div><p class="aim">İki görünümü sına</p><p class="scope">tümü · erişilebilirlik</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+                </div>
+                <h3>Nasıl</h3>
+                <p>Önce yerleşim kipi çekirdekte türetilir (adım 1); sonra iki görünüm tek tek kurulur (adım 2-3);
+                doğrulayıcı her iki görünümü senaryolarla sınar (adım 4). Her adım rapor + CI kanıtı verir.</p>
+                <h3>Kanıt</h3>
+                <p>Her adım: rapor + <strong>CI yeşil</strong>. Kapanış: ROADMAP ve tech-debt güncellemesi,
+                kanıt sha ile.</p>
+              </div>
+            </div>
+          </div>
+          <aside class="rack">
+            <div>
+              <span class="readout">Zaman çizelgesi</span>
+              <ul class="tl">
+                <li><span class="at">14:08</span><span>İş emri açıldı</span></li>
+                <li><span class="at">14:12</span><span>Mimar çalıştı</span></li>
+                <li><span class="at">14:14</span><span>Plan hazır <span class="d">4 adım</span></span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout">Belgeler</span>
+              <div class="evd"><span>iş emri.md ↗</span><span>plan.md ↗</span></div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-signal-breathe"></div>
+          <span class="msg"><b>Onaylarsan adımlar sırayla koşar.</b></span>
+          <div class="acts">
+            <button class="btn btn-ghost">İtiraz et <span class="kbd">esc</span></button>
+            <button class="btn btn-primary">Onayla <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>DETAY.</b> Planın tamamı — ama yine insan biçiminde: başlıklar, cümleler, adım kartları.
+    Ham markdown ya da JSON hiçbir görünümde karşına çıkmaz.</p>
+  </section>
+
+  <!-- ============ 4 · ADIM KOŞUYOR + İZİN ============ -->
+  <section class="ph" id="s4">
+    <div class="ph-head">
+      <span class="ph-num">04</span>
+      <h2>Adım koşuyor — izin anı</h2>
+      <span class="who">uygulayıcı çalışıyor · ara ara senden izin</span>
+    </div>
+    <p class="ph-desc">
+      İzin kuralı "otomatik" seçilmişti ama <b>riskli</b> bulduğu bir yazım için ajan yine durdu.
+      Kart tek başına SADE'nin baş köşesinde — ve tek tıkla <b>kural bu iş emri için</b> değişir.
+      Ayarlara gitmek yok.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 680 · SADE</span></div>
+      <div class="console short" style="height: 600px;">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-signal"></i>Adım 2 · Uygulayıcı</span>
+          <span class="readout">2/4 · durdu — izin bekliyor</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14:20</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — izin</span>
+          <span class="readout right">⏎ izin ver</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content: center;">
+            <div class="askcard" style="max-width: 640px; width: 100%; margin: 0 auto;">
+              <div class="lamp lamp-signal-breathe"></div>
+              <div class="body">
+                <p class="readout" style="color: var(--signal); margin-bottom: 6px;">Riskli yazım — kural otomatik olsa da soruldu</p>
+                <p class="ttl">İş akışı dosyası değiştirilecek</p>
+                <p class="p">.github/workflows/check.yml · 4.2 KB · yeniden yaz</p>
+                <p class="note">Ajan bunu "riskli" sınıfına koydu: CI iş akışı. Nedenini Detay'da okuyabilirsin.</p>
+                <div class="acts">
+                  <button class="btn btn-ghost">Bu iş emrinde hep otomatik</button>
+                  <button class="btn btn-secondary">Reddet</button>
+                  <button class="btn btn-primary">İzin ver <span class="kbd">⏎</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg"><b>Oturum durdu.</b> Yanıt verilene kadar maliyet işlemez.</span>
+          <div class="acts"><button class="btn btn-ghost">Neden riskli? (Detay)</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE · izin.</b> Tek kart, üç seçenek. "Bu iş emrinde hep otomatik" kuralı WO'ya yazar
+    (Ayarlar'a değil), şeritteki rozet anında "İzin: tam otomatik" olur, zaman çizelgesine "kural değişti"
+    olayı düşer.</p>
+
+    <div class="connector">aynı an · detay</div>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · DETAY</span></div>
+      <div class="console">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-signal"></i>Adım 2 · Uygulayıcı</span>
+          <span class="readout">2/4 · durdu — izin bekliyor</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14:20</div></div>
+            <div class="viewseg"><button>Sade</button><button class="on">Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — izin</span>
+          <span class="readout right">⏎ izin ver</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head">
+                <span class="readout">Uygulayıcı · durakladı</span>
+                <span class="costline">$3.60 · 00:14:20</span>
+              </div>
+              <pre class="term-body">
+<span class="c">14:31:02</span>  <span class="inf">● Bash</span>  npm run typecheck
+<span class="c">         ✓</span> <span class="ok">her iki tsconfig — 0 hata</span>
+<span class="c">14:31:40</span>  <span class="inf">● Edit</span>  <span class="amt">src/ui/screens/DetailScreen.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32:15</span>  <span class="inf">● Read</span>  <span class="amt">.github/workflows/check.yml</span>
+<span class="c">14:32:16</span>  <span class="warn">⏸ riskli yazım — izin bekleniyor</span>
+<span class="c">         ▸</span> neden: CI iş akışı — çalışma ortaklarını etkiler</pre>
+            </div>
+            <div class="askcard">
+              <div class="lamp lamp-signal-breathe"></div>
+              <div class="body">
+                <p class="ttl">İş akışı dosyası değiştirilecek</p>
+                <p class="p">.github/workflows/check.yml · 4.2 KB · yeniden yaz</p>
+                <div class="acts">
+                  <button class="btn btn-ghost">Bu iş emrinde hep otomatik</button>
+                  <button class="btn btn-secondary">Reddet</button>
+                  <button class="btn btn-primary">İzin ver <span class="kbd">⏎</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="rack">
+            <div>
+              <span class="readout">Adımlar · 1/4</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · <span class="lnk">rapor ↗</span></p></div></li>
+                <li class="step" style="border-color: color-mix(in srgb, var(--signal) 35%, transparent);"><span class="dot dot-signal"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · izin bekliyor</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout">Kanıtlar</span>
+              <div class="evd"><span><i class="dot dot-done"></i>CI yeşil</span></div>
+            </div>
+            <div>
+              <span class="readout">Zaman çizelgesi</span>
+              <ul class="tl">
+                <li><span class="at">14:20</span><span>Adım 1 tamam</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:32</span><span>İzin istendi</span></li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg"><b>Oturum durdu.</b> Yanıt verilene kadar maliyet işlemez.</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>DETAY · izin.</b> Terminalde neden durduğunu kendi cümleleriyle görürsün ("neden: CI iş
+    akışı…"), kart yine elinin altında. Raf: adımlar, kanıt, çizelge — hepsi güncel.</p>
+  </section>
+
+  <!-- ============ 5 · VERDİKT ============ -->
+  <section class="ph" id="s5">
+    <div class="ph-head">
+      <span class="ph-num">05</span>
+      <h2>Adım bitti — inceleme sonucu</h2>
+      <span class="who">mimar baktı · karar: devam</span>
+    </div>
+    <p class="ph-desc">
+      "Kapılarda" inceleme modunda mimar adım bitince otomatik bakar. Sonuç SADE'de tek kart: ne bitti,
+      ne dedi, <b>sırada ne var</b>. İtiraz çıksaydı aynı kart kırmızıya döner, "düzelt ve yine koş" derdi.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 680 · SADE</span></div>
+      <div class="console" style="height: 580px;">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-idle" style="background: var(--signal);"></i>Adım 2 tamam · sıradaki hazır</span>
+          <span class="readout">2/4</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$5.90</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:22:40</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — başlat</span>
+          <span class="readout right">⏎ başlat</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content: center;">
+            <div style="max-width: 640px; width: 100%; margin: 0 auto; display:flex; overflow:hidden; border:1px solid var(--hairline); border-radius:9px; background: var(--surface);">
+              <div class="lamp lamp-done"></div>
+              <div style="flex:1; padding: 16px 18px;">
+                <p style="font-size: 14.5px; font-weight: 800;">Adım 2 tamam — inceleme: <span style="color: var(--proceed);">devam</span></p>
+                <p style="color: var(--inkdim); font-size: 12.5px; margin-top: 6px; line-height: 1.6;">
+                  Mimar raporu okudu: <i>"İki görünüm de akışta; ölçüler tutarlı. Devam."</i>
+                  Kanıt: CI yeşil · 62 satır eklendi.
+                </p>
+                <div class="stepcards" style="margin-top: 12px; grid-template-columns: 1fr 1fr;">
+                  <div class="stepcard" style="padding: 9px 12px;"><div class="st" style="margin:0;"><i class="dot dot-done"></i>adım 3 · detay rafı — hazır</div></div>
+                  <div class="stepcard" style="padding: 9px 12px;"><div class="st" style="margin:0;"><i class="dot dot-idle"></i>adım 4 · sınama — sırada</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-idle"></div>
+          <span class="msg"><b>Sıradaki adım hazır.</b> İstersen raporu oku, istersen direkt başlat.</span>
+          <div class="acts">
+            <button class="btn btn-secondary">Raporu oku</button>
+            <button class="btn btn-primary">Adım 3'ü başlat <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE · verdikt.</b> Sonuç bir cümle, sıradaki bir bakışta. Rapor okumak isteyen
+    DETAY'a geçer — orada raporun kendisi açılır.</p>
+
+    <div class="connector">aynı an · detay — rapor</div>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 760 · DETAY · rapor</span></div>
+      <div class="console" style="height: 660px;">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-idle" style="background: var(--signal);"></i>Adım 2 tamam · sıradaki hazır</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div class="viewseg"><button>Sade</button><button class="on">Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout">Adım 2 raporu · uygulayıcı</span>
+          <span class="readout right">⏎ adımı başlat</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="doc" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+              <div class="doc-head">
+                <span class="readout">Rapor · adım 2 — sade görünümü kur</span>
+                <span class="costline">2.4 KB · 14:47</span>
+              </div>
+              <div class="doc-scroll">
+                <h3>Ne yapıldı</h3>
+                <p>Sade görünümü kuruldu: durum şeridi, tek kart, aksiyon rayı. Kartlar plan adımlarını
+                rol renkleriyle gösteriyor; JSON hiçbir yerde görünmüyor.</p>
+                <h3>Ölçüler</h3>
+                <p>Tip denetimi <strong>0 hata</strong> · testler <strong>412/412</strong> · yeni E2E: sade/detay
+                geçişi 4 ekranda doğrulandı.</p>
+                <h3>Değişenler</h3>
+                <div class="evd" style="margin-top:6px;">
+                  <span><i class="dot dot-done"></i>DetailScreen.tsx</span>
+                  <span><i class="dot dot-done"></i>WorkOrderDetail.tsx</span>
+                  <span><i class="dot dot-done"></i>labels.ts</span>
+                  <span>+3 dosya</span>
+                </div>
+                <h3>İnceleme · mimar</h3>
+                <p><strong>Devam.</strong> "İki görünüm de akışta; ölçüler tutarlı. Devam." — 14:52</p>
+              </div>
+            </div>
+          </div>
+          <aside class="rack">
+            <div>
+              <span class="readout">Adımlar · 2/4</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · <span class="lnk">rapor ↗</span></p></div></li>
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">tamam · <span class="lnk">rapor</span> · <span class="lnk">inceleme</span></p></div></li>
+                <li class="step" style="border-style: dashed;"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">hazır</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-idle"></div>
+          <span class="msg"><b>Adım 3 hazır.</b></span>
+          <div class="acts"><button class="btn btn-primary">Adım 3'ü başlat <span class="kbd">⏎</span></button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>DETAY · rapor.</b> Rapor yine insan biçiminde: ne yapıldı, ölçüler, değişen dosyalar,
+    mimarın cümlesi. Rafın adım listesi "şu anki durum" unvanını taşır.</p>
+  </section>
+
+  <!-- ============ 6 · KAPAT ============ -->
+  <section class="ph" id="s6">
+    <div class="ph-head">
+      <span class="ph-num">06</span>
+      <h2>Her şey tamam — kapat</h2>
+      <span class="who">4/4 · kanıtlar tamam · son karar sende</span>
+    </div>
+    <p class="ph-desc">
+      Kapanış bir onay-dialog'u değil, <b>künyeli bir kapanış kartı</b>: ne harcandı, ne kanıtlandı, ne
+      değişti. Detay'da özet ve kanıt listesi; kapanış notu yazmak isteğe bağlı.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 720 · SADE</span></div>
+      <div class="console" style="height: 620px;">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-signal"></i>Kapanmaya hazır</span>
+          <span class="readout">4/4 · kanıtlar tamam</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$9.50</div></div>
+            <div><span class="readout">Süre</span><div class="v">01:12:03</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--signal);">● Sıra sende — kapat</span>
+          <span class="readout right">⏎ kapat</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content: center;">
+            <div style="max-width: 680px; width: 100%; margin: 0 auto; display:flex; overflow:hidden; border:1px solid var(--hairline); border-radius:9px; background: var(--surface);">
+              <div class="lamp lamp-signal-breathe"></div>
+              <div style="flex:1; padding: 18px 20px;">
+                <p style="font-size: 15px; font-weight: 800;">Dört adım da tamam — kapanmaya hazır</p>
+                <div style="display:flex; gap: 26px; flex-wrap: wrap; margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);">
+                  <div><span class="readout" style="display:block; margin-bottom:3px;">Maliyet</span><span class="mono" style="font-size:13px;">$9.50</span></div>
+                  <div><span class="readout" style="display:block; margin-bottom:3px;">Süre</span><span class="mono" style="font-size:13px;">01:12:03</span></div>
+                  <div><span class="readout" style="display:block; margin-bottom:3px;">Oturum</span><span class="mono" style="font-size:13px;">7</span></div>
+                  <div><span class="readout" style="display:block; margin-bottom:3px;">Kanıt</span><span class="mono" style="font-size:13px; color: var(--proceed);">CI ✓ · inceleme ×3 ✓</span></div>
+                </div>
+                <p style="color: var(--inkdim); font-size: 12.5px; line-height: 1.6;">
+                  Kapanışla iş emri arşive gider: salt okunur sayfa, belgeler ve kanıtlarla.
+                  İstersen bir kapanış notu bırak.
+                </p>
+                <div style="margin-top: 12px; display:flex; gap:8px; justify-content:flex-end;">
+                  <button class="btn btn-ghost">Kapanış notu ekle</button>
+                  <button class="btn btn-primary">Kapat ve arşivle <span class="kbd">⏎</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg"><b>Son adım.</b> Kapatınca merge sha künyeye işlenir.</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE · kapat.</b> Künye + tek buton. Onay dialogu yok — eylem zaten kartın içinde,
+    geri alınamazlığı künye söyler.</p>
+  </section>
+
+  <!-- ============ 7 · ARŞİV ============ -->
+  <section class="ph" id="s7">
+    <div class="ph-head">
+      <span class="ph-num">07</span>
+      <h2>Kapandı — arşiv</h2>
+      <span class="who">salt okunur · istediğinde dönüp oku</span>
+    </div>
+    <p class="ph-desc">
+      Kapanmış iş emri bir <b>sayfa</b>: künye, tek paragraf özet, belgeler. SADE bu kadar — rahat okunur.
+      DETAY adım kartlarının, kanıtların ve tüm çizelgenin tamamını açar. Aksiyon rayı yok: eylem yok,
+      satır bile yok — arşiv sessizdir.
+    </p>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 760 · SADE</span></div>
+      <div class="console" style="height: 660px; grid-template-rows: auto auto minmax(0,1fr);">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-done"></i>Kapandı</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$9.50</div></div>
+            <div><span class="readout">Süre</span><div class="v">01:12:03</div></div>
+            <div><span class="readout">Kapanış</span><div class="v">a9683b9</div></div>
+            <div class="viewseg"><button class="on">Sade</button><button>Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--proceed);">● Kanıtlı kapanış · salt okunur</span>
+        </div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content: center;">
+            <div style="max-width: 760px; width: 100%; margin: 0 auto;">
+              <p style="font-size: 21px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.3;">
+                Detay ekranı v2 — sade &amp; detay teslim edildi</p>
+              <p style="color: var(--inkdim); font-size: 13px; line-height: 1.7; margin-top: 12px;">
+                Dört adım tamam; üç mimar incelemesinin üçü de <span style="color: var(--proceed); font-weight: 600;">devam</span> dedi.
+                CI yeşil, 412 test. İki görünüm E2E ile doğrulandı. ROADMAP güncellendi.
+              </p>
+              <div style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 18px;" class="evd">
+                <span>iş emri.md ↗</span><span>plan.md ↗</span><span>kapanış.md ↗</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>SADE · arşiv.</b> Kapanış bir kapanış sayfası: başlık, özet, belgeler. Alt bant yok —
+    "eylem yok" durumu söylenmez, yaşanır.</p>
+
+    <div class="connector">aynı an · detay</div>
+
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0005 · Detay ekranı v2</span><span class="w">1240 × 800 · DETAY</span></div>
+      <div class="console" style="grid-template-rows: auto auto minmax(0,1fr);">
+        <div class="strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0005</span>
+          <span class="phase"><i class="dot dot-done"></i>Kapandı</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$9.50</div></div>
+            <div><span class="readout">Süre</span><div class="v">01:12:03</div></div>
+            <div><span class="readout">Kapanış</span><div class="v">a9683b9</div></div>
+            <div class="viewseg"><button>Sade</button><button class="on">Detay</button></div>
+          </div>
+        </div>
+        <div class="substrip">
+          <span class="readout" style="color: var(--proceed);">● Kanıtlı kapanış · salt okunur</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="doc" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+              <div class="doc-head"><span class="readout">Kapanış kaydı</span></div>
+              <div class="doc-scroll">
+                <div class="stepcards" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 1</span><span class="rolechip role-arch">Mimar</span></div><p class="aim">Yerleşimi duruma bağla</p><div class="st"><i class="dot dot-done"></i>tamam · <span class="lnk" style="color:var(--info); cursor:pointer;">rapor ↗</span></div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 2</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Sade görünümü kur</p><div class="st"><i class="dot dot-done"></i>tamam · <span class="lnk" style="color:var(--info); cursor:pointer;">rapor ↗</span></div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 3</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Detay rafını kur</p><div class="st"><i class="dot dot-done"></i>tamam · <span class="lnk" style="color:var(--info); cursor:pointer;">rapor ↗</span></div></div>
+                  <div class="stepcard"><div class="top"><span class="no">ADIM 4</span><span class="rolechip role-verif">Doğrulayıcı</span></div><p class="aim">İki görünümü sına</p><div class="st"><i class="dot dot-done"></i>tamam · <span class="lnk" style="color:var(--info); cursor:pointer;">rapor ↗</span></div></div>
+                </div>
+                <h3>Kanıtlar</h3>
+                <div class="evd" style="margin-top:6px;">
+                  <span><i class="dot dot-done"></i>CI yeşil</span>
+                  <span><i class="dot dot-done"></i>inceleme ×3</span>
+                  <span><i class="dot dot-done"></i>merge #34</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="rack">
+            <div>
+              <span class="readout">Zaman çizelgesi · tümü</span>
+              <ul class="tl">
+                <li><span class="at">14:08</span><span>İş emri açıldı</span></li>
+                <li><span class="at">14:14</span><span>Plan hazır</span></li>
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:32</span><span>İzin verildi <span class="d">check.yml</span></span></li>
+                <li><span class="at">14:52</span><span>Adım 2 · inceleme: devam</span></li>
+                <li><span class="at">16:40</span><span>Adım 4 tamam</span></li>
+                <li><span class="at">16:44</span><span>Kapatıldı <span class="d">a9683b9</span></span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout">Belgeler</span>
+              <div class="evd"><span>iş emri.md ↗</span><span>plan.md ↗</span><span>kapanış.md ↗</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>DETAY · arşiv.</b> Adım kartları (hepsi yeşil), kanıtlar, tam çizelge — izin olayı dahil.
+    Zaman çizelgesi iş emrinin günlüğüdür; kural değişiklikleri de burada görünür.</p>
+  </section>
+
+  <!-- ============ KARAR ============ -->
+  <section class="ph" id="karar">
+    <div class="ph-head">
+      <span class="ph-num">✓</span>
+      <h2>Bu mu?</h2>
+    </div>
+    <table class="cmp">
+      <tr><th></th><th>Ekranda ne var</th><th>Ne yok</th></tr>
+      <tr><td>SADE</td>
+        <td>Durum şeridi (kimlik, faz, maliyet/süre, izin rozeti) · tek odak kartı · aksiyon rayı (eylem varsa)</td>
+        <td>Terminal geçmişi, adım listesi, kanıtlar, çizelge, belgeler — hepsi DETAY'da</td></tr>
+      <tr><td>DETAY</td>
+        <td>SADE'nin her şeyi + canlı terminal + adım kartları + kanıtlar + çizelge + belgeler (sağ raf, ≥1080px)</td>
+        <td>Ham JSON, steps bloğu, makine dili — hiçbir görünümde yok</td></tr>
+    </table>
+    <div class="verdict">
+      <h3>Onaylarsan WO-0031c şunu yapar</h3>
+      <p>
+        <strong>1)</strong> Tek yerleşim: şerit + içerik + aksiyon rayı; SADE/DETAY tüm ekranı yönetir
+        (varsayılan SADE, hatırlanır). <strong>2</strong> Adımlar/plan/raporlar kart ve düz Türkçe olarak
+        render edilir — JSON ekrana asla girmez (labels.ts disipliniyle). <strong>3)</strong> İzin kuralı iş
+        emrine taşınır: oluştururken seçim, izin kartından tek tık değişim, şeritte rozet, çizelgede denetim
+        izi; Ayarlar yalnız varsayılanı tutar. <strong>4)</strong> Audit P0/P1'leri aynı WO'da kapanır: ölü
+        Durdur (B1), opacity-60 kontrast (B4), aria-live rayda "sıra sende" duyurusu (B5), Esc=geri (B3),
+        boş bölümler yine çizilmez (A4). <strong>5)</strong> E2E matrisi: 7 yaşam aşaması × 2 görünüm × 2
+        pencere genişliği + kontrast scripti.
+      </p>
+      <p style="color: var(--ink);">Söyle: <b>"onay"</b> — ya da değştirme notunla birlikte söyle, mockup'a işleyip önüne koyayım.</p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

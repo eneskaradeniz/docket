@@ -1,0 +1,1162 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docket — Detay v2 · Üç Yön (WO-0031c mockup turu)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ===== Docket "Kontrol Konsolu" tokens (src/index.css birebir) ===== */
+  :root {
+    --bg: #0e1520;
+    --surface: #16202e;
+    --raised: #1d2938;
+    --hairline: #263349;
+    --ink: #e7edf4;
+    --inkdim: #8b95a7;
+    --signal: #f5b544;
+    --proceed: #4cc38a;
+    --info: #6ca0ce;
+    --error: #e5484d;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: color-mix(in srgb, var(--signal) 30%, transparent); }
+  a { color: var(--info); text-decoration: none; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 3px; }
+  section { scroll-margin-top: 64px; }
+
+  .readout {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--inkdim);
+  }
+  .mono { font-family: var(--mono); }
+
+  /* lamps */
+  .lamp { width: 3px; align-self: stretch; flex: none; border-radius: 0 2px 2px 0; }
+  .lamp-idle { background: var(--hairline); }
+  .lamp-signal { background: var(--signal); }
+  .lamp-signal-breathe { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .lamp-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .lamp-done { background: var(--proceed); }
+  .lamp-error { background: var(--error); }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot-signal { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .dot-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .dot-done { background: var(--proceed); }
+  .dot-idle { background: var(--hairline); }
+
+  /* buttons */
+  .btn {
+    font-family: var(--sans); font-size: 12.5px; font-weight: 600;
+    border-radius: 6px; border: 1px solid transparent;
+    padding: 6px 14px; cursor: pointer; letter-spacing: 0.01em;
+  }
+  .btn-primary { background: var(--signal); color: #20180a; }
+  .btn-primary:hover { background: #ffc95e; }
+  .btn-secondary { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  .btn-secondary:hover { background: var(--raised); }
+  .btn-ghost { background: transparent; color: var(--inkdim); }
+  .btn-ghost:hover { color: var(--ink); background: var(--raised); }
+  .btn-danger { background: transparent; color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); }
+  .kbd {
+    font-family: var(--mono); font-size: 10px; color: var(--inkdim);
+    border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px;
+    background: color-mix(in srgb, var(--raised) 60%, transparent);
+  }
+
+  /* ===== review page chrome ===== */
+  .topnav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: 18px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--hairline);
+    padding: 10px 24px;
+  }
+  .topnav .brand { font-weight: 800; font-size: 13px; letter-spacing: 0.02em; }
+  .topnav nav { display: flex; gap: 14px; flex-wrap: wrap; }
+  .topnav nav a { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .topnav .legend { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--inkdim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px 80px; }
+  .intro { padding: 44px 8px 36px; max-width: 860px; }
+  .intro h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+  .intro h1 em { font-style: normal; color: var(--signal); }
+  .intro p { color: var(--inkdim); margin-top: 12px; line-height: 1.65; font-size: 13.5px; }
+  .intro p strong { color: var(--ink); font-weight: 600; }
+  .intro .states { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .statechip {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px;
+    background: var(--surface); font-size: 12px; color: var(--ink);
+  }
+  .statechip .readout { font-size: 10px; }
+
+  .dir { border-top: 1px solid var(--hairline); padding-top: 40px; margin-top: 56px; }
+  .dir-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .dir-head h2 { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; }
+  .dir-head .thesis { color: var(--inkdim); font-size: 13px; }
+  .dir-meta { display: flex; gap: 22px; margin: 14px 0 30px; flex-wrap: wrap; }
+  .dir-meta div { max-width: 380px; }
+  .dir-meta .readout { display: block; margin-bottom: 4px; color: var(--signal); }
+  .dir-meta p { color: var(--inkdim); font-size: 12.5px; line-height: 1.55; }
+
+  /* window frame */
+  .frame {
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.55);
+    margin-bottom: 8px;
+  }
+  .frame + .frame { margin-top: 34px; }
+  .tbar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 12px; border-bottom: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--surface) 70%, var(--bg));
+  }
+  .tbar i { width: 11px; height: 11px; border-radius: 50%; background: var(--hairline); }
+  .tbar i:nth-child(1) { background: #de5d51; } .tbar i:nth-child(2) { background: #d8a03e; } .tbar i:nth-child(3) { background: #58b464; }
+  .tbar .t { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin-left: 10px; }
+  .tbar .w { font-family: var(--mono); font-size: 10px; color: var(--inkdim); opacity: 0.6; margin-left: auto; }
+  .cap { font-size: 12px; color: var(--inkdim); margin: 8px 4px 0; line-height: 1.5; }
+  .cap b { color: var(--ink); font-weight: 600; }
+
+  /* ===== shared inner components ===== */
+  .backlink { display: inline-flex; align-items: center; gap: 6px; color: var(--inkdim); font-size: 12.5px; cursor: pointer; }
+  .backlink:hover { color: var(--ink); }
+  .badge {
+    font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    border: 1px solid var(--hairline); color: var(--inkdim); border-radius: 5px; padding: 2.5px 7px;
+  }
+  .badge-amber { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); }
+  .badge-green { color: var(--proceed); border-color: color-mix(in srgb, var(--proceed) 45%, transparent); }
+
+  .term { display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; background: #0b111b; }
+  .term-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid var(--hairline); background: var(--surface);
+  }
+  .term-head .seg { margin-left: auto; display: flex; gap: 2px; }
+  .term-body { font-family: var(--mono); font-size: 11.5px; line-height: 1.75; padding: 12px 14px; color: var(--inkdim); overflow: hidden; }
+  .term-body .c { color: #5f6b80; }
+  .term-body .ok { color: var(--proceed); }
+  .term-body .inf { color: var(--info); }
+  .term-body .amt { color: var(--ink); }
+  .term-body .warn { color: var(--signal); }
+  .seg button {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    background: transparent; color: var(--inkdim); border: 0; padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  }
+  .seg button.on { background: var(--raised); color: var(--ink); }
+
+  .steps { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .step {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface); padding: 9px 12px 9px 10px;
+  }
+  .step .dot { margin-top: 5px; }
+  .step-idx { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin-top: 2px; width: 14px; }
+  .step-aim { font-size: 12.5px; font-weight: 600; }
+  .step-meta { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--inkdim); margin-top: 3px; }
+  .step-meta .lnk { color: var(--info); cursor: pointer; }
+
+  .evd { display: flex; flex-wrap: wrap; gap: 8px; }
+  .evd span {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em;
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 8px; color: var(--inkdim);
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+  .evd .ok { color: var(--proceed); }
+
+  .tl { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .tl li { display: flex; gap: 10px; font-size: 12px; align-items: baseline; }
+  .tl .at { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); width: 78px; flex: none; }
+  .tl .d { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); opacity: 0.75; }
+
+  .doc { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .doc-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+  .doc-body { padding: 16px 18px; }
+  .doc-body h3 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; }
+  .doc-body h3:first-child { margin-top: 0; }
+  .doc-body p, .doc-body li { color: var(--inkdim); line-height: 1.65; font-size: 12.5px; }
+  .doc-body strong { color: var(--ink); }
+  .fence {
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.7;
+    background: #0b111b; border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent);
+    border-radius: 6px; padding: 10px 12px; margin: 10px 0; color: var(--ink);
+  }
+  .fence .k { color: var(--signal); }
+
+  .askcard { display: flex; overflow: hidden; border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 8px; background: var(--surface); }
+  .askcard .body { flex: 1; padding: 12px 14px; }
+  .askcard .ttl { font-size: 13px; font-weight: 700; }
+  .askcard .p { font-family: var(--mono); font-size: 11.5px; color: var(--inkdim); margin: 5px 0 10px; }
+  .askcard .acts { display: flex; gap: 8px; justify-content: flex-end; }
+
+  .costline { font-family: var(--mono); font-size: 11px; color: var(--inkdim); }
+
+  /* ============ YÖN A — SAHNE ============ */
+  .a-house { padding: 26px 0 34px; background: radial-gradient(ellipse 62% 46% at 50% 34%, rgba(28, 40, 58, 0.85), transparent 72%); }
+  .a-stage { max-width: 880px; margin: 0 auto; padding: 0 22px; }
+  .a-transport {
+    display: flex; align-items: center; gap: 14px; padding: 0 4px 14px;
+  }
+  .a-transport .t-right { margin-left: auto; }
+  .a-title { display: flex; align-items: baseline; gap: 12px; padding: 0 4px 6px; }
+  .a-title h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .a-board { border: 1px solid var(--hairline); border-radius: 12px; background: color-mix(in srgb, var(--surface) 55%, var(--bg)); overflow: hidden; }
+  .a-banner { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--hairline); }
+  .a-banner .big { font-size: 14.5px; font-weight: 700; }
+  .a-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 18px; }
+  @media (min-width: 1180px) { .a-body.with-margin { grid-template-columns: minmax(0, 1fr) 300px; } }
+  .a-note { border-top: 1px solid var(--hairline); padding-top: 14px; margin-top: 4px; }
+  .a-note + .a-note { margin-top: 18px; }
+  .a-note .readout { display: block; margin-bottom: 8px; }
+  .a-docbar {
+    display: flex; align-items: center; gap: 10px;
+    border-top: 1px solid var(--hairline);
+    padding: 11px 16px; background: color-mix(in srgb, var(--raised) 60%, var(--bg));
+  }
+  .a-docbar .hint { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .a-cover { text-align: left; padding: 34px 34px 30px; }
+  .a-cover .seal { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .a-cover h1 { font-size: 27px; font-weight: 800; letter-spacing: -0.015em; max-width: 620px; line-height: 1.25; }
+  .a-cover .meta {
+    display: flex; gap: 26px; flex-wrap: wrap; margin: 20px 0 24px; padding: 14px 0;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  }
+  .a-cover .meta div .readout { display: block; margin-bottom: 3px; }
+  .a-cover .meta div .v { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+
+  /* ============ YÖN B — KUMANDA ============ */
+  .b-console { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 660px; }
+  .b-strip {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px; border-bottom: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--surface) 80%, var(--bg));
+  }
+  .b-strip .phase { font-size: 14px; font-weight: 800; letter-spacing: 0.01em; display: flex; align-items: center; gap: 9px; }
+  .b-strip .metrics { margin-left: auto; display: flex; gap: 20px; }
+  .b-strip .metrics div { text-align: right; }
+  .b-strip .metrics .v { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+  .b-substrip { display: flex; gap: 10px; align-items: center; padding: 7px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg); }
+  .b-body { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  @media (min-width: 1080px) { .b-body.with-rack { grid-template-columns: minmax(0, 1fr) 264px; } }
+  .b-main { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+  .b-main .term { flex: 1; min-height: 0; }
+  .b-main .term-body { flex: 1; }
+  .b-rack { border-left: 1px solid var(--hairline); padding: 16px 14px; overflow: hidden; display: flex; flex-direction: column; gap: 18px; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); }
+  .b-rail {
+    display: flex; align-items: center; gap: 12px;
+    border-top: 1px solid var(--hairline);
+    padding: 12px 18px; background: color-mix(in srgb, var(--raised) 55%, var(--bg));
+  }
+  .b-rail .msg { font-size: 12.5px; color: var(--inkdim); }
+  .b-rail .msg b { color: var(--ink); font-weight: 700; }
+  .b-rail .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .b-rail.quiet { background: transparent; }
+  .b-rail.quiet .msg { color: var(--inkdim); opacity: 0.7; }
+  .b-doc { display: grid; grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
+  .b-doc .doc { display: flex; flex-direction: column; min-height: 0; }
+  .b-doc .doc-scroll { overflow: hidden; flex: 1; padding: 16px 18px; }
+
+  /* ============ YÖN C — OMURGA ============ */
+  .c-wrap { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 640px; }
+  @media (max-width: 980px) { .c-wrap { grid-template-columns: minmax(0, 1fr); } }
+  .c-spine { border-right: 1px solid var(--hairline); padding: 18px 0 18px 0; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); position: relative; }
+  .c-spine .c-head { padding: 0 16px 14px; }
+  .c-nodes { list-style: none; position: relative; }
+  .c-nodes::before { content: ""; position: absolute; left: 26px; top: 10px; bottom: 14px; width: 1px; background: var(--hairline); }
+  .c-node { display: flex; gap: 12px; padding: 7px 16px 7px 0; margin-left: 16px; position: relative; }
+  .c-node .dot { margin-top: 3px; position: relative; z-index: 1; box-shadow: 0 0 0 4px var(--bg); }
+  .c-node .what { font-size: 12px; font-weight: 600; }
+  .c-node .when { font-family: var(--mono); font-size: 10px; color: var(--inkdim); margin-top: 2px; letter-spacing: 0.05em; }
+  .c-node.past .what { color: var(--inkdim); font-weight: 500; }
+  .c-node.future .what { color: var(--inkdim); opacity: 0.55; }
+  .c-node.now { background: color-mix(in srgb, var(--signal) 7%, transparent); border-radius: 8px; padding-right: 8px; }
+  .c-node.now .what { color: var(--ink); }
+  .c-node .tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--hairline); color: var(--inkdim); margin-top: 4px; display: inline-block; }
+  .c-node.now .tag { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 40%, transparent); }
+  .c-panel { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .c-panel .term { flex: 1; }
+
+  /* ===== comparison ===== */
+  table.cmp { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 12.5px; }
+  table.cmp th, table.cmp td { border: 1px solid var(--hairline); padding: 9px 12px; text-align: left; vertical-align: top; line-height: 1.5; }
+  table.cmp th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); background: var(--surface); }
+  table.cmp td { color: var(--inkdim); }
+  table.cmp td:first-child { color: var(--ink); font-weight: 700; white-space: nowrap; }
+  .verdict { border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 10px; padding: 18px 20px; margin-top: 26px; background: color-mix(in srgb, var(--signal) 5%, var(--surface)); }
+  .verdict h3 { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
+  .verdict p { color: var(--inkdim); line-height: 1.65; font-size: 13px; margin-top: 8px; }
+  .verdict p strong { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lamp-signal-breathe, .lamp-run, .dot-signal, .dot-run { animation: none; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <span class="brand">Docket · Detay v2</span>
+  <nav>
+    <a href="#yon-a">A · Sahne</a>
+    <a href="#yon-b">B · Kumanda</a>
+    <a href="#yon-c">C · Omurga</a>
+    <a href="#karsilastirma">Karşılaştırma</a>
+  </nav>
+  <div class="legend">
+    <span><i class="dot dot-signal"></i> seni bekliyor</span>
+    <span><i class="dot dot-run"></i> çalışıyor</span>
+    <span><i class="dot dot-done"></i> tamam</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="intro">
+    <h1>Detay ekranı v2 — <em>durum-farkındar</em> üç yön</h1>
+    <p>
+      Mevcut yerleşimin kök sorunu: grid, iş emrinin <strong>durumundan bağımsız</strong>. Kapalı bir iş emrinde
+      solda minicik bir kart, sağda kutu yığını kalıyordu. Bu turda her yön aynı dört durumu aynı içerikle
+      gösterir — <strong>aynı tokenlar, aynı lamba grameri</strong>; değişen tek şey kompozisyon kararı.
+      Davranış (WO-0020..0030 akışları) hep aynı kalır; burada izlenen şey yalnızca yerleşim.
+    </p>
+    <div class="states">
+      <span class="statechip"><i class="dot dot-run"></i> Canlı oturum <span class="readout">adım koşuyor</span></span>
+      <span class="statechip"><i class="dot dot-signal"></i> Karar <span class="readout">plan onayı / izin / verdikt</span></span>
+      <span class="statechip"><i class="dot dot-idle"></i> Bekleme <span class="readout">adımlar arası</span></span>
+      <span class="statechip"><i class="dot dot-done"></i> Arşiv <span class="readout">kapandı · okuma</span></span>
+    </div>
+    <p style="margin-top:16px; font-size:12px;">
+      Not: izin kartı (<span class="mono" style="font-size:11px;">stopped_asking</span>) her yönde "Karar" desenini izler.
+      Ekranlar 1240px genişlikte; dar pencere davranışı her yönde tek kolona iner.
+    </p>
+  </header>
+
+  <!-- ================================================================ -->
+  <!-- YÖN A — SAHNE -->
+  <!-- ================================================================ -->
+  <section class="dir" id="yon-a">
+    <div class="dir-head">
+      <h2>Yön A — Sahne</h2>
+      <span class="thesis">Tek ışıklı sahne: her durum sahnede bir "perde"; gerisi loş ev ışığı.</span>
+    </div>
+    <div class="dir-meta">
+      <div>
+        <span class="readout">Tez</span>
+        <p>Okuma konforu önce. Tüm içerik ~880px'lik ortalanmış bir sahnede yaşar; geniş ekranda artan alan
+        kenar notlarına dönüşür, kutu yığınına değil. Belge ve terminal asla 320px'e sıkışmaz.</p>
+      </div>
+      <div>
+        <span class="readout">İmza</span>
+        <p>Sahnenin çevresindeki sıcak ışık yıkaması: durum değiştikçe sahne yeniden ışıklanır —
+        karar amber, canlı mavi, arşiv yeşil. Konsol uygulamalarında alışılmadık, bu yönün riski.</p>
+      </div>
+      <div>
+        <span class="readout">Risk</span>
+        <p>Yoğun operasyon anlarında genişlik "boşa" görünebilir; konsol kimliğinden editoryal kimliğe kayma.</p>
+      </div>
+    </div>
+
+    <!-- A · CANLI -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 800</span></div>
+      <div class="a-house">
+        <div class="a-stage">
+          <div class="a-transport">
+            <span class="backlink">‹ İş emirleri</span>
+            <span class="badge">WO-0003</span>
+            <span class="badge badge-amber">Uygulama</span>
+            <span class="t-right costline">$4.12 · ⏱ 00:18:44</span>
+          </div>
+          <div class="a-title">
+            <h1>Uygulama sürüyor</h1>
+          </div>
+          <div class="a-board">
+            <div class="a-banner">
+              <div class="lamp lamp-run"></div>
+              <span class="readout" style="color: var(--info);">Çalışıyor</span>
+              <span class="readout">Adım 2/3 · Uygulayıcı</span>
+              <span style="margin-left:auto;"><button class="btn btn-secondary" style="font-size:11.5px;">Durdur</button></span>
+            </div>
+            <div class="a-body with-margin">
+              <div class="term">
+                <div class="term-head">
+                  <span class="readout">Oturum · Uygulayıcı</span>
+                  <span class="seg"><button>Sade</button><button class="on">Detay</button></span>
+                </div>
+                <pre class="term-body">
+<span class="c">17:41:02</span>  <span class="inf">● Bash</span>  npm run typecheck
+<span class="c">         ✓</span> <span class="ok">tsconfig.json — 0 hata</span>
+<span class="c">         ✓</span> <span class="ok">tsconfig.electron.json — 0 hata</span>
+<span class="c">17:41:39</span>  <span class="inf">● Edit</span>  <span class="amt">src/ui/components/detail/WorkOrderDetail.tsx</span> <span class="c">(+48 −12)</span>
+<span class="c">17:42:10</span>  <span class="inf">● Read</span>  <span class="amt">src/core/derive.ts:1-120</span>
+<span class="c">17:42:58</span>  <span class="inf">● Bash</span>  npm test -- --run
+<span class="c">         ✓</span> <span class="ok">389/389 geçti</span> <span class="c">(2.4s)</span>
+<span class="c">17:43:31</span>  <span class="warn">⋯ adım raporu yazılıyor…</span></pre>
+              </div>
+              <aside>
+                <div class="a-note">
+                  <span class="readout">Adımlar · 1/3</span>
+                  <ul class="steps">
+                    <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler ve taşıyıcılar</p><p class="step-meta">Uygulayı·tamam · <span class="lnk">rapor ↗</span></p></div></li>
+                    <li class="step" style="border-color: color-mix(in srgb, var(--info) 35%, transparent);"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay ekranı yeniden</p><p class="step-meta">Uygulayı·çalışıyor</p></div></li>
+                    <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: erişilebilirlik</p><p class="step-meta">Bekliyor</p></div></li>
+                  </ul>
+                </div>
+                <div class="a-note">
+                  <span class="readout">Kanıtlar</span>
+                  <div class="evd"><span><i class="dot dot-done"></i>ci_green</span><span><i class="dot dot-done"></i>review 1/1</span></div>
+                </div>
+                <div class="a-note">
+                  <span class="readout">Zaman çizelgesi</span>
+                  <ul class="tl">
+                    <li><span class="at">16:02</span> Plan onaylandı</li>
+                    <li><span class="at">16:31</span> Adım 1 tamam <span class="d">verdict: devam</span></li>
+                    <li><span class="at">17:41</span> Adım 2 başladı</li>
+                  </ul>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Canlı.</b> Terminal sahnede tek başına; adımlar/kanıtlar/çizelge sağda sessiz kenar notları —
+    yalnız geniş ekranda belirir, dar pencerede sahne altına iner. Kutu çerçevesi yok: sair bilgi nottur.</p>
+
+    <!-- A · KARAR -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0002 · Plan bekliyor</span><span class="w">1240 × 800</span></div>
+      <div class="a-house" style="background: radial-gradient(ellipse 62% 46% at 50% 30%, rgba(64, 49, 16, 0.5), transparent 72%);">
+        <div class="a-stage">
+          <div class="a-transport">
+            <span class="backlink">‹ İş emirleri</span>
+            <span class="badge">WO-0002</span>
+            <span class="badge badge-amber">Plan onayı</span>
+            <span class="t-right costline">$1.84 · ⏱ 00:06:12</span>
+          </div>
+          <div class="a-title"><h1>Plan bekliyor</h1></div>
+          <div class="a-board">
+            <div class="a-banner" style="border-bottom: 0;">
+              <div class="lamp lamp-signal-breathe"></div>
+              <span class="readout" style="color: var(--signal);">Seni bekliyor</span>
+              <span class="big" style="font-size: 14.5px; font-weight: 700; color: var(--ink);">Mimarın planı onayını bekliyor</span>
+            </div>
+            <div class="doc" style="border-radius: 0; border: 0; border-top: 1px solid var(--hairline); background: transparent;">
+              <div class="doc-body" style="padding: 4px 18px 16px;">
+                <h3>Amaç</h3>
+                <p>Detay ekranını durum-farkındar yap: yerleşim, iş emrinin aşamasından türesin. Kapalı iş emri
+                belge gibi okunsun; canlı oturum enstrüman gibi izlensin.</p>
+                <h3>Yaklaşım</h3>
+                <p><strong>layoutMode</strong> — <span class="mono" style="font-size:11.5px;">derivePhase</span> çıktısından
+                türeyen dört kip: <strong>canlı · karar · bekleme · arşiv</strong>. Grid kararı content'te değil bu kipte.</p>
+                <div class="fence"><span class="k">```steps</span>
+[{ "role": "implementer", "aim": "Omurga: tipler ve taşıyıcılar", "scope": "core" },
+ { "role": "implementer", "aim": "Yüzey: detay ekranı yeniden", "scope": "ui" },
+ { "role": "verifier",     "aim": "Denetim: erişilebilirlik", "scope": "all" }]
+<span class="k">```</span></div>
+                <h3>Kanıt</h3>
+                <p>Her adım raporu + ci_green; kapanış için ROADMAP ve tech-debt güncellemesi kanıt sha ile.</p>
+              </div>
+            </div>
+            <div class="a-docbar">
+              <span class="readout">Plan · Mimar</span>
+              <span class="costline">plan.md · 2.1 KB</span>
+              <div class="hint">
+                <span class="readout">fence dışına çıkmaz</span>
+                <button class="btn btn-ghost">İtiraz et</button>
+                <button class="btn btn-primary">Onayla</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Karar.</b> Kenar notları tamamen çekilmiş; sahne belgeye devredilmiş, karar çubuğu sahneye
+    sabitlenmiş. Perde değişimi = aynı sahne, farklı ışık. Onayla butonu ekranda kaç satır belge olursa olsun hep aynı yerde.</p>
+
+    <!-- A · BEKLEME -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 640</span></div>
+      <div class="a-house">
+        <div class="a-stage">
+          <div class="a-transport">
+            <span class="backlink">‹ İş emirleri</span>
+            <span class="badge">WO-0003</span>
+            <span class="badge badge-amber">Uygulama</span>
+            <span class="t-right costline">$5.90 · ⏱ 00:26:03</span>
+          </div>
+          <div class="a-title"><h1>Uygulama sürüyor</h1></div>
+          <div class="a-board">
+            <div class="a-banner">
+              <div class="lamp lamp-idle"></div>
+              <span class="readout">Bekleme</span>
+              <span class="big">Adım 2 tamamlandı — sıradaki hazır</span>
+            </div>
+            <div class="a-body">
+              <div class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler ve taşıyıcılar</p><p class="step-meta">Uygulayı·tamam · verdict devam · <span class="lnk">rapor ↗</span></p></div></li>
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay ekranı yeniden</p><p class="step-meta">Uygulayı·tamam · <span class="lnk">rapor ↗</span> · <span class="lnk">verdikt ↗</span></p></div></li>
+                <li class="step" style="border-style: dashed;"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: erişilebilirlik</p><p class="step-meta">Doğrulayıcı · sırada</p></div></li>
+              </div>
+              <div style="display:flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn btn-secondary">Raporu oku</button>
+                <button class="btn btn-primary">Adım 3'ü başlat</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Bekleme.</b> Sahne küçülür: adımlar listesi başrolde, tek eylem sağda. Yan kolon yok —
+    gösterilecek enstrüman yokken sahne boş kutu taşımaz.</p>
+
+    <!-- A · ARŞİV -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0004 · Kapandı</span><span class="w">1240 × 800</span></div>
+      <div class="a-house" style="background: radial-gradient(ellipse 62% 46% at 50% 26%, rgba(20, 52, 38, 0.45), transparent 72%);">
+        <div class="a-stage">
+          <div class="a-transport">
+            <span class="backlink">‹ İş emirleri</span>
+            <span class="badge">WO-0004</span>
+            <span class="badge badge-green">Kapalı</span>
+          </div>
+          <div class="a-board">
+            <div class="a-cover">
+              <span class="seal"><i class="dot dot-done"></i><span class="readout" style="color: var(--proceed);">Kapandı · kanıtlı</span></span>
+              <h1>Kapandı — v2 detay ekranı teslim edildi</h1>
+              <div class="meta">
+                <div><span class="readout">Maliyet</span><span class="v">$9.50</span></div>
+                <div><span class="readout">Süre</span><span class="v">01:12:03</span></div>
+                <div><span class="readout">Oturum</span><span class="v">5</span></div>
+                <div><span class="readout">Kapanış sha</span><span class="v">a9683b9</span></div>
+              </div>
+              <p style="color: var(--inkdim); line-height: 1.7; max-width: 640px;">
+                Üç adım tamam, iki mimar incelemesi <span style="color: var(--proceed); font-weight:600;">devam</span> verdi;
+                ci_green ve review kanıtları eksiksiz. ROADMAP güncellendi, tech-debt kaydı TD-036 açıldı.
+                Belge ve kaynaklar aşağıda, tam genişlikte okunur biçimde.
+              </p>
+              <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div><span class="readout" style="display:block; margin-bottom:8px;">Adımlar · 3/3</span>
+                  <ul class="steps">
+                    <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler ve taşıyıcılar</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                    <li class="step"><span class="dot dot-done"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay ekranı yeniden</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                    <li class="step"><span class="dot dot-done"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: erişilebilirlik</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                  </ul>
+                </div>
+                <div><span class="readout" style="display:block; margin-bottom:8px;">Kanıtlar</span>
+                  <div class="evd"><span><i class="dot dot-done"></i>ci_green</span><span><i class="dot dot-done"></i>review ×2</span><span><i class="dot dot-done"></i>merge #34</span></div>
+                </div>
+                <div><span class="readout" style="display:block; margin-bottom:8px;">Belgeler</span>
+                  <div class="evd"><span>iş emri.md ↗</span><span>plan.md ↗</span><span>kapanış.md ↗</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Arşiv.</b> İş emri bir "kapanış sayfası": kapak tipografisi, mono künye, tam genişlik belgeler.
+    Reddedilen minik-kart + kutu-yığını görüntüsünün tam tersi — kapanış bir anlatı.</p>
+  </section>
+
+  <!-- ================================================================ -->
+  <!-- YÖN B — KUMANDA -->
+  <!-- ================================================================ -->
+  <section class="dir" id="yon-b">
+    <div class="dir-head">
+      <h2>Yön B — Kumanda</h2>
+      <span class="thesis">Sabit çapalı konsol: durum ne olursa olsun aynı üç bölge — şerit, enstrüman, aksiyon rayı.</span>
+    </div>
+    <div class="dir-meta">
+      <div>
+        <span class="readout">Tez</span>
+        <p>Kas hafızası. Faz/metrik hep üst şeritte; içerik hep ortada; <strong>tek karar hep alt rayda</strong>.
+        Durum değişince gözün ve elin yeri değişmez — sadece içerik ve ray doldurular.</p>
+      </div>
+      <div>
+        <span class="readout">İmza</span>
+        <p>64px'lik aksiyon rayı: sahnede tek birincil eylem yaşar (Onayla / Durdur / İzin ver), sabit,
+        lamba kenarlı, klavye ipuçlu. Dikey alanı ona adamak bu yönün riski.</p>
+      </div>
+      <div>
+        <span class="readout">Risk</span>
+        <p>Konsol yoğunluğu: küçük pencerede dikey bütçe dar; şerit + ray ~110px götürür.</p>
+      </div>
+    </div>
+
+    <!-- B · CANLI -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 800</span></div>
+      <div class="b-console">
+        <div class="b-strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0003</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama sürüyor</span>
+          <span class="readout">Adım 2/3 · Uygulayıcı</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$4.12</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:18:44</div></div>
+          </div>
+        </div>
+        <div class="b-substrip">
+          <span class="readout">Uygulama</span>
+          <span class="readout" style="color: var(--inkdim);">/ adım 2 — yüzey</span>
+          <span style="margin-left:auto;" class="readout">esc geri · ⌥D durdur</span>
+        </div>
+        <div class="b-body with-rack">
+          <div class="b-main">
+            <div class="term">
+              <div class="term-head">
+                <span class="readout">Oturum · Uygulayıcı</span>
+                <span class="costline">$4.12 · 00:18:44</span>
+                <span class="seg"><button>Sade</button><button class="on">Detay</button></span>
+              </div>
+              <pre class="term-body">
+<span class="c">17:41:02</span>  <span class="inf">● Bash</span>  npm run typecheck
+<span class="c">         ✓</span> <span class="ok">tsconfig.json — 0 hata</span>
+<span class="c">         ✓</span> <span class="ok">tsconfig.electron.json — 0 hata</span>
+<span class="c">17:41:39</span>  <span class="inf">● Edit</span>  <span class="amt">src/ui/components/detail/WorkOrderDetail.tsx</span> <span class="c">(+48 −12)</span>
+<span class="c">17:42:10</span>  <span class="inf">● Read</span>  <span class="amt">src/core/derive.ts:1-120</span>
+<span class="c">17:42:58</span>  <span class="inf">● Bash</span>  npm test -- --run
+<span class="c">         ✓</span> <span class="ok">389/389 geçti</span> <span class="c">(2.4s)</span>
+<span class="c">17:43:31</span>  <span class="warn">⋯ adım raporu yazılıyor…</span></pre>
+            </div>
+          </div>
+          <aside class="b-rack">
+            <div>
+              <span class="readout" style="display:block; margin-bottom:8px;">Adımlar · 1/3</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler</p><p class="step-meta">tamam · <span class="lnk">rapor ↗</span></p></div></li>
+                <li class="step" style="border-color: color-mix(in srgb, var(--info) 35%, transparent);"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay</p><p class="step-meta">çalışıyor</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: a11y</p><p class="step-meta">bekliyor</p></div></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout" style="display:block; margin-bottom:8px;">Zaman çizelgesi</span>
+              <ul class="tl">
+                <li><span class="at">16:02</span><span>Plan onaylandı</span></li>
+                <li><span class="at">16:31</span><span>Adım 1 tamam</span></li>
+                <li><span class="at">17:41</span><span>Adım 2 başladı</span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="readout" style="display:block; margin-bottom:8px;">Kanıtlar</span>
+              <div class="evd"><span><i class="dot dot-done"></i>ci_green</span></div>
+            </div>
+          </aside>
+        </div>
+        <div class="b-rail quiet">
+          <div class="lamp lamp-run" style="height: 100%;"></div>
+          <span class="msg"><b>Adım 2 çalışıyor.</b> Oturum kendi ilerler; sana bir şey gerekmiyor.</span>
+          <div class="acts"><button class="btn btn-secondary">Durdur <span class="kbd">⌥D</span></button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Canlı.</b> Enstrüman rayı doldurur (sağ 264px rack: adımlar+çizelge+kanıt). Aksiyon rayında
+    tek sakin eylem: Durdur. "Sana bir şey gerekmiyor" mesajı kasıtlı — çalışırken sessizlik bir bilgidir.</p>
+
+    <!-- B · KARAR -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0002 · Plan bekliyor</span><span class="w">1240 × 800</span></div>
+      <div class="b-console">
+        <div class="b-strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0002</span>
+          <span class="phase"><i class="dot dot-signal"></i>Plan bekliyor</span>
+          <span class="readout">Mimar · plan hazır</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$1.84</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:06:12</div></div>
+          </div>
+        </div>
+        <div class="b-substrip">
+          <span class="readout" style="color: var(--signal);">● Seni bekliyor — plan onayı</span>
+          <span style="margin-left:auto;" class="readout">⏎ onayla · esc itiraz</span>
+        </div>
+        <div class="b-body">
+          <div class="b-main b-doc">
+            <div class="doc">
+              <div class="doc-head">
+                <span class="readout">Plan · Mimar</span>
+                <span class="costline">plan.md · 2.1 KB</span>
+                <span style="margin-left:auto;" class="readout" style="color: var(--signal);">fence uyarısı</span>
+              </div>
+              <div class="doc-scroll">
+                <h3>Amaç</h3>
+                <p>Detay ekranını durum-farkındar yap: yerleşim, iş emrinin aşamasından türesin. Kapalı iş emri
+                belge gibi okunsun; canlı oturum enstrüman gibi izlensin.</p>
+                <h3>Yaklaşım</h3>
+                <p><strong>layoutMode</strong> — <span class="mono" style="font-size:11.5px;">derivePhase</span> çıktısından
+                türeyen dört kip: <strong>canlı · karar · bekleme · arşiv</strong>.</p>
+                <div class="fence"><span class="k">```steps</span>
+[{ "role": "implementer", "aim": "Omurga: tipler ve taşıyıcılar", "scope": "core" },
+ { "role": "implementer", "aim": "Yüzey: detay ekranı yeniden", "scope": "ui" },
+ { "role": "verifier",     "aim": "Denetim: erişilebilirlik", "scope": "all" }]
+<span class="k">```</span></div>
+                <h3>Kanıt</h3>
+                <p>Her adım raporu + ci_green; kapanış için ROADMAP ve tech-debt güncellemesi kanıt sha ile.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="b-rail">
+          <div class="lamp lamp-signal-breathe" style="height: 100%;"></div>
+          <span class="msg"><b>Mimarın planı onayını bekliyor.</b> Onaylarsan uygulayıcı adımları sırayla koşar.</span>
+          <div class="acts">
+            <button class="btn btn-ghost">İtiraz et <span class="kbd">esc</span></button>
+            <button class="btn btn-primary">Onayla <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Karar.</b> Rack katlanmış; belge tüm enstrüman alanını almış. Karar alt rayda — canlıdakiyle
+    <strong>aynı pikselde</strong>. Klavye ipuçları rayda yaşar; aria-live bölgesi de buraya kurulur.</p>
+
+    <!-- B · İZİN (bonus) -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 620</span></div>
+      <div class="b-console" style="height: 560px;">
+        <div class="b-strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0003</span>
+          <span class="phase"><i class="dot dot-signal"></i>Uygulama sürüyor</span>
+          <span class="readout">Adım 2/3 · Uygulayıcı · durdu-sordu</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$4.12</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:18:44</div></div>
+          </div>
+        </div>
+        <div class="b-substrip">
+          <span class="readout" style="color: var(--signal);">● Seni bekliyor — izin</span>
+          <span style="margin-left:auto;" class="readout">⏎ izin ver</span>
+        </div>
+        <div class="b-body">
+          <div class="b-main">
+            <div class="term">
+              <div class="term-head">
+                <span class="readout">Oturum · Uygulayıcı</span>
+                <span class="costline">$4.12 · 00:18:44</span>
+                <span class="seg"><button class="on">Sade</button><button>Detay</button></span>
+              </div>
+              <pre class="term-body">
+<span class="c">17:43:31</span>  <span class="warn">⋯ adım raporu yazılıyor…</span>
+<span class="c">17:43:44</span>  <span class="warn">⏸ oturum durdu — sana soruyor</span></pre>
+            </div>
+            <div class="askcard">
+              <div class="lamp lamp-signal-breathe"></div>
+              <div class="body">
+                <p class="ttl">Dosya yazımı — .github/workflows/check.yml</p>
+                <p class="p">ci · İş emri · 4.2 KB · değiştir</p>
+                <div class="acts">
+                  <button class="btn btn-secondary">Tümüne izin ver</button>
+                  <button class="btn btn-primary">İzin ver <span class="kbd">⏎</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="b-rail quiet">
+          <div class="lamp lamp-signal" style="height: 100%;"></div>
+          <span class="msg"><b>Oturum izin bekliyor.</b> Yanıt verilene kadar maliyet durur.</span>
+          <div class="acts"><button class="btn btn-ghost">Kural olarak kaydet…</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>İzin (bonus durum).</b> stopped_asking aynı deseni izler: soru enstrüman alanında kart,
+    birincil eylem alt rayda. Bu yönün en doğal olduğu an — karar hep aynı yerde.</p>
+
+    <!-- B · BEKLEME -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 620</span></div>
+      <div class="b-console" style="height: 560px;">
+        <div class="b-strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0003</span>
+          <span class="phase"><i class="dot dot-idle" style="background: var(--inkdim);"></i>Uygulama sürüyor</span>
+          <span class="readout">Adım 2/3 tamam · sıradaki hazır</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$5.90</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:26:03</div></div>
+          </div>
+        </div>
+        <div class="b-substrip">
+          <span class="readout">Bekleme</span>
+          <span style="margin-left:auto;" class="readout">⏎ başlat</span>
+        </div>
+        <div class="b-body">
+          <div class="b-main">
+            <ul class="steps">
+              <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler ve taşıyıcılar</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+              <li class="step"><span class="dot dot-done"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay ekranı yeniden</p><p class="step-meta">tamam · <span class="lnk">rapor ↗</span> · <span class="lnk">verdikt ↗</span></p></div></li>
+              <li class="step" style="border-style: dashed;"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: erişilebilirlik</p><p class="step-meta">Doğrulayıcı · sırada</p></div></li>
+            </ul>
+          </div>
+        </div>
+        <div class="b-rail">
+          <div class="lamp lamp-idle" style="height: 100%;"></div>
+          <span class="msg"><b>Adım 2 tamam.</b> Rapor okunabilir; sıradaki doğrulayıcı adımı başlatmaya hazır.</span>
+          <div class="acts">
+            <button class="btn btn-secondary">Raporu oku</button>
+            <button class="btn btn-primary">Adım 3'ü başlat <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Bekleme.</b> Rack yine katlı; adım listesi enstrüman. Ray tek kararla dolu: başlat.</p>
+
+    <!-- B · ARŞİV -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0004 · Kapandı</span><span class="w">1240 × 800</span></div>
+      <div class="b-console">
+        <div class="b-strip">
+          <span class="backlink">‹</span>
+          <span class="badge">WO-0004</span>
+          <span class="phase"><i class="dot dot-done"></i>Kapandı</span>
+          <span class="readout">3/3 adım · 2 inceleme · tamam</span>
+          <div class="metrics">
+            <div><span class="readout">Maliyet</span><div class="v">$9.50</div></div>
+            <div><span class="readout">Süre</span><div class="v">01:12:03</div></div>
+            <div><span class="readout">Kapanış</span><div class="v">a9683b9</div></div>
+          </div>
+        </div>
+        <div class="b-substrip">
+          <span class="readout" style="color: var(--proceed);">● Kanıtlı kapanış</span>
+          <span class="readout">— arşiv · salt okunur</span>
+        </div>
+        <div class="b-body">
+          <div class="b-main b-doc">
+            <div class="doc">
+              <div class="doc-head">
+                <span class="readout">Kapanış · salt okunur</span>
+                <span class="costline">iş emri.md · plan.md · kapanış.md</span>
+              </div>
+              <div class="doc-scroll">
+                <h3>Özet</h3>
+                <p>Üç adım tamam, iki mimar incelemesi <strong style="color:var(--proceed);">devam</strong> verdi;
+                ci_green ve review kanıtları eksiksiz. ROADMAP güncellendi, TD-036 açıldı.</p>
+                <h3>Adımlar</h3>
+                <ul class="steps" style="margin-top:6px;">
+                  <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Omurga: tipler ve taşıyıcılar</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                  <li class="step"><span class="dot dot-done"></span><span class="step-idx">2</span><div><p class="step-aim">Yüzey: detay ekranı yeniden</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                  <li class="step"><span class="dot dot-done"></span><span class="step-idx">3</span><div><p class="step-aim">Denetim: erişilebilirlik</p><p class="step-meta">tamam · devam · <span class="lnk">rapor ↗</span></p></div></li>
+                </ul>
+                <h3>Kanıtlar</h3>
+                <div class="evd" style="margin-top:6px;"><span><i class="dot dot-done"></i>ci_green</span><span><i class="dot dot-done"></i>review ×2</span><span><i class="dot dot-done"></i>merge #34</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="b-rail quiet">
+          <div class="lamp lamp-done" style="height: 100%;"></div>
+          <span class="msg"><b>Kapandı.</b> Bu iş emri salt okunur — eylem yok, yalnız kayıt.</span>
+          <div class="acts"><button class="btn btn-ghost">Belgeleri indir</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Arşiv.</b> Konsol okuyucuya döner: şerit künyeye, enstrüman belgeye, ray sessizleşir.
+    "Eylem yok" rayda yazılıdır — yok sayılmaz, söylenir.</p>
+  </section>
+
+  <!-- ================================================================ -->
+  <!-- YÖN C — OMURGA -->
+  <!-- ================================================================ -->
+  <section class="dir" id="yon-c">
+    <div class="dir-head">
+      <h2>Yön C — Omurga</h2>
+      <span class="thesis">İş emri bir zaman öyküsü: solda düğüm düğüm omurga, sağda hep "şimdi" paneli.</span>
+    </div>
+    <div class="dir-meta">
+      <div>
+        <span class="readout">Tez</span>
+        <p>Bağlam asla kaybolmaz. Geçmiş düğümler tek satıra sıkışıp yukarıda durur; "şimdi" düğümü parlar,
+        paneli onun yanında yaşar. Operatör her an öykünün neresinde olduğunu bilir.</p>
+      </div>
+      <div>
+        <span class="readout">İmza</span>
+        <p>Lamba düğümlü omurga: her düğüm aynı grameri taşır (amber bekliyor / mavi çalışıyor / yeşil tamam).
+        Omurga tek başına tüm iş emrinin hikâyesini okutur — bu yönün riski genişlik maliyeti.</p>
+      </div>
+      <div>
+        <span class="readout">Risk</span>
+        <p>236px yatay harcama; terminal daralır. Adım listesiyle omurga düğümleri örtüşür — çift temsil disiplin ister.</p>
+      </div>
+    </div>
+
+    <!-- C · CANLI -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 800</span></div>
+      <div class="c-wrap">
+        <aside class="c-spine">
+          <div class="c-head">
+            <span class="backlink">‹ İş emirleri</span>
+            <div style="margin-top:10px;"><span class="badge">WO-0003</span> <span class="badge badge-amber">Uygulama</span></div>
+            <p style="font-size:13.5px; font-weight:800; margin-top:8px;">Uygulama sürüyor</p>
+            <p class="costline" style="margin-top:6px;">$4.12 · ⏱ 00:18:44</p>
+          </div>
+          <ul class="c-nodes">
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">İş emri açıldı</p><p class="when">15:47</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Plan · mimar</p><p class="when">16:02 · onaylandı</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 1 · omurga</p><p class="when">16:31 · devam</p></div></li>
+            <li class="c-node now"><span class="dot dot-run"></span><div><p class="what">Adım 2 · yüzey</p><p class="when">17:41'den beri</p><span class="tag">Uygulayıcı çalışıyor</span></div></li>
+            <li class="c-node future"><span class="dot dot-idle"></span><div><p class="what">Adım 3 · denetim</p><p class="when">sırada · doğrulayıcı</p></div></li>
+            <li class="c-node future"><span class="dot dot-idle"></span><div><p class="what">Kapanış</p><p class="when">kanıt bekliyor</p></div></li>
+          </ul>
+        </aside>
+        <div class="c-panel">
+          <div class="term">
+            <div class="term-head">
+              <span class="readout">Adım 2 · Uygulayıcı</span>
+              <span class="costline">$4.12 · 00:18:44</span>
+              <span class="seg"><button>Sade</button><button class="on">Detay</button></span>
+            </div>
+            <pre class="term-body">
+<span class="c">17:41:02</span>  <span class="inf">● Bash</span>  npm run typecheck
+<span class="c">         ✓</span> <span class="ok">tsconfig.json — 0 hata</span>
+<span class="c">         ✓</span> <span class="ok">tsconfig.electron.json — 0 hata</span>
+<span class="c">17:41:39</span>  <span class="inf">● Edit</span>  <span class="amt">src/ui/components/detail/WorkOrderDetail.tsx</span> <span class="c">(+48 −12)</span>
+<span class="c">17:42:10</span>  <span class="inf">● Read</span>  <span class="amt">src/core/derive.ts:1-120</span>
+<span class="c">17:42:58</span>  <span class="inf">● Bash</span>  npm test -- --run
+<span class="c">         ✓</span> <span class="ok">389/389 geçti</span> <span class="c">(2.4s)</span>
+<span class="c">17:43:31</span>  <span class="warn">⋯ adım raporu yazılıyor…</span></pre>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
+            <span class="readout">kanıt: ci_green ✓</span>
+            <button class="btn btn-secondary">Durdur</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Canlı.</b> "Şimdi" düğümü yanındaki panel terminal; geçmiş yukarıda tek satırlık düğümler.
+    Kanıt/rapor bağlamı omurgada düğüme bağlı yaşar — ayrı ray bölümüne gerek kalmaz.</p>
+
+    <!-- C · KARAR -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0002 · Plan bekliyor</span><span class="w">1240 × 800</span></div>
+      <div class="c-wrap">
+        <aside class="c-spine">
+          <div class="c-head">
+            <span class="backlink">‹ İş emirleri</span>
+            <div style="margin-top:10px;"><span class="badge">WO-0002</span> <span class="badge badge-amber">Plan onayı</span></div>
+            <p style="font-size:13.5px; font-weight:800; margin-top:8px;">Plan bekliyor</p>
+            <p class="costline" style="margin-top:6px;">$1.84 · ⏱ 00:06:12</p>
+          </div>
+          <ul class="c-nodes">
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">İş emri açıldı</p><p class="when">15:58</p></div></li>
+            <li class="c-node now"><span class="dot dot-signal"></span><div><p class="what">Plan · mimar</p><p class="when">16:04'ten beri</p><span class="tag">Onayını bekliyor</span></div></li>
+            <li class="c-node future"><span class="dot dot-idle"></span><div><p class="what">Adımlar</p><p class="when">plana bağlı</p></div></li>
+            <li class="c-node future"><span class="dot dot-idle"></span><div><p class="what">Kapanış</p><p class="when">—</p></div></li>
+          </ul>
+        </aside>
+        <div class="c-panel">
+          <div class="askcard">
+            <div class="lamp lamp-signal-breathe"></div>
+            <div class="body">
+              <p class="ttl">Mimarın planı onayını bekliyor</p>
+              <p class="p">Onaylarsan uygulayıcı adımları sırayla koşar.</p>
+              <div class="acts">
+                <button class="btn btn-ghost">İtiraz et</button>
+                <button class="btn btn-primary">Onayla <span class="kbd">⏎</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="doc" style="flex:1;">
+            <div class="doc-head">
+              <span class="readout">Plan · Mimar</span>
+              <span class="costline">plan.md · 2.1 KB · fence uyarısı</span>
+            </div>
+            <div class="doc-body">
+              <h3>Amaç</h3>
+              <p>Detay ekranını durum-farkındar yap: yerleşim, iş emrinin aşamasından türesin.</p>
+              <h3>Yaklaşım</h3>
+              <p><strong>layoutMode</strong> — dört kip: <strong>canlı · karar · bekleme · arşiv</strong>.</p>
+              <div class="fence"><span class="k">```steps</span>
+[{ "role": "implementer", "aim": "Omurga: tipler ve taşıyıcılar", "scope": "core" },
+ { "role": "implementer", "aim": "Yüzey: detay ekranı yeniden", "scope": "ui" },
+ { "role": "verifier",     "aim": "Denetim: erişilebilirlik", "scope": "all" }]
+<span class="k">```</span></div>
+              <h3>Kanıt</h3>
+              <p>Her adım raporu + ci_green; kapanış kanıt sha ile.</p>
+            </div>
+          </div>
+        </div>
+    </div>
+    <p class="cap"><b>Karar.</b> Karar kartı panelin tepesinde, belge altında genişçe. Omurga şunu söyler:
+    bu tek onay, uzun bir öykünün bir durağı — sonra ne olacağu gelecek düğümlerde yazılı.</p>
+
+    <!-- C · BEKLEME -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0003 · Uygulama sürüyor</span><span class="w">1240 × 640</span></div>
+      <div class="c-wrap" style="min-height: 560px;">
+        <aside class="c-spine">
+          <div class="c-head">
+            <span class="backlink">‹ İş emirleri</span>
+            <div style="margin-top:10px;"><span class="badge">WO-0003</span> <span class="badge badge-amber">Uygulama</span></div>
+            <p style="font-size:13.5px; font-weight:800; margin-top:8px;">Uygulama sürüyor</p>
+            <p class="costline" style="margin-top:6px;">$5.90 · ⏱ 00:26:03</p>
+          </div>
+          <ul class="c-nodes">
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">İş emri açıldı</p><p class="when">15:47</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Plan · mimar</p><p class="when">16:02 · onaylandı</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 1 · omurga</p><p class="when">16:31 · devam</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 2 · yüzey</p><p class="when">17:44 · rapor hazır</p></div></li>
+            <li class="c-node now"><span class="dot dot-idle" style="background: var(--signal);"></span><div><p class="what">Adım 3 · denetim</p><p class="when">başlatılmayı bekliyor</p><span class="tag">Sırada</span></div></li>
+            <li class="c-node future"><span class="dot dot-idle"></span><div><p class="what">Kapanış</p><p class="when">kanıt bekliyor</p></div></li>
+          </ul>
+        </aside>
+        <div class="c-panel">
+          <div class="askcard" style="border-color: var(--hairline);">
+            <div class="lamp lamp-idle"></div>
+            <div class="body">
+              <p class="ttl">Adım 2 tamam — rapor hazır</p>
+              <p class="p">verdikt: devam · kanıt: ci_green ✓</p>
+              <div class="acts">
+                <button class="btn btn-secondary">Raporu oku</button>
+                <button class="btn btn-primary">Adım 3'ü başlat <span class="kbd">⏎</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="tl" style="padding: 4px 2px;">
+            <li><span class="at">16:02</span><span>Plan onaylandı</span></li>
+            <li><span class="at">16:31</span><span>Adım 1 tamam <span class="d">verdict: devam</span></span></li>
+            <li><span class="at">17:41</span><span>Adım 2 başladı</span></li>
+            <li><span class="at">17:44</span><span>Adım 2 raporu yazıldı <span class="d">2.3 KB</span></span></li>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Bekleme.</b> Omurgada "şimdi" bir sonraki düğüme geçmiş; panel kısa bir durum kartı +
+    taze olaylar. Tam liste omurgada zaten var — panel tekrar etmez.</p>
+
+    <!-- C · ARŞİV -->
+    <div class="frame">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0004 · Kapandı</span><span class="w">1240 × 800</span></div>
+      <div class="c-wrap">
+        <aside class="c-spine">
+          <div class="c-head">
+            <span class="backlink">‹ İş emirleri</span>
+            <div style="margin-top:10px;"><span class="badge">WO-0004</span> <span class="badge badge-green">Kapalı</span></div>
+            <p style="font-size:13.5px; font-weight:800; margin-top:8px;">Kapandı</p>
+            <p class="costline" style="margin-top:6px;">$9.50 · ⏱ 01:12:03 · a9683b9</p>
+          </div>
+          <ul class="c-nodes">
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">İş emri açıldı</p><p class="when">14:02</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Plan · mimar</p><p class="when">14:20 · onaylandı</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 1 · omurga</p><p class="when">14:58 · devam</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 2 · yüzey</p><p class="when">15:36 · devam</p></div></li>
+            <li class="c-node past"><span class="dot dot-done"></span><div><p class="what">Adım 3 · denetim</p><p class="when">16:10 · devam</p></div></li>
+            <li class="c-node now" style="background: color-mix(in srgb, var(--proceed) 7%, transparent);"><span class="dot dot-done"></span><div><p class="what">Kapanış</p><p class="when">16:44 · kanıtlı</p><span class="tag" style="color: var(--proceed); border-color: color-mix(in srgb, var(--proceed) 40%, transparent);">Tamamlandı</span></div></li>
+          </ul>
+        </aside>
+        <div class="c-panel">
+          <div class="doc">
+            <div class="doc-head">
+              <span class="readout" style="color: var(--proceed);">Kapanış · salt okunur</span>
+              <span class="costline">iş emri.md · plan.md · kapanış.md</span>
+            </div>
+            <div class="doc-body">
+              <h3>Özet</h3>
+              <p>Üç adım tamam, iki mimar incelemesi <strong style="color:var(--proceed);">devam</strong> verdi;
+              ci_green ve review kanıtları eksiksiz. ROADMAP güncellendi, TD-036 açıldı.</p>
+              <h3>Kanıtlar</h3>
+              <div class="evd" style="margin-top:6px;"><span><i class="dot dot-done"></i>ci_green</span><span><i class="dot dot-done"></i>review ×2</span><span><i class="dot dot-done"></i>merge #34</span></div>
+              <h3>Raporlar</h3>
+              <div class="evd" style="margin-top:6px;"><span>adım 1 ↗</span><span>adım 2 ↗</span><span>adım 3 ↗</span><span>verdiktler ↗</span></div>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end;"><button class="btn btn-ghost">Belgeleri indir</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Arşiv.</b> Omurganın en güçlü anı: tamamlanmış öykü tek bakışta — her düğüm yeşil,
+    kapanış düğümü künye. Sağ panel kısa özet + kanıt/report bağlantıları. Reddedilen "kutu yığını"
+    burada hiç oluşmaz: arşiv zaten omurganın kendisi.</p>
+  </section>
+
+  <!-- ================================================================ -->
+  <!-- KARŞILAŞTIRMA -->
+  <!-- ================================================================ -->
+  <section class="dir" id="karsilastirma">
+    <div class="dir-head">
+      <h2>Karşılaştırma</h2>
+      <span class="thesis">Aynı dört durum, aynı tokenlar — yalnız kompozisyon farkı.</span>
+    </div>
+    <table class="cmp">
+      <tr>
+        <th></th><th>Canlı oturum</th><th>Karar anı</th><th>Arşiv</th><th>Genişlik duyarlılığı</th><th>En doğal olduğu an</th>
+      </tr>
+      <tr>
+        <td>A · Sahne</td>
+        <td>Terminal ortalanmış sahnede; bağlam kenar notu</td>
+        <td>Belge + sabit karar çubuğu; sahne amber ışıkla</td>
+        <td>Kapaklı kapanış sayfası — en şık arşiv okuması</td>
+        <td>Genişlik kenar nota dönüşür; dar pencere tek kolon</td>
+        <td>Plan/rapor okuma; sakin iş emirleri</td>
+      </tr>
+      <tr>
+        <td>B · Kumanda</td>
+        <td>Enstrüman + 264px rack; sayfa kaymaz</td>
+        <td>Rack katlanır; karar alt rayda — hep aynı piksel</td>
+        <td>Şerit künyeye döner; ray "eylem yok" der</td>
+        <td>Rack yalnız ≥1080px; küçük pencerede dikey bütçe dar</td>
+        <td>Gün içi operasyon: izin/verdikt/durdurma reflexleri</td>
+      </tr>
+      <tr>
+        <td>C · Omurga</td>
+        <td>Şimdi düğümü + terminal; geçmiş hep görünür</td>
+        <td>Karar kartı panelde; omurga "bu bir duraK" der</td>
+        <td>Tamamlanmış öykü tek bakışta — arşiv bedava</td>
+        <td>236px sabit maliyet; terminal en darı burada</td>
+        <td>Uzun iş emirleri; nerede kaldım sorusu</td>
+      </tr>
+    </table>
+
+    <div class="verdict">
+      <h3>Önerim — B (Kumanda), A'nın arşiv sayfasıyla hibrit</h3>
+      <p>
+        <strong>Neden B:</strong> bu ürünün kritik anları saniyelik refleksler (izin ver, durdur, onayla).
+        Sabit aksiyon rayı bunları kas hafızasına ve klavyeye bağlar; aria-live bölgesi, ölü Durdur düzeltmesi (B1)
+        ve Esc=geri (B3) aynı rayın doğal parçası olur. Canlı oturumda hiçbir şey kaymaz — şu anki en büyük
+        dert olan "ray duvarı + kaybolan bağlam" (A2/A5) yapısal olarak kapanır.
+      </p>
+      <p>
+        <strong>Neden A'nın arşivi:</strong> kapanış bir "sayfa" gibi okunmalı; B'nin arşiv çerçevesi künye+belgeyle
+        bunu zaten destekler — A'nın kapak tipografisi arşiv durumuna ödünç alınır (hibrit).
+        <strong>C'nin omurgası</strong> ise detay ekranına değil, panoya/tahtaya (WO-0031d) çok daha güçlü bir fikir:
+        kartların içinde mini omurga = iş emrinin öyküsü tahtada okunur.
+      </p>
+      <p style="color: var(--ink);">
+        Karar senin: <b>"B"</b>, <b>"B + A arşivi"</b>, <b>"C"</b> ya da notunla karışım —
+        söyle, seçilen yönü WO-0031c iş emrine çevirip uygulamaya geçeriz.
+      </p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
