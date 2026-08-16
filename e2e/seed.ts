@@ -40,4 +40,20 @@ store.recordStep(wo4.id, 1, { status: 'done', reportPath: 'reports/step-01-imple
 store.recordStepVerdict(wo4.id, 1, 'proceed', 'ok');
 await store.closeWorkOrder(wo4.id, 'e2e closed');
 
+// 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment
+//    (ask card + `Sıra sende` substrip + glow-signal) rendered statically from the persisted session.
+const wo5 = await mk('İzin bekliyor', 'E2E: a step paused on a permission ask.');
+await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+store.recordStep(wo5.id, 1, { status: 'active' });
+store.recordSession({
+  providerSessionId: 'e2e-ask-session',
+  workOrderId: wo5.id,
+  role: 'implementer',
+  status: 'stopped_asking',
+  stepIdx: 1,
+  transcript: [{ speaker: 'assistant', text: 'E2E: about to write a file.' }],
+  asks: [{ requestId: 'e2e-ask-r1', tool: 'Write', input: { file_path: 'docs/example.md' } }],
+  startedAt: new Date('2026-08-16T14:00:00Z').toISOString(),
+});
+
 console.log(`DB=${join(root, 'e2e.db')}`);

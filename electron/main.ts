@@ -10,9 +10,10 @@ import { dirname, join, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
-import type { DriveInput, PermissionDecision } from '../src/core/runner';
+import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
 import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import { createE2eRunner, type E2eRunner } from './e2e-runner';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -178,8 +179,12 @@ ipcMain.handle('docket:pick-files', async () => {
 //   and forwards each RunnerEvent back over 'docket:runner:event' until the run completes. ---
 // The stored provider key (WO-0025 / B1) becomes the subprocess env — Options.env REPLACES the env, so
 // process.env is spread (the SDK's own login files must keep working when no key is stored).
-const providerKey = await store.getProviderKey();
-const runner = createRunner(providerKey !== undefined ? { env: providerEnvForKey(providerKey) } : {});
+// Under DOCKET_E2E the scripted fake runner replaces the SDK entirely (WO-0031c): same port, same
+// pipeline, zero tokens — the E2E driver pushes events through `docket:e2e:emit`.
+const providerKey = process.env.DOCKET_E2E ? undefined : await store.getProviderKey();
+const runner: E2eRunner | ReturnType<typeof createRunner> = process.env.DOCKET_E2E
+  ? createE2eRunner()
+  : createRunner(providerKey !== undefined ? { env: providerEnvForKey(providerKey) } : {});
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });
@@ -214,6 +219,13 @@ ipcMain.handle('docket:runner:interrupt', async () => {
 // WO-0027 / Bulgu 9: a remounted pane re-attaches to the asks this runner still holds — the resolvers are
 // alive in the runner, so decide() on these ids works immediately. The pipeline forwards to the runner.
 ipcMain.handle('docket:runner:pending-asks', () => runner.pendingAsks());
+
+// E2E-only scripting channel (WO-0031c): push a scripted RunnerEvent into the active fake drive.
+if (process.env.DOCKET_E2E) {
+  ipcMain.handle('docket:e2e:emit', (_e, ev: RunnerEvent) => {
+    (runner as E2eRunner).emit(ev);
+  });
+}
 
 app.whenReady().then(() => {
   createWindow();
