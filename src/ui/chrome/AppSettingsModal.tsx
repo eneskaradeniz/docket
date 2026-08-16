@@ -1,36 +1,25 @@
-// App settings (WO-0031 restyle on the kit Dialog): provider access + İzin modu + language
-// placeholder + version. Theme is gone — dark-only by the console ruling.
+// App settings (WO-0031 restyle on the kit Dialog): auth status + Test + İzin modu + language
+// placeholder + version. Theme is gone (dark-only); the stored-API-key field was removed at the
+// operator's request — auth rides the provider CLI login, which Test verifies.
 import { useEffect, useState } from 'react';
 import type { AppSettings, ProviderStatus } from '../../core/app-settings';
 import { PROVIDER_ERROR_LABELS, UI } from '../data/labels';
 import { VERSION } from '../data/version';
-import { Button, Dialog, Field, Input, Segmented, Spinner } from '../kit';
+import { Button, Dialog, Segmented, Spinner } from '../kit';
 
 export function AppSettingsModal({ settings, onClose }: { settings: AppSettings; onClose: () => void }) {
-  // Provider block state (WO-0025 / B1): the stored key draft + the last check result. The quick check on
-  // open tells the operator where auth stands before the first "Plan iste" throws.
-  const [keyDraft, setKeyDraft] = useState('');
+  // Auth status (WO-0025 / B1): the quick check on open tells the operator where auth stands before the
+  // first "Plan iste" throws; Test re-runs the zero-token handshake on demand.
   const [permMode, setPermMode] = useState<'ask' | 'auto'>('ask');
   const [status, setStatus] = useState<ProviderStatus | undefined>(undefined);
   const [testing, setTesting] = useState(false);
   useEffect(() => {
-    void settings.getProviderKey().then((k) => setKeyDraft(k ?? ''));
     void settings.getPermissionMode?.().then((m) => setPermMode(m ?? 'ask'));
     void settings.checkProvider().then(setStatus).catch(() => setStatus(undefined));
   }, [settings]);
-  const saveKey = async (): Promise<void> => {
-    await settings.setProviderKey(keyDraft.trim() || undefined);
-    setStatus(undefined);
-  };
-  const clearKey = async (): Promise<void> => {
-    setKeyDraft('');
-    await settings.setProviderKey(undefined);
-    setStatus(undefined);
-  };
   const runTest = async (): Promise<void> => {
     setTesting(true);
     try {
-      if (keyDraft.trim()) await settings.setProviderKey(keyDraft.trim());
       setStatus(await settings.checkProvider());
     } finally {
       setTesting(false);
@@ -57,20 +46,7 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
     >
       <div className="flex flex-col gap-5">
         <section>
-          <Field label={UI.providerKeyLabel} hint={UI.providerHint}>
-            <div className="flex gap-1.5">
-              <Input
-                type="password"
-                value={keyDraft}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                placeholder={UI.providerKeyPlaceholder}
-                className="font-mono"
-              />
-              <Button size="sm" variant="secondary" onClick={() => void saveKey()}>{UI.providerKeySave}</Button>
-              <Button size="sm" variant="ghost" onClick={() => void clearKey()}>{UI.providerKeyClear}</Button>
-            </div>
-          </Field>
-          <div className="mt-2 flex items-center gap-3">
+          <div className="flex items-center gap-3">
             {testing ? <Spinner /> : <span className={`text-xs ${statusTone}`}>{statusText}</span>}
             <button type="button" onClick={() => void runTest()} className="alink ml-auto text-[12px]">
               {UI.providerTest}
