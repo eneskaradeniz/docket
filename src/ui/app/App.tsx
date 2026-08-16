@@ -12,8 +12,8 @@ import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { AppSettingsModal } from '../chrome/AppSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
-import { RunnerContext } from '../components/session/runner-context';
 import { createDriveStore, DriveStoreContext } from '../components/session/drive-store';
+import { ViewModeProvider } from '../data/view-mode';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -251,7 +251,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   }, [driveStore, refreshWorkOrders]);
 
   return (
-    <RunnerContext.Provider value={runner}>
+    <ViewModeProvider>
       <DriveStoreContext.Provider value={driveStore}>
       {chrome}
       {main}
@@ -277,6 +277,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       ) : null}
       {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
       </DriveStoreContext.Provider>
-    </RunnerContext.Provider>
+    </ViewModeProvider>
   );
 }

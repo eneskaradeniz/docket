@@ -557,17 +557,24 @@ export const UI = {
   viewModeSimple: 'SADE',
   viewModeDetail: 'DETAY',
   viewModeAria: 'Görünüm — Sade veya Detay',
-  // Sıra durumu (deriveTurnState çıktısı) — substrip satırı.
+  // Sıra durumu (deriveTurnState çıktısı) — substrip satırı. Kısa metin kuralı (operatör): çalışan
+  // durumda doldurma güvence cümlesi YOK — yalnız "Çalışıyor" + canlı satır; bilgi taşıyan satırlar
+  // (maliyet donması gibi) kalır.
   turnYours: 'Sıra sende',
-  turnRunning: 'Çalışıyor — sana iş yok',
+  turnRunning: 'Çalışıyor',
   turnStopped: 'Durduruldu — istersen sürdür',
   turnRetry: 'Yeniden dene',
   // Klavye ipuçları (substrip sağı).
   hintEscBack: 'esc geri',
-  // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin).
+  // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
+  stripCost: 'Maliyet',
+  stripDuration: 'Süre',
+  objectTitle: 'İtirazın ne?',
+  objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
+  // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
+  // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
   railApprove: 'Onayla',
   railApproveHint: 'Onayla — adımlar sırayla koşar.',
-  railWorking: 'Çalışıyor. Hazır olunca haber veririm.',
   railCloseHint: 'Kapat — arşive gider, not bırakabilirsin.',
   railAskHint: 'Oturum durdu — maliyet işlemez.',
   railResume: '▶ Sürdür',

@@ -8,15 +8,21 @@ export function Segmented<T extends string>({
   options,
   size = 'md',
   className,
+  'aria-label': ariaLabel,
 }: {
   value: T;
   onValueChange: (value: T) => void;
   options: Array<{ value: T; label: string }>;
   size?: 'sm' | 'md';
   className?: string;
+  'aria-label'?: string;
 }) {
   return (
-    <div className={cn('inline-flex gap-0.5 rounded-md border border-hairline bg-bg p-0.5', className)}>
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className={cn('inline-flex gap-0.5 rounded-md border border-hairline bg-bg p-0.5', className)}
+    >
       {options.map((o) => (
         <button
           key={o.value}

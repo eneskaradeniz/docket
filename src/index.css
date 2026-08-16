@@ -218,6 +218,36 @@
     }
   }
 
+  /* ===== Juice (v4 §7, operator) — all <400ms, reduced-motion respected, the cost counter is NEVER
+     animated. SADE stays calm; juice lives in DETAY and result moments. ===== */
+  .pop {
+    animation: pop 0.38s cubic-bezier(0.2, 1.6, 0.4, 1);
+  }
+  @keyframes pop {
+    0% {
+      transform: scale(0.92);
+    }
+    55% {
+      transform: scale(1.045);
+    }
+    100% {
+      transform: none;
+    }
+  }
+  /* the thin step-progress hairline under the strip — fills with done/total steps */
+  .hairline-progress {
+    height: 2px;
+    overflow: hidden;
+    border-radius: 1px;
+    background: var(--color-hairline);
+  }
+  .hairline-progress > div {
+    height: 100%;
+    width: 0;
+    background: var(--color-signal);
+    transition: width 0.36s ease;
+  }
+
   /* ===== Step card (WO-0031c) — the plan's card language; hover lifts it a hair ===== */
   .stepcard {
     transition: transform 0.12s ease, border-color 0.12s ease;
@@ -233,8 +263,12 @@
   .rise,
   .flash,
   .flash-err,
+  .pop,
   .stepcard {
     animation: none;
+    transition: none;
+  }
+  .hairline-progress > div {
     transition: none;
   }
 }

@@ -24,6 +24,8 @@ declare global {
       runner: RunnerBridge;
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;
+      /** E2E-only scripting channel (WO-0031c) — present only under DOCKET_E2E. */
+      e2e?: { emit: (ev: RunnerEvent) => Promise<void> };
     };
   }
 }
