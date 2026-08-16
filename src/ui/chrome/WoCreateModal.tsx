@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
-import type { ReviewMode, WorkOrderSource } from '../../core/source';
-import { UI } from '../data/labels';
+import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
+import { PERMISSION_RULE_LABELS, UI } from '../data/labels';
 import { Button, Dialog, Field, Input, Segmented, Textarea } from '../kit';
 
 const base = (p: string): string => {
@@ -19,13 +19,17 @@ const base = (p: string): string => {
 export function WoCreateModal({
   workspace,
   source,
+  defaultRule,
   onClose,
   onCreated,
 }: {
   workspace: Workspace;
   source: WorkOrderSource;
+  /** The Settings default — the preselected rule (WO-0031c; the WO carries its own from here on). */
+  defaultRule: PermissionRule;
   onClose: () => void;
-  onCreated: (wo: WorkOrder) => void;
+  /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
+  onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
 }) {
   // PRODUCT.md §Decisions 6: the decision store is a workspace setting, not a track. For a multi-repo
   // workspace the dedicated decision-store repo is excluded; a single-repo workspace keeps its repo
@@ -37,6 +41,7 @@ export function WoCreateModal({
   const [description, setDescription] = useState('');
   const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(trackOptions);
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
+  const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish
 
@@ -56,7 +61,7 @@ export function WoCreateModal({
     setContextFiles((prev) => prev.filter((_p, idx) => idx !== i));
   }
 
-  async function save() {
+  async function save(withPlan = false) {
     if (!title.trim()) {
       setError(UI.woErrTitle);
       return;
@@ -70,8 +75,9 @@ export function WoCreateModal({
         trackRepos: selectedTracks,
         reviewMode,
         contextFiles,
+        permissionRule,
       });
-      onCreated(wo);
+      onCreated(wo, withPlan);
       onClose();
     } catch {
       setError(UI.saveFailed); // B5: the modal stays open — and says WHY
@@ -88,7 +94,8 @@ export function WoCreateModal({
         <>
           {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
           <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
-          <Button variant="primary" size="sm" onClick={() => void save()}>{UI.woCreateBtn}</Button>
+          <Button variant="secondary" size="sm" onClick={() => void save()}>{UI.woCreateBtn}</Button>
+          <Button variant="primary" size="sm" className="min-w-[150px]" onClick={() => void save(true)}>{UI.createAndPlan}</Button>
         </>
       }
     >
@@ -151,11 +158,29 @@ export function WoCreateModal({
             value={reviewMode}
             onValueChange={setReviewMode}
             options={[
-              { value: 'gates', label: UI.modeSimple },
-              { value: 'every-step', label: UI.modeEveryStep },
+              { value: 'gates', label: UI.reviewModeGatesShort },
+              { value: 'every-step', label: UI.reviewModeEveryShort },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">{reviewMode === 'gates' ? UI.woReviewGates : UI.woReviewEvery}</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">{reviewMode === 'gates' ? UI.woReviewGatesV2 : UI.woReviewEvery}</p>
+        </section>
+
+        {/* WO-0031c: the rule lives on the work order; Settings holds only this default. */}
+        <section>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.permRuleQuestion}</span>
+          <Segmented
+            value={permissionRule}
+            onValueChange={setPermissionRule}
+            options={[
+              { value: 'ask_every', label: PERMISSION_RULE_LABELS.ask_every },
+              { value: 'risky_excluded', label: PERMISSION_RULE_LABELS.risky_excluded },
+              { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">
+            {permissionRule === 'ask_every' ? UI.permRuleAskHint : permissionRule === 'full_auto' ? UI.permRuleFullHint : UI.permRuleRiskyHint}
+            {' '}{UI.permRuleHint}
+          </p>
         </section>
       </div>
     </Dialog>

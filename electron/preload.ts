@@ -6,7 +6,7 @@
 // Both are async (ipcRenderer.invoke). The sync sendSync snapshot bridge is deleted (TD-017).
 // No Node surface leaks to the renderer (ADR-0001).
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput, WorkOrderSource } from '../src/core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { AppSettings } from '../src/core/app-settings';
 import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
@@ -25,7 +25,11 @@ const source: WorkOrderSource = {
   removeRepoConnection: (id: WorkspaceId, path: string) =>
     ipcRenderer.invoke('docket:source:remove-repo-connection', id, path),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
-  approvePlan: (id: WorkOrderId, planText: string) => ipcRenderer.invoke('docket:source:approve-plan', id, planText),
+  updateWorkOrder: (id: WorkOrderId, patch: UpdateWorkOrderInput) => ipcRenderer.invoke('docket:source:update-work-order', id, patch),
+  recordPermissionDecision: (id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) =>
+    ipcRenderer.invoke('docket:source:record-permission-decision', id, input),
+  approvePlan: (id: WorkOrderId, planText: string, opts?: { editedCount?: number }) =>
+    ipcRenderer.invoke('docket:source:approve-plan', id, planText, opts),
   getWorkOrderSteps: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-steps', id),
   getStepReport: (id: WorkOrderId, idx: number, role: StepRole) =>
     ipcRenderer.invoke('docket:source:get-step-report', id, idx, role),
@@ -43,8 +47,8 @@ const settings: AppSettings = {
   getProviderKey: () => ipcRenderer.invoke('docket:settings:get-provider-key'),
   setProviderKey: (key: string | undefined) => ipcRenderer.invoke('docket:settings:set-provider-key', key),
   checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
-  getPermissionMode: () => ipcRenderer.invoke('docket:settings:get-permission-mode'),
-  setPermissionMode: (mode: 'ask' | 'auto') => ipcRenderer.invoke('docket:settings:set-permission-mode', mode),
+  getPermissionRule: () => ipcRenderer.invoke('docket:settings:get-permission-rule'),
+  setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
 };
 
 const runner = {
@@ -60,6 +64,7 @@ const runner = {
     ipcRenderer.invoke('docket:runner:decide', requestId, decision),
   pendingAsks: (): Promise<PermissionAsk[]> => ipcRenderer.invoke('docket:runner:pending-asks'),
   interrupt: (): Promise<void> => ipcRenderer.invoke('docket:runner:interrupt'),
+  abort: (): Promise<void> => ipcRenderer.invoke('docket:runner:abort'),
 };
 
 contextBridge.exposeInMainWorld('docket', {
@@ -68,6 +73,8 @@ contextBridge.exposeInMainWorld('docket', {
   runner,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
+  diffPeek: (workOrderId: WorkOrderId, filePath: string, newContent: string): Promise<import('../src/core/diff').LineDiff | null> =>
+    ipcRenderer.invoke('docket:diff-peek', workOrderId, filePath, newContent),
   // E2E-only scripting channel (WO-0031c): absent outside DOCKET_E2E runs.
   ...(process.env.DOCKET_E2E
     ? { e2e: { emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev) } }

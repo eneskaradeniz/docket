@@ -12,7 +12,7 @@ import { lampClass } from '../session/pane-chrome';
 export interface RailAction {
   id: string;
   label: string;
-  variant: 'primary' | 'secondary' | 'ghost' | 'signal';
+  variant: 'primary' | 'secondary' | 'ghost' | 'signal' | 'danger';
   busy?: boolean;
   locked?: boolean;
   onActivate: () => void;

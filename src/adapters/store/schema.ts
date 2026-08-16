@@ -98,12 +98,13 @@ CREATE TABLE IF NOT EXISTS connection (
 -- Operator app preferences (WO-0025): a third ADR-0010 category — neither a git-observed fact nor a
 -- decision about work; machine-local app configuration (e.g. the provider API key). Key-value rows.
 -- WO lifecycle event log (WO-0030 / İstek 8): append-only audit of the operator/system actions —
--- created/plan/step/verdict/closure. OWNED: it is Docket's own record of its decisions (ADR-0010),
--- never mutated, never derived. M3's forge events (pr/ci/merge) join this table.
+-- created/plan/step/verdict/closure + the WO-0031c edit/permission kinds (wo_edited, rule_changed,
+-- permission_decision). OWNED: it is Docket's own record of its decisions (ADR-0010), never mutated,
+-- never derived. M3's forge events (pr/ci/merge) join this table.
 CREATE TABLE IF NOT EXISTS wo_event (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_order_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed')),
+  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision')),
   detail TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL
 );

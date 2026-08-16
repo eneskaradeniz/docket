@@ -8,7 +8,7 @@
 // Brand-clean: no woid/tid here — those stay in the store, which calls these helpers.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ReviewMode } from '../../core/source';
+import type { PermissionRule, ReviewMode } from '../../core/source';
 
 const WORK_ORDERS_DIR = ['docs', 'work-orders'];
 
@@ -77,6 +77,7 @@ export interface OrderMdInput {
   trackRepos: string[]; // repo slug strings (code repos only — never the decision store)
   reviewMode: ReviewMode; // → front-matter review_mode
   contextFiles: string[]; // local file paths → Context
+  permissionRule?: PermissionRule; // → front-matter permission_rule (WO-0031c); the WO carries its own rule
 }
 
 // Compose the order.md body. Follows docs/work-orders/TEMPLATE.md + the WO-0013/0014 front-matter
@@ -99,7 +100,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-tracks:
+${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}tracks:
 ${tracks}
 ---
 

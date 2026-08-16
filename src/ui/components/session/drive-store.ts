@@ -14,7 +14,7 @@
 // - `onEnd` is registered by the App: a completion refreshes the WO wherever the operator is (the board's
 //   cost/stage too), not just the open detail.
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import type { DriveInput, LiveSessionState, PermissionDecision } from '../../../core/runner';
+import type { DriveInput, LiveSessionState, PermissionDecision, TranscriptLine } from '../../../core/runner';
 import { foldSessionEvent, initialSessionState } from '../../../core/runner';
 import type { SessionRunner } from '../../../core/runner';
 
@@ -29,12 +29,16 @@ type Listener = () => void;
 export function createDriveStore(runner: SessionRunner) {
   const drives = new Map<string, DriveHandle>();
   const sessionIds = new Map<string, string | undefined>(); // per-key provider session id (resume/approve)
+  const keyWo = new Map<string, DriveInput['workOrderId']>(); // key → branded WO id (ADR-0003: no ui-side cast)
   const listeners = new Set<Listener>();
   let onEnd: ((key: string) => void) | undefined;
   // WO-0029 / B13+B14: fired from the fold loop so the App can refresh the board the moment a drive
   // starts (the card flips to "Çalışıyor") or an ask surfaces in the background ("Seni bekliyor").
   let onStarted: ((key: string) => void) | undefined;
   let onAsk: ((key: string) => void) | undefined;
+  // WO-0031c: a drive DIED (a folded error event or the stream itself threw) — the notification
+  // contract's error toast. Distinct from onEnd, which fires for every completion.
+  let onError: ((key: string) => void) | undefined;
   let active: string | undefined; // the one running key (one drive at a time)
 
   const notify = (): void => {
@@ -60,6 +64,7 @@ export function createDriveStore(runner: SessionRunner) {
   function start(key: string, input: DriveInput, seed: LiveSessionState = initialSessionState): boolean {
     if (active !== undefined) return active === key; // already running this key → no-op true; another → false
     active = key;
+    keyWo.set(key, input.workOrderId);
     drives.set(key, { state: seed, running: true, startedAt: Date.now() });
     sessionIds.set(key, seed.sessionId);
     notify();
@@ -71,6 +76,7 @@ export function createDriveStore(runner: SessionRunner) {
             onStarted?.(key);
           }
           if (ev.kind === 'permission_request') onAsk?.(key);
+          if (ev.kind === 'error') onError?.(key);
           const cur = drives.get(key) ?? { state: initialSessionState, running: true, startedAt: Date.now() };
           drives.set(key, { ...cur, state: foldSessionEvent(cur.state, ev) });
           notify();
@@ -78,6 +84,7 @@ export function createDriveStore(runner: SessionRunner) {
       } catch {
         const cur = drives.get(key);
         if (cur) drives.set(key, { ...cur, state: { ...cur.state, status: 'error', lastError: 'drive failed' } });
+        onError?.(key);
         notify();
       } finally {
         const cur = drives.get(key);
@@ -94,6 +101,19 @@ export function createDriveStore(runner: SessionRunner) {
     runner.decide(requestId, decision);
   const interrupt = (): Promise<void> => runner.interrupt();
   const sessionId = (key: string): string | undefined => sessionIds.get(key);
+  /** The branded work-order id a key belongs to (WO-0031c) — captured at start, so nothing in the UI
+   *  ever constructs a branded id from the key string (ADR-0003). */
+  const woId = (key: string): DriveInput['workOrderId'] | undefined => keyWo.get(key);
+  /** WO-0031c: append an operator-side NOTE line to a drive's fold (the wind-down/force-kill terminal
+   *  annotations). Live-only — a persisted transcript never carries Docket's own commentary. */
+  function note(key: string, line: TranscriptLine): void {
+    const cur = drives.get(key);
+    if (!cur) return;
+    drives.set(key, { ...cur, state: { ...cur.state, entries: [...cur.state.entries, line] } });
+    notify();
+  }
+  /** WO-0031c: Zorla kes — the 5s-stuck escape hatch (forwards the port's forced stop). */
+  const abort = (): Promise<void> => runner.abort();
 
   return {
     subscribe,
@@ -102,7 +122,10 @@ export function createDriveStore(runner: SessionRunner) {
     start,
     decide,
     interrupt,
+    abort,
+    note,
     sessionId,
+    woId,
     set onEnd(cb: (key: string) => void) {
       onEnd = cb;
     },
@@ -111,6 +134,9 @@ export function createDriveStore(runner: SessionRunner) {
     },
     set onAsk(cb: (key: string) => void) {
       onAsk = cb;
+    },
+    set onError(cb: (key: string) => void) {
+      onError = cb;
     },
   };
 }

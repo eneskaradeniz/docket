@@ -327,6 +327,11 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     async interrupt(): Promise<void> {
       currentAbort?.abort();
     },
+    // WO-0031c abort: no harder mechanism exists on the provider surface — the alias is honest
+    // (the GUI's REAL force lives main-side: the pipeline generator's injected return).
+    async abort(): Promise<void> {
+      await this.interrupt();
+    },
   };
 }
 

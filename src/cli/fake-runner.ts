@@ -33,6 +33,7 @@ export function createFakeRunner(scriptPath: string): { runner: SessionRunner; d
     },
     pendingAsks: async () => [],
     async interrupt() { /* no-op for a scripted runner */ },
+    async abort() { /* no-op for a scripted runner */ },
   };
 
   return { runner, decideCalls };

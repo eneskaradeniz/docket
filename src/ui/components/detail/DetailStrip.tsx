@@ -1,13 +1,23 @@
 // DetailStrip (WO-0031c / v4) — the console's top row: ‹ back · WO badge + stage · the phase readout ·
 // right-aligned metrics (Maliyet, Süre — hidden at the narrowest sizes) · the GLOBAL SADE|DETAY
-// segment · the quiet delete icon. The work-order title rides underneath. This replaces Faz B's
-// DetailHeader; cost/duration/status that lived in per-pane headers now live here, once.
-import { ChevronLeft, Trash2 } from 'lucide-react';
+// segment · the quiet delete icon. The work-order title rides underneath with the two strip badges:
+// the review cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display;
+// the ask card changes it). The pencil opens the inline title/description editor (WO-0031c freedom 2).
+import { useState } from 'react';
+import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
 import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
-import { Badge, Button, Segmented } from '../../kit';
-import { cn } from '../../kit';
-import { formatUsd, phaseLabelText, STAGE_LABELS, UI, woIdLabel } from '../../data/labels';
+import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import { Badge, Button, Input, Segmented, Textarea, cn } from '../../kit';
+import {
+  formatUsd,
+  PERMISSION_RULE_SHORT,
+  PERMISSION_RULE_TINY,
+  phaseLabelText,
+  STAGE_LABELS,
+  UI,
+  woIdLabel,
+} from '../../data/labels';
 import type { ViewMode } from '../../data/view-mode';
 import type { LampTone } from '../session/pane-chrome';
 import { lampClass } from '../session/pane-chrome';
@@ -25,20 +35,27 @@ const PHASE_KIND_TONE: Record<WoPhase['kind'], LampTone> = {
 
 export function DetailStrip({
   detail,
+  objective,
   phase,
   duration,
   viewMode,
   onViewModeChange,
   onBack,
   onDelete,
+  permissionRule,
+  onUpdateWorkOrder,
 }: {
   detail: WorkOrderDetailView;
+  /** The parsed order.md Objective — the description editor's starting text (WO-0031c). */
+  objective: string;
   phase: WoPhase;
   duration?: string;
   viewMode: ViewMode;
   onViewModeChange: (m: ViewMode) => void;
   onBack: () => void;
   onDelete: () => void;
+  permissionRule: PermissionRule;
+  onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
 }) {
   const tone = PHASE_KIND_TONE[phase.kind];
   const anyCost = detail.sessions.some((s) => s.cost);
@@ -46,6 +63,23 @@ export function DetailStrip({
   // The juice hairline (v4 §7): fills with done/total steps — a quiet progress read under the strip.
   const stepsTotal = detail.steps.length;
   const stepsDone = detail.steps.filter((s) => s.status === 'done').length;
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(detail.title);
+  const [description, setDescription] = useState(objective);
+  const [saving, setSaving] = useState(false);
+  const closeEdit = (): void => {
+    setEditing(false);
+    setTitle(detail.title);
+  };
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    try {
+      await onUpdateWorkOrder({ ...(title.trim() && title !== detail.title ? { title: title.trim() } : {}), ...(description.trim() && description !== objective ? { description: description.trim() } : {}) });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <header className="flex flex-col gap-1.5 pb-2">
@@ -93,7 +127,65 @@ export function DetailStrip({
           </Button>
         </div>
       </div>
-      <h1 className="truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+
+      {editing ? (
+        <div className="flex flex-col gap-1.5 rounded-md border border-hairline bg-surface p-2.5">
+          <label className="sr-only" htmlFor="wo-edit-title">{UI.woEditTitleLabel}</label>
+          <Input
+            id="wo-edit-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={UI.woEditTitleLabel}
+            className="font-sans text-[14px]"
+          />
+          <label className="sr-only" htmlFor="wo-edit-desc">{UI.woEditDescLabel}</label>
+          <Textarea
+            id="wo-edit-desc"
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={UI.woEditDescLabel}
+            className="font-sans text-[12.5px]"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={closeEdit}>{UI.cancel}</Button>
+            <Button variant="primary" size="sm" busy={saving} locked={saving || !title.trim()} onClick={() => void save()}>
+              {UI.woEditSave}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={UI.woEditAria}
+            className="h-6 w-6 shrink-0"
+            onClick={() => setEditing(true)}
+          >
+            <Pencil className="h-3 w-3" aria-hidden="true" />
+          </Button>
+          {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows. */}
+          <button
+            type="button"
+            data-review-mode={detail.reviewMode}
+            title={UI.reviewModeLabel}
+            onClick={() => void onUpdateWorkOrder({ reviewMode: detail.reviewMode === 'gates' ? 'every-step' : 'gates' })}
+            className="shrink-0 rounded border border-hairline px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-inkdim transition-colors hover:border-inkdim hover:text-ink"
+          >
+            {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
+          </button>
+          <span
+            data-permission-rule={permissionRule}
+            className="hidden shrink-0 rounded border border-info/40 px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-info min-[520px]:inline"
+          >
+            <span className="min-[820px]:inline">{PERMISSION_RULE_SHORT[permissionRule]}</span>
+            <span className="hidden min-[520px]:inline min-[820px]:hidden">{PERMISSION_RULE_TINY[permissionRule]}</span>
+          </span>
+        </div>
+      )}
+
       {stepsTotal > 0 ? (
         <div className="hairline-progress" aria-hidden="true">
           <div style={{ width: `${Math.round((stepsDone / stepsTotal) * 100)}%` }} />

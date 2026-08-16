@@ -3,15 +3,16 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
+import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
+import { unifiedDiffLines } from '../src/core/diff';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, RepoConnectionInput } from '../src/core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
 
@@ -129,9 +130,51 @@ ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, pat
 //   renderer (ADR-0001). ---
 ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => store.createWorkOrder(input));
 
+// --- Work-order EDITING + permission-decision audit (WO-0031c). order.md rewrite stays store-side. ---
+ipcMain.handle('docket:source:update-work-order', (_e, id: WorkOrderId, patch: UpdateWorkOrderInput) => store.updateWorkOrder(id, patch));
+ipcMain.handle(
+  'docket:source:record-permission-decision',
+  (_e, id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) => store.recordPermissionDecision(id, input),
+);
+
+// --- Diff peek (WO-0031c, hardened): the OLD file content for a write-permission card. fs stays
+//   main-side; the renderer sends the WORK ORDER id + the write's target path + new content and gets
+//   capped diff STRUCTURE back. The read is jailed to the WO's own repo roots (its tracks' connected
+//   local paths — never process.cwd(), which is the app's repo): the target is realpath'd (symlinks
+//   cannot hop the fence) and must sit strictly under one of those roots. Anything else reads as
+//   absent — a peek is a courtesy, never an arbitrary-read oracle. ---
+const isUnder = (root: string, candidate: string): boolean => {
+  const rel = relative(root, candidate);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+};
+ipcMain.handle('docket:diff-peek', (_e, workOrderId: WorkOrderId, filePath: string, newContent: string) => {
+  const roots = store.woRepoPaths(workOrderId).map((r) => {
+    try {
+      return realpathSync(r);
+    } catch {
+      return r;
+    }
+  });
+  if (roots.length === 0) return null;
+  const abs = isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
+  let real: string;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return null; // the target does not exist (yet) → a fresh-file peek is the caller's fallback
+  }
+  if (!roots.some((root) => isUnder(root, real))) return null;
+  try {
+    const oldText = readFileSync(real, 'utf8');
+    return unifiedDiffLines(oldText, newContent);
+  } catch {
+    return null; // unreadable (permissions/binary) → no peek
+  }
+});
+
 // --- Plan approval (WO-0016). Writes plan.md into the working tree (no commit) + flips the
 //   plan_approval gate. Path resolution stays server-side (ADR-0001). ---
-ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: string) => store.approvePlan(id, planText));
+ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: string, opts?: { editedCount?: number }) => store.approvePlan(id, planText, opts));
 
 // --- Step list + reports (WO-0017). The step specs are parsed from plan.md's ```steps fence; reports are
 //   read from the decision store at view time (ADR-0010). Path resolution stays server-side (ADR-0001). ---
@@ -155,8 +198,8 @@ ipcMain.handle('docket:source:get-work-order-events', (_e, id: WorkOrderId) => s
 //   the provider check runs in the runner adapter — the only place that may touch the provider. ---
 ipcMain.handle('docket:settings:get-provider-key', () => store.getProviderKey());
 ipcMain.handle('docket:settings:set-provider-key', (_e, key: string | undefined) => store.setProviderKey(key));
-ipcMain.handle('docket:settings:get-permission-mode', () => store.getPermissionMode());
-ipcMain.handle('docket:settings:set-permission-mode', (_e, mode: 'ask' | 'auto') => store.setPermissionMode(mode));
+ipcMain.handle('docket:settings:get-permission-rule', () => store.getPermissionRule());
+ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule) => store.setPermissionRule(rule));
 ipcMain.handle('docket:settings:check-provider', async () => {
   const key = await store.getProviderKey();
   return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
@@ -188,23 +231,30 @@ const runner: E2eRunner | ReturnType<typeof createRunner> = process.env.DOCKET_E
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });
+// The one active drive's generator — Zorla kes (docket:runner:abort) closes it via injected return.
+let activeDrive: AsyncIterable<RunnerEvent> & { return?: (v: unknown) => Promise<unknown> } | undefined;
 
 ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // The renderer cannot know filesystem paths; the composition root fills cwd. Everything else — prompt
   // assembly, persistence side-effects (WO-0010/0017/0020), verdict capture, permission handling — lives in
   // the host-agnostic pipeline (src/core/pipeline.ts, WO-0023), which drives the runner port and re-yields
   // every event here for IPC. This handler is a thin forwarder; it owns no logic.
-  // WO-0029 / B18: the ask cadence is the operator's choice — the stored mode applies unless the drive
-  // explicitly carries one (the CLI's --policy sets it per drive). The fence behaves identically in both.
-  const permissionMode = input.permissions ?? (await store.getPermissionMode());
-  const driveInput: DriveInput = { ...input, cwd: process.cwd(), permissions: permissionMode };
+  // WO-0031c: the work order's permission rule applies unless the drive explicitly carries one (the
+  // CLI's --policy). The rule resolves from the WO's order.md front-matter, falling back to the Settings
+  // default. The fence (scope) is identical under every rule — this is cadence only.
+  const permissionRule = input.permissionRule ?? (await store.getPermissionRuleFor(input.workOrderId));
+  const driveInput: DriveInput = { ...input, cwd: process.cwd(), permissionRule };
+  const iterator = pipeline.drive(driveInput);
+  activeDrive = iterator;
   try {
-    for await (const ev of pipeline.drive(driveInput)) {
+    for await (const ev of iterator) {
       event.sender.send('docket:runner:event', ev);
     }
   } catch (e) {
     // The pipeline catches drive errors itself; this is a last-resort guard for an IPC/send failure.
     event.sender.send('docket:runner:event', { kind: 'error', message: (e as Error)?.message ?? String(e) });
+  } finally {
+    if (activeDrive === iterator) activeDrive = undefined;
   }
 });
 
@@ -214,6 +264,16 @@ ipcMain.handle('docket:runner:decide', async (_event, requestId: string, decisio
 
 ipcMain.handle('docket:runner:interrupt', async () => {
   await pipeline.interrupt();
+});
+
+// WO-0031c: Zorla kes — the 5s-stuck stop's escape hatch. A generator's injected return runs its
+// `finally` (the pipeline's completion guarantee records the session idle), unlike a hard process kill.
+ipcMain.handle('docket:runner:abort', async () => {
+  if (activeDrive?.return) {
+    const ret = activeDrive.return;
+    activeDrive = undefined;
+    await ret(undefined);
+  }
 });
 
 // WO-0027 / Bulgu 9: a remounted pane re-attaches to the asks this runner still holds — the resolvers are
@@ -228,6 +288,11 @@ if (process.env.DOCKET_E2E) {
 }
 
 app.whenReady().then(() => {
+  // WO-0031c: the notification contract — the renderer's Notification() (OS toast on background asks)
+  // is denied by default on file:// origins; allow it explicitly.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'notifications');
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -23,6 +23,8 @@ import type {
   WoEventKind,
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
+import type { TranscriptLine } from '../../core/types';
+import type { PermissionRule } from '../../core/source';
 import type { WoPhase } from '../../core/derive';
 import type { ProviderErrorCode } from '../../core/runner';
 
@@ -228,6 +230,23 @@ export function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? 'Araç kullan';
 }
 
+/** One transcript line as PLAIN text (the fail card's detail + clipboard, WO-0031c) — the ANSI
+ *  formatter is for xterm; this is its DOM/clipboard sibling, same label discipline. */
+export function transcriptLineText(line: TranscriptLine): string {
+  switch (line.speaker) {
+    case 'assistant':
+      return line.text;
+    case 'tool_use':
+      return line.detail ? `${toolLabel(line.tool)} — ${line.detail}` : toolLabel(line.tool);
+    case 'tool_result':
+      return `→ ${line.summary}`;
+    case 'system':
+      return line.text;
+    case 'note':
+      return UI.noteFor(line.kind, line.detail);
+  }
+}
+
 export function permissionPrompt(tool: string, detail: string): string {
   const label = toolLabel(tool);
   return detail ? `${label} — ${detail}` : label;
@@ -304,7 +323,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
 };
 
-// Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8)
+// Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8; WO-0031c düzenleme/izin türleri eklendi)
 export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   created: 'Oluşturuldu',
   plan_saved: 'Plan önerildi (pending)',
@@ -314,6 +333,49 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   step_verdict: 'Mimar kararı',
   verdict_overridden: 'Karar geçersiz kılındı (operatör)',
   closed: 'Kapatıldı',
+  wo_edited: 'İş emri düzenlendi',
+  rule_changed: 'Kural değişti',
+  permission_decision: 'İzin kararı',
+};
+
+/** The STRUCTURAL event detail → display (WO-0031c): the store writes machine detail (`edited:3`,
+ *  `allowed · check.yml`, `full_auto`); this is the one place it becomes Turkish. */
+export function eventDetailText(kind: WoEventKind, detail: string): string {
+  if (!detail) return '';
+  switch (kind) {
+    case 'plan_approved': {
+      const m = /^edited:(\d+)$/.exec(detail);
+      return m ? `düzenlenmiş onay · ${m[1]} değişiklik` : detail;
+    }
+    case 'permission_decision': {
+      const sep = detail.indexOf(' · ');
+      const head = sep >= 0 ? detail.slice(0, sep) : detail;
+      const rest = sep >= 0 ? detail.slice(sep + 3) : '';
+      const verdict = head === 'allowed' ? 'izin verildi' : head === 'denied' ? 'reddedildi' : head;
+      return rest ? `${verdict} · ${rest}` : verdict;
+    }
+    case 'rule_changed':
+      return PERMISSION_RULE_LABELS[detail as PermissionRule] ?? detail;
+    default:
+      return detail;
+  }
+}
+
+// Per-WO izin kuralı (WO-0031c) — değerler → görüntü.
+export const PERMISSION_RULE_LABELS: Record<PermissionRule, string> = {
+  ask_every: 'Her seferinde sor',
+  risky_excluded: 'Riskli hariç',
+  full_auto: 'Tam otomatik',
+};
+export const PERMISSION_RULE_SHORT: Record<PermissionRule, string> = {
+  ask_every: 'İzin: hep sor',
+  risky_excluded: 'İzin: otomatik',
+  full_auto: 'İzin: tam otomatik',
+};
+export const PERMISSION_RULE_TINY: Record<PermissionRule, string> = {
+  ask_every: 'İzin: sor',
+  risky_excluded: 'İzin: oto',
+  full_auto: 'İzin: tam',
 };
 
 const MONTHS_TR = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
@@ -602,6 +664,83 @@ export const UI = {
     const base = { interrupt_sent: '⏸ kesme sinyali gönderildi', session_closed: '■ oturum kapandı', force_killed: '■ zorla kesildi' }[kind];
     return detail ? `${base} — ${detail}` : base;
   },
+  // ===== c2 (WO-0031c): kural, düzenleme, denetim, bildirim =====
+  // İzin kuralı — Ayarlar (varsayılan) + create-modal + rozet + izin kartı.
+  permRuleLabel: 'İzin kuralı',
+  permRuleQuestion: 'İzin kuralı — ajan sizden ne zaman izin istesin',
+  permRuleHint: "Varsayılan: Ayarlar'daki kural. Bu seçim yalnız bu iş emri için; izin kartından değiştirilebilir.",
+  permRuleAskHint: 'her dosya/komut için',
+  permRuleRiskyHint: 'otomatik — riskli olanlar yine sorar',
+  permRuleFullHint: 'hiç sormaz',
+  permRuleSaving: 'Kaydediliyor…',
+  askRiskyTag: 'riskli yazım',
+  askAlwaysAuto: 'Bu iş emri için hep otomatik',
+  // WO satır içi düzenleme + inceleme modu rozeti.
+  reviewModeLabel: 'İnceleme',
+  reviewModeGatesShort: 'Kapılarda',
+  reviewModeEveryShort: 'Her adımda',
+  woEditAria: 'İş emrini düzenle',
+  woEditSave: 'Kaydet',
+  woEditTitleLabel: 'Başlık',
+  woEditDescLabel: 'Açıklama / hedef',
+  // Plan düzenleme (onay öncesi).
+  editPlan: 'Düzenle',
+  editPlanDone: 'Bitti',
+  editAddStep: '+ Adım ekle',
+  editNewStepAim: 'Yeni adım — yaz…',
+  editCounter: (n: number) => `${n} değişiklik — onayın "düzenlenmiş onay" olarak loglanır`,
+  editNoChanges: 'Değişiklik yapmadan da onaylayabilirsin.',
+  editAimMissing: 'Bir adımın metni boş — doldurunca Onayla gelir.',
+  editHint: 'roze tıkla: rol değişir · ▲▼ sıralar · ✕ siler',
+  editMoveUpAria: 'Yukarı taşı',
+  editMoveDownAria: 'Aşağı taşı',
+  editRemoveAria: 'Adımı sil',
+  editRoleAria: (role: SessionRole) => `Rol: ${ROLE_LABELS[role]} — değiştirmek için tıkla`,
+  stepRef: (idx: number) => `adım ${idx}`,
+  // Denetim (oturum dökümü tablosu).
+  auditTitle: 'Oturum dökümü',
+  auditColSession: 'Oturum',
+  auditColRole: 'Rol',
+  auditColTime: 'Zaman',
+  auditColDuration: 'Süre',
+  auditColCost: 'Maliyet',
+  auditTotal: 'Toplam',
+  auditCostNone: '—',
+  auditClock: (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const p = (n: number): string => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  },
+  auditRange: (a: string, b: string) => `${UI.auditClock(a)} – ${UI.auditClock(b)}`,
+  auditNamePlan: 'Plan',
+  auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
+  auditNameReview: (idx: number) => `İnceleme ${idx}`,
+  stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
+  // Diff peek (yazma izni kartı).
+  diffPeek: '▸ fark',
+  diffPeekHide: '▾ fark',
+  diffTruncated: (n: number) => `… ${n} satır`,
+  diffEmpty: 'Değişiklik yok',
+  // Durum: wind-down, force-kill, hata kartı.
+  railForceKill: 'Zorla kes',
+  railStoppedMsg: 'Durduruldu. Rapor kısmi kalır.',
+  failTitle: 'Oturum çöktü',
+  failSpent: (cost: string) => `Harcanan: ${cost} — kayıt korundu.`,
+  failDetail: 'Ayrıntı',
+  failCopy: 'Kopyala',
+  failCopied: 'Kopyalandı',
+  failLastTitle: 'Son satırlar',
+  // Toast + bildirim sözleşmesi.
+  toastAskTitle: (wo: string) => `${wo} · izin bekliyor`,
+  toastAskBody: 'tıkla — detaya git',
+  toastErrTitle: (wo: string) => `${wo} · oturum çöktü`,
+  toastRuleSaved: 'Kural kaydedildi',
+  toastRuleSavedBody: 'bu iş emrinde tam otomatik',
+  titlePending: (n: number) => `(${n}) izin bekliyor`,
+  // Create-modal: tek adımda mimar + yeni inceleme adları.
+  createAndPlan: 'Oluştur ve plan iste',
+  woReviewGatesV2: 'Kapılarda — plan onayı, revizyon ve merge’de sorar',
 } as const;
 
 // WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;

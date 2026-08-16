@@ -162,6 +162,8 @@ export interface Track {
 }
 
 // --- WO lifecycle event (WO-0030 / İstek 8): one append-only audit row per lifecycle action. ---
+// WO-0031c adds the edit/permission kinds: wo_edited (title/description/review-mode edits), rule_changed
+// (the per-WO permission rule), permission_decision (the operator's answer on an ask card).
 export type WoEventKind =
   | 'created'
   | 'plan_saved'
@@ -170,7 +172,10 @@ export type WoEventKind =
   | 'step_done'
   | 'step_verdict'
   | 'verdict_overridden'
-  | 'closed';
+  | 'closed'
+  | 'wo_edited'
+  | 'rule_changed'
+  | 'permission_decision';
 
 export interface WoEvent {
   kind: WoEventKind;

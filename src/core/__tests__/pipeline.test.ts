@@ -56,6 +56,7 @@ function fakeRunner(script: RunnerEvent[]) {
     },
     pendingAsks: async () => [],
     async interrupt() {},
+    async abort() {},
   } as SessionRunner;
   return { runner, decideCalls, drivenInputs };
 }
@@ -71,6 +72,7 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
     async decide() {},
     pendingAsks: async () => [],
     async interrupt() {},
+    async abort() {},
   } as SessionRunner;
   return { runner, drivenInputs };
 }
@@ -228,6 +230,76 @@ describe('createPipeline — permission policy', () => {
     }
     expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'ask_resolved', 'turn_complete']);
     expect(fr.decideCalls).toEqual([['r1', { allow: true }]]);
+  });
+});
+
+describe('createPipeline — per-work-order permission rule (WO-0031c)', () => {
+  const riskyAsk: RunnerEvent = {
+    kind: 'permission_request',
+    requestId: 'r-risky',
+    tool: 'Write',
+    input: { file_path: '.github/workflows/check.yml' },
+  };
+  const benignAsk: RunnerEvent = {
+    kind: 'permission_request',
+    requestId: 'r-ok',
+    tool: 'Write',
+    input: { file_path: 'src/app.ts' },
+  };
+
+  it('risky_excluded: a risky ask is DEFERRED (surfaced to the operator)', async () => {
+    const fr = fakeRunner([started(), riskyAsk, done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events: RunnerEvent[] = [];
+    for await (const ev of p.drive(stepDrive({ permissionRule: 'risky_excluded' }))) {
+      events.push(ev);
+      if (ev.kind === 'permission_request') await p.decide(ev.requestId, { allow: true });
+    }
+    expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'ask_resolved', 'turn_complete']);
+    expect(fr.decideCalls).toEqual([['r-risky', { allow: true }]]); // the OPERATOR answered, not the policy
+  });
+
+  it('risky_excluded: an ordinary in-scope write auto-approves — nothing surfaces', async () => {
+    const fr = fakeRunner([started(), benignAsk, done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: askOperatorPolicy() });
+    const events = await collect(p, stepDrive({ permissionRule: 'risky_excluded' }));
+    expect(events.map((e) => e.kind)).toEqual(['started', 'ask_resolved', 'turn_complete']);
+    expect(fr.decideCalls).toEqual([['r-ok', { allow: true }]]);
+  });
+
+  it('full_auto resolves every ask internally even under an ask-operator injection', async () => {
+    const fr = fakeRunner([started(), riskyAsk, done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: askOperatorPolicy() });
+    const events = await collect(p, stepDrive({ permissionRule: 'full_auto' }));
+    expect(events.map((e) => e.kind)).toEqual(['started', 'ask_resolved', 'turn_complete']);
+  });
+
+  it('ask_every defers even the ordinary write (Her seferinde sor)', async () => {
+    const fr = fakeRunner([started(), benignAsk, done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events: RunnerEvent[] = [];
+    for await (const ev of p.drive(stepDrive({ permissionRule: 'ask_every' }))) {
+      events.push(ev);
+      if (ev.kind === 'permission_request') await p.decide(ev.requestId, { allow: false, reason: 'no' });
+    }
+    expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'ask_resolved', 'turn_complete']);
+    expect(fr.decideCalls).toEqual([['r-ok', { allow: false, reason: 'no' }]]);
+  });
+
+  it('no rule on the drive → the injected policy governs (tests/scripted runners)', async () => {
+    const fr = fakeRunner([started(), benignAsk, done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: askOperatorPolicy() });
+    const events: RunnerEvent[] = [];
+    for await (const ev of p.drive(stepDrive())) {
+      events.push(ev);
+      if (ev.kind === 'permission_request') await p.decide(ev.requestId, { allow: true });
+    }
+    expect(events.map((e) => e.kind)).toEqual(['started', 'permission_request', 'ask_resolved', 'turn_complete']);
   });
 });
 
