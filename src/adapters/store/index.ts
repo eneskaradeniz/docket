@@ -45,6 +45,9 @@ import type {
 export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
+  /** The work order's REPO ROOT PATHS (its tracks' connected local paths, decision store included) —
+   *  the jail the diff-peek read stays inside (WO-0031c: the root is the WO's repos, never cwd). */
+  woRepoPaths(workOrderId: WorkOrderId): string[];
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -471,6 +474,22 @@ function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): s
   return process.cwd();
 }
 
+/** The work order's repo root paths: its tracks' connected local paths (decision store included). The
+ *  diff-peek read (WO-0031c) is jailed to THESE — never process.cwd(), which is the app's own repo. */
+function woRepoPaths(db: DatabaseSync, workOrderId: WorkOrderId): string[] {
+  const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as { workspace_id: string } | undefined;
+  if (!wo) return [];
+  const tracks = db.prepare('SELECT repo FROM track WHERE work_order_id = ?').all(workOrderId) as { repo: string }[];
+  const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(wid(wo.workspace_id)) as { local_path: string }[];
+  const paths = new Set<string>();
+  for (const t of tracks) {
+    for (const r of rows) {
+      if (repoBase(r.local_path) === t.repo || r.local_path.endsWith(t.repo)) paths.add(r.local_path);
+    }
+  }
+  return [...paths];
+}
+
 // ===== Plan steps (WO-0017) =====
 //
 // Steps are detail-only: the board never asks for them. The specs (role/aim/scope) are parsed from plan.md's
@@ -487,12 +506,13 @@ function woDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
 
 // The Settings DEFAULT permission rule (WO-0031c): the new `permission_rule` key, falling back to the
 // legacy `permission_mode` value ('ask'→ask_every, 'auto'→risky_excluded) so a pre-c2 operator's stored
-// choice keeps its meaning. Absent both → risky_excluded (the v4 default).
+// choice keeps its meaning. Absent both → ask_every — the operator's ruling: a fresh install never
+// silently auto-approves; the operator OPTS IN to Riskli hariç / Tam otomatik.
 function settingPermissionRule(db: DatabaseSync): PermissionRule {
   const rule = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_rule') as { value: string } | undefined)?.value;
   if (rule === 'ask_every' || rule === 'risky_excluded' || rule === 'full_auto') return rule;
   const legacy = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('permission_mode') as { value: string } | undefined)?.value;
-  return legacy === 'ask' ? 'ask_every' : legacy === 'auto' ? 'risky_excluded' : 'risky_excluded';
+  return legacy === 'auto' ? 'risky_excluded' : 'ask_every';
 }
 
 // The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
@@ -859,6 +879,7 @@ export function createStore(dbPath: string): Store {
       return Promise.resolve();
     },
     getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),
+    woRepoPaths: (workOrderId: WorkOrderId) => woRepoPaths(db, workOrderId),
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
     recordStep: (workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }) =>
       recordStepRow(db, workOrderId, idx, patch),

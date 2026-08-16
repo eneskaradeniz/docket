@@ -6,7 +6,7 @@ import { derivePhase, deriveTurnState } from '../../../core/derive';
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, UI } from '../../data/labels';
+import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } from '../../data/labels';
 import { Button, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
@@ -245,7 +245,9 @@ export function WorkOrderDetail({
     if (!effectivePlan) return;
     setApproving(true);
     try {
-      if (editOpen && editSteps.length > 0) {
+      // The edited approval requires a fence to rewrite — a fence-less plan is approved verbatim
+      // (the editor cannot be open for one; the belt guards the suspenders).
+      if (editOpen && editSteps.length > 0 && proposedSteps.length > 0) {
         const editedCount = planEditCount;
         await onApprovePlan(applyStepEdits(effectivePlan, editSteps), { editedCount });
         setEditOpen(false);
@@ -353,6 +355,7 @@ export function WorkOrderDetail({
   }, [editOpen, editSteps, proposedSteps]);
   const editEmptyAim = editOpen && editSteps.some((s) => !s.aim.trim());
   const openEditor = (): void => {
+    if (proposedSteps.length === 0) return; // no fence → nothing to edit (see the rail's Düzenle rule)
     setEditSteps(proposedSteps.map((s) => ({ ...s })));
     setEditOpen(true);
   };
@@ -394,9 +397,14 @@ export function WorkOrderDetail({
         if (!editEmptyAim) railPrimary = () => void approvePlan();
       } else {
         railMessage = UI.railApproveHint;
+        // Editing needs a parsed steps fence: a fence-less plan has nothing to edit, and approving
+        // editor-added steps would SILENTLY DROP them (applyStepEdits has no fence to rewrite) — the
+        // Düzenle action is absent there, and the planNoStepsWarn banner already says object (ADR-0001).
         railActions = [
           { id: 'object', label: UI.object, variant: 'ghost', locked: approving, onActivate: () => setObjectionOpen(true) },
-          { id: 'edit', label: UI.editPlan, variant: 'secondary', locked: approving, onActivate: openEditor },
+          ...(proposedSteps.length > 0
+            ? [{ id: 'edit', label: UI.editPlan, variant: 'secondary' as const, locked: approving, onActivate: openEditor }]
+            : []),
           { id: 'approve', label: UI.railApprove, variant: 'primary', busy: approving, locked: approving, onActivate: () => void approvePlan() },
         ];
         railPrimary = () => void approvePlan();
@@ -464,22 +472,66 @@ export function WorkOrderDetail({
           onAllow={() => allowAsk(a)}
           onDeny={() => denyAsk(a)}
           {...(permissionRule === 'full_auto' ? {} : { onAlwaysAuto: () => void alwaysAuto(a), alwaysAutoBusy: liftingRule })}
-          diffPeek={window.docket.diffPeek}
+          diffPeek={(filePath, newContent) => window.docket.diffPeek(detail.id, filePath, newContent)}
         />
       ))}
     </div>
   ) : null;
 
   // The failed-session card (c2): the error is a one-button stop, not a dead end. The sub-line is the
-  // honest "spent so far" — the record survived.
+  // honest "spent so far"; the expandable detail carries the code + message + the last transcript lines
+  // (v4 d4) and a Kopyala that puts the whole diagnostic on the clipboard.
+  const [failDetailOpen, setFailDetailOpen] = useState(false);
+  const [failCopied, setFailCopied] = useState(false);
+  const failTail = [...state.entries].slice(-8);
+  const failCopyText = [
+    state.lastErrorCode ? `code: ${state.lastErrorCode}` : null,
+    state.lastError ? `message: ${state.lastError}` : null,
+    UI.failLastTitle + ':',
+    ...failTail.map(transcriptLineText),
+  ]
+    .filter((l): l is string => l !== null)
+    .join('\n');
+  const copyFailDetail = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(failCopyText);
+      setFailCopied(true);
+      setTimeout(() => setFailCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — the text stays selectable on screen
+    }
+  };
   const failCard =
     turn === 'retry' ? (
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
-        <div className="flex-1 px-3.5 py-3">
+        <div className="min-w-0 flex-1 px-3.5 py-3">
           <p className="readout text-error">{state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : UI.failTitle}</p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.failSpent(state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0))}</p>
-          {state.lastError && !state.lastErrorCode ? <p className="mt-1 break-words text-[11px] text-inkdim">{state.lastError}</p> : null}
+          <div className="mt-1.5 flex items-center gap-3">
+            <button type="button" className="alink text-[11px]" onClick={() => setFailDetailOpen((o) => !o)}>
+              {failDetailOpen ? '▾' : '▸'} {UI.failDetail}
+            </button>
+            {failDetailOpen ? (
+              <button type="button" className="alink text-[11px]" onClick={() => void copyFailDetail()}>
+                {failCopied ? UI.failCopied : UI.failCopy}
+              </button>
+            ) : null}
+          </div>
+          {failDetailOpen ? (
+            <pre className="mt-2 max-h-56 overflow-auto rounded border border-hairline bg-bg p-2 font-mono text-[11px] leading-relaxed text-inkdim">
+              {state.lastErrorCode ? <span className="block text-error">code: {state.lastErrorCode}</span> : null}
+              {state.lastError ? <span className="block whitespace-pre-wrap break-words">{state.lastError}</span> : null}
+              {failTail.length > 0 ? (
+                <>
+                  <span className="mt-1 block text-ink">{UI.failLastTitle}</span>
+                  {failTail.map((l, i) => (
+                    <span key={i} className="block whitespace-pre-wrap">{transcriptLineText(l)}</span>
+                  ))}
+                </>
+              ) : null}
+            </pre>
+          ) : null}
         </div>
       </div>
     ) : null;
@@ -585,7 +637,7 @@ export function WorkOrderDetail({
             <div className="flex-1 px-3.5 py-3">
               <p className="readout text-signal">{UI.verdictCardReviseTitle}</p>
               <p className="mt-1 text-[12px] text-inkdim">
-                {UI.overrideVerdictHint} — <span className="font-mono">adım {unresolvedRevise.idx}</span>
+                {UI.overrideVerdictHint} — <span className="font-mono">{UI.stepRef(unresolvedRevise.idx)}</span>
               </p>
               <div className="mt-2 flex justify-end gap-2">
                 <Button variant="secondary" size="sm" onClick={() => void onResetStep(unresolvedRevise.idx)}>{UI.rerunStep}</Button>

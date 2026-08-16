@@ -537,15 +537,16 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
   });
   it('permission rule round-trips; the legacy ask/auto values keep their meaning (WO-0031c)', async () => {
     const store = createStore(freshDb());
-    expect(await store.getPermissionRule()).toBe('risky_excluded'); // no key → the v4 default
+    // no keys at all → ask_every: a fresh install never silently auto-approves (operator ruling)
+    expect(await store.getPermissionRule()).toBe('ask_every');
     await store.setPermissionRule('full_auto');
     expect(await store.getPermissionRule()).toBe('full_auto');
-    // legacy mapping: a pre-c2 operator's stored choice (ask) must not silently change behavior
-    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('permission_mode', 'ask')").run();
+    // legacy mapping: a pre-c2 operator's stored choice keeps its meaning
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('permission_mode', 'auto')").run();
     store.db.prepare("DELETE FROM app_setting WHERE key = 'permission_rule'").run();
-    expect(await store.getPermissionRule()).toBe('ask_every');
-    store.db.prepare("UPDATE app_setting SET value = 'auto' WHERE key = 'permission_mode'").run();
     expect(await store.getPermissionRule()).toBe('risky_excluded');
+    store.db.prepare("UPDATE app_setting SET value = 'ask' WHERE key = 'permission_mode'").run();
+    expect(await store.getPermissionRule()).toBe('ask_every');
   });
 });
 
@@ -643,13 +644,24 @@ describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
     expect(decision.detail).toBe('allowed · check.yml');
   });
 
+  it('WO-0031c: woRepoPaths resolves the WO tracks to their connected local paths (the diff-peek jail)', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const other = freshRoot();
+    const ws = await store.createWorkspace({ label: 'R', repos: [{ path: root }, { path: other }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Jail', description: 'x', trackRepos: [ws.repos[0]!], reviewMode: 'gates', contextFiles: [] });
+    const paths = store.woRepoPaths(wo.id);
+    expect(paths).toEqual([root]); // the WO's OWN track repo — not cwd, not the workspace's other repos
+    expect(store.woRepoPaths(woid('WO-YOK'))).toEqual([]);
+  });
+
   it('WO-0031c: a created WO carries its rule; a pre-rule WO follows the Settings default', async () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot5(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'R', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], permissionRule: 'ask_every' });
     expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every');
     const legacy = await store.createWorkOrder({ workspaceId: ws.id, title: 'L2', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    expect(await store.getPermissionRuleFor(legacy.id)).toBe('risky_excluded'); // no rule → the default
+    expect(await store.getPermissionRuleFor(legacy.id)).toBe('ask_every'); // no rule → the safe default
     await store.setPermissionRule('full_auto');
     expect(await store.getPermissionRuleFor(legacy.id)).toBe('full_auto'); // the default moved
     expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every'); // …but the WO's own rule wins

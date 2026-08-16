@@ -73,8 +73,8 @@ contextBridge.exposeInMainWorld('docket', {
   runner,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
-  diffPeek: (filePath: string, newContent: string): Promise<import('../src/core/diff').LineDiff | null> =>
-    ipcRenderer.invoke('docket:diff-peek', filePath, newContent),
+  diffPeek: (workOrderId: WorkOrderId, filePath: string, newContent: string): Promise<import('../src/core/diff').LineDiff | null> =>
+    ipcRenderer.invoke('docket:diff-peek', workOrderId, filePath, newContent),
   // E2E-only scripting channel (WO-0031c): absent outside DOCKET_E2E runs.
   ...(process.env.DOCKET_E2E
     ? { e2e: { emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev) } }

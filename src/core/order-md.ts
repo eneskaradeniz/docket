@@ -11,7 +11,7 @@ export interface ParsedOrderMd {
   reviewMode: ReviewMode; // front-matter review_mode (default 'gates'); consumed by the architect runtime
   objective: string; // the ## Objective section body — the architect session's first prompt
   title: string; // front-matter title
-  permissionRule: PermissionRule; // front-matter permission_rule (default 'risky_excluded', WO-0031c)
+  permissionRule: PermissionRule; // front-matter permission_rule; absent/garbage → 'ask_every' (the safe default — operator ruling: no silent auto-approval)
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -49,7 +49,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const reviewMode: ReviewMode = reviewModeValue === 'every-step' ? 'every-step' : 'gates';
   const ruleValue = frontValue(front, 'permission_rule');
   const permissionRule: PermissionRule =
-    ruleValue === 'ask_every' || ruleValue === 'full_auto' ? ruleValue : 'risky_excluded';
+    ruleValue === 'full_auto' || ruleValue === 'risky_excluded' ? ruleValue : 'ask_every';
   return {
     reviewMode,
     title: frontValue(front, 'title'),

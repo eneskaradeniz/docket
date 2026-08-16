@@ -23,6 +23,7 @@ import type {
   WoEventKind,
 } from '../../core/types';
 import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
+import type { TranscriptLine } from '../../core/types';
 import type { PermissionRule } from '../../core/source';
 import type { WoPhase } from '../../core/derive';
 import type { ProviderErrorCode } from '../../core/runner';
@@ -227,6 +228,23 @@ export const TOOL_LABELS: Record<string, string> = {
 
 export function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? 'Araç kullan';
+}
+
+/** One transcript line as PLAIN text (the fail card's detail + clipboard, WO-0031c) — the ANSI
+ *  formatter is for xterm; this is its DOM/clipboard sibling, same label discipline. */
+export function transcriptLineText(line: TranscriptLine): string {
+  switch (line.speaker) {
+    case 'assistant':
+      return line.text;
+    case 'tool_use':
+      return line.detail ? `${toolLabel(line.tool)} — ${line.detail}` : toolLabel(line.tool);
+    case 'tool_result':
+      return `→ ${line.summary}`;
+    case 'system':
+      return line.text;
+    case 'note':
+      return UI.noteFor(line.kind, line.detail);
+  }
 }
 
 export function permissionPrompt(tool: string, detail: string): string {
@@ -678,6 +696,7 @@ export const UI = {
   editMoveDownAria: 'Aşağı taşı',
   editRemoveAria: 'Adımı sil',
   editRoleAria: (role: SessionRole) => `Rol: ${ROLE_LABELS[role]} — değiştirmek için tıkla`,
+  stepRef: (idx: number) => `adım ${idx}`,
   // Denetim (oturum dökümü tablosu).
   auditTitle: 'Oturum dökümü',
   auditColSession: 'Oturum',
@@ -708,6 +727,10 @@ export const UI = {
   railStoppedMsg: 'Durduruldu. Rapor kısmi kalır.',
   failTitle: 'Oturum çöktü',
   failSpent: (cost: string) => `Harcanan: ${cost} — kayıt korundu.`,
+  failDetail: 'Ayrıntı',
+  failCopy: 'Kopyala',
+  failCopied: 'Kopyalandı',
+  failLastTitle: 'Son satırlar',
   // Toast + bildirim sözleşmesi.
   toastAskTitle: (wo: string) => `${wo} · izin bekliyor`,
   toastAskBody: 'tıkla — detaya git',

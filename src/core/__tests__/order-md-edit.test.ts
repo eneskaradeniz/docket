@@ -17,12 +17,12 @@ describe('parseOrderMd — permission_rule (WO-0031c)', () => {
     expect(p.permissionRule).toBe('full_auto');
   });
 
-  it('absent rule → risky_excluded (the chosen default)', () => {
-    expect(parseOrderMd(base).permissionRule).toBe('risky_excluded');
+  it("absent rule → ask_every (the operator's safe default — no silent auto-approval)", () => {
+    expect(parseOrderMd(base).permissionRule).toBe('ask_every');
   });
 
-  it('an unknown value coerces to the default (no free-form rules)', () => {
-    expect(parseOrderMd(doc(['permission_rule: yolo'].join('\n'), 'x')).permissionRule).toBe('risky_excluded');
+  it('an unknown value coerces to the safe default (no free-form rules)', () => {
+    expect(parseOrderMd(doc(['permission_rule: yolo'].join('\n'), 'x')).permissionRule).toBe('ask_every');
   });
 });
 

@@ -44,6 +44,22 @@ describe('unifiedDiffLines', () => {
     expect(truncated).toBe(190); // 100 del + 100 add - 10 shown
   });
 
+  it('caps the INPUT: oversized sides diff only their heads, the dropped tails count as truncated (operator fix)', () => {
+    const old = Array.from({ length: 5000 }, (_, i) => `old${i}`).join('\n');
+    const next = Array.from({ length: 5000 }, (_, i) => `new${i}`).join('\n');
+    const { lines, truncated } = unifiedDiffLines(old, next, 10, 100);
+    expect(lines).toHaveLength(10); // output still bounded
+    // 100 old + 100 new diffed = 200 lines; 4900 + 4900 dropped by the input budget; 190 by the output cap
+    expect(truncated).toBe(4900 + 4900 + 190);
+  });
+
+  it('slices pathologically long lines for display (a 1 MB minified line must not ride the DOM)', () => {
+    const huge = 'x'.repeat(50_000);
+    const { lines } = unifiedDiffLines('', huge);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text.length).toBe(400);
+  });
+
   it('tolerates CRLF on the old side (editor artifacts)', () => {
     const { lines } = unifiedDiffLines('a\r\nb', 'a\nb');
     expect(lines).toEqual([]);

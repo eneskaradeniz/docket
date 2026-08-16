@@ -4,9 +4,9 @@
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
 import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
@@ -137,18 +137,38 @@ ipcMain.handle(
   (_e, id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) => store.recordPermissionDecision(id, input),
 );
 
-// --- Diff peek (WO-0031c): the OLD file content for a write-permission card. fs stays main-side; the
-//   renderer sends the write's target path + new content and gets capped diff STRUCTURE back. The path
-//   is resolved against the working repo root; anything escaping it reads as absent (no arbitrary reads). ---
-ipcMain.handle('docket:diff-peek', (_e, filePath: string, newContent: string) => {
-  const root = process.cwd();
-  const abs = isAbsolute(filePath) ? filePath : resolve(root, filePath);
-  if (!abs.startsWith(root)) return null;
+// --- Diff peek (WO-0031c, hardened): the OLD file content for a write-permission card. fs stays
+//   main-side; the renderer sends the WORK ORDER id + the write's target path + new content and gets
+//   capped diff STRUCTURE back. The read is jailed to the WO's own repo roots (its tracks' connected
+//   local paths — never process.cwd(), which is the app's repo): the target is realpath'd (symlinks
+//   cannot hop the fence) and must sit strictly under one of those roots. Anything else reads as
+//   absent — a peek is a courtesy, never an arbitrary-read oracle. ---
+const isUnder = (root: string, candidate: string): boolean => {
+  const rel = relative(root, candidate);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+};
+ipcMain.handle('docket:diff-peek', (_e, workOrderId: WorkOrderId, filePath: string, newContent: string) => {
+  const roots = store.woRepoPaths(workOrderId).map((r) => {
+    try {
+      return realpathSync(r);
+    } catch {
+      return r;
+    }
+  });
+  if (roots.length === 0) return null;
+  const abs = isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
+  let real: string;
   try {
-    const oldText = readFileSync(abs, 'utf8');
+    real = realpathSync(abs);
+  } catch {
+    return null; // the target does not exist (yet) → a fresh-file peek is the caller's fallback
+  }
+  if (!roots.some((root) => isUnder(root, real))) return null;
+  try {
+    const oldText = readFileSync(real, 'utf8');
     return unifiedDiffLines(oldText, newContent);
   } catch {
-    return null; // absent/unreadable → a fresh-file peek (all adds) is the caller's fallback
+    return null; // unreadable (permissions/binary) → no peek
   }
 });
 

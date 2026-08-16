@@ -17,11 +17,20 @@ const ws = await store.createWorkspace({
   decisionStorePath: repo,
 });
 
-const mk = (title: string, description: string) =>
-  store.createWorkOrder({ workspaceId: ws.id, title, description, trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+const mk = (title: string, description: string, permissionRule?: 'ask_every' | 'risky_excluded' | 'full_auto') =>
+  store.createWorkOrder({
+    workspaceId: ws.id,
+    title,
+    description,
+    trackRepos: ws.repos,
+    reviewMode: 'gates',
+    contextFiles: [],
+    ...(permissionRule ? { permissionRule } : {}),
+  });
 
-// 1) written — the fresh queue
-await mk('Yeni iş emri örneği', 'E2E: freshly created, awaiting a plan request.');
+// 1) written — the fresh queue (explicit risky_excluded: the safe default is ask_every now; this WO's
+//    E2E spec exercises the risky-excluded cadence + badge)
+await mk('Yeni iş emri örneği', 'E2E: freshly created, awaiting a plan request.', 'risky_excluded');
 
 // 2) architect_approval — a pending plan (restart-recovery surface)
 const wo2 = await mk('Plan bekliyor', 'E2E: plan proposed, awaiting approval.');
