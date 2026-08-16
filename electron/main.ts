@@ -37,12 +37,12 @@ function windowStatePath(): string {
 }
 
 function restoreWindowState(): WindowState {
-  const fallback: WindowState = { width: 1180, height: 720 };
+  const fallback: WindowState = { width: 980, height: 620 }; // compact console default (operator feedback)
   if (process.env.DOCKET_E2E) return fallback;
   try {
     const raw = JSON.parse(readFileSync(windowStatePath(), 'utf8')) as WindowState;
-    const w = Math.min(Math.max(raw.width ?? 1180, 940), 2400);
-    const h = Math.min(Math.max(raw.height ?? 720, 560), 1600);
+    const w = Math.min(Math.max(raw.width ?? 980, 760), 2400);
+    const h = Math.min(Math.max(raw.height ?? 620, 480), 1600);
     // clamp into a visible display so a moved-away window never opens off-screen
     if (raw.x !== undefined && raw.y !== undefined) {
       const visible = screen.getAllDisplays().some((d) => {
@@ -64,7 +64,7 @@ function persistWindowState(win: BrowserWindow): void {
     const bounds = win.isMaximized() ? undefined : win.getBounds();
     const state: WindowState = bounds
       ? { width: bounds.width, height: bounds.height, x: bounds.x, y: bounds.y }
-      : { width: 1180, height: 720 };
+      : { width: 980, height: 620 };
     try {
       writeFileSync(windowStatePath(), JSON.stringify(state), 'utf8');
     } catch {
@@ -86,11 +86,11 @@ function createWindow() {
     width: state.width,
     height: state.height,
     ...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
-    minWidth: 940,
-    minHeight: 560,
+    minWidth: 760,
+    minHeight: 480,
     useContentSize: true,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 18 },
+    trafficLightPosition: { x: 14, y: 16 },
     webPreferences: {
       preload: resolve(here, 'preload.cjs'),
       contextIsolation: true,

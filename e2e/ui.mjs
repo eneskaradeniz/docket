@@ -45,10 +45,10 @@ await page.waitForTimeout(700); // board load effect
 
 console.log('\nWO-0031 Phase-A UI specs');
 
-await spec('window opens at the default size (1180×720, content)', async () => {
+await spec('window opens at the compact default (980×620, content)', async () => {
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getContentSize());
-  assert.equal(size[0], 1180);
-  assert.equal(size[1], 720);
+  assert.equal(size[0], 980);
+  assert.equal(size[1], 620);
 });
 
 await spec('board renders the seeded work orders', async () => {
@@ -68,16 +68,30 @@ await spec('card opens the detail', async () => {
 });
 
 await spec('new-work-order dialog opens and ESC closes it', async () => {
-  // Phase A: the WO modal is still the legacy chrome (kit Dialog migration is Phase B) — assert its
-  // heading + ESC close; Phase B upgrades this to [role=dialog].
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
   await page.waitForTimeout(350);
-  const heading = await page.getByText('Yeni iş emri', { exact: true }).count();
-  assert.ok(heading >= 1, 'dialog did not open (no heading)');
+  const dialog = await page.locator('[role="dialog"]').count();
+  assert.ok(dialog >= 1, 'dialog did not open');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
-  const after = await page.getByText('Yeni iş emri', { exact: true }).count();
+  const after = await page.locator('[role="dialog"]').count();
   assert.equal(after, 0, 'dialog did not close on ESC');
+});
+
+await spec('dialog FULLY visible at min window size (760×480)', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(760, 480));
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  const box = await page.locator('[role="dialog"]').boundingBox();
+  assert.ok(box, 'dialog not found at min size');
+  const vp = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  assert.ok(box.y >= 0 && box.x >= 0, `dialog off-screen top/left: ${JSON.stringify(box)}`);
+  assert.ok(box.y + box.height <= (vp?.height ?? 0) + 1, `dialog bottom cut: ${box.y + box.height} > ${vp?.height}`);
+  assert.ok(box.x + box.width <= (vp?.width ?? 0) + 1, `dialog right cut: ${box.x + box.width} > ${vp?.width}`);
+  await page.screenshot({ path: join(SHOTS, 'dialog@760.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
 });
 
 await spec('no horizontal overflow at 940×560', async () => {

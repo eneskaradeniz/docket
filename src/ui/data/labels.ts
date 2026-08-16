@@ -450,6 +450,7 @@ export const UI = {
   architectRequest: 'Mimarın bir isteği var',
   // SADE/Detay mod geçişi (WO-0016)
   modeSimple: 'Sade',
+  modeEveryStep: 'Her adımda',
   modeDetail: 'Detay',
   // Onboarding: ilk çalışma alanı (WO-0016)
   noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',

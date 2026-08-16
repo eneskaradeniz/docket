@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { ReviewMode, WorkOrderSource } from '../../core/source';
 import { UI } from '../data/labels';
+import { Button, Dialog, Field, Input, Segmented, Textarea } from '../kit';
 
 const base = (p: string): string => {
   let s = p;
@@ -9,9 +11,11 @@ const base = (p: string): string => {
   return s.split('/').pop() || 'file';
 };
 
-// "Yeni iş emri" creation modal (WO-0015). The decision store is excluded from the track list when the
-// workspace has a dedicated decision-store repo (PRODUCT.md §Decisions 6); a single-repo workspace keeps
-// its one repo as a track (it is both code and the docs/ decision store). Mirrors WsSettingsModal's shell.
+// "Yeni iş emri" creation modal (WO-0015; WO-0031 kit restyle — pulled forward from Phase B after the
+// operator hit the half-cut legacy popup at min window size). The decision store is excluded from the
+// track list when the workspace has a dedicated decision-store repo (PRODUCT.md §Decisions 6); a
+// single-repo workspace keeps its one repo as a track. The Dialog's flex column + internal scroll keep
+// it fully inside the viewport at ANY window size ≥ min.
 export function WoCreateModal({
   workspace,
   source,
@@ -34,13 +38,7 @@ export function WoCreateModal({
   const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(trackOptions);
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [contextFiles, setContextFiles] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish (WO-0026)
-
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onEsc);
-    return () => document.removeEventListener('keydown', onEsc);
-  }, [onClose]);
+  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish
 
   function toggleTrack(repo: RepoId) {
     setSelectedTracks((prev) => (prev.includes(repo) ? prev.filter((r) => r !== repo) : [...prev, repo]));
@@ -55,7 +53,7 @@ export function WoCreateModal({
     }
   }
   function removeContext(i: number) {
-    setContextFiles((prev) => prev.filter((_, idx) => idx !== i));
+    setContextFiles((prev) => prev.filter((_p, idx) => idx !== i));
   }
 
   async function save() {
@@ -76,97 +74,90 @@ export function WoCreateModal({
       onCreated(wo);
       onClose();
     } catch {
-      setError(UI.saveFailed); // B5: the modal stays open — now it also says WHY (WO-0026)
+      setError(UI.saveFailed); // B5: the modal stays open — and says WHY
     }
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center px-4 pt-24" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-lg rounded-md border border-rule bg-surface p-5 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-[15px] font-semibold text-ink">{UI.woCreate}</h2>
-            <p className="mt-0.5 text-[12px] text-inkdim">{UI.woCreateSubtitle}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label={UI.close} className="-mr-1.5 -mt-1.5 grid h-7 w-7 place-items-center rounded text-[14px] text-inkdim hover:bg-surface2 hover:text-ink">✕</button>
-        </div>
+    <Dialog
+      open
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={UI.woCreate}
+      wide
+      footer={
+        <>
+          {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
+          <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
+          <Button variant="primary" size="sm" onClick={() => void save()}>{UI.woCreateBtn}</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="-mt-1 text-[12px] text-inkdim">{UI.woCreateSubtitle}</p>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.woTitleLabel}</label>
-        <input
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={UI.woTitlePlaceholder}
-          className="mb-3 w-full rounded border border-rule bg-bg px-3 py-2 text-[14px] text-ink outline-none"
-        />
+        <Field label={UI.woTitleLabel}>
+          <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={UI.woTitlePlaceholder} />
+        </Field>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.woDescLabel}</label>
-        <textarea
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={UI.woDescPlaceholder}
-          className="mb-3 w-full rounded border border-rule bg-bg px-3 py-2 text-[13px] text-ink outline-none"
-        />
+        <Field label={UI.woDescLabel}>
+          <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={UI.woDescPlaceholder} className="font-sans text-[13px]" />
+        </Field>
 
         {trackOptions.length > 0 ? (
-          <>
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.woTracksLabel}</label>
+          <section>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woTracksLabel}</span>
             <p className="mb-2 text-[11px] text-inkdim">{UI.woTracksHint}</p>
-            <div className="mb-3 flex flex-wrap gap-2 text-[12px]">
+            <div className="flex flex-wrap gap-2">
               {trackOptions.map((r) => {
-                const checked = selectedTracks.includes(r);
+                const checked = selectedTracks.includes(r as RepoId);
                 return (
                   <button
                     type="button"
                     key={r as string}
+                    aria-pressed={checked}
                     onClick={() => toggleTrack(r)}
-                    className={`flex items-center gap-1.5 rounded border border-rule px-2 py-1 ${checked ? 'bg-surface2 text-ink' : 'bg-bg text-inkdim'}`}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors ${checked ? 'border-info/60 bg-info/10 text-ink' : 'border-hairline bg-bg text-inkdim hover:text-ink'}`}
                   >
-                    <span className={checked ? 'evx' : 'inkdim'}>{checked ? '✓' : '○'}</span>
+                    <span className={`font-mono text-[11px] ${checked ? 'text-info' : ''}`}>{checked ? '✓' : '○'}</span>
                     <span className="font-mono text-[11px]">{r as string}</span>
                   </button>
                 );
               })}
             </div>
-          </>
+          </section>
         ) : null}
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.woContextLabel}</label>
-        <div className="mb-3">
+        <section>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woContextLabel}</span>
           {contextFiles.length > 0 ? (
             <div className="mb-1.5 flex flex-wrap gap-1.5">
               {contextFiles.map((p, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded border border-rule bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
+                <span key={i} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
-                  <button type="button" onClick={() => removeContext(i)} className="err px-0.5 text-[12px]">✕</button>
+                  <button type="button" onClick={() => removeContext(i)} className="text-error px-0.5" aria-label="kaldır"><X className="h-3 w-3" aria-hidden="true" /></button>
                 </span>
               ))}
             </div>
           ) : null}
-          <button type="button" onClick={pickContext} className="alink text-[12px]">{UI.woContextAdd}</button>
-        </div>
+          <Button variant="ghost" size="sm" onClick={() => void pickContext()}>
+            <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            {UI.woContextAdd}
+          </Button>
+        </section>
 
-        <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-inkdim">{UI.woReviewLabel}</label>
-        <div className="mb-5 flex flex-col gap-1.5 text-[12px]">
-          <label className="flex items-start gap-1.5">
-            <input type="radio" name="review" checked={reviewMode === 'gates'} onChange={() => setReviewMode('gates')} className="mt-0.5" style={{ accentColor: 'var(--color-brass)' }} />
-            <span>{UI.woReviewGates}</span>
-          </label>
-          <label className="flex items-start gap-1.5">
-            <input type="radio" name="review" checked={reviewMode === 'every-step'} onChange={() => setReviewMode('every-step')} className="mt-0.5" style={{ accentColor: 'var(--color-brass)' }} />
-            <span>{UI.woReviewEvery}</span>
-          </label>
-        </div>
-
-        {error ? <p className="mb-2 text-right text-xs text-clay">{error}</p> : null}
-
-        {error ? <p className="mb-2 text-xs text-clay">{error}</p> : null}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-ghost rounded px-4 py-1.5 text-[12px]">{UI.close}</button>
-          <button type="button" onClick={save} className="btn-primary rounded px-4 py-1.5 text-[12px]">{UI.woCreateBtn}</button>
-        </div>
+        <section>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woReviewLabel}</span>
+          <Segmented
+            value={reviewMode}
+            onValueChange={setReviewMode}
+            options={[
+              { value: 'gates', label: UI.modeSimple },
+              { value: 'every-step', label: UI.modeEveryStep },
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">{reviewMode === 'gates' ? UI.woReviewGates : UI.woReviewEvery}</p>
+        </section>
       </div>
-    </div>
+    </Dialog>
   );
 }

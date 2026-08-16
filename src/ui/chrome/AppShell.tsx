@@ -39,7 +39,7 @@ export function AppShell({
   return (
     <>
       <header
-        className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-3 border-b border-hairline bg-surface/85 pl-20 pr-4 backdrop-blur-md"
+        className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-4 border-b border-hairline bg-surface/85 pl-[92px] pr-4 backdrop-blur-md"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <span className="select-none font-mono text-[12px] font-semibold uppercase tracking-[0.22em] text-ink">
