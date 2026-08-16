@@ -1,33 +1,47 @@
 @import "tailwindcss";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+@import "@fontsource/manrope/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
-/* ===== Design tokens (the approved warm-dark "aged-paper-meets-terminal" system) =====
-   Tailwind v4 @theme: color tokens generate bg-/text-/border- utilities; font tokens generate font-.
-   Dark is the default (:root); html.light overrides the same vars so utilities follow. */
+/* ===== "Kontrol Konsolu" design tokens (WO-0031) =====
+   A dispatch console for one operator: dark room, calm layered surfaces, data in mono, and ONE lamp
+   color that means "this needs you". Dark-only by ruling (ADR-0012 pending in Phase C). Tailwind v4
+   @theme tokens generate bg-/text-/border- utilities. Old token names (surface2/brass/denim/sage/clay)
+   are kept as ALIASES so the not-yet-restyled screens keep working through the migration phases. */
 @theme {
-  --color-bg: #15120e;
-  --color-surface: #1d1813;
-  --color-surface2: #241f1b;
-  --color-ink: #ece4d3;
-  --color-inkdim: #a59880;
-  --color-rule: #2c251d;
-  --color-brass: #d4a24c;
-  --color-denim: #6f9bb0;
-  --color-sage: #8aa172;
-  --color-clay: #c1665a;
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --color-bg: #0e1520;
+  --color-surface: #16202e;
+  --color-raised: #1d2938;
+  --color-hairline: #263349;
+  --color-ink: #e7edf4;
+  --color-inkdim: #8b95a7;
+  --color-signal: #f5b544;
+  --color-proceed: #4cc38a;
+  --color-info: #6ca0ce;
+  --color-error: #e5484d;
+  --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-}
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 
-html.light {
-  --color-bg: #f5efe2;
-  --color-surface: #fbf6ea;
-  --color-surface2: #efe7d4;
-  --color-ink: #2a2419;
-  --color-inkdim: #7a6f5c;
-  --color-rule: #ddd2b8;
+  /* migration aliases (Phase A/B: old classnames → new tokens) */
+  --color-surface2: #1d2938;
+  --color-rule: #263349;
+  --color-brass: #f5b544;
+  --color-denim: #6ca0ce;
+  --color-sage: #4cc38a;
+  --color-clay: #e5484d;
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
   html,
   body {
     background: var(--color-bg);
@@ -36,8 +50,28 @@ html.light {
   body {
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    letter-spacing: 0.01em;
   }
-  /* one global keyboard-focus ring (brass) */
+  /* thin, themed scrollbars — never the browser default (WO-0031 / şikâyet: "tarayıcı scrollbar") */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-hairline);
+    border-radius: 5px;
+    border: 2px solid var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a4a63;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  /* one global keyboard-focus ring (signal amber) */
   a:focus-visible,
   button:focus-visible,
   input:focus-visible,
@@ -45,18 +79,25 @@ html.light {
   textarea:focus-visible,
   summary:focus-visible,
   [tabindex]:focus-visible {
-    outline: 2px solid var(--color-brass);
+    outline: 2px solid var(--color-signal);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: 3px;
   }
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    border-color: var(--color-brass);
+    border-color: var(--color-signal);
+  }
+  /* Tailwind v4 drops the UA pointer cursor on buttons — one base rule instead of per-component
+     `cursor-pointer` classes (which collide with the vendor-name boundary check, c1). */
+  button:not(:disabled),
+  summary,
+  [role='button'],
+  a {
+    cursor: pointer;
   }
   details > summary {
     list-style: none;
-    cursor: pointer;
   }
   details > summary::-webkit-details-marker {
     display: none;
@@ -64,12 +105,76 @@ html.light {
 }
 
 @layer components {
-  /* the evidence-ticket signature: perforated binding strip + colored status bar */
+  /* ===== The signature: the signal spine + instrument readout =====
+     A 3px lamp edge on every work-order surface. Amber breathing = "seni bekliyor" (the ONE thing that
+     needs the operator); info pulse = a session is running; steady green = done; dim = idle. */
+  .lamp {
+    width: 3px;
+    align-self: stretch;
+    flex: none;
+    border-radius: 0 2px 2px 0;
+  }
+  .lamp-idle {
+    background: var(--color-hairline);
+  }
+  .lamp-signal {
+    background: var(--color-signal);
+  }
+  .lamp-signal-breathe {
+    background: var(--color-signal);
+    animation: breathe 2.2s ease-in-out infinite;
+  }
+  .lamp-run {
+    background: var(--color-info);
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  .lamp-done {
+    background: var(--color-proceed);
+  }
+  .lamp-error {
+    background: var(--color-error);
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  /* mono uppercase instrument line — the app's readout voice */
+  .readout {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-inkdim);
+  }
+
+  /* board load stagger — the one orchestrated moment */
+  .rise {
+    animation: rise 0.26s ease-out both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* legacy aliases kept for Phase-B/C screens still using them */
   .perf {
     width: 22px;
     align-self: stretch;
     flex: none;
-    background-color: var(--color-rule);
+    background-color: var(--color-hairline);
     background-image: radial-gradient(circle, var(--color-bg) 2px, transparent 2.4px);
     background-size: 100% 11px;
     background-position: 50% 5.5px;
@@ -81,30 +186,19 @@ html.light {
     flex: none;
   }
   .bar-brass {
-    background: var(--color-brass);
+    background: var(--color-signal);
   }
   .bar-denim {
-    background: var(--color-denim);
+    background: var(--color-info);
   }
   .bar-sage {
-    background: var(--color-sage);
+    background: var(--color-proceed);
   }
   .pulse {
-    animation: pulse 2.4s ease-in-out infinite;
+    animation: breathe 2.4s ease-in-out infinite;
   }
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.65;
-    }
-  }
-
-  /* brass underlined-mono action link — the inline ▸ affordance */
   .alink {
-    color: var(--color-brass);
+    color: var(--color-info);
     font-family: var(--font-mono);
     font-weight: 500;
     text-decoration: underline;
@@ -112,42 +206,42 @@ html.light {
     cursor: pointer;
   }
   .alink:hover {
-    background: color-mix(in srgb, var(--color-brass) 14%, transparent);
+    background: color-mix(in srgb, var(--color-info) 14%, transparent);
   }
-
   .btn-primary {
-    background: var(--color-brass);
-    color: #15120e;
+    background: var(--color-ink);
+    color: #0e1520;
     font-weight: 600;
   }
   .btn-primary:hover {
     filter: brightness(1.08);
   }
   .btn-ghost {
-    border: 1px solid var(--color-rule);
+    border: 1px solid var(--color-hairline);
     color: var(--color-ink);
   }
   .btn-ghost:hover {
-    background: var(--color-surface2);
+    background: var(--color-raised);
   }
-
-  /* evidence marks — three-valued (satisfied / unsatisfied / exempt) */
   .evx {
-    color: var(--color-sage);
+    color: var(--color-proceed);
   }
   .evblank {
     color: var(--color-inkdim);
   }
   .evexempt {
-    color: var(--color-denim);
+    color: var(--color-info);
   }
   .err {
-    color: var(--color-clay);
+    color: var(--color-error);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pulse {
+  .lamp-signal-breathe,
+  .lamp-run,
+  .pulse,
+  .rise {
     animation: none;
   }
 }

@@ -383,6 +383,7 @@ export const UI = {
   language: 'Dil',
   langEn: 'English',
   langTr: 'Türkçe',
+  langHint: 'Arayüz dili — İngilizce M3.5 aşamasında geliyor.',
   close: 'Kapat',
   workspace: 'Çalışma alanı',
   // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)

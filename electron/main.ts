@@ -3,7 +3,8 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
@@ -17,12 +18,79 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // The state store. node:sqlite (built into Electron's Node); seeded from fixtures on first
 // run. The DB lives in the user-data dir — a machine-local, reconstructible cache (ADR-0010).
-const store = createStore(join(app.getPath('userData'), 'docket.db'));
+// DOCKET_DB_PATH (WO-0031): the E2E driver points the app at a seeded temp db without touching the
+// operator's real one.
+const store = createStore(process.env.DOCKET_DB_PATH ?? join(app.getPath('userData'), 'docket.db'));
+
+// WO-0031: window state persistence — remember size/position across runs (the "çok büyük açılıyor"
+// complaint: 1280×800 fixed default). Restored clamped into a visible display; DOCKET_E2E skips restore
+// for deterministic tests.
+interface WindowState {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+}
+
+function windowStatePath(): string {
+  return join(app.getPath('userData'), 'window-state.json');
+}
+
+function restoreWindowState(): WindowState {
+  const fallback: WindowState = { width: 1180, height: 720 };
+  if (process.env.DOCKET_E2E) return fallback;
+  try {
+    const raw = JSON.parse(readFileSync(windowStatePath(), 'utf8')) as WindowState;
+    const w = Math.min(Math.max(raw.width ?? 1180, 940), 2400);
+    const h = Math.min(Math.max(raw.height ?? 720, 560), 1600);
+    // clamp into a visible display so a moved-away window never opens off-screen
+    if (raw.x !== undefined && raw.y !== undefined) {
+      const visible = screen.getAllDisplays().some((d) => {
+        const a = d.workArea;
+        return raw.x! >= a.x && raw.y! >= a.y && raw.x! < a.x + a.width && raw.y! < a.y + a.height;
+      });
+      if (visible) return { width: w, height: h, x: raw.x, y: raw.y };
+    }
+    return { width: w, height: h };
+  } catch {
+    return fallback;
+  }
+}
+
+let saveStateTimer: NodeJS.Timeout | undefined;
+function persistWindowState(win: BrowserWindow): void {
+  const save = (): void => {
+    if (win.isDestroyed() || win.isMinimized()) return;
+    const bounds = win.isMaximized() ? undefined : win.getBounds();
+    const state: WindowState = bounds
+      ? { width: bounds.width, height: bounds.height, x: bounds.x, y: bounds.y }
+      : { width: 1180, height: 720 };
+    try {
+      writeFileSync(windowStatePath(), JSON.stringify(state), 'utf8');
+    } catch {
+      // best-effort persistence
+    }
+  };
+  const debounced = (): void => {
+    clearTimeout(saveStateTimer);
+    saveStateTimer = setTimeout(save, 400);
+  };
+  win.on('resize', debounced);
+  win.on('move', debounced);
+  win.on('close', save);
+}
 
 function createWindow() {
+  const state = restoreWindowState();
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: state.width,
+    height: state.height,
+    ...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
+    minWidth: 940,
+    minHeight: 560,
+    useContentSize: true,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
       preload: resolve(here, 'preload.cjs'),
       contextIsolation: true,
@@ -30,6 +98,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  persistWindowState(win);
 
   // The plugin sets ELECTRON_RENDERER_URL to the Vite dev server in dev; in the built
   // app the renderer is a static file under dist/.

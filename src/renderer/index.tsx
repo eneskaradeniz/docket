@@ -6,6 +6,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '../ui/app/App';
 import { ErrorBoundary } from '../ui/chrome/ErrorBoundary';
+import { TooltipProvider } from '../ui/kit';
 import { createRunnerPort } from './runner';
 import '../index.css';
 
@@ -14,7 +15,9 @@ if (root) {
   createRoot(root).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
+        <TooltipProvider>
+          <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
+        </TooltipProvider>
       </ErrorBoundary>
     </React.StrictMode>,
   );
