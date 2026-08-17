@@ -14,12 +14,15 @@ tracks:
 
 ## Objective
 
-Land the operator's final-tour rulings — the v5 mockup tour (12 rulings, 2026-08-18) plus the v6
-structure tour (2 rulings, same day, after the operator's "Apple gibi: daha az yüzey" feedback) —
-as one restructure: DETAY's six tabs become **two surfaces (Akış | Kayıt)** with the live terminal
-inside the active step's row, the **D3 "Sıcak"** direction pass over everything, the board's
-closed-list toggle + peron invitation + card durations, the closed work order made immutable
-(UI + store), the running-empty stream line, and the agreed tech-debt batch.
+Land the operator's final-tour rulings — three mockup rounds on one day (2026-08-18): the v5 tour
+(12 rulings), the v6 structure tour (2 rulings, after "Apple gibi: daha az yüzey"), and the v7 feel
+tour (3 rulings, after "her şey gerektiğinde… detayına baktığın belli olmalı… sıcak, animasyonlu,
+oyunlaştırılmış, ödüllendirilmiş, kullanıcıyı çeken") — as one restructure + one feel pass: DETAY's
+six tabs become **two surfaces (Akış | Kayıt)** with the live terminal inside the active step's row,
+the **D3 "Sıcak"** direction pass over everything, the board's closed-list toggle + peron invitation
++ card durations, the closed work order made immutable (UI + store), the running-empty stream line,
+the agreed tech-debt batch, and the v7 feel layer (owner-spotlight anchoring, reward moments,
+entrance glides).
 
 ## Context
 
@@ -44,6 +47,26 @@ closed-list toggle + peron invitation + card durations, the closed work order ma
     world: the two tabs keep the signal underline + counts (Akış 1/4 · Kayıt 2/3); Kayıt's sections
     carry their own readout headers as drawn in v6; the conditional-scroll language survives only
     for the substrip adım N/T jump. The v5 §04 frames are superseded by v6 as the spec.
+- **The v7 feel rulings (tour round three — operator: "her şey gerektiğinde olmalı… detayına
+  baktığın belli olmalı… her şey değerli toplu olmalı… sıcak, animasyonlu, oyunlaştırılmış,
+  ödüllendirilmiş, kullanıcıyı çeken"):**
+  - **H-1: reward = the moment, not the meta-game.** No points, badges, or scores (ADR-0012 r7's
+    "no meta-game" stands verbatim). Three one-shot reward moments: a step completing (pop + drawn-✓
+    + green flash + row mini-fill + the strip hairline advancing + the substrip segment flipping),
+    closure (the seal ceremony — sealpop once, only on a live close; stats never count up: money does
+    not celebrate), and the day ending (the board's all-done arrival: one green wash pulse ≤400ms,
+    then steady — a state transition, never a mount). Two ADR-0012-governed additions land inside
+    the existing juice contract: the hairline advances on step completion (it already fills — this
+    names the arrival) and the all-done pulse.
+  - **H-2: the gaze anchor.** Opening a detail spotlights its owner: the row's surface raises, its
+    state edge names it, and the report/transcript reveals under it in ≤200ms; sibling rows dim one
+    notch by BACKGROUND only (text contrast untouched — the WO-0031c B4 lesson); closing restores
+    calm. "Neye baktığın belli" — the detail always reads as belonging to its step.
+  - **H-3: the entrance glide returns — as a NAMED exception.** A surface entering view (first board
+    open, a tab switch) glides in once: ≤400ms, translate+fade only (no scale/rotation), staggered
+    ≤40ms between siblings; re-renders and live appends stay motionless; reduced-motion kills it.
+    This consciously REVERSES the v5 ".rise kaldırılsın" ruling — recorded here so the reversal is a
+    decision, not drift.
 - **The v5 rulings that survive unchanged (tour round one, 12 decisions):**
   - **Y1 = D3 Sıcak** (the operator's pick, not the tour's D1 recommendation): the lamp language
     goes everywhere — step rows carry a 3px state edge (done `proceed`, active `info`), rack/Kayıt
@@ -60,12 +83,14 @@ closed-list toggle + peron invitation + card durations, the closed work order ma
     review chip an inert badge, permission badge display-only, Sil remains with an error line
     (TD-038.4); the store's `updateWorkOrder` throws on `stage === 'closed'` (test-first);
     `deleteWorkOrder` unchanged.
-  - **F-kat = TD-038 (all five) + TD-037 (Çizelge cap is MOOT — the section dies; the load lines
-    remain)**; TD-034 stays OUT.
-  - **.rise removed** (no ADR exception needed); **F7 copy = "Oturum açıldı — çıktı bekleniyor"**.
-- ADR-0012 governs every item; one amendment lands (see Scope). Mockups are the approved design:
-  `docs/ui-mockups/wo-0031-v5-final-turu.html` (35 frames) + `docs/ui-mockups/wo-0031-v6-yapi.html`
-  (8 frames, D3 skin — where the two disagree, v6 wins).
+  - **F-kat = TD-038 (all five — item 1 resolves as the v7 glide exception, below) + TD-037 (Çizelge
+    cap is MOOT — the section dies; the load lines remain)**; TD-034 stays OUT.
+  - **F7 copy = "Oturum açıldı — çıktı bekleniyor"**.
+- ADR-0012 governs every item; two amendments land (see Scope). Mockups are the approved design:
+  `docs/ui-mockups/wo-0031-v5-final-turu.html` (35 frames) +
+  `docs/ui-mockups/wo-0031-v6-yapi.html` (8 frames, D3 skin) +
+  `docs/ui-mockups/wo-0031-v7-his.html` (7 frames, D3 skin, interactive feel demos) — where they
+  disagree, v7 wins on feel, v6 on structure, v5 on the board/closure rules.
 
 ## Scope
 
@@ -85,6 +110,12 @@ In scope:
 - **D3 direction pass**: `src/index.css` + detail/board components — step-row state edges,
   section-header dots, audit role lamps, glow one notch stronger (static radials only). Typography,
   spacing band, tokens, hover contract unchanged (v5 §01 D3 deltas table is the boundary).
+- **Feel layer (v7)**: owner-spotlight on detail expansion (raised surface + state edge + ≤200ms
+  reveal + siblings dimmed by background only); the three one-shot reward moments wired end-to-end
+  (step completion advances the strip hairline and flips the substrip segment; closure seal remains
+  once-per-live-close; the board's all-done arrival pulses once, green, ≤400ms); the entrance glide
+  (`glide` on surfaces entering view — first open and tab switch only, ≤400ms translate+fade,
+  ≤40ms stagger, named reduced-motion kill) replacing `.rise`.
 - **Board (F1, F2, F4)**: `Board.tsx` — the closedtoggle pattern on all three surfaces (the mixed
   drawer's `<details>` becomes the button; collapsed default at >5); the all-done platform's inline
   invitation (`onNewWorkOrder` from `BoardScreen.tsx`); core-first **card duration**
@@ -97,8 +128,11 @@ In scope:
 - **TD folds**: `.rise` removal; StepList `hover:underline` → `.alink`; terminal pulse dispose-timer
   cleanup; empty-DB E2E console collector; load lines ("Adımlar okunuyor…" — the Çizelge cap item is
   moot, the section dies).
-- **ADR-0012 edit**: r2 gains one sentence — a finished surface may carry one invitation CTA beside
-  its state line (the peron invitation is the named case).
+- **ADR-0012 edits**: two one-sentence amendments — (1) r2: a finished surface may carry one
+  invitation CTA beside its state line (the peron invitation is the named case); (2) r7: entrance
+  glides are the named exception to "never on mount" (a surface entering view on first open or tab
+  change may glide in once, ≤400ms translate+fade; re-renders, live appends, and reduced-motion stay
+  motionless — the reborn `.rise`, now contractual).
 - **Labels**: Akış/Kayıt names + ~10 keys, all pre-shown in the mockups.
 - **E2E**: the two-surface world (tab pair + counts + underline), terminal-in-row (live pinned,
   report toggle), Kayıt composition (chips/docs/ledger; Çizelge absence assert), the closed toggle
@@ -138,12 +172,18 @@ Out of scope:
    and surfaces failures; the store rejects `updateWorkOrder` on closed (test-pinned).
 9. A running session with zero entries renders "Oturum açıldı — çıktı bekleniyor"; the line leaves
    with the first transcript entry.
-10. `.rise` gone; StepList link uses `.alink`; pulse timer cleared on unmount; empty-DB E2E collects
-    console errors; the named load lines replace bare "Yükleniyor…".
-11. ADR-0012 r2 carries the one-sentence finished-surface invitation amendment; no other ADR text
-    changes.
-12. All new copy lives in `labels.ts`; no `.replace(`/`disabled` in `src/ui`.
-13. E2E: 29 specs rewritten/extended for the two-surface world (target ≥ 32); `npm run typecheck &&
+10. StepList link uses `.alink`; pulse timer cleared on unmount; empty-DB E2E collects console
+    errors; the named load lines replace bare "Yükleniyor…" — and `.rise` is reborn as the
+    contractual `glide`: first open / tab switch only, ≤400ms, once, reduced-motion-killed.
+11. Opening a detail spotlights its owner (raised surface + state edge, siblings dimmed by
+    background only — text contrast unchanged) and reveals in ≤200ms; closing restores calm.
+12. The reward moments are one-shot and composed as drawn in v7 §02 (step: pop+✓+flash+fill+hairline
+    advance+segment flip; closure: seal once per live close, stats never animate; board: one green
+    arrival pulse) — money never animates anywhere.
+13. ADR-0012 carries exactly the two one-sentence amendments (r2 invitation; r7 entrance glide); no
+    other ADR text changes.
+14. All new copy lives in `labels.ts`; no `.replace(`/`disabled` in `src/ui`.
+15. E2E: 29 specs rewritten/extended for the two-surface world (target ≥ 32); `npm run typecheck &&
     npm test && npm run check:boundaries && npm run build && npm run test:ui` green.
 
 ## Evidence required
@@ -159,19 +199,22 @@ Out of scope:
 
 ## Stop-and-ask gates
 
-- The exact ADR-0012 r2 amendment sentence — confirm at PR review before merge.
+- The exact wording of BOTH ADR-0012 amendment sentences (r2 invitation; r7 entrance glide) — confirm
+  at PR review before merge.
 - If the xterm-per-active-step mount proves to lose scrollback the operator expects on finished
   steps (the transcript expansion is the designed fallback), surface it at PR review rather than
   inventing a hidden keep-alive.
 
 ## Notes
 
-Created 2026-08-18 in the final-tour session; restructured same day after the operator's structure
-feedback ("Apple gibi… çok sekme var… hala tam final değil") — v5's 12 rulings were captured in the
-morning, v6's structure round (8 frames, D3 skin, `Omurga + Kayıt` picked over single-surface and
-4-tab variants) in the afternoon; Y-2 = Çizelge dies, Y-3 = the names. Hand-numbered WO-0031f on
-purpose (TD-035). Two honest deviations, both the operator's calls: Y1 = D3 (the tour suggested D1),
-and the awaiting-close platform keeps a single CTA. The smooth-scroll CSS-route rule survives for
-the substrip N/T jump; the two-tab world makes S3 nearly moot. `durationMs` rides the existing
-`getWorkOrders` payload (TD-036). E2E's tab-scroll spec (WO-0031e) gets rewritten, not deleted — the
-N/T jump keeps its coverage.
+Created 2026-08-18 in the final-tour session; restructured twice the same day on the operator's
+live feedback — v5's 12 rulings (morning), then "Apple gibi… çok sekme var… hala tam final değil" →
+v6's structure round (8 frames, D3 skin, `Omurga + Kayıt` picked over single-surface and 4-tab
+variants; Y-2 = Çizelge dies, Y-3 = the names), then "her şey gerektiğinde… sıcak, animasyonlu,
+oyunlaştırılmış, ödüllendirilmiş, çeken" → v7's feel round (7 frames; H-1 reward = the moment, no
+meta-game; H-2 gaze anchor; H-3 entrance glide, reversing the v5 ".rise kaldırılsın" ruling
+consciously). Hand-numbered WO-0031f on purpose (TD-035). Two honest deviations, both the
+operator's calls: Y1 = D3 (the tour suggested D1), and the awaiting-close platform keeps a single
+CTA. The smooth-scroll CSS-route rule survives for the substrip N/T jump; the two-tab world makes
+S3 nearly moot. `durationMs` rides the existing `getWorkOrders` payload (TD-036). E2E's tab-scroll
+spec (WO-0031e) gets rewritten, not deleted — the N/T jump keeps its coverage.

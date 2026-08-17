@@ -235,18 +235,22 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       done line "Tamamlandı", never "Sonraki oturum bekleniyor". 472 tests (+8); E2E 29 specs (+3,
       seeded `raf` workspace). TD-036 untouched — `closeable` rides the existing `getWorkOrders`
       payload. Spec: `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
-- [ ] **WO-0031f** — UI final turu: two mockup rounds (v5, 12 rulings + v6 structure tour after the
-      operator's "Apple gibi — daha az yüzey" feedback, 2 rulings) become one restructure: DETAY's
-      six tabs collapse into **Akış | Kayıt** — the live terminal lives **inside the active step's
-      row** (pinned), done steps carry their report under their row, Kayıt = kanıt chips + belgeler +
-      döküm (arşiv gövdesi), **Çizelge yüzeyi ölür** (olaylar döküm saatlerinde + adım metasında);
-      **D3 "Sıcak"** direction pass (step-row state edges, section dots, audit role lamps, stronger
-      glow); board **closed-list toggle** (three surfaces, >5 collapsed) + all-done peron's inline
-      **invitation CTA** + card **Süre** (session-sum, finished-only); **closed WO immutable**
-      (pencil absent + reason, inert badges, store guard, Sil stays with an error line);
-      running-empty stream line; TD-038 (all five) + TD-037 load lines + one ADR-0012 r2 amendment
-      line. Spec: `docs/work-orders/WO-0031f-final-turu/order.md`; mockups `docs/ui-mockups/
-      wo-0031-v5-final-turu.html` + `wo-0031-v6-yapi.html`.
+- [ ] **WO-0031f** — UI final turu: three mockup rounds on one day (v5, 12 rulings; v6 structure
+      tour after "Apple gibi — daha az yüzey"; v7 feel tour after "her şey gerektiğinde… sıcak,
+      animasyonlu, oyunlaştırılmış, ödüllendirilmiş, çeken") become one restructure + one feel pass:
+      DETAY's six tabs collapse into **Akış | Kayıt** — the live terminal lives **inside the active
+      step's row** (pinned), done steps carry their report under their row, Kayıt = kanıt chips +
+      belgeler + döküm (arşiv gövdesi), **Çizelge yüzeyi ölür**; the **gaze anchor** spotlights the
+      row you're reading into (owner raises, siblings dim by background); **reward = the moment**
+      (step pop+✓+flash+hairline advance, closure seal, board's one green arrival pulse — no
+      points/badges, money never animates); **entrance glides return** as ADR-0012's named
+      exception (≤400ms, once, reduced-motion-killed — consciously reversing the .rise removal);
+      **D3 "Sıcak"** direction pass; board **closed-list toggle** (three surfaces, >5 collapsed) +
+      all-done peron's inline **invitation CTA** + card **Süre** (session-sum, finished-only);
+      **closed WO immutable** (pencil absent + reason, inert badges, store guard, Sil stays with an
+      error line); running-empty stream line; TD-038 (all five) + TD-037 load lines + two
+      ADR-0012 amendment sentences. Spec: `docs/work-orders/WO-0031f-final-turu/order.md`; mockups
+      `docs/ui-mockups/wo-0031-v5-final-turu.html` + `wo-0031-v6-yapi.html` + `wo-0031-v7-his.html`.
 
 ## M3 — Evidence layer
 
