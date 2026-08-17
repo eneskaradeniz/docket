@@ -186,13 +186,26 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       TD-030). UX blockers: the first **ErrorBoundary** (B2), detail-load failure shows an error card with
       Geri/Yeniden dene instead of an eternal spinner (B3), board-load failure gets a retry (B4), and both
       modals surface save errors instead of swallowing them (B5). +7 tests (335).
-- [ ] **WO-0031c** — Kontrol Konsolu v2: the operator-approved v4 mockup becomes the detail screen —
-      content-aware strip/substrip/body/rail spine (980×620), global SADE/DETAY, DETAY tabs <1080px /
-      250px rack ≥1080px, card language, per-WO permission rule ("Riskli hariç" incl. sensitive files),
-      `updateWorkOrder` + inline WO/plan editing, audit surfaces (⏱/$ + session ledger), toast +
-      window-title + OS notification contract, stop wind-down/force-kill, diff peek, esc=geri; P0/P1
-      repairs (dead Durdur, contrast, empty sections, aria-live) and the E2E harness repair. Two PRs
-      (c1 spine, c2 rules/data/notifications). Spec: `docs/work-orders/WO-0031c-kompakt-detay/order.md`.
+- [x] **WO-0031c** — Kontrol Konsolu v2: the operator-approved v4 mockup IS the detail screen now. Done
+      (PR #34 `19f2b13` + PR #35 `182158e`, two stacked PRs): the content-aware strip/substrip/body/rail
+      spine with ONE turn classifier (`deriveTurnState`), global remembered SADE/DETAY, DETAY tabs
+      <1080px (Radix forceMount — xterm scrollback survives tab switches) / 250px rack ≥1080px, the card
+      language (plans render as step CARDS, never JSON), the ONE working Durdur in the rail (Faz B's dead
+      `window.stop` buttons deleted) with wind-down notes + 5s Zorla kes, esc=geri layered, glow washes,
+      juice (pop/flash/progress hairline). c2: the per-WO permission rule (`ask_every` default — no
+      silent auto-approval; `risky_excluded` = CI/lockfile/agent-config/sensitive-files/destructive-shell
+      via core `risky.ts`; ask-card lift + strip badge + timeline audit), `updateWorkOrder` + pencil
+      editing + the review badge (Kapılarda↔Her adımda), pre-approval plan EDITING with the honest
+      per-step counter and "düzenlenmiş onay · N değişiklik", the Denetim session ledger (archive default
+      + DETAY section; step cards carry ⏱/$), diff peek (realpath-jailed to the WO's repo roots, budgeted
+      LCS), the step-fail card with expandable diagnostics + Yeniden dene, ⏎ on rail primaries (close
+      deliberately ⏎'süz), `Oluştur ve plan iste`, and the notification contract (3-kind toast with the
+      on-screen rule in one place, "(n) izin bekliyor" title, OS notifications). The E2E harness repairs
+      A6 (screens named truly, board shots on the board) and gains a scripted fake runner under DOCKET_E2E
+      (real clicks, token-free — 18 specs). Pre-merge hardening: the five operator fixes (diff-peek jail,
+      diff budgets, fence-less edit guard, `adım {idx}` into labels, fail-card detail). 452 tests (+55);
+      **TD-036** (preload IPC arity) + **TD-037** (Faz C P2 batch) opened; a latent React #185 seed loop
+      (since F14) found and fixed. Spec: `docs/work-orders/WO-0031c-kompakt-detay/order.md`.
 
 ## M3 — Evidence layer
 

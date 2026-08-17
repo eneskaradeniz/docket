@@ -2,7 +2,7 @@
 id: WO-0031c
 title: Kontrol Konsolu v2 — kompakt detay ekranı
 workspace: docket
-status: implementing
+status: closed
 mode: direct
 review: light
 tracks:
@@ -113,3 +113,21 @@ Created 2026-08-16 from the mockup tour session (operator decisions: two PRs c1/
 set includes sensitive files; ▲▼ ordering; create+plan single step). Hand-numbered WO-0031c
 on purpose — the CLI's `nextWorkOrderNumber` counts decision-store dirs and would renumber
 (TD-035).
+
+## Closure
+
+Tamamlandı — iki stacked PR: c1 omurga (#34, `19f2b13`), c2 kural/veri/bildirim (#35, `182158e`).
+v4 mockup artık uygulamanın kendisi: içerik-farkındalıklı strip/substrip/body/ray (tek sınıflandırıcı
+`deriveTurnState`), hatırlanan global SADE/DETAY, sekmeler@980 (forceMount — xterm scrollback yaşıyor) /
+raf@≥1080, kart dili (plan asla JSON değil), ray'deki TEK çalışan Durdur + wind-down + 5 sn Zorla kes,
+katmanlı esc=geri, glow. Per-WO izin kuralı (varsayılan ask_every — sessiz otomatik onay yok; Riskli
+hariç seti: CI/lockfile/ajan-yapılandırma/duyarlı dosyalar/yıkıcı shell), updateWorkOrder + kalem
+düzenleme + Kapılarda↔Her adımda rozeti, onay öncesi plan düzenleme ("düzenlenmiş onay · N değişiklik"),
+Denetim oturum defteri + adım kartlarında ⏱/$, diff peek (realpath + WO repo köklerine haps + bütçeli
+LCS), hata kartı ayrıntısı + Yeniden dene, ⏎ ray birincil (kapat ⏎'süz), Oluştur ve plan iste,
+toast/başlık-sayacı/OS bildirimi sözleşmesi. E2E onarıldı (A6) + DOCKET_E2E sahte runner (18 spec,
+token'sız). Merge öncesi operatörün 5 düzeltmesi uygulandı. 452 test (+55). Açılan borç: TD-036
+(preload IPC argüman düşürme), TD-037 (Faz C P2 grubu). Latens React #185 (pane tohumları, F14'ten
+beri) bulundu ve düzeltildi. Elle uygulandı (Docket sürülmedi) — oturum maliyeti yok.
+
+_Closed 2026-08-17 at 182158e37689b4c0a26c149339bb1a6c3ccdef7d_
