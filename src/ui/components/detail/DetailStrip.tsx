@@ -2,13 +2,15 @@
 // right-aligned metrics (Maliyet, Süre — hidden at the narrowest sizes) · the GLOBAL SADE|DETAY
 // segment · the quiet delete icon. The work-order title rides underneath with the two strip badges:
 // the review cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display;
-// the ask card changes it). The pencil opens the inline title/description editor (WO-0031c freedom 2).
+// the ask card changes it). WO-0031d: the pencil/trash/review-badge are ABSENT while a drive is live
+// (wind-down included — still spending) with one reason line, and the pencil opens a kit Dialog
+// instead of replacing the title row.
 import { useState } from 'react';
 import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
 import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { Badge, Button, Input, Segmented, Textarea, cn } from '../../kit';
+import { Badge, Button, Dialog, Input, Segmented, Textarea, cn } from '../../kit';
 import {
   formatUsd,
   PERMISSION_RULE_SHORT,
@@ -38,6 +40,7 @@ export function DetailStrip({
   objective,
   phase,
   duration,
+  driveLive,
   viewMode,
   onViewModeChange,
   onBack,
@@ -50,6 +53,8 @@ export function DetailStrip({
   objective: string;
   phase: WoPhase;
   duration?: string;
+  /** A drive is spending right now (running or winding down) — order.md writers are absent (WO-0031d). */
+  driveLive: boolean;
   viewMode: ViewMode;
   onViewModeChange: (m: ViewMode) => void;
   onBack: () => void;
@@ -80,6 +85,8 @@ export function DetailStrip({
       setSaving(false);
     }
   };
+  // The edit dialog's title Input takes the focus (Radix would otherwise land it on the close X).
+  const onDialogOpenAutoFocus = (e: Event): void => e.preventDefault();
 
   return (
     <header className="flex flex-col gap-1.5 pb-2">
@@ -122,41 +129,20 @@ export function DetailStrip({
               { value: 'detail', label: UI.viewModeDetail },
             ]}
           />
-          <Button variant="ghost" size="icon" aria-label={UI.deleteWo} onClick={onDelete}>
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
+          {!driveLive ? (
+            <Button variant="ghost" size="icon" aria-label={UI.deleteWo} onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      {editing ? (
-        <div className="flex flex-col gap-1.5 rounded-md border border-hairline bg-surface p-2.5">
-          <label className="sr-only" htmlFor="wo-edit-title">{UI.woEditTitleLabel}</label>
-          <Input
-            id="wo-edit-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={UI.woEditTitleLabel}
-            className="font-sans text-[14px]"
-          />
-          <label className="sr-only" htmlFor="wo-edit-desc">{UI.woEditDescLabel}</label>
-          <Textarea
-            id="wo-edit-desc"
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={UI.woEditDescLabel}
-            className="font-sans text-[12.5px]"
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={closeEdit}>{UI.cancel}</Button>
-            <Button variant="primary" size="sm" busy={saving} locked={saving || !title.trim()} onClick={() => void save()}>
-              {UI.woEditSave}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+        {driveLive ? (
+          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit.
+          <span className="readout shrink-0">{UI.stripGateReason}</span>
+        ) : (
           <Button
             variant="ghost"
             size="icon"
@@ -166,25 +152,76 @@ export function DetailStrip({
           >
             <Pencil className="h-3 w-3" aria-hidden="true" />
           </Button>
-          {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows. */}
+        )}
+        {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
+            WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
+            as the pencil — gated with it; the button is simply not rendered). */}
+        {driveLive ? (
+          <span
+            data-review-mode={detail.reviewMode}
+            title={UI.reviewModeLabel}
+            className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
+          >
+            {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
+          </span>
+        ) : (
           <button
             type="button"
             data-review-mode={detail.reviewMode}
             title={UI.reviewModeLabel}
             onClick={() => void onUpdateWorkOrder({ reviewMode: detail.reviewMode === 'gates' ? 'every-step' : 'gates' })}
-            className="shrink-0 rounded border border-hairline px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-inkdim transition-colors hover:border-inkdim hover:text-ink"
+            className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
           >
             {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
           </button>
-          <span
-            data-permission-rule={permissionRule}
-            className="hidden shrink-0 rounded border border-info/40 px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-info min-[520px]:inline"
-          >
-            <span className="min-[820px]:inline">{PERMISSION_RULE_SHORT[permissionRule]}</span>
-            <span className="hidden min-[520px]:inline min-[820px]:hidden">{PERMISSION_RULE_TINY[permissionRule]}</span>
-          </span>
-        </div>
-      )}
+        )}
+        <span
+          data-permission-rule={permissionRule}
+          className="hidden shrink-0 rounded border border-info/40 px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-info min-[520px]:inline"
+        >
+          <span className="min-[820px]:inline">{PERMISSION_RULE_SHORT[permissionRule]}</span>
+          <span className="hidden min-[520px]:inline min-[820px]:hidden">{PERMISSION_RULE_TINY[permissionRule]}</span>
+        </span>
+      </div>
+
+      {editing ? (
+        <Dialog
+          open
+          onOpenChange={(o) => { if (!o) closeEdit(); }}
+          title={UI.woEditTitle}
+          closeAria={UI.dialogCloseAria}
+          onOpenAutoFocus={onDialogOpenAutoFocus}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={closeEdit}>{UI.cancel}</Button>
+              <Button variant="primary" size="sm" busy={saving} locked={saving || !title.trim()} onClick={() => void save()}>
+                {UI.woEditSave}
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-edit-title">{UI.woEditTitleLabel}</label>
+            <Input
+              id="wo-edit-title"
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={UI.woEditTitleLabel}
+              className="font-sans text-[14px]"
+            />
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-edit-desc">{UI.woEditDescLabel}</label>
+            <Textarea
+              id="wo-edit-desc"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={UI.woEditDescLabel}
+              className="font-sans text-[12.5px]"
+            />
+          </div>
+        </Dialog>
+      ) : null}
 
       {stepsTotal > 0 ? (
         <div className="hairline-progress" aria-hidden="true">

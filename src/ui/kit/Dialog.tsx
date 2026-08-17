@@ -15,6 +15,7 @@ export function Dialog({
   children,
   footer,
   wide,
+  onOpenAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,12 +24,15 @@ export function Dialog({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** Radix focuses the first focusable (the close X) by default; pass this to focus a field instead. */
+  onOpenAutoFocus?: (e: Event) => void;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-bg/70 backdrop-blur-[2px] data-[state=open]:animate-[rise_0.15s_ease-out]" />
         <DialogPrimitive.Content
+          {...(onOpenAutoFocus ? { onOpenAutoFocus } : {})}
           className={cn(
             'fixed inset-x-4 top-[7vh] z-50 mx-auto flex max-h-[86vh] w-[min(92vw,540px)] flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-2xl data-[state=open]:animate-[rise_0.15s_ease-out]',
             wide && 'w-[min(94vw,680px)]',

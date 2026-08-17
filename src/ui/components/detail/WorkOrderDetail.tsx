@@ -7,7 +7,7 @@ import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } from '../../data/labels';
-import { Button, Input, cn } from '../../kit';
+import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
 import { ActionRail, type RailAction } from './ActionRail';
@@ -188,6 +188,9 @@ export function WorkOrderDetail({
   }, [reviewIdx, planStage, hasSteps, runIdx, detail.sessions]);
   const state = useDrive(store, driveKey, () => seedState);
   const running = store.get(driveKey)?.running ?? false;
+  // WO-0031d: a live drive (running, or winding down — still spending) closes the strip's order.md
+  // writers. `stopped` does not gate: the session is over, nothing is being written against.
+  const driveLive = running || stopping;
 
   // A live plan_ready takes precedence; otherwise fall back to a plan persisted to plan.md (restart recovery,
   // WO-0020/TD-025) so the operator can still approve after the live state was lost.
@@ -266,7 +269,16 @@ export function WorkOrderDetail({
   const requestPlan = (): void => {
     setStopped(false);
     // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
-    store.start(driveKey, { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '' }, initialSessionState);
+    // WO-0031d: a plan retry/Sürdür RESUMES the persisted architect session when one survived (same
+    // pattern as the step retry below) instead of silently starting a fresh conversation.
+    const resumeId =
+      state.sessionId ??
+      detail.sessions.find((s) => s.role === 'architect' && s.stepIdx === undefined && s.providerSessionId)?.providerSessionId;
+    store.start(
+      driveKey,
+      { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '', ...(resumeId ? { resume: resumeId } : {}) },
+      resumeId ? state : initialSessionState,
+    );
   };
   // "Oluştur ve plan iste" (c2): fire once on arrival, then hand control back to the operator.
   const autoPlanDone = useRef(false);
@@ -423,7 +435,8 @@ export function WorkOrderDetail({
   }
 
   // --- Esc layering + ⏎: peel one inline layer at a time; only a bare esc leaves the screen; Enter
-  //     (outside inputs) fires the rail's primary when one exists. ---
+  //     (outside inputs, outside dialogs) fires the rail's primary when one exists. The Sil/Kapat/Düzenle
+  //     dialogs are Radix-owned — their Esc never reaches here (WO-0031d). ---
   const closeTopLayer = (): boolean => {
     if (objectionOpen) {
       setObjectionOpen(false);
@@ -431,14 +444,6 @@ export function WorkOrderDetail({
     }
     if (editOpen) {
       setEditOpen(false);
-      return true;
-    }
-    if (confirmClose) {
-      setConfirmClose(false);
-      return true;
-    }
-    if (confirmDelete) {
-      setConfirmDelete(false);
       return true;
     }
     return false;
@@ -542,24 +547,6 @@ export function WorkOrderDetail({
       {askCards}
       {failCard}
 
-      {confirmDelete ? (
-        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
-          <div className="lamp lamp-error" />
-          <div className="flex-1 px-3.5 py-3">
-            <p className="readout text-error">{UI.deleteWo}</p>
-            <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.deleteWoHint}</p>
-            {deleting ? (
-              <p className="text-right text-xs text-error">{UI.deleteWoInFlight}</p>
-            ) : (
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{UI.cancel}</Button>
-                <Button variant="danger" size="sm" onClick={() => void handleDelete()}>{UI.deleteWoConfirm}</Button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-
       {objectionOpen ? (
         <div className="flex items-stretch overflow-hidden rounded-md border border-signal/40 bg-surface">
           <div className="lamp lamp-signal" />
@@ -649,27 +636,9 @@ export function WorkOrderDetail({
             <div className="lamp lamp-done" />
             <div className="flex-1 px-3.5 py-3">
               <p className="readout text-proceed">{UI.stepsAllDone}</p>
-              {confirmClose ? (
-                <div className="mt-2">
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
-                  <Input
-                    value={closeNote}
-                    onChange={(e) => setCloseNote(e.target.value)}
-                    placeholder={UI.closeNotePlaceholder}
-                    className="mb-2 font-sans text-[13px]"
-                  />
-                  {closeError ? <p className="mb-2 text-xs text-error">{UI.closeWoFailed}</p> : null}
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
-                    {/* No ⏎ here by design (v4: kapat ⏎'süz — deliberate friction on the irreversible). */}
-                    <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
-                  </div>
-                </div>
-              ) : (
-                <Button variant="secondary" size="sm" className="mt-2" onClick={() => setConfirmClose(true)}>
-                  {UI.closeWo}
-                </Button>
-              )}
+              <Button variant="secondary" size="sm" className="mt-2" onClick={() => { setCloseError(false); setConfirmClose(true); }}>
+                {UI.closeWo}
+              </Button>
             </div>
           </div>
         ) : (
@@ -734,6 +703,7 @@ export function WorkOrderDetail({
         objective={objective}
         phase={phase}
         duration={durationText}
+        driveLive={driveLive}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onBack={onBack}
@@ -746,6 +716,53 @@ export function WorkOrderDetail({
         <DetailBody viewMode={viewMode} decision={bodyDecision} instrument={instrument} sections={sections} />
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />
+
+      {/* WO-0031d: the destructive/edit confirmations are dialogs over an intact screen (operator's
+          explicit reversal of the old inline-confirm preference). No <form> anywhere — Enter in the
+          note input does nothing, and useDetailKeys stands down while any dialog is open, so kapat
+          stays ⏎'süz (v4: deliberate friction on the irreversible). */}
+      {confirmDelete ? (
+        <Dialog
+          open
+          onOpenChange={(o) => { if (!o && !deleting) setConfirmDelete(false); }}
+          title={UI.deleteWo}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{UI.cancel}</Button>
+              <Button variant="danger" size="sm" busy={deleting} onClick={() => void handleDelete()}>{UI.deleteWoConfirm}</Button>
+            </>
+          }
+        >
+          <p className="text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+        </Dialog>
+      ) : null}
+      {confirmClose ? (
+        <Dialog
+          open
+          onOpenChange={(o) => { if (!o && !closing) setConfirmClose(false); }}
+          title={UI.closeWo}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
+              <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-close-note">{UI.closeNoteLabel}</label>
+            <Input
+              id="wo-close-note"
+              value={closeNote}
+              onChange={(e) => setCloseNote(e.target.value)}
+              placeholder={UI.closeNotePlaceholder}
+              className="font-sans text-[13px]"
+            />
+            {closeError ? <p className="text-xs text-error">{UI.closeWoFailed}</p> : null}
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
