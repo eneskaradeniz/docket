@@ -191,6 +191,19 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
   // Cost is DERIVED from the WO's session rows (ADR-0010 rule 2 — same as `stage`); the
   // work_order.cost_* columns are inert (TD-023). `sessions` is hydrated just above.
   const cost = deriveWorkOrderCost(sessions);
+  // WO-0031e tur-3: `closeable` is the canClose predicate over the step rows (the same projection
+  // closeWorkOrder re-checks server-side), derived at hydrate and never stored — the board's
+  // honest "the Kapat card is live" signal.
+  const stepRows = db.prepare('SELECT status, verdict FROM work_order_step WHERE work_order_id = ?').all(id) as Array<
+    { status: string; verdict: string | null }
+  >;
+  const closeable = canClose({
+    planApproved: !!r.gate_plan_approved,
+    steps: stepRows.map((s) => ({
+      status: s.status as 'pending' | 'active' | 'done' | 'blocked',
+      verdict: (s.verdict ?? undefined) as 'proceed' | 'revise' | undefined,
+    })),
+  }).ok;
   return {
     id: woid(r.id),
     title: r.title,
@@ -202,6 +215,7 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     gateInputs,
     cost,
     sources: hydrateSources(db, id),
+    ...(closeable ? { closeable: true } : {}),
   };
 }
 

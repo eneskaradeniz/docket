@@ -292,6 +292,10 @@ export function deriveCardAction(wo: WorkOrder): CardAction | undefined {
   const reason = deriveCardReason(wo);
   if (reason.kind === 'in_progress' || reason.kind === 'ci_running') return undefined;
   if (reason.kind === 'stopped_asking') return { kind: 'permission', intent: 'resume' };
+  // WO-0031e tur-3: a closable WO (adapter-derived canClose) names its own action — the card says
+  // ▸ Kapatılabilir. Disjoint from plan (closable requires planApproved) and from an unresolved
+  // revise (canClose requires every verdict proceed), so it can only be the closure intent.
+  if (wo.closeable) return { kind: 'closure', intent: 'close' };
   const primary = derivePrimaryAction(wo);
   if (primary.kind === 'absent') return undefined;
   const intent = primary.intent;
@@ -321,6 +325,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
     reason: deriveCardReason(wo),
     action,
     actionRank: deriveCardActionRank(action),
+    closable: wo.closeable === true,
     role: active?.role,
     primaryRepo: wo.tracks[0]?.repo,
     trackCount: wo.tracks.length,

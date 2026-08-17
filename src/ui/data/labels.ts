@@ -111,7 +111,9 @@ export const CARD_ACTION_AREA: Record<CardActionKind, string> = {
 
 export function cardActionText(a: CardAction): string {
   if (a.kind === 'link') return ACTION_LABELS[a.intent];
-  return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Belgeleri güncelle' }[a.kind];
+  // WO-0031e tur-3: the closure-stage card names its state — Kapatılabilir (canClose holds; the
+  // detail's Kapat card is live). ACTION_LABELS.update_docs stays for the rail's ActionCard.
+  return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Kapatılabilir' }[a.kind];
 }
 
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
