@@ -64,7 +64,7 @@ export function StepList({
         for (const [idx] of armed) delete next[idx];
         return next;
       });
-    }, 900);
+    }, 400);
     return () => clearTimeout(t);
   }, [steps]);
 

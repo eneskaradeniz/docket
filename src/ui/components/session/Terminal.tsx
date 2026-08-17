@@ -129,7 +129,7 @@ export function Terminal({
         const marker = term.registerMarker(-1);
         if (marker) {
           const deco = term.registerDecoration({ marker, width: term.cols, backgroundColor: 'rgba(76, 195, 138, 0.12)' });
-          setTimeout(() => { deco?.dispose(); marker.dispose(); }, 700);
+          setTimeout(() => { deco?.dispose(); marker.dispose(); }, 400);
         }
       } catch {
         // decoration surface unavailable — the pulse is optional by ruling

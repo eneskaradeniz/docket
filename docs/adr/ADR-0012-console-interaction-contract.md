@@ -90,7 +90,9 @@ Motion is feedback, not decoration, and lives by six rules (the operator's, from
 
 1. Motion fires on **state transitions only**, never on mount or reload — reopening a finished
    thing is calm.
-2. Every animation is **≤400ms**.
+2. Every **transition** animation is **≤400ms**. The one exemption is ambient state, not
+   transitions: the lamp's breathe loops (2.2s/3.2s) are how a persistent state ("seni bekliyor",
+   "çalışıyor") reads at a glance — they loop by design and reduced-motion still kills them.
 3. `prefers-reduced-motion: reduce` turns every animation off via the one CSS block — no
    per-component exemptions.
 4. The **cost counter is never animated**. Money does not celebrate.

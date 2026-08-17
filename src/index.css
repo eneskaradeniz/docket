@@ -173,6 +173,12 @@
     background: color-mix(in srgb, var(--color-info) 14%, transparent);
   }
 
+  /* the kit Dialog's open rise (WO-0031d) — a NAMED class, not an arbitrary Tailwind animate
+     utility, so the one reduced-motion block below can kill it like everything else */
+  .dialog-rise[data-state='open'] {
+    animation: rise 0.15s ease-out;
+  }
+
   /* ===== Ambient glow (WO-0031c / v4 "durum ışığı") =====
      A static radial wash behind the console content, one hue per turn state: amber = waiting on the
      operator, blue = a session runs, green = done/closed, red = crashed. No animation at all — the
@@ -196,7 +202,7 @@
 
   /* ===== Step-card state flash (WO-0031c) — one brief wash when a card's status flips ===== */
   .flash {
-    animation: flash 0.8s ease-out;
+    animation: flash 0.4s ease-out;
   }
   @keyframes flash {
     from {
@@ -207,7 +213,7 @@
     }
   }
   .flash-err {
-    animation: flash-err 0.8s ease-out;
+    animation: flash-err 0.4s ease-out;
   }
   @keyframes flash-err {
     from {
@@ -369,8 +375,14 @@
   .flash-err,
   .pop,
   .stepcard,
-  .sealpop {
+  .sealpop,
+  .dialog-rise {
     animation: none;
+    transition: none;
+  }
+  .ibtn,
+  .irow,
+  .ichip {
     transition: none;
   }
   .hairline-progress > div,

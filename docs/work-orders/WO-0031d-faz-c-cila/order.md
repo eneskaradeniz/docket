@@ -123,3 +123,9 @@ Created 2026-08-17 in the fresh WO-0031d session. Deviations worth naming at rev
 is deleted as dead code (only `RoleChip` was ever imported — the live status surface is `StepList`);
 the review badge joins the live-drive gate (operator-approved extension); the mockup's 0.6s sealpop
 is capped at 400ms per the juice rule. Hand-numbered WO-0031d on purpose (TD-035).
+
+Pre-merge fixes (operator review of PR #36): Kapat now closes its dialog on success (the error branch
+stays open for retry) + an E2E assert that it does; all transition juice trimmed to ≤400ms (flash,
+pulse, the flash window) with the lamp-breathe loops named as ADR-0012's ambient exemption; the
+reduced-motion block gains the Dialog rise (now a named class, not an arbitrary utility) and the
+interaction-class transitions. The review's remaining P2s are filed as TD-038.

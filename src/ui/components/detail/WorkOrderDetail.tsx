@@ -139,6 +139,7 @@ export function WorkOrderDetail({
     setCloseError(false);
     try {
       await onCloseWorkOrder(closeNote.trim() || detail.title);
+      setConfirmClose(false); // success closes the dialog (the results card is the payoff); an error keeps it open for retry
     } catch {
       setCloseError(true);
     } finally {

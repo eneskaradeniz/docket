@@ -430,6 +430,7 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'Enter in the note input closed the dialog');
   await page.getByRole('button', { name: 'Evet, kapat', exact: true }).click();
   await page.waitForTimeout(900); // closeWorkOrder → closure sha → stage closed → results card
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the close dialog stayed open after a successful close');
   assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow after closing');
   assert.ok((await page.locator('[data-closure-card]').count()) >= 1, 'no results card on the closed WO');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on the results card');
