@@ -235,16 +235,18 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       done line "Tamamlandı", never "Sonraki oturum bekleniyor". 472 tests (+8); E2E 29 specs (+3,
       seeded `raf` workspace). TD-036 untouched — `closeable` rides the existing `getWorkOrders`
       payload. Spec: `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
-- [ ] **WO-0031f** — UI final turu: the v5 mockup tour's 12 operator rulings (2026-08-18,
-      `docs/ui-mockups/wo-0031-v5-final-turu.html`) become the console: **D3 "Sıcak"** direction pass
-      (lamp language everywhere — step-row state edge, rack section dots, audit role lamps, glow one
-      notch stronger), DETAY tab language (S1-C signal underline + count emphasis, panel headers +
-      sticky, conditional CSS-smooth scroll), the board's one **closed-list toggle** (three surfaces,
-      >5 collapsed), the all-done peron's inline **invitation CTA**, card **Süre** (session-sum,
-      finished-sessions-only), the step report **under its row**, the running-empty stream line,
-      **closed WO immutable** (pencil absent + reason, inert badges, store guard, Sil stays with an
-      error line) + TD-038 (all five) + TD-037 (Çizelge cap + load lines) + one ADR-0012 r2
-      amendment line. Spec: `docs/work-orders/WO-0031f-final-turu/order.md`.
+- [ ] **WO-0031f** — UI final turu: two mockup rounds (v5, 12 rulings + v6 structure tour after the
+      operator's "Apple gibi — daha az yüzey" feedback, 2 rulings) become one restructure: DETAY's
+      six tabs collapse into **Akış | Kayıt** — the live terminal lives **inside the active step's
+      row** (pinned), done steps carry their report under their row, Kayıt = kanıt chips + belgeler +
+      döküm (arşiv gövdesi), **Çizelge yüzeyi ölür** (olaylar döküm saatlerinde + adım metasında);
+      **D3 "Sıcak"** direction pass (step-row state edges, section dots, audit role lamps, stronger
+      glow); board **closed-list toggle** (three surfaces, >5 collapsed) + all-done peron's inline
+      **invitation CTA** + card **Süre** (session-sum, finished-only); **closed WO immutable**
+      (pencil absent + reason, inert badges, store guard, Sil stays with an error line);
+      running-empty stream line; TD-038 (all five) + TD-037 load lines + one ADR-0012 r2 amendment
+      line. Spec: `docs/work-orders/WO-0031f-final-turu/order.md`; mockups `docs/ui-mockups/
+      wo-0031-v5-final-turu.html` + `wo-0031-v6-yapi.html`.
 
 ## M3 — Evidence layer
 

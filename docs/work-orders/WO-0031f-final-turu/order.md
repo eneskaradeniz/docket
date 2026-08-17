@@ -1,6 +1,6 @@
 ---
 id: WO-0031f
-title: UI final turu — yön D3, sekme dili, tahta kontrolü, kapalılık
+title: UI final turu — yapı: Akış + Kayıt; yön D3; tahta kontrolü; kapalılık
 workspace: docket
 status: open
 mode: direct
@@ -10,184 +10,168 @@ tracks:
     depends_on: []
 ---
 
-# WO-0031f — UI final turu — yön D3, sekme dili, tahta kontrolü, kapalılık
+# WO-0031f — UI final turu — yapı: Akış + Kayıt; yön D3; tahta kontrolü; kapalılık
 
 ## Objective
 
-Land the operator's final-tour rulings (2026-08-18, three AskUserQuestion rounds over the v5 mockup
-`docs/ui-mockups/wo-0031-v5-final-turu.html` — 12 decisions): the **D3 "Sıcak"** aesthetic direction
-becomes the console's global pass, DETAY tabs gain a real affordance + panel context + a conditional
-scroll language, the board gains the closed-list toggle + a peron invitation + card durations, the
-closed work order becomes immutable (UI + store), the step report opens under its row, the
-running-empty terminal gets its line — and the agreed tech-debt batch rides along.
+Land the operator's final-tour rulings — the v5 mockup tour (12 rulings, 2026-08-18) plus the v6
+structure tour (2 rulings, same day, after the operator's "Apple gibi: daha az yüzey" feedback) —
+as one restructure: DETAY's six tabs become **two surfaces (Akış | Kayıt)** with the live terminal
+inside the active step's row, the **D3 "Sıcak"** direction pass over everything, the board's
+closed-list toggle + peron invitation + card durations, the closed work order made immutable
+(UI + store), the running-empty stream line, and the agreed tech-debt batch.
 
 ## Context
 
-- The 12 rulings, as picked by the operator (mockup §09 ledger):
-  - **Y1 = D3 Sıcak** (the operator's own pick, not the tour's D1 recommendation): the lamp language
-    goes everywhere — the step row's left edge carries its state color (done `proceed`, active
-    `info`), rack section headers open with a dot, audit rows carry their role lamp, the ambient glow
-    is a tick stronger (§01 D3 frames + the d3 audit close-up are the spec; the deltas table lists
-    every axis).
-  - **S1 = C**: active tab gets a 2px `signal` underline; the active tab's count turns info-toned
-    (Adımlar 1/4, Kanıt 2/3 — the counts already exist in the app today, C only emphasizes them).
-  - **S2 = panel header + count, sticky**: every DETAY tab panel opens with the rack's own readout
-    header + mono aside (`DetailSection` already carries both; tabs drop them today), sticky within
-    the panel. The Terminal panel keeps its own instrument head (it is not a section).
-  - **S3 = conditional scroll**: on tab switch the panel scrolls into view only when it is out of
-    view; the motion rides CSS `scroll-behavior: smooth` (never JS `behavior:'smooth'` — the one
-    reduced-motion block must kill it), long distances fall back to instant; the substrip adım N/T
-    jump uses the same handler.
-  - **T1 = toggle button**: one closed-list control across all three surfaces (the mixed board's
-    drawer, the awaiting-close tail, the all-done list) — "▸ N kapalı iş", collapsed by default when
-    N > 5.
-  - **T2 = inline invitation**: the all-done platform line carries "▸ Yeni iş emri" next to "Bütün
-    işler tamam" (opens the create modal). The awaiting-close platform keeps exactly its one CTA
-    ("Kapanışa git") — its work is closing, not creating; this narrows the original finding to the
-    all-done surface and keeps ADR-0012 r2's "exactly 1 CTA" intact for the waiting platform.
-  - **T3 = session-sum duration**: the card's Süre is the sum of session durations (the strip's live
-    Süre and the audit total — one number everywhere); drawn only when at least one session has
-    finished (the cost line's precedent — never `$0.00`-style noise on fresh cards).
-  - **R1 = inline report**: the step report opens under its own row in the StepList (the audit-row
-    ▸ döküm idiom: real padding, header "Rapor · Adım N" + role + time, one open at a time, the
-    toggle is a real button with `aria-expanded`, hover via the `.alink`/`.irow` family).
-  - **K1 = Sil stays**: on a closed WO the pencil is ABSENT with the reason line "Kapalı iş emri
-    değişmez", the review-mode chip renders as an inert badge (a closed WO's mode is history, not a
-    setting), the permission badge stays display-only, and Sil remains (archive hygiene is not
-    editing) — the Sil dialog gains the error line (TD-038.4). Enforcement is two layers: UI surfaces
-    absent AND the store's `updateWorkOrder` throws on `stage === 'closed'` (test-first);
-    `deleteWorkOrder` stays allowed.
-  - **F-kat = all in**: TD-038 items 1–5 + TD-037's two (see Scope). TD-034 (transcript markdown)
-    stays OUT — an architecture decision, not polish.
-  - **.rise = removed**: the board's mount stagger dies; ADR-0012's "no motion on mount" needs no
-    exception (TD-038.1 resolved by removal).
-  - **F7 copy = "Oturum açıldı — çıktı bekleniyor"** for a running session with zero entries.
-- ADR-0012 governs every item. One amendment lands with this WO (see Scope); everything else stays
-  inside the existing contract.
-- The v5 mockup is the approved design (WO-0031c's v4 precedent: mockup + rulings = the plan). Its
-  §02+ frames render today's structure by design — the D3 pass applies globally per §01.
-- Pre-tour finding 0 (closed cards claiming "▸ Kapatılabilir") was already fixed pre-merge in #37
-  (`14fce73`); this WO starts from that state.
+- **The v6 structure rulings (the tour's second round — operator: "istediğim o sıcaklık, sade,
+  minimal… Apple gibi düşün… kanıt sekmesi ne gerek var mı? çok sekme var… hala tam final değil"):**
+  - DETAY = **Akış | Kayıt** (Y-3): two tabs at <1080; at ≥1080 the rack IS Kayıt (left Akış, right
+    the record) — no tabs. SADE unchanged (it already answers the three questions at a glance:
+    whose turn, what to do, how much).
+  - **Akış is the body itself**: the step list is the spine. The active step's row carries its live
+    terminal INLINE, pinned open while running (not toggleable — the live thing is in front); a done
+    step's report opens under its own row (the v5 R1 ruling, now the universal pattern); pending rows
+    stay quiet. Free-form sessions (no plan) render the terminal inside the instrument card. Decision
+    cards (ask, plan approval, verdict) keep living in the body above the flow, unchanged.
+  - **Kayıt is one drawer**: three Kanıt chips at the top (a summary, not a section), Belgeler,
+    Oturum dökümü. The archive body is the full Kayıt (result card + chips + docs + ledger), as today.
+  - **Y-2: Çizelge dies as a surface** — "who did what when" already lives in the ledger rows'
+    timestamps and the step metas; rare events (e.g. rule changes) surface in the audit row's
+    detail. The stored event stream is untouched — only the UI section disappears.
+  - Terminal/Kanıt/Çizelge/Belgeler/Oturum dökümü as standalone tabs all die; nothing is lost, every
+    old surface has a written home (v6 §04 yuva tablosu).
+  - The v5 S1/S2/S3 rulings (six-tab affordance, panel headers, conditional scroll) shrink into this
+    world: the two tabs keep the signal underline + counts (Akış 1/4 · Kayıt 2/3); Kayıt's sections
+    carry their own readout headers as drawn in v6; the conditional-scroll language survives only
+    for the substrip adım N/T jump. The v5 §04 frames are superseded by v6 as the spec.
+- **The v5 rulings that survive unchanged (tour round one, 12 decisions):**
+  - **Y1 = D3 Sıcak** (the operator's pick, not the tour's D1 recommendation): the lamp language
+    goes everywhere — step rows carry a 3px state edge (done `proceed`, active `info`), rack/Kayıt
+    section headers open with a dot, audit rows carry their role lamp, the ambient glow is a tick
+    stronger. The v6 frames are drawn in D3 — structure and warmth together are the spec.
+  - **T1 = closed-list toggle button** across all three surfaces (mixed board, awaiting-close tail,
+    all-done list): "N kapalı iş", collapsed by default when >5.
+  - **T2 = inline invitation** on the all-done platform only ("Bütün işler tamam · ▸ Yeni iş emri");
+    the awaiting-close platform keeps exactly its one CTA ("Kapanışa git").
+  - **T3 = card Süre = session-sum** (one number with the strip and the audit total), drawn only
+    when at least one session has finished.
+  - **R1 = report under its row** — now the universal step-detail pattern (see Akış).
+  - **K1 = closed WO immutable, Sil stays**: pencil ABSENT + reason line "Kapalı iş emri değişmez",
+    review chip an inert badge, permission badge display-only, Sil remains with an error line
+    (TD-038.4); the store's `updateWorkOrder` throws on `stage === 'closed'` (test-first);
+    `deleteWorkOrder` unchanged.
+  - **F-kat = TD-038 (all five) + TD-037 (Çizelge cap is MOOT — the section dies; the load lines
+    remain)**; TD-034 stays OUT.
+  - **.rise removed** (no ADR exception needed); **F7 copy = "Oturum açıldı — çıktı bekleniyor"**.
+- ADR-0012 governs every item; one amendment lands (see Scope). Mockups are the approved design:
+  `docs/ui-mockups/wo-0031-v5-final-turu.html` (35 frames) + `docs/ui-mockups/wo-0031-v6-yapi.html`
+  (8 frames, D3 skin — where the two disagree, v6 wins).
 
 ## Scope
 
 In scope:
 
-- **D3 direction pass (F3)**: `src/index.css` + the detail/board components — step rows (`StepList`)
-  gain a 3px state edge (done/active), rack section headers (`SectionStack`) gain the leading dot,
-  `AuditTable` rows gain the role lamp, the glow washes strengthen one notch (within the existing
-  static radial pattern — still no animation). Typography, spacing band, tokens, and the hover
-  contract do not change (D3's deltas table is the boundary).
-- **Tabs (F5)**: `src/ui/kit/Tabs.tsx` — S1-C affordance (kit-only; every tab surface inherits);
-  `DetailBody.tsx` — the section header + aside inside each `TabsContent` (shared markup with
-  `SectionStack`), sticky within the panel; `WorkOrderDetail.tsx` `handleTabChange` — the conditional
-  scroll: bounds-check the target, move only when out of view, smooth via a CSS `scroll-behavior`
-  class (killed by the one reduced-motion block), instant fallback for long distances; the substrip
-  N/T jump rides the same handler.
+- **DETAY restructure (v6)**: `DetailBody.tsx` / `DetailSections.tsx` — <1080: two tabs
+  (Akış | Kayıt) with the S1 underline+counts treatment; ≥1080: Akış left, Kayıt rack right.
+  Akış = decision surfaces + the step spine. Kayıt = Kanıt chips + Belgeler + Oturum dökümü
+  (+ result card in the archive, where Kayıt is the body). Çizelge section removed; its events
+  surface via the audit row detail / step metas. `Timeline`'s data path is untouched.
+- **Terminal in the step row**: the active step's DETAY view renders its terminal inside the row
+  (pinned while running — the live thing is never hidden behind a toggle); done rows toggle their
+  report under the row (one report open at a time, real buttons, `aria-expanded`, `.alink` toggle);
+  free-form sessions render the terminal in the instrument card. xterm mounts per active step;
+  finished steps' scrollback is served by the transcript (the audit row expansion), not a live
+  terminal. `StepReport.tsx`'s detached card retires.
+- **D3 direction pass**: `src/index.css` + detail/board components — step-row state edges,
+  section-header dots, audit role lamps, glow one notch stronger (static radials only). Typography,
+  spacing band, tokens, hover contract unchanged (v5 §01 D3 deltas table is the boundary).
 - **Board (F1, F2, F4)**: `Board.tsx` — the closedtoggle pattern on all three surfaces (the mixed
-  drawer's `<details>` becomes the button row; awaiting-close tail; all-done list; collapsed default
-  at >5), the all-done platform's inline invitation CTA (`onNewWorkOrder` threaded from
-  `BoardScreen.tsx`); core-first **card duration**: `WorkOrderCardView.durationMs` (sum of session
-  durations; 0 when none finished), derived in `toCardView`, drawn beside cost only when >0; label
-  keys `closedToggle(n)` etc.
-- **Report (F6/R1-A)**: `StepList.tsx` — the done row's report opens as an inline expansion under the
-  row (padded, header "Rapor · Adım N" + `ROLE_LABELS` + time, one open, `aria-expanded`, `.alink`
-  toggle); `StepReport.tsx`'s detached-card variant retires; the loading state uses the new load line.
+  drawer's `<details>` becomes the button; collapsed default at >5); the all-done platform's inline
+  invitation (`onNewWorkOrder` from `BoardScreen.tsx`); core-first **card duration**
+  (`WorkOrderCardView.durationMs`, session-sum, drawn beside cost only when >0).
 - **Empty stream (F7)**: `SessionPane.tsx` / `StepPane.tsx` — a running session with zero entries
-  renders the line "Oturum açıldı — çıktı bekleniyor" (mono, dot pulse) where the terminal would be
-  blank; it leaves with the first transcript line.
-- **Closed immutability (F8/K1)**: `DetailStrip.tsx` — `stage === 'closed'` gates the pencil (absent +
-  the reason line) and freezes the review chip to an inert badge (same treatment as `driveLive`);
-  store `updateWorkOrder` throws on closed (store test or a `canEditWorkOrder` core predicate,
-  test-first — UI gating alone would be a lie); `deleteWorkOrder` unchanged; the Sil dialog gains the
-  error line (`handleDelete` catch → dialog error state, the Kapat dialog's pattern).
-- **TD folds**: TD-038.1 `.rise` + its stagger code removed from `Board.tsx`; TD-038.2 StepList
-  `hover:underline` → `.alink`; TD-038.3 terminal pulse dispose-timer cleanup on unmount;
-  TD-038.5 the second empty-DB E2E app gets the console-error collector; TD-037 Çizelge renders 3
-  events + "▸ tümü (N)" expansion (the same bounded-list idiom); TD-037 load lines ("Adımlar
-  okunuyor…" etc. — quiet mono + dot, no skeletons).
-- **ADR-0012 edit**: r2 gains one sentence — a *finished* surface may carry one invitation CTA beside
-  its state line (the peron invitation is the named case). Nothing else in the ADR changes; the
-  `.rise` question resolves by removal, so no exception is written.
-- **Labels**: ~10 new keys, all pre-shown in the mockup (§09's new-text table): `closedToggle(n)`,
-  `showAll(n)`, `reportToggle` pair, `streamOpen`, `stripClosedReason`, the load-line trio, the
-  peron CTA reuses the existing create label.
-- **E2E**: specs for the closed toggle (three surfaces), the peron CTA opening the create modal, the
-  tab underline + active count, panel headers present, the conditional scroll (moves when hidden,
-  still when visible), the closed strip's absence asserts (pencil, clickable badge), the card
-  duration, the report expansion, the stream line, the Çizelge cap.
+  renders "Oturum açıldı — çıktı bekleniyor"; it leaves with the first transcript line.
+- **Closed immutability (F8/K1)**: `DetailStrip.tsx` closed gating (pencil absent + reason, inert
+  badges); store `updateWorkOrder` throws on closed (test-first); Sil dialog error line
+  (`handleDelete` catch).
+- **TD folds**: `.rise` removal; StepList `hover:underline` → `.alink`; terminal pulse dispose-timer
+  cleanup; empty-DB E2E console collector; load lines ("Adımlar okunuyor…" — the Çizelge cap item is
+  moot, the section dies).
+- **ADR-0012 edit**: r2 gains one sentence — a finished surface may carry one invitation CTA beside
+  its state line (the peron invitation is the named case).
+- **Labels**: Akış/Kayıt names + ~10 keys, all pre-shown in the mockups.
+- **E2E**: the two-surface world (tab pair + counts + underline), terminal-in-row (live pinned,
+  report toggle), Kayıt composition (chips/docs/ledger; Çizelge absence assert), the closed toggle
+  (three surfaces), peron CTA, card duration, closed strip absences, stream line; existing tab-scroll
+  and section specs rewritten for the two-surface world.
 
 Out of scope:
 
 - Specialization profiles — WO-0032.
-- TD-034 (transcript markdown rendering) — architecture decision, its own WO if ever.
-- Measured-contrast/token changes (D3 uses the existing palette only); locale + theme (M3.5).
-- Audit virtualization; the awaiting-close platform gaining a second CTA (T2 ruling narrows the
-  invitation to the all-done surface).
+- TD-034 (transcript markdown rendering); measured-contrast/token changes (D3 uses the existing
+  palette); locale + theme (M3.5).
+- Any second CTA on the awaiting-close platform; audit virtualization.
 - Any port-signature or preload-arity change (TD-036) — `durationMs` rides the existing
-  `getWorkOrders` payload exactly like `stage`/`cost`/`closeable`.
+  `getWorkOrders` payload.
 
 ## Acceptance criteria
 
-1. The D3 pass is visible exactly on its four axes: StepList rows carry the 3px state edge
-   (done `proceed` / active `info`), rack section headers open with a dot, audit rows carry the role
-   lamp, the glow washes are one notch stronger — and NOT on anything else (no typography, spacing,
-   token, or hover changes beyond the named deltas).
-2. The active DETAY tab carries a 2px `signal` underline and its count renders info-toned; inactive
-   tabs keep today's dialect; every section panel opens with its readout header + aside, sticky
-   within the panel; the Terminal panel keeps its instrument head and no section header.
-3. A tab switch scrolls only when the target panel is out of view; the motion rides CSS
-   `scroll-behavior` (a computed-style assert pins it) and dies under reduced motion; the substrip
-   adım N/T jump uses the same handler; nothing scrolls on mount or same-tab re-click.
-4. All three closed-list surfaces use the one toggle button ("N kapalı iş", `aria-expanded`,
-   `.irow`-family hover); at >5 closed cards it starts collapsed; the mixed board's `<details>`
-   drawer is gone.
-5. The all-done platform line carries the inline invitation that opens the create modal; the
+1. DETAY at <1080 renders exactly two tabs — Akış (count = done/total steps) and Kayıt (count =
+   satisfied/total evidence) — with the active tab's 2px `signal` underline and info-toned count;
+   at ≥1080 the layout is Akış + Kayıt rack, no tabs; SADE is unchanged.
+2. The active step's row carries its live terminal inline, pinned open while the session runs (no
+   toggle hides it); a done step's report opens under its own row (padded, header "Rapor · Adım N" +
+   role + time, one open at a time, real button + `aria-expanded`); pending rows are quiet; the
+   detached report card no longer exists.
+3. Kayıt renders: three Kanıt chips (with satisfied/total), Belgeler, Oturum dökümü — in that order;
+   the archive body is the full Kayıt with the result card on top; **no Çizelge surface exists
+   anywhere** (E2E absence assert) and audit rows can expand to transcript detail.
+4. The D3 pass is visible exactly on its four axes (step edges, section dots, audit role lamps,
+   stronger glow) and nowhere else.
+5. All three closed-list surfaces use the one toggle button ("N kapalı iş", `aria-expanded`); at >5
+   closed cards it starts collapsed; the mixed board's `<details>` drawer is gone.
+6. The all-done platform line carries the inline invitation opening the create modal; the
    awaiting-close platform is unchanged (one CTA).
-6. `WorkOrderCardView.durationMs` is the session-sum (core tests: zero sessions → 0, live-only → 0,
-   never NaN, multi-session sum), drawn beside cost only when > 0; the strip's Süre and the audit
-   total tell the same number for the same WO.
-7. A done step's report opens as a padded inline expansion under its row with the contextual header,
-   one open at a time; the toggle is a real button with `aria-expanded`; no detached report card
-   remains.
-8. A running session with zero entries renders "Oturum açıldı — çıktı bekleniyor"; a session-less
-   pane keeps "Çalışan oturum yok."; the line leaves with the first transcript entry.
-9. On a closed WO: no pencil (the reason line reads "Kapalı iş emri değişmez"), the review chip is an
-   inert badge, Sil remains and its dialog surfaces delete failures; the store rejects
-   `updateWorkOrder` on a closed WO (test-pinned) while `deleteWorkOrder` still works.
-10. `.rise` and its stagger are gone; StepList's report link uses `.alink`; the terminal pulse timer
-    is cleared on unmount; the empty-DB E2E app collects console errors; Çizelge renders 3 events +
-    "▸ tümü (N)"; the named load lines replace bare "Yükleniyor…".
+7. `WorkOrderCardView.durationMs` is the session-sum (core tests: zero sessions → 0, live-only → 0,
+   never NaN, multi-session), drawn only when > 0.
+8. On a closed WO: no pencil (reason line "Kapalı iş emri değişmez"), inert review badge, Sil works
+   and surfaces failures; the store rejects `updateWorkOrder` on closed (test-pinned).
+9. A running session with zero entries renders "Oturum açıldı — çıktı bekleniyor"; the line leaves
+   with the first transcript entry.
+10. `.rise` gone; StepList link uses `.alink`; pulse timer cleared on unmount; empty-DB E2E collects
+    console errors; the named load lines replace bare "Yükleniyor…".
 11. ADR-0012 r2 carries the one-sentence finished-surface invitation amendment; no other ADR text
     changes.
 12. All new copy lives in `labels.ts`; no `.replace(`/`disabled` in `src/ui`.
-13. E2E: 29 specs + the new set green (target ≥ 36); `npm run typecheck && npm test && npm run
-    check:boundaries && npm run build && npm run test:ui` green.
+13. E2E: 29 specs rewritten/extended for the two-surface world (target ≥ 32); `npm run typecheck &&
+    npm test && npm run check:boundaries && npm run build && npm run test:ui` green.
 
 ## Evidence required
 
-- plan_approval: exempt — `mode: direct`; the plan is the operator's 12 v5-tour rulings + this order.
+- plan_approval: exempt — `mode: direct`; the plan is the operator's v5 (12) + v6 (2) tour rulings +
+  this order.
 - pr_open: PR URL, head sha (single PR).
 - ci_green: all required checks `success`.
 - verification: verifier report, all `path:line` pointers resolve at head sha.
-- closure: all tracks merged; `ROADMAP.md` `[x]` + `docs/tech-debt.md` updated (TD-038 closed, TD-037
-  narrowed-or-closed per what landed); the ADR-0012 amendment rides the same PR.
+- closure: all tracks merged; `ROADMAP.md` `[x]` + `docs/tech-debt.md` updated (TD-038 closed;
+  TD-037 narrowed — the load lines land, the Çizelge cap item is moot); the ADR-0012 amendment rides
+  the same PR.
 
 ## Stop-and-ask gates
 
-- The exact ADR-0012 r2 amendment sentence (drafted in this order's Scope) — confirm at PR review
-  before merge; the operator approved the direction (T2) over a mockup caption that flagged it, the
-  final wording still gets one explicit look.
+- The exact ADR-0012 r2 amendment sentence — confirm at PR review before merge.
+- If the xterm-per-active-step mount proves to lose scrollback the operator expects on finished
+  steps (the transcript expansion is the designed fallback), surface it at PR review rather than
+  inventing a hidden keep-alive.
 
 ## Notes
 
-Created 2026-08-18 in the v5 final-tour session. Hand-numbered WO-0031f on purpose (TD-035). The
-mockup tour ran mockup-first per the v4 precedent: one self-contained HTML file (35 frames, 9
-sections, click-tested demos), three critique lenses (contract/rubric/scenario) before the operator
-saw it, an Electron smoke suite (zero console errors, every demo clicked), then three decision
-rounds. Two honest deviations from the tour's own recommendations, both the operator's calls: Y1 =
-D3 (the tour suggested D1), and the awaiting-close platform keeps a single CTA (the finding's
-"both platforms" reading narrowed — see T2). The S3 smooth scroll MUST stay on the CSS route; a JS
-`behavior:'smooth'` would bypass the one reduced-motion kill switch (the mockup implements and
-documents this). `durationMs` rides the existing `getWorkOrders` payload — no preload signature
-change (TD-036).
+Created 2026-08-18 in the final-tour session; restructured same day after the operator's structure
+feedback ("Apple gibi… çok sekme var… hala tam final değil") — v5's 12 rulings were captured in the
+morning, v6's structure round (8 frames, D3 skin, `Omurga + Kayıt` picked over single-surface and
+4-tab variants) in the afternoon; Y-2 = Çizelge dies, Y-3 = the names. Hand-numbered WO-0031f on
+purpose (TD-035). Two honest deviations, both the operator's calls: Y1 = D3 (the tour suggested D1),
+and the awaiting-close platform keeps a single CTA. The smooth-scroll CSS-route rule survives for
+the substrip N/T jump; the two-tab world makes S3 nearly moot. `durationMs` rides the existing
+`getWorkOrders` payload (TD-036). E2E's tab-scroll spec (WO-0031e) gets rewritten, not deleted — the
+N/T jump keeps its coverage.
