@@ -24,7 +24,8 @@ export function AppShell({
   onNewWorkOrder,
 }: {
   workspaces: Workspace[];
-  workspaceId: WorkspaceId;
+  /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
+  workspaceId: WorkspaceId | null;
   onSwitch: (id: WorkspaceId) => void;
   source: WorkOrderSource;
   settings: AppSettings;
@@ -45,21 +46,25 @@ export function AppShell({
         <span className="select-none font-mono text-[12px] font-semibold uppercase tracking-[0.22em] text-ink">
           {UI.productName}
         </span>
-        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <WorkspaceSwitcher
-            workspaces={workspaces}
-            selectedId={workspaceId}
-            onSwitch={onSwitch}
-            onEdit={(ws) => { setEditingWs(ws); setWsModal('edit'); }}
-            onCreate={() => { setEditingWs(undefined); setWsModal('create'); }}
-            onOpenList={() => setWsListOpen(true)}
-          />
-        </div>
+        {workspaceId !== null ? (
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <WorkspaceSwitcher
+              workspaces={workspaces}
+              selectedId={workspaceId}
+              onSwitch={onSwitch}
+              onEdit={(ws) => { setEditingWs(ws); setWsModal('edit'); }}
+              onCreate={() => { setEditingWs(undefined); setWsModal('create'); }}
+              onOpenList={() => setWsListOpen(true)}
+            />
+          </div>
+        ) : null}
         <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            {UI.newWorkOrder}
-          </Button>
+          {workspaceId !== null ? (
+            <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              {UI.newWorkOrder}
+            </Button>
+          ) : null}
           <Tooltip label={UI.settings}>
             <button
               type="button"
@@ -82,7 +87,7 @@ export function AppShell({
           onSaved={onWorkspacesChanged}
         />
       ) : null}
-      {wsListOpen ? (
+      {wsListOpen && workspaceId !== null ? (
         <WsListModal
           workspaces={workspaces}
           selectedId={workspaceId}

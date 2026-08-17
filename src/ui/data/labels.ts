@@ -405,7 +405,6 @@ export const UI = {
   backToBoard: '← İş emirleri',
   evidence: 'Kanıtlar',
   sources: 'Kaynaklar',
-  noWorkOrders: 'İş emri yok',
   ciExempt: 'CI muaf',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
@@ -413,7 +412,6 @@ export const UI = {
   scopedToTrack: ' · track',
   loading: 'Yükleniyor…',
   loadError: 'İş emirleri yüklenemedi.',
-  inflightEmpty: 'Çalışan oturum yok.',
   closedDrawer: 'Kapalı',
   // Canlı oturum bölmesi (WO-0008)
   permissionRequested: 'İzin istendi',
@@ -478,7 +476,6 @@ export const UI = {
   architectRequest: 'Mimarın bir isteği var',
   // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
   inviteFirstWo: 'Haydi ilk iş emrini açalım',
-  noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',
   // Plan adımları (WO-0017)
   stepsHeader: 'Plan',
   stepsUnit: 'adım',
