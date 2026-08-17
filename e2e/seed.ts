@@ -152,4 +152,51 @@ store.recordStep(wo6.id, 1, { status: 'done', reportPath: 'reports/step-01-imple
 store.recordStepVerdict(wo6.id, 1, 'proceed', 'ok');
 await store.closeWorkOrder(wo6.id, 'e2e closed long ago');
 
+// 7) WO-0031e tur-3: a third workspace whose only work order is CLOSABLE but not closed — the
+//    awaiting-close platform board ("N iş kapatılmayı bekliyor" + CTA + ▸ Kapatılabilir). Same
+//    shared decision store (TD-035 numbering). Its one implementer session carries a 4-line
+//    transcript: the audit-row expansion spec. The deliberately long Objective makes the Belgeler
+//    section overflow 980×620 so the tab-scroll spec has deterministic room to scroll.
+const ws3 = await store.createWorkspace({
+  label: 'raf',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+const wo7 = await store.createWorkOrder({
+  workspaceId: ws3.id,
+  title: 'Raf işi',
+  description: [
+    'E2E: closable but not closed — the awaiting-close platform.',
+    'Bu açıklama bilinçli olarak uzun tutuldu: Belgeler bölümü 980×620 gövdesinde rahatça',
+    'taşmalı ki sekme değişimi kaydırması gerçek bir scroll mesafesi bulsun. Aşağıda amaç',
+    'metni uzatmaktan başka bir işlevi olmayan cümleler var. Satır bir. Satır iki. Satır üç.',
+    'Satır dört. Satır beş. Satır altı. Satır yedi. Satır sekiz. Satır dokuz. Satır on.',
+    'Satır on bir. Satır on iki. Satır on üç. Satır on dört. Satır on beş. Satır on altı.',
+    'Satır on yedi. Satır on sekiz. Satır on dokuz. Satır yirmi. Satır yirmi bir. Satır',
+    'yirmi iki. Satır yirmi üç. Satır yirmi dört. Satır yirmi beş. Bu kadar yeter.',
+  ].join(' '),
+  trackRepos: ws3.repos,
+  reviewMode: 'gates',
+  contextFiles: [],
+});
+await store.approvePlan(wo7.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+store.recordStep(wo7.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+store.recordStepVerdict(wo7.id, 1, 'proceed', 'ok');
+store.recordSession({
+  providerSessionId: 'e2e-wo7-run',
+  workOrderId: wo7.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [
+    { speaker: 'assistant', text: 'Raf: döküm satırı 1 — plan onaylandı.' },
+    { speaker: 'tool_use', tool: 'Bash', detail: 'npm test' },
+    { speaker: 'tool_result', summary: 'Raf: döküm satırı 3 — testler geçti.', isError: false },
+    { speaker: 'system', text: 'Raf: döküm satırı 4 — bitti.' },
+  ],
+  cost: { tokensIn: 9_000, tokensOut: 2_000, usd: 0.55 },
+  startedAt: new Date('2026-08-16T16:00:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T16:05:00Z').toISOString(),
+});
+
 console.log(`DB=${join(root, 'e2e.db')}`);
