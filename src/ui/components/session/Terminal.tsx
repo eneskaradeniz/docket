@@ -115,11 +115,26 @@ export function Terminal({
       term.reset();
       writtenCountRef.current = 0;
     }
+    // WO-0031d / v4 §7 — the newline pulse: only a LIVE append (something was already written in this
+    // mount; a resume seed writes 0→N and stays calm) washes its last line briefly. The decoration API
+    // has no animation; the pulse is register → dispose. Reduced-motion never registers it.
+    const pulse = writtenCountRef.current > 0 && writtenCountRef.current < entries.length;
     for (let i = writtenCountRef.current; i < entries.length; i++) {
       const formatted = formatTranscriptLine(entries[i], { labelFor: toolLabel, noteFor: UI.noteFor });
       for (const piece of formatted.split('\n')) term.writeln(piece);
     }
     writtenCountRef.current = entries.length;
+    if (pulse && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      try {
+        const marker = term.registerMarker(-1);
+        if (marker) {
+          const deco = term.registerDecoration({ marker, width: term.cols, backgroundColor: 'rgba(76, 195, 138, 0.12)' });
+          setTimeout(() => { deco?.dispose(); marker.dispose(); }, 700);
+        }
+      } catch {
+        // decoration surface unavailable — the pulse is optional by ruling
+      }
+    }
   }, [entries, resetKey]);
 
   return (

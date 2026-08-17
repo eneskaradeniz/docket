@@ -488,7 +488,6 @@ export const UI = {
   deleteWo: 'Sil',
   deleteWoHint: 'Bu iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.',
   deleteWoConfirm: 'Evet, sil',
-  deleteWoInFlight: 'Siliniyor…',
   cancel: 'Vazgeç',
   stepsAllDone: 'Tüm adımlar tamam',
   // İş emri kapanışı (WO-0025)
@@ -497,6 +496,8 @@ export const UI = {
   closeNotePlaceholder: "Kısa bir kapanış notu — order.md'ye yazılır",
   closeWoConfirm: 'Evet, kapat',
   closeWoFailed: 'Kapatılamadı: ön koşullar karşılanmadı (adım/denetim eksik olabilir).',
+  closeStatEvidence: 'Kanıt',
+  closeStatReviews: 'İnceleme',
   // Sertleştirme dizgeleri (WO-0026)
   errorBoundaryTitle: 'Bir şeyler ters gitti',
   errorBoundaryHint: "Beklenmeyen bir hata oluştu. Yeniden yükleyebilirsin — kalıcı kayıtlar etkilenmez, yalnızca açık canlı oturum akışı kaybolur.",

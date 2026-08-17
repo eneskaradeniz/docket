@@ -1,7 +1,7 @@
 // Substrip (WO-0031c / v4) — the one line under the strip: WHOSE turn it is (left, tone-dotted, an
 // aria-live polite announcement — audit B5: the "Sıra sende" flip must reach screen readers, not just
-// eyes) and the keyboard hint (right). The text comes from deriveTurnState via labels; this component
-// only maps tone → lamp class.
+// eyes). WO-0031d: the right slot is the STEP SEGMENTS (adım N/T + filled cells) whenever a plan has
+// steps — the standing "esc geri" hint is gone (hints are never standing text, ADR-0012 r5).
 import type { TurnState } from '../../../core/derive';
 import { UI } from '../../data/labels';
 import { cn } from '../../kit';
@@ -36,7 +36,14 @@ export function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
   }
 }
 
-export function Substrip({ turn }: { turn: TurnState }) {
+export function Substrip({
+  turn,
+  segments,
+}: {
+  turn: TurnState;
+  /** The step segments (adım N/T + filled cells); absent while no plan has steps. */
+  segments?: { done: number; total: number; activeIdx?: number };
+}) {
   const tone = TURN_TONE[turn];
   return (
     <div className="flex items-center justify-between gap-3 border-b border-hairline/60 pb-1.5">
@@ -47,6 +54,27 @@ export function Substrip({ turn }: { turn: TurnState }) {
         />
         <span className="truncate">{TURN_LABEL[turn]}</span>
       </p>
+      {segments && segments.total > 0 ? (
+        <span className="flex shrink-0 items-center gap-2" data-segments={segments.total}>
+          <span className="flex gap-1" aria-hidden="true">
+            {Array.from({ length: segments.total }, (_, i) => i + 1).map((idx) => (
+              <span
+                key={idx}
+                data-seg={idx}
+                className={cn(
+                  'h-1 w-3 rounded-sm',
+                  segments.activeIdx === idx
+                    ? 'bg-info'
+                    : idx <= segments.done
+                      ? 'bg-proceed'
+                      : 'bg-hairline',
+                )}
+              />
+            ))}
+          </span>
+          <span className="readout">{UI.stepSegments(segments.done, segments.total)}</span>
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -1,12 +1,34 @@
 // PlanApprovalCards (WO-0031c / v4) — the plan's PRIMARY surface at the approval moment: "Mimar N adım
-// önerdi" over a grid of StepCards (the markdown prose stays a document, read in DETAY · Belgeler).
+// önerdi" over a grid of step cards (the markdown prose stays a document, read in DETAY · Belgeler).
 // The approval ACTIONS live in the rail (Onayla / İtiraz et / Düzenle) — this card only speaks.
 // The EDITOR (c2): aim becomes an input, the role chip cycles (Mimar→Uyg→Doğ), ▲▼ reorder, ✕ removes
 // (min 1), + Adım ekle appends — the rail carries the change counter and the "düzenlenmiş onay".
+// WO-0031d: the RoleChip lives here now — its old module's StepCard was dead code (only the chip was
+// ever imported; the live status surface is StepList).
 import { parsePlanSteps } from '../../../core/plan-steps';
-import type { StepSpec } from '../../../core/types';
-import { UI } from '../../data/labels';
-import { RoleChip } from './StepCard';
+import type { SessionRole, StepSpec } from '../../../core/types';
+import { ROLE_LABELS, UI } from '../../data/labels';
+import { cn } from '../../kit';
+
+const ROLE_CHIP: Record<SessionRole, string> = {
+  architect: 'border-signal/50 text-signal',
+  implementer: 'border-info/50 text-info',
+  verifier: 'border-proceed/50 text-proceed',
+};
+
+function RoleChip({ role, className }: { role: SessionRole; className?: string }) {
+  return (
+    <span
+      className={cn(
+        'rounded-full border px-1.5 py-px font-mono text-[10px] font-medium uppercase tracking-wider',
+        ROLE_CHIP[role],
+        className,
+      )}
+    >
+      {ROLE_LABELS[role]}
+    </span>
+  );
+}
 
 export function PlanApprovalCards({
   plan,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import type { StepRole, StepSpec, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
-import { derivePhase, deriveTurnState } from '../../../core/derive';
+import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
@@ -164,6 +164,22 @@ export function WorkOrderDetail({
   const activeStep = runIdx !== undefined ? detail.steps.find((s) => s.idx === runIdx) : undefined;
 
   const phase = derivePhase(detail, detail.steps, !!docs.plan);
+
+  // The seal's one-shot rule (WO-0031d / ADR-0012 r7): the ref seeds with the CURRENT kind, so a mount
+  // that starts at done (reopening a closed work order) never pops; only a live flip to done does.
+  const [sealPop, setSealPop] = useState(0);
+  const prevPhaseKind = useRef<string | null>(null);
+  if (prevPhaseKind.current === null) prevPhaseKind.current = phase.kind;
+  useEffect(() => {
+    const prev = prevPhaseKind.current;
+    prevPhaseKind.current = phase.kind;
+    if (prev !== 'done' && phase.kind === 'done') setSealPop((n) => n + 1);
+  }, [phase.kind]);
+
+  // The substrip's step segments (WO-0031d): adım N/T + filled cells, absent before a plan has steps.
+  const segTotal = detail.steps.length;
+  const segDone = detail.steps.filter((s) => s.status === 'done').length;
+  const segActive = detail.steps.find((s) => s.status === 'active')?.idx;
 
   // --- The controller's read-only subscription to the ACTIVE drive (the panes subscribe too; drives are
   //     only ever started by the panes' auto-drive effects or the rail's actions below). The seed mirrors
@@ -610,13 +626,38 @@ export function WorkOrderDetail({
 
       {!planStage || !effectivePlan ? (
         detail.stage === 'closed' ? (
-          <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
-            <div className="lamp lamp-done" />
-            <div className="flex-1 px-3.5 py-3">
-              <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
-              <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
-            </div>
-          </div>
+          // WO-0031d / v4 §7: closure is a RESULTS card, not a flat line — the seal pops ONCE on the
+          // in-session flip to done (prevPhaseKind ref, seeded with the current kind → reopening an
+          // already-closed WO is calm); the stats row is plain mono text (money never animates).
+          (() => {
+            const audit = deriveSessionAudit(detail.sessions, parsePlanSteps(docs.plan));
+            const reviews = detail.sessions.filter((s) => s.role === 'architect' && s.stepIdx !== undefined).length;
+            const satisfied = detail.evidence.filter((e) => e.status === 'satisfied').length;
+            const doneSteps = detail.steps.filter((s) => s.status === 'done').length;
+            return (
+              <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface" data-closure-card="">
+                <div className="lamp lamp-done" />
+                <div className="flex-1 px-3.5 py-3">
+                  <div className="flex items-center gap-3">
+                    <span
+                      key={sealPop}
+                      data-seal=""
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-proceed ${sealPop > 0 ? 'sealpop' : ''}`}
+                    >
+                      <svg className="checkmark" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <path d="M3 8.5 6.5 12 13 4.5" />
+                      </svg>
+                    </span>
+                    <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-inkdim">
+                    {UI.stripDuration} {UI.formatDuration(audit.total.durationMs)} · {UI.stripCost} {formatUsd(detail.cost.usd)} · {doneSteps}/{detail.steps.length} {UI.stepsUnit} · {UI.closeStatEvidence} {satisfied}/{detail.evidence.length} · {UI.closeStatReviews} {reviews}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
+                </div>
+              </div>
+            );
+          })()
         ) : unresolvedRevise && allStepsDone ? (
           <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
             <div className="lamp lamp-signal" />
@@ -711,7 +752,12 @@ export function WorkOrderDetail({
         permissionRule={permissionRule}
         onUpdateWorkOrder={onUpdateWorkOrder}
       />
-      <Substrip turn={turn} />
+      <Substrip
+        turn={turn}
+        {...(segTotal > 0
+          ? { segments: { done: segDone, total: segTotal, ...(segActive !== undefined ? { activeIdx: segActive } : {}) } }
+          : {})}
+      />
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
         <DetailBody viewMode={viewMode} decision={bodyDecision} instrument={instrument} sections={sections} />
       </div>

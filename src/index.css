@@ -314,11 +314,11 @@
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-dasharray: 14;
+    stroke-dasharray: 16;
     stroke-dashoffset: 0;
   }
   .checkmark.draw path {
-    stroke-dashoffset: 14;
+    stroke-dashoffset: 16;
     animation: draw-check 0.35s ease-out forwards;
   }
   @keyframes draw-check {
