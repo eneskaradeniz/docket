@@ -102,3 +102,30 @@ describe('isRiskyPermission — shell commands', () => {
     expect(bash('grep -r "yarn.lock" docs')).toBe(false);
   });
 });
+
+// WO-0031d — case-blindness. Shouted commands and odd-case basenames are the same risk as lowercase
+// ones; the classifier matched only some patterns case-insensitively (.env and the shell set didn't).
+// The *key* suffix rule is already case-blind — pinned here so it stays that way.
+describe('isRiskyPermission — case-blindness (WO-0031d)', () => {
+  it('uppercase .ENV basenames are risky', () => {
+    expect(write('.ENV')).toBe(true);
+    expect(write('.Env.production')).toBe(true);
+  });
+
+  it('the *key* suffix rule is case-blind', () => {
+    expect(write('certs/id.KEY')).toBe(true);
+    expect(write('release_signing.Key')).toBe(true);
+  });
+
+  it('shouted destructive shell is risky', () => {
+    expect(bash('NPM INSTALL lodash')).toBe(true);
+    expect(bash('GIT PUSH origin main')).toBe(true);
+    expect(bash('PIP INSTALL requests')).toBe(true);
+    expect(bash('RM -rf node_modules')).toBe(true);
+  });
+
+  it('case-blind matching does not swallow the negatives', () => {
+    expect(bash('NPM RUN TYPECHECK')).toBe(false);
+    expect(write('src/ENV-loader.ts')).toBe(false); // "env" substring, not an .env* basename
+  });
+});

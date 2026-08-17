@@ -27,6 +27,15 @@ rule restated with its reasons in two places is the duplication this repository 
   `disabled`, `aria-disabled`, or `data-disabled` attribute (incl. the `{...{ disabled: true }}` object-key
   form) in `src/ui/`.
 
+## Interaction + copy contract — ADR-0012
+- Hover flows ONLY through the semantic classes in `src/index.css` (`.ibtn` / `.irow` / `.ichip`) or kit
+  variants; focus is the global ring, active is the kit press scale. Empty surface = 1 short line + ≤1
+  action; empty groups render absent.
+- No explainer paragraphs (field names suffice; informative lines — reasons, consequences, "maliyet
+  işlemez" — stay), no jargon/mixed-case headers, no standing keyboard hints (only the rail ⏎ badge).
+- Juice: transitions only (never mount), ≤400ms, reduced-motion off via the one CSS block, the cost
+  counter never animates, SADE stays calm.
+
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears
   anywhere in `src/` except the provider adapter (`src/adapters/`), the one place a provider SDK is named

@@ -80,6 +80,17 @@ store.recordSession({
   startedAt: new Date('2026-08-16T14:09:00Z').toISOString(),
   endedAt: new Date('2026-08-16T14:14:00Z').toISOString(),
 });
+// WO-0031d: a free-form (unscoped) implementer run — the ledger names it "Bağımsız", never "Adım 0".
+// No cost → the closed-WO total-cost assert ($6,27) is unchanged.
+store.recordSession({
+  providerSessionId: 'e2e-wo4-free',
+  workOrderId: wo4.id,
+  role: 'implementer',
+  status: 'idle',
+  transcript: [],
+  startedAt: new Date('2026-08-16T14:15:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:15:30Z').toISOString(),
+});
 store.recordSession({
   providerSessionId: 'e2e-wo4-run',
   workOrderId: wo4.id,
@@ -119,5 +130,26 @@ store.recordSession({
   asks: [{ requestId: 'e2e-ask-r1', tool: 'Write', input: { file_path: 'docs/example.md' } }],
   startedAt: new Date('2026-08-16T14:00:00Z').toISOString(),
 });
+
+// 6) tur-2 D1: a second workspace whose ONLY work order is closed — the "Bütün işler tamam"
+//    platform board. Shares ws1's decision store ON PURPOSE: numbering counts the store dir, so a
+//    shared store keeps the global WO-NNNN primary keys unique (a second store would collide — TD-035).
+const ws2 = await store.createWorkspace({
+  label: 'arşiv',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+const wo6 = await store.createWorkOrder({
+  workspaceId: ws2.id,
+  title: 'Eski iş',
+  description: 'E2E: already closed — the only-closed board platform.',
+  trackRepos: ws2.repos,
+  reviewMode: 'gates',
+  contextFiles: [],
+});
+await store.approvePlan(wo6.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+store.recordStep(wo6.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+store.recordStepVerdict(wo6.id, 1, 'proceed', 'ok');
+await store.closeWorkOrder(wo6.id, 'e2e closed long ago');
 
 console.log(`DB=${join(root, 'e2e.db')}`);

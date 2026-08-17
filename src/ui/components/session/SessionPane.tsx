@@ -115,7 +115,6 @@ export function SessionPane({
           <div className="lamp lamp-signal" />
           <div className="flex-1 px-3.5 py-3">
             <p className="readout text-signal">{UI.architectWaiting}</p>
-            <p className="mb-1 mt-0.5 text-[12px] text-inkdim">{UI.architectQuestionHint}</p>
             <p className="mb-2 text-[14px] text-ink">{lastAssistant.text}</p>
             <div className="flex flex-col gap-2">
               <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} rows={2} placeholder={UI.replyPlaceholder} className="font-sans text-[13px]" />

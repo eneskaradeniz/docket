@@ -4,7 +4,8 @@ import { WorkOrderCard } from './WorkOrderCard';
 
 // The dispatch board (WO-0031 "Kontrol Konsolu"): the two live queues sit side by side when there is
 // room (≥1200px) and stack below it; the closed drawer stays collapsed at the bottom. Cards load with a
-// 30ms stagger — the one orchestrated moment (reduced-motion kills it).
+// 30ms stagger — the one orchestrated moment (reduced-motion kills it). A group with nothing in it is
+// ABSENT (ADR-0012 r2): no empty frame, no dashed box, no count of zero.
 export function Board({
   cards,
   onSelect,
@@ -18,65 +19,76 @@ export function Board({
   const stagger = (i: number): { animationDelay: string } | undefined =>
     i < 12 ? { animationDelay: `${i * 30}ms` } : undefined;
 
-  return (
-    <div>
-      <div className="grid gap-x-6 gap-y-8 xl:grid-cols-2">
-        <section>
-          <h2 className="readout mb-2 flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
-            {BUCKET_LABELS.up}
-            <span className="font-mono text-inkdim/60">{up.length}</span>
-          </h2>
-          <div className="flex flex-col gap-2">
-            {up.length ? (
-              up.map((c, i) => (
-                <div key={c.id} className="rise" style={stagger(i)}>
-                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
-                </div>
-              ))
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-3 py-3 text-[12px] text-inkdim">
-                <span className="font-mono">—</span>
-                <span>{UI.noWorkOrders}</span>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section>
-          <h2 className="readout mb-2 flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
-            {BUCKET_LABELS.working}
-            <span className="font-mono text-inkdim/60">{working.length}</span>
-          </h2>
-          <div className="flex flex-col gap-2">
-            {working.length ? (
-              working.map((c, i) => (
-                <div key={c.id} className="rise" style={stagger(i)}>
-                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
-                </div>
-              ))
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-3 py-3 text-[12px] text-inkdim">
-                <span className="font-mono">—</span>
-                <span>{UI.inflightEmpty}</span>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-
-      <details className="mt-10">
-        <summary className="readout">{UI.closedDrawer} · {closed.length}</summary>
-        {/* WO-0031c / B4: the closed drawer used to fade the whole column (opacity-60 ≈2.9:1 on the
-            reason line — AA fail). The quiet card keeps every line readable; the drawer whispers by
-            structure, not by contrast theft. */}
-        <div className="mt-2 flex flex-col gap-2">
+  // D1 (tur-2): a board with ONLY closed work orders is the "Bütün işler tamam" platform — a steady
+  // green dot (no breathe — nothing waits on the operator), the quiet cards OPEN in one column (no
+  // drawer to dig through), no body CTA (the appbar already carries it), calm on mount.
+  if (up.length === 0 && working.length === 0 && closed.length > 0) {
+    return (
+      <div data-board-all-done="">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-proceed" aria-hidden="true" />
+          <p className="readout text-proceed">{UI.boardAllDone}</p>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
           {closed.map((c) => (
             <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
           ))}
         </div>
-      </details>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid gap-x-3.5 gap-y-4 xl:grid-cols-2">
+        {up.length ? (
+          <section>
+            <h2 className="readout mb-2 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
+              {BUCKET_LABELS.up}
+              <span className="font-mono text-inkdim/60">{up.length}</span>
+            </h2>
+            <div className="flex flex-col gap-2">
+              {up.map((c, i) => (
+                <div key={c.id} className="rise" style={stagger(i)}>
+                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {working.length ? (
+          <section>
+            <h2 className="readout mb-2 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
+              {BUCKET_LABELS.working}
+              <span className="font-mono text-inkdim/60">{working.length}</span>
+            </h2>
+            <div className="flex flex-col gap-2">
+              {working.map((c, i) => (
+                <div key={c.id} className="rise" style={stagger(i)}>
+                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </div>
+
+      {closed.length ? (
+        <details className="mt-10">
+          <summary className="readout">{UI.closedDrawer} · {closed.length}</summary>
+          {/* WO-0031c / B4: the closed drawer used to fade the whole column (opacity-60 ≈2.9:1 on the
+              reason line — AA fail). The quiet card keeps every line readable; the drawer whispers by
+              structure, not by contrast theft. */}
+          <div className="mt-2 flex flex-col gap-2">
+            {closed.map((c) => (
+              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

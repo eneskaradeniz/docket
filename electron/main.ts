@@ -6,7 +6,7 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
@@ -158,12 +158,22 @@ ipcMain.handle('docket:diff-peek', (_e, workOrderId: WorkOrderId, filePath: stri
   if (roots.length === 0) return null;
   const abs = isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
   let real: string;
+  let fresh = false;
   try {
     real = realpathSync(abs);
   } catch {
-    return null; // the target does not exist (yet) → a fresh-file peek is the caller's fallback
+    // The target does not exist (yet) — a Write creating a new file. Resolve the deepest existing
+    // ancestor and jail THAT (the root check must still hold; a peek is never an arbitrary-read
+    // oracle); a fresh file peeks as all-adds (WO-0031d), not silence.
+    try {
+      real = resolve(realpathSync(dirname(abs)), basename(abs));
+    } catch {
+      return null;
+    }
+    fresh = true;
   }
   if (!roots.some((root) => isUnder(root, real))) return null;
+  if (fresh) return unifiedDiffLines('', newContent);
   try {
     const oldText = readFileSync(real, 'utf8');
     return unifiedDiffLines(oldText, newContent);

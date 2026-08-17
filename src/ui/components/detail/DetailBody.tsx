@@ -20,11 +20,16 @@ import { UI } from '../../data/labels';
 
 export function DetailBody({
   viewMode,
+  tab,
+  onTabChange,
   decision,
   instrument,
   sections,
 }: {
   viewMode: 'sade' | 'detail';
+  /** The controlled tab (tur-2 A7: the substrip's adım N/T jump drives it). */
+  tab: string;
+  onTabChange: (v: string) => void;
   decision: ReactNode;
   instrument: ReactNode;
   sections: DetailSection[];
@@ -44,8 +49,8 @@ export function DetailBody({
     return (
       // The columns are unconditional: this tree only renders when useDetailLayout says ≥1080 (the JS
       // switch is the single source of the breakpoint — no Tailwind `lg:` racing a second threshold).
-      <div className="grid min-h-0 items-start grid-cols-[minmax(0,1fr)_250px] gap-x-6 gap-y-5">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="grid min-h-0 items-start grid-cols-[minmax(0,1fr)_250px] gap-x-3.5 gap-y-4">
+        <div className="flex min-w-0 flex-col gap-3.5">
           {decision}
           {instrument}
         </div>
@@ -55,9 +60,9 @@ export function DetailBody({
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div className="flex min-h-0 flex-col gap-3.5">
       {decision}
-      <Tabs defaultValue="instrument" className="min-h-0">
+      <Tabs value={tab} onValueChange={onTabChange} className="min-h-0">
         <TabsList>
           <TabsTrigger value="instrument">{UI.secTerminal}</TabsTrigger>
           {sections.map((s) => (
@@ -67,12 +72,13 @@ export function DetailBody({
             </TabsTrigger>
           ))}
         </TabsList>
-        {/* forceMount on every panel: the xterm canvas survives tab switches (scrollback intact). */}
+        {/* forceMount on every panel: the xterm canvas survives tab switches (scrollback intact);
+            the kit's TabsContent hides inactive panels (tur-2 A2). The id anchors the N/T jump. */}
         <TabsContent value="instrument" forceMount className="mt-3">
           {instrument}
         </TabsContent>
         {sections.map((s) => (
-          <TabsContent key={s.id} value={s.id} forceMount className="mt-3">
+          <TabsContent key={s.id} value={s.id} forceMount className="mt-3" id={`sec-${s.id}`}>
             {s.node}
           </TabsContent>
         ))}

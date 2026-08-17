@@ -42,12 +42,17 @@ describe('deriveTurnState (WO-0031c)', () => {
     expect(turn('idle', { stopped: true })).toBe('stopped');
   });
 
-  it('closed/done → yours (the rail renders nothing there; the strip carries the archive state)', () => {
-    expect(turn('idle', { stage: 'closed' })).toBe('yours');
+  it('a closed work order → done — the calm "Kapandı" line, never a false "Sıra sende" (WO-0031d tur-2)', () => {
+    expect(turn('idle', { stage: 'closed' })).toBe('done');
+  });
+
+  it('done is terminal — it outranks stale live state on a closed WO', () => {
+    expect(turn('running', { stage: 'closed' })).toBe('done');
+    expect(turn('error', { stage: 'closed' })).toBe('done');
   });
 
   it('idle with nothing pending → yours (default: an unmatched work order is on the operator)', () => {
     expect(turn('idle')).toBe('yours');
-    expect(turn('done')).toBe('yours');
+    expect(turn('done')).toBe('yours'); // a finished DRIVE, not a closed WO — the loop continues
   });
 });

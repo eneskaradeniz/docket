@@ -90,3 +90,12 @@ Until then, the protection is structural, not speculative: the runner lives behi
   declared unmeasured, and a wrong port is more expensive than a late one.
 - **Test-first everywhere including components.** Produces slow, brittle tests around a surface whose whole
   purpose is to be looked at and argued with.
+
+## Addendum (WO-0031d) — the agent-configuration carve-out is mechanical, in CI
+
+Boundary check c1 strips the literals `CLAUDE.md` and `.claude` from each line before running the
+vendor-name test (`scripts/check-boundaries.mjs`). Rationale: `src/core/risky.ts` must match those
+exact paths to classify agent-configuration writes as risky; naming the agent's *configuration file*
+is not naming the vendor's *product*. The strip is scoped to those two literals — any other vendor
+name in `core/`, `ui/`, `renderer/` or `electron/` still fails the check. Recorded here because the
+carve-out shipped in WO-0031c's pre-merge fixes with only a script comment as its home.

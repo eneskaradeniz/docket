@@ -66,3 +66,34 @@ describe('deriveSessionAudit (WO-0031c)', () => {
     expect(out.total.costUsd).toBe(0);
   });
 });
+
+// WO-0031d — unscoped sessions (free-form runs, stepIdx undefined by design — types.ts). They used to
+// fold into { kind: 'step', idx: 0 } and rendered "Adım 0"; they are their own thing now: a session
+// that belongs to no step ("Bağımsız"). The architect's plan session is NOT unscoped — it is the plan.
+describe('deriveSessionAudit — unscoped sessions (WO-0031d)', () => {
+  it('an implementer session WITHOUT a step is unscoped — never "Adım 0"', () => {
+    const out = deriveSessionAudit([session({ role: 'implementer', startedAt: T(9), endedAt: T(9, 4) })]);
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows[0]!.name).toEqual({ kind: 'unscoped' });
+  });
+
+  it('a verifier session WITHOUT a step is unscoped too', () => {
+    const out = deriveSessionAudit([session({ role: 'verifier', startedAt: T(9), endedAt: T(9, 2) })]);
+    expect(out.rows[0]!.name).toEqual({ kind: 'unscoped' });
+  });
+
+  it('an architect session WITHOUT a step stays the PLAN session (unscoped is not a demotion)', () => {
+    const out = deriveSessionAudit([session({ role: 'architect', startedAt: T(9), endedAt: T(9, 3) })]);
+    expect(out.rows[0]!.name).toEqual({ kind: 'plan' });
+  });
+
+  it('a mixed ledger keeps plan/step/review/unscoped distinct', () => {
+    const out = deriveSessionAudit([
+      session({ role: 'implementer', stepIdx: 1, startedAt: T(10) }),
+      session({ role: 'implementer', startedAt: T(11) }),
+      session({ role: 'architect', startedAt: T(9) }),
+      session({ role: 'architect', stepIdx: 1, startedAt: T(12) }),
+    ]);
+    expect(out.rows.map((r) => r.name.kind)).toEqual(['plan', 'step', 'unscoped', 'review']);
+  });
+});

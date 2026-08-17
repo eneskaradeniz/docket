@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import type { StepRole, StepSpec, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
-import { derivePhase, deriveTurnState } from '../../../core/derive';
+import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } from '../../data/labels';
-import { Button, Input, cn } from '../../kit';
+import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
 import { ActionRail, type RailAction } from './ActionRail';
@@ -39,6 +39,8 @@ import { useViewMode } from '../../data/view-mode';
 // c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
 // "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
 // primary, permission decisions into the timeline, and the Denetim surfaces.
+// WO-0031d: Düzenle/Sil/Kapat confirmations are kit Dialogs (screen intact); the strip's order.md
+// writers stand down while a drive is live; closure renders the results card with the one-shot seal.
 export function WorkOrderDetail({
   detail,
   docs,
@@ -137,6 +139,7 @@ export function WorkOrderDetail({
     setCloseError(false);
     try {
       await onCloseWorkOrder(closeNote.trim() || detail.title);
+      setConfirmClose(false); // success closes the dialog (the results card is the payoff); an error keeps it open for retry
     } catch {
       setCloseError(true);
     } finally {
@@ -165,6 +168,22 @@ export function WorkOrderDetail({
 
   const phase = derivePhase(detail, detail.steps, !!docs.plan);
 
+  // The seal's one-shot rule (WO-0031d / ADR-0012 r7): the ref seeds with the CURRENT kind, so a mount
+  // that starts at done (reopening a closed work order) never pops; only a live flip to done does.
+  const [sealPop, setSealPop] = useState(0);
+  const prevPhaseKind = useRef<string | null>(null);
+  if (prevPhaseKind.current === null) prevPhaseKind.current = phase.kind;
+  useEffect(() => {
+    const prev = prevPhaseKind.current;
+    prevPhaseKind.current = phase.kind;
+    if (prev !== 'done' && phase.kind === 'done') setSealPop((n) => n + 1);
+  }, [phase.kind]);
+
+  // The substrip's step segments (WO-0031d): adım N/T + filled cells, absent before a plan has steps.
+  const segTotal = detail.steps.length;
+  const segDone = detail.steps.filter((s) => s.status === 'done').length;
+  const segActive = detail.steps.find((s) => s.status === 'active')?.idx;
+
   // --- The controller's read-only subscription to the ACTIVE drive (the panes subscribe too; drives are
   //     only ever started by the panes' auto-drive effects or the rail's actions below). The seed mirrors
   //     the panes' seeding (F14) so a remount after restart re-seeds the fold — now including persisted
@@ -188,6 +207,9 @@ export function WorkOrderDetail({
   }, [reviewIdx, planStage, hasSteps, runIdx, detail.sessions]);
   const state = useDrive(store, driveKey, () => seedState);
   const running = store.get(driveKey)?.running ?? false;
+  // WO-0031d: a live drive (running, or winding down — still spending) closes the strip's order.md
+  // writers. `stopped` does not gate: the session is over, nothing is being written against.
+  const driveLive = running || stopping;
 
   // A live plan_ready takes precedence; otherwise fall back to a plan persisted to plan.md (restart recovery,
   // WO-0020/TD-025) so the operator can still approve after the live state was lost.
@@ -266,7 +288,16 @@ export function WorkOrderDetail({
   const requestPlan = (): void => {
     setStopped(false);
     // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
-    store.start(driveKey, { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '' }, initialSessionState);
+    // WO-0031d: a plan retry/Sürdür RESUMES the persisted architect session when one survived (same
+    // pattern as the step retry below) instead of silently starting a fresh conversation.
+    const resumeId =
+      state.sessionId ??
+      detail.sessions.find((s) => s.role === 'architect' && s.stepIdx === undefined && s.providerSessionId)?.providerSessionId;
+    store.start(
+      driveKey,
+      { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '', ...(resumeId ? { resume: resumeId } : {}) },
+      resumeId ? state : initialSessionState,
+    );
   };
   // "Oluştur ve plan iste" (c2): fire once on arrival, then hand control back to the operator.
   const autoPlanDone = useRef(false);
@@ -387,7 +418,7 @@ export function WorkOrderDetail({
       railMessage = UI.railStoppedMsg;
     } else if (planStage && effectivePlan) {
       if (editOpen) {
-        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : UI.editNoChanges;
+        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : undefined;
         railActions = [
           { id: 'edit-done', label: UI.editPlanDone, variant: 'secondary', onActivate: () => setEditOpen(false) },
           ...(editEmptyAim
@@ -423,7 +454,8 @@ export function WorkOrderDetail({
   }
 
   // --- Esc layering + ⏎: peel one inline layer at a time; only a bare esc leaves the screen; Enter
-  //     (outside inputs) fires the rail's primary when one exists. ---
+  //     (outside inputs, outside dialogs) fires the rail's primary when one exists. The Sil/Kapat/Düzenle
+  //     dialogs are Radix-owned — their Esc never reaches here (WO-0031d). ---
   const closeTopLayer = (): boolean => {
     if (objectionOpen) {
       setObjectionOpen(false);
@@ -433,19 +465,23 @@ export function WorkOrderDetail({
       setEditOpen(false);
       return true;
     }
-    if (confirmClose) {
-      setConfirmClose(false);
-      return true;
-    }
-    if (confirmDelete) {
-      setConfirmDelete(false);
-      return true;
-    }
     return false;
   };
   useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
 
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
+  // tur-2 A7: the DETAY tab is controlled so the substrip's adım N/T can jump to the steps.
+  const [detailTab, setDetailTab] = useState('instrument');
+  const jumpToSteps = (): void => {
+    setViewMode('detail');
+    setDetailTab('steps');
+    // two frames: the view-mode switch mounts the sections first, then the anchor exists
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('sec-steps')?.scrollIntoView({ block: 'start' });
+      });
+    });
+  };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
   const sections = useMemo(
     () => buildDetailSections({ detail, steps: detail.steps, events, docs, onOpenReport: setReportStep }),
@@ -542,24 +578,6 @@ export function WorkOrderDetail({
       {askCards}
       {failCard}
 
-      {confirmDelete ? (
-        <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
-          <div className="lamp lamp-error" />
-          <div className="flex-1 px-3.5 py-3">
-            <p className="readout text-error">{UI.deleteWo}</p>
-            <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.deleteWoHint}</p>
-            {deleting ? (
-              <p className="text-right text-xs text-error">{UI.deleteWoInFlight}</p>
-            ) : (
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{UI.cancel}</Button>
-                <Button variant="danger" size="sm" onClick={() => void handleDelete()}>{UI.deleteWoConfirm}</Button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-
       {objectionOpen ? (
         <div className="flex items-stretch overflow-hidden rounded-md border border-signal/40 bg-surface">
           <div className="lamp lamp-signal" />
@@ -595,7 +613,6 @@ export function WorkOrderDetail({
           plan={editOpen ? undefined : effectivePlan}
           editing={editOpen}
           steps={editSteps}
-          hint={editOpen ? UI.editHint : undefined}
           onAimChange={(idx, aim) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, aim } : s)))}
           onRoleCycle={(idx) =>
             setEditSteps((ss) =>
@@ -624,13 +641,54 @@ export function WorkOrderDetail({
 
       {!planStage || !effectivePlan ? (
         detail.stage === 'closed' ? (
-          <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
-            <div className="lamp lamp-done" />
-            <div className="flex-1 px-3.5 py-3">
-              <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
-              <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
-            </div>
-          </div>
+          // WO-0031d / v4 §7: closure is a RESULTS card, not a flat line — the seal pops ONCE on the
+          // in-session flip to done (prevPhaseKind ref, seeded with the current kind → reopening an
+          // already-closed WO is calm); the stats row is plain mono text (money never animates).
+          (() => {
+            const sha = detail.gateInputs.closureDocsSha;
+            const audit = deriveSessionAudit(detail.sessions, parsePlanSteps(docs.plan));
+            const reviews = detail.sessions.filter((s) => s.role === 'architect' && s.stepIdx !== undefined).length;
+            const satisfied = detail.evidence.filter((e) => e.status === 'satisfied').length;
+            const doneSteps = detail.steps.filter((s) => s.status === 'done').length;
+            return (
+              <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface" data-closure-card="">
+                <div className="lamp lamp-done" />
+                <div className="flex-1 px-3.5 py-3">
+                  <div className="flex items-center gap-3">
+                    <span
+                      key={sealPop}
+                      data-seal=""
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-proceed ${sealPop > 0 ? 'sealpop' : ''}`}
+                    >
+                      <svg className="checkmark" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <path d="M3 8.5 6.5 12 13 4.5" />
+                      </svg>
+                    </span>
+                    <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-inkdim">
+                    {UI.stripDuration} {UI.formatDuration(audit.total.durationMs)} · {UI.stripCost} {formatUsd(detail.cost.usd)} · {doneSteps}/{detail.steps.length} {UI.stepsUnit} · {UI.closeStatEvidence} {satisfied}/{detail.evidence.length} · {UI.closeStatReviews} {reviews}
+                  </p>
+                  {sha ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(sha)
+                          .then(() => toast.push({ kind: 'confirm', title: UI.copyDone }))
+                          .catch(() => undefined); // clipboard unavailable — the title still carries the full sha
+                      }}
+                      title={sha}
+                      aria-label={`${UI.closeShaAria} ${sha}`}
+                      className="irow mt-1 px-1 font-mono text-[11px] text-inkdim"
+                    >
+                      {sha.slice(0, 7)}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })()
         ) : unresolvedRevise && allStepsDone ? (
           <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
             <div className="lamp lamp-signal" />
@@ -650,29 +708,9 @@ export function WorkOrderDetail({
             <div className="lamp lamp-done" />
             <div className="flex-1 px-3.5 py-3">
               <p className="readout text-proceed">{UI.stepsAllDone}</p>
-              <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
-              {confirmClose ? (
-                <div className="mt-2">
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
-                  <Input
-                    value={closeNote}
-                    onChange={(e) => setCloseNote(e.target.value)}
-                    placeholder={UI.closeNotePlaceholder}
-                    className="mb-2 font-sans text-[13px]"
-                  />
-                  <p className="mb-2 text-[12px] text-inkdim">{UI.closeWoHint}</p>
-                  {closeError ? <p className="mb-2 text-xs text-error">{UI.closeWoFailed}</p> : null}
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
-                    {/* No ⏎ here by design (v4: kapat ⏎'süz — deliberate friction on the irreversible). */}
-                    <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
-                  </div>
-                </div>
-              ) : (
-                <Button variant="secondary" size="sm" className="mt-2" onClick={() => setConfirmClose(true)}>
-                  {UI.closeWo}
-                </Button>
-              )}
+              <Button variant="secondary" size="sm" className="mt-2" onClick={() => { setCloseError(false); setConfirmClose(true); }}>
+                {UI.closeWo}
+              </Button>
             </div>
           </div>
         ) : (
@@ -737,6 +775,7 @@ export function WorkOrderDetail({
         objective={objective}
         phase={phase}
         duration={durationText}
+        driveLive={driveLive}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onBack={onBack}
@@ -744,11 +783,71 @@ export function WorkOrderDetail({
         permissionRule={permissionRule}
         onUpdateWorkOrder={onUpdateWorkOrder}
       />
-      <Substrip turn={turn} />
+      <Substrip
+        turn={turn}
+        {...(segTotal > 0
+          ? { segments: { done: segDone, total: segTotal, ...(segActive !== undefined ? { activeIdx: segActive } : {}) } }
+          : {})}
+          onJump={jumpToSteps}
+      />
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        <DetailBody viewMode={viewMode} decision={bodyDecision} instrument={instrument} sections={sections} />
+        <DetailBody
+          viewMode={viewMode}
+          tab={detailTab}
+          onTabChange={setDetailTab}
+          decision={bodyDecision}
+          instrument={instrument}
+          sections={sections}
+        />
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />
+
+      {/* WO-0031d: the destructive/edit confirmations are dialogs over an intact screen (operator's
+          explicit reversal of the old inline-confirm preference). No <form> anywhere — Enter in the
+          note input does nothing, and useDetailKeys stands down while any dialog is open, so kapat
+          stays ⏎'süz (v4: deliberate friction on the irreversible). */}
+      {confirmDelete ? (
+        <Dialog
+          open
+          onOpenChange={(o) => { if (!o && !deleting) setConfirmDelete(false); }}
+          title={UI.deleteWo}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{UI.cancel}</Button>
+              <Button variant="danger" size="sm" busy={deleting} onClick={() => void handleDelete()}>{UI.deleteWoConfirm}</Button>
+            </>
+          }
+        >
+          <p className="text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+        </Dialog>
+      ) : null}
+      {confirmClose ? (
+        <Dialog
+          open
+          onOpenChange={(o) => { if (!o && !closing) setConfirmClose(false); }}
+          title={UI.closeWo}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>
+              <Button variant="primary" size="sm" busy={closing} onClick={() => void handleClose()}>{UI.closeWoConfirm}</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-close-note">{UI.closeNoteLabel}</label>
+            <Input
+              id="wo-close-note"
+              value={closeNote}
+              onChange={(e) => setCloseNote(e.target.value)}
+              placeholder={UI.closeNotePlaceholder}
+              className="font-sans text-[13px]"
+            />
+            {closeError ? <p className="text-xs text-error">{UI.closeWoFailed}</p> : null}
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

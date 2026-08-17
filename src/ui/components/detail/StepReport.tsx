@@ -35,7 +35,7 @@ export function StepReport({
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-inkdim">
           {UI.stepReportTitle} · {step.idx}
         </h2>
-        <button type="button" onClick={onClose} aria-label={UI.close} className="ml-auto text-[14px] text-inkdim hover:text-ink">
+        <button type="button" onClick={onClose} aria-label={UI.close} className="ibtn ml-auto text-[14px]">
           ✕
         </button>
       </header>

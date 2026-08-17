@@ -97,6 +97,7 @@ export function WsSettingsModal({
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={mode === 'create' ? UI.wsCreate : UI.wsSettings}
+      closeAria={UI.dialogCloseAria}
       footer={
         <>
           {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
@@ -106,15 +107,12 @@ export function WsSettingsModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="-mt-1 text-[12px] text-inkdim">{UI.wsSettingsSubtitle}</p>
-
         <Field label={UI.wsNameLabel}>
           <Input value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
         </Field>
 
         <section>
           <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</span>
-          <p className="mb-2 text-[11px] text-inkdim">{UI.wsReposHint}</p>
           {mode === 'edit' && workspace ? (
             <div className="mb-2 flex flex-col gap-1">
               {workspace.repos.map((r) => (
@@ -131,7 +129,7 @@ export function WsSettingsModal({
                   {valid(p) ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <X className="h-3.5 w-3.5" aria-hidden="true" />}
                 </span>
                 <Input value={p} onChange={(e) => updatePath(i, e.target.value)} className="flex-1 border-0 bg-transparent px-0 py-0 font-mono text-[11px] focus-visible:border-0" />
-                <button type="button" onClick={() => removePath(i)} className="shrink-0 px-1 text-error" aria-label="kaldır">
+                <button type="button" onClick={() => removePath(i)} className="ibtn ibtn-danger shrink-0 px-1" aria-label={UI.removeAria}>
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>

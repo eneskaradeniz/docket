@@ -69,7 +69,7 @@ export function ToastHost() {
           <div className={cn('lamp', t.kind === 'error' ? 'lamp-error' : t.kind === 'news' ? 'lamp-signal-breathe' : 'lamp-done')} />
           <button
             type="button"
-            className={cn('min-w-0 flex-1 px-3 py-2 text-left', t.onActivate ? 'hover:bg-raised/50' : '')}
+            className={cn('min-w-0 flex-1 rounded px-3 py-2 text-left', t.onActivate ? 'irow' : '')}
             onClick={() => {
               t.onActivate?.();
               dismiss(t.id);
@@ -83,7 +83,7 @@ export function ToastHost() {
               type="button"
               aria-label={UI.close}
               onClick={() => dismiss(t.id)}
-              className="shrink-0 px-2 text-inkdim transition-colors hover:text-ink"
+              className="ibtn shrink-0"
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>

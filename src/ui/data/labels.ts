@@ -5,20 +5,15 @@ import type {
   AbsentReason,
   ActionIntent,
   BoardBucket,
-  BoardColumn,
   CardAction,
   CardActionKind,
   CardReason,
   EvidenceKind,
-  EvidenceStatus,
-  SessionRef,
   SessionRole,
   SourceKind,
   StepStatus,
   CostSummary,
   StageId,
-  TrackStage,
-  TrackMergeAction,
   WorkOrderId,
   WoEventKind,
 } from '../../core/types';
@@ -29,29 +24,11 @@ import type { WoPhase } from '../../core/derive';
 import type { ProviderErrorCode } from '../../core/runner';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
-export const COLUMN_LABELS: Record<BoardColumn, string> = {
-  your_turn: 'Sıra sende',
-  running: 'Çalışıyor',
-  external: 'Harici',
-};
-
-export const COLUMN_HELP: Record<BoardColumn, string> = {
-  your_turn: 'Seni bekliyor',
-  running: 'Bir oturum çalışıyor',
-  external: 'Harici sistem bekleniyor',
-};
-
 // Yeni iki kovalı tahta (WO-0013).
 export const BUCKET_LABELS: Record<BoardBucket, string> = {
   up: 'Sıra sende',
   working: 'Çalışıyor',
   closed: 'Kapalı',
-};
-
-export const BUCKET_HELP: Record<BoardBucket, string> = {
-  up: 'Seni bekleyenler',
-  working: 'Bir oturum çalışıyor',
-  closed: 'Tamamlananlar',
 };
 
 export const ROLE_LABELS: Record<SessionRole, string> = {
@@ -86,6 +63,8 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
   resume: 'Oturumu sürdür',
   open_pr: 'PR aç',
   merge_track: "Track'i mergele",
+// D3 (tur-2): merge is not a UI action today. When the command becomes real it belongs in the
+// RAIL, and this wording needs de-jargoning ('Repoyu birleştir'-style) per ADR-0012 r4.
   request_verification: 'Doğrulama iste',
   audit: 'Denetim çalıştır',
   update_docs: 'Belgeleri güncelle',
@@ -135,38 +114,9 @@ export function cardActionText(a: CardAction): string {
   return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Belgeleri güncelle' }[a.kind];
 }
 
-export function mergeActionText(a: TrackMergeAction): string {
-  if (a.kind === 'available') return 'Mergele';
-  switch (a.reason) {
-    case 'depends_on_open':
-      return 'Merge engelli — bağımlılık açık';
-    case 'ci_not_green':
-      return 'Merge engelli — CI yeşil değil';
-    case 'pr_not_open':
-      return 'Henüz PR yok';
-    case 'already_merged':
-      return 'Merged';
-  }
-}
-
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
 // bunları tümceye çeviren besteciler. Bunlarla hiçbir bileşen bir kod tanımlayıcıyı `.replace` ile
 // arayüz metnine çevirmez; bir çevirmenin dokunacağı her kelime burada.
-export const TRACK_STAGE_LABELS: Record<TrackStage, string> = {
-  not_started: 'Başlamadı',
-  implementation: 'Uygulama',
-  pr_opened: 'PR açıldı',
-  ci: 'CI',
-  merged: 'Merged',
-};
-
-export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
-  running: 'Çalışıyor',
-  stopped_asking: 'İzin istiyor',
-  idle: 'Boşta',
-  none: 'Yok',
-};
-
 // Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘).
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   pending: 'Bekliyor',
@@ -263,24 +213,6 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   roadmap: 'ROADMAP',
   contract: 'sözleşme',
 };
-
-export const EVIDENCE_MARK: Record<EvidenceStatus, string> = {
-  satisfied: '[x]',
-  unsatisfied: '[ ]',
-  exempt: '[~]',
-};
-
-export function trackSessionText(session: { status: SessionRef['status'] } | undefined | null): string {
-  return session ? `oturum · ${SESSION_STATUS_LABELS[session.status]}` : 'Oturum yok';
-}
-
-export function dependsOnText(count: number): string {
-  return `${count} bağımlılığı var`;
-}
-
-export function needsText(kind: EvidenceKind): string {
-  return `${EVIDENCE_LABELS[kind]} gerekli`;
-}
 
 export function modeText(mode: 'plan' | 'direct'): string {
   return `${MODE_LABELS[mode]} modu`;
@@ -404,33 +336,23 @@ export const UI = {
   productName: 'Docket',
   backToBoard: '← İş emirleri',
   evidence: 'Kanıtlar',
-  tracks: 'Track’ler',
-  session: 'Oturum',
-  sessionLog: 'Oturum günlüğü',
+  // Tur-2 D2/D3 — Kanıt chip dili: yokluk cümleleri (ADR-0001 ruhu — sebepsiz 'eksik' yok) + iz konumu.
+  evdPlanApproval: 'plan onayı bekliyor',
+  evdVerification: 'doğrulayıcı raporu yok',
+  evdClosure: 'belgeler güncellenmedi',
+  evdPrMissing: (repo: string) => `PR açılmadı · ${repo}`,
+  evdCiRed: (repo?: string) => (repo ? `CI yeşil değil · ${repo}` : 'CI yeşil değil'),
+  evdNoPr: 'henüz PR yok',
+  evdPrCi: (ciState: string) => `PR açık · ${ciState}`,
+  evdCiGreenShort: 'CI yeşil',
+  evdMerged: (repo?: string) => (repo ? `✓ Depoda · ${repo}` : '✓ Depoda'),
   sources: 'Kaynaklar',
-  noWorkOrders: 'İş emri yok',
-  noSessionForRole: 'Bu rol için oturum yok.',
-  transcriptEmpty: '(transkript boş)',
-  provisional: 'geçici',
   ciExempt: 'CI muaf',
-  tokens: 'token',
-  costNoSessions: 'Henüz oturum yok',
   orderDoc: 'order.md',
-  docsSection: 'Belgeler',
   planDoc: 'plan.md',
-  workOrders: 'iş emri',
-  noActionAvailable: 'Eylem yok.',
-  tracksUnit: 'track',
-  missing: 'eksik',
-  scopedToTrack: ' · track',
   loading: 'Yükleniyor…',
   loadError: 'İş emirleri yüklenemedi.',
-  boardIntro: 'Şu an sana ne düşüyor ve her oturum ne yapıyor.',
-  inflightEmpty: 'Çalışan oturum yok.',
   closedDrawer: 'Kapalı',
-  showPipeline: 'Akışı göster',
-  pipelineHint: '9 aşama rayı · track’ler · kaynaklar · order.md · plan.md',
-  metaSep: ' · ',
   // Canlı oturum bölmesi (WO-0008)
   permissionRequested: 'İzin istendi',
   startSession: 'Oturumu başlat',
@@ -438,95 +360,65 @@ export const UI = {
   promptPlaceholder: 'Bu oturum ne yapsın?',
   allow: 'İzin ver',
   deny: 'Reddet',
-  approve: 'Planı onayla',
   interrupt: 'Durdur',
-  awaitingApproval: 'Plan hazır — devam etmek için incele ve onayla.',
   noSession: 'Çalışan oturum yok.',
   // Ayarlar modalı (WO-0013)
   settings: 'Ayarlar',
-  theme: 'Tema',
-  themeLight: 'Açık',
-  themeDark: 'Koyu',
-  themeSystem: 'Sistem',
   language: 'Dil',
   langEn: 'English',
   langTr: 'Türkçe',
-  langHint: 'Arayüz dili — İngilizce M3.5 aşamasında geliyor.',
   close: 'Kapat',
-  workspace: 'Çalışma alanı',
   // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)
   actionNeeded: 'Ne lazım',
-  actionNotWired: 'Bu eylem oturum bölmesinden yapılır.',
   // Workspace management (WO-0014)
   wsSettings: 'Workspace ayarları',
   wsCreate: 'Yeni çalışma alanı',
-  wsSettingsSubtitle: 'Yerel repo yolları ve karar deposu.',
   wsNameLabel: 'Ad',
   wsReposLabel: 'Repo bağlantıları',
-  wsReposHint: "Yerel klasörü seç — GitHub bilgisi .github/'dan otomatik bulunur.",
-  wsRepoAdd: '▸ Repo ekle',
   wsRepoAddManual: 'Ekle',
   wsRepoPick: 'Klasör',
   wsRepoPlaceholder: 'yerel repo yolu',
   wsDecisionStore: 'Karar deposu',
   wsErrName: 'Ad gerekli.',
   wsErrRepo: 'En az bir geçerli repo yolu ekle (örn. /Users/.../proje).',
-  wsDecisionSameRepo: '— aynı reponun docs/ klasörü —',
   wsSave: 'Kaydet',
   wsCreateBtn: 'Oluştur',
   wsListTitle: 'Çalışma alanları',
-  wsListSubtitle: 'Seç, ara veya yeni oluştur.',
   wsListFilter: 'ara…',
   wsListEmpty: 'Eşleşen yok.',
   wsListCreate: '▸ Yeni çalışma alanı',
   wsAll: 'Tümünü gör',
-  wsRemove: "Docket'tan kaldır",
   // Kart sebebi — yeni yazılmış iş emri (WO-0015)
   cardJustWritten: 'İş emri yazıldı — bir plan isteyerek başla',
   // İş emri oluşturma (WO-0015)
   newWorkOrder: '▸ Yeni iş emri',
   woCreate: 'Yeni iş emri',
-  woCreateSubtitle: 'Bir başlık ve hedef gir. Oluştur de, iş emri “yazıldı” aşamasında açılır ve kendi sayfasına gidersin.',
   woTitleLabel: 'Başlık',
   woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
   woDescLabel: 'Açıklama / hedef',
   woDescPlaceholder: 'Bu iş emri neyi başarmalı? İlk prompt olarak mimar oturumuna gider.',
-  woTracksLabel: "Track’ler (ilgili repolar)",
-  woTracksHint: 'Karar deposu bir track değildir; listede yer almaz.',
+  woTracksLabel: 'Repolar',
   woContextLabel: 'Context (dosya)',
   woContextAdd: '▸ Dosya ekle',
   woReviewLabel: 'Denetim',
-  woReviewGates: 'Sade — mimar otonom; plan onayı, revizyon ve merge’de sorar',
-  woReviewEvery: 'Her adımda — her rapordan sonra bana sor',
   woCreateBtn: 'Oluştur',
   // Plan döngüsü (WO-0016)
   requestPlan: 'Plan iste',
-  approvingPlan: 'Plan işleniyor…',
   planReadyHeader: 'Plan hazır',
-  planReviewHint: 'Planı oku, sonra onayla ya da itiraz et.',
   object: 'İtiraz et',
-  objectPlaceholder: 'Neden itiraz ediyorsun? Mimar revize etsin.',
   objectSend: 'Gönder',
   objectCancel: 'Vazgeç',
-  objectingPlan: 'Plan revize ediliyor…',
   // Mimar soru kartı (WO-0016)
   architectWaiting: 'Mimar seni bekliyor',
-  architectQuestionHint: 'Mimar devam etmek için sana soru sordu.',
   replyPlaceholder: 'Yanıtını yaz…',
   reply: 'Yanıtla',
   skipReply: 'Bilmiyorum',
   architectRequest: 'Mimarın bir isteği var',
-  // SADE/Detay mod geçişi (WO-0016)
-  modeSimple: 'Sade',
-  modeEveryStep: 'Her adımda',
-  modeDetail: 'Detay',
-  // Onboarding: ilk çalışma alanı (WO-0016)
-  noWorkspaceHint: 'Başlamak için bir çalışma alanı oluştur — yerel repo klasörünü seç, karar deposu otomatik belirlenir.',
+  // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
+  inviteFirstWo: 'Haydi ilk iş emrini açalım',
   // Plan adımları (WO-0017)
   stepsHeader: 'Plan',
   stepsUnit: 'adım',
-  stepRun: 'Çalıştır',
-  stepResume: 'Sürdür',
   stepReportTitle: 'Rapor',
   stepReportMissing: '(rapor henüz yok)',
   stepScopeAll: 'hepsi',
@@ -536,18 +428,16 @@ export const UI = {
   deleteWo: 'Sil',
   deleteWoHint: 'Bu iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.',
   deleteWoConfirm: 'Evet, sil',
-  deleteWoInFlight: 'Siliniyor…',
   cancel: 'Vazgeç',
   stepsAllDone: 'Tüm adımlar tamam',
-  stepsAllDoneHint: "Plan uygulandı, tüm adımlar mimar denetiminden geçti. Kapanış: iş emrini kapat — merge'ler senin onayınla kayda geçer, kapanış notu order.md'ye yazılır.",
   // İş emri kapanışı (WO-0025)
   closeWo: 'İş emrini kapat',
-  closeWoHint: "Tüm adımlar tamam ve denetimli. Kapatınca: merge'ler yapıldı olarak kayda geçer (M3'e kadar operatör onayı), kapanış notu order.md'ye eklenir ve iş emri 'Kapalı' çekencesine taşınır.",
   closeNoteLabel: 'Kapanış notu',
   closeNotePlaceholder: "Kısa bir kapanış notu — order.md'ye yazılır",
   closeWoConfirm: 'Evet, kapat',
-  closeWoInFlight: 'Kapatılıyor…',
   closeWoFailed: 'Kapatılamadı: ön koşullar karşılanmadı (adım/denetim eksik olabilir).',
+  closeStatEvidence: 'Kanıt',
+  closeStatReviews: 'İnceleme',
   // Sertleştirme dizgeleri (WO-0026)
   errorBoundaryTitle: 'Bir şeyler ters gitti',
   errorBoundaryHint: "Beklenmeyen bir hata oluştu. Yeniden yükleyebilirsin — kalıcı kayıtlar etkilenmez, yalnızca açık canlı oturum akışı kaybolur.",
@@ -562,16 +452,8 @@ export const UI = {
   // WO-0029 cila dizgeleri
   closeWoDoneTitle: 'Kapandı',
   planNoStepsWarn: 'Planda adım listesi (```steps) yok — onaylarsan adım akışı ve denetimler çalışmaz. İtiraz etmeyi düşün.',
-  objectingLine: 'Mimar yeniden planlıyor…',
   overrideVerdictBtn: 'Devam et (geçersiz kıl)',
   overrideVerdictHint: "Mimarın 'revize' kararını geçersiz kılıp proceed yapar — mimarın özgün metni verdict dosyasında kalır.",
-  permModeLabel: 'İzin modu',
-  permModeAsk: 'Sor',
-  permModeAuto: 'Otomatik',
-  permModeHint: 'Otomatik: kapsam-içi her istek onaylı sayılır; kapsam-dışı yazmalar yine engellenir. Sor: her istekte kart çıkar.',
-  verdictOverrideDone: 'Geçersiz kılındı — adım proceed sayıldı.',
-  timelineTitle: 'Zaman çizelgesi',
-  timelineLegacyNote: 'Bu iş emri olay günlüğünden önce açılmış.',
   allowAll: 'Tümüne izin ver',
   // Rol-farkında askı satırı (Bulgu 8): 'Mimarın bir isteği var' sabitti; isteyen rol hangisiyse o.
   askingRole: (role: SessionRole) => ASKING_ROLE[role],
@@ -586,24 +468,15 @@ export const UI = {
     return `${h}s ${min % 60}dk`;
   },
   // Sağlayıcı ayarları (WO-0025 / B1)
-  providerLabel: 'Agent sağlayıcısı',
   providerStatusOk: 'Hazır', // + source shown appended by the modal
   providerStatusUnknown: 'Durum bilinmiyor — anahtar kaydet ya da Test et',
-  providerKeyLabel: 'API anahtarı',
-  providerKeyPlaceholder: 'sk-… (yoksa sağlayıcı girişi kullanılır)',
-  providerKeySave: 'Kaydet',
-  providerKeyClear: 'Temizle',
   providerTest: 'Test et',
-  providerTesting: 'Sınanıyor…',
-  providerHint: 'Anahtar paylaşılan veritabanına kaydedilir; GUI ve CLI birlikte görür. Sağlayıcı girişi varsa anahtar gerekmez.',
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',
-  verdictLabel: 'Karar',
   verdictCardProceedTitle: 'Mimar devam dedi',
   verdictCardReviseTitle: 'Mimar revize istiyor',
   verdictCardUnknown: 'Mimar net karar vermedi — sen incele.',
-  verdictCardHint: 'Raporu oku, sonra devam et ya da adımı yeniden çalıştır.',
   devamStep: 'Devam et',
   rerunStep: 'Adımı yeniden çalıştır',
   stepVerdictMissing: '(karar henüz yok)',
@@ -626,12 +499,19 @@ export const UI = {
   turnRunning: 'Çalışıyor',
   turnStopped: 'Durduruldu — istersen sürdür',
   turnRetry: 'Yeniden dene',
-  // Klavye ipuçları (substrip sağı).
-  hintEscBack: 'esc geri',
+  turnDone: 'Kapandı',
+  // Tur-2 D1: the only-closed board platform.
+  boardAllDone: 'Bütün işler tamam',
+  // Tur-2 A3: the short closure sha (full sha in title/aria; click copies).
+  closeShaAria: 'Kapanış kaydı — kopyala',
+  copyDone: 'Kopyalandı',
   // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
   stripCost: 'Maliyet',
   stripDuration: 'Süre',
   objectTitle: 'İtirazın ne?',
+  dialogCloseAria: 'kapat',
+  removeAria: 'kaldır',
+  stripGateReason: 'önce oturumu durdur',
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
   // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
   // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
@@ -643,12 +523,7 @@ export const UI = {
   railStopping: 'Durduruluyor…',
   railRetry: 'Yeniden dene',
   // Adım kartı durum satırı (kart dili).
-  stepQueued: 'sırada',
-  stepWorking: 'çalışıyor',
-  stepWorkingAsk: 'çalışıyor · izin bekliyor',
   stepReady: 'hazır',
-  stepDoneMeta: (duration: string, cost?: string) =>
-    cost ? `tamam · ⏱ ${duration} · ${cost}` : `tamam · ⏱ ${duration}`,
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
   planProposedSteps: (n: number) => `Mimar ${n} adım önerdi`,
   // DETAY bölüm yüzeyleri — sekme adları @<1080 ve raf başlıkları @≥1080 aynı dili kullanır.
@@ -658,7 +533,7 @@ export const UI = {
   secTimeline: 'Çizelge',
   secDocs: 'Belgeler',
   secSources: 'Kaynaklar',
-  secTracks: 'Track’ler',
+  secTracks: 'Repolar',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
     const base = { interrupt_sent: '⏸ kesme sinyali gönderildi', session_closed: '■ oturum kapandı', force_killed: '■ zorla kesildi' }[kind];
@@ -668,11 +543,6 @@ export const UI = {
   // İzin kuralı — Ayarlar (varsayılan) + create-modal + rozet + izin kartı.
   permRuleLabel: 'İzin kuralı',
   permRuleQuestion: 'İzin kuralı — ajan sizden ne zaman izin istesin',
-  permRuleHint: "Varsayılan: Ayarlar'daki kural. Bu seçim yalnız bu iş emri için; izin kartından değiştirilebilir.",
-  permRuleAskHint: 'her dosya/komut için',
-  permRuleRiskyHint: 'otomatik — riskli olanlar yine sorar',
-  permRuleFullHint: 'hiç sormaz',
-  permRuleSaving: 'Kaydediliyor…',
   askRiskyTag: 'riskli yazım',
   askAlwaysAuto: 'Bu iş emri için hep otomatik',
   // WO satır içi düzenleme + inceleme modu rozeti.
@@ -680,6 +550,7 @@ export const UI = {
   reviewModeGatesShort: 'Kapılarda',
   reviewModeEveryShort: 'Her adımda',
   woEditAria: 'İş emrini düzenle',
+  woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
   woEditTitleLabel: 'Başlık',
   woEditDescLabel: 'Açıklama / hedef',
@@ -689,14 +560,13 @@ export const UI = {
   editAddStep: '+ Adım ekle',
   editNewStepAim: 'Yeni adım — yaz…',
   editCounter: (n: number) => `${n} değişiklik — onayın "düzenlenmiş onay" olarak loglanır`,
-  editNoChanges: 'Değişiklik yapmadan da onaylayabilirsin.',
   editAimMissing: 'Bir adımın metni boş — doldurunca Onayla gelir.',
-  editHint: 'roze tıkla: rol değişir · ▲▼ sıralar · ✕ siler',
   editMoveUpAria: 'Yukarı taşı',
   editMoveDownAria: 'Aşağı taşı',
   editRemoveAria: 'Adımı sil',
   editRoleAria: (role: SessionRole) => `Rol: ${ROLE_LABELS[role]} — değiştirmek için tıkla`,
   stepRef: (idx: number) => `adım ${idx}`,
+  stepSegments: (idx: number, total: number) => `adım ${idx}/${total}`,
   // Denetim (oturum dökümü tablosu).
   auditTitle: 'Oturum dökümü',
   auditColSession: 'Oturum',
@@ -716,6 +586,7 @@ export const UI = {
   auditNamePlan: 'Plan',
   auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
+  auditNameUnscoped: 'Bağımsız',
   stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
   // Diff peek (yazma izni kartı).
   diffPeek: '▸ fark',
@@ -740,7 +611,6 @@ export const UI = {
   titlePending: (n: number) => `(${n}) izin bekliyor`,
   // Create-modal: tek adımda mimar + yeni inceleme adları.
   createAndPlan: 'Oluştur ve plan iste',
-  woReviewGatesV2: 'Kapılarda — plan onayı, revizyon ve merge’de sorar',
 } as const;
 
 // WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;

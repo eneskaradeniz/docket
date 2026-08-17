@@ -44,7 +44,7 @@ export function DetailScreen({
   autoRequestPlan?: boolean;
 }) {
   return (
-    <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1240px] flex-col overflow-hidden px-6 pb-4 pt-3">
+    <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1160px] flex-col overflow-hidden px-5 pb-3.5 pt-2.5">
       <WorkOrderDetail
         detail={detail}
         docs={docs}

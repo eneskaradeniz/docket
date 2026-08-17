@@ -89,6 +89,7 @@ export function WoCreateModal({
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.woCreate}
+      closeAria={UI.dialogCloseAria}
       wide
       footer={
         <>
@@ -100,8 +101,6 @@ export function WoCreateModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="-mt-1 text-[12px] text-inkdim">{UI.woCreateSubtitle}</p>
-
         <Field label={UI.woTitleLabel}>
           <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={UI.woTitlePlaceholder} />
         </Field>
@@ -113,7 +112,6 @@ export function WoCreateModal({
         {trackOptions.length > 0 ? (
           <section>
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woTracksLabel}</span>
-            <p className="mb-2 text-[11px] text-inkdim">{UI.woTracksHint}</p>
             <div className="flex flex-wrap gap-2">
               {trackOptions.map((r) => {
                 const checked = selectedTracks.includes(r);
@@ -123,7 +121,7 @@ export function WoCreateModal({
                     key={r as string}
                     aria-pressed={checked}
                     onClick={() => toggleTrack(r)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors ${checked ? 'border-info/60 bg-info/10 text-ink' : 'border-hairline bg-bg text-inkdim hover:text-ink'}`}
+                    className={`ichip inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${checked ? 'ichip-on' : ''}`}
                   >
                     <span className={`font-mono text-[11px] ${checked ? 'text-info' : ''}`}>{checked ? '✓' : '○'}</span>
                     <span className="font-mono text-[11px]">{r as string}</span>
@@ -141,7 +139,7 @@ export function WoCreateModal({
               {contextFiles.map((p, i) => (
                 <span key={i} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
-                  <button type="button" onClick={() => removeContext(i)} className="text-error px-0.5" aria-label="kaldır"><X className="h-3 w-3" aria-hidden="true" /></button>
+                  <button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button>
                 </span>
               ))}
             </div>
@@ -162,7 +160,6 @@ export function WoCreateModal({
               { value: 'every-step', label: UI.reviewModeEveryShort },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">{reviewMode === 'gates' ? UI.woReviewGatesV2 : UI.woReviewEvery}</p>
         </section>
 
         {/* WO-0031c: the rule lives on the work order; Settings holds only this default. */}
@@ -177,10 +174,6 @@ export function WoCreateModal({
               { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">
-            {permissionRule === 'ask_every' ? UI.permRuleAskHint : permissionRule === 'full_auto' ? UI.permRuleFullHint : UI.permRuleRiskyHint}
-            {' '}{UI.permRuleHint}
-          </p>
         </section>
       </div>
     </Dialog>

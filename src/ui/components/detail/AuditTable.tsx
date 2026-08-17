@@ -15,6 +15,8 @@ function nameText(row: SessionAuditRow): string {
       return UI.auditNameStep(row.name.idx, row.name.aim);
     case 'review':
       return UI.auditNameReview(row.name.idx);
+    case 'unscoped':
+      return UI.auditNameUnscoped;
   }
 }
 

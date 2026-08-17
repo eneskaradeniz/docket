@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyStepScope, parsePlanSteps } from '../plan-steps';
+import { classifyStepScope, parsePlanSteps, splitStepsFence } from '../plan-steps';
 import type { StepSpec } from '../types';
 
 // Helper: wrap a JSON body in a ```steps fence (the last fence wins; here there is only one).
@@ -104,5 +104,35 @@ describe('classifyStepScope', () => {
   it('classifies any other string to {kind:"track", ref} preserving original case/spacing (trimmed)', () => {
     expect(classifyStepScope('backend-svc')).toEqual({ kind: 'track', ref: 'backend-svc' });
     expect(classifyStepScope('  App  ')).toEqual({ kind: 'track', ref: 'App' });
+  });
+});
+
+// WO-0031d tur-2 — the fence never renders raw: documents show the PROSE plus a card summary.
+// splitStepsFence gives both halves; a malformed fence body still strips the block (the raw JSON is
+// banned from the screen either way) and degrades to steps: [] like parsePlanSteps.
+describe('splitStepsFence (WO-0031d tur-2)', () => {
+  const PLAN = '# Hedef\n\nProse paragraph.\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n\nSon söz.\n';
+
+  it('splits prose from the fence; steps parse; the fence text is gone from the prose', () => {
+    const { prose, steps } = splitStepsFence(PLAN);
+    expect(prose).toContain('# Hedef');
+    expect(prose).toContain('Son söz.');
+    expect(prose).not.toContain('```steps');
+    expect(prose).not.toContain('"role"');
+    expect(steps).toHaveLength(1);
+  });
+
+  it('no fence → prose unchanged, steps []', () => {
+    const { prose, steps } = splitStepsFence('# Sadece prose\n');
+    expect(prose).toBe('# Sadece prose\n');
+    expect(steps).toEqual([]);
+  });
+
+  it('a malformed fence body still strips the block and degrades to []', () => {
+    const { prose, steps } = splitStepsFence('Önce.\n\n```steps\nnot-json\n```\n\nSonra.\n');
+    expect(prose).toContain('Önce.');
+    expect(prose).toContain('Sonra.');
+    expect(prose).not.toContain('```steps');
+    expect(steps).toEqual([]);
   });
 });

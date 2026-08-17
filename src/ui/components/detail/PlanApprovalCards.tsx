@@ -1,18 +1,17 @@
 // PlanApprovalCards (WO-0031c / v4) — the plan's PRIMARY surface at the approval moment: "Mimar N adım
-// önerdi" over a grid of StepCards (the markdown prose stays a document, read in DETAY · Belgeler).
+// önerdi" over a grid of step cards (the markdown prose stays a document, read in DETAY · Belgeler).
 // The approval ACTIONS live in the rail (Onayla / İtiraz et / Düzenle) — this card only speaks.
 // The EDITOR (c2): aim becomes an input, the role chip cycles (Mimar→Uyg→Doğ), ▲▼ reorder, ✕ removes
 // (min 1), + Adım ekle appends — the rail carries the change counter and the "düzenlenmiş onay".
 import { parsePlanSteps } from '../../../core/plan-steps';
 import type { StepSpec } from '../../../core/types';
 import { UI } from '../../data/labels';
-import { RoleChip } from './StepCard';
+import { RoleChip } from './RoleChip';
 
 export function PlanApprovalCards({
   plan,
   editing,
   steps,
-  hint,
   onAimChange,
   onRoleCycle,
   onMove,
@@ -23,7 +22,6 @@ export function PlanApprovalCards({
   plan?: string;
   editing?: boolean;
   steps?: StepSpec[];
-  hint?: string;
   onAimChange?: (idx: number, aim: string) => void;
   onRoleCycle?: (idx: number) => void;
   onMove?: (idx: number, dir: -1 | 1) => void;
@@ -36,7 +34,6 @@ export function PlanApprovalCards({
       <header className="mb-2.5 flex items-baseline gap-2.5">
         <p className="readout text-signal">{UI.planReadyHeader}</p>
         {editing ? null : <p className="text-[13px] font-semibold text-ink">{UI.planProposedSteps(specs.length)}</p>}
-        {hint ? <p className="ml-auto text-[11px] text-inkdim">{hint}</p> : null}
       </header>
       {specs.length === 0 && !editing ? (
         <p className="rounded-md border border-signal/40 bg-signal/5 px-3 py-2 text-[12px] text-signal">
@@ -65,7 +62,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editMoveUpAria}
                       onClick={() => onMove?.(s.idx, -1)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+                      className="ibtn px-1 text-[11px]"
                     >
                       ▲
                     </button>
@@ -73,7 +70,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editMoveDownAria}
                       onClick={() => onMove?.(s.idx, 1)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+                      className="ibtn px-1 text-[11px]"
                     >
                       ▼
                     </button>
@@ -81,7 +78,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editRemoveAria}
                       onClick={() => onRemove?.(s.idx)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-error"
+                      className="ibtn ibtn-danger px-1 text-[11px]"
                     >
                       ✕
                     </button>
@@ -105,7 +102,7 @@ export function PlanApprovalCards({
             <button
               type="button"
               onClick={() => onAdd?.()}
-              className="stepcard flex min-h-[76px] items-center justify-center rounded-md border border-dashed border-info/40 text-[12px] text-info transition-colors hover:bg-raised/50"
+              className="stepcard irow flex min-h-[76px] items-center justify-center rounded-md border border-dashed border-info/40 text-[12px] text-info"
             >
               {UI.editAddStep}
             </button>

@@ -12,6 +12,7 @@ import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { AppSettingsModal } from '../chrome/AppSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
+import { InviteHero } from '../components/InviteHero';
 import { createDriveStore, DriveStoreContext } from '../components/session/drive-store';
 import { ViewModeProvider } from '../data/view-mode';
 import { ToastHost, toast } from '../chrome/ToastHost';
@@ -165,7 +166,10 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const handleGetStepVerdict = useCallback((idx: number) => source.getStepVerdict(selectedId!, idx), [source, selectedId]);
   const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
 
-  const chrome = workspaceId ? (
+  // WO-0031d: the REAL appbar always renders once data is ready — an empty database keeps the brand
+  // and the normal Settings gear (no second, lesser chrome); the workspace-dependent parts of the
+  // shell are absent until a workspace exists.
+  const chrome = load !== 'loading' ? (
     <AppShell
       workspaces={workspaces}
       workspaceId={workspaceId}
@@ -186,7 +190,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         <div className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-error">{UI.loadError}</p>
           <div className="mt-2 flex justify-end">
-            <button type="button" onClick={() => setLoadNonce((n) => n + 1)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
+            <button type="button" onClick={() => setLoadNonce((n) => n + 1)} className="irow border border-hairline px-3 py-1 text-xs text-inkdim">
               {UI.loadRetry}
             </button>
           </div>
@@ -194,43 +198,19 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       </div>
     );
   } else if (workspaces.length === 0) {
-    // Onboarding (ADR-0009): no workspace yet → the only action is to create one. With no workspace the
-    // board has no context, so surface workspace creation directly instead of a dead-end empty board.
-    // Settings (theme/language) remain reachable: a minimal header carries the gear (AppChrome's gear only
-    // renders once a workspace exists).
-    main = (
-      <>
-        <header
-          className="sticky top-0 z-20 flex h-12 shrink-0 items-center justify-end border-b border-hairline bg-surface/85 px-4 backdrop-blur-md"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <button type="button" onClick={() => setSettingsOpen(true)} aria-label={UI.settings} className="rounded-md p-2 text-inkdim transition-colors hover:bg-raised hover:text-ink">
-              ⚙
-            </button>
-          </div>
-        </header>
-        <main className="mx-auto max-w-3xl px-6 py-8">
-          <div className="rounded-md border border-hairline bg-surface p-6 shadow-sm">
-            <h2 className="text-[15px] font-semibold text-ink">{UI.wsCreate}</h2>
-            <p className="mt-1 text-[13px] text-inkdim">{UI.noWorkspaceHint}</p>
-            <button type="button" onClick={() => setWsCreateOpen(true)} className="mt-3 rounded-md bg-ink px-4 py-1.5 text-[12px] font-semibold text-bg transition-colors hover:brightness-110">
-              {UI.wsCreate}
-            </button>
-          </div>
-        </main>
-      </>
-    );
+    // Empty database (ADR-0009 + ADR-0012 r2): the appbar above is the real one; the body is the
+    // invitation — one line, one CTA (create the first workspace; the first work order follows).
+    main = <InviteHero cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
   } else if (selectedId) {
     main = detailError ? (
       <div className="px-6 py-8">
         <div className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-error">{UI.detailLoadError}</p>
           <div className="mt-2 flex justify-end gap-2">
-            <button type="button" onClick={() => setSelectedId(null)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
+            <button type="button" onClick={() => setSelectedId(null)} className="irow border border-hairline px-3 py-1 text-xs text-inkdim">
               {UI.backToBoard}
             </button>
-            <button type="button" onClick={() => setDetailNonce((n) => n + 1)} className="rounded-md border border-hairline px-3 py-1 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
+            <button type="button" onClick={() => setDetailNonce((n) => n + 1)} className="irow border border-hairline px-3 py-1 text-xs text-inkdim">
               {UI.loadRetry}
             </button>
           </div>
@@ -259,7 +239,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} onSelect={setSelectedId} />;
+    main = <BoardScreen cards={cards} onSelect={setSelectedId} onNewWorkOrder={() => setWoCreateOpen(true)} />;
   }
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
