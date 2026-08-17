@@ -21,7 +21,7 @@ export function Board({
 
   return (
     <div>
-      <div className="grid gap-x-6 gap-y-8 xl:grid-cols-2">
+      <div className="grid gap-x-3.5 gap-y-4 xl:grid-cols-2">
         {up.length ? (
           <section>
             <h2 className="readout mb-2 flex items-center gap-1.5">

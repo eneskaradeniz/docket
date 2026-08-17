@@ -17,7 +17,7 @@ export function BoardScreen({
   onNewWorkOrder: () => void;
 }) {
   return (
-    <main className="mx-auto w-full max-w-[880px] px-6 py-6">
+    <main className="mx-auto w-full max-w-[840px] px-5 py-5">
       {cards.length ? (
         <Board cards={cards} onSelect={onSelect} />
       ) : (

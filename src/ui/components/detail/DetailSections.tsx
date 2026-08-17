@@ -102,7 +102,7 @@ export function buildDetailSections({
 /** The rack's stacked form (≥1080): readout headers over calm content. */
 export function SectionStack({ sections }: { sections: DetailSection[] }) {
   return (
-    <aside className="flex min-w-0 flex-col gap-5">
+    <aside className="flex min-w-0 flex-col gap-3.5">
       {sections.map((s) => (
         <section key={s.id}>
           <h2 className="readout mb-2 flex items-baseline gap-2">

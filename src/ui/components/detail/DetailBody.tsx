@@ -44,8 +44,8 @@ export function DetailBody({
     return (
       // The columns are unconditional: this tree only renders when useDetailLayout says ≥1080 (the JS
       // switch is the single source of the breakpoint — no Tailwind `lg:` racing a second threshold).
-      <div className="grid min-h-0 items-start grid-cols-[minmax(0,1fr)_250px] gap-x-6 gap-y-5">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="grid min-h-0 items-start grid-cols-[minmax(0,1fr)_250px] gap-x-3.5 gap-y-4">
+        <div className="flex min-w-0 flex-col gap-3.5">
           {decision}
           {instrument}
         </div>
@@ -55,7 +55,7 @@ export function DetailBody({
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div className="flex min-h-0 flex-col gap-3.5">
       {decision}
       <Tabs defaultValue="instrument" className="min-h-0">
         <TabsList>

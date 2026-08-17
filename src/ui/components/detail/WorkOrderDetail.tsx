@@ -39,6 +39,8 @@ import { useViewMode } from '../../data/view-mode';
 // c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
 // "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
 // primary, permission decisions into the timeline, and the Denetim surfaces.
+// WO-0031d: Düzenle/Sil/Kapat confirmations are kit Dialogs (screen intact); the strip's order.md
+// writers stand down while a drive is live; closure renders the results card with the one-shot seal.
 export function WorkOrderDetail({
   detail,
   docs,
