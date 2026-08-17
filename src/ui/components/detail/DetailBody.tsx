@@ -73,8 +73,9 @@ export function DetailBody({
           ))}
         </TabsList>
         {/* forceMount on every panel: the xterm canvas survives tab switches (scrollback intact);
-            the kit's TabsContent hides inactive panels (tur-2 A2). The id anchors the N/T jump. */}
-        <TabsContent value="instrument" forceMount className="mt-3">
+            the kit's TabsContent hides inactive panels (tur-2 A2). The ids anchor the N/T jump and
+            the tur-3 selection scroll. */}
+        <TabsContent value="instrument" forceMount className="mt-3" id="sec-instrument">
           {instrument}
         </TabsContent>
         {sections.map((s) => (

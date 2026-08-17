@@ -1,4 +1,5 @@
 import type { WorkOrderCardView } from '../../../core/types';
+import { Button } from '../../kit';
 import { BUCKET_LABELS, UI } from '../../data/labels';
 import { WorkOrderCard } from './WorkOrderCard';
 
@@ -16,6 +17,11 @@ export function Board({
   const up = cards.filter((c) => c.bucket === 'up').sort((a, b) => a.actionRank - b.actionRank);
   const working = cards.filter((c) => c.bucket === 'working');
   const closed = cards.filter((c) => c.bucket === 'closed');
+  // WO-0031e tur-3: the awaiting-close partition. A stopped_asking card never counts as closable
+  // here — a permission ask outranks closure, the platform must not say "kapatılmayı bekliyor"
+  // over an unanswered ask (deriveCardAction makes the same call for the ▸ line).
+  const closableUp = up.filter((c) => c.closable && c.reason.kind !== 'stopped_asking');
+  const otherUp = up.filter((c) => !c.closable || c.reason.kind === 'stopped_asking');
   const stagger = (i: number): { animationDelay: string } | undefined =>
     i < 12 ? { animationDelay: `${i * 30}ms` } : undefined;
 
@@ -34,6 +40,37 @@ export function Board({
             <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  // WO-0031e tur-3: the awaiting-close platform — no live work left (no working, nothing in `up`
+  // that is not closable). One short line + exactly ONE CTA (ADR-0012 r2): the line names the
+  // count, the CTA opens the first closable detail where the Kapat card lives. Closable cards
+  // stay actionable (never quiet — they are the work); closed cards rest quietly below. The dot
+  // breathes nothing — but it is signal-colored: this platform DOES wait on the operator.
+  if (working.length === 0 && otherUp.length === 0 && closableUp.length > 0) {
+    return (
+      <div data-board-awaiting-close="">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
+          <p className="readout text-signal">{UI.boardAwaitingClose(closableUp.length)}</p>
+          <Button variant="secondary" size="sm" className="ml-2" onClick={() => onSelect(closableUp[0].id)}>
+            {UI.boardCloseCta}
+          </Button>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          {closableUp.map((c) => (
+            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
+          ))}
+        </div>
+        {closed.length > 0 ? (
+          <div className="mt-4 flex flex-col gap-2">
+            {closed.map((c) => (
+              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }

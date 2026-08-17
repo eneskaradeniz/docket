@@ -250,6 +250,10 @@ export interface WorkOrder {
   gateInputs: WoGateInputs;
   cost: CostSummary;
   sources: SourceLink[]; // referenced docs only — owned docs come via getWorkOrderDocs
+  // WO-0031e tur-3: the canClose predicate over the step rows, derived by the adapter at hydrate
+  // (ADR-0010 rule 2 — same as `stage`/`cost`, never stored). The board's honest "the Kapat card
+  // is live" signal; undefined = not closable.
+  closeable?: boolean;
 }
 
 // ===== DERIVED VIEWS (pure functions in core; structured data, no display strings) =====
@@ -276,6 +280,7 @@ export interface EvidenceItem {
 // (`in_progress` covers the running column — a WO with an actively-working session that is neither
 //  stopped, CI-failing, nor awaiting a gate. The six signed-off variants left no reason for it.)
 export type CardReason =
+  | { kind: 'closed' }
   | { kind: 'stopped_asking'; gate: string }
   | { kind: 'ci_failed'; checkName: string }
   | { kind: 'ci_running' }
@@ -302,6 +307,7 @@ export interface WorkOrderCardView {
   reason: CardReason;
   action?: CardAction;
   actionRank: number;
+  closable: boolean; // WO-0031e tur-3 — the awaiting-close platform partition reads this
   role?: SessionRole;
   primaryRepo: RepoId | undefined;
   trackCount: number;

@@ -471,16 +471,23 @@ export function WorkOrderDetail({
 
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
   // tur-2 A7: the DETAY tab is controlled so the substrip's adım N/T can jump to the steps.
+  // WO-0031e tur-3: every tab SELECTION scrolls the opened panel's top into view — switching used
+  // to only unhide, leaving the scroll container wherever the previous panel left it. Instant
+  // (no smooth — reduced-motion safe by construction); Radix fires onValueChange only on a real
+  // change, so a same-tab re-click never scrolls and nothing scrolls on mount.
   const [detailTab, setDetailTab] = useState('instrument');
-  const jumpToSteps = (): void => {
-    setViewMode('detail');
-    setDetailTab('steps');
-    // two frames: the view-mode switch mounts the sections first, then the anchor exists
+  const handleTabChange = (v: string): void => {
+    setDetailTab(v);
+    // two frames: a SADE→DETAY switch mounts the sections first, then the anchor exists
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        document.getElementById('sec-steps')?.scrollIntoView({ block: 'start' });
+        document.getElementById(`sec-${v}`)?.scrollIntoView({ block: 'start' });
       });
     });
+  };
+  const jumpToSteps = (): void => {
+    setViewMode('detail');
+    handleTabChange('steps');
   };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
   const sections = useMemo(
@@ -794,7 +801,7 @@ export function WorkOrderDetail({
         <DetailBody
           viewMode={viewMode}
           tab={detailTab}
-          onTabChange={setDetailTab}
+          onTabChange={handleTabChange}
           decision={bodyDecision}
           instrument={instrument}
           sections={sections}

@@ -77,6 +77,49 @@ describe('deriveCardReason — freshly written work order (WO-0015)', () => {
   });
 });
 
+describe('closable card signal (WO-0031e tur-3)', () => {
+  // `closeable` is the canClose predicate over the step rows, derived by the adapter at hydrate
+  // (the stage/cost precedent — never stored). Core only ever reads the flag.
+  it('a closable WO exposes closable on the card and the closure action (▸ Kapatılabilir)', () => {
+    const w = aWorkOrder({ closeable: true, sessions: [] });
+    expect(toCardView(w).closable).toBe(true);
+    expect(deriveCardAction(w)).toEqual({ kind: 'closure', intent: 'close' });
+  });
+
+  it('without the flag the card is not closable and the action is unchanged', () => {
+    const w = aWorkOrder({ stage: 'written', sessions: [], gateInputs: { planApproved: false } });
+    expect(toCardView(w).closable).toBe(false);
+    expect(deriveCardAction(w)).toEqual({ kind: 'link', intent: 'request_plan' });
+  });
+
+  it('a working state outranks closable — no inline action while CI runs', () => {
+    const w = { ...wo('WO-1005'), closeable: true };
+    expect(deriveCardReason(w).kind).toBe('ci_running');
+    expect(deriveCardAction(w)).toBeUndefined();
+    expect(toCardView(w).closable).toBe(true);
+  });
+
+  it('a stopped_asking session outranks closable — the permission action wins', () => {
+    const w = aWorkOrder({
+      closeable: true,
+      sessions: [aSession({ role: 'implementer', status: 'stopped_asking', stopAndAsk: { question: 'devam mı?', gate: 'g' } })],
+    });
+    expect(deriveCardAction(w)).toEqual({ kind: 'permission', intent: 'resume' });
+  });
+
+  // Pre-merge (operator tour of PR #37): the real archive showed CLOSED cards claiming
+  // ▸ Kapatılabilir + "Sonraki oturum bekleniyor" — both impossible states for a closed WO.
+  it('a CLOSED work order is never closable — the archive card carries no closure action', () => {
+    const w = aWorkOrder({ closeable: true, stage: 'closed', sessions: [] });
+    expect(toCardView(w).closable).toBe(false);
+    expect(deriveCardAction(w)).toBeUndefined();
+  });
+
+  it('a CLOSED work order reason is the done line — never "Sonraki oturum bekleniyor"', () => {
+    expect(deriveCardReason(aWorkOrder({ stage: 'closed', sessions: [] }))).toEqual({ kind: 'closed' });
+  });
+});
+
 describe('named invariant cases (AC10)', () => {
   it('a work order matching no whoseTurn rule falls to your_turn', () => {
     const idle = aWorkOrder({

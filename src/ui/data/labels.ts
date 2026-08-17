@@ -82,6 +82,8 @@ export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
 
 export function cardReasonText(r: CardReason): string {
   switch (r.kind) {
+    case 'closed':
+      return UI.woPhaseDone; // closed is terminal — never "Sonraki oturum bekleniyor" (PR #37 tour)
     case 'stopped_asking':
       return `Şurada durdu: ${r.gate}`;
     case 'ci_failed':
@@ -111,7 +113,9 @@ export const CARD_ACTION_AREA: Record<CardActionKind, string> = {
 
 export function cardActionText(a: CardAction): string {
   if (a.kind === 'link') return ACTION_LABELS[a.intent];
-  return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Belgeleri güncelle' }[a.kind];
+  // WO-0031e tur-3: the closure-stage card names its state — Kapatılabilir (canClose holds; the
+  // detail's Kapat card is live). ACTION_LABELS.update_docs stays for the rail's ActionCard.
+  return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Kapatılabilir' }[a.kind];
 }
 
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
@@ -502,6 +506,9 @@ export const UI = {
   turnDone: 'Kapandı',
   // Tur-2 D1: the only-closed board platform.
   boardAllDone: 'Bütün işler tamam',
+  // WO-0031e tur-3: the awaiting-close platform — no live work left, only closable + closed.
+  boardAwaitingClose: (n: number): string => `${n} iş kapatılmayı bekliyor`,
+  boardCloseCta: 'Kapanışa git',
   // Tur-2 A3: the short closure sha (full sha in title/aria; click copies).
   closeShaAria: 'Kapanış kaydı — kopyala',
   copyDone: 'Kopyalandı',
@@ -587,6 +594,10 @@ export const UI = {
   auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
   auditNameUnscoped: 'Bağımsız',
+  // WO-0031e tur-3 — the per-row transcript show/hide (the diffPeek ▸/▾ idiom; "döküm" echoes
+  // auditTitle). Rendered only when the session HAS a transcript — absent, never disabled.
+  auditShowTranscript: '▸ döküm',
+  auditHideTranscript: '▾ döküm',
   stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
   // Diff peek (yazma izni kartı).
   diffPeek: '▸ fark',

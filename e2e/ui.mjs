@@ -227,6 +227,9 @@ await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the 
   assert.equal(await page.getByText('Adım 0', { exact: false }).count(), 0, 'an "Adım 0" row leaked into the ledger');
   assert.ok((await page.getByText('Toplam', { exact: true }).count()) >= 1, 'no Toplam row');
   assert.ok((await page.getByText('$6,27', { exact: true }).count()) >= 1, 'the total cost is not the honest sum');
+  // WO-0031e tur-3: every session of this closed WO has an EMPTY transcript — no row may render
+  // an expander (absent, never disabled)
+  assert.equal(await page.locator('[data-audit-toggle]').count(), 0, 'expanders rendered for empty transcripts');
   await backToBoard();
 });
 
@@ -506,6 +509,10 @@ await spec('only-closed board: the Bütün işler tamam platform + the OPEN quie
   await page.waitForTimeout(600);
   assert.ok((await page.getByText('Bütün işler tamam').count()) >= 1, 'no platform line');
   assert.ok((await page.locator('[data-board-all-done]').count()) >= 1, 'no platform container');
+  // pre-merge (operator tour of PR #37): a closed card never claims ▸ Kapatılabilir and its reason
+  // is the done line — the real archive showed both on closed cards
+  assert.equal(await page.getByText('Kapatılabilir').count(), 0, 'a closed card claims Kapatılabilir');
+  assert.ok((await page.getByText('Tamamlandı', { exact: true }).count()) >= 1, 'closed card reason is not the done line');
   // the closed list renders OPEN — no details drawer to dig through
   assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the only-closed board');
   assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closed card is not out in the open');
@@ -516,6 +523,96 @@ await spec('only-closed board: the Bütün işler tamam platform + the OPEN quie
   await page.getByRole('button', { name: 'e2e', exact: false }).first().click();
   await page.waitForTimeout(500);
   assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
+});
+
+// ===== WO-0031e tur-3 specs (closable platform, audit transcript, tab scroll) =====
+
+await spec('closable platform: N iş kapatılmayı bekliyor + CTA + ▸ Kapatılabilir (tur-3)', async () => {
+  // switch to the 'raf' workspace (its only WO is closable, not closed) via the appbar switcher
+  await page.locator('header button', { hasText: 'e2e' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: /raf/ }).first().click();
+  await page.waitForTimeout(600);
+  assert.ok((await page.getByText('1 iş kapatılmayı bekliyor').count()) >= 1, 'no awaiting-close line');
+  assert.ok((await page.locator('[data-board-awaiting-close]').count()) >= 1, 'no awaiting-close platform container');
+  assert.equal(await page.getByRole('button', { name: 'Kapanışa git', exact: true }).count(), 1, 'not exactly one CTA');
+  assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the awaiting-close board');
+  assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closable card is not out in the open');
+  assert.ok((await page.getByText('Kapatılabilir').count()) >= 1, 'no ▸ Kapatılabilir on the card');
+  await page.screenshot({ path: join(SHOTS, 'board-awaiting-close@980.png') });
+  // the CTA opens the first closable detail — the Kapat card is the payoff
+  await page.getByRole('button', { name: 'Kapanışa git', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByText('Tüm adımlar tamam').count()) >= 1, 'the CTA did not open the closable detail');
+  assert.ok((await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).count()) >= 1, 'no Kapat card');
+  // tur-3 item 2: the strip progress hairline fills GREEN (--color-proceed #4cc38a)
+  const fill = await page.evaluate(() => {
+    const el = document.querySelector('.hairline-progress > div');
+    return el ? getComputedStyle(el).backgroundColor : 'missing';
+  });
+  assert.equal(fill, 'rgb(76, 195, 138)', `hairline fill is ${fill}, not --color-proceed`);
+  await backToBoard();
+  // back to the busy workspace for the remaining specs
+  await page.locator('header button', { hasText: 'raf' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'e2e', exact: false }).first().click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
+});
+
+await spec('audit rows expand: the session transcript opens under its row (tur-3)', async () => {
+  await page.locator('header button', { hasText: 'e2e' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: /raf/ }).first().click();
+  await page.waitForTimeout(600);
+  await openDetail('Raf işi');
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('tab', { name: /Oturum dökümü/ }).click();
+  await page.waitForTimeout(300);
+  await page.locator('[data-audit-toggle]').first().click();
+  await page.waitForTimeout(300);
+  const box = page.locator('[data-audit-transcript]');
+  assert.equal(await box.count(), 1, 'no transcript box under the row');
+  const text = (await box.textContent()) ?? '';
+  assert.ok(text.includes('Raf: döküm satırı 1'), 'the assistant line is missing');
+  assert.ok(text.includes('Komut çalıştır — npm test'), 'the tool_use line did not render through labels');
+  assert.ok(text.includes('→ Raf: döküm satırı 3'), 'the tool_result line is missing');
+  await page.screenshot({ path: join(SHOTS, 'audit-transcript@980.png') });
+  // toggle again — the box hides
+  await page.locator('[data-audit-toggle]').first().click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[data-audit-transcript]').count(), 0, 'the transcript box did not hide');
+  await backToBoard();
+});
+
+await spec('tab switch scrolls the opened panel into view (tur-3)', async () => {
+  // still on the raf workspace; the long Objective guarantees the docs panel overflows 980×620
+  await openDetail('Raf işi');
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  const read = () => page.evaluate(() => {
+    const panel = document.getElementById('sec-docs');
+    const container = panel ? panel.closest('.overflow-y-auto') : null;
+    return {
+      top: container ? container.scrollTop : -1,
+      docsTop: panel ? panel.getBoundingClientRect().top : -1,
+      scrollable: container ? container.scrollHeight - container.clientHeight : -1,
+    };
+  });
+  await page.getByRole('tab', { name: /Belgeler/ }).click();
+  await page.waitForTimeout(300);
+  let state = await read();
+  assert.ok(state.scrollable > 40, `the docs panel has no room to scroll (${state.scrollable})`);
+  assert.ok(state.top > 0, `selecting Belgeler did not scroll (scrollTop ${state.top})`);
+  assert.ok(state.docsTop < 240, `sec-docs is not in view (${state.docsTop})`);
+  const afterDocs = state.top;
+  // back to Terminal — the first panel; the scroll moves UP
+  await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
+  await page.waitForTimeout(300);
+  state = await read();
+  assert.ok(state.top < afterDocs, `switching back to Terminal did not scroll up (${state.top} vs ${afterDocs})`);
+  await backToBoard();
 });
 
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
