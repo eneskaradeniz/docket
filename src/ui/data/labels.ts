@@ -504,6 +504,9 @@ export const UI = {
   turnDone: 'Kapandı',
   // Tur-2 D1: the only-closed board platform.
   boardAllDone: 'Bütün işler tamam',
+  // WO-0031e tur-3: the awaiting-close platform — no live work left, only closable + closed.
+  boardAwaitingClose: (n: number): string => `${n} iş kapatılmayı bekliyor`,
+  boardCloseCta: 'Kapanışa git',
   // Tur-2 A3: the short closure sha (full sha in title/aria; click copies).
   closeShaAria: 'Kapanış kaydı — kopyala',
   copyDone: 'Kopyalandı',

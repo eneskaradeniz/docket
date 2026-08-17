@@ -250,7 +250,9 @@
   .hairline-progress > div {
     height: 100%;
     width: 0;
-    background: var(--color-signal);
+    /* WO-0031e tur-3: green like .stepfill — the strip measures done-steps (progress toward
+       done), not an operator-needed signal. */
+    background: var(--color-proceed);
     transition: width 0.36s ease;
   }
 
