@@ -221,6 +221,15 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       platform, D2 Kanıt chips with n/total, D3 TrackLane + the Repolar section deleted. 464
       tests (+12); E2E 26 specs (+8). **TD-037** narrowed; **TD-038** (review P2s) opened. Spec:
       `docs/work-orders/WO-0031d-faz-c-cila/order.md`.
+- [ ] **WO-0031e** — Tur-3 cila: the board grows a **kapatılabilir peronu** — when only closable work
+      orders remain (`working` empty, non-closable `up` empty), the board says "N iş kapatılmayı
+      bekliyor" + one CTA into the first closable detail, and the closable card carries the new ▸
+      `Kapatılabilir` (`canClose` derived at hydrate, test-first; the all-closed "Bütün işler tamam"
+      platform unchanged); the strip progress hairline fills **green** (`--color-proceed`, matching
+      `.stepfill`); the Denetim table rows **expand** to that session's transcript (mono DOM,
+      height-capped, instant, calm — `sourceIdx` core change); a DETAY tab switch **scrolls** the
+      opened panel into view (instant, <1080 tabs; rack unaffected). Spec:
+      `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
 
 ## M3 — Evidence layer
 
