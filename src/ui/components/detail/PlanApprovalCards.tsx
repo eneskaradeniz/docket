@@ -62,7 +62,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editMoveUpAria}
                       onClick={() => onMove?.(s.idx, -1)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+                      className="ibtn px-1 text-[11px]"
                     >
                       ▲
                     </button>
@@ -70,7 +70,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editMoveDownAria}
                       onClick={() => onMove?.(s.idx, 1)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+                      className="ibtn px-1 text-[11px]"
                     >
                       ▼
                     </button>
@@ -78,7 +78,7 @@ export function PlanApprovalCards({
                       type="button"
                       aria-label={UI.editRemoveAria}
                       onClick={() => onRemove?.(s.idx)}
-                      className="rounded px-1 text-[11px] text-inkdim transition-colors hover:bg-raised hover:text-error"
+                      className="ibtn ibtn-danger px-1 text-[11px]"
                     >
                       ✕
                     </button>
@@ -102,7 +102,7 @@ export function PlanApprovalCards({
             <button
               type="button"
               onClick={() => onAdd?.()}
-              className="stepcard flex min-h-[76px] items-center justify-center rounded-md border border-dashed border-info/40 text-[12px] text-info transition-colors hover:bg-raised/50"
+              className="stepcard irow flex min-h-[76px] items-center justify-center rounded-md border border-dashed border-info/40 text-[12px] text-info"
             >
               {UI.editAddStep}
             </button>

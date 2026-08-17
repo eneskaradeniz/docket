@@ -65,7 +65,7 @@ export function AppShell({
               type="button"
               onClick={() => setSettingsOpen(true)}
               aria-label={UI.settings}
-              className="rounded-md p-2 text-inkdim transition-colors hover:bg-raised hover:text-ink"
+              className="ibtn"
             >
               <Settings2 className="h-4 w-4" aria-hidden="true" />
             </button>

@@ -19,7 +19,7 @@ export function TrackLane({ lane }: { lane: TrackLaneView }) {
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-inkdim">{sessionLabel}</span>
         {mergeAction.kind === 'available' ? (
-          <button type="button" className="rounded-md border border-hairline px-2 py-0.5 text-xs text-inkdim transition-colors hover:bg-raised hover:text-ink">
+          <button type="button" className="ichip rounded-md px-2 py-0.5 text-xs">
             {mergeActionText(mergeAction)}
           </button>
         ) : (

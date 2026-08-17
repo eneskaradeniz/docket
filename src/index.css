@@ -9,7 +9,7 @@
 
 /* ===== "Kontrol Konsolu" design tokens (WO-0031) =====
    A dispatch console for one operator: dark room, calm layered surfaces, data in mono, and ONE lamp
-   color that means "this needs you". Dark-only by ruling (ADR-0012 pending in Phase C). Tailwind v4
+   color that means "this needs you". Dark-only by ruling (ADR-0012). Tailwind v4
    @theme tokens generate bg-/text-/border- utilities. The migration-era aliases (surface2/brass/
    denim/sage/clay) are GONE — the last user (ErrorBoundary's bg-clay) was restyled in WO-0031c. */
 @theme {
@@ -255,6 +255,110 @@
   .stepcard:hover {
     transform: translateY(-1px);
   }
+
+  /* ===== Interaction contract (WO-0031d / ADR-0012 r1) — THE hover tokens =====
+     Every interactive surface answers hover through one of these three classes (or kit/Button
+     variants). Focus is the global ring above; active is the kit press scale. No hand-rolled
+     hover:* on ad-hoc buttons. */
+  .ibtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    padding: 0.375rem;
+    color: var(--color-inkdim);
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .ibtn:hover {
+    background: var(--color-raised);
+    color: var(--color-ink);
+  }
+  .ibtn-danger {
+    color: var(--color-error);
+  }
+  .ibtn-danger:hover {
+    background: color-mix(in srgb, var(--color-error) 12%, transparent);
+    color: var(--color-error);
+  }
+  .irow {
+    border-radius: 6px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .irow:hover {
+    background: color-mix(in srgb, var(--color-raised) 60%, transparent);
+    color: var(--color-ink);
+  }
+  .ichip {
+    border: 1px solid var(--color-hairline);
+    color: var(--color-inkdim);
+    transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+  }
+  .ichip:hover {
+    border-color: var(--color-inkdim);
+    color: var(--color-ink);
+  }
+  .ichip-on {
+    border-color: color-mix(in srgb, var(--color-info) 60%, transparent);
+    background: color-mix(in srgb, var(--color-info) 10%, transparent);
+    color: var(--color-ink);
+  }
+
+  /* ===== Juice additions (WO-0031d / v4 §7) — drawn ✓, closure seal, row mini-fill ===== */
+  .checkmark {
+    display: inline-block;
+    vertical-align: -2px;
+  }
+  .checkmark path {
+    stroke: var(--color-proceed);
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 14;
+    stroke-dashoffset: 0;
+  }
+  .checkmark.draw path {
+    stroke-dashoffset: 14;
+    animation: draw-check 0.35s ease-out forwards;
+  }
+  @keyframes draw-check {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  .sealpop {
+    animation: sealpop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  @keyframes sealpop {
+    0% {
+      transform: scale(0.6);
+      opacity: 0.4;
+    }
+    60% {
+      transform: scale(1.06);
+    }
+    100% {
+      transform: none;
+      opacity: 1;
+    }
+  }
+  .stepfill {
+    height: 2px;
+    overflow: hidden;
+    border-radius: 1px;
+    background: var(--color-hairline);
+  }
+  .stepfill > div {
+    height: 100%;
+    width: 0;
+    background: var(--color-proceed);
+    transition: width 0.36s ease;
+  }
+}
+
+/* Deep links/anchors must clear the pinned rail (TD-037, paid in WO-0031d). */
+[id] {
+  scroll-margin-block-end: 96px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -264,11 +368,17 @@
   .flash,
   .flash-err,
   .pop,
-  .stepcard {
+  .stepcard,
+  .sealpop {
     animation: none;
     transition: none;
   }
-  .hairline-progress > div {
+  .hairline-progress > div,
+  .stepfill > div {
     transition: none;
+  }
+  .checkmark.draw path {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }

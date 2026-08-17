@@ -89,6 +89,7 @@ export function WoCreateModal({
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.woCreate}
+      closeAria={UI.dialogCloseAria}
       wide
       footer={
         <>
@@ -120,7 +121,7 @@ export function WoCreateModal({
                     key={r as string}
                     aria-pressed={checked}
                     onClick={() => toggleTrack(r)}
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 transition-colors ${checked ? 'border-info/60 bg-info/10 text-ink' : 'border-hairline bg-bg text-inkdim hover:text-ink'}`}
+                    className={`ichip inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${checked ? 'ichip-on' : ''}`}
                   >
                     <span className={`font-mono text-[11px] ${checked ? 'text-info' : ''}`}>{checked ? '✓' : '○'}</span>
                     <span className="font-mono text-[11px]">{r as string}</span>
@@ -138,7 +139,7 @@ export function WoCreateModal({
               {contextFiles.map((p, i) => (
                 <span key={i} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
-                  <button type="button" onClick={() => removeContext(i)} className="text-error px-0.5" aria-label="kaldır"><X className="h-3 w-3" aria-hidden="true" /></button>
+                  <button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button>
                 </span>
               ))}
             </div>

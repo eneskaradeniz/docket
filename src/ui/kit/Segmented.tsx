@@ -32,7 +32,7 @@ export function Segmented<T extends string>({
           className={cn(
             'rounded font-medium transition-colors',
             size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs',
-            o.value === value ? 'bg-raised text-ink' : 'text-inkdim hover:text-ink',
+            o.value === value ? 'bg-raised text-ink' : 'text-inkdim hover:bg-raised/60 hover:text-ink',
           )}
         >
           {o.label}

@@ -77,7 +77,7 @@ export function StopAndAskCard({
           {planContext ? UI.architectRequest : UI.permissionRequested}
           {risky ? <span className="rounded border border-signal/50 px-1.5 py-px text-[10px]">{UI.askRiskyTag}</span> : null}
           {canPeek ? (
-            <button type="button" className="ml-auto text-[10px] normal-case tracking-normal hover:text-ink" onClick={() => void togglePeek()}>
+            <button type="button" className="irow ml-auto px-1.5 text-[10px] normal-case tracking-normal" onClick={() => void togglePeek()}>
               {peekLoading ? UI.loading : peekOpen ? UI.diffPeekHide : UI.diffPeek}
             </button>
           ) : null}

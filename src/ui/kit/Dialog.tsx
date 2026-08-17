@@ -5,10 +5,13 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from './cn';
 
+// ADR-0007: the kit carries no copy — callers pass every string, including this aria label.
+
 export function Dialog({
   open,
   onOpenChange,
   title,
+  closeAria,
   children,
   footer,
   wide,
@@ -16,6 +19,7 @@ export function Dialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  closeAria: string;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
@@ -32,7 +36,7 @@ export function Dialog({
         >
           <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
             <DialogPrimitive.Title className="text-[14px] font-semibold tracking-tight text-ink">{title}</DialogPrimitive.Title>
-            <DialogPrimitive.Close className="rounded p-1 text-inkdim transition-colors hover:bg-raised hover:text-ink" aria-label="kapat">
+            <DialogPrimitive.Close className="ibtn" aria-label={closeAria}>
               <X className="h-4 w-4" aria-hidden="true" />
             </DialogPrimitive.Close>
           </div>

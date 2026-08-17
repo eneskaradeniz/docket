@@ -26,6 +26,7 @@ export function WsListModal({
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.wsListTitle}
+      closeAria={UI.dialogCloseAria}
       wide
       footer={
         <Button variant="secondary" size="sm" onClick={() => { onClose(); onCreate(); }}>{UI.wsListCreate}</Button>
@@ -38,7 +39,7 @@ export function WsListModal({
           return (
             <div
               key={w.id as string}
-              className={`flex items-center gap-2 rounded-md px-3 py-2 text-[14px] transition-colors ${on ? 'bg-raised font-semibold' : 'hover:bg-raised/60'}`}
+              className={`flex items-center gap-2 rounded-md px-3 py-2 text-[14px] transition-colors ${on ? 'bg-raised font-semibold' : 'irow'}`}
             >
               <button type="button" className="flex flex-1 items-center gap-2 text-left" onClick={() => { onSwitch(w.id); onClose(); }}>
                 <span className={`w-4 text-center ${on ? 'text-signal' : ''}`}>{on ? <Check className="inline h-3.5 w-3.5" aria-hidden="true" /> : null}</span>
@@ -47,7 +48,7 @@ export function WsListModal({
               <button
                 type="button"
                 onClick={() => onEdit(w)}
-                className="grid h-8 w-8 place-items-center rounded-md border border-hairline text-inkdim transition-colors hover:border-inkdim hover:text-ink"
+                className="ibtn h-8 w-8 border border-hairline"
                 aria-label={UI.wsSettings}
               >
                 <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />

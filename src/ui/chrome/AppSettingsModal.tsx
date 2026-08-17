@@ -40,6 +40,7 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.settings}
+      closeAria={UI.dialogCloseAria}
       footer={
         <Button variant="primary" size="sm" onClick={onClose}>
           {UI.close}

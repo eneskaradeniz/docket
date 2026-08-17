@@ -88,7 +88,7 @@ export function DetailStrip({
           type="button"
           onClick={onBack}
           aria-label={UI.backToBoard}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-inkdim transition-colors hover:bg-raised hover:text-ink"
+          className="ibtn h-7 w-7 shrink-0"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         </button>

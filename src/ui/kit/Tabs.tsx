@@ -13,7 +13,7 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
   return (
     <TabsPrimitive.Trigger
       value={value}
-      className="flex-1 rounded px-2.5 py-1 text-xs font-medium text-inkdim transition-colors hover:text-ink radix-state-active:bg-raised radix-state-active:text-ink"
+      className="flex-1 rounded px-2.5 py-1 text-xs font-medium text-inkdim transition-colors hover:bg-raised/60 hover:text-ink radix-state-active:bg-raised radix-state-active:text-ink"
     >
       {children}
     </TabsPrimitive.Trigger>

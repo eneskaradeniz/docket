@@ -97,6 +97,7 @@ export function WsSettingsModal({
       open
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={mode === 'create' ? UI.wsCreate : UI.wsSettings}
+      closeAria={UI.dialogCloseAria}
       footer={
         <>
           {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
@@ -128,7 +129,7 @@ export function WsSettingsModal({
                   {valid(p) ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <X className="h-3.5 w-3.5" aria-hidden="true" />}
                 </span>
                 <Input value={p} onChange={(e) => updatePath(i, e.target.value)} className="flex-1 border-0 bg-transparent px-0 py-0 font-mono text-[11px] focus-visible:border-0" />
-                <button type="button" onClick={() => removePath(i)} className="shrink-0 px-1 text-error" aria-label="kaldır">
+                <button type="button" onClick={() => removePath(i)} className="ibtn ibtn-danger shrink-0 px-1" aria-label={UI.removeAria}>
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
