@@ -8,7 +8,8 @@
 // captures, and every spec that shoots the board navigates back to it first — filenames never lie.
 // Run: npm run test:ui  (builds first). Exit code = failing spec count.
 import { strict as assert } from 'node:assert';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
@@ -152,6 +153,9 @@ await spec('stopped_asking: ask card + aria-live Sıra sende + quiet rail messag
   assert.ok((await page.getByRole('button', { name: 'İzin ver', exact: true }).count()) >= 1, 'no ask card');
   assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no quiet rail message');
   assert.ok((await page.locator('.glow-signal').count()) >= 1, 'no amber glow while asking');
+  // WO-0031d: the window title carries the waiting counter ((n) izin bekliyor)
+  const title = await page.title();
+  assert.match(title, /^\(\d+\) izin bekliyor$/, `title counter missing: ${title}`);
 });
 
 await spec('DETAY at 980: sections are tabs; the seeded terminal survives a tab switch (forceMount)', async () => {
@@ -205,6 +209,8 @@ await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the 
   assert.equal(await page.locator('[data-rail]').count(), 0, 'a closed WO rendered a rail');
   // the session ledger renders by default in the archive: 3 rows + the Toplam line
   assert.ok((await page.locator('[data-audit-table] tbody tr').count()) >= 4, 'no audit table rows on the closed WO');
+  assert.ok((await page.getByText('Bağımsız', { exact: true }).count()) >= 1, 'the unscoped session is not named Bağımsız');
+  assert.equal(await page.getByText('Adım 0', { exact: false }).count(), 0, 'an "Adım 0" row leaked into the ledger');
   assert.ok((await page.getByText('Toplam', { exact: true }).count()) >= 1, 'no Toplam row');
   assert.ok((await page.getByText('$6,27', { exact: true }).count()) >= 1, 'the total cost is not the honest sum');
   await backToBoard();
@@ -336,6 +342,149 @@ await spec('no horizontal overflow at 940×560 on the board (A6: shot taken ON t
   const overflow = await page.evaluate(() => document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth);
   assert.equal(overflow, 0, `horizontal overflow of ${overflow}px at 940px`);
   await page.screenshot({ path: join(SHOTS, 'board@940.png') });
+});
+
+// ===== WO-0031d specs (ADR-0012 contract, gating, dialogs, results card) =====
+
+await spec('substrip: step segments replace the esc hint (adım N/T + cells)', async () => {
+  await setSize(980, 620);
+  await openDetail('İzin bekliyor'); // 1 step, active (not done)
+  assert.ok((await page.locator('[data-segments="1"]').count()) >= 1, 'no segment group in the substrip');
+  assert.ok((await page.locator('[data-seg]').count()) >= 1, 'no segment cells');
+  assert.ok((await page.getByText('adım 0/1').count()) >= 1, 'no adım N/T readout');
+  assert.equal(await page.getByText('esc geri').count(), 0, 'the standing esc hint still renders');
+  await backToBoard();
+});
+
+await spec('strip gates the order.md writers while a drive runs (absent + reason line)', async () => {
+  await openDetail('Yeni iş emri örneği');
+  // the drive may be fresh (Plan iste) or stopped from an earlier spec (Sürdür) — both start it
+  const start = await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first();
+  await start.click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count()) >= 1, 'drive not running');
+  assert.equal(await page.locator('button[aria-label="İş emrini düzenle"]').count(), 0, 'the pencil renders while a drive runs');
+  assert.equal(await page.locator('button[aria-label="Sil"]').count(), 0, 'the trash renders while a drive runs');
+  assert.equal(await page.locator('button[data-review-mode]').count(), 0, 'the review badge is still a button while a drive runs');
+  assert.ok((await page.getByText('önce oturumu durdur').count()) >= 1, 'no absence reason line');
+  await page.screenshot({ path: join(SHOTS, 'strip-gated@980.png') });
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(800); // wind-down + detail reload
+  assert.ok((await page.locator('button[aria-label="İş emrini düzenle"]').count()) >= 1, 'the pencil did not return after the stop');
+  await backToBoard();
+});
+
+await spec('Düzenle is a dialog; the title edit persists and the screen stays intact', async () => {
+  await openDetail('Plan bekliyor');
+  // spec 14's approval may have left an auto-chained step drive running in the background — a live
+  // drive correctly gates the writers, so rest the chain before asserting editability.
+  await stopAllDrives();
+  await page.waitForTimeout(400);
+  await page.locator('button[aria-label="İş emrini düzenle"]').first().click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'the edit dialog did not open');
+  assert.ok((await page.locator('h1').count()) >= 1, 'the screen behind lost its title');
+  const dialogInput = page.locator('[role="dialog"] input#wo-edit-title');
+  await dialogInput.fill('Plan bekliyor — düzenlendi');
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(700); // updateWorkOrder → reloadDetail
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the edit dialog did not close');
+  assert.ok((await page.getByText('Plan bekliyor — düzenlendi').count()) >= 1, 'the edited title did not land');
+  // restore the title so later openDetail('Plan bekliyor') lookups still resolve
+  await page.locator('button[aria-label="İş emrini düzenle"]').first().click();
+  await page.waitForTimeout(250);
+  await page.locator('[role="dialog"] input#wo-edit-title').fill('Plan bekliyor');
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(600);
+  await backToBoard();
+});
+
+await spec('Sil is a dialog and cascades (the throwaway WO from the create spec)', async () => {
+  await backToBoard(); // defensive: the previous spec may have died mid-detail
+  await openDetail('Tek adımda oluşturulan iş emri');
+  await stopAllDrives();
+  await page.waitForTimeout(400);
+  await page.locator('button[aria-label="Sil"]').first().click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.getByText('Geri alınamaz').count()) >= 1, 'no consequence line in the delete dialog');
+  assert.ok((await page.getByText('Evet, sil', { exact: true }).count()) >= 1, 'no confirm button');
+  await page.getByText('Evet, sil').click();
+  await page.waitForTimeout(800); // cascade + board refresh
+  assert.ok((await page.locator('[data-wo-id]').count()) >= 1, 'not back on the board after delete');
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Tek adımda' }).count(), 0, 'the deleted WO still has a card');
+});
+
+await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals once', async () => {
+  await backToBoard(); // defensive: the previous spec may have died mid-detail
+  await openDetail('Uygulama sürüyor'); // one step done + proceed → allStepsDone, closable
+  await stopAllDrives();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  const note = page.locator('[role="dialog"] input#wo-close-note');
+  assert.ok((await note.count()) >= 1, 'the close dialog has no note input');
+  await note.fill('e2e kapanış notu');
+  // Enter in the note input must NOT submit (kapat ⏎'süz) — the dialog stays open
+  await note.press('Enter');
+  await page.waitForTimeout(400);
+  assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'Enter in the note input closed the dialog');
+  await page.getByRole('button', { name: 'Evet, kapat', exact: true }).click();
+  await page.waitForTimeout(900); // closeWorkOrder → closure sha → stage closed → results card
+  assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow after closing');
+  assert.ok((await page.locator('[data-closure-card]').count()) >= 1, 'no results card on the closed WO');
+  assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on the results card');
+  assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no Kapandı readout');
+  assert.ok((await page.getByText('1/1 adım').count()) >= 1, 'no 1/1 adım stat');
+  await page.screenshot({ path: join(SHOTS, 'closure-results@980.png') });
+  // reopening an already-closed WO is CALM — the seal renders without the animation class
+  await backToBoard();
+  if ((await page.locator('details[open]').count()) === 0) {
+    await page.locator('details > summary').click();
+    await page.waitForTimeout(250);
+  }
+  await openDetail('Uygulama sürüyor');
+  assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
+  assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
+  await backToBoard();
+});
+
+await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
+  // a SECOND app on a fresh DB path (the store never auto-seeds) — the first-run surface, end to end
+  const emptyRoot = mkdtempSync(join(tmpdir(), 'docket-e2e-empty-'));
+  const emptyApp = await electron.launch({
+    args: [join(ROOT, 'dist-electron', 'main.js')],
+    env: { ...process.env, DOCKET_DB_PATH: join(emptyRoot, 'empty.db'), DOCKET_E2E: '1', NODE_ENV: 'production' },
+  });
+  try {
+    const emptyPage = await emptyApp.firstWindow();
+    await emptyPage.waitForLoadState('domcontentloaded');
+    await emptyPage.waitForTimeout(700);
+    assert.ok((await emptyPage.getByText('Docket', { exact: true }).count()) >= 1, 'no brand on an empty DB');
+    assert.ok((await emptyPage.locator('button[aria-label="Ayarlar"]').count()) >= 1, 'no normal Settings gear on an empty DB');
+    assert.ok((await emptyPage.getByText('Haydi ilk iş emrini açalım').count()) >= 1, 'no invitation line');
+    assert.ok((await emptyPage.getByRole('button', { name: 'Yeni çalışma alanı' }).count()) === 1, 'not exactly one CTA');
+    await emptyPage.screenshot({ path: join(SHOTS, 'empty-db-hero@980.png') });
+    // the CTA opens the workspace-create dialog; create one over a temp dir (typed, no native picker)
+    await emptyPage.getByRole('button', { name: 'Yeni çalışma alanı' }).click();
+    await emptyPage.waitForTimeout(350);
+    const wsRepo = join(emptyRoot, 'repo');
+    mkdirSync(join(wsRepo, 'docs', 'work-orders'), { recursive: true });
+    await emptyPage.locator('[role="dialog"] input').first().fill('boş');
+    const repoInput = emptyPage.locator('[role="dialog"] input[placeholder="yerel repo yolu"]');
+    await repoInput.fill(wsRepo);
+    await emptyPage.getByRole('button', { name: 'Ekle', exact: true }).click();
+    await emptyPage.waitForTimeout(250);
+    await emptyPage.getByRole('button', { name: 'Oluştur', exact: true }).click();
+    await emptyPage.waitForTimeout(800);
+    // the zero-WO board is the SAME hero with the work-order CTA — no buckets, no drawer, no dashed boxes
+    assert.ok((await emptyPage.getByText('Haydi ilk iş emrini açalım').count()) >= 1, 'no zero-WO hero');
+    assert.ok((await emptyPage.getByRole('button', { name: /Yeni iş emri/ }).count()) >= 1, 'no zero-WO CTA');
+    assert.equal(await emptyPage.getByText('Sıra sende', { exact: true }).count(), 0, 'a bucket header rendered at zero WOs');
+    assert.equal(await emptyPage.locator('details > summary').count(), 0, 'the closed drawer rendered at zero WOs');
+    await emptyPage.screenshot({ path: join(SHOTS, 'zero-wo-hero@980.png') });
+  } finally {
+    await emptyApp.close();
+  }
 });
 
 await spec('zero renderer console errors', async () => {

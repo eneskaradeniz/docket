@@ -80,6 +80,17 @@ store.recordSession({
   startedAt: new Date('2026-08-16T14:09:00Z').toISOString(),
   endedAt: new Date('2026-08-16T14:14:00Z').toISOString(),
 });
+// WO-0031d: a free-form (unscoped) implementer run — the ledger names it "Bağımsız", never "Adım 0".
+// No cost → the closed-WO total-cost assert ($6,27) is unchanged.
+store.recordSession({
+  providerSessionId: 'e2e-wo4-free',
+  workOrderId: wo4.id,
+  role: 'implementer',
+  status: 'idle',
+  transcript: [],
+  startedAt: new Date('2026-08-16T14:15:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T14:15:30Z').toISOString(),
+});
 store.recordSession({
   providerSessionId: 'e2e-wo4-run',
   workOrderId: wo4.id,
