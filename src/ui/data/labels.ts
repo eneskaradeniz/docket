@@ -716,6 +716,7 @@ export const UI = {
   auditNamePlan: 'Plan',
   auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
+  auditNameUnscoped: 'Bağımsız',
   stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
   // Diff peek (yazma izni kartı).
   diffPeek: '▸ fark',

@@ -23,21 +23,22 @@ const LOCKFILE_BASENAMES = new Set([
   'go.sum',
 ]);
 
-/** Basename patterns for key/certificate/secret material — matched case-insensitively. */
-const SENSITIVE_BASENAME = [/^\.env(\..+)?$/, /\.pem$/, /key$/i, /^credentials/i, /^secrets/i];
+/** Basename patterns for key/certificate/secret material — matched case-insensitively (WO-0031d: all of them). */
+const SENSITIVE_BASENAME = [/^\.env(\..+)?$/i, /\.pem$/i, /key$/i, /^credentials/i, /^secrets/i];
 
-/** Shell substrings that make a command risky regardless of position (over-ask by design). */
+/** Shell substrings that make a command risky regardless of position (over-ask by design;
+ *  case-blind — a shouted NPM INSTALL is the same risk as a lowercase one, WO-0031d). */
 const RISKY_COMMAND_PATTERNS: RegExp[] = [
-  /\bgit\s+push\b/,
-  /\bgit\s+remote\s+(set-url|add|remove|rename)\b/,
-  /\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b/,
-  /\bcargo\s+add\b/,
-  /\bpip\d*\s+install\b/,
-  /\bpoetry\s+add\b/,
-  /\bcomposer\s+require\b/,
-  /\bgo\s+get\b/,
-  /\bbundle\s+(install|add)\b/,
-  /(^|[\s;&|])rm\s/,
+  /\bgit\s+push\b/i,
+  /\bgit\s+remote\s+(set-url|add|remove|rename)\b/i,
+  /\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b/i,
+  /\bcargo\s+add\b/i,
+  /\bpip\d*\s+install\b/i,
+  /\bpoetry\s+add\b/i,
+  /\bcomposer\s+require\b/i,
+  /\bgo\s+get\b/i,
+  /\bbundle\s+(install|add)\b/i,
+  /(^|[\s;&|])rm\s/i,
 ];
 
 function normalizeSegments(path: string): string[] {

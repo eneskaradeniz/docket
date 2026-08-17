@@ -435,7 +435,8 @@ export function deriveTurnState(input: {
 export type SessionAuditName =
   | { kind: 'plan' }
   | { kind: 'step'; idx: number; aim?: string }
-  | { kind: 'review'; idx: number };
+  | { kind: 'review'; idx: number }
+  | { kind: 'unscoped' };
 
 export interface SessionAuditRow {
   name: SessionAuditName;
@@ -458,7 +459,9 @@ export function deriveSessionAudit(
           ? s.stepIdx === undefined
             ? { kind: 'plan' }
             : { kind: 'review', idx: s.stepIdx }
-          : { kind: 'step', idx: s.stepIdx ?? 0, ...(s.stepIdx !== undefined ? { aim: steps.find((st) => st.idx === s.stepIdx)?.aim } : {}) };
+          : s.stepIdx === undefined
+            ? { kind: 'unscoped' }
+            : { kind: 'step', idx: s.stepIdx, ...(s.stepIdx !== undefined ? { aim: steps.find((st) => st.idx === s.stepIdx)?.aim } : {}) };
       const durationMs =
         s.startedAt && s.endedAt
           ? Math.max(0, new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime())
