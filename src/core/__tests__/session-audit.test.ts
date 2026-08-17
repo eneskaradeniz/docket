@@ -97,3 +97,33 @@ describe('deriveSessionAudit — unscoped sessions (WO-0031d)', () => {
     expect(out.rows.map((r) => r.name.kind)).toEqual(['plan', 'step', 'unscoped', 'review']);
   });
 });
+
+describe('deriveSessionAudit — sourceIdx (WO-0031e tur-3)', () => {
+  // The ledger sorts a copy, so a row cannot otherwise say WHICH session it came from. sourceIdx is
+  // the INPUT index — the UI maps sessions[row.sourceIdx].transcript for the row expansion.
+  it('every row maps back to its input session while rows stay start-time sorted', () => {
+    const sessions = [
+      session({ role: 'implementer', stepIdx: 1, startedAt: T(14, 16), endedAt: T(14, 22) }),
+      session({ role: 'architect', startedAt: T(14, 9), endedAt: T(14, 14) }),
+      session({ role: 'verifier', stepIdx: 4, startedAt: T(15, 10), endedAt: T(15, 29) }),
+    ];
+    const out = deriveSessionAudit(sessions);
+    expect(out.rows.map((r) => r.sourceIdx)).toEqual([1, 0, 2]);
+    for (const r of out.rows) {
+      expect(sessions[r.sourceIdx]!.role).toBe(r.role);
+      expect(sessions[r.sourceIdx]!.startedAt).toBe(r.startedAt);
+    }
+  });
+
+  it('sourceIdx is the INPUT index, not the row index — pinned on an out-of-order fixture', () => {
+    const sessions = [
+      session({ role: 'verifier', stepIdx: 2, startedAt: T(16) }),
+      session({ role: 'architect', startedAt: T(10) }),
+    ];
+    const out = deriveSessionAudit(sessions);
+    expect(out.rows[0]!.name.kind).toBe('plan');
+    expect(out.rows[0]!.sourceIdx).toBe(1);
+    expect(out.rows[1]!.name.kind).toBe('step');
+    expect(out.rows[1]!.sourceIdx).toBe(0);
+  });
+});

@@ -449,6 +449,7 @@ export type SessionAuditName =
 export interface SessionAuditRow {
   name: SessionAuditName;
   role: SessionRole;
+  sourceIdx: number; // WO-0031e tur-3 — the INPUT session index (rows are sorted); the row expansion maps sessions[sourceIdx].transcript
   startedAt?: string;
   endedAt?: string;
   durationMs: number;
@@ -459,9 +460,10 @@ export function deriveSessionAudit(
   sessions: ReadonlyArray<Pick<SessionRef, 'role' | 'stepIdx' | 'startedAt' | 'endedAt' | 'cost'>>,
   steps: ReadonlyArray<Pick<StepSpec, 'idx' | 'aim'>> = [],
 ): { rows: SessionAuditRow[]; total: { startAt?: string; endAt?: string; durationMs: number; costUsd: number } } {
-  const rows = [...sessions]
-    .sort((x, y) => (x.startedAt ?? '').localeCompare(y.startedAt ?? ''))
-    .map((s): SessionAuditRow => {
+  const rows = sessions
+    .map((s, sourceIdx) => ({ s, sourceIdx })) // WO-0031e tur-3 — capture the INPUT index before the sort
+    .sort((x, y) => (x.s.startedAt ?? '').localeCompare(y.s.startedAt ?? ''))
+    .map(({ s, sourceIdx }): SessionAuditRow => {
       const name: SessionAuditName =
         s.role === 'architect'
           ? s.stepIdx === undefined
@@ -477,6 +479,7 @@ export function deriveSessionAudit(
       return {
         name,
         role: s.role,
+        sourceIdx,
         ...(s.startedAt ? { startedAt: s.startedAt } : {}),
         ...(s.endedAt ? { endedAt: s.endedAt } : {}),
         durationMs,

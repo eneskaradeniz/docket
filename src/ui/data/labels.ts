@@ -592,6 +592,10 @@ export const UI = {
   auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
   auditNameUnscoped: 'Bağımsız',
+  // WO-0031e tur-3 — the per-row transcript show/hide (the diffPeek ▸/▾ idiom; "döküm" echoes
+  // auditTitle). Rendered only when the session HAS a transcript — absent, never disabled.
+  auditShowTranscript: '▸ döküm',
+  auditHideTranscript: '▾ döküm',
   stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
   // Diff peek (yazma izni kartı).
   diffPeek: '▸ fark',
