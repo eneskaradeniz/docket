@@ -2,7 +2,7 @@
 id: WO-0031d
 title: Faz C — kural kitabı (ADR-0012), boş durumlar, diyalog akışları, juice
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 tracks:
@@ -142,3 +142,18 @@ Kanıt becomes chips with a `n/total` aside — absence sentences instead of mar
 no panel box. D3 TrackLane + the Repolar section are deleted; the track state folds into Kanıt chips
 (✓ Depoda / PR açık · CI yeşil / henüz PR yok / CI muaf); the dead onClick-less 'Mergele' chip is
 gone. Five more grep-proven dead label exports purged with them.
+
+## Closure
+
+Tamamlandı — tek PR (#36, `7dbd924`). ADR-0012 konsolun tek etkileşim sözleşmesi oldu: `.ibtn`/`.irow`/
+`.ichip` hover token'ları, labels.ts açıklayıcı-cümle/jargon/kalıcı-ipucu temizliği ("Repolar"), 12–14px
+yoğunluk bandı. Boş yüzeyler davet oldu (boş DB'de gerçek appbar + hero, sıfır-WO tahta hero'su, boş kova
+başlıkları yok); Düzenle/Sil/Kapat kit diyalogları — sürü çalışırken tek sebep satırıyla yok (wind-down
+dahil); adım juice'ı (flash, çizilen ✓, mini fill, `adım N/T` segmentleri) + kapanış sonuç kartı (mühür +
+Süre/Maliyet/adım/Kanıt/İnceleme; bir kez, ≤400ms, reduced-motion güvenli); P2 katlanmaları (başlık sayacı
+E2E assert'i, "Bağımsız" satırları, plan-retry Sürdür, fresh-file diff-peek all-adds, riskli desenlerde
+harf büyüklüğü duyarsızlığı, ADR-0006 CI carve-out). Operatörün tur-2 turu aynı PR'de taşındı: A1–A7 kod
+fixleri + D1 "Bütün işler tamam" platformu, D2 Kanıt chip'leri (n/toplam), D3 TrackLane ve Repolar bölümü
+silindi. 464 test (+12); E2E 26 spec (+8). TD-037 daraltıldı; TD-038 (inceleme P2'leri) açıldı.
+
+_Closed 2026-08-17 at 7dbd92464f0914050795d28e62a2543f1a0bad86_
