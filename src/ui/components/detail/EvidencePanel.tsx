@@ -1,33 +1,103 @@
-import type { EvidenceItem } from '../../../core/types';
-import { EVIDENCE_LABELS, EVIDENCE_MARK, UI } from '../../data/labels';
+// EvidencePanel (WO-0031d tur-2 D2/D3) — Kanıt as horizontal chips (the mockup's .evd language):
+//   satisfied → '✓ label' (proceed); unsatisfied → an ABSENCE SENTENCE (ADR-0001 spirit — never a
+//   reasonless 'eksik'); exempt → info tone with the reason one line under (full text in the title).
+// D3 folds the dead TrackLane in: each track is ONE chip — merged → '✓ Depoda · repo', otherwise its
+// PR/CI position ('PR açık · CI yeşil' / 'henüz PR yok' / 'CI muaf' / 'CI yeşil değil'). The scope
+// suffix is the REPO name (never a TrackId); a single-repo work order prints no suffix. Chips are not
+// controls → no hover (ADR-0012 r1 scopes the contract to controls).
+import type { EvidenceItem, TrackId, TrackLaneView } from '../../../core/types';
+import { EVIDENCE_LABELS, UI } from '../../data/labels';
 
-const TONE: Record<EvidenceItem['status'], string> = {
-  satisfied: 'text-proceed',
-  unsatisfied: 'text-inkdim',
-  exempt: 'text-info',
+/** The absence sentence per WO-level kind — what is MISSING, in plain words. */
+const ABSENCE: Partial<Record<EvidenceItem['kind'], string>> = {
+  plan_approval: UI.evdPlanApproval,
+  verification: UI.evdVerification,
+  closure: UI.evdClosure,
 };
 
-export function EvidencePanel({ items }: { items: EvidenceItem[] }) {
+type Chip = { key: string; text: string; tone: 'proceed' | 'dim' | 'info'; title?: string; reason?: string };
+
+const TONE_CLASS: Record<Chip['tone'], string> = {
+  proceed: 'border-proceed/40 text-proceed',
+  dim: 'border-hairline text-inkdim',
+  info: 'border-info/40 text-info',
+};
+
+/** One chip per WO-level evidence item + ONE chip per track (D3: the TrackLane fold). */
+function buildChips(
+  items: EvidenceItem[],
+  tracks: TrackLaneView[],
+  repoOf: (id: TrackId) => string | undefined,
+  multiRepo: boolean,
+): Chip[] {
+  const chips: Chip[] = [];
+  for (const it of items) {
+    if (it.scope !== undefined) continue; // per-track evidence speaks through the track chips below
+    if (it.status === 'satisfied') {
+      chips.push({ key: `wo-${it.kind}`, text: `✓ ${EVIDENCE_LABELS[it.kind]}`, tone: 'proceed' });
+    } else if (it.status === 'exempt') {
+      chips.push({
+        key: `wo-${it.kind}`,
+        text: EVIDENCE_LABELS[it.kind],
+        tone: 'info',
+        ...(it.exemption ? { title: it.exemption.reason, reason: it.exemption.reason } : {}),
+      });
+    } else {
+      chips.push({ key: `wo-${it.kind}`, text: ABSENCE[it.kind] ?? EVIDENCE_LABELS[it.kind], tone: 'dim' });
+    }
+  }
+  for (const ln of tracks) {
+    const repo = repoOf(ln.track.id);
+    const suffix = multiRepo && repo !== undefined ? ` · ${repo}` : '';
+    const scoped = (kind: 'pr_open' | 'ci_green') => items.find((e) => e.kind === kind && e.scope === ln.track.id);
+    const prOpen = scoped('pr_open')?.status === 'satisfied';
+    const ci = scoped('ci_green');
+    let chip: Chip;
+    if (ln.track.merge) {
+      chip = { key: `tr-${ln.track.id}`, text: UI.evdMerged(multiRepo ? repo : undefined), tone: 'proceed' };
+    } else if (!prOpen) {
+      chip = { key: `tr-${ln.track.id}`, text: multiRepo && repo !== undefined ? UI.evdPrMissing(repo) : UI.evdNoPr, tone: 'dim' };
+    } else if (ci?.status === 'satisfied') {
+      chip = { key: `tr-${ln.track.id}`, text: `${UI.evdPrCi(UI.evdCiGreenShort)}${suffix}`, tone: 'proceed' };
+    } else if (ci?.status === 'exempt') {
+      chip = {
+        key: `tr-${ln.track.id}`,
+        text: `${UI.evdPrCi(UI.ciExempt)}${suffix}`,
+        tone: 'info',
+        ...(ci.exemption ? { title: ci.exemption.reason } : {}),
+      };
+    } else {
+      chip = { key: `tr-${ln.track.id}`, text: UI.evdCiRed(multiRepo ? repo : undefined), tone: 'dim' };
+    }
+    chips.push(chip);
+  }
+  return chips;
+}
+
+export function EvidencePanel({
+  items,
+  tracks,
+  repoOf,
+  multiRepo,
+}: {
+  items: EvidenceItem[];
+  /** The tracks whose PR/CI/merge state speaks here (D3 — the TrackLane is gone). */
+  tracks: TrackLaneView[];
+  repoOf: (id: TrackId) => string | undefined;
+  multiRepo: boolean;
+}) {
+  const chips = buildChips(items, tracks, repoOf, multiRepo);
+  const satisfied = items.filter((e) => e.status === 'satisfied').length;
   return (
-    <section className="rounded-md border border-hairline bg-surface p-3 shadow-sm">
-      <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.evidence}</h2>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((it, i) => (
-          <li key={`${it.kind}-${it.scope ? (it.scope as string) : 'wo'}-${i}`} className="text-xs">
-            <div className="flex items-start gap-2">
-              <span className={`font-mono ${TONE[it.status]}`}>{EVIDENCE_MARK[it.status]}</span>
-              <span className="text-ink">
-                {EVIDENCE_LABELS[it.kind]}
-                {it.scope ? <span className="text-inkdim">{UI.scopedToTrack}</span> : null}
-              </span>
-            </div>
-            {it.status === 'exempt' && it.exemption ? (
-              <p className="ml-6 text-[11px] text-info">{it.exemption.reason}</p>
-            ) : null}
-            {it.status === 'unsatisfied' ? <p className="ml-6 text-[11px] text-inkdim">{UI.missing}</p> : null}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <ul className="flex flex-wrap gap-1.5" data-evidence-chips={chips.length} data-evidence-sum={`${satisfied}/${items.length}`}>
+      {chips.map((c) => (
+        <li key={c.key} className="max-w-full">
+          <span className={`inline-block rounded border px-1.5 py-px font-mono text-[11px] ${TONE_CLASS[c.tone]}`} {...(c.title ? { title: c.title } : {})}>
+            {c.text}
+          </span>
+          {c.reason ? <span className="block pl-1 text-[10.5px] text-info">{c.reason}</span> : null}
+        </li>
+      ))}
+    </ul>
   );
 }

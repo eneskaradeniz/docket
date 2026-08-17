@@ -2,14 +2,18 @@
 // ≥1080 rack (stacked in the side column) and the <1080 tab bar. Audit A4 rule: a section with
 // nothing to show is ABSENT — no header, no tab. Evidence always shows (three WO-level items are
 // ever-present by model); Timeline only with events; the rest on presence.
+//
+// WO-0031d tur-2: the Repolar section is GONE (D3 — the track state folds into Kanıt's chips);
+// Kanıt carries a '3/5' summary aside like Adımlar (D2); Belgeler never renders the ```steps fence
+// raw — the prose shows and the steps become a card summary (A4, splitStepsFence).
 import type { ReactNode } from 'react';
-import { parsePlanSteps } from '../../../core/plan-steps';
-import type { StepView, TrackLaneView, WoEvent, WorkOrderDetailView } from '../../../core/types';
+import { parsePlanSteps, splitStepsFence } from '../../../core/plan-steps';
+import type { StepSpec, StepView, TrackId, WoEvent, WorkOrderDetailView } from '../../../core/types';
 import { eventDetailText, UI, formatDateTime, WO_EVENT_LABELS } from '../../data/labels';
 import { AuditTable } from './AuditTable';
 import { StepList } from './StepList';
 import { EvidencePanel } from './EvidencePanel';
-import { TrackLane } from './TrackLane';
+import { RoleChip } from './RoleChip';
 import { SourceLinks } from './SourceLinks';
 import { MarkdownDoc } from './MarkdownDoc';
 
@@ -18,6 +22,21 @@ export interface DetailSection {
   title: string;
   aside?: string;
   node: ReactNode;
+}
+
+/** The plan's steps in the card language — the fence NEVER renders raw (tur-2 A4). */
+function PlanStepsSummary({ steps }: { steps: StepSpec[] }) {
+  return (
+    <div className="flex flex-col gap-1.5" data-plan-summary={steps.length}>
+      {steps.map((s) => (
+        <div key={s.idx} className="flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5">
+          <span className="font-mono text-[11px] text-inkdim">{s.idx}</span>
+          <RoleChip role={s.role} />
+          <span className="min-w-0 truncate text-[12.5px] text-ink">{s.aim}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function buildDetailSections({
@@ -43,20 +62,22 @@ export function buildDetailSections({
       node: <StepList steps={steps} sessions={detail.sessions} onOpenReport={onOpenReport} />,
     });
   }
-  sections.push({ id: 'evidence', title: UI.secEvidence, node: <EvidencePanel items={detail.evidence} /> });
-  if (detail.tracks.length > 0) {
-    sections.push({
-      id: 'tracks',
-      title: UI.secTracks,
-      node: (
-        <ul className="flex flex-col gap-2">
-          {detail.tracks.map((ln: TrackLaneView) => (
-            <TrackLane key={ln.track.id as string} lane={ln} />
-          ))}
-        </ul>
-      ),
-    });
-  }
+  const repoByTrack = new Map<TrackId, string>(detail.tracks.map((ln) => [ln.track.id, ln.track.repo as string]));
+  const repoCount = new Set(repoByTrack.values()).size;
+  const satisfied = detail.evidence.filter((e) => e.status === 'satisfied').length;
+  sections.push({
+    id: 'evidence',
+    title: UI.secEvidence,
+    aside: `${satisfied}/${detail.evidence.length}`,
+    node: (
+      <EvidencePanel
+        items={detail.evidence}
+        tracks={detail.tracks}
+        repoOf={(id: TrackId) => repoByTrack.get(id)}
+        multiRepo={repoCount > 1}
+      />
+    ),
+  });
   if (events.length > 0) {
     sections.push({
       id: 'timeline',
@@ -75,13 +96,20 @@ export function buildDetailSections({
     });
   }
   if (docs.order || docs.plan) {
+    // A4: the fence never shows raw — the plan doc renders its prose plus the steps as cards.
+    const plan = docs.plan ? splitStepsFence(docs.plan) : undefined;
     sections.push({
       id: 'docs',
       title: UI.secDocs,
       node: (
         <div className="flex flex-col gap-2">
           {docs.order ? <MarkdownDoc title={UI.orderDoc} content={docs.order} /> : null}
-          {docs.plan ? <MarkdownDoc title={UI.planDoc} content={docs.plan} /> : null}
+          {plan ? (
+            <div className="flex flex-col gap-2">
+              <MarkdownDoc title={UI.planDoc} content={plan.prose} />
+              {plan.steps.length > 0 ? <PlanStepsSummary steps={plan.steps} /> : null}
+            </div>
+          ) : null}
         </div>
       ),
     });
@@ -99,12 +127,13 @@ export function buildDetailSections({
   return sections;
 }
 
-/** The rack's stacked form (≥1080): readout headers over calm content. */
+/** The rack's stacked form (≥1080): readout headers over calm content. The id anchors the
+ *  substrip's adım N/T jump (tur-2 A7 — scroll-margin clears the pinned chrome). */
 export function SectionStack({ sections }: { sections: DetailSection[] }) {
   return (
     <aside className="flex min-w-0 flex-col gap-3.5">
       {sections.map((s) => (
-        <section key={s.id}>
+        <section key={s.id} id={`sec-${s.id}`}>
           <h2 className="readout mb-2 flex items-baseline gap-2">
             {s.title}
             {s.aside ? <span className="font-mono text-inkdim/60">{s.aside}</span> : null}

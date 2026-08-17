@@ -407,7 +407,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
 // a dead session (retry) outranks a pending ask, which outranks a running drive; the wind-down
 // (`stopping` — interrupt sent, session still open) is still a running (spending) session; `stopped` is
 // the controller's memory that a wind-down COMPLETED and Sürdür has not been clicked yet.
-export type TurnState = 'yours' | 'running' | 'stopped' | 'retry';
+export type TurnState = 'yours' | 'running' | 'stopped' | 'retry' | 'done';
 
 export function deriveTurnState(input: {
   phase: WoPhase;
@@ -416,6 +416,9 @@ export function deriveTurnState(input: {
   stopping?: boolean; // interrupt sent, session not yet closed (Durduruluyor…)
   stopped?: boolean; // wind-down completed, awaiting Sürdür (controller-owned; cleared on resume)
 }): TurnState {
+  // A closed work order is DONE — terminal, outranking any stale live state (tur-2: a closed WO used
+  // to fall through to 'yours' and the substrip claimed "Sıra sende" over an archive).
+  if (input.phase.kind === 'done') return 'done';
   if (input.liveStatus === 'error') return 'retry';
   if (input.hasPendingAsks || input.liveStatus === 'stopped_asking') return 'yours';
   if (input.liveStatus === 'plan_ready') return 'yours';

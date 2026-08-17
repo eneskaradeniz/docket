@@ -13,6 +13,7 @@ const TURN_LABEL: Record<TurnState, string> = {
   running: UI.turnRunning,
   stopped: UI.turnStopped,
   retry: UI.turnRetry,
+  done: UI.turnDone,
 };
 
 const TURN_TONE: Record<TurnState, LampTone> = {
@@ -20,6 +21,7 @@ const TURN_TONE: Record<TurnState, LampTone> = {
   running: 'run',
   stopped: 'idle',
   retry: 'error',
+  done: 'done',
 };
 
 export function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
@@ -33,16 +35,21 @@ export function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
       return 'glow-error';
     case 'stopped':
       return ''; // the wash is removed while stopped (v4: "signal removed when stopped")
+    case 'done':
+      return 'glow-done'; // unreachable via turn (phaseDone covers it) — the classifier is terminal-safe
   }
 }
 
 export function Substrip({
   turn,
   segments,
+  onJump,
 }: {
   turn: TurnState;
   /** The step segments (adım N/T + filled cells); absent while no plan has steps. */
   segments?: { done: number; total: number; activeIdx?: number };
+  /** The segments are a JUMP control (tur-2 A7): DETAY + the Adımlar section + scroll to it. */
+  onJump?: () => void;
 }) {
   const tone = TURN_TONE[turn];
   return (
@@ -55,7 +62,12 @@ export function Substrip({
         <span className="truncate">{TURN_LABEL[turn]}</span>
       </p>
       {segments && segments.total > 0 ? (
-        <span className="flex shrink-0 items-center gap-2" data-segments={segments.total}>
+        <button
+          type="button"
+          onClick={onJump}
+          data-segments={segments.total}
+          className="irow flex shrink-0 items-center gap-2 px-1.5 py-0.5"
+        >
           <span className="flex gap-1" aria-hidden="true">
             {Array.from({ length: segments.total }, (_, i) => i + 1).map((idx) => (
               <span
@@ -73,7 +85,7 @@ export function Substrip({
             ))}
           </span>
           <span className="readout">{UI.stepSegments(segments.done, segments.total)}</span>
-        </span>
+        </button>
       ) : null}
     </div>
   );

@@ -138,7 +138,7 @@ export function Terminal({
   }, [entries, resetKey]);
 
   return (
-    <div className="h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg">
+    <div className="h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5">
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

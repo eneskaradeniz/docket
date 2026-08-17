@@ -470,6 +470,18 @@ export function WorkOrderDetail({
   useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
 
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
+  // tur-2 A7: the DETAY tab is controlled so the substrip's adım N/T can jump to the steps.
+  const [detailTab, setDetailTab] = useState('instrument');
+  const jumpToSteps = (): void => {
+    setViewMode('detail');
+    setDetailTab('steps');
+    // two frames: the view-mode switch mounts the sections first, then the anchor exists
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById('sec-steps')?.scrollIntoView({ block: 'start' });
+      });
+    });
+  };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
   const sections = useMemo(
     () => buildDetailSections({ detail, steps: detail.steps, events, docs, onOpenReport: setReportStep }),
@@ -633,6 +645,7 @@ export function WorkOrderDetail({
           // in-session flip to done (prevPhaseKind ref, seeded with the current kind → reopening an
           // already-closed WO is calm); the stats row is plain mono text (money never animates).
           (() => {
+            const sha = detail.gateInputs.closureDocsSha;
             const audit = deriveSessionAudit(detail.sessions, parsePlanSteps(docs.plan));
             const reviews = detail.sessions.filter((s) => s.role === 'architect' && s.stepIdx !== undefined).length;
             const satisfied = detail.evidence.filter((e) => e.status === 'satisfied').length;
@@ -656,7 +669,22 @@ export function WorkOrderDetail({
                   <p className="mt-2 font-mono text-[11px] text-inkdim">
                     {UI.stripDuration} {UI.formatDuration(audit.total.durationMs)} · {UI.stripCost} {formatUsd(detail.cost.usd)} · {doneSteps}/{detail.steps.length} {UI.stepsUnit} · {UI.closeStatEvidence} {satisfied}/{detail.evidence.length} · {UI.closeStatReviews} {reviews}
                   </p>
-                  <p className="mt-1 font-mono text-[11px] text-inkdim">{detail.gateInputs.closureDocsSha}</p>
+                  {sha ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(sha)
+                          .then(() => toast.push({ kind: 'confirm', title: UI.copyDone }))
+                          .catch(() => undefined); // clipboard unavailable — the title still carries the full sha
+                      }}
+                      title={sha}
+                      aria-label={`${UI.closeShaAria} ${sha}`}
+                      className="irow mt-1 px-1 font-mono text-[11px] text-inkdim"
+                    >
+                      {sha.slice(0, 7)}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             );
@@ -760,9 +788,17 @@ export function WorkOrderDetail({
         {...(segTotal > 0
           ? { segments: { done: segDone, total: segTotal, ...(segActive !== undefined ? { activeIdx: segActive } : {}) } }
           : {})}
+          onJump={jumpToSteps}
       />
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        <DetailBody viewMode={viewMode} decision={bodyDecision} instrument={instrument} sections={sections} />
+        <DetailBody
+          viewMode={viewMode}
+          tab={detailTab}
+          onTabChange={setDetailTab}
+          decision={bodyDecision}
+          instrument={instrument}
+          sections={sections}
+        />
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />
 

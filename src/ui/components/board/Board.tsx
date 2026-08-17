@@ -19,6 +19,25 @@ export function Board({
   const stagger = (i: number): { animationDelay: string } | undefined =>
     i < 12 ? { animationDelay: `${i * 30}ms` } : undefined;
 
+  // D1 (tur-2): a board with ONLY closed work orders is the "Bütün işler tamam" platform — a steady
+  // green dot (no breathe — nothing waits on the operator), the quiet cards OPEN in one column (no
+  // drawer to dig through), no body CTA (the appbar already carries it), calm on mount.
+  if (up.length === 0 && working.length === 0 && closed.length > 0) {
+    return (
+      <div data-board-all-done="">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-proceed" aria-hidden="true" />
+          <p className="readout text-proceed">{UI.boardAllDone}</p>
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          {closed.map((c) => (
+            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="grid gap-x-3.5 gap-y-4 xl:grid-cols-2">

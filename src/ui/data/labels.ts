@@ -10,15 +10,12 @@ import type {
   CardActionKind,
   CardReason,
   EvidenceKind,
-  EvidenceStatus,
   SessionRef,
   SessionRole,
   SourceKind,
   StepStatus,
   CostSummary,
   StageId,
-  TrackStage,
-  TrackMergeAction,
   WorkOrderId,
   WoEventKind,
 } from '../../core/types';
@@ -86,6 +83,8 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
   resume: 'Oturumu sürdür',
   open_pr: 'PR aç',
   merge_track: "Track'i mergele",
+// D3 (tur-2): merge is not a UI action today. When the command becomes real it belongs in the
+// RAIL, and this wording needs de-jargoning ('Repoyu birleştir'-style) per ADR-0012 r4.
   request_verification: 'Doğrulama iste',
   audit: 'Denetim çalıştır',
   update_docs: 'Belgeleri güncelle',
@@ -135,31 +134,9 @@ export function cardActionText(a: CardAction): string {
   return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Belgeleri güncelle' }[a.kind];
 }
 
-export function mergeActionText(a: TrackMergeAction): string {
-  if (a.kind === 'available') return 'Mergele';
-  switch (a.reason) {
-    case 'depends_on_open':
-      return 'Merge engelli — bağımlılık açık';
-    case 'ci_not_green':
-      return 'Merge engelli — CI yeşil değil';
-    case 'pr_not_open':
-      return 'Henüz PR yok';
-    case 'already_merged':
-      return 'Merged';
-  }
-}
-
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
 // bunları tümceye çeviren besteciler. Bunlarla hiçbir bileşen bir kod tanımlayıcıyı `.replace` ile
 // arayüz metnine çevirmez; bir çevirmenin dokunacağı her kelime burada.
-export const TRACK_STAGE_LABELS: Record<TrackStage, string> = {
-  not_started: 'Başlamadı',
-  implementation: 'Uygulama',
-  pr_opened: 'PR açıldı',
-  ci: 'CI',
-  merged: 'Merged',
-};
-
 export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
   running: 'Çalışıyor',
   stopped_asking: 'İzin istiyor',
@@ -263,20 +240,6 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   roadmap: 'ROADMAP',
   contract: 'sözleşme',
 };
-
-export const EVIDENCE_MARK: Record<EvidenceStatus, string> = {
-  satisfied: '[x]',
-  unsatisfied: '[ ]',
-  exempt: '[~]',
-};
-
-export function trackSessionText(session: { status: SessionRef['status'] } | undefined | null): string {
-  return session ? `oturum · ${SESSION_STATUS_LABELS[session.status]}` : 'Oturum yok';
-}
-
-export function dependsOnText(count: number): string {
-  return `${count} bağımlılığı var`;
-}
 
 export function needsText(kind: EvidenceKind): string {
   return `${EVIDENCE_LABELS[kind]} gerekli`;
@@ -404,12 +367,20 @@ export const UI = {
   productName: 'Docket',
   backToBoard: '← İş emirleri',
   evidence: 'Kanıtlar',
+  // Tur-2 D2/D3 — Kanıt chip dili: yokluk cümleleri (ADR-0001 ruhu — sebepsiz 'eksik' yok) + iz konumu.
+  evdPlanApproval: 'plan onayı bekliyor',
+  evdVerification: 'doğrulayıcı raporu yok',
+  evdClosure: 'belgeler güncellenmedi',
+  evdPrMissing: (repo: string) => `PR açılmadı · ${repo}`,
+  evdCiRed: (repo?: string) => (repo ? `CI yeşil değil · ${repo}` : 'CI yeşil değil'),
+  evdNoPr: 'henüz PR yok',
+  evdPrCi: (ciState: string) => `PR açık · ${ciState}`,
+  evdCiGreenShort: 'CI yeşil',
+  evdMerged: (repo?: string) => (repo ? `✓ Depoda · ${repo}` : '✓ Depoda'),
   sources: 'Kaynaklar',
   ciExempt: 'CI muaf',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
-  missing: 'eksik',
-  scopedToTrack: ' · track',
   loading: 'Yükleniyor…',
   loadError: 'İş emirleri yüklenemedi.',
   closedDrawer: 'Kapalı',
@@ -559,6 +530,12 @@ export const UI = {
   turnRunning: 'Çalışıyor',
   turnStopped: 'Durduruldu — istersen sürdür',
   turnRetry: 'Yeniden dene',
+  turnDone: 'Kapandı',
+  // Tur-2 D1: the only-closed board platform.
+  boardAllDone: 'Bütün işler tamam',
+  // Tur-2 A3: the short closure sha (full sha in title/aria; click copies).
+  closeShaAria: 'Kapanış kaydı — kopyala',
+  copyDone: 'Kopyalandı',
   // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
   stripCost: 'Maliyet',
   stripDuration: 'Süre',

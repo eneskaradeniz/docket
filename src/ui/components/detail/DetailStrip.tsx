@@ -213,7 +213,7 @@ export function DetailStrip({
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-edit-desc">{UI.woEditDescLabel}</label>
             <Textarea
               id="wo-edit-desc"
-              rows={3}
+              rows={5}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={UI.woEditDescLabel}

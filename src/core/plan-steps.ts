@@ -40,6 +40,27 @@ function lastStepsFence(md: string): string | null {
   return last;
 }
 
+// Locate the LAST ```steps fence's [start, end) range, or null — shared by the parser and the splitter.
+function lastStepsFenceRange(md: string): [number, number] | null {
+  const re = /```steps\s*\n[\s\S]*?```/g;
+  let last: [number, number] | null = null;
+  for (let m: RegExpExecArray | null; (m = re.exec(md));) last = [m.index, m.index + m[0].length];
+  return last;
+}
+
+/**
+ * Split plan.md into its two presentation halves (WO-0031d tur-2: the fence never renders raw —
+ * Belgeler shows the prose plus a step-card summary). The fence BLOCK is stripped from the prose even
+ * when its body is malformed (raw JSON is banned from the screen either way); `steps` then degrades
+ * to `[]` exactly like `parsePlanSteps`.
+ */
+export function splitStepsFence(md: string): { prose: string; steps: StepSpec[] } {
+  const range = lastStepsFenceRange(md ?? '');
+  if (range == null) return { prose: md ?? '', steps: parsePlanSteps(md ?? '') };
+  const prose = (md.slice(0, range[0]) + md.slice(range[1])).replace(/\n{3,}/g, '\n\n').trimEnd();
+  return { prose, steps: parsePlanSteps(md) };
+}
+
 /**
  * Parse plan.md's ```steps fence into a validated `StepSpec[]`.
  * Returns `[]` when there is no fence, the body is not valid JSON, the JSON is not an array, or ANY
