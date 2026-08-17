@@ -280,6 +280,7 @@ export interface EvidenceItem {
 // (`in_progress` covers the running column — a WO with an actively-working session that is neither
 //  stopped, CI-failing, nor awaiting a gate. The six signed-off variants left no reason for it.)
 export type CardReason =
+  | { kind: 'closed' }
   | { kind: 'stopped_asking'; gate: string }
   | { kind: 'ci_failed'; checkName: string }
   | { kind: 'ci_running' }

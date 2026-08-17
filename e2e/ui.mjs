@@ -509,6 +509,10 @@ await spec('only-closed board: the Bütün işler tamam platform + the OPEN quie
   await page.waitForTimeout(600);
   assert.ok((await page.getByText('Bütün işler tamam').count()) >= 1, 'no platform line');
   assert.ok((await page.locator('[data-board-all-done]').count()) >= 1, 'no platform container');
+  // pre-merge (operator tour of PR #37): a closed card never claims ▸ Kapatılabilir and its reason
+  // is the done line — the real archive showed both on closed cards
+  assert.equal(await page.getByText('Kapatılabilir').count(), 0, 'a closed card claims Kapatılabilir');
+  assert.ok((await page.getByText('Tamamlandı', { exact: true }).count()) >= 1, 'closed card reason is not the done line');
   // the closed list renders OPEN — no details drawer to dig through
   assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the only-closed board');
   assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closed card is not out in the open');

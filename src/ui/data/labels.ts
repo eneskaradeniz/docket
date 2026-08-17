@@ -82,6 +82,8 @@ export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
 
 export function cardReasonText(r: CardReason): string {
   switch (r.kind) {
+    case 'closed':
+      return UI.woPhaseDone; // closed is terminal — never "Sonraki oturum bekleniyor" (PR #37 tour)
     case 'stopped_asking':
       return `Şurada durdu: ${r.gate}`;
     case 'ci_failed':

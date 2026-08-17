@@ -199,6 +199,9 @@ export function whoseTurn(wo: WorkOrder): BoardColumn {
 }
 
 export function deriveCardReason(wo: WorkOrder): CardReason {
+  // Pre-merge (operator tour of PR #37): a closed WO is not "awaiting the next session" — the
+  // archive card said 'Sonraki oturum bekleniyor' under a Kapalı badge. Closed is terminal.
+  if (wo.stage === 'closed') return { kind: 'closed' };
   if (wo.stage === 'written') return { kind: 'just_written' };
   const stopped = wo.sessions.find((s) => s.status === 'stopped_asking');
   if (stopped && stopped.status === 'stopped_asking') {
@@ -289,6 +292,10 @@ export function deriveBucket(c: { column: BoardColumn; stage: StageId }): BoardB
 // The inline ▸ next-action on a card, derived from the primary action + card reason. Working states
 // (a running session / CI) surface no inline action — the card shows a working indicator instead.
 export function deriveCardAction(wo: WorkOrder): CardAction | undefined {
+  // Pre-merge (operator tour of PR #37): a closed WO carries NO inline action — the archive card
+  // is a record, not a next step. Without this, derivePrimaryAction happily re-derives the close
+  // intent (every gate is satisfied after closure) and the card claims ▸ Kapatılabilir forever.
+  if (wo.stage === 'closed') return undefined;
   const reason = deriveCardReason(wo);
   if (reason.kind === 'in_progress' || reason.kind === 'ci_running') return undefined;
   if (reason.kind === 'stopped_asking') return { kind: 'permission', intent: 'resume' };
@@ -325,7 +332,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
     reason: deriveCardReason(wo),
     action,
     actionRank: deriveCardActionRank(action),
-    closable: wo.closeable === true,
+    closable: wo.closeable === true && wo.stage !== 'closed',
     role: active?.role,
     primaryRepo: wo.tracks[0]?.repo,
     trackCount: wo.tracks.length,

@@ -106,6 +106,18 @@ describe('closable card signal (WO-0031e tur-3)', () => {
     });
     expect(deriveCardAction(w)).toEqual({ kind: 'permission', intent: 'resume' });
   });
+
+  // Pre-merge (operator tour of PR #37): the real archive showed CLOSED cards claiming
+  // ▸ Kapatılabilir + "Sonraki oturum bekleniyor" — both impossible states for a closed WO.
+  it('a CLOSED work order is never closable — the archive card carries no closure action', () => {
+    const w = aWorkOrder({ closeable: true, stage: 'closed', sessions: [] });
+    expect(toCardView(w).closable).toBe(false);
+    expect(deriveCardAction(w)).toBeUndefined();
+  });
+
+  it('a CLOSED work order reason is the done line — never "Sonraki oturum bekleniyor"', () => {
+    expect(deriveCardReason(aWorkOrder({ stage: 'closed', sessions: [] }))).toEqual({ kind: 'closed' });
+  });
 });
 
 describe('named invariant cases (AC10)', () => {
