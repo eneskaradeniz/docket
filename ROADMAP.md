@@ -206,6 +206,16 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       diff budgets, fence-less edit guard, `adım {idx}` into labels, fail-card detail). 452 tests (+55);
       **TD-036** (preload IPC arity) + **TD-037** (Faz C P2 batch) opened; a latent React #185 seed loop
       (since F14) found and fixed. Spec: `docs/work-orders/WO-0031c-kompakt-detay/order.md`.
+- [ ] **WO-0031d** — Faz C + the operator's tour findings: **ADR-0012** (the interaction/micro-copy/
+      density/juice contract) with its enforcement sweep — one hover contract via `.ibtn`/`.irow`/
+      `.ichip`, the labels.ts explainer/jargon/standing-hint purge ("Repolar" replaces Track words),
+      the 12–14px density band; empty surfaces become **invitations** (real appbar + hero on an empty
+      DB, zero-WO board hero, empty buckets absent); Düzenle/Sil/Kapat become **kit dialogs**, absent
+      with a reason line while a drive runs (wind-down included); step-transition **juice** (flash,
+      drawn ✓, mini fill, `adım N/T` segments) + the closure **results card** (seal + Süre/Maliyet/
+      Kanıt stats, once, ≤400ms, reduced-motion safe); P2 folds (title-counter E2E assert, "Bağımsız"
+      audit rows, plan-retry resume, fresh-file diff-peek all-adds, risky case-blindness, ADR-0006 CI
+      carve-out documented). Spec: `docs/work-orders/WO-0031d-faz-c-cila/order.md`.
 
 ## M3 — Evidence layer
 
