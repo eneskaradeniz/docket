@@ -69,10 +69,6 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
               { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">
-            {rule === 'ask_every' ? UI.permRuleAskHint : rule === 'full_auto' ? UI.permRuleFullHint : UI.permRuleRiskyHint}
-            {' '}{UI.permRuleHint}
-          </p>
         </section>
 
         <section>
@@ -87,7 +83,6 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
               { value: 'en', label: UI.langEn },
             ]}
           />
-          <p className="mt-1.5 text-[11px] text-inkdim">{UI.langHint}</p>
         </section>
 
         <p className="border-t border-hairline pt-3 font-mono text-[11px] text-inkdim">

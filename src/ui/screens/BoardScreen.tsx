@@ -1,5 +1,4 @@
 import type { WorkOrderCardView, WorkOrderId } from '../../core/types';
-import { UI } from '../data/labels';
 import { Board } from '../components/board/Board';
 
 // The board screen (WO-0031): the new-WO action moved into the AppShell bar (one primary action, one
@@ -14,7 +13,6 @@ export function BoardScreen({
 }) {
   return (
     <main className="mx-auto w-full max-w-[880px] px-6 py-6">
-      <p className="readout mb-4">{UI.boardIntro}</p>
       <Board cards={cards} onSelect={onSelect} />
     </main>
   );

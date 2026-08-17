@@ -31,7 +31,6 @@ export function WsListModal({
         <Button variant="secondary" size="sm" onClick={() => { onClose(); onCreate(); }}>{UI.wsListCreate}</Button>
       }
     >
-      <p className="-mt-1 mb-3 text-[12px] text-inkdim">{UI.wsListSubtitle}</p>
       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={UI.wsListFilter} className="mb-3" />
       <div className="flex max-h-[50vh] flex-col gap-1 overflow-y-auto">
         {filtered.length ? filtered.map((w) => {

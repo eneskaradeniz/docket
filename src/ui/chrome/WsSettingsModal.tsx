@@ -106,15 +106,12 @@ export function WsSettingsModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="-mt-1 text-[12px] text-inkdim">{UI.wsSettingsSubtitle}</p>
-
         <Field label={UI.wsNameLabel}>
           <Input value={name} onChange={(e) => { setName(e.target.value); setError(null); }} />
         </Field>
 
         <section>
           <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</span>
-          <p className="mb-2 text-[11px] text-inkdim">{UI.wsReposHint}</p>
           {mode === 'edit' && workspace ? (
             <div className="mb-2 flex flex-col gap-1">
               {workspace.repos.map((r) => (

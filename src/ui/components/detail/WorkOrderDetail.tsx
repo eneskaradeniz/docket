@@ -387,7 +387,7 @@ export function WorkOrderDetail({
       railMessage = UI.railStoppedMsg;
     } else if (planStage && effectivePlan) {
       if (editOpen) {
-        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : UI.editNoChanges;
+        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : undefined;
         railActions = [
           { id: 'edit-done', label: UI.editPlanDone, variant: 'secondary', onActivate: () => setEditOpen(false) },
           ...(editEmptyAim
@@ -595,7 +595,6 @@ export function WorkOrderDetail({
           plan={editOpen ? undefined : effectivePlan}
           editing={editOpen}
           steps={editSteps}
-          hint={editOpen ? UI.editHint : undefined}
           onAimChange={(idx, aim) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, aim } : s)))}
           onRoleCycle={(idx) =>
             setEditSteps((ss) =>
@@ -650,7 +649,6 @@ export function WorkOrderDetail({
             <div className="lamp lamp-done" />
             <div className="flex-1 px-3.5 py-3">
               <p className="readout text-proceed">{UI.stepsAllDone}</p>
-              <p className="mt-1 text-[12px] text-inkdim">{UI.stepsAllDoneHint}</p>
               {confirmClose ? (
                 <div className="mt-2">
                   <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.closeNoteLabel}</label>
@@ -660,7 +658,6 @@ export function WorkOrderDetail({
                     placeholder={UI.closeNotePlaceholder}
                     className="mb-2 font-sans text-[13px]"
                   />
-                  <p className="mb-2 text-[12px] text-inkdim">{UI.closeWoHint}</p>
                   {closeError ? <p className="mb-2 text-xs text-error">{UI.closeWoFailed}</p> : null}
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{UI.cancel}</Button>

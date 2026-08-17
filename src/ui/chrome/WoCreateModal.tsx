@@ -100,8 +100,6 @@ export function WoCreateModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="-mt-1 text-[12px] text-inkdim">{UI.woCreateSubtitle}</p>
-
         <Field label={UI.woTitleLabel}>
           <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={UI.woTitlePlaceholder} />
         </Field>
@@ -113,7 +111,6 @@ export function WoCreateModal({
         {trackOptions.length > 0 ? (
           <section>
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woTracksLabel}</span>
-            <p className="mb-2 text-[11px] text-inkdim">{UI.woTracksHint}</p>
             <div className="flex flex-wrap gap-2">
               {trackOptions.map((r) => {
                 const checked = selectedTracks.includes(r);
@@ -162,7 +159,6 @@ export function WoCreateModal({
               { value: 'every-step', label: UI.reviewModeEveryShort },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">{reviewMode === 'gates' ? UI.woReviewGatesV2 : UI.woReviewEvery}</p>
         </section>
 
         {/* WO-0031c: the rule lives on the work order; Settings holds only this default. */}
@@ -177,10 +173,6 @@ export function WoCreateModal({
               { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
             ]}
           />
-          <p className="mt-1.5 text-[11px] leading-relaxed text-inkdim">
-            {permissionRule === 'ask_every' ? UI.permRuleAskHint : permissionRule === 'full_auto' ? UI.permRuleFullHint : UI.permRuleRiskyHint}
-            {' '}{UI.permRuleHint}
-          </p>
         </section>
       </div>
     </Dialog>

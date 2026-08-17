@@ -41,7 +41,6 @@ export function VerdictCard({
       <div className={`lamp ${lampTone}`} />
       <div className="flex-1 px-3.5 py-3">
         <p className={`readout ${titleTone}`}>{title}</p>
-        <p className="mb-2 mt-1 text-[12px] text-inkdim">{UI.verdictCardHint}</p>
         {body === null ? (
           <p className="text-xs text-inkdim">{UI.loading}</p>
         ) : body.trim() ? (

@@ -12,7 +12,6 @@ export function PlanApprovalCards({
   plan,
   editing,
   steps,
-  hint,
   onAimChange,
   onRoleCycle,
   onMove,
@@ -23,7 +22,6 @@ export function PlanApprovalCards({
   plan?: string;
   editing?: boolean;
   steps?: StepSpec[];
-  hint?: string;
   onAimChange?: (idx: number, aim: string) => void;
   onRoleCycle?: (idx: number) => void;
   onMove?: (idx: number, dir: -1 | 1) => void;
@@ -36,7 +34,6 @@ export function PlanApprovalCards({
       <header className="mb-2.5 flex items-baseline gap-2.5">
         <p className="readout text-signal">{UI.planReadyHeader}</p>
         {editing ? null : <p className="text-[13px] font-semibold text-ink">{UI.planProposedSteps(specs.length)}</p>}
-        {hint ? <p className="ml-auto text-[11px] text-inkdim">{hint}</p> : null}
       </header>
       {specs.length === 0 && !editing ? (
         <p className="rounded-md border border-signal/40 bg-signal/5 px-3 py-2 text-[12px] text-signal">

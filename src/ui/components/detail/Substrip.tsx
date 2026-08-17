@@ -47,7 +47,6 @@ export function Substrip({ turn }: { turn: TurnState }) {
         />
         <span className="truncate">{TURN_LABEL[turn]}</span>
       </p>
-      <span className="readout shrink-0">{UI.hintEscBack}</span>
     </div>
   );
 }
