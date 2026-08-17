@@ -170,6 +170,13 @@ await spec('DETAY at 980: sections are tabs; the seeded terminal survives a tab 
   await page.getByRole('tab', { name: /Adımlar/ }).click();
   await page.waitForTimeout(250);
   assert.ok((await page.getByText('0/1', { exact: true }).count()) >= 1, 'steps section not shown');
+  // tur-2 A2: the click actually SWITCHES panels — the active one is visible, inactive ones hidden
+  // (forceMount keeps them alive; the old spec passed tautologically with everything stacked).
+  assert.equal(await page.locator('[role="tabpanel"][data-state="active"]').count(), 1, 'not exactly one active panel');
+  assert.ok(await page.locator('[role="tabpanel"][data-state="active"]').isVisible(), 'the active panel is hidden');
+  const inactive = page.locator('[role="tabpanel"][data-state="inactive"]');
+  assert.ok((await inactive.count()) >= 1, 'no inactive panels to hide');
+  assert.ok(await inactive.first().isHidden(), 'an inactive panel stayed visible');
   await page.getByRole('tab', { name: /Terminal/ }).click();
   await page.waitForTimeout(350);
   assert.ok((await page.locator('.xterm').count()) >= 1, 'terminal canvas gone after a tab switch');
@@ -206,6 +213,13 @@ await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the 
   await openDetail('Kapandı');
   assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow on a closed WO');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no closure card');
+  // tur-2 A1: the substrip says Kapandı (TurnState 'done'), never a false "Sıra sende"
+  assert.ok((await page.locator('[aria-live="polite"]').getByText('Kapandı').count()) >= 1, 'substrip does not say Kapandı');
+  assert.equal(await page.locator('[aria-live="polite"]').getByText('Sıra sende').count(), 0, 'closed WO claims Sıra sende');
+  // tur-2 A3: the closure sha is the short form (7 chars; the full sha rides the title attribute)
+  // (the seeded repo has no commits — the store's honest 'uncommitted' marker rides the same short slot)
+  const shaText = await page.locator('[data-closure-card] button').first().textContent();
+  assert.ok(shaText && shaText.trim().length <= 7, `sha is not the short form: ${shaText}`);
   assert.equal(await page.locator('[data-rail]').count(), 0, 'a closed WO rendered a rail');
   // the session ledger renders by default in the archive: 3 rows + the Toplam line
   assert.ok((await page.locator('[data-audit-table] tbody tr').count()) >= 4, 'no audit table rows on the closed WO');
@@ -353,6 +367,14 @@ await spec('substrip: step segments replace the esc hint (adım N/T + cells)', a
   assert.ok((await page.locator('[data-seg]').count()) >= 1, 'no segment cells');
   assert.ok((await page.getByText('adım 0/1').count()) >= 1, 'no adım N/T readout');
   assert.equal(await page.getByText('esc geri').count(), 0, 'the standing esc hint still renders');
+  // tur-2 A7: the segments are a real jump — click → DETAY + the Adımlar panel active
+  await page.locator('button[data-segments]').first().click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'the jump did not switch to DETAY');
+  const activeTab = await page.locator('[role="tab"][data-state="active"]').first().textContent();
+  assert.ok(activeTab && activeTab.includes('Adımlar'), `the jump did not select Adımlar: ${activeTab}`);
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(250);
   await backToBoard();
 });
 
@@ -414,6 +436,27 @@ await spec('Sil is a dialog and cascades (the throwaway WO from the create spec)
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Tek adımda' }).count(), 0, 'the deleted WO still has a card');
 });
 
+await spec('Kanıt: summary aside + chips (absence sentences, no Repolar section)', async () => {
+  await openDetail('Uygulama sürüyor'); // single-repo, implementation: 1 gate satisfied, rest absent
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  // tur-2 D3: the Repolar section is GONE — no tab, no rack header
+  assert.equal(await page.getByRole('tab', { name: /Repolar/ }).count(), 0, 'a Repolar tab still exists');
+  await page.getByRole('tab', { name: /Kanıt/ }).click();
+  await page.waitForTimeout(250);
+  // D2: the aside carries n/total (tab badge + panel container)
+  const sum = await page.locator('[data-evidence-sum]').first().getAttribute('data-evidence-sum');
+  assert.ok(sum && /^\d+\/\d+$/.test(sum), `no n/total evidence summary: ${sum}`);
+  // chips: satisfied ✓, absence sentences in plain words (never a bare 'eksik')
+  assert.ok((await page.getByText('✓ plan onayı', { exact: true }).count()) >= 1, 'no satisfied plan-approval chip');
+  assert.ok((await page.getByText('henüz PR yok', { exact: true }).count()) >= 1, 'no track position chip');
+  assert.ok((await page.getByText('doğrulayıcı raporu yok', { exact: true }).count()) >= 1, 'no verification absence sentence');
+  assert.equal(await page.getByText('eksik', { exact: true }).count(), 0, 'a reasonless eksik leaked');
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
+  await backToBoard();
+});
+
 await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals once', async () => {
   await backToBoard(); // defensive: the previous spec may have died mid-detail
   await openDetail('Uygulama sürüyor'); // one step done + proceed → allStepsDone, closable
@@ -446,7 +489,33 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await openDetail('Uygulama sürüyor');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
+  // D3: the merged track speaks as a Kanıt chip ('✓ Depoda' — single repo, no suffix)
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByText('✓ Depoda', { exact: true }).count()) >= 1, 'no merged-track chip');
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
   await backToBoard();
+});
+
+await spec('only-closed board: the Bütün işler tamam platform + the OPEN quiet list', async () => {
+  // switch to the 'arşiv' workspace (its only WO is closed) via the appbar switcher
+  await page.locator('header button', { hasText: 'e2e' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: /arşiv/ }).first().click();
+  await page.waitForTimeout(600);
+  assert.ok((await page.getByText('Bütün işler tamam').count()) >= 1, 'no platform line');
+  assert.ok((await page.locator('[data-board-all-done]').count()) >= 1, 'no platform container');
+  // the closed list renders OPEN — no details drawer to dig through
+  assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the only-closed board');
+  assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closed card is not out in the open');
+  await page.screenshot({ path: join(SHOTS, 'board-all-done@980.png') });
+  // back to the busy workspace for the remaining specs
+  await page.locator('header button', { hasText: 'arşiv' }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'e2e', exact: false }).first().click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
 });
 
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {

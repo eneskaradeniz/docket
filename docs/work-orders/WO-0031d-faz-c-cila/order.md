@@ -129,3 +129,16 @@ stays open for retry) + an E2E assert that it does; all transition juice trimmed
 pulse, the flash window) with the lamp-breathe loops named as ADR-0012's ambient exemption; the
 reduced-motion block gains the Dialog rise (now a named class, not an arbitrary utility) and the
 interaction-class transitions. The review's remaining P2s are filed as TD-038.
+
+Tur-2 fixes (operator's second tour, all decisions embedded): A1 `TurnState` gains `done` (test-first)
+— a closed WO reads "Kapandı", never a false "Sıra sende"; A2 the kit TabsContent hides inactive
+panels (forceMount keeps them alive — the tab bar visually did nothing before); A3 the closure sha
+renders as 7 chars (full sha in title/aria, click copies); A4 the ```steps fence never renders raw —
+Belgeler shows prose + a role-chip card summary (`splitStepsFence`, core, test-first); A5 Terminal +
+markdown panel padding; A6 the edit dialog's description textarea is 5 rows; A7 the substrip `adım
+N/T` is a real jump (DETAY + Adımlar tab + scroll, controlled tab state). D1 a board with only closed
+WOs is the "Bütün işler tamam" platform (steady green dot, quiet cards OPEN, no drawer, no CTA). D2
+Kanıt becomes chips with a `n/total` aside — absence sentences instead of marks, repo-name suffixes,
+no panel box. D3 TrackLane + the Repolar section are deleted; the track state folds into Kanıt chips
+(✓ Depoda / PR açık · CI yeşil / henüz PR yok / CI muaf); the dead onClick-less 'Mergele' chip is
+gone. Five more grep-proven dead label exports purged with them.

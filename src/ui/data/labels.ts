@@ -5,12 +5,10 @@ import type {
   AbsentReason,
   ActionIntent,
   BoardBucket,
-  BoardColumn,
   CardAction,
   CardActionKind,
   CardReason,
   EvidenceKind,
-  SessionRef,
   SessionRole,
   SourceKind,
   StepStatus,
@@ -26,29 +24,11 @@ import type { WoPhase } from '../../core/derive';
 import type { ProviderErrorCode } from '../../core/runner';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
-export const COLUMN_LABELS: Record<BoardColumn, string> = {
-  your_turn: 'Sıra sende',
-  running: 'Çalışıyor',
-  external: 'Harici',
-};
-
-export const COLUMN_HELP: Record<BoardColumn, string> = {
-  your_turn: 'Seni bekliyor',
-  running: 'Bir oturum çalışıyor',
-  external: 'Harici sistem bekleniyor',
-};
-
 // Yeni iki kovalı tahta (WO-0013).
 export const BUCKET_LABELS: Record<BoardBucket, string> = {
   up: 'Sıra sende',
   working: 'Çalışıyor',
   closed: 'Kapalı',
-};
-
-export const BUCKET_HELP: Record<BoardBucket, string> = {
-  up: 'Seni bekleyenler',
-  working: 'Bir oturum çalışıyor',
-  closed: 'Tamamlananlar',
 };
 
 export const ROLE_LABELS: Record<SessionRole, string> = {
@@ -137,13 +117,6 @@ export function cardActionText(a: CardAction): string {
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
 // bunları tümceye çeviren besteciler. Bunlarla hiçbir bileşen bir kod tanımlayıcıyı `.replace` ile
 // arayüz metnine çevirmez; bir çevirmenin dokunacağı her kelime burada.
-export const SESSION_STATUS_LABELS: Record<SessionRef['status'], string> = {
-  running: 'Çalışıyor',
-  stopped_asking: 'İzin istiyor',
-  idle: 'Boşta',
-  none: 'Yok',
-};
-
 // Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘).
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   pending: 'Bekliyor',
@@ -240,10 +213,6 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   roadmap: 'ROADMAP',
   contract: 'sözleşme',
 };
-
-export function needsText(kind: EvidenceKind): string {
-  return `${EVIDENCE_LABELS[kind]} gerekli`;
-}
 
 export function modeText(mode: 'plan' | 'direct'): string {
   return `${MODE_LABELS[mode]} modu`;
