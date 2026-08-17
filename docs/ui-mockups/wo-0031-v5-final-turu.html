@@ -1,0 +1,2408 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docket — v5 · Final Turu (WO-0031f)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* tokens — src/index.css birebir (birebir olmak bu turun şartı) */
+  :root {
+    --bg: #0e1520; --surface: #16202e; --raised: #1d2938; --hairline: #263349;
+    --ink: #e7edf4; --inkdim: #8b95a7; --signal: #f5b544; --proceed: #4cc38a;
+    --info: #6ca0ce; --error: #e5484d;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* inline display'li panellerde de gizleme kazansın (tab demosu) */
+  [hidden] { display: none !important; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 13px; letter-spacing: 0.01em; -webkit-font-smoothing: antialiased; }
+  a { color: var(--info); text-decoration: none; }
+  a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 4px; }
+  section { scroll-margin-top: 60px; }
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); }
+  .mono { font-family: var(--mono); }
+
+  .lamp { width: 3px; align-self: stretch; flex: none; border-radius: 0 2px 2px 0; }
+  .lamp-idle { background: var(--hairline); }
+  .lamp-signal { background: var(--signal); }
+  .lamp-signal-breathe { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .lamp-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .lamp-done { background: var(--proceed); }
+  .lamp-error { background: var(--error); }
+  @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot-signal { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .dot-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .dot-done { background: var(--proceed); }
+  .dot-idle { background: var(--hairline); }
+
+  /* butonlar — v4 sözleşmesi aynen: anında tepki, ölçü sabit, çift tık kilidi */
+  .btn { font-family: var(--sans); font-size: 12px; font-weight: 600; border-radius: 6px; border: 1px solid transparent; padding: 6px 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; justify-content: center; transition: transform .08s ease, background .12s ease, border-color .12s ease, color .12s ease; white-space: nowrap; }
+  .btn:active { transform: scale(.955); }
+  .btn-sm { font-size: 11px; padding: 4px 10px; }
+  .btn-primary { background: var(--signal); color: #20180a; }
+  .btn-primary:hover { background: #ffc95e; }
+  .btn-primary:active { background: #ffd27d; }
+  .btn-secondary { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  .btn-secondary:hover { background: var(--raised); border-color: #33445f; }
+  .btn-ghost { background: transparent; color: var(--inkdim); }
+  .btn-ghost:hover { color: var(--ink); background: var(--raised); }
+  .btn-danger { background: transparent; color: var(--error); border-color: color-mix(in srgb, var(--error) 45%, transparent); }
+  .btn-danger:hover { background: color-mix(in srgb, var(--error) 12%, transparent); }
+  .btn.busy { pointer-events: none; opacity: .85; }
+  .spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid rgba(32,24,10,.28); border-top-color: #20180a; animation: rot .7s linear infinite; flex: none; }
+  .btn-secondary .spin, .btn-ghost .spin, .btn-danger .spin { border-color: color-mix(in srgb, var(--inkdim) 30%, transparent); border-top-color: var(--inkdim); }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .kbd { font-family: var(--mono); font-size: 9.5px; color: inherit; opacity: .8; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+  .ibtn { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; border-radius: 6px; padding: 6px; color: var(--inkdim); cursor: pointer; transition: background .12s ease, color .12s ease; font-size: 13px; }
+  .ibtn:hover { background: var(--raised); color: var(--ink); }
+  .ichip { font-family: var(--mono); font-size: 10px; letter-spacing: .05em; border: 1px solid var(--hairline); color: var(--inkdim); border-radius: 5px; padding: 2.5px 8px; cursor: pointer; background: transparent; transition: border-color .12s ease, color .12s ease, background .12s ease; }
+  .ichip:hover { border-color: var(--inkdim); color: var(--ink); }
+  .ichip-on { border-color: color-mix(in srgb, var(--info) 60%, transparent); background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--ink); }
+
+  /* tur sayfası */
+  .topnav { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hairline); padding: 9px 24px; }
+  .topnav .brand { font-weight: 800; font-size: 12.5px; }
+  .topnav nav { display: flex; gap: 12px; flex-wrap: wrap; }
+  .topnav nav a { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .wrap { max-width: 1300px; margin: 0 auto; padding: 0 20px 70px; }
+  .intro { padding: 32px 8px 26px; max-width: 840px; }
+  .intro h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+  .intro p { color: var(--inkdim); margin-top: 10px; line-height: 1.6; font-size: 13px; }
+  .intro p b { color: var(--ink); }
+  .reqs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .reqs span { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 9px; color: var(--inkdim); }
+  .reqs span b { color: var(--signal); font-weight: 600; }
+
+  .ph { border-top: 1px solid var(--hairline); padding-top: 30px; margin-top: 44px; }
+  .ph-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .ph-num { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--signal); letter-spacing: 0.1em; }
+  .ph-head h2 { font-size: 17px; font-weight: 800; }
+  .ph-desc { color: var(--inkdim); font-size: 12.5px; line-height: 1.55; margin: 8px 0 20px; max-width: 760px; }
+  .ph-desc b { color: var(--ink); }
+
+  .frame { border: 1px solid var(--hairline); border-radius: 9px; overflow: hidden; background: var(--bg); box-shadow: 0 16px 44px -18px rgba(0,0,0,0.55); margin: 0 auto 8px; }
+  .tbar { display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 70%, var(--bg)); }
+  .tbar i { width: 10px; height: 10px; border-radius: 50%; background: var(--hairline); }
+  .tbar i:nth-child(1) { background: #de5d51; } .tbar i:nth-child(2) { background: #d8a03e; } .tbar i:nth-child(3) { background: #58b464; }
+  .tbar .t { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); margin-left: 10px; }
+  .tbar .w { font-family: var(--mono); font-size: 9.5px; color: var(--inkdim); opacity: .75; margin-left: auto; }
+  .cap { font-size: 12px; color: var(--inkdim); margin: 8px 4px 22px; line-height: 1.5; max-width: 1000px; }
+  .cap b { color: var(--ink); font-weight: 600; }
+  .cap .ab { font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 4px; padding: 1px 6px; margin-right: 5px; white-space: nowrap; }
+  .sizes { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 14px 0 4px; }
+  .sizes .readout { letter-spacing: .06em; }
+
+  /* ===== konsol (uygulama ekranı) ===== */
+  .console { display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; height: 620px; position: relative; }
+  .console.h480 { height: 480px; }
+  .console.h520 { height: 520px; }
+  .console.h560 { height: 560px; }
+  .strip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 80%, var(--bg)); }
+  .strip .phase { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .strip .metrics { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  .strip .metrics .v { font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
+  .viewseg { display: flex; gap: 2px; border: 1px solid var(--hairline); border-radius: 6px; padding: 2px; }
+  .viewseg button { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; background: transparent; color: var(--inkdim); border: 0; padding: 4px 9px; border-radius: 4px; cursor: pointer; transition: background .12s ease, color .12s ease; }
+  .viewseg button:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); color: var(--ink); }
+  .viewseg button.on { background: var(--raised); color: var(--ink); }
+  .badge { font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--hairline); color: var(--inkdim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
+  .badge-amber { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); }
+  .badge-green { color: var(--proceed); border-color: color-mix(in srgb, var(--proceed) 45%, transparent); }
+  .badge-rule { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+  .backlink { color: var(--inkdim); font-size: 13px; cursor: pointer; background: none; border: 0; padding: 6px 8px; border-radius: 6px; transition: background .12s ease, color .12s ease; }
+  .backlink:hover { color: var(--ink); background: var(--raised); }
+  .substrip { display: flex; gap: 10px; align-items: center; padding: 5px 14px; border-bottom: 1px solid var(--hairline); }
+  .substrip .right { margin-left: auto; }
+  .segs { display: flex; gap: 3px; align-items: center; }
+  .segs i { width: 3px; height: 12px; border-radius: 2px; background: var(--hairline); }
+  .segs i.done { background: var(--proceed); }
+  .segs i.act { background: var(--info); }
+  .cbody { display: grid; grid-template-columns: minmax(0,1fr); min-height: 0; }
+  .cbody.with-rack { grid-template-columns: minmax(0,1fr) 250px; }
+  .console { max-width: 1160px; margin: 0 auto; }
+  .cmain { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+  .rack { border-left: 1px solid var(--hairline); padding: 12px; overflow: hidden; display: flex; flex-direction: column; gap: 14px; background: color-mix(in srgb, var(--surface) 35%, var(--bg)); }
+  .rack .readout { display: block; margin-bottom: 7px; }
+  .rail { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--hairline); padding: 10px 14px; background: color-mix(in srgb, var(--raised) 55%, var(--bg)); min-height: 52px; }
+  .rail .msg { font-size: 12px; color: var(--inkdim); line-height: 1.45; }
+  .rail .msg b { color: var(--ink); font-weight: 700; }
+  .rail .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .rail.quiet { background: transparent; }
+
+  .console.glow-signal { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245,181,68,.14), transparent 62%), var(--bg); }
+  .console.glow-run { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108,160,206,.11), transparent 62%), var(--bg); }
+  .console.glow-done { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(76,195,138,.10), transparent 62%), var(--bg); }
+  .console.glow-error { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(229,72,77,.14), transparent 62%), var(--bg); }
+
+  .stepcard { transition: transform .12s ease, border-color .12s ease; }
+  .stepcard:hover { transform: translateY(-1px); border-color: #33445f; }
+  .stepcards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stepcard { border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .stepcard .top { display: flex; align-items: center; gap: 7px; }
+  .stepcard .no { font-family: var(--mono); font-size: 9.5px; color: var(--inkdim); letter-spacing: 0.08em; }
+  .rolechip { font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; border-radius: 4px; padding: 1.5px 6px; }
+  .role-impl { color: #20180a; background: color-mix(in srgb, var(--info) 78%, white); }
+  .role-arch { color: #20180a; background: color-mix(in srgb, var(--signal) 82%, white); }
+  .role-verif { color: #08130c; background: color-mix(in srgb, var(--proceed) 78%, white); }
+  .stepcard .aim { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+  .stepcard .scope { font-family: var(--mono); font-size: 10px; color: var(--inkdim); }
+  .stepcard .st { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); margin-top: auto; }
+
+  .focuscard { display: flex; overflow: hidden; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); }
+  .focuscard .body { flex: 1; padding: 12px 14px; }
+  .focuscard .ttl { font-size: 13.5px; font-weight: 800; }
+  .focuscard .sub { font-size: 12px; color: var(--inkdim); margin-top: 4px; line-height: 1.5; }
+
+  .term { display: flex; flex-direction: column; border: 1px solid var(--hairline); border-radius: 7px; overflow: hidden; background: #0b111b; flex: 1; min-height: 0; }
+  .term-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--hairline); background: var(--surface); }
+  .term-body { font-family: var(--mono); font-size: 10.5px; line-height: 1.7; padding: 9px 11px; color: var(--inkdim); overflow: hidden; flex: 1; white-space: pre-wrap; }
+  .term-body .c { color: var(--inkdim); } .term-body .ok { color: var(--proceed); } .term-body .inf { color: var(--info); }
+  .term-body .amt { color: var(--ink); } .term-body .warn { color: var(--signal); } .term-body .err { color: var(--error); }
+  .costline { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); }
+
+  .steps { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .step { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); padding: 7px 10px; }
+  /* rapor açılan adım satırı gerçek düğme (klavye + odak) — satır yıkaması .irow diliyle */
+  button.step { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .step.toggle:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); }
+  .step .dot { margin-top: 4px; }
+  .step-idx { font-family: var(--mono); font-size: 10px; color: var(--inkdim); margin-top: 2px; width: 12px; }
+  .step-aim { font-size: 12px; font-weight: 600; }
+  .step-meta { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--inkdim); margin-top: 2px; }
+  .stepfill { height: 2px; border-radius: 1px; background: var(--hairline); overflow: hidden; }
+  .stepfill div { height: 100%; background: var(--proceed); width: 0; transition: width .36s ease; }
+
+  .evd { display: flex; flex-wrap: wrap; gap: 6px; }
+  .evd span { font-family: var(--mono); font-size: 10px; border: 1px solid var(--hairline); border-radius: 5px; padding: 3px 7px; color: var(--inkdim); display: inline-flex; gap: 5px; align-items: center; }
+  .evd .ok { color: var(--proceed); }
+
+  .tl { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .tl li { display: flex; gap: 8px; font-size: 11.5px; align-items: baseline; }
+  .tl .at { font-family: var(--mono); font-size: 10px; color: var(--inkdim); width: 52px; flex: none; }
+
+  .askcard { display: flex; overflow: hidden; border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 8px; background: var(--surface); }
+  .askcard .body { flex: 1; padding: 12px 14px; }
+  .askcard .ttl { font-size: 13px; font-weight: 700; }
+  .askcard .p { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin: 4px 0 9px; }
+  .askcard .acts { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+
+  .hairline { height: 2px; background: var(--hairline); overflow: hidden; }
+  .hairline .fill { height: 100%; background: var(--proceed); width: 33%; transition: width .36s ease; }
+
+  table.audit { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+  table.audit th { text-align: left; font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: var(--inkdim); font-weight: 500; padding: 6px 9px; border-bottom: 1px solid var(--hairline); }
+  table.audit td { padding: 7px 9px; border-bottom: 1px solid color-mix(in srgb, var(--hairline) 45%, transparent); color: var(--inkdim); }
+  table.audit td.name { color: var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 600; }
+  table.audit .num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.audit tr.total td { color: var(--ink); border-top: 1px solid var(--hairline); border-bottom: 0; font-weight: 600; }
+  .rlamp { display: inline-block; width: 3px; height: 11px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+
+  .toasts { position: absolute; top: 52px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; width: 296px; }
+  .toast { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--hairline); border-radius: 8px; background: color-mix(in srgb, var(--raised) 94%, transparent); padding: 10px 12px; box-shadow: 0 12px 30px -12px rgba(0,0,0,0.65); animation: toastin .22s ease; cursor: pointer; }
+  .toast .t { font-size: 12px; font-weight: 700; }
+  .toast .d { font-size: 11px; color: var(--inkdim); margin-top: 2px; }
+  .toast.err { border-color: color-mix(in srgb, var(--error) 50%, transparent); cursor: default; }
+  .toast.err .t { color: var(--error); }
+  .toast .x { margin-left: auto; cursor: pointer; color: var(--inkdim); font-size: 13px; line-height: 1; background: none; border: 0; }
+  .toast .x:hover { color: var(--ink); }
+  @keyframes toastin { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+  .minibtn { font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; background: transparent; color: var(--inkdim); border: 1px solid var(--hairline); border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+  .minibtn:hover { color: var(--ink); border-color: #33445f; }
+
+  /* juice — hepsi ≤400ms (uygulamanın gerçeği; v4'ün 500/600ms'likleri ödenmişti) */
+  .pop { animation: pop .38s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes pop { 0% { transform: scale(.92); } 55% { transform: scale(1.045); } 100% { transform: none; } }
+  .sealpop { animation: seal .4s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes seal { 0% { transform: scale(1.6) rotate(-8deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  .flash { animation: flash .4s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--proceed) 14%, transparent); } to { background: transparent; } }
+  .flash-err { animation: flasherr .4s ease-out; }
+  @keyframes flasherr { from { background: color-mix(in srgb, var(--error) 14%, transparent); } to { background: transparent; } }
+
+  /* ===== v5 · tahta ===== */
+  .appbar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px 0 92px; border-bottom: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 85%, var(--bg)); }
+  .appbar .wordmark { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.22em; }
+  .appbar .wssel { font-family: var(--mono); font-size: 11px; color: var(--inkdim); border: 0; background: transparent; border-radius: 6px; padding: 5px 9px; cursor: pointer; transition: background .12s, color .12s; }
+  .appbar .wssel:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); color: var(--ink); }
+  .appbar .spring { margin-left: auto; }
+  .boardbody { height: 572px; overflow-y: auto; padding: 20px; }
+  .boardcol { max-width: 840px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .buckethead { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .buckethead .n { font-family: var(--mono); color: var(--inkdim); font-size: 10.5px; }
+  .wocard { display: flex; overflow: hidden; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); text-align: left; cursor: pointer; transition: border-color .12s ease; width: 100%; }
+  .wocard:hover { border-color: #33445f; }
+  .wocard .inner { flex: 1; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .wo-row1 { display: flex; align-items: center; gap: 8px; }
+  .wo-id { font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); letter-spacing: .06em; }
+  .wo-metrics { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--inkdim); font-variant-numeric: tabular-nums; }
+  .wo-metrics .dur { color: var(--inkdim); }
+  .wo-title { font-size: 13px; font-weight: 700; line-height: 1.3; }
+  .wo-row3 { display: flex; align-items: baseline; gap: 8px; }
+  .wo-reason { font-size: 11.5px; color: var(--inkdim); }
+  .wo-act { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--info); white-space: nowrap; }
+  .wocard.quiet { background: var(--bg); }
+  .wocard.quiet .wo-title { color: var(--inkdim); font-weight: 600; }
+  .platline { display: flex; align-items: center; gap: 8px; }
+  .hero { min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  .hero .dot { width: 8px; height: 8px; }
+  .hero p { font-size: 13.5px; color: var(--inkdim); }
+
+  /* F1 — kapalı liste kontrolü (tek desen, üç yüzey) */
+  .closedtoggle { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid var(--hairline); border-radius: 7px; background: transparent; color: var(--inkdim); font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; padding: 8px 12px; cursor: pointer; transition: background .12s ease, color .12s ease, border-color .12s ease; }
+  .closedtoggle:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); color: var(--ink); border-color: var(--inkdim); }
+  .closedtoggle .n { color: var(--ink); }
+  .closedtoggle .arr { margin-left: auto; }
+  .morerow { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--info); background: none; border: 0; cursor: pointer; padding: 6px 2px; text-align: left; }
+  .morerow:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ===== v5 · sekmeler (F5) ===== */
+  .tabbar { display: flex; gap: 2px; border: 1px solid var(--hairline); border-radius: 8px; padding: 3px; background: var(--bg); }
+  .tab { font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; border: 0; background: transparent; color: var(--inkdim); padding: 6px 11px; border-radius: 5px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; transition: background .12s ease, color .12s ease, box-shadow .12s ease; white-space: nowrap; }
+  .tab:hover { background: color-mix(in srgb, var(--raised) 60%, transparent); color: var(--ink); }
+  .tab .n { font-variant-numeric: tabular-nums; }
+  .tabset.tC .tab.on .n { color: var(--info); }
+  .tabset.t0 .tab.on { background: var(--raised); color: var(--ink); }
+  .tabset.tA .tab.on { color: var(--ink); box-shadow: inset 0 -2px 0 var(--signal); }
+  .tabset.tB .tab.on { background: var(--raised); color: var(--ink); box-shadow: inset 0 0 0 1px #33445f; }
+  .panelhead { display: flex; align-items: baseline; gap: 10px; padding: 2px 2px 9px; }
+  .panelhead .aside { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--inkdim); font-variant-numeric: tabular-nums; }
+  .panelhead.sticky { position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(4px); padding: 8px 2px; z-index: 2; }
+  .scroller { overflow-y: auto; min-height: 0; }
+  .scroller.smooth { scroll-behavior: smooth; }
+  .scrollpad { height: 420px; display: flex; align-items: center; justify-content: center; }
+
+  /* ===== v5 · yönler (F3) — aynı token'lar, aynı bant, üç karakter ===== */
+  /* D1 Sakin — çerçeve az, boşluk ve ritim taşır */
+  .skin-d1 .cmain { gap: 14px; }
+  .skin-d1 .stepcard { border-color: transparent; background: color-mix(in srgb, var(--surface) 62%, var(--bg)); }
+  .skin-d1 .stepcard:hover { transform: none; }
+  .skin-d1 .stepcard .aim { font-weight: 600; }
+  .skin-d1 .rack { border-left-color: transparent; background: transparent; }
+  .skin-d1 .term { border-color: color-mix(in srgb, var(--hairline) 55%, transparent); }
+  .skin-d1 .rail { background: transparent; }
+  .skin-d1 .step { border-color: transparent; background: color-mix(in srgb, var(--surface) 62%, var(--bg)); }
+  table.audit.d1 td { border-bottom-color: transparent; padding-top: 9px; padding-bottom: 9px; }
+  table.audit.d1 th, table.audit.d1 tr.total td { border-bottom-color: var(--hairline); }
+
+  /* D2 Keskin — ölçek + kadens; rakamlar sağda, toplam çift çizgi */
+  .skin-d2 .strip .phase { font-size: 13.5px; }
+  .skin-d2 .cmain { gap: 12px; }
+  .skin-d2 .stepcard { border-color: #33445f; }
+  .skin-d2 .stepcard .aim { font-size: 13px; font-weight: 700; }
+  .skin-d2 .rack .readout, .skin-d2 .term-head .readout { color: var(--ink); font-weight: 600; }
+  .skin-d2 .step-aim { font-weight: 700; }
+  .skin-d2 .step-meta, .skin-d2 .costline { color: var(--ink); }
+  table.audit.d2 td { font-size: 11px; }
+  table.audit.d2 tr.total td { border-top: 3px double color-mix(in srgb, var(--inkdim) 70%, transparent); border-bottom: 3px double color-mix(in srgb, var(--inkdim) 70%, transparent); padding-top: 9px; }
+
+  /* D3 Sıcak — lamba her yerde: kart kenarı, satır feneri, raf noktası */
+  .skin-d3 .stepcard { box-shadow: inset 3px 0 0 var(--hairline); }
+  .skin-d3 .stepcard.done { box-shadow: inset 3px 0 0 var(--proceed); }
+  .skin-d3 .stepcard.act { box-shadow: inset 3px 0 0 var(--info); }
+  .skin-d3 .step { box-shadow: inset 3px 0 0 var(--hairline); }
+  .skin-d3 .step.sdone { box-shadow: inset 3px 0 0 var(--proceed); }
+  .skin-d3 .step.sact { box-shadow: inset 3px 0 0 var(--info); }
+  .skin-d3 .rack > div > .readout::before { content: "● "; color: var(--hairline); }
+  .skin-d3 .console.glow-run { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108,160,206,.16), transparent 62%), var(--bg); }
+  .skin-d3 .console.glow-signal { background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245,181,68,.18), transparent 62%), var(--bg); }
+
+  /* ===== v5 · rapor okuyucu (F6) ===== */
+  .repline { display: flex; gap: 8px; align-items: center; padding: 8px 11px; border: 1px dashed var(--hairline); border-radius: 6px; background: var(--bg); font-size: 12px; color: var(--inkdim); cursor: pointer; width: 100%; text-align: left; }
+  .repline:hover { color: var(--ink); border-color: var(--inkdim); }
+  .repbody { margin: 2px 0 6px 18px; border-left: 2px solid var(--hairline); padding: 10px 4px 10px 14px; font-size: 12px; color: var(--inkdim); line-height: 1.6; }
+  .repbody b { color: var(--ink); }
+  .readercard { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+  .readercard .rhead { display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px; }
+  .readercard .rhead .x { margin-left: auto; }
+  .readercard .rbody { font-size: 12.5px; color: var(--inkdim); line-height: 1.65; }
+  .readercard .rbody b { color: var(--ink); }
+
+  /* ===== v5 · boş anlar (F7) ===== */
+  .streamline { font-family: var(--mono); font-size: 11px; color: var(--inkdim); padding: 12px; }
+  .loadline { font-family: var(--mono); font-size: 11px; color: var(--inkdim); display: flex; gap: 8px; align-items: center; }
+  .loadline .dot { width: 5px; height: 5px; }
+
+  /* ===== v5 · diyalog mini'leri ===== */
+  .mini { max-width: 540px; margin: 0 auto; border: 1px solid #33445f; border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, var(--bg)); padding: 16px 18px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.7); }
+  .mini .mh { font-size: 14px; font-weight: 800; margin-bottom: 4px; }
+  .mini .ms { font-size: 12px; color: var(--inkdim); line-height: 1.5; margin-bottom: 12px; }
+  .mini .field { margin-bottom: 10px; }
+  .mini .field .readout { display: block; margin-bottom: 5px; }
+  .mini .field .inp { border: 1px solid var(--hairline); border-radius: 6px; padding: 7px 10px; font-size: 12.5px; color: var(--ink); background: var(--bg); }
+  .mini .field .inp.dim { color: var(--inkdim); }
+  .mini .mfoot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 14px; }
+  .mini .merr { font-size: 11.5px; color: color-mix(in srgb, var(--error) 78%, white); margin-top: 8px; }
+  .mini .btn-danger { color: color-mix(in srgb, var(--error) 78%, white); }
+  .mini .btn-danger:hover { color: color-mix(in srgb, var(--error) 78%, white); }
+
+  table.cmp { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+  table.cmp th, table.cmp td { border: 1px solid var(--hairline); padding: 8px 11px; text-align: left; vertical-align: top; line-height: 1.5; }
+  table.cmp th { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); background: var(--surface); }
+  table.cmp td { color: var(--inkdim); }
+  table.cmp td.k { color: var(--signal); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .old { text-decoration: line-through; opacity: .6; }
+  .new { color: var(--ink); }
+  .verdict { border: 1px solid color-mix(in srgb, var(--signal) 40%, transparent); border-radius: 9px; padding: 16px 18px; margin-top: 22px; background: color-mix(in srgb, var(--signal) 5%, var(--surface)); }
+  .verdict h3 { font-size: 14.5px; font-weight: 800; margin-bottom: 8px; }
+  .verdict p { color: var(--inkdim); line-height: 1.6; font-size: 12.5px; margin-top: 7px; }
+  .verdict p strong { color: var(--ink); }
+
+  /* ===== reduce — tek blok, her şey ölür (buna yumuşak kaydırma da dahil) ===== */
+  @media (prefers-reduced-motion: reduce) {
+    .lamp-signal-breathe, .lamp-run, .dot-signal, .dot-run, .spin, .pop, .checkmark, .sealpop, .flash, .flash-err, .toast { animation: none; }
+    .stepcard, .hairline .fill, .stepfill div, .tab, .ichip, .ibtn, .closedtoggle, .wocard, .repline, .viewseg button, .btn, .wssel, .backlink, .step.toggle, .morerow { transition: none; }
+    .scroller.smooth { scroll-behavior: auto; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <span class="brand">Docket · v5 — Final Turu</span>
+  <nav>
+    <a href="#giris">00 Giriş</a>
+    <a href="#yon">1 Yön</a>
+    <a href="#tahta">2 Tahta</a>
+    <a href="#detay">3 Detay</a>
+    <a href="#sekmeler">4 Sekmeler</a>
+    <a href="#rapor">5 Rapor</a>
+    <a href="#bos">6 Boş anlar</a>
+    <a href="#kapali">7 Kapalılık</a>
+    <a href="#diyalog">8 Diyaloglar</a>
+    <a href="#karar">9 Karar defteri</a>
+  </nav>
+</div>
+
+<div class="wrap">
+
+  <header class="intro" id="giris">
+    <h1>v5 — final turu: her senaryo bir karede, kararlar senin</h1>
+    <p>Omurga aynı (şerit → altşerit → gövde → ray), token'lar aynı, ADR-0012 bandı aynı. Bu tur
+    kalan <b>sekiz konuyu</b> kapatır: her biri aşağıda somut bir tasarımla, gerçek bir seçenekse
+    <b>yan yana varyantlarla</b> duruyor. Her kare gerçek pencere boyutunda; tıklanan yerler gerçekten
+    tıklanır. Gez, işaretlediklerimi söyle — <b>§09'daki karar defterinden</b> seçimlerini yaparız.</p>
+    <div class="reqs">
+      <span><b>980×620</b> hedef</span><span><b>760×480</b> alt sınır</span><span>her senaryo bir kare</span>
+      <span>sade · basit · minimal</span><span>ADR-0012 bandı</span><span>≤400ms</span>
+      <span>yok = çizilmez</span><span>gerçek token'lar</span>
+    </div>
+    <p style="margin-top: 14px;"><b>Okuma kuralı:</b> §02'den itibaren kareler bugünkü yapıyı taşır;
+    <b>§01'de seçeceğin yön</b> uygulama sırasında her şeye aynı anda dokunan ayrı bir geçittir.
+    Yani "sonraki bölümler neden hâlâ böyle?" diye sorma — §01'in cevabı hepsine uygulanacak.</p>
+    <p><b>Tur öncesi düzeltilmiş:</b> kapalı kartın "▸ Kapatılabilir" demesi (tur bulgusu 0) main'de
+    düzeltildi — kapalı kart artık yalnız "Tamamlandı" der, kapanış önermez.</p>
+  </header>
+
+  <!-- ================= 01 · YÖN ================= -->
+  <section class="ph" id="yon">
+    <div class="ph-head"><span class="ph-num">01</span><h2>Yön — aynı token'lar, üç karakter</h2></div>
+    <p class="ph-desc">"Tasarım daha hoş olabilir" bulgusunun cevabı: palet, font, hover sözleşmesi,
+    yoğunluk bandı değişmiyor — değişen <b>neyin konuşlandığı</b>. Aynı ekran (Uygulama · DETAY · geniş
+    pencere) üç kez: önce bugünkü, sonra üç yön. Altta her yönün <b>denetim tablosu</b> yakınlaşması ve
+    bir <b>fark tablosu</b> var — his değil, madde seçiyorsun. Karar: <b class="mono">Y1</b>.</p>
+
+    <div class="sizes"><span class="readout">bugünkü — kıyas için</span></div>
+    <div class="frame" style="width: 1240px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035</span><span class="w">1240 × 620</span></div>
+      <div class="console glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14</div></div>
+            <div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" style="width: 25%;"></div></div>
+        <div class="substrip">
+          <span class="readout">Çalışıyor</span>
+          <span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span>
+          <span class="readout right">adım 2/4</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+              <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+            </div>
+          </div>
+          <aside class="rack">
+            <div><span class="readout">Adımlar · 1/4</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div><span class="readout">Çizelge</span>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg">Çalışıyor.</span>
+          <div class="acts"><button class="btn btn-secondary">■ Durdur</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Bugünkü.</b> Çizelge'deki <b>▸ tümü (12)</b> bu turun katkısıdır (aşağıda): uzun
+    listeler 3 satırda durur, kalanı tek dokunuşla açılır — Çizelge artık sınırsız uzamaz.</p>
+
+    <div class="sizes"><span class="readout">D1 · sakin</span></div>
+    <div class="frame skin-d1" style="width: 1240px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · yön D1</span><span class="w">1240 × 620</span></div>
+      <div class="console glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14</div></div>
+            <div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" style="width: 25%;"></div></div>
+        <div class="substrip">
+          <span class="readout">Çalışıyor</span>
+          <span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span>
+          <span class="readout right">adım 2/4</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+              <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+            </div>
+          </div>
+          <aside class="rack">
+            <div><span class="readout">Adımlar · 1/4</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div><span class="readout">Çizelge</span>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg">Çalışıyor.</span>
+          <div class="acts"><button class="btn btn-secondary">■ Durdur</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D1</span><b>Sakin.</b> Kutular çözülür: kartlar ve raf çerçevesiz
+    yüzeylere döner, gruplamayı <b>boşluk ve readout ritmi</b> taşır. Hover'da kalkma yok, sadece renk.
+    Ekranda en az mürekkep — "her şey zaten kutu içindeydi" hissinin karşılığı.</p>
+
+    <div class="sizes"><span class="readout">D2 · keskin</span></div>
+    <div class="frame skin-d2" style="width: 1240px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · yön D2</span><span class="w">1240 × 620</span></div>
+      <div class="console glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14</div></div>
+            <div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" style="width: 25%;"></div></div>
+        <div class="substrip">
+          <span class="readout">Çalışıyor</span>
+          <span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span>
+          <span class="readout right">adım 2/4</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+              <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+            </div>
+          </div>
+          <aside class="rack">
+            <div><span class="readout">Adımlar · 1/4</span>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div><span class="readout">Çizelge</span>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg">Çalışıyor.</span>
+          <div class="acts"><button class="btn btn-secondary">■ Durdur</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D2</span><b>Keskin.</b> Hiyerarşi yükselir: readout'lar mürekkep
+    olur (bölüm başlıları artık koyu), adım metinleri büyür ve kalınlaşır, rakamlar tabular hizalı.
+    Kartların çerçevesi koyulaşır. Ekran <b>komuta paneli</b> gibi okunur — ritim tipografiden gelir.</p>
+
+    <div class="sizes"><span class="readout">D3 · sıcak</span></div>
+    <div class="frame skin-d3" style="width: 1240px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · yön D3</span><span class="w">1240 × 620</span></div>
+      <div class="console glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics">
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div><span class="readout">Süre</span><div class="v">00:14</div></div>
+            <div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" style="width: 25%;"></div></div>
+        <div class="substrip">
+          <span class="readout">Çalışıyor</span>
+          <span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span>
+          <span class="readout right">adım 2/4</span>
+        </div>
+        <div class="cbody with-rack">
+          <div class="cmain">
+            <div class="term">
+              <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+              <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+            </div>
+          </div>
+          <aside class="rack">
+            <div><span class="readout">Adımlar · 1/4</span>
+              <ul class="steps">
+                <li class="step sdone"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step sact"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div><span class="readout">Çizelge</span>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg">Çalışıyor.</span>
+          <div class="acts"><button class="btn btn-secondary">■ Durdur</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D3</span><b>Sıcak.</b> Lamba dili her yere taşınır: adım satırının
+    sol kenarı durum rengini taşır (yeşil bitti, mavi koşuyor), raf bölümleri nokta ile açılır, sahne
+    ışığı biraz daha hissedilir. Ekran <b>yaşayan gösterge paneli</b> gibi okunur.</p>
+
+    <div class="sizes"><span class="readout">denetim tablosu — aynı üç yön</span></div>
+    <div class="frame skin-d1" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">denetim · yön D1</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-done">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0031</span>
+          <span class="phase"><i class="dot dot-done"></i>Tamamlandı</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$9.50</div></div><div><span class="readout">Süre</span><div class="v">01:12</div></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--proceed);">● Denetim · 6 oturum</span></div>
+        <div class="cbody"><div class="cmain">
+          <table class="audit d1">
+            <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+            <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+            <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+            <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+            <tr><td class="name">İnceleme 2</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:41 – 14:43</td><td class="num">00:02</td><td class="num">$0.41</td></tr>
+            <tr><td class="name">Adım 3 · detay rafı</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:45 – 15:07</td><td class="num">00:22</td><td class="num">$1.86</td></tr>
+            <tr><td class="name">Adım 4 · sınama</td><td><span class="rolechip role-verif">Doğ</span></td><td>15:10 – 15:29</td><td class="num">00:19</td><td class="num">$2.03</td></tr>
+            <tr class="total"><td class="name">Toplam</td><td></td><td>14:09 – 15:29</td><td class="num">01:12</td><td class="num">$9.50</td></tr>
+          </table>
+        </div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D1</span>Denetim: satır çizgileri kalkar, yalnız başlık ve Toplam
+    çizgi taşır — tablo nefes alır.</p>
+
+    <div class="frame skin-d2" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">denetim · yön D2</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-done">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0031</span>
+          <span class="phase"><i class="dot dot-done"></i>Tamamlandı</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$9.50</div></div><div><span class="readout">Süre</span><div class="v">01:12</div></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--proceed);">● Denetim · 6 oturum</span></div>
+        <div class="cbody"><div class="cmain">
+          <table class="audit d2">
+            <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+            <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+            <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+            <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+            <tr><td class="name">İnceleme 2</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:41 – 14:43</td><td class="num">00:02</td><td class="num">$0.41</td></tr>
+            <tr><td class="name">Adım 3 · detay rafı</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:45 – 15:07</td><td class="num">00:22</td><td class="num">$1.86</td></tr>
+            <tr><td class="name">Adım 4 · sınama</td><td><span class="rolechip role-verif">Doğ</span></td><td>15:10 – 15:29</td><td class="num">00:19</td><td class="num">$2.03</td></tr>
+            <tr class="total"><td class="name">Toplam</td><td></td><td>14:09 – 15:29</td><td class="num">01:12</td><td class="num">$9.50</td></tr>
+          </table>
+        </div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D2</span>Denetim: rakamlar tabular, <b>Toplam çift çizgiyle</b>
+    mühürlenir — muhasebe defteri hissi.</p>
+
+    <div class="frame skin-d3" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">denetim · yön D3</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-done">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0031</span>
+          <span class="phase"><i class="dot dot-done"></i>Tamamlandı</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$9.50</div></div><div><span class="readout">Süre</span><div class="v">01:12</div></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--proceed);">● Denetim · 6 oturum</span></div>
+        <div class="cbody"><div class="cmain">
+          <table class="audit d3">
+            <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--signal);"></span>Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--signal);"></span>Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--info);"></span>Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--signal);"></span>İnceleme 2</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:41 – 14:43</td><td class="num">00:02</td><td class="num">$0.41</td></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--info);"></span>Adım 3 · detay rafı</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:45 – 15:07</td><td class="num">00:22</td><td class="num">$1.86</td></tr>
+            <tr><td class="name"><span class="rlamp" style="background: var(--proceed);"></span>Adım 4 · sınama</td><td><span class="rolechip role-verif">Doğ</span></td><td>15:10 – 15:29</td><td class="num">00:19</td><td class="num">$2.03</td></tr>
+            <tr class="total"><td class="name">Toplam</td><td></td><td>14:09 – 15:29</td><td class="num">01:12</td><td class="num">$9.50</td></tr>
+          </table>
+        </div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">D3</span>Denetim: her satır rolünün <b>fenerini</b> taşır — tablo
+    tek bakışta kim-neyi-yapmış gibi okunur.</p>
+
+    <table class="cmp">
+      <tr><th>Eksen</th><th>D1 · Sakin</th><th>D2 · Keskin</th><th>D3 · Sıcak</th></tr>
+      <tr><td>Bölüm ritmi</td><td>readout fısıldar, boşluk gruplar</td><td>readout konuşur (mürekkep), kadens gruplar</td><td>readout nokta ile açılır</td></tr>
+      <tr><td>Çerçeve</td><td>kutular çözülür (çerçevesiz yüzey)</td><td>kutular kalır, koyulaşır</td><td>kutular kalır + sol kenar renkli</td></tr>
+      <tr><td>Tipografi</td><td>aynı ölçek, ağırlık kısılır</td><td>adım metni ↑ kalın; başlılar koyu</td><td>aynı ölçek</td></tr>
+      <tr><td>Rakamlar</td><td>aynı</td><td>tabular, sağda, Toplam çift çizgi</td><td>aynı</td></tr>
+      <tr><td>Denetim</td><td>satır çizgisi yok</td><td>defter mührü</td><td>rol feneri/satır</td></tr>
+      <tr><td>Sahne ışığı</td><td>aynı</td><td>aynı</td><td>bir tık güçlü</td></tr>
+      <tr><td>Hover'da kart</td><td>kalkma yok</td><td>kalkma kalır</td><td>kalkma kalır</td></tr>
+    </table>
+    <p class="cap">Yön kareleri geniş yerleşimde (raf); hedef boyutta (980, sekmeli düzlem) aynı
+    hamleler geçerli — yoğunluk azalır, karakter değişmez.</p>
+
+    <div class="sizes"><span class="readout">bekleyen yük satırları — iskelet yok, tek satır</span></div>
+    <div class="frame" style="width: 760px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">yükleniyor · üç yüzey</span><span class="w">760 × 300</span></div>
+      <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; background: var(--bg);">
+        <div class="loadline"><i class="dot dot-run"></i>Adımlar okunuyor…</div>
+        <div class="loadline"><i class="dot dot-run"></i>Rapor okunuyor…</div>
+        <div class="loadline"><i class="dot dot-run"></i>Belgeler okunuyor…</div>
+      </div>
+    </div>
+    <p class="cap"><b>Yük satırları.</b> İskelet/dummy kutu yok (ADR-0012: boş grup "yükleniyor hiçliği"
+    değildir) — ama çıplak "Yükleniyor…" de tek başına kuru: <b>neyin</b> okunduğu + minik nabız.
+    Tek satır, mürekkepsiz.</p>
+  </section>
+
+  <!-- ================= 02 · TAHTA ================= -->
+  <section class="ph" id="tahta">
+    <div class="ph-head"><span class="ph-num">02</span><h2>Tahta — beş durum, üç konu</h2></div>
+    <p class="ph-desc">Tahtanın tüm yüzeyleri: boş kurulum, boş çalışma alanı, karışık gün, kapanış
+    bekleyen peron, hep-tamam peronu. Üç konu burada kapanıyor: <b>kapalı listenin gizle/göster'i</b>
+    (F1), <b>kartlarda süre</b> (F2), <b>peronda iş daveti</b> (F4). Kapalı liste kontrolü <b>tek desen
+    olarak üç yüzeyde de</b> duruyor — karışık tahtanın çekmencesi, kapanış peronunun kuyruğu, hep-tamam
+    peronunun listesi aynı düğme dilini konuşur.</p>
+
+    <div class="sizes"><span class="readout">durum 1 · boş kurulum — referans</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — ilk açılış</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <span class="spring"></span>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="hero">
+            <i class="dot dot-signal"></i>
+            <p>Haydi ilk iş emrini açalım</p>
+            <button class="btn btn-primary">▸ Yeni çalışma alanı</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Boş kurulum.</b> Gerçek appbar (ikinci sınıf bir başlık yok), bir satır, bir
+    düğme. Değişmiyor — burada sadece turun eksiksizliği için.</p>
+
+    <div class="sizes"><span class="readout">durum 2 · boş çalışma alanı — referans</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — docket</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <button class="wssel">▎ docket ▾</button>
+          <span class="spring"></span>
+          <button class="btn btn-primary btn-sm">+ Yeni iş emri</button>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="hero">
+            <i class="dot dot-signal"></i>
+            <p>Haydi ilk iş emrini açalım</p>
+            <button class="btn btn-primary">▸ Yeni iş emri</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Boş tahta.</b> Davet dili aynı kalır: bir nokta, bir cümle, bir düğme.
+    Değişmiyor.</p>
+
+    <div class="sizes"><span class="readout">durum 3 · karışık gün — F1 demosu, tıkla</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — docket</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <button class="wssel">▎ docket ▾</button>
+          <span class="spring"></span>
+          <button class="btn btn-primary btn-sm">+ Yeni iş emri</button>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="boardcol">
+            <section>
+              <div class="buckethead"><i class="dot dot-signal"></i><span class="readout">Sıra sende</span><span class="n">2</span></div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <button class="wocard"><span class="lamp lamp-signal-breathe"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0036</span><span class="badge badge-amber">Plan hazır</span><span class="wo-metrics">$1.84</span></span>
+                  <span class="wo-title">Plan bekliyor</span>
+                  <span class="wo-row3"><span class="wo-reason">Plan hazır — onayla</span><span class="wo-act">▸ Planı onayla</span></span>
+                </span></button>
+                <button class="wocard"><span class="lamp lamp-signal"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0037</span><span class="badge">Yazıldı</span></span>
+                  <span class="wo-title">Yeni iş emri örneği</span>
+                  <span class="wo-row3"><span class="wo-reason">İş emri yazıldı</span><span class="wo-act">▸ Plan iste</span></span>
+                </span></button>
+              </div>
+            </section>
+            <section>
+              <div class="buckethead"><i class="dot dot-run"></i><span class="readout">Çalışıyor</span><span class="n">1</span></div>
+              <button class="wocard"><span class="lamp lamp-run"></span><span class="inner">
+                <span class="wo-row1"><span class="wo-id">WO-0035</span><span class="badge badge-rule">Uygulama</span><span class="wo-metrics">$3.60</span></span>
+                <span class="wo-title">Denetim tablosu</span>
+                <span class="wo-row3"><span class="wo-reason">Devam ediyor · 2/4 adım</span></span>
+              </span></button>
+            </section>
+            <section>
+              <button class="closedtoggle" id="ft-mix" aria-expanded="false"><span class="arr" id="ft-mix-arr">▸</span><span class="n">3</span>&nbsp;kapalı iş</button>
+              <div id="ft-mix-list" style="display:none; margin-top:8px; flex-direction:column; gap:8px;">
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0031</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$9.50 · <span class="dur">01:20</span></span></span>
+                  <span class="wo-title">Konsol arayüzü</span>
+                  <span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span>
+                </span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0030</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$4.10 · <span class="dur">00:44</span></span></span>
+                  <span class="wo-title">Eski belgelerin taşınması</span>
+                  <span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span>
+                </span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0028</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$2.20 · <span class="dur">00:31</span></span></span>
+                  <span class="wo-title">Başlangıç ayarları</span>
+                  <span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span>
+                </span></button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">F1</span><b>Kapalı liste kontrolü.</b> Eski "Kapalı · 3" çekmencesi
+    bu düğmeye dönüşür — ok + sayı + ad, tek satır, tıkla: açılır/kapanır (dene). 5'i aşarsa
+    <b>varsayılan kapalı</b> açılır. Aynı düğme aşağıdaki iki peronda da kuyruk/liste başı olacak.
+    <b>Süre (F2) kuralı:</b> en az bir oturumu bitmiş kartta görünür — kapatılabilirde de
+    (<span class="mono">$6.27 · 01:02</span>, durum 4), kapalıda da (<span class="mono">$9.50 · 01:20</span>);
+    oturumu hiç koşmamış kartta (WO-0037) maliyet gibi süre de çizilmez.</p>
+
+    <div class="sizes"><span class="readout">durum 4 · kapanış bekleyen peron — referans</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — docket</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <button class="wssel">▎ docket ▾</button>
+          <span class="spring"></span>
+          <button class="btn btn-primary btn-sm">+ Yeni iş emri</button>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="boardcol">
+            <div class="platline">
+              <i class="dot" style="background: var(--signal);"></i>
+              <span class="readout" style="color: var(--signal);">1 iş kapatılmayı bekliyor</span>
+              <button class="btn btn-secondary btn-sm">Kapanışa git</button>
+            </div>
+            <button class="wocard"><span class="lamp lamp-signal"></span><span class="inner">
+              <span class="wo-row1"><span class="wo-id">WO-0034</span><span class="badge badge-rule">Kapanış</span><span class="wo-metrics">$6.27 · <span class="dur">01:02</span></span></span>
+              <span class="wo-title">Raf yerleşimi</span>
+              <span class="wo-row3"><span class="wo-reason">Tüm adımlar tamam</span><span class="wo-act">▸ Kapatılabilir</span></span>
+            </span></button>
+            <section>
+              <button class="closedtoggle" id="ft-ac" aria-expanded="false"><span class="arr" id="ft-ac-arr">▸</span><span class="n">1</span>&nbsp;kapalı iş</button>
+              <div id="ft-ac-list" style="display:none; margin-top:8px; flex-direction:column; gap:8px;">
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner">
+                  <span class="wo-row1"><span class="wo-id">WO-0031</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$9.50 · <span class="dur">01:20</span></span></span>
+                  <span class="wo-title">Konsol arayüzü</span>
+                  <span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span>
+                </span></button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Kapanış peronu.</b> Bugünkü hâli + F1 düğmesi kuyrukta. Buradaki davet
+    <b>Kapanışa git</b> — doğru de, iş emri kalmayınca "yeni iş" daveti de (T2'de seçeceğin biçimde)
+    bu perona aynı kuruluma oturur.</p>
+
+    <div class="sizes"><span class="readout">durum 5a · hep-tamam — F1-A + F4-A + F2 — tıkla</span></div>
+    <div class="frame" style="width: 980px; position: relative;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — arşiv alanı</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <button class="wssel">▎ docket ▾</button>
+          <span class="spring"></span>
+          <button class="btn btn-primary btn-sm">+ Yeni iş emri</button>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="boardcol">
+            <div class="platline">
+              <i class="dot" style="background: var(--proceed);"></i>
+              <span class="readout" style="color: var(--proceed);">Bütün işler tamam</span>
+              <button class="btn btn-secondary btn-sm" id="f4btn">▸ Yeni iş emri</button>
+            </div>
+            <section>
+              <button class="closedtoggle" id="ft-a" aria-expanded="false"><span class="arr" id="ft-a-arr">▸</span><span class="n">7</span>&nbsp;kapalı iş</button>
+              <div id="ft-a-list" style="display:none; margin-top:8px; flex-direction:column; gap:8px;">
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0033</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$7.90 · <span class="dur">01:05</span></span></span><span class="wo-title">İzin kuralları</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0032</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$5.60 · <span class="dur">00:58</span></span></span><span class="wo-title">Denetim dökümü</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0031</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$9.50 · <span class="dur">01:20</span></span></span><span class="wo-title">Konsol arayüzü</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0030</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$4.10 · <span class="dur">00:44</span></span></span><span class="wo-title">Eski belgelerin taşınması</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0029</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$3.30 · <span class="dur">00:40</span></span></span><span class="wo-title">Raf düzeltmesi</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0028</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$2.20 · <span class="dur">00:31</span></span></span><span class="wo-title">Başlangıç ayarları</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0027</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$1.80 · <span class="dur">00:26</span></span></span><span class="wo-title">İlk deneme</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div id="f4dlg" style="position:absolute; inset:0; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(2px); display:none; align-items:flex-start; justify-content:center; padding-top: 7vh; z-index:6;">
+        <div class="mini" style="width: 680px; max-width: 92%;">
+          <p class="mh">Yeni iş emri</p>
+          <div class="field"><span class="readout">Başlık</span><div class="inp dim">Bir cümle — ne isteniyor?</div></div>
+          <div class="field"><span class="readout">Repolar</span>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;"><span class="ichip ichip-on">✓ docket</span><span class="ichip">○ docket-docs</span></div>
+          </div>
+          <p class="readout" style="margin-top:2px;">gerçek pencere ayrıca: açıklama · denetim · izin kuralı · bağlam dosyaları</p>
+          <div class="mfoot">
+            <button class="btn btn-ghost" id="f4close">Kapat</button>
+            <button class="btn btn-secondary">Oluştur</button>
+            <button class="btn btn-primary">Oluştur ve plan iste</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">A</span><b>Hep-tamam · A bileşimi.</b> F1-A: 7 kapalı iş düğmenin
+    ardında (5'i aşınca kapalı başlar — <b>tıkla, açılıp kapanıyor</b>). F4-A: davet peron satırında,
+    "Kapanışa git" ile aynı yerde (<b>tıkla — oluşturma penceresi açılır</b>). F2: kartta
+    <b>süre = duvar saati aralığı</b> (ilk oturum açılışı → son oturum kapanışı; bu örnekte
+    01:20). ADR-0012'nin "boş yüzeye davet" kuralı burada <i>dolu</i> bir yüzeye davetle genişliyor —
+    tur bunu açıkça yazmayı öneriyor (tek satırlık madde).</p>
+
+    <div class="sizes"><span class="readout">durum 5b · hep-tamam — F1-B + F4-B + F2 — tıkla</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — arşiv alanı</span><span class="w">980 × 620</span></div>
+      <div>
+        <div class="appbar">
+          <span class="wordmark">DOCKET</span>
+          <button class="wssel">▎ docket ▾</button>
+          <span class="spring"></span>
+          <button class="btn btn-primary btn-sm">+ Yeni iş emri</button>
+          <button class="ibtn" aria-label="Ayarlar">⚙</button>
+        </div>
+        <div class="boardbody">
+          <div class="boardcol">
+            <div class="platline">
+              <i class="dot" style="background: var(--proceed);"></i>
+              <span class="readout" style="color: var(--proceed);">Bütün işler tamam</span>
+            </div>
+            <section style="display:flex; flex-direction:column; gap:8px;">
+              <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0033</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$7.90 · <span class="dur">00:51</span></span></span><span class="wo-title">İzin kuralları</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0032</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$5.60 · <span class="dur">00:49</span></span></span><span class="wo-title">Denetim dökümü</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0031</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$9.50 · <span class="dur">01:12</span></span></span><span class="wo-title">Konsol arayüzü</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0030</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$4.10 · <span class="dur">00:44</span></span></span><span class="wo-title">Eski belgelerin taşınması</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0029</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$3.30 · <span class="dur">00:40</span></span></span><span class="wo-title">Raf düzeltmesi</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              <div id="ft-b-more-wrap" style="display:none; flex-direction:column; gap:8px;">
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0028</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$2.20 · <span class="dur">00:28</span></span></span><span class="wo-title">Başlangıç ayarları</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+                <button class="wocard quiet"><span class="lamp lamp-done"></span><span class="inner"><span class="wo-row1"><span class="wo-id">WO-0027</span><span class="badge badge-green">Kapalı</span><span class="wo-metrics">$1.80 · <span class="dur">00:23</span></span></span><span class="wo-title">İlk deneme</span><span class="wo-row3"><span class="wo-reason">Tamamlandı</span></span></span></button>
+              </div>
+              <button class="morerow" id="ft-b-more">▸ kalan 2</button>
+            </section>
+            <div class="platline" style="justify-content:center;">
+              <button class="btn btn-ghost btn-sm">▸ Yeni iş emri oluştur</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">B</span><b>Hep-tamam · B bileşimi.</b> F1-B: liste <b>5 kartla sınırlı
+    başlar</b>, kalanı "▸ kalan N" satırıyla açılır (dene — geri de kapatır). F4-B: davet listenin
+    altında, sakin bir ghost düğme. F2: kartta <b>süre = oturum sürelerinin toplamı</b> (bu örnekte
+    01:12). <b>F2 uyarısı:</b> şeritteki canlı Süre ve denetim toplamı <i>toplam</i>dır — A'yı
+    seçersen kart 01:20 derken şerit 01:12 der; B'yi seçersen kart şeritle aynı dili konuşur ama
+    bekleme aralarını saymaz. Hangi "süre" gerçeği istediğin T3'ün cevabı.</p>
+  </section>
+
+  <!-- ================= 03 · DETAY — YEDİ FAZ ================= -->
+  <section class="ph" id="detay">
+    <div class="ph-head"><span class="ph-num">03</span><h2>Detay — yedi faz, omurga aynı</h2></div>
+    <p class="ph-desc">Bu bölüm <b>doğrulama</b>: her fazın en anlatıcı karesi. Omurga (şerit → altşerit
+    → gövde → ray) fazdan faza aynı kalıyor; değişen yalnız durum dili. Plan düzenleme ve izin anının
+    <b>etkileşimli</b> sözleşmesi v4'te kaldı — o demolar geçerli; burada yalnız yeni gözeten yerler
+    (durdur rampa-raysı, sonuç ekranı) taze.</p>
+
+    <div class="sizes"><span class="readout">faz 1 · yazıldı — sade</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0037</span><span class="w">980 × 480</span></div>
+      <div class="console h480">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0037</span>
+          <span class="phase"><i class="dot dot-idle"></i>İş emri yazıldı — plan iste</span>
+          <div class="metrics"><span class="badge badge-rule">İzin: otomatik</span><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto;">
+              <div class="lamp lamp-idle"></div>
+              <div class="body"><p class="ttl">Ne lazım</p><p class="sub">Plan iste — mimar adımları önerir.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-signal-breathe"></div>
+          <span class="msg">İş emri hazır.</span>
+          <div class="acts"><button class="btn btn-primary">Plan iste <span class="kbd">⏎</span></button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Yazıldı.</b> Boş gövde boş kutu çizmez: tek kart, tek cümle, rayda tek düğme.</p>
+
+    <div class="sizes"><span class="readout">faz 2 · planda — sade</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0037</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0037</span>
+          <span class="phase"><i class="dot dot-run"></i>Mimar planı düşünüyor…</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$0.12</div></div><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="substrip"><span class="readout">Çalışıyor</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto;">
+              <div class="lamp lamp-run"></div>
+              <div class="body"><p class="readout" style="margin-bottom:5px;">Mimar</p><p class="ttl">Plan düşünülüyor…</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg">Çalışıyor.</span>
+          <div class="acts"><button class="btn btn-secondary">■ Durdur</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Planda.</b> SADE sakin: tek satır enstrüman, rayda yalnız Durdur — dolgu cümle yok.</p>
+
+    <div class="sizes"><span class="readout">faz 3 · plan hazır — sade</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0036</span><span class="w">980 × 620</span></div>
+      <div class="console glow-signal">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0036</span>
+          <span class="phase"><i class="dot dot-signal"></i>Plan hazır — onayla</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$1.84</div></div><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <p style="font-size:14px; font-weight:800; padding:0 2px;">Mimar 4 adım önerdi</p>
+            <div class="stepcards">
+              <div class="stepcard"><div class="top"><span class="no">1</span><span class="rolechip role-arch">Mimar</span></div><p class="aim">Yerleşimi duruma bağla</p><p class="scope">çekirdek</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+              <div class="stepcard"><div class="top"><span class="no">2</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Sade görünümü kur</p><p class="scope">arayüz</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+              <div class="stepcard"><div class="top"><span class="no">3</span><span class="rolechip role-impl">Uygulayıcı</span></div><p class="aim">Detay rafını kur</p><p class="scope">arayüz</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+              <div class="stepcard"><div class="top"><span class="no">4</span><span class="rolechip role-verif">Doğrulayıcı</span></div><p class="aim">İki görünümü sına</p><p class="scope">tümü</p><div class="st"><i class="dot dot-idle"></i>sırada</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="lamp lamp-signal-breathe"></div>
+          <span class="msg"><b>Onayla</b> — adımlar sırayla koşar.</span>
+          <div class="acts">
+            <button class="btn btn-ghost">İtiraz et</button>
+            <button class="btn btn-secondary">Düzenle</button>
+            <button class="btn btn-primary">Onayla <span class="kbd">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Plan hazır.</b> Kartlar, rol rozetleri, üç çıkışlı ray — hepsi v4'ün onaylı dili.
+    Düzenleme etkileşimi (rol çevir, sırala, ekle/sil, "düzenlenmiş onay" sayacı) v4 demo 5'te
+    canlıdır; bu tur değiştirmiyor.</p>
+
+    <div class="sizes"><span class="readout">faz 4 · uygulama — durdur rampası, tıkla</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · durdur → sürdür → zorla kes</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run" id="wd">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase" id="wd-phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout" id="wd-sub">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto;">
+              <div class="lamp lamp-run" id="wd-lamp"></div>
+              <div class="body"><p class="readout" style="margin-bottom:5px;">Uygulayıcı · Adım 2</p><p class="ttl" id="wd-card">Sade görünümü kuruluyor…</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-run"></div>
+          <span class="msg" id="wd-msg">Çalışıyor.</span>
+          <div class="acts" id="wd-acts">
+            <button class="btn btn-secondary" id="wd-stop" style="min-width:110px;">■ Durdur</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Durdur rampası.</b> Dene: Durdur → "Durduruluyor…" (maliyet donar) → durdu:
+    ray <b>▶ Sürdür</b> der; takılırsa (gerçekte 5 sn; demoda kısaldık) yanında kırmızı
+    <b>Zorla kes</b> belirir. Sürdür kaldığı yerden devam eder — para asla sessizce yanmaz.</p>
+
+    <div class="sizes"><span class="readout">faz 4b · izin anı — referans</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · izin</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-signal">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-signal"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics">
+            <span class="badge badge-rule" id="izn-rule">İzin: otomatik</span>
+            <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+            <div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div>
+          </div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="askcard" style="max-width:560px; width:100%; margin:0 auto;">
+              <div class="lamp lamp-signal-breathe"></div>
+              <div class="body">
+                <p class="readout" style="color: var(--signal); margin-bottom:5px;">riskli yazım</p>
+                <p class="ttl">İş akışı dosyası değiştirilecek</p>
+                <p class="p">.github/workflows/check.yml · 4.2 KB · <span style="color: var(--info);">▸ fark</span></p>
+                <div class="acts">
+                  <button class="btn btn-ghost">Bu iş emrinde hep otomatik</button>
+                  <button class="btn btn-secondary">Reddet</button>
+                  <button class="btn btn-primary">İzin ver <span class="kbd">⏎</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg">Oturum durdu — maliyet işlemez.</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>İzin anı.</b> Turun değişmeyen yüzeyi — v4 demo 2'de canlıdır (ver / reddet /
+    kuralı değiştir; şerit rozeti döner, çizelgeye düşer). Çoklu askı aynı karta "Tümüne izin ver"
+    düğmesi ekler. Burada yalnız turun "her senaryo bir karede" sözünü kefilliyor.</p>
+
+    <div class="sizes"><span class="readout">faz 5 · inceleme — karar kartı</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · inceleme</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-done">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-signal"></i>Mimar denetimi · adım 2</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center; gap:12px;">
+            <div class="focuscard" style="max-width:560px; width:100%; margin:0 auto; border-color: color-mix(in srgb, var(--proceed) 35%, transparent);">
+              <div class="lamp lamp-done"></div>
+              <div class="body">
+                <p class="ttl">Mimar devam dedi</p>
+                <p class="sub">Testler aynı kalacak şekilde genişletilmiş; kapsam tamam. Adım 3 açılabilir.</p>
+                <div class="acts" style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+                  <button class="btn btn-ghost">Adımı yeniden çalıştır</button>
+                  <button class="btn btn-primary">Devam et</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg">Karar kartı gövdede.</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>İnceleme kararı.</b> Devam yeşil, revize amber, net-değil kırmızı — aynı kart,
+    üç ton. Çöken oturumun kartı (ayrıntı açılımı + Kopyala + Yeniden dene) v4 demo 4'te canlı;
+    değişmiyor.</p>
+
+    <div class="sizes"><span class="readout">faz 6 · kapanış — son davet</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0034</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-signal">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0034</span>
+          <span class="phase"><i class="dot dot-signal"></i>Kapanış — belgeleri güncelle</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$6.27</div></div><div><span class="readout">Süre</span><div class="v">01:02</div></div><div class="viewseg"><button class="on">SADE</button><button>DETAY</button></div></div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto;">
+              <div class="lamp lamp-done"></div>
+              <div class="body"><p class="ttl">Tüm adımlar tamam</p><p class="sub">İş emrini kapat — arşive gider, not bırakabilirsin.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="rail quiet">
+          <div class="lamp lamp-signal"></div>
+          <span class="msg"><b>Kapat</b> — arşive gider, not bırakabilirsin.</span>
+          <div class="acts"><button class="btn btn-secondary">İş emrini kapat</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Kapanış daveti.</b> Kapat bir onay penceresiyle teyitlenir (§08) ve ⏎'e bağlı
+    değildir — yanlışlıkla kapanmaz.</p>
+
+    <div class="sizes"><span class="readout">faz 7 · kapandı — sonuç ekranı + defter</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0031 · arşiv</span><span class="w">980 × 620</span></div>
+      <div class="console glow-done">
+        <div class="strip" style="flex-wrap:wrap; row-gap:0;">
+          <div style="display:flex; align-items:center; gap:10px; width:100%;">
+            <button class="backlink" aria-label="Tahtaya dön">‹</button>
+            <span class="badge">WO-0031</span>
+            <span class="phase"><i class="dot dot-done"></i>Tamamlandı</span>
+            <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$9.50</div></div><div><span class="readout">Süre</span><div class="v">01:12</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; width:100%; padding:4px 26px 6px;">
+            <span style="font-size:13.5px; font-weight:700;">Konsol arayüzü</span>
+            <span class="badge">Kapılarda</span>
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <span class="readout" style="margin-left:auto;">Kapalı iş emri değişmez</span>
+            <button class="ibtn ibtn-danger" aria-label="Sil">🗑</button>
+          </div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--proceed);">● Kapandı</span></div>
+        <div class="cbody">
+          <div class="cmain" style="overflow-y:auto; gap:14px;">
+            <div class="focuscard" style="max-width:560px; width:100%; margin:0 auto; border-color: color-mix(in srgb, var(--proceed) 35%, transparent);">
+              <div class="lamp lamp-done"></div>
+              <div class="body" style="text-align:center; padding:16px 20px;">
+                <span style="display:inline-flex; width:28px; height:28px; border:2px solid var(--proceed); border-radius:50%; align-items:center; justify-content:center;"><svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 8.5 L6.5 13 L14 3" fill="none" stroke="var(--proceed)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <p class="readout" style="color: var(--proceed); margin-top:8px;">Kapandı</p>
+                <div class="mono" style="display:flex; gap:24px; justify-content:center; margin-top:10px; font-size:12px;">
+                  <div><span class="readout" style="display:block;">Süre</span>01:12</div>
+                  <div><span class="readout" style="display:block;">Maliyet</span>$9.50</div>
+                  <div><span class="readout" style="display:block;">Adım</span>4/4</div>
+                  <div><span class="readout" style="display:block;">Kanıt</span>3/3</div>
+                </div>
+                <button class="ichip" style="margin-top:12px;" title="d7cc33e4a1… — tıkla: kopyalar">d7cc33e</button>
+              </div>
+            </div>
+            <div>
+              <div class="panelhead"><span class="readout">Oturum dökümü</span><span class="aside">6 oturum</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+                <tr><td class="name">İnceleme 2</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:41 – 14:43</td><td class="num">00:02</td><td class="num">$0.41</td></tr>
+            <tr><td class="name">Adım 3 · detay rafı</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:45 – 15:07</td><td class="num">00:22</td><td class="num">$1.86</td></tr>
+                <tr><td class="name">Adım 4 · sınama</td><td><span class="rolechip role-verif">Doğ</span></td><td>15:10 – 15:29</td><td class="num">00:19</td><td class="num">$2.03</td></tr>
+                <tr class="total"><td class="name">Toplam</td><td></td><td>14:09 – 15:29</td><td class="num">01:12</td><td class="num">$9.50</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Sonuç ekranı.</b> Mühür + tek satır istatistik + kısa sha; altında defter (arşiv
+    gövdesi artık bu). Sha'ya tıkla → kopyalar. Kapanış anında mühür bir kez <b>pop</b> yapar
+    (≤400ms, reduced-motion'da hiç). Kapalı şeridin davranışı §07'de.</p>
+  </section>
+
+  <!-- ================= 04 · SEKMELER ================= -->
+  <section class="ph" id="sekmeler">
+    <div class="ph-head"><span class="ph-num">04</span><h2>Sekmeler — affordans, bağlam, kaydırma</h2></div>
+    <p class="ph-desc">"Neyin ne olduğu belli değil, düzen yok" bulgusunun üç katmanı: <b>sekme nasıl
+    tıklanılır görünür</b> (S1), <b>panel kendi başlığını taşır mı</b> (S2 — rafın bölüm başlıkları
+    sekme modunda bugün kayboluyor), <b>sekme değişince kaydırma nasıl hissettirir</b> (S3 — bugünkü
+    anlık ışınlama şikâyeti). Üç S1 karesi de tıklanabilir — gez, hisset.
+    <b>S3 demolarında:</b> önce panel içinde aşağı kaydır, sonra sekme değiştir — fark ancak o zaman
+    hissedilir; Kanıt paneli kısa tutuldu, C onda hiç kımıldamaz. Uygulamada sekmeler Radix Tabs
+    olur (rol, aria-selected, ok tuşları bedava gelir).</p>
+
+    <div class="sizes"><span class="readout">S1-A · alt çizgi — tıkla, gez</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · detay @980</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="tabbar tabset tA" data-switch>
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+          <div class="scroller" style="flex:1; margin-top:10px;">
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px; padding-bottom:12px;">
+              <div class="term" style="min-height:200px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span><span><i class="dot dot-idle" style="width:5px;height:5px;"></i>belgeler güncellenmedi</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">A</span><b>Alt çizgi.</b> Etkin sekmenin altında 2px <b>amber çizgi</b>
+    — "sen buradasın" sinyali, uygulamanın tek "seni bekliyorum" rengiyle. Düz yazı olmaktan çıkar,
+    düğme olduğu ilk bakışta anlaşılır. Sayaç bugünkü gibi yerinde kalır (Adımlar 1/4).</p>
+
+    <div class="sizes"><span class="readout">S1-B · dolu segment — tıkla, gez</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · detay @980</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="tabbar tabset tB" data-switch>
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+          <div class="scroller" style="flex:1; margin-top:10px;">
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px; padding-bottom:12px;">
+              <div class="term" style="min-height:200px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span><span><i class="dot dot-idle" style="width:5px;height:5px;"></i>belgeler güncellenmedi</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">B</span><b>Dolu segment.</b> Etkin sekme yüzeyden <b>yükselir</b>:
+    dolu zemin + ince çerçeve + mürekkep — basılmış bir düğme gibi. En güçlü "bu bir kontrol" işareti;
+    maliyeti görsel ağırlığı. Sayaç burada da bugünkü gibi kalır.</p>
+
+    <div class="sizes"><span class="readout">S1-C · alt çizgi + sayaç — tıkla, gez</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0035 · detay @980</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="tabbar tabset tA" data-switch>
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+          <div class="scroller" style="flex:1; margin-top:10px;">
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px; padding-bottom:12px;">
+              <div class="term" style="min-height:200px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span><span><i class="dot dot-idle" style="width:5px;height:5px;"></i>belgeler güncellenmedi</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">C</span><b>Alt çizgi + sayaç.</b> A'nın çizgesi + <b>sayaç aktif
+    dilin parçası</b> yapılır: etkin sekmede sayı bilgi rengine döner (Adımlar 1/4, Kanıt 2/3 —
+    "Kanıt 2/3" görür görmez eksik anlaşılır). Dürüst not: bugünkü uygulamada sekmeler zaten sayı
+    taşır; C'nin eki yalnızca sayacın vurgulanması — A/B'de sayaç bugünkü gibi donuk kalır.</p>
+
+    <div class="sizes"><span class="readout">S2 · panel başlığı — bugünkü çıplak / öneri</span></div>
+    <div class="frame" style="width: 760px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">panel bağlamı</span><span class="w">760 × 360</span></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--hairline); height:360px;">
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--signal); margin-bottom:8px;">bugünkü</p>
+          <ul class="steps">
+            <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+            <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+          </ul>
+          <p class="readout" style="margin-top:14px;">← bu liste neyin? başlık yok</p>
+        </div>
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--proceed); margin-bottom:8px;">öneri</p>
+          <div class="panelhead" style="padding-top:0;"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+          <ul class="steps">
+            <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+            <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+          </ul>
+          <p class="readout" style="margin-top:14px;">rafın başlığı panelde de ↑</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Bağlam.</b> Geniş ekranda (raf) her bölümün başlığı + sayacı var; sekme modunda
+    bunlar düşer — liste "ne listesi?" belirsiz kalırdı. Öneri: <b>panel, rafın başlığını aynen
+    taşır</b> (readout + sayaç — veri zaten var, sadece gösterilmiyor). Terminal paneli hariç: o bir
+    bölüm değil canlı enstrüman, kendi kafası var. Alt varyant: başlık panel içinde <b>yapışkan</b>
+    (uzun listede de görünür kalır) — yapışkan hâli aşağıdaki S3 karelerinde canlı, kaydır ve gör.</p>
+
+    <div class="sizes"><span class="readout">S3-A · anlık — bugünkü, tıkla (Belgeler'e bas)</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · kaydırma A — anlık</span><span class="w">980 × 560</span></div>
+      <div class="console h560 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="scroller" id="scA" style="flex:1;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto 10px;">
+              <div class="lamp lamp-run"></div>
+              <div class="body"><p class="readout" style="margin-bottom:5px;">Uygulayıcı · Adım 2</p><p class="ttl">Sade görünümü kuruluyor…</p></div>
+            </div>
+            <div class="tabbar tabset tA" data-switch data-scroll="instant" data-scroller="scA" style="margin-bottom:10px;">
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px;">
+              <div class="term" style="min-height:180px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+              <div class="scrollpad"><span class="readout">uzun transkript… (kaydırma hissi için)</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">A</span><b>Anlık.</b> Bugünkü davranış: sekme değişince görünüm
+    olduğu gibi ışınlanır. Hızlı ama <b>ışınlama</b> — nerede olduğun kaybolur. (Kıyas için burada;
+    önerilmez.)</p>
+
+    <div class="sizes"><span class="readout">S3-B · yumuşak — CSS yolu, tıkla</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · kaydırma B — yumuşak</span><span class="w">980 × 560</span></div>
+      <div class="console h560 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="scroller smooth" id="scB" style="flex:1;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto 10px;">
+              <div class="lamp lamp-run"></div>
+              <div class="body"><p class="readout" style="margin-bottom:5px;">Uygulayıcı · Adım 2</p><p class="ttl">Sade görünümü kuruluyor…</p></div>
+            </div>
+            <div class="tabbar tabset tA" data-switch data-scroll="smooth" data-scroller="scB" style="margin-bottom:10px;">
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px;">
+              <div class="term" style="min-height:180px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+              <div class="scrollpad"><span class="readout">uzun transkript… (kaydırma hissi için)</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">B</span><b>Yumuşak.</b> Aynı tıklama, ama görünüm <b>kayarak</b>
+    gider — nerede başladığını, nereye gittiğini görürsün. Kritik ayrıntı: yumuşama <b>CSS'in kendisi</b>
+    (`scroll-behavior: smooth`), JavaScript değil — böylece reduced-motion bloğu yumuşamayı da
+    <b>tek hamleyle kapatır</b> (demoda dev-tools'ta reduced-motion aç ve dene). Uzun atlarda süre
+    tarayıcıya bağlıdır; uygulama çok uzun mesafeyi anlığa düşürür.</p>
+
+    <div class="sizes"><span class="readout">S3-C · şartlı — sadece gerekirse, tıkla</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · kaydırma C — şartlı</span><span class="w">980 × 560</span></div>
+      <div class="console h560 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="padding:10px 14px 0;">
+          <div class="scroller smooth" id="scC" style="flex:1;">
+            <div class="focuscard" style="max-width:520px; width:100%; margin:0 auto 10px;">
+              <div class="lamp lamp-run"></div>
+              <div class="body"><p class="readout" style="margin-bottom:5px;">Uygulayıcı · Adım 2</p><p class="ttl">Sade görünümü kuruluyor…</p></div>
+            </div>
+            <div class="tabbar tabset tA" data-switch data-scroll="cond" data-scroller="scC" style="margin-bottom:10px;">
+            <button class="tab on">Terminal</button><button class="tab">Adımlar <span class="n">1/4</span></button><button class="tab">Kanıt <span class="n">2/3</span></button><button class="tab">Çizelge</button><button class="tab">Belgeler</button><button class="tab">Oturum dökümü</button>
+          </div>
+            <div class="spanel" style="display:flex; flex-direction:column; gap:10px;">
+              <div class="term" style="min-height:180px;">
+                <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$3.60 · 00:14</span></div>
+                <pre class="term-body">
+<span class="c">14:31</span>  <span class="inf">● Bash</span>  npm run typecheck — <span class="ok">0 hata</span>
+<span class="c">14:31</span>  <span class="inf">● Edit</span>  <span class="amt">DetailBody.tsx</span> <span class="c">(+62 −18)</span>
+<span class="c">14:32</span>  <span class="warn">⋯ adım 2 sürüyor…</span></pre>
+              </div>
+              <div class="scrollpad"><span class="readout">uzun transkript… (kaydırma hissi için)</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+              <ul class="steps">
+                <li class="step"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+                <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+                <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Kanıt</span><span class="aside">2/3</span></div>
+              <ul class="evd"><span><i class="dot dot-done" style="width:5px;height:5px;"></i>plan onayı</span><span><i class="dot dot-done" style="width:5px;height:5px;"></i>doğrulama raporu</span></ul>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Çizelge</span></div>
+              <ul class="tl">
+                <li><span class="at">14:15</span><span>Plan onaylandı</span></li>
+                <li><span class="at">14:22</span><span>Adım 2 başladı</span></li>
+                <li><span class="at">14:31</span><span>İzin verildi — gates.ts</span></li>
+              </ul>
+              <button class="morerow" data-tum aria-expanded="false">▸ tümü (12)</button>
+              <div hidden>
+                <ul class="tl" style="margin-top:5px;">
+                  <li><span class="at">14:15</span><span>İş emri oluşturuldu</span></li>
+                  <li><span class="at">14:16</span><span>Mimar oturumu açıldı</span></li>
+                  <li><span class="at">14:20</span><span>Plan taslağı yazıldı</span></li>
+                </ul>
+              </div>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Belgeler</span></div>
+              <ul class="tl">
+                <li><span class="at">order.md</span><span>İş emri belgesi</span></li>
+                <li><span class="at">plan.md</span><span>Mimarın planı — adım kartları</span></li>
+              </ul>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+            <div class="spanel" hidden>
+              <div class="panelhead sticky"><span class="readout">Oturum dökümü</span><span class="aside">6</span></div>
+              <table class="audit">
+                <tr><th>Oturum</th><th>Rol</th><th>Zaman</th><th class="num">Süre</th><th class="num">Maliyet</th></tr>
+                <tr><td class="name">Plan</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:09 – 14:14</td><td class="num">00:05</td><td class="num">$1.84</td></tr>
+                <tr><td class="name">Adım 1 · yerleşim</td><td><span class="rolechip role-arch">Mimar</span></td><td>14:16 – 14:22</td><td class="num">00:06</td><td class="num">$0.96</td></tr>
+                <tr><td class="name">Adım 2 · sade görünüm</td><td><span class="rolechip role-impl">Uyg</span></td><td>14:22 – 14:40</td><td class="num">00:18</td><td class="num">$2.40</td></tr>
+              </table>
+              <div class="scrollpad"><span class="readout">…</span></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">C</span><b>Şartlı.</b> En rafine: hedef zaten görünümdeyse
+    <b>hiç kımıldanmaz</b>; görünümde değilse yumuşakça gider. Komşu sekmeye geçiş artık hiç
+    ışınlamaz, uzak sekme yine bulur. (B'nin CSS yolu + tek bir görünürlük ölçümü.) Altşeritteki
+    <b>adım N/T</b> zıplaması da aynı davranışa biner — tek kaydırma dili.</p>
+  </section>
+
+  <!-- ================= 05 · RAPOR ================= -->
+  <section class="ph" id="rapor">
+    <div class="ph-head"><span class="ph-num">05</span><h2>Rapor okuyucu — nerede okunur?</h2></div>
+    <p class="ph-desc">Bugünkü rapor kartının üç kusuru: <b>pad'i yok</b> (metin kutuya yapışık),
+    <b>bağlamı yok</b> ("Rapor · 1" — hangi adım, neydi amacı?), <b>evsahipsiz</b> (listeden açtın,
+    başka yerde belirdi). İki çözüm — ikisi de üç kusuru kapatıyor; ayrım <b>raporun nerede yaşadığı</b>:
+    adımın altında mı, karar sütununda mı. Dene.</p>
+
+    <div class="sizes"><span class="readout">R1-A · satır altında açılım — tıkla: "▸ rapor"</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · rapor A — satır içi</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="overflow-y:auto;">
+          <div class="panelhead" style="padding-top:0;"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+          <ul class="steps">
+            <li><button class="step toggle" id="rp-a1" type="button" aria-expanded="false" aria-controls="rp-a1-body"><span class="dot dot-done"></span><span class="step-idx">1</span><div style="flex:1;"><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96 · <span class="mono" style="color: var(--info);" id="rp-a1-t">▸ rapor</span></p></div></button></li>
+          </ul>
+          <div class="repbody" id="rp-a1-body" hidden>
+            <div class="panelhead" style="padding:0 0 7px;"><span class="readout">Rapor · Adım 1</span><span class="rolechip role-arch" style="margin-left:8px;">Mimar</span><span class="aside">14:22</span></div>
+            <p><b>Sonuç.</b> Yerleşim artık fazdan türetiliyor: <span class="mono">layoutMode</span>
+            plan / karar / boşta / arşiv dörtlüsünde gövdeyi kendisi kuruyor; kapalı iş emrinde ray
+            hiç çizilmiyor. 12 test eklendi, 312 toplam — hepsi yeşil.</p>
+          </div>
+          <ul class="steps">
+            <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+            <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+            <li class="step"><span class="dot dot-idle"></span><span class="step-idx">4</span><div><p class="step-aim">İki görünümü sına</p><p class="step-meta">sırada</p></div></li>
+          </ul>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">A</span><b>Satır altında.</b> Rapor, kendi adımının altında açılır —
+    denetim tablosunun "▸ döküm" diliyle birebir aynı (tek açık, tekrar tıkla: kapanır). Başlıkta
+    <b>adım no + rol + saat</b>; metin pad'li. Nerede okuduğunu asla şaşırmazsın: rapor adımla birlikte
+    yaşar, Adımlar tek yüzey kalır.</p>
+
+    <div class="sizes"><span class="readout">R1-B · karar sütununda okuma kartı — tıkla: "▸ rapor"</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">demo · rapor B — okuma kartı</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-run">
+        <div class="strip">
+          <button class="backlink" aria-label="Tahtaya dön">‹</button>
+          <span class="badge">WO-0035</span>
+          <span class="phase"><i class="dot dot-run"></i>Uygulama · 2/4 adım</span>
+          <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$3.60</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:25%;"></div></div>
+        <div class="substrip"><span class="readout">Çalışıyor</span><span class="right segs"><i class="done"></i><i class="act"></i><i></i><i></i></span><span class="readout right">adım 2/4</span></div>
+        <div class="cbody"><div class="cmain" style="overflow-y:auto;">
+          <div class="readercard" id="rp-b-card" style="max-width:600px; width:100%; margin:0 auto;" hidden>
+            <div class="rhead">
+              <span class="readout">Rapor · Adım 1</span>
+              <span class="rolechip role-arch">Mimar</span>
+              <span style="font-size:12.5px; font-weight:700;">Yerleşimi duruma bağla</span>
+              <button class="ibtn x" id="rp-b-close" aria-label="Kapat">✕</button>
+            </div>
+            <div class="rbody">
+              <p><b>Sonuç.</b> Yerleşim artık fazdan türetiliyor: <span class="mono">layoutMode</span>
+              plan / karar / boşta / arşiv dörtlüsünde gövdeyi kendisi kuruyor; kapalı iş emrinde ray
+              hiç çizilmiyor. 12 test eklendi, 312 toplam — hepsi yeşil.</p>
+            </div>
+          </div>
+          <div class="panelhead" style="padding-top:0;"><span class="readout">Adımlar</span><span class="aside">1/4</span></div>
+          <ul class="steps">
+            <li><button class="step toggle" id="rp-b1" type="button" aria-expanded="false"><span class="dot dot-done"></span><span class="step-idx">1</span><div style="flex:1;"><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96 · <span class="mono" style="color: var(--info);">▸ rapor</span></p></div></button></li>
+            <li class="step"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+            <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+          </ul>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-run"></div><span class="msg">Çalışıyor.</span><div class="acts"><button class="btn btn-secondary">■ Durdur</button></div></div>
+      </div>
+    </div>
+    <p class="cap"><span class="ab">B</span><b>Okuma kartı.</b> Rapor, kararların okunduğu sütunda
+    (izin kartının, karar kartının yaşadığı yer) tam genişlik bir kart olarak belirir — ✕ ile kapanır,
+    listeden yeniden açılır. Başlıkta <b>adım + rol + amaç cümlesi</b>; okuma deneyimi biraz daha
+    "belge", adım listesi de biraz daha "liste" kalır. (Demo: kart kapalı başlar — "▸ rapor"a bas,
+    aç; ✕ kapatır.)</p>
+  </section>
+
+  <!-- ================= 06 · BOŞ ANLAR ================= -->
+  <section class="ph" id="bos">
+    <div class="ph-head"><span class="ph-num">06</span><h2>Boş anlar — sessizlik de bir sözdür</h2></div>
+    <p class="ph-desc">Terminal boşken ekranda <b>hiçbir şey</b> olmaması, "çöktü mü?" sorusunu doğurur.
+    Kural aynı: tek satır, doğru bilgi. "Oturum yok" hâli bugün de doğru çiziliyor; eksik olan
+    <b>oturum var ama henüz çıktı yok</b> anı — açılan oturumun ilk satırı düşene kadar terminal bomboş.</p>
+
+    <div class="sizes"><span class="readout">iki sessiz an — solda öneri, sağda bugünkü (doğru)</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">terminal · sessiz anlar</span><span class="w">980 × 360</span></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--hairline); height:360px;">
+        <div style="background:var(--bg); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <p class="readout" style="color:var(--signal);">öneri · koşuyor, çıktı yok</p>
+          <div class="term">
+            <div class="term-head"><span class="readout">Uygulayıcı · canlı</span><span class="costline" style="margin-left:auto;">$0.00 · 00:02</span></div>
+            <div class="term-body"><span class="streamline" style="display:block; padding:0;"><i class="dot dot-run" style="display:inline-block; margin-right:8px; vertical-align:1px;"></i>Oturum açıldı — çıktı bekleniyor</span></div>
+          </div>
+          <p class="readout">Alternatif metin: "Bağlanıyor…"</p>
+        </div>
+        <div style="background:var(--bg); padding:14px; display:flex; flex-direction:column; gap:10px;">
+          <p class="readout" style="color:var(--proceed);">bugünkü · oturum yok (doğru, kalır)</p>
+          <div class="term">
+            <div class="term-head"><span class="readout">Uygulayıcı</span></div>
+            <div class="term-body"><span class="streamline" style="display:block; padding:0; color: var(--inkdim);">Çalışan oturum yok.</span></div>
+          </div>
+          <p class="readout">Sade görünümde aynı satır PhaseLine'da</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Sözleşme.</b> Oturum açılır açılmaz tek satır: <b>"Oturum açıldı — çıktı
+    bekleniyor"</b> + minik nabız. Bilgi satırıdır (ne oluyor: bekleniyor), dolgu değil — ADR-0012'nin
+    "talimat ölür, bilgi kalır" testinden geçer. İlk çıktı düşünce satır kendi kendine gider.
+    Metin tercihi (iki seçenek yukarıda) turda netleşecek.</p>
+  </section>
+
+  <!-- ================= 07 · KAPALILIK ================= -->
+  <section class="ph" id="kapali">
+    <div class="ph-head"><span class="ph-num">07</span><h2>Kapalılık — biten iş emri değişmez</h2></div>
+    <p class="ph-desc">"Biten iş emri düzenlenemez olmalı." Bugün kapalı bir iş emrinde kalem, çöp ve
+    denetim rozeti hâlâ tıklanabilir; depo da yazmayı kabul ediyor. Öneri: <b>kalem yok + sebep satırı,
+    rozet donuk gösterge, Sil tartışmalı</b> (A: arşiv temizliği kalır / B: kapalı kayıt dokunulmaz).
+    Uygulama iki katmanda: arayüz yüzeyleri çizilmez <b>ve depo yazmayı reddeder</b> — tek katman
+    yalancı olur.</p>
+
+    <div class="sizes"><span class="readout">şerit kıyası — bugünkü / öneri A / öneri B</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">kapalı iş emri şeridi</span><span class="w">980 × 330</span></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1px; background:var(--hairline);">
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--signal); margin-bottom:8px;">bugünkü</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden; background: color-mix(in srgb, var(--surface) 80%, var(--bg));">
+            <div style="display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--hairline);">
+              <span class="backlink">‹</span><span class="badge">WO-0031</span>
+              <span style="font-size:12.5px; font-weight:800; display:flex; align-items:center; gap:7px;"><i class="dot dot-done"></i>Tamamlandı</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
+              <span style="font-size:13.5px; font-weight:700;">Konsol arayüzü</span>
+              <button class="ibtn" aria-label="Düzenle">✎</button>
+              <button class="ichip">Kapılarda ▾</button>
+              <span class="badge badge-rule">İzin: otomatik</span>
+              <button class="ibtn ibtn-danger" aria-label="Sil" style="margin-left:auto;">🗑</button>
+            </div>
+          </div>
+          <p class="readout" style="margin-top:10px;">kalem · rozet · çöp: hepsi aktif ✗</p>
+        </div>
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--proceed); margin-bottom:8px;">öneri A · Sil kalır</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden; background: color-mix(in srgb, var(--surface) 80%, var(--bg));">
+            <div style="display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--hairline);">
+              <span class="backlink">‹</span><span class="badge">WO-0031</span>
+              <span style="font-size:12.5px; font-weight:800; display:flex; align-items:center; gap:7px;"><i class="dot dot-done"></i>Tamamlandı</span>
+              <span class="badge badge-green" style="margin-left:auto;">Tamamlandı</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
+              <span style="font-size:13.5px; font-weight:700;">Konsol arayüzü</span>
+              <span class="badge">Kapılarda</span>
+              <span class="badge badge-rule">İzin: otomatik</span>
+              <button class="ibtn ibtn-danger" aria-label="Sil" style="margin-left:auto;">🗑</button>
+            </div>
+            <div style="padding:0 12px 9px;"><p class="readout">Kapalı iş emri değişmez</p></div>
+          </div>
+          <p class="readout" style="margin-top:10px;">kalem yok · rozet gösterge · çöp var (arşiv temizliği)</p>
+        </div>
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--proceed); margin-bottom:8px;">öneri B · Sil de yok</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden; background: color-mix(in srgb, var(--surface) 80%, var(--bg));">
+            <div style="display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--hairline);">
+              <span class="backlink">‹</span><span class="badge">WO-0031</span>
+              <span style="font-size:12.5px; font-weight:800; display:flex; align-items:center; gap:7px;"><i class="dot dot-done"></i>Tamamlandı</span>
+              <span class="badge badge-green" style="margin-left:auto;">Tamamlandı</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
+              <span style="font-size:13.5px; font-weight:700;">Konsol arayüzü</span>
+              <span class="badge">Kapılarda</span>
+              <span class="badge badge-rule">İzin: otomatik</span>
+            </div>
+            <div style="padding:0 12px 9px;"><p class="readout">Kapalı iş emri değişmez</p></div>
+          </div>
+          <p class="readout" style="margin-top:10px;">kayıt kalıcı — silme tek yol değil, hiçbir yol</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Kural.</b> Kalem tıklanabilir değil <b>çizilmez</b>; yerine tek satır bilgi:
+    "Kapalı iş emri değişmez" (talimat değil, durum fact'i). Denetim rozeti buton değil <b>rozet</b>
+    olarak kalır — mod ARTIK bir tarihtir, ayar değil. Sil: A'da kalır (yanlışlıkla açılmış/boş iş
+    emrinin arşivi temizlemesi meşru); B'de kapalı kayıt bir defter sayfası gibi dokunulmaz.
+    <b>K1 = bu seçim.</b> Uygulama tarafında depo da kapatılır: kapalı iş emrine
+    <span class="mono">updateWorkOrder</span> yazması reddedilir (test-first).</p>
+
+    <div class="sizes"><span class="readout">kapalı arşiv — bütün (öneri A ile)</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">docket — WO-0031 · arşiv</span><span class="w">980 × 480</span></div>
+      <div class="console h480 glow-done">
+        <div class="strip" style="flex-wrap:wrap; row-gap:0;">
+          <div style="display:flex; align-items:center; gap:10px; width:100%;">
+            <button class="backlink" aria-label="Tahtaya dön">‹</button>
+            <span class="badge">WO-0031</span>
+            <span class="phase"><i class="dot dot-done"></i>Tamamlandı</span>
+            <div class="metrics"><div><span class="readout">Maliyet</span><div class="v">$9.50</div></div><div><span class="readout">Süre</span><div class="v">01:12</div></div><div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; width:100%; padding:4px 26px 6px;">
+            <span style="font-size:13.5px; font-weight:700;">Konsol arayüzü</span>
+            <span class="badge">Kapılarda</span>
+            <span class="badge badge-rule">İzin: otomatik</span>
+            <span class="readout" style="margin-left:auto;">Kapalı iş emri değişmez</span>
+            <button class="ibtn ibtn-danger" aria-label="Sil">🗑</button>
+          </div>
+        </div>
+        <div class="substrip"><span class="readout" style="color: var(--proceed);">● Kapandı</span></div>
+        <div class="cbody">
+          <div class="cmain" style="justify-content:center;">
+            <div class="focuscard" style="max-width:560px; width:100%; margin:0 auto; border-color: color-mix(in srgb, var(--proceed) 35%, transparent);">
+              <div class="lamp lamp-done"></div>
+              <div class="body" style="text-align:center; padding:14px 20px;">
+                <span style="display:inline-flex; width:28px; height:28px; border:2px solid var(--proceed); border-radius:50%; align-items:center; justify-content:center;"><svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 8.5 L6.5 13 L14 3" fill="none" stroke="var(--proceed)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <p class="readout" style="color: var(--proceed); margin-top:8px;">Kapandı</p>
+                <div class="mono" style="display:flex; gap:24px; justify-content:center; margin-top:10px; font-size:12px;">
+                  <div><span class="readout" style="display:block;">Süre</span>01:12</div>
+                  <div><span class="readout" style="display:block;">Maliyet</span>$9.50</div>
+                  <div><span class="readout" style="display:block;">Adım</span>4/4</div>
+                  <div><span class="readout" style="display:block;">Kanıt</span>3/3</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Arşiv bütünü.</b> Şerit sakin: başlık + iki donuk rozet + sebep satırı, sonuç
+    kartı, altında defter (§03 faz 7). Ray yok — kapalı iş emrinde ray çizilmez (kapanış davetinin
+    rayı §03 faz 6'da ayrıca çizili). Defter (Oturum dökümü) bu gövdenin altında — §03 faz 7'de bütün hâliyle.
+    Sil diyalogunun hata satırı §08'de.</p>
+  </section>
+
+  <!-- ================= 08 · DİYALOGLAR ================= -->
+  <section class="ph" id="diyalog">
+    <div class="ph-head"><span class="ph-num">08</span><h2>Diyaloglar &amp; haberler — değişen bir, kefili bir tablo</h2></div>
+    <p class="ph-desc">Turun dokunmadığı yüzeyleri yeniden tartışmaya açmak istemiyoruz — ama
+    "hiçbir şey unutulmadı" da kanıtlanmalı. Değişen tek diyalog: <b>Sil</b> (hata satırı kazanıyor —
+    bugün silme hatası hiçbir yüzeyde görünmez). Geri kalanlar aşağıdaki kefil tablosunda.</p>
+
+    <div class="sizes"><span class="readout">Sil (yeni hata satırı ile) · Kapat (referans)</span></div>
+    <div class="frame" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">diyaloglar</span><span class="w">980 × 400</span></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--hairline); height:400px; align-items:start; background: var(--bg);">
+        <div style="background:var(--bg); padding:18px 20px;">
+          <div class="mini" style="margin:0;">
+            <p class="mh">Sil — Konsol arayüzü?</p>
+            <p class="ms">İş emri, planı ve tüm kayıtlarıyla silinir. <b style="color:var(--ink);">Geri alınamaz.</b></p>
+            <div class="mfoot">
+              <button class="btn btn-ghost">Vazgeç</button>
+              <button class="btn btn-danger">Evet, sil</button>
+            </div>
+            <p class="merr" id="sil-err" hidden>Silinemedi — depo yazma hatası.</p>
+          </div>
+          <button class="minibtn" id="sil-try" style="margin-top:12px;">▸ hata örneği</button>
+        </div>
+        <div style="background:var(--bg); padding:18px 20px;">
+          <div class="mini" style="margin:0;">
+            <p class="mh">Kapat — Konsol arayüzü</p>
+            <div class="field"><span class="readout">Kapanış notu</span><div class="inp dim" style="min-height:52px;">İsteğe bağlı — kapanış kaydına işlenir…</div></div>
+            <div class="mfoot">
+              <button class="btn btn-ghost">Vazgeç</button>
+              <button class="btn btn-secondary">Evet, kapat</button>
+            </div>
+          </div>
+          <p class="readout" style="margin-top:12px;">⏎ bağlı değil — bilerek (yanlışlıkla kapanmaz)</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Sil.</b> Hata olursa diyalog açık kalır ve <b>tek satır hata</b> taşar (Kapat
+    diyalogunun dilini taşır — desen zaten vardı, Sil'de unutulmuştu). Dene: "▸ hata örneği".
+    <b>Kapat</b> değişmiyor: not alanı, teyit, ⏎'süz.</p>
+
+    <table class="cmp">
+      <tr><th>Yüzey</th><th>Durum</th></tr>
+      <tr><td>Düzenle (başlık + açıklama)</td><td>değişmiyor — §07'deki kapalılık kuralı dışında</td></tr>
+      <tr><td>Yeni iş emri oluşturma</td><td>değişmiyor — gerçek pencere: başlık, açıklama, repolar, denetim, izin kuralı, bağlam + hata satırı (§02'deki stub alanları kısalttı)</td></tr>
+      <tr><td>İzin kartı (ver / reddet / kural değiştir; çoklu askıda "Tümüne izin ver")</td><td>değişmiyor — v4 demo 2 canlı; kare hâlâ §03 faz 4b'de</td></tr>
+      <tr><td>Ayarlar · Çalışma alanı ekle/düzenle · Liste</td><td>değişmiyor</td></tr>
+      <tr><td>Haber / Hata / Teyit toast'ları</td><td>değişmiyor — v4 §5 sözleşmesi</td></tr>
+      <tr><td>Hata kartı (ayrıntı + Kopyala + Yeniden dene)</td><td>değişmiyor — v4 demo 4</td></tr>
+      <tr><td>Hata sınırı (çökme ekranı + Yeniden yükle)</td><td>değişmiyor</td></tr>
+      <tr><td>İtiraz kartı · Plan düzenleme</td><td>değişmiyor — v4 demo 1 ve demo 5</td></tr>
+    </table>
+  </section>
+
+  <!-- ================= 09 · KARAR DEFTERİ ================= -->
+  <section class="ph" id="karar">
+    <div class="ph-head"><span class="ph-num">09</span><h2>Karar defteri — on bir soru, bir tur</h2></div>
+    <p class="ph-desc">Yukarıdaki her seçenek burada bir kimlikle duruyor. Sorular üç turda sorulacak
+    (önce geniş darbe alanlar: yön ve sekmeler; sonra tahta ve kapalılık; en son rapor ve paket).
+    "Öneri" sütunu turun kanaati — <b>son söz senin.</b></p>
+
+    <table class="cmp">
+      <tr><th>ID</th><th>Konu</th><th>Seçenekler</th><th>Öneri</th></tr>
+      <tr><td class="k">Y1</td><td>Estetik yön (§01)</td><td>D1 sakin · D2 keskin · D3 sıcak · bugünkü kalsın (yalnız denetim restyle)</td><td>D1</td></tr>
+      <tr><td class="k">S1</td><td>Sekme affordansı (§04)</td><td>A alt çizgi · B dolu segment · C alt çizgi + sayaç vurgusu · düz kalsın (bugünkü: düz metin + sayaç + hafif zemin)</td><td>C</td></tr>
+      <tr><td class="k">S2</td><td>Panel başlığı (§04)</td><td>başlık + sayaç · üstüne yapışkan · başlıksız (bugünkü)</td><td>başlık + sayaç, yapışkan</td></tr>
+      <tr><td class="k">S3</td><td>Kaydırma hissi (§04)</td><td>anlık (bugünkü) · yumuşak · şartlı</td><td>şartlı</td></tr>
+      <tr><td class="k">T1</td><td>Kapalı liste kontrolü (§02)</td><td>toggle düğmesi, 5'i aşınca kapalı · 5 kart + "▸ kalan N" · hep açık (bugünkü)</td><td>toggle düğmesi</td></tr>
+      <tr><td class="k">T2</td><td>Peronda iş daveti (§02)</td><td>satır içi · listenin altında · yok (bugünkü)</td><td>satır içi</td></tr>
+      <tr><td class="k">T3</td><td>Karttaki sürenin anlamı (§02)</td><td>duvar saati aralığı · oturum toplamı · kartta süre olmasın (bugünkü)</td><td>oturum toplamı</td></tr>
+      <tr><td class="k">R1</td><td>Rapor sunumu (§05)</td><td>adım satırının altında açılım · karar sütununda okuma kartı</td><td>satır altında</td></tr>
+      <tr><td class="k">K1</td><td>Kapalı iş emri politikası (§07)</td><td>kalem+rozet donuk + Sil kalır · Sil de yok · hiçbiri (bugünkü: düzenlenebilir)</td><td>Sil kalır</td></tr>
+      <tr><td class="k">TD</td><td>Teknik borç katılımı</td><td>TD-038'in 5 maddesi + TD-037'nin 2 maddesi bu iş emrine girsin · girmesin</td><td>girsin (hepsi aynı yüzeylerde)</td></tr>
+      <tr><td class="k">ADR</td><td>ADR-0012 düzeltmeleri</td><td>① dolu yüzeyde davet (T2 sonucu) tek satırla maddeleşsin ② tahta `.rise` girişteki kademeli giriş: istisna yazılsın ya da kaldırılsın</td><td>① yazılsın ② kaldırılsın</td></tr>
+    </table>
+
+    <table class="cmp">
+      <tr><th>Yeni metin</th><th>Nerede</th><th>Not</th></tr>
+      <tr><td class="new">"N kapalı iş" (▸/▾)</td><td>tahta — kapalı liste düğmesi</td><td>tek desen, üç yüzey</td></tr>
+      <tr><td class="new">"▸ kalan N" / "▴ az göster"</td><td>tahta — T1-B seçilirse</td><td>yalnız B</td></tr>
+      <tr><td class="new">"▾ rapor"</td><td>adım satırı — R1-A'nın açık hâli</td><td>yalnız R1-A</td></tr>
+      <tr><td class="new">"▸ tümü (N)"</td><td>Çizelge sınırı (TD-037)</td><td>3 satır + düğme</td></tr>
+      <tr><td class="new">"Oturum açıldı — çıktı bekleniyor" / "Bağlanıyor…"</td><td>terminal — boş canlı oturum</td><td>ikisinden biri</td></tr>
+      <tr><td class="new">"Kapalı iş emri değişmez"</td><td>kapalı şerit — sebep satırı</td><td>bilgi, talimat değil</td></tr>
+      <tr><td class="new">"Adımlar/Rapor/Belgeler okunuyor…"</td><td>yük satırları (TD-037)</td><td>ne okunduğu + nabız</td></tr>
+    </table>
+
+    <div class="verdict">
+      <h3>Sıra sende</h3>
+      <p><strong>Onayla</strong> → seçimlerin WO-0031f olur: yön geçidi her yüzeye, sekme paketi
+      (affordans + panel başlıkları + kaydırma dili) DETAY'a, tahta paketi (kapalı liste kontrolü +
+      peron daveti + kart süresi) tahtaya, rapor okuyucusu, kapalılık kuralı (arayüz + depo), boş an
+      satırları ve onaylanan borç kalemleri. Hepsi test-first çekirdek + E2E ile sınanır; kapılar:
+      typecheck · test · boundaries · build · E2E.</p>
+      <p><strong>Not gönderirsen</strong> mockup'a işleyip yine önüne koyarım — tur, sen "evet bu"
+      diyene kadar döner.</p>
+    </div>
+  </section>
+
+  <!-- ===== MORE-SECTIONS ===== -->
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  function toBusy(btn, label) { btn.dataset.orig = btn.innerHTML; btn.innerHTML = '<span class="spin"></span>' + label; }
+  function $(id) { return document.getElementById(id); }
+
+  // ---- F1 · kapalı liste düğmesi (karışık tahta + hep-tamam A) ----
+  function bindToggle(btnId, listId, arrId) {
+    var btn = $(btnId), list = $(listId), arr = $(arrId);
+    if (!btn || !list) return;
+    btn.addEventListener('click', function () {
+      var open = list.style.display !== 'none';
+      list.style.display = open ? 'none' : 'flex';
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (arr) arr.textContent = open ? '▸' : '▾';
+    });
+  }
+  bindToggle('ft-mix', 'ft-mix-list', 'ft-mix-arr');
+  bindToggle('ft-a', 'ft-a-list', 'ft-a-arr');
+  bindToggle('ft-ac', 'ft-ac-list', 'ft-ac-arr');
+
+  // ---- F1-B · "▸ kalan N" ----
+  (function () {
+    var more = $('ft-b-more'), wrap = $('ft-b-more-wrap');
+    if (!more || !wrap) return;
+    more.addEventListener('click', function () {
+      var open = wrap.style.display !== 'none';
+      wrap.style.display = open ? 'none' : 'flex';
+      more.textContent = open ? '▸ kalan 2' : '▴ az göster';
+      more.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  })();
+
+  // ---- F4 · peron CTA → oluşturma penceresi ----
+  (function () {
+    var open = $('f4btn'), dlg = $('f4dlg'), close = $('f4close');
+    if (!open || !dlg) return;
+    open.addEventListener('click', function () { dlg.style.display = 'flex'; });
+    if (close) close.addEventListener('click', function () { dlg.style.display = 'none'; });
+    // oluşturma düğmeleri de diyalogu kapatsın — ölü düğme kalmasın
+    Array.prototype.forEach.call(dlg.querySelectorAll('.mfoot .btn'), function (b) {
+      if (b !== close) b.addEventListener('click', function () { dlg.style.display = 'none'; });
+    });
+  })();
+
+  // ---- F5 · sekmeler: panel değiştirme + üç kaydırma dili ----
+  // Kaydırma HER Zaman CSS yoluyla yumuşar (scrollTop ataması scroll-behavior'a uyar);
+  // reduced-motion bloğu scroll-behavior'ı auto yapar → yumuşama tek hamleyle ölür.
+  Array.prototype.forEach.call(document.querySelectorAll('.tabset[data-switch]'), function (bar) {
+    var tabs = bar.querySelectorAll('.tab');
+    var scroller = bar.parentElement.querySelector('.scroller');
+    var mode = bar.getAttribute('data-scroll') || 'none';
+    var custom = bar.getAttribute('data-scroller');
+    if (custom) scroller = $(custom);
+    if (!scroller) return;
+    var panels = scroller.querySelectorAll(':scope > .spanel');
+    function topOf(p) {
+      return p.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    }
+    function visible(p) {
+      var pt = p.getBoundingClientRect().top, pb = p.getBoundingClientRect().bottom;
+      var st = scroller.getBoundingClientRect().top, sb = scroller.getBoundingClientRect().bottom;
+      return pt >= st - 2 && pb <= sb + 2;
+    }
+    Array.prototype.forEach.call(tabs, function (tab, i) {
+      tab.addEventListener('click', function () {
+        Array.prototype.forEach.call(tabs, function (t) { t.classList.remove('on'); });
+        tab.classList.add('on');
+        Array.prototype.forEach.call(panels, function (p, j) { p.hidden = j !== i; });
+        var p = panels[i];
+        if (!p) return;
+        if (mode === 'instant') {
+          scroller.scrollTop = topOf(p);
+        } else if (mode === 'smooth') {
+          scroller.scrollTop = topOf(p);
+        } else if (mode === 'cond') {
+          if (!visible(p)) scroller.scrollTop = topOf(p);
+        } else {
+          scroller.scrollTop = 0;
+        }
+      });
+    });
+  });
+
+  // ---- Çizelge "▸ tümü (N)" — her yerde aynı desen ----
+  Array.prototype.forEach.call(document.querySelectorAll('.morerow[data-tum]'), function (btn) {
+    var extra = btn.nextElementSibling;
+    if (!extra) return;
+    btn.addEventListener('click', function () {
+      var open = !extra.hidden;
+      extra.hidden = open;
+      btn.textContent = (open ? '▸' : '▾') + ' tümü (12)';
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  });
+
+  // ---- F6-A · rapor satır altında açılım ----
+  (function () {
+    var row = $('rp-a1'), body = $('rp-a1-body'), t = $('rp-a1-t');
+    if (!row || !body) return;
+    row.addEventListener('click', function () {
+      var open = !body.hidden;
+      body.hidden = open;
+      if (t) t.textContent = open ? '▸ rapor' : '▾ rapor';
+      row.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  })();
+
+  // ---- F6-B · okuma kartı (satır tıklaması açar/kapatır; ✕ kapatır) ----
+  (function () {
+    var row = $('rp-b1'), card = $('rp-b-card'), x = $('rp-b-close');
+    if (!row || !card) return;
+    function flip(open) { card.hidden = !open; row.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+    row.addEventListener('click', function () { flip(card.hidden); });
+    if (x) x.addEventListener('click', function () { flip(false); });
+  })();
+
+  // ---- §03 · durdur rampası: durdur → sürdür → zorla kes ----
+  (function () {
+    var stop = $('wd-stop'), acts = $('wd-acts'), msg = $('wd-msg'), sub = $('wd-sub');
+    var phase = $('wd-phase'), lamp = $('wd-lamp'), card = $('wd-card'), consoleEl = $('wd');
+    if (!stop || !acts) return;
+    var wdTimer = null;
+    function running() {
+      sub.textContent = 'Çalışıyor';
+      phase.innerHTML = '<i class="dot dot-run"></i>Uygulama · 2/4 adım';
+      lamp.className = 'lamp lamp-run';
+      card.textContent = 'Sade görünümü kuruluyor…';
+      msg.textContent = 'Çalışıyor.';
+      consoleEl.classList.add('glow-run');
+      acts.innerHTML = '<button class="btn btn-secondary" id="wd-stop" style="min-width:110px;">■ Durdur</button>';
+      $('wd-stop').addEventListener('click', stopping);
+    }
+    function stopping() {
+      var b = $('wd-stop');
+      b.classList.add('busy'); toBusy(b, 'Durduruluyor…');
+      msg.innerHTML = '<b>Durduruluyor…</b>';
+      sub.textContent = 'Durduruluyor…';
+      setTimeout(stopped, 900);
+    }
+    function stopped() {
+      sub.textContent = 'Durduruldu — istersen sürdür';
+      phase.innerHTML = '<i class="dot dot-idle" style="background: var(--signal);"></i>Durduruldu';
+      lamp.className = 'lamp lamp-idle';
+      card.textContent = 'Durduruldu — maliyet dondu: $3.60';
+      msg.innerHTML = '<b>Durduruldu.</b> Rapor kısmi kalır.';
+      consoleEl.classList.remove('glow-run');
+      acts.innerHTML = '<button class="btn btn-primary" id="wd-resume" style="min-width:100px;">▶ Sürdür</button>';
+      $('wd-resume').addEventListener('click', function () {
+        clearTimeout(wdTimer);
+        var r = this;
+        r.classList.add('busy'); toBusy(r, 'Sürdürülüyor…');
+        setTimeout(running, 700);
+      });
+      wdTimer = setTimeout(function () {
+        var fk = document.createElement('button');
+        fk.className = 'btn btn-danger';
+        fk.textContent = 'Zorla kes';
+        fk.addEventListener('click', function () {
+          clearTimeout(wdTimer);
+          sub.textContent = 'Kesildi';
+          phase.innerHTML = '<i class="dot dot-idle" style="background: var(--error);"></i>Kesildi';
+          card.textContent = 'Oturum kesildi — kayıt korundu: $3.60';
+          msg.innerHTML = '<b>Oturum kesildi.</b> Kayıt korundu.';
+          acts.innerHTML = '';
+          var retry = document.createElement('button');
+          retry.className = 'btn btn-ghost';
+          retry.textContent = 'Adımı yeniden çalıştır';
+          retry.addEventListener('click', function () {
+            retry.classList.add('busy'); toBusy(retry, 'Başlatılıyor…');
+            setTimeout(running, 700);
+          });
+          acts.appendChild(retry);
+        });
+        acts.appendChild(fk);
+      }, 1800);
+    }
+    stop.addEventListener('click', stopping);
+  })();
+
+  // ---- §08 · Sil hata örneği ----
+  (function () {
+    var b = $('sil-try'), e = $('sil-err');
+    if (!b || !e) return;
+    b.addEventListener('click', function () { e.hidden = !e.hidden; b.setAttribute('aria-expanded', e.hidden ? 'false' : 'true'); });
+  })();
+})();
+</script>
+</body>
+</html>
