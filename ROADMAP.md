@@ -221,15 +221,20 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       platform, D2 Kanıt chips with n/total, D3 TrackLane + the Repolar section deleted. 464
       tests (+12); E2E 26 specs (+8). **TD-037** narrowed; **TD-038** (review P2s) opened. Spec:
       `docs/work-orders/WO-0031d-faz-c-cila/order.md`.
-- [ ] **WO-0031e** — Tur-3 cila: the board grows a **kapatılabilir peronu** — when only closable work
-      orders remain (`working` empty, non-closable `up` empty), the board says "N iş kapatılmayı
-      bekliyor" + one CTA into the first closable detail, and the closable card carries the new ▸
-      `Kapatılabilir` (`canClose` derived at hydrate, test-first; the all-closed "Bütün işler tamam"
-      platform unchanged); the strip progress hairline fills **green** (`--color-proceed`, matching
-      `.stepfill`); the Denetim table rows **expand** to that session's transcript (mono DOM,
-      height-capped, instant, calm — `sourceIdx` core change); a DETAY tab switch **scrolls** the
-      opened panel into view (instant, <1080 tabs; rack unaffected). Spec:
-      `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
+- [x] **WO-0031e** — Tur-3 cila. Done (PR #37 `d7cc33e`, one PR): the board grows a **kapatılabilir
+      peronu** — when no live work is left (`working` empty, non-closable `up` empty) it says "N iş
+      kapatılmayı bekliyor" + one CTA into the first closable detail; the closable card carries ▸
+      `Kapatılabilir` (`closeable` = the canClose predicate derived at hydrate — the stage/cost
+      precedent, never stored; the all-closed "Bütün işler tamam" platform unchanged); the strip
+      progress hairline fills **green** (`--color-proceed`, matching `.stepfill`); the Denetim rows
+      **expand** to their session transcript (`sourceIdx` core change, test-first; mono DOM via
+      `transcriptLineText`, height-capped, empty transcript → no toggle); a DETAY tab switch
+      **scrolls** the opened panel into view (<1080 tabs; rack unaffected). Pre-merge (operator
+      tour): closed cards never claim Kapatılabilir — `deriveCardAction` guards `stage === 'closed'`
+      (derivePrimaryAction re-derives the close intent after closure) and the closed reason is the
+      done line "Tamamlandı", never "Sonraki oturum bekleniyor". 472 tests (+8); E2E 29 specs (+3,
+      seeded `raf` workspace). TD-036 untouched — `closeable` rides the existing `getWorkOrders`
+      payload. Spec: `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
 
 ## M3 — Evidence layer
 

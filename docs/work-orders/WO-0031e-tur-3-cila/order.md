@@ -2,7 +2,7 @@
 id: WO-0031e
 title: Tur-3 cila — kapatılabilir peronu, yeşil hairline, denetim dökümü, sekme kaydırma
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 tracks:
@@ -113,3 +113,24 @@ rows need `sourceIdx` to map back to their source session at all. The closable d
 `canClose`, not `stage === 'closure'` — the seed's `Uygulama sürüyor` sits at stage `implementation`
 while its Kapat card is live, which is exactly the state the board must surface. The transcript box
 is height-capped but line-unbounded; virtualization stays TD-037 territory.
+
+## Closure
+
+Tamamlandı — tek PR (#37, `d7cc33e`). Dört operatör kararı: (1) kapatılabilir kart sinyali —
+`closeable` = canClose koşulunun hydrate'ta adapter'da türevi (stage/cost emsali, saklanmaz; core
+test-first 4 durum); kart ▸ "Kapatılabilir" der. (2) Kapatılmayı-bekleyen peronu — working boş +
+up'ta kapatılabilirden başkası yokken "N iş kapatılmayı bekliyor" + tek CTA (ilk kapatılabilire
+açar); kapatılabilirler quiet-değil, kapalılar altta sessiz; stopped_asking sayılmaz; D1 tümü-kapalı
+peronu değişmedi. (3) Yeşil hairline — `.hairline-progress` dolgusu `--color-proceed` (`.stepfill`
+ile uyumlu; E2E RGB assert). (4) Denetim satır dökümü — `SessionAuditRow.sourceIdx` (test-first;
+sıralı kopyadan geri eşleme ancak böyle mümkün) + satır açılımı: mono DOM, labels'ın
+`transcriptLineText`'i (core'un formatTranscriptLine'ı xterm-ANSI — DOM'da değil), max-h-64,
+animasyonsuz, boş transkript düğmesiz. (5) Sekme kaydırma — `handleTabChange` çift-rAF
+scrollIntoView (instant), `sec-instrument` çapası. Merge öncesi operatör turu düzeltmesi
+(`14fce73`): kapalı kartlar asla "▸ Kapatılabilir" demez — `deriveCardAction` tepesinde
+stage==='closed' guard'ı (derivePrimaryAction kapanıştan sonra close niyetini yeniden türetiyordu)
++ kapalı kartın reason satırı "Tamamlandı" ("Sonraki oturum bekleniyor" değil). 472 test (+8);
+E2E 29 spec (+3; `raf` workspace'i). TD-036'ya dokunulmadı — closeable mevcut `getWorkOrders`
+yüküne biner.
+
+_Closed 2026-08-18 at d7cc33ec738c8866b2dee02a0d8b1ef5f17376fe_
