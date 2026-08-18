@@ -186,7 +186,8 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
 
   let main;
   if (load === 'loading') {
-    main = <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>;
+    // TD-037: the named load line — what is actually being read, never a bare 'Yükleniyor…'.
+    main = <p className="loadline px-4 py-8">{UI.loadWorkOrders}</p>;
   } else if (load === 'error') {
     main = (
       <div className="px-6 py-8">
@@ -238,7 +239,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
       />
     ) : (
-      <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
+      <p className="loadline px-4 py-8">{UI.loadSteps}</p>
     );
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state

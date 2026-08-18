@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
-import { PaneError, PaneShell, PhaseLine } from './pane-chrome';
+import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
 import { Terminal } from './Terminal';
 import { useViewMode } from '../../data/view-mode';
@@ -73,6 +73,8 @@ export function StepPane({
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
+  // F7: running but nothing written yet — one honest line instead of a blank canvas.
+  const emptyRun = state.status === 'running' && state.entries.length === 0;
 
   // The DETAY row form's live costline (v6: `$3.60 · 00:14`) — the drive's cost plus its elapsed.
   const running = store.get(driveKey)?.running ?? false;
@@ -93,7 +95,9 @@ export function StepPane({
           </span>
           {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
         </div>
-        {hasStream ? (
+        {emptyRun ? (
+          <StreamLine />
+        ) : hasStream ? (
           <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} compact />
         ) : (
           <p className="text-xs text-inkdim">{UI.noSession}</p>
@@ -108,7 +112,11 @@ export function StepPane({
   return (
     <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
       {hasStream ? (
-        <PhaseLine phase={phase} label={phase === 'asking_permission' ? UI.askingRole(step.role) : SIMPLE_PHASE_LABELS[phase]} />
+        // F7 rides the SADE phase line while the stream is empty — the same line, calmer skin.
+        <PhaseLine
+          phase={phase}
+          label={emptyRun ? UI.streamOpened : phase === 'asking_permission' ? UI.askingRole(step.role) : SIMPLE_PHASE_LABELS[phase]}
+        />
       ) : (
         <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}

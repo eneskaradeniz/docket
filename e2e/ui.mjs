@@ -473,6 +473,30 @@ await spec('strip gates the order.md writers while a drive runs (absent + reason
   await backToBoard();
 });
 
+await spec('a running session with zero entries says so; the line leaves with the first entry (F7)', async () => {
+  await stopAllDrives(); // the one-drive-at-a-time rule — stage this on a FRESH work order
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Boş akış denemesi');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400); // create → the detail arrives
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(500);
+  // running, nothing written yet — SADE's phase line carries the honest copy
+  assert.ok((await page.getByText('Oturum açıldı — çıktı bekleniyor').count()) >= 1, 'no running-empty line');
+  // the first transcript entry replaces it
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'assistant_text', text: 'İlk çıktı satırı geldi.' }));
+  await page.waitForTimeout(400);
+  assert.equal(await page.getByText('Oturum açıldı — çıktı bekleniyor').count(), 0, 'the line stayed after the first entry');
+  await stopAllDrives();
+  // cleanup: the throwaway work order leaves the way it came
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('Evet, sil').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Boş akış' }).count(), 0, 'the throwaway F7 WO survived');
+});
+
 await spec('Düzenle is a dialog; the title edit persists and the screen stays intact', async () => {
   await openDetail('Plan bekliyor');
   // spec 14's approval may have left an auto-chained step drive running in the background — a live
@@ -760,6 +784,13 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
   });
   try {
     const emptyPage = await emptyApp.firstWindow();
+    // TD-038.5: the second app gets its own console collector — its renderer errors used to pass
+    // the zero-errors spec silently.
+    const emptyConsoleErrors = [];
+    emptyPage.on('console', (msg) => {
+      if (msg.type() === 'error') emptyConsoleErrors.push(msg.text());
+    });
+    emptyPage.on('pageerror', (err) => emptyConsoleErrors.push(String(err)));
     await emptyPage.waitForLoadState('domcontentloaded');
     await emptyPage.waitForTimeout(700);
     assert.ok((await emptyPage.getByText('Docket', { exact: true }).count()) >= 1, 'no brand on an empty DB');
@@ -785,6 +816,7 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     assert.equal(await emptyPage.getByText('Sıra sende', { exact: true }).count(), 0, 'a bucket header rendered at zero WOs');
     assert.equal(await emptyPage.locator('[data-closed-toggle]').count(), 0, 'a closed toggle rendered at zero WOs');
     await emptyPage.screenshot({ path: join(SHOTS, 'zero-wo-hero@980.png') });
+    assert.deepEqual(emptyConsoleErrors, [], `empty-DB console errors: ${emptyConsoleErrors.join(' | ')}`);
   } finally {
     await emptyApp.close();
   }

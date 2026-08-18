@@ -230,7 +230,7 @@ function StepReportBody({
         {clock ? <span className="ml-auto font-mono text-[10px] text-inkdim">{clock}</span> : null}
       </div>
       {body === null ? (
-        <p className="text-xs text-inkdim">{UI.loading}</p>
+        <p className="loadline text-xs">{UI.loadReport}</p>
       ) : body.trim() ? (
         <MarkdownBody content={body} />
       ) : (

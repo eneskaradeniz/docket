@@ -51,6 +51,9 @@ export function Terminal({
   const termRef = useRef<XTerm | null>(null);
   const writtenCountRef = useRef(0);
   const lastResetKeyRef = useRef<string | undefined>(undefined);
+  // TD-038.3: the pulse's dispose timer rides this ref — cleared on the effect's cleanup AND on
+  // unmount, so a disposed terminal is never decorated by a timer that outlived it.
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Create the terminal once; refit whenever the CONTAINER resizes; dispose on unmount. `disableStdin`
   // keeps it read-only (input stays the prompt + drive controls). A ResizeObserver (WO-0031c) — not the
@@ -132,12 +135,18 @@ export function Terminal({
         const marker = term.registerMarker(-1);
         if (marker) {
           const deco = term.registerDecoration({ marker, width: term.cols, backgroundColor: 'rgba(76, 195, 138, 0.12)' });
-          setTimeout(() => { deco?.dispose(); marker.dispose(); }, 400);
+          pulseTimerRef.current = setTimeout(() => { deco?.dispose(); marker.dispose(); }, 400);
         }
       } catch {
         // decoration surface unavailable — the pulse is optional by ruling
       }
     }
+    return () => {
+      if (pulseTimerRef.current !== null) {
+        clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+    };
   }, [entries, resetKey]);
 
   return (

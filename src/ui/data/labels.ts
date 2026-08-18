@@ -536,6 +536,15 @@ export const UI = {
   termLive: 'canlı',
   stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
   auditSessions: (n: number): string => `${n} oturum`,
+  // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
+  // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
+  streamOpened: 'Oturum açıldı — çıktı bekleniyor',
+  // TD-037 — the named load lines replace the bare 'Yükleniyor…' (no skeletons, one line + a run
+  // dot). loadWorkOrders is the one string no mockup drew (the board reads work orders, not
+  // documents) — shown to the operator at PR review.
+  loadWorkOrders: 'İş emirleri okunuyor…',
+  loadSteps: 'Adımlar okunuyor…',
+  loadReport: 'Rapor okunuyor…',
   // WO-0031f T1 — the closed-list toggle, ONE pattern on all three board surfaces ('▸ 3 kapalı iş';
   // the count is data, the word is copy — >5 closed starts collapsed).
   closedToggleWord: 'kapalı iş',

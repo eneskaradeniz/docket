@@ -3,7 +3,7 @@ import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInp
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
 import { Button, Segmented, Textarea } from '../../kit';
-import { PaneError, PaneShell, PhaseLine } from './pane-chrome';
+import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { Terminal } from './Terminal';
 import { useViewMode } from '../../data/view-mode';
@@ -72,6 +72,8 @@ export function SessionPane({
   // SADE mode derives one calm phase from the live state; DETAY shows the raw themed terminal.
   const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
+  // F7: running but nothing written yet — one honest line instead of a blank canvas.
+  const emptyRun = state.status === 'running' && state.entries.length === 0;
   // A session persisted across restart (WO-0010) — offer resume only when one exists for the role.
   const resumeSessionId = sessions.find((s) => s.role === role && s.providerSessionId)?.providerSessionId;
   const resume = (): void => {
@@ -127,7 +129,13 @@ export function SessionPane({
         </div>
       ) : null}
 
-      {hasStream ? (
+      {emptyRun ? (
+        viewMode === 'sade' ? (
+          <PhaseLine phase={phase} label={UI.streamOpened} />
+        ) : (
+          <StreamLine />
+        )
+      ) : hasStream ? (
         viewMode === 'sade' ? (
           <PhaseLine phase={phase} label={phase === 'asking_permission' ? UI.askingRole(role) : SIMPLE_PHASE_LABELS[phase]} />
         ) : (
