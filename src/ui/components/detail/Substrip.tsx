@@ -102,7 +102,7 @@ export function Substrip({
               key={idx}
               data-seg={idx}
               className={cn(
-                'h-3 w-[3px] rounded-[2px]',
+                'segcell h-3 w-[3px] rounded-[2px]',
                 segments.activeIdx === idx
                   ? 'bg-info'
                   : idx <= segments.done

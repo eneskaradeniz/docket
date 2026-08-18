@@ -427,6 +427,34 @@ await spec('substrip band: sıra · odak · ilerleme in one breath (WO-0031f H-4
   await backToBoard();
 });
 
+await spec('the report opens under its row and spotlights its owner (R1 + H-2)', async () => {
+  await openDetail('Uygulama sürüyor'); // step 1 done with a report path → the row is a real toggle
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  const row = page.locator('[data-step-idx="1"]');
+  const toggleBtn = row.locator('button[data-step-toggle="1"]');
+  assert.ok((await toggleBtn.count()) === 1, 'the done row is not a toggle button');
+  assert.equal(await toggleBtn.first().getAttribute('aria-expanded'), 'false', 'the report starts open');
+  await toggleBtn.click();
+  await page.waitForTimeout(350);
+  assert.equal(await toggleBtn.first().getAttribute('aria-expanded'), 'true', 'the toggle did not open');
+  // the report body sits UNDER its own row, headed 'Rapor · Adım 1' + the role + the clock
+  const rep = page.locator('[data-step-report="1"]');
+  assert.ok((await rep.count()) === 1, 'no report body under the row');
+  assert.ok((await rep.getByText('Rapor · Adım 1').count()) >= 1, 'the report header lost its title');
+  // H-2: the opened row is the owner (raised surface); the spine is dimmed; closing restores calm
+  assert.ok((await row.locator('.steprow.owner').count()) === 1, 'the open row is not the owner');
+  assert.ok((await page.locator('ul.steps.dimmed').count()) === 1, 'the spine does not dim while a report holds the gaze');
+  await toggleBtn.click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[data-step-report]').count(), 0, 'the report did not close');
+  assert.equal(await page.locator('ul.steps.dimmed').count(), 0, 'the spine stayed dimmed after closing');
+  assert.equal(await page.locator('.steprow.owner').count(), 0, 'a row kept the owner surface');
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
+  await backToBoard();
+});
+
 await spec('strip gates the order.md writers while a drive runs (absent + reason line)', async () => {
   await openDetail('Yeni iş emri örneği');
   // the drive may be fresh (Plan iste) or stopped from an earlier spec (Sürdür) — both start it
@@ -539,6 +567,13 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on the results card');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no Kapandı readout');
   assert.ok((await page.getByText('1/1 adım').count()) >= 1, 'no 1/1 adım stat');
+  // H-1: money never celebrates — the stats line carries no animation of its own
+  const statsAnim = await page.evaluate(() => {
+    const card = document.querySelector('[data-closure-card]');
+    const stats = card?.querySelector('p.font-mono') ?? null;
+    return stats ? getComputedStyle(stats).animationName : 'missing';
+  });
+  assert.equal(statsAnim, 'none', `the closure stats animate: ${statsAnim}`);
   await page.screenshot({ path: join(SHOTS, 'closure-results@980.png') });
   // reopening an already-closed WO is CALM — the seal renders without the animation class
   await backToBoard();

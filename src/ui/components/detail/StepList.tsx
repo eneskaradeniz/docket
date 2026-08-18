@@ -93,7 +93,7 @@ export function StepList({
   }, [steps]);
 
   return (
-    <ul className="flex flex-col gap-1.5" data-steps={steps.length}>
+    <ul className={`steps flex flex-col gap-1.5${reportStep ? ' dimmed' : ''}`} data-steps={steps.length}>
       {steps.map((s) => {
         const hasReport = s.status === 'done' && !!s.reportPath;
         const open = reportStep?.idx === s.idx;
@@ -151,11 +151,19 @@ export function StepList({
           <li key={s.idx} data-step-idx={s.idx} className="relative">
             <div
               className={cn(
-                'relative flex items-center gap-2 overflow-hidden rounded-md border border-hairline bg-surface px-2.5 py-1.5',
+                'steprow relative flex items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5',
+                // H-2: the opened report's row is the OWNER — its surface raises and its state edge
+                // names it; while it holds the gaze the spine is .dimmed and the siblings' BACKGROUND
+                // alone quiets one notch (text contrast untouched — the WO-0031c B4 lesson).
+                open ? 'owner' : '',
+                s.status === 'active' || driven ? 'act' : '',
                 // D3: the row's 3px state edge — done speaks proceed, the driven/active row info,
                 // the rest the quiet hairline base.
                 s.status === 'done' ? 'step-edge-done' : s.status === 'active' || driven ? 'step-edge-act' : 'step-edge',
-                flash ? (flash.tone === 'ok' ? 'flash' : 'flash-err') : '',
+                // H-1: the step-completion reward — pop + flash in the SAME one window (the flash
+                // machine arms on the done flip); checkmark draw + stepfill + the strip hairline
+                // advance are already data-driven.
+                flash ? (flash.tone === 'ok' ? 'pop flash' : 'flash-err') : '',
               )}
             >
               {hasReport ? (
@@ -215,7 +223,7 @@ function StepReportBody({
   }, [loadReport]);
 
   return (
-    <div id={`step-${step.idx}-report`} data-step-report={step.idx} className="repbody">
+    <div id={`step-${step.idx}-report`} data-step-report={step.idx} className="repbody reveal">
       <div className="mb-1 flex items-center gap-2">
         <span className="readout">{UI.reportTitle(step.idx)}</span>
         <RoleChip role={step.role} />
