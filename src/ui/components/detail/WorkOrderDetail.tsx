@@ -679,7 +679,7 @@ export function WorkOrderDetail({
                     <p className="readout text-proceed">{UI.closeWoDoneTitle}</p>
                   </div>
                   <p className="mt-2 font-mono text-[11px] text-inkdim">
-                    {UI.stripDuration} {UI.formatDuration(audit.total.durationMs)} · {UI.stripCost} {formatUsd(detail.cost.usd)} · {doneSteps}/{detail.steps.length} {UI.stepsUnit} · {UI.closeStatEvidence} {satisfied}/{detail.evidence.length} · {UI.closeStatReviews} {reviews}
+                    {UI.stripDuration} {UI.formatDuration(audit.total.durationMs)} · {formatUsd(detail.cost.usd)} · {doneSteps}/{detail.steps.length} {UI.stepsUnit} · {UI.closeStatEvidence} {satisfied}/{detail.evidence.length} · {UI.closeStatReviews} {reviews}
                   </p>
                   {sha ? (
                     <button

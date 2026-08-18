@@ -512,7 +512,8 @@ export const UI = {
   closeShaAria: 'Kapanış kaydı — kopyala',
   copyDone: 'Kopyalandı',
   // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
-  stripCost: 'Maliyet',
+  // WO-0031f review (operator): stripCost died — the price speaks for itself ("$9,50", no prefix);
+  // the LEDGER's column header (auditColCost) stays, it names a column.
   stripDuration: 'Süre',
   objectTitle: 'İtirazın ne?',
   dialogCloseAria: 'kapat',

@@ -1,5 +1,6 @@
 // DetailStrip (WO-0031c / v4) — the console's top row: ‹ back · WO badge + stage · the phase readout ·
-// right-aligned metrics (Maliyet, Süre — hidden at the narrowest sizes) · the GLOBAL SADE|DETAY
+// right-aligned metrics (the price, bare — its word died with the operator's review; Süre — hidden
+// at the narrowest sizes) · the GLOBAL SADE|DETAY
 // segment · the quiet delete icon. The work-order title rides underneath with the two strip badges:
 // the review cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display;
 // the ask card changes it). WO-0031d: the pencil/trash/review-badge are ABSENT while a drive is live
@@ -114,8 +115,9 @@ export function DetailStrip({
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2.5">
           {anyCost ? (
+            // WO-0031f review (operator): the price speaks for itself — the "Maliyet" prefix died.
             <span className="hidden whitespace-nowrap font-mono text-[11px] text-inkdim min-[520px]:inline">
-              {UI.stripCost} {formatUsd(detail.cost.usd)}
+              {formatUsd(detail.cost.usd)}
             </span>
           ) : null}
           {duration ? (
