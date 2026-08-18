@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
-import type { StepRole, StepSpec, StepView, WoEvent, WorkOrderDetailView } from '../../../core/types';
+import type { StepRole, StepSpec, StepView, WorkOrderDetailView } from '../../../core/types';
 import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
@@ -11,12 +11,11 @@ import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
 import { ActionRail, type RailAction } from './ActionRail';
-import { AuditTable } from './AuditTable';
 import { DetailBody } from './DetailBody';
-import { buildDetailSections } from './DetailSections';
+import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
 import { PlanApprovalCards } from './PlanApprovalCards';
-import { StepReport } from './StepReport';
+import { StepList } from './StepList';
 import { Substrip, turnGlowClass } from './Substrip';
 import { useDetailKeys } from './useDetailKeys';
 import { VerdictCard } from './VerdictCard';
@@ -44,7 +43,6 @@ import { useViewMode } from '../../data/view-mode';
 export function WorkOrderDetail({
   detail,
   docs,
-  events,
   permissionRule,
   onBack,
   onApprovePlan,
@@ -61,7 +59,6 @@ export function WorkOrderDetail({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
-  events: WoEvent[];
   permissionRule: PermissionRule;
   onBack: () => void;
   onApprovePlan: (planText: string, opts?: { editedCount?: number }) => Promise<void>;
@@ -477,15 +474,15 @@ export function WorkOrderDetail({
   useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
 
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
-  // tur-2 A7: the DETAY tab is controlled so the substrip's adım N/T can jump to the steps.
-  // WO-0031e tur-3: every tab SELECTION scrolls the opened panel's top into view — switching used
-  // to only unhide, leaving the scroll container wherever the previous panel left it. Instant
-  // (no smooth — reduced-motion safe by construction); Radix fires onValueChange only on a real
-  // change, so a same-tab re-click never scrolls and nothing scrolls on mount.
-  const [detailTab, setDetailTab] = useState('instrument');
+  // tur-2 A7 → WO-0031f v6: the DETAY tab pair (Akış | Kayıt) is controlled so the substrip's adım
+  // N/T can jump to the spine. Every tab SELECTION scrolls the opened panel's top into view —
+  // switching used to only unhide, leaving the scroll container wherever the previous panel left it.
+  // Instant (no smooth — reduced-motion safe by construction); Radix fires onValueChange only on a
+  // real change, so a same-tab re-click never scrolls and nothing scrolls on mount.
+  const [detailTab, setDetailTab] = useState('flow');
   const handleTabChange = (v: string): void => {
     setDetailTab(v);
-    // two frames: a SADE→DETAY switch mounts the sections first, then the anchor exists
+    // two frames: a SADE→DETAY switch mounts the panels first, then the anchor exists
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         document.getElementById(`sec-${v}`)?.scrollIntoView({ block: 'start' });
@@ -494,13 +491,14 @@ export function WorkOrderDetail({
   };
   const jumpToSteps = (): void => {
     setViewMode('detail');
-    handleTabChange('steps');
+    handleTabChange('flow');
   };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
-  const sections = useMemo(
-    () => buildDetailSections({ detail, steps: detail.steps, events, docs, onOpenReport: setReportStep }),
-    [detail, events, docs],
-  );
+  const recordSections = useMemo(() => buildRecordSections({ detail, docs }), [detail, docs]);
+  // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
+  const toggleReport = (step: StepView): void => {
+    setReportStep((cur) => (cur?.idx === step.idx ? undefined : step));
+  };
 
   // Ask cards are pinned above everything in every mode (v4: the amber moment outranks). Rule lift +
   // the diff peek ride them; risky writes wear the tag (core/risky decides).
@@ -751,14 +749,6 @@ export function WorkOrderDetail({
       ) : null}
 
       {!planStage && !hasSteps && docs.plan ? <p className="text-xs text-error">{UI.noSteps}</p> : null}
-
-      {reportStep ? (
-        <StepReport
-          step={reportStep}
-          loadReport={() => onGetStepReport(reportStep.idx, reportStep.role)}
-          onClose={() => setReportStep(undefined)}
-        />
-      ) : null}
     </div>
   );
 
@@ -768,19 +758,37 @@ export function WorkOrderDetail({
   ) : reviewIdx !== undefined ? (
     <ReviewPane step={detail.steps.find((s) => s.idx === reviewIdx)!} workOrderId={detail.id} />
   ) : activeStep ? (
-    <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} />
+    <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} />
   ) : null;
 
-  // The archive's default body is the session ledger (v4 §4: "Tablo arşivde varsayılan").
-  const auditTable = detail.sessions.length > 0 ? <AuditTable sessions={detail.sessions} steps={parsePlanSteps(docs.plan)} /> : null;
-  const bodyDecision = phase.kind === 'done' && auditTable ? (
-    <div className="flex flex-col gap-3">
+  // WO-0031f v6 — the two surfaces. Akış: the decision cards + the step spine (in DETAY, the driven
+  // row carries its terminal inline, so the StepPane instrument renders ONLY in SADE — never twice);
+  // a plan-stage / step-less / reviewing WO keeps its instrument card above whatever flow exists.
+  // Kayıt: the one record stack. The archive (a closed WO) is the record as the body, at every width.
+  const stepPaneLivesInSpine = viewMode === 'detail' && !planStage && hasSteps && reviewIdx === undefined && !!activeStep;
+  const spine =
+    viewMode === 'detail' && !planStage && hasSteps ? (
+      <StepList
+        steps={detail.steps}
+        sessions={detail.sessions}
+        workOrderId={detail.id}
+        {...(reviewIdx === undefined && activeStep ? { activeIdx: activeStep.idx } : {})}
+        {...(reportStep ? { reportStep } : {})}
+        onToggleReport={toggleReport}
+        onGetStepReport={onGetStepReport}
+        now={now}
+      />
+    ) : null;
+  const flow = (
+    <div className="flex min-w-0 flex-col gap-3.5">
       {decision}
-      {auditTable}
+      {stepPaneLivesInSpine ? null : instrument}
+      {spine}
     </div>
-  ) : (
-    decision
   );
+  const record = <RecordStack sections={recordSections} />;
+  const flowAside = hasSteps ? `${detail.steps.filter((s) => s.status === 'done').length}/${detail.steps.length}` : undefined;
+  const recordAside = `${detail.evidence.filter((e) => e.status === 'satisfied').length}/${detail.evidence.length}`;
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', turnGlowClass(turn, phase.kind === 'done'))}>
@@ -809,9 +817,11 @@ export function WorkOrderDetail({
           viewMode={viewMode}
           tab={detailTab}
           onTabChange={handleTabChange}
-          decision={bodyDecision}
-          instrument={instrument}
-          sections={sections}
+          flow={flow}
+          {...(flowAside !== undefined ? { flowAside } : {})}
+          record={record}
+          recordAside={recordAside}
+          archive={detail.stage === 'closed'}
         />
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />

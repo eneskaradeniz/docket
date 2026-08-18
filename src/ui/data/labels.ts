@@ -420,10 +420,9 @@ export const UI = {
   architectRequest: 'Mimarın bir isteği var',
   // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
   inviteFirstWo: 'Haydi ilk iş emrini açalım',
-  // Plan adımları (WO-0017)
-  stepsHeader: 'Plan',
+  // Plan adımları (WO-0017). WO-0031f: stepsHeader/stepReportTitle died with the spine restructure —
+  // the spine carries no "Plan" header (the Akış count does) and the report header is reportTitle(idx).
   stepsUnit: 'adım',
-  stepReportTitle: 'Rapor',
   stepReportMissing: '(rapor henüz yok)',
   stepScopeAll: 'hepsi',
   stepBlockedHint: 'kapsam bir track ile eşleşmiyor',
@@ -524,6 +523,19 @@ export const UI = {
   closedImmutableReason: 'Kapalı iş emri değişmez',
   // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
   deleteWoFailed: 'Silinemedi — depo yazma hatası.',
+  // WO-0031f v6 — the two DETAY surfaces. Akış is the body itself (decision cards + the step spine);
+  // Kayıt is one drawer (kanıt chips + belgeler + döküm). The counts ride the tab (S1-C shrunk).
+  secFlow: 'Akış',
+  secRecord: 'Kayıt',
+  // WO-0031f v6 §01 — the spine's row metas + the report under its own row.
+  reportTitle: (idx: number): string => `Rapor · Adım ${idx}`,
+  repOpen: '▸ rapor',
+  repClose: '▾ rapor',
+  stepQueued: 'sırada',
+  stepRunningShort: 'çalışıyor',
+  termLive: 'canlı',
+  stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
+  auditSessions: (n: number): string => `${n} oturum`,
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
   // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
   // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
@@ -538,11 +550,10 @@ export const UI = {
   stepReady: 'hazır',
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
   planProposedSteps: (n: number) => `Mimar ${n} adım önerdi`,
-  // DETAY bölüm yüzeyleri — sekme adları @<1080 ve raf başlıkları @≥1080 aynı dili kullanır.
-  secTerminal: 'Terminal',
-  secSteps: 'Adımlar',
+  // DETAY bölüm yüzeyleri — WO-0031f v6: altı sekme öldü, iki yüzey var (Akış | Kayıt); Kayıt'ın
+  // kendi bölümleri (Kanıt/Belgeler/Kaynaklar) raf başlığı olarak aynı dili kullanır. secTerminal/
+  // secSteps/secTimeline died with the restructure (the spine IS Akış; Çizelge died with Y-2).
   secEvidence: 'Kanıt',
-  secTimeline: 'Çizelge',
   secDocs: 'Belgeler',
   secSources: 'Kaynaklar',
   secTracks: 'Repolar',

@@ -39,10 +39,13 @@ function readTokens(): ITheme {
 export function Terminal({
   entries,
   resetKey,
+  compact,
 }: {
   entries: TranscriptLine[];
   /** Changes when the stream should clear (a fresh drive). SessionPane feeds the provider session id. */
   resetKey?: string;
+  /** WO-0031f v6: the in-row form of the active step's spine row — a shorter floor (120px vs 220px). */
+  compact?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -138,7 +141,7 @@ export function Terminal({
   }, [entries, resetKey]);
 
   return (
-    <div className="h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5">
+    <div className={compact ? 'h-full min-h-[120px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5' : 'h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5'}>
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

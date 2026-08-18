@@ -1,5 +1,4 @@
 import type { StepRole, WorkOrderDetailView } from '../../core/types';
-import type { WoEvent } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../core/source';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
@@ -9,7 +8,6 @@ import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 export function DetailScreen({
   detail,
   docs,
-  events,
   permissionRule,
   onBack,
   onApprovePlan,
@@ -26,7 +24,6 @@ export function DetailScreen({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
-  events: WoEvent[];
   /** WO-0031c: the effective permission rule (the WO's own, else the Settings default). */
   permissionRule: PermissionRule;
   onBack: () => void;
@@ -48,7 +45,6 @@ export function DetailScreen({
       <WorkOrderDetail
         detail={detail}
         docs={docs}
-        events={events}
         onBack={onBack}
         onApprovePlan={onApprovePlan}
         onUpdateWorkOrder={onUpdateWorkOrder}

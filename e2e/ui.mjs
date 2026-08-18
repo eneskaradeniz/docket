@@ -167,26 +167,40 @@ await spec('stopped_asking: ask card + aria-live Sıra sende + quiet rail messag
   assert.match(title, /^\(\d+\) izin bekliyor$/, `title counter missing: ${title}`);
 });
 
-await spec('DETAY at 980: sections are tabs; the seeded terminal survives a tab switch (forceMount)', async () => {
-  // still on 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the Terminal tab
-  // actually holds an xterm instance with content.
+await spec('DETAY at 980: two surfaces — Akış | Kayıt; the terminal lives in the driven row (WO-0031f)', async () => {
+  // still on 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the spine's
+  // driven row actually holds an xterm instance with content.
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(400);
   assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'no tab bar at 980');
-  for (const tab of ['Terminal', 'Adımlar', 'Kanıt', 'Çizelge', 'Belgeler']) {
-    assert.ok((await page.getByRole('tab', { name: new RegExp(`^${tab}`) }).count()) >= 1, `no ${tab} tab`);
-  }
-  await page.getByRole('tab', { name: /Adımlar/ }).click();
+  // v6 Y-3: EXACTLY two tabs — Akış (done/total steps) and Kayıt (satisfied/total evidence)
+  const tabs = await page.locator('[role="tab"]').allTextContents();
+  assert.equal(tabs.length, 2, `expected exactly 2 tabs, got: ${tabs.join(' | ')}`);
+  assert.ok(tabs[0]?.includes('Akış'), `the first tab is not Akış: ${tabs[0]}`);
+  assert.ok(tabs[0]?.includes('0/1'), `Akış carries no done/total count: ${tabs[0]}`);
+  assert.ok(tabs[1]?.includes('Kayıt'), `the second tab is not Kayıt: ${tabs[1]}`);
+  assert.ok(/\d+\/\d+/.test(tabs[1] ?? ''), `Kayıt carries no evidence count: ${tabs[1]}`);
+  // S1-C: the active tab wears the signal underline
+  const underline = await page.evaluate(() => {
+    const el = document.querySelector('[role="tab"][data-state="active"]');
+    return el ? getComputedStyle(el).boxShadow : 'missing';
+  });
+  assert.ok(underline.includes('245, 181, 68'), `the active tab has no signal underline: ${underline}`);
+  // Y-2: the Çizelge surface is DEAD everywhere
+  assert.equal(await page.getByRole('tab', { name: /Çizelge/ }).count(), 0, 'a Çizelge tab still exists');
+  assert.equal(await page.getByText('Çizelge', { exact: true }).count(), 0, 'a Çizelge surface still exists');
+  // the terminal is INLINE in the driven step's row (pinned — no toggle hides it)
+  assert.ok((await page.locator('[data-step-live] .xterm').count()) >= 1, 'no xterm inside the driven step row');
+  await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(250);
-  assert.ok((await page.getByText('0/1', { exact: true }).count()) >= 1, 'steps section not shown');
-  // tur-2 A2: the click actually SWITCHES panels — the active one is visible, inactive ones hidden
-  // (forceMount keeps them alive; the old spec passed tautologically with everything stacked).
+  // tur-2 A2: the click actually SWITCHES panels — the active one is visible, the other hidden
+  // (forceMount keeps the xterm alive; the old spec passed tautologically with everything stacked).
   assert.equal(await page.locator('[role="tabpanel"][data-state="active"]').count(), 1, 'not exactly one active panel');
   assert.ok(await page.locator('[role="tabpanel"][data-state="active"]').isVisible(), 'the active panel is hidden');
   const inactive = page.locator('[role="tabpanel"][data-state="inactive"]');
   assert.ok((await inactive.count()) >= 1, 'no inactive panels to hide');
   assert.ok(await inactive.first().isHidden(), 'an inactive panel stayed visible');
-  await page.getByRole('tab', { name: /Terminal/ }).click();
+  await page.getByRole('tab', { name: /Akış/ }).click();
   await page.waitForTimeout(350);
   assert.ok((await page.locator('.xterm').count()) >= 1, 'terminal canvas gone after a tab switch');
   await page.screenshot({ path: join(SHOTS, 'detail-tabs@980.png') });
@@ -261,16 +275,17 @@ await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline rec
   assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no asking rail line');
   await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
   await page.waitForTimeout(400);
-  // end the turn, then check the timeline entry
+  // end the turn; WO-0031f Y-2 killed the Çizelge surface, so the decision is asserted where it
+  // still lives — the stored event stream (the port is untouched; only the UI section died)
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(350);
-  await page.getByRole('tab', { name: /Çizelge/ }).click();
-  await page.waitForTimeout(250);
-  assert.ok((await page.getByText('İzin kararı').count()) >= 1, 'no permission_decision in the timeline');
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
+  const decisionKinds = await page.evaluate(async () => {
+    const wos = await window.docket.source.getWorkOrders();
+    const wo = wos.find((w) => w.title === 'Yeni iş emri örneği');
+    const evs = await window.docket.source.getWorkOrderEvents(wo.id);
+    return evs.map((e) => e.kind);
+  });
+  assert.ok(decisionKinds.includes('permission_decision'), `the event stream lost the permission decision: ${decisionKinds.join(',')}`);
   await backToBoard();
 });
 
@@ -315,13 +330,16 @@ await spec('plan editing: Düzenle → role cycle → aim edit → add → count
   assert.ok((await page.getByText('2 değişiklik', { exact: false }).count()) >= 1, 'no change counter in the rail');
   await page.getByRole('button', { name: 'Onayla', exact: true }).first().click();
   await page.waitForTimeout(700);
-  // the plan is approved; the timeline says "düzenlenmiş onay"
+  // the plan is approved; WO-0031f Y-2 killed the Çizelge surface, so the edited approval is
+  // asserted in the stored event stream (detail 'edited:N' — what the dead timeline rendered from)
   assert.ok((await page.getByText('Plan hazır', { exact: true }).count()) === 0, 'approval did not land');
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(350);
-  await page.getByRole('tab', { name: /Çizelge/ }).click();
-  await page.waitForTimeout(250);
-  assert.ok((await page.getByText('düzenlenmiş onay · 2 değişiklik').count()) >= 1, 'no edited-approval timeline entry');
+  const approved = await page.evaluate(async () => {
+    const wos = await window.docket.source.getWorkOrders();
+    const wo = wos.find((w) => w.title === 'Plan bekliyor');
+    const evs = await window.docket.source.getWorkOrderEvents(wo.id);
+    return evs.find((e) => e.kind === 'plan_approved')?.detail ?? '';
+  });
+  assert.equal(approved, 'edited:2', `the edited approval did not land in the event stream: ${approved}`);
   // gates cadence: approval chained the drives ("Onayla — adımlar sırayla koşar") — stop the whole
   // chain (step + the auto-review it triggers) before leaving.
   await page.getByRole('button', { name: 'SADE' }).first().click();
@@ -379,12 +397,12 @@ await spec('substrip: step segments replace the esc hint (adım N/T + cells)', a
   assert.ok((await page.locator('[data-seg]').count()) >= 1, 'no segment cells');
   assert.ok((await page.getByText('adım 0/1').count()) >= 1, 'no adım N/T readout');
   assert.equal(await page.getByText('esc geri').count(), 0, 'the standing esc hint still renders');
-  // tur-2 A7: the segments are a real jump — click → DETAY + the Adımlar panel active
+  // tur-2 A7 → WO-0031f: the segments are a real jump — click → DETAY + the Akış surface active
   await page.locator('button[data-segments]').first().click();
   await page.waitForTimeout(500);
   assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'the jump did not switch to DETAY');
   const activeTab = await page.locator('[role="tab"][data-state="active"]').first().textContent();
-  assert.ok(activeTab && activeTab.includes('Adımlar'), `the jump did not select Adımlar: ${activeTab}`);
+  assert.ok(activeTab && activeTab.includes('Akış'), `the jump did not select Akış: ${activeTab}`);
   await page.getByRole('button', { name: 'SADE' }).first().click();
   await page.waitForTimeout(250);
   await backToBoard();
@@ -448,15 +466,19 @@ await spec('Sil is a dialog and cascades (the throwaway WO from the create spec)
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Tek adımda' }).count(), 0, 'the deleted WO still has a card');
 });
 
-await spec('Kanıt: summary aside + chips (absence sentences, no Repolar section)', async () => {
+await spec('Kayıt: kanıt chips at the top of the drawer + Belgeler + döküm (WO-0031f v6)', async () => {
   await openDetail('Uygulama sürüyor'); // single-repo, implementation: 1 gate satisfied, rest absent
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(400);
-  // tur-2 D3: the Repolar section is GONE — no tab, no rack header
-  assert.equal(await page.getByRole('tab', { name: /Repolar/ }).count(), 0, 'a Repolar tab still exists');
-  await page.getByRole('tab', { name: /Kanıt/ }).click();
+  // tur-2 D3 stands: the Repolar section stays gone — and the two-tab world has no room for it
+  assert.equal(await page.getByText('Repolar', { exact: true }).count(), 0, 'a Repolar surface still exists');
+  await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(250);
-  // D2: the aside carries n/total (tab badge + panel container)
+  // v6: the three Kanıt chips sit at the TOP of the record (a summary, not a section)
+  const record = page.locator('#sec-record');
+  const first = await record.locator('section').first().textContent();
+  assert.ok(first?.includes('Kanıt'), `Kanıt is not the record's first section: ${first}`);
+  // D2: the aside carries n/total
   const sum = await page.locator('[data-evidence-sum]').first().getAttribute('data-evidence-sum');
   assert.ok(sum && /^\d+\/\d+$/.test(sum), `no n/total evidence summary: ${sum}`);
   // chips: satisfied ✓, absence sentences in plain words (never a bare 'eksik')
@@ -464,6 +486,13 @@ await spec('Kanıt: summary aside + chips (absence sentences, no Repolar section
   assert.ok((await page.getByText('henüz PR yok', { exact: true }).count()) >= 1, 'no track position chip');
   assert.ok((await page.getByText('doğrulayıcı raporu yok', { exact: true }).count()) >= 1, 'no verification absence sentence');
   assert.equal(await page.getByText('eksik', { exact: true }).count(), 0, 'a reasonless eksik leaked');
+  // v6 order: Kanıt → Belgeler → Oturum dökümü (+ Kaynaklar last, on presence) — the stack's own
+  // section headers only (MarkdownDoc renders the doc's own h2s nested deeper)
+  const titles = await record.locator('aside > section > h2').allTextContents();
+  const ids = ['Kanıt', 'Belgeler', 'Oturum dökümü'];
+  for (let i = 0; i < ids.length; i++) {
+    assert.ok(titles[i]?.includes(ids[i]), `record section ${i} is not ${ids[i]}: ${titles.join(' | ')}`);
+  }
   await page.getByRole('button', { name: 'SADE' }).first().click();
   await page.waitForTimeout(200);
   await backToBoard();
@@ -583,7 +612,7 @@ await spec('audit rows expand: the session transcript opens under its row (tur-3
   await openDetail('Raf işi');
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(300);
-  await page.getByRole('tab', { name: /Oturum dökümü/ }).click();
+  await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(300);
   await page.locator('[data-audit-toggle]').first().click();
   await page.waitForTimeout(300);
@@ -601,32 +630,32 @@ await spec('audit rows expand: the session transcript opens under its row (tur-3
   await backToBoard();
 });
 
-await spec('tab switch scrolls the opened panel into view (tur-3)', async () => {
-  // still on the raf workspace; the long Objective guarantees the docs panel overflows 980×620
+await spec('tab switch scrolls the opened panel into view (tur-3, re-anchored to the two surfaces)', async () => {
+  // still on the raf workspace; the long Objective guarantees the Kayıt panel overflows 980×620
   await openDetail('Raf işi');
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(400);
   const read = () => page.evaluate(() => {
-    const panel = document.getElementById('sec-docs');
+    const panel = document.getElementById('sec-record');
     const container = panel ? panel.closest('.overflow-y-auto') : null;
     return {
       top: container ? container.scrollTop : -1,
-      docsTop: panel ? panel.getBoundingClientRect().top : -1,
+      recordTop: panel ? panel.getBoundingClientRect().top : -1,
       scrollable: container ? container.scrollHeight - container.clientHeight : -1,
     };
   });
-  await page.getByRole('tab', { name: /Belgeler/ }).click();
+  await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(300);
   let state = await read();
-  assert.ok(state.scrollable > 40, `the docs panel has no room to scroll (${state.scrollable})`);
-  assert.ok(state.top > 0, `selecting Belgeler did not scroll (scrollTop ${state.top})`);
-  assert.ok(state.docsTop < 240, `sec-docs is not in view (${state.docsTop})`);
-  const afterDocs = state.top;
-  // back to Terminal — the first panel; the scroll moves UP
-  await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
+  assert.ok(state.scrollable > 40, `the record panel has no room to scroll (${state.scrollable})`);
+  assert.ok(state.top > 0, `selecting Kayıt did not scroll (scrollTop ${state.top})`);
+  assert.ok(state.recordTop < 240, `sec-record is not in view (${state.recordTop})`);
+  const afterRecord = state.top;
+  // back to Akış — the first surface; the scroll moves UP
+  await page.getByRole('tab', { name: /Akış/ }).click();
   await page.waitForTimeout(300);
   state = await read();
-  assert.ok(state.top < afterDocs, `switching back to Terminal did not scroll up (${state.top} vs ${afterDocs})`);
+  assert.ok(state.top < afterRecord, `switching back to Akış did not scroll up (${state.top} vs ${afterRecord})`);
   await backToBoard();
 });
 
