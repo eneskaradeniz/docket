@@ -481,6 +481,11 @@ await spec('switching reports closes the sibling and arrives at the new one\'s t
   assert.ok(after > before, `the switch did not scroll down (${before} → ${after})`);
   const top = await topOf('[data-step-report="8"]');
   assert.ok(top >= 0 && top < 300, `report 8's top is not in reading position (${top})`);
+  // the ROW heading rides along — the report never starts without its owning line in view. (A LATE
+  // row clamps short of the very top: too little content follows it to scroll further — in-view is
+  // the honest contract, the arrival targets the row so an EARLY row lands right under the bar.)
+  const rowTop = await topOf('[data-step-idx="8"]');
+  assert.ok(rowTop >= -1 && rowTop < 300, `report 8's row heading is not in view (${rowTop})`);
   await page.getByRole('button', { name: 'SADE' }).first().click();
   await page.waitForTimeout(200);
   await backToBoard();
@@ -737,6 +742,13 @@ await spec('tab switch scrolls the opened panel into view (tur-3, re-anchored to
   assert.ok(state.scrollable > 40, `the record panel has no room to scroll (${state.scrollable})`);
   assert.ok(state.top > 0, `selecting Kayıt did not scroll (scrollTop ${state.top})`);
   assert.ok(state.recordTop < 240, `sec-record is not in view (${state.recordTop})`);
+  // WO-0031f review: the Akış|Kayıt bar STAYS PINNED while the content scrolls under it
+  const barTop = await page.evaluate(() => {
+    const bar = document.querySelector('[role="tablist"]');
+    const container = document.querySelector('.flow-scroll');
+    return bar && container ? bar.getBoundingClientRect().top - container.getBoundingClientRect().top : -1;
+  });
+  assert.ok(barTop >= -1 && barTop < 60, `the tab bar scrolled away (${barTop})`);
   const afterRecord = state.top;
   // back to Akış — the first surface; the scroll moves UP
   await page.getByRole('tab', { name: /Akış/ }).click();

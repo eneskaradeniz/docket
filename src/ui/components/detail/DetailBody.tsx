@@ -74,8 +74,10 @@ export function DetailBody({
     <div className="flex min-h-0 flex-col gap-3.5">
       <Tabs value={tab} onValueChange={onTabChange} className="min-h-0">
         {/* v6 Y-3 / S1-C: two tabs, the signal underline, the active count info-toned — the six-tab
-            world is gone; every old surface has its written home (the v6 §04 yuva tablosu). */}
-        <TabsList className="flowtabs">
+            world is gone; every old surface has its written home (the v6 §04 yuva tablosu). Sticky
+            (operator review): the pair stays pinned at the scroller top — the surfaces' name should
+            not scroll away under the content it governs (v5 §04's sticky panel-head treatment). */}
+        <TabsList className="flowtabs sticky top-0 z-20">
           <TabsTrigger value="flow" className="flowtab">
             {UI.secFlow}
             {flowAside ? <span className="flowtab-n">{flowAside}</span> : null}

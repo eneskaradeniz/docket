@@ -148,7 +148,7 @@ export function StepList({
         );
 
         return (
-          <li key={s.idx} data-step-idx={s.idx} className="relative">
+          <li key={s.idx} id={`step-row-${s.idx}`} data-step-idx={s.idx} className="relative">
             <div
               className={cn(
                 'steprow relative flex items-center gap-2 overflow-hidden rounded-md px-2.5 py-1.5',
@@ -180,9 +180,12 @@ export function StepList({
                   aria-controls={`step-${s.idx}-report`}
                   onClick={() => {
                     if (!open) {
+                      // WO-0031f review: the ROW is the arrival target, not the report body — the
+                      // heading (idx · role · aim · the state edge) rides along, reading starts with
+                      // its context. scroll-margin-top on [id] clears the sticky tab bar.
                       requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
-                          document.getElementById(`step-${s.idx}-report`)?.scrollIntoView({ block: 'start' });
+                          document.getElementById(`step-row-${s.idx}`)?.scrollIntoView({ block: 'start' });
                         });
                       });
                     }
