@@ -313,6 +313,7 @@ export interface WorkOrderCardView {
   trackCount: number;
   sessionCount: number;
   cost: CostSummary;
+  durationMs: number; // WO-0031f T3 — finished-session sum (the strip/audit arithmetic); drawn only when > 0
 }
 
 // A lane view: the track plus its resolved session and derived merge action.

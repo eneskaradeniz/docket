@@ -1,6 +1,6 @@
 import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
 import { Badge, cn } from '../../kit';
-import { cardActionText, cardReasonText, formatCost, STAGE_LABELS, woIdLabel } from '../../data/labels';
+import { cardActionText, cardReasonText, formatCost, STAGE_LABELS, UI, woIdLabel } from '../../data/labels';
 
 // The dispatch card (WO-0031 "Kontrol Konsolu"): a 3px signal lamp on the left edge — amber breathing
 // when the operator is needed, info pulse while a session runs, steady green when closed — over a calm
@@ -40,7 +40,10 @@ export function WorkOrderCard({
           <span className="font-mono text-[11px] text-inkdim">{woIdLabel(card.id)}</span>
           <Badge tone={STAGE_TONE[card.bucket]}>{STAGE_LABELS[card.stage]}</Badge>
           <span className="ml-auto font-mono text-[11px] text-inkdim">
+            {/* WO-0031f T3 — Süre is the finished-session sum, drawn beside the cost only when > 0
+                (a never-run card draws neither; a live-only card draws cost but no Süre). */}
             {card.sessionCount > 0 ? formatCost(card.cost) : null}
+            {card.durationMs > 0 ? ` · ${UI.formatDuration(card.durationMs)}` : null}
           </span>
         </div>
         <h3 className={cn('mt-0.5 truncate text-[13.5px] font-semibold tracking-tight', quiet ? 'text-inkdim' : 'text-ink')}>

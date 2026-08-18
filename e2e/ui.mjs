@@ -85,6 +85,15 @@ await spec('board renders the seeded work orders', async () => {
   assert.ok(cards >= 5, `expected ≥5 cards, got ${cards}`);
 });
 
+await spec('card Süre is the finished-session sum, drawn only when > 0 (WO-0031f T3)', async () => {
+  // wo3 'Uygulama sürüyor': 6dk + 2dk dated sessions → '8dk 0sn' beside the cost
+  const busy = await page.locator('[data-wo-id]', { hasText: 'Uygulama sürüyor' }).first().textContent();
+  assert.ok(busy && busy.includes('8dk 0sn'), `no session-sum duration on the busy card: ${busy}`);
+  // the fresh WO (zero sessions) draws neither cost nor Süre
+  const fresh = await page.locator('[data-wo-id]', { hasText: 'Yeni iş emri örneği' }).first().textContent();
+  assert.ok(fresh && !/\d+dk/.test(fresh), `never-run card draws a duration: ${fresh}`);
+});
+
 await spec('card opens the detail; esc goes back (v4: esc=geri)', async () => {
   await page.locator('[data-wo-id]').first().click();
   await page.waitForTimeout(450);
