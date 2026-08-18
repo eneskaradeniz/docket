@@ -455,6 +455,37 @@ await spec('the report opens under its row and spotlights its owner (R1 + H-2)',
   await backToBoard();
 });
 
+await spec('switching reports closes the sibling and arrives at the new one\'s top (WO-0031f)', async () => {
+  await openDetail('Rapor turu'); // ten done steps, each row a report toggle
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  const scroll = () => page.evaluate(() => document.querySelector('.flow-scroll')?.scrollTop ?? -1);
+  // scroller-RELATIVE top (the viewport adds appbar+strip above the scroller); a late row can clamp
+  // short of the very top when too little content follows it — "reading position" = fully in view.
+  const topOf = (sel) => page.evaluate((s) => {
+    const el = document.querySelector(s);
+    const container = document.querySelector('.flow-scroll');
+    return el && container ? el.getBoundingClientRect().top - container.getBoundingClientRect().top : -1;
+  }, sel);
+  // open step 1's report near the top
+  await page.locator('button[data-step-toggle="1"]').click();
+  await page.waitForTimeout(700); // the smooth scroll settles
+  assert.equal(await page.locator('[data-step-report="1"]').count(), 1, 'report 1 did not open');
+  // switch to step 8 (deep in the list): 1 closes, 8 opens — and the view GLIDES to report 8's top
+  const before = await scroll();
+  await page.locator('button[data-step-toggle="8"]').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-step-report="1"]').count(), 0, 'report 1 stayed open after the switch');
+  assert.equal(await page.locator('[data-step-report="8"]').count(), 1, 'report 8 did not open');
+  const after = await scroll();
+  assert.ok(after > before, `the switch did not scroll down (${before} → ${after})`);
+  const top = await topOf('[data-step-report="8"]');
+  assert.ok(top >= 0 && top < 300, `report 8's top is not in reading position (${top})`);
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(200);
+  await backToBoard();
+});
+
 await spec('strip gates the order.md writers while a drive runs (absent + reason line)', async () => {
   await openDetail('Yeni iş emri örneği');
   // the drive may be fresh (Plan iste) or stopped from an earlier spec (Sürdür) — both start it
@@ -604,10 +635,13 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await openDetail('Uygulama sürüyor');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
-  // WO-0031f K1 — the closed strip is immutable: pencil absent + the fact line, inert review badge,
-  // and Sil STAYS (an archive cleanup is legitimate — the store guards only updateWorkOrder)
-  assert.equal(await page.getByRole('button', { name: 'İş emrini düzenle', exact: true }).count(), 0, 'the closed strip still shows the pencil');
-  assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) >= 1, 'no immutability reason line');
+  // WO-0031f K1 (operator review amendment): the closed strip's pencil stays IN PLACE, LOCKED — no
+  // standing line (the closed state is already named beside it); inert review badge; Sil STAYS
+  const closedPencil = page.getByRole('button', { name: 'İş emrini düzenle', exact: true });
+  assert.ok((await closedPencil.count()) >= 1, 'the pencil vanished from the closed strip');
+  const pencilClass = (await closedPencil.first().getAttribute('class')) ?? '';
+  assert.ok(pencilClass.includes('pointer-events-none'), `the closed pencil is not locked: ${pencilClass}`);
+  assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) === 0, 'the immutability line still renders');
   assert.ok((await page.locator('span[data-review-mode]').count()) >= 1, 'the review badge is not the inert span form');
   assert.ok((await page.getByRole('button', { name: 'Sil', exact: true }).count()) >= 1, 'Sil vanished from the closed strip');
   // D3: the merged track speaks as a Kanıt chip ('✓ Depoda' — single repo, no suffix)
@@ -767,10 +801,12 @@ await spec('closable platform → live close → the all-done arrival pulses onc
   assert.equal(await toggle.first().getAttribute('aria-expanded'), 'true', 'the ≤5 toggle does not start open');
   assert.ok((await toggle.getByText('1 kapalı iş').count()) >= 1, 'the toggle label carries no count');
   await page.screenshot({ path: join(SHOTS, 'board-all-done-live@980.png') });
-  // the archive body is the full Kayıt — spot-check via the reopened record (K1 strip asserted in
-  // the closure spec)
+  // the reopened archive carries the terminal lock (the line died with the operator's amendment —
+  // the K1 strip form is asserted in the closure spec)
   await openDetail('Raf işi');
-  assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) >= 1, 'no immutability line on the reopened archive');
+  const rafPencil = page.getByRole('button', { name: 'İş emrini düzenle', exact: true });
+  assert.ok((await rafPencil.count()) >= 1, 'the pencil vanished from the reopened archive');
+  assert.ok(((await rafPencil.first().getAttribute('class')) ?? '').includes('pointer-events-none'), 'the archive pencil is not locked');
   await backToBoard();
   // leave the workspace tidy for the empty-DB spec (it launches its own app)
 });

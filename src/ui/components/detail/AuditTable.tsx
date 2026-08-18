@@ -1,7 +1,8 @@
 // AuditTable (WO-0031c / v4 §4) — the session ledger: Oturum | Rol | Zaman | Süre | Maliyet + the
 // total row. Rows come from core's deriveSessionAudit (structured names — labels render them); the
-// table is the archive's default body and DETAY's "Denetim" section. A missing cost renders "—",
-// never a fake $0,00 (the TD-030 honesty).
+// table lives inside the record stack on every surface (the Kayıt tab, the rack, the archive body),
+// and the STACK's section header carries the title — the table itself renders title-less (the old
+// internal header double-titled it). A missing cost renders "—", never a fake $0,00 (TD-030).
 // WO-0031e tur-3: a row with a transcript expands in place — the toggle (▸/▾ döküm) maps through
 // `sourceIdx` to `sessions[sourceIdx].transcript`, rendered as mono DOM via labels'
 // `transcriptLineText` (core's formatTranscriptLine is xterm-ANSI — never for DOM). Instant show
@@ -35,9 +36,6 @@ export function AuditTable({ sessions, steps }: { sessions: SessionRef[]; steps?
     r.startedAt && r.endedAt ? UI.auditRange(r.startedAt, r.endedAt) : r.startedAt ? UI.auditClock(r.startedAt) : UI.auditCostNone;
   return (
     <section data-audit-table="">
-      <header className="mb-2 flex items-baseline gap-2.5">
-        <p className="readout text-proceed">{UI.auditTitle}</p>
-      </header>
       <table className="w-full font-mono text-[11px]">
         <thead>
           <tr className="border-b border-hairline text-inkdim">

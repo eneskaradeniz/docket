@@ -200,4 +200,43 @@ store.recordSession({
   endedAt: new Date('2026-08-16T16:05:00Z').toISOString(),
 });
 
+// 8) WO-0031f review: ten DONE steps with reports — the report-switch scroll spec (open an early
+//    report, then a late one: the sibling closes, the new one opens AND the view arrives at its top;
+//    ten rows guarantee real scroll travel under the 980×620 console).
+const wo8 = await mk('Rapor turu', 'E2E: ten done steps — the report switch scroll.');
+await store.approvePlan(
+  wo8.id,
+  '# E2E plan\n\n```steps\n' +
+    JSON.stringify(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ role: n % 2 === 0 ? 'verifier' : 'implementer', aim: `adım ${n} amacı`, scope: 'all' })),
+    ) +
+    '\n```\n',
+);
+for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+  store.recordStep(wo8.id, n, { status: 'done', reportPath: `reports/step-0${n}-${n % 2 === 0 ? 'verifier' : 'implementer'}.md` });
+  store.recordStepVerdict(wo8.id, n, 'proceed', 'ok');
+}
+store.recordSession({
+  providerSessionId: 'e2e-wo8-run1',
+  workOrderId: wo8.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 4_000, tokensOut: 900, usd: 0.31 },
+  startedAt: new Date('2026-08-16T16:20:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T16:24:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo8-run6',
+  workOrderId: wo8.id,
+  role: 'verifier',
+  status: 'idle',
+  stepIdx: 6,
+  transcript: [],
+  cost: { tokensIn: 6_000, tokensOut: 1_200, usd: 0.44 },
+  startedAt: new Date('2026-08-16T17:00:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T17:05:00Z').toISOString(),
+});
+
 console.log(`DB=${join(root, 'e2e.db')}`);

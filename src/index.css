@@ -432,7 +432,12 @@
   .reveal {
     animation: reveal 0.2s ease-out;
   }
-  @keyframes reveal {
+  /* WO-0031f review — the ONE smooth-scroll route (CSS, never JS behavior:'smooth'): the detail
+     body scroller. Tab selections, the N/T jump, and the report-switch scroll arrive at reading
+     position without teleporting; reduced-motion restores the instant jump below. */
+  .flow-scroll {
+    scroll-behavior: smooth;
+  }  @keyframes reveal {
     from {
       opacity: 0;
       transform: translateY(-4px);
@@ -620,6 +625,9 @@
   }
   .segcell {
     transition: none;
+  }
+  .flow-scroll {
+    scroll-behavior: auto;
   }
   .ibtn,
   .irow,

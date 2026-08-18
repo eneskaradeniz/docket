@@ -819,7 +819,7 @@ export function WorkOrderDetail({
           : {})}
           onJump={jumpToSteps}
       />
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
         <DetailBody
           viewMode={viewMode}
           tab={detailTab}

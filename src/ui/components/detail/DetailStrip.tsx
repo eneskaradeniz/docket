@@ -143,17 +143,21 @@ export function DetailStrip({
 
       <div className="flex items-center gap-2">
         <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
-        {driveLive || closed ? (
-          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit —
-          // "önce oturumu durdur" while a drive spends, "Kapalı iş emri değişmez" in the archive.
-          <span className="readout shrink-0">{closed ? UI.closedImmutableReason : UI.stripGateReason}</span>
+        {driveLive ? (
+          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit while
+          // a drive spends — a TRANSIENT gate whose cause is not otherwise on screen.
+          <span className="readout shrink-0">{UI.stripGateReason}</span>
         ) : (
+          // WO-0031f (operator, ADR-0001 addendum): on a CLOSED work order the pencil stays in place,
+          // LOCKED — the terminal lock. The closed state is already named by the badge/faze beside it,
+          // so the old "Kapalı iş emri değişmez" line said nothing new and died with this change.
           <Button
             variant="ghost"
             size="icon"
             aria-label={UI.woEditAria}
             className="h-6 w-6 shrink-0"
             onClick={() => setEditing(true)}
+            {...(closed ? { locked: true } : {})}
           >
             <Pencil className="h-3 w-3" aria-hidden="true" />
           </Button>

@@ -518,9 +518,9 @@ export const UI = {
   dialogCloseAria: 'kapat',
   removeAria: 'kaldır',
   stripGateReason: 'önce oturumu durdur',
-  // WO-0031f K1 — the closed strip's one fact line where the pencil would sit (v5 §07: "talimat
-  // değil, durum fact'i"). The store layer refuses the write too.
-  closedImmutableReason: 'Kapalı iş emri değişmez',
+  // (WO-0031f review, operator: the old "Kapalı iş emri değişmez" line died — the pencil renders
+  // LOCKED in place on a closed WO instead; the closed state is already named beside it. The store
+  // still refuses the write — that layer is unchanged.)
   // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
   deleteWoFailed: 'Silinemedi — depo yazma hatası.',
   // WO-0031f v6 — the two DETAY surfaces. Akış is the body itself (decision cards + the step spine);

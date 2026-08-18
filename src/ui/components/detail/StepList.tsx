@@ -168,13 +168,26 @@ export function StepList({
             >
               {hasReport ? (
                 // v6: the done row IS the toggle — one real button, the .irow hover token (TD-038.2's
-                // hand-rolled hover:underline dies with the old text-link form).
+                // hand-rolled hover:underline dies with the old text-link form). WO-0031f review: a
+                // newly-opened report (open, or a switch from its sibling) takes the view to ITS TOP —
+                // reading starts at the beginning every time. The smoothness is the CSS route
+                // (.flow-scroll on the scroller; reduced-motion kills it); the double rAF waits for
+                // the mount, like the controller's tab scroll.
                 <button
                   type="button"
                   data-step-toggle={s.idx}
                   aria-expanded={open}
                   aria-controls={`step-${s.idx}-report`}
-                  onClick={() => onToggleReport(s)}
+                  onClick={() => {
+                    if (!open) {
+                      requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                          document.getElementById(`step-${s.idx}-report`)?.scrollIntoView({ block: 'start' });
+                        });
+                      });
+                    }
+                    onToggleReport(s);
+                  }}
                   className="irow flex w-full items-center gap-2 text-left"
                 >
                   {rowLine}
