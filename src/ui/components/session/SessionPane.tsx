@@ -82,6 +82,18 @@ export function SessionPane({
     runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, false);
   };
 
+  // WO-0031f review (operator): the plan-stage instrument with nothing running is an INVITATION, not
+  // a tall empty card that reads like an input and leaves a hole — one breathing dot, one line,
+  // centered; the action itself lives on the rail (Plan iste), it is not duplicated here.
+  if (isPlanRequestStage && !hasStream) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2.5 rounded-md border border-hairline bg-surface px-4 py-10 text-center">
+        <span className="h-2 w-2 rounded-full lamp-signal-breathe" aria-hidden="true" />
+        <p className="readout">{UI.planWaitingHint}</p>
+      </div>
+    );
+  }
+
   return (
     <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' || state.status === 'plan_ready' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
       {/* Role tabs are hidden on a written work order — the only session is the architect plan session. */}

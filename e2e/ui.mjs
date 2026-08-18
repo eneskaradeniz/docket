@@ -543,6 +543,16 @@ await spec('Düzenle is a dialog; the title edit persists and the screen stays i
   await page.waitForTimeout(300);
   assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'the edit dialog did not open');
   assert.ok((await page.locator('h1').count()) >= 1, 'the screen behind lost its title');
+  // WO-0031f review (operator): ONE Esc closes the DIALOG only — it must not also leave the detail
+  // (the capture-phase guard sees the dialog before Radix unmounts it; the old bubble guard raced)
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'Esc did not close the dialog');
+  assert.ok((await page.locator('h1').count()) >= 1, 'Esc closed the dialog AND left the detail');
+  assert.equal(await page.locator('[data-wo-id]').count(), 0, 'Esc threw the operator back to the board');
+  // reopen and continue the edit flow
+  await page.locator('button[aria-label="İş emrini düzenle"]').first().click();
+  await page.waitForTimeout(300);
   const dialogInput = page.locator('[role="dialog"] input#wo-edit-title');
   await dialogInput.fill('Plan bekliyor — düzenlendi');
   await page.getByRole('button', { name: 'Kaydet', exact: true }).click();

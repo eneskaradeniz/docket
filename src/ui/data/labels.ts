@@ -540,6 +540,9 @@ export const UI = {
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
   streamOpened: 'Oturum açıldı — çıktı bekleniyor',
+  // WO-0031f review — the plan-stage empty instrument's invitation line (a state fact: the architect
+  // is ready; the Plan iste action lives on the rail, not duplicated here).
+  planWaitingHint: 'Mimar plan için hazır',
   // TD-037 — the named load lines replace the bare 'Yükleniyor…' (no skeletons, one line + a run
   // dot). loadWorkOrders is the one string no mockup drew (the board reads work orders, not
   // documents) — shown to the operator at PR review.
