@@ -67,6 +67,13 @@ entrance glides).
     ≤40ms between siblings; re-renders and live appends stay motionless; reduced-motion kills it.
     This consciously REVERSES the v5 ".rise kaldırılsın" ruling — recorded here so the reversal is a
     decision, not drift.
+  - **H-4: the substrip becomes a filled band carrying three values** (operator's spot note on v7
+    §01: "● Sıra sende … adım 2/4 — orası üstü altı çok boş durmuyor mu?"). Treatment C of v7 §1b:
+    a surface-tinted band, the turn label one notch bigger (12px), the MIDDLE carrying the current
+    focus (the active step's aim, or the reviewed report's step — data the app already holds), and
+    the right keeping segments + adım N/T. The line now answers sıra kimde · odak ne · ilerleme
+    kaçta in one breath; it never sits empty while a focus exists. SADE keeps its calm line
+    unchanged.
 - **The v5 rulings that survive unchanged (tour round one, 12 decisions):**
   - **Y1 = D3 Sıcak** (the operator's pick, not the tour's D1 recommendation): the lamp language
     goes everywhere — step rows carry a 3px state edge (done `proceed`, active `info`), rack/Kayıt
@@ -116,6 +123,9 @@ In scope:
   once-per-live-close; the board's all-done arrival pulses once, green, ≤400ms); the entrance glide
   (`glide` on surfaces entering view — first open and tab switch only, ≤400ms translate+fade,
   ≤40ms stagger, named reduced-motion kill) replacing `.rise`.
+- **Substrip (H-4)**: the turn line becomes a filled band — `Substrip.tsx` + `labels.ts` (the focus
+  text reuses the step aim; no new derivation): turn (left, 12px) · current focus (middle) ·
+  segments + adım N/T (right); surface-tint background, one line, SADE unchanged.
 - **Board (F1, F2, F4)**: `Board.tsx` — the closedtoggle pattern on all three surfaces (the mixed
   drawer's `<details>` becomes the button; collapsed default at >5); the all-done platform's inline
   invitation (`onNewWorkOrder` from `BoardScreen.tsx`); core-first **card duration**
@@ -180,10 +190,13 @@ Out of scope:
 12. The reward moments are one-shot and composed as drawn in v7 §02 (step: pop+✓+flash+fill+hairline
     advance+segment flip; closure: seal once per live close, stats never animate; board: one green
     arrival pulse) — money never animates anywhere.
-13. ADR-0012 carries exactly the two one-sentence amendments (r2 invitation; r7 entrance glide); no
+13. The substrip renders as a filled band carrying sıra · odak · ilerleme (turn label, current
+    focus, segments + N/T); the middle never sits empty while a step/session focus exists; SADE's
+    calm line is unchanged.
+14. ADR-0012 carries exactly the two one-sentence amendments (r2 invitation; r7 entrance glide); no
     other ADR text changes.
-14. All new copy lives in `labels.ts`; no `.replace(`/`disabled` in `src/ui`.
-15. E2E: 29 specs rewritten/extended for the two-surface world (target ≥ 32); `npm run typecheck &&
+15. All new copy lives in `labels.ts`; no `.replace(`/`disabled` in `src/ui`.
+16. E2E: 29 specs rewritten/extended for the two-surface world (target ≥ 32); `npm run typecheck &&
     npm test && npm run check:boundaries && npm run build && npm run test:ui` green.
 
 ## Evidence required

@@ -371,6 +371,10 @@
   .docrow span:last-child { color: var(--inkdim); }
 </style>
 <style>
+  /* v7 ekleri — altşerit varyantları (operatör notu: "üstü altı çok boş") */
+  .substrip-band { background: color-mix(in srgb, var(--surface) 45%, var(--bg)); padding: 8px 14px; gap: 14px; }
+  .substrip .turn { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .substrip .focus { font-family: var(--mono); font-size: 11px; color: var(--inkdim); letter-spacing: .02em; }
   /* v7 ekleri — his katmanı: bakış çapası, ödül anları, giriş süzülüşü (hepsi ≤400ms) */
   .step.owner { background: var(--raised); border-color: #33445f; }
   .step.owner .step-aim { color: var(--ink); }
@@ -393,6 +397,7 @@
   <span class="brand">Docket · v7 — His</span>
   <nav>
     <a href="#capa">1 Bakış çapası</a>
+    <a href="#altserit">1b Altşerit</a>
     <a href="#odul">2 Ödül anları</a>
     <a href="#glide">3 Giriş süzülüşü</a>
     <a href="#canli">4 Canlı ambient</a>
@@ -462,6 +467,92 @@
     diğer satırların zeminini bir ton kısarız — metin aynı kalır (kontrast çalınmaz, v4'ün B4
     dersidir). Kapattığında her şey eski dinginliğine döner. <b>Neye baktığın artık bir
     soru değil.</b></p>
+  </section>
+
+  <!-- ================= 1b · ALTŞERİT ================= -->
+  <section class="ph" id="altserit">
+    <div class="ph-head"><span class="ph-num">01·b</span><h2>Altşerit — o boş satırı doldurmak</h2></div>
+    <p class="ph-desc">Notun yerinde: "● Sıra sende … adım 2/4" satırı iki ucunda minicik metin,
+    ortasında devasa hava taşıyor — üstü altı da boş nefis. Dört muamele: (A) bugünkü (cesaretle
+    zayıf), (B) <b>dolgulu bant</b> (zemin dolgusu satırı yere oturtur), (C) <b>bant + odak</b> —
+    orta boşluğa satırın zaten bildiği şeyi yazar: <b>şu an ne üzerinde çalışılıyor</b>. Satır üç
+    değer taşır: <b>sıra kimde · odak ne · ilerleme kaçta</b>. (D) en radikal: altşerit kalkar,
+    her şey şeride taşınır.</p>
+
+    <div class="sizes"><span class="readout">altşerit · üç muamele yan yana</span></div>
+    <div class="frame skin-d3" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">altşerit kıyası</span><span class="w">980 × 380</span></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1px; background:var(--hairline);">
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--signal); margin-bottom:10px;">A · bugünkü</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden;">
+            <div style="padding:9px 12px; border-bottom:1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 80%, var(--bg)); display:flex; gap:8px; align-items:center;"><span class="backlink" aria-label="Tahtaya dön">‹</span><span class="badge">WO-0035</span><span style="font-size:12px; font-weight:800;">Mimar denetimi · adım 2</span></div>
+            <div class="hairline"><div class="fill" style="width:50%;"></div></div>
+            <div class="substrip"><span class="readout" style="color: var(--signal);">● Sıra sende</span><span class="right" style="display:flex; align-items:center; gap:10px;"><span class="segs"><i class="done"></i><i class="done"></i><i></i><i></i></span><span class="readout">adım 2/4</span></span></div>
+            <div style="padding:10px 12px;"><div style="border:1px solid var(--hairline); border-radius:6px; padding:7px 10px; font-size:11px; color:var(--inkdim);">Adım 2 · Sade görünümü kur</div></div>
+          </div>
+          <p class="readout" style="margin-top:8px;">orta: ~boşluk</p>
+        </div>
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--proceed); margin-bottom:10px;">B · dolgulu bant</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden;">
+            <div style="padding:9px 12px; border-bottom:1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 80%, var(--bg)); display:flex; gap:8px; align-items:center;"><span class="backlink" aria-label="Tahtaya dön">‹</span><span class="badge">WO-0035</span><span style="font-size:12px; font-weight:800;">Mimar denetimi · adım 2</span></div>
+            <div class="hairline"><div class="fill" style="width:50%;"></div></div>
+            <div class="substrip substrip-band"><span class="turn" style="color: var(--signal);">● Sıra sende</span><span class="right" style="display:flex; align-items:center; gap:10px;"><span class="segs"><i class="done"></i><i class="done"></i><i></i><i></i></span><span class="readout">adım 2/4</span></span></div>
+            <div style="padding:10px 12px;"><div style="border:1px solid var(--hairline); border-radius:6px; padding:7px 10px; font-size:11px; color:var(--inkdim);">Adım 2 · Sade görünümü kur</div></div>
+          </div>
+          <p class="readout" style="margin-top:8px;">zemin dolgusu: satır yere oturur</p>
+        </div>
+        <div style="background:var(--bg); padding:12px;">
+          <p class="readout" style="color:var(--info); margin-bottom:10px;">C · bant + odak</p>
+          <div style="border:1px solid var(--hairline); border-radius:8px; overflow:hidden;">
+            <div style="padding:9px 12px; border-bottom:1px solid var(--hairline); background: color-mix(in srgb, var(--surface) 80%, var(--bg)); display:flex; gap:8px; align-items:center;"><span class="backlink" aria-label="Tahtaya dön">‹</span><span class="badge">WO-0035</span><span style="font-size:12px; font-weight:800;">Mimar denetimi · adım 2</span></div>
+            <div class="hairline"><div class="fill" style="width:50%;"></div></div>
+            <div class="substrip substrip-band"><span class="turn" style="color: var(--signal);">● Sıra sende</span><span class="focus">Sade görünümü kur</span><span class="right" style="display:flex; align-items:center; gap:10px;"><span class="segs"><i class="done"></i><i class="done"></i><i></i><i></i></span><span class="readout">adım 2/4</span></span></div>
+            <div style="padding:10px 12px;"><div style="border:1px solid var(--hairline); border-radius:6px; padding:7px 10px; font-size:11px; color:var(--inkdim);">Adım 2 · Sade görünümü kur</div></div>
+          </div>
+          <p class="readout" style="margin-top:8px;">sıra · odak · ilerleme — üç değer</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>B/C farkı:</b> B satırı görsel olarak doldurur (yüzey dolgusu + bir tık
+    büyük "sıra" yazısı); C ayrıca <b>ortadaki boşluğa anlam</b> koyar — o anki odak (aktif adımın
+    amacı / incelenen raporun sahibi). Veri yeni değil: uygulama o an neyin üstünde olduğunu zaten
+    biliyor, sadece yazmıyor. Satır böylece "sıra kimde · ne üzerinde · kaçıncı adım" üçlüsünü tek
+    nefeste söyler.</p>
+
+    <div class="sizes"><span class="readout">D · en radikal — altşerit yok, her şey şeritte</span></div>
+    <div class="frame skin-d3" style="width: 980px;">
+      <div class="tbar"><i></i><i></i><i></i><span class="t">altşerit yok</span><span class="w">980 × 420</span></div>
+      <div class="console" style="height:420px; grid-template-rows: auto auto minmax(0,1fr) auto;">
+        <div class="strip" style="flex-wrap:wrap; row-gap:0;">
+          <div style="display:flex; align-items:center; gap:10px; width:100%;">
+            <button class="backlink" aria-label="Tahtaya dön">‹</button>
+            <span class="badge">WO-0035</span>
+            <span style="font-size:12.5px; font-weight:800; display:flex; align-items:center; gap:7px;"><i class="dot dot-signal"></i>Mimar denetimi · adım 2</span>
+            <div class="metrics">
+              <span class="turn" style="color: var(--signal); font-family:var(--mono); font-size:11px; font-weight:600;">● Sıra sende</span>
+              <span class="segs"><i class="done"></i><i class="done"></i><i></i><i></i></span>
+              <span class="readout">adım 2/4</span>
+              <div><span class="readout">Maliyet</span><div class="v">$3.60</div></div>
+              <div class="viewseg"><button>SADE</button><button class="on">DETAY</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="hairline"><div class="fill" style="width:50%;"></div></div>
+        <div class="cbody"><div class="cmain" style="padding-top:8px;">
+          <ul class="steps">
+            <li class="step sdone"><span class="dot dot-done"></span><span class="step-idx">1</span><div><p class="step-aim">Yerleşimi duruma bağla</p><p class="step-meta">tamam · ⏱ 00:06 · $0.96</p></div></li>
+            <li class="step sact"><span class="dot dot-run"></span><span class="step-idx">2</span><div><p class="step-aim">Sade görünümü kur</p><p class="step-meta">çalışıyor · ⏱ 00:14</p></div></li>
+            <li class="step"><span class="dot dot-idle"></span><span class="step-idx">3</span><div><p class="step-aim">Detay rafını kur</p><p class="step-meta">sırada</p></div></li>
+          </ul>
+        </div></div>
+        <div class="rail quiet"><div class="lamp lamp-signal"></div><span class="msg">Karar kartı gövdede.</span></div>
+      </div>
+    </div>
+    <p class="cap"><b>D.</b> Altşerit tümüyle kalkar; sıra + ilerleme şeridin sağına taşınır, gövde
+    bir satır yukarı başlar. En az satır — ama şerit kalabalıklaşır ve "sıra sende" nabzı (amber
+    nefes) kimliksiz bir rozete sıkışır. Cesur; önerim değil.</p>
   </section>
 
   <!-- ================= 2 · ÖDÜL ANLARI ================= -->
@@ -701,6 +792,7 @@
       <tr><td class="k">H-1</td><td>Ödül anları (§02)</td><td class="new">ödül = an hissi: adım (pop+✓+flaş+dolgu), kapanış (mühür, tek sefer), gün (tek yeşil nefes) — puan/rozet yok, ADR-0012 "meta-oyun yok" aynen</td></tr>
       <tr><td class="k">H-2</td><td>Bakış çapası (§01)</td><td class="new">detay sahibinin kucağında; açılınca sahibi parlar (yüzey yükselir + kenar rengi), diğerlerinin zemini kısılır (metin kontrastı korunur), açılış 200ms</td></tr>
       <tr><td class="k">H-3</td><td>Giriş süzülüşü (§03)</td><td class="new">geri geldi — adlandırılmış istisna: yüzey ilk kez girerken/sekme değişiminde bir kez ≤400ms kayar+solur; yeniden çizim/canlı ekleme hareketsiz; reduced-motion öldürür</td></tr>
+      <tr><td class="k">H-4</td><td>Altşerit (§1b)</td><td class="new">dolgulu bant + odak: sıra kimde (sol, 12px) · o anki odak (orta — aktif adımın amacı, veri zaten var) · ilerleme (dilimler + adım N/T, sağ); orta artık asla boş oturmaz</td></tr>
     </table>
 
     <div class="verdict">

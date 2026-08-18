@@ -241,7 +241,9 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       DETAY's six tabs collapse into **Akış | Kayıt** — the live terminal lives **inside the active
       step's row** (pinned), done steps carry their report under their row, Kayıt = kanıt chips +
       belgeler + döküm (arşiv gövdesi), **Çizelge yüzeyi ölür**; the **gaze anchor** spotlights the
-      row you're reading into (owner raises, siblings dim by background); **reward = the moment**
+      row you're reading into (owner raises, siblings dim by background); the **substrip becomes a
+      filled band** (sıra · odak · ilerleme — the middle carries the current focus, never empty);
+      **reward = the moment**
       (step pop+✓+flash+hairline advance, closure seal, board's one green arrival pulse — no
       points/badges, money never animates); **entrance glides return** as ADR-0012's named
       exception (≤400ms, once, reduced-motion-killed — consciously reversing the .rise removal);
