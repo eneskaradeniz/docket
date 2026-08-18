@@ -501,6 +501,12 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await openDetail('Uygulama sürüyor');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
+  // WO-0031f K1 — the closed strip is immutable: pencil absent + the fact line, inert review badge,
+  // and Sil STAYS (an archive cleanup is legitimate — the store guards only updateWorkOrder)
+  assert.equal(await page.getByRole('button', { name: 'İş emrini düzenle', exact: true }).count(), 0, 'the closed strip still shows the pencil');
+  assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) >= 1, 'no immutability reason line');
+  assert.ok((await page.locator('span[data-review-mode]').count()) >= 1, 'the review badge is not the inert span form');
+  assert.ok((await page.getByRole('button', { name: 'Sil', exact: true }).count()) >= 1, 'Sil vanished from the closed strip');
   // D3: the merged track speaks as a Kanıt chip ('✓ Depoda' — single repo, no suffix)
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(400);

@@ -116,6 +116,10 @@ export function WorkOrderDetail({
   }, [detail.steps, reviewIdx, verdictFor, detail.reviewMode]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // TD-038.4 / WO-0031f: a failed delete used to close nothing and say nothing (try/finally, no
+  // catch) — the rejection escaped through the void-ed click. The dialog now owns the error line,
+  // mirroring the close dialog's closeError.
+  const [deleteError, setDeleteError] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeNote, setCloseNote] = useState('');
   const [closeError, setCloseError] = useState(false);
@@ -148,8 +152,11 @@ export function WorkOrderDetail({
   };
   const handleDelete = async (): Promise<void> => {
     setDeleting(true);
+    setDeleteError(false);
     try {
       await onDelete();
+    } catch {
+      setDeleteError(true); // the dialog stays open for a retry — a failed delete deletes nothing
     } finally {
       setDeleting(false);
     }
@@ -826,7 +833,10 @@ export function WorkOrderDetail({
             </>
           }
         >
-          <p className="text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+          <div className="flex flex-col gap-2">
+            <p className="text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+            {deleteError ? <p className="text-xs text-error">{UI.deleteWoFailed}</p> : null}
+          </div>
         </Dialog>
       ) : null}
       {confirmClose ? (

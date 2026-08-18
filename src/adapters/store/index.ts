@@ -791,10 +791,15 @@ export function createStore(dbPath: string): Store {
     // everything else — Closure notes included), the DB title follows, and the timeline records what
     // changed (wo_edited, plus rule_changed when the permission rule moved).
     updateWorkOrder: async (workOrderId: WorkOrderId, patch: UpdateWorkOrderInput) => {
-      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
-        | { workspace_id: string }
+      const wo = db.prepare('SELECT workspace_id, gate_closure_docs_sha FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string; gate_closure_docs_sha: string | null }
         | undefined;
       if (!wo) throw new Error(`updateWorkOrder: work order ${workOrderId} not found`);
+      // WO-0031f K1 — a closed work order is immutable (closed ⟺ gate_closure_docs_sha set, deriveStage's
+      // own test; the closeWorkOrder precedent one screen down). The UI keeps the pencil absent with the
+      // "Kapalı iş emri değişmez" reason; the store is the second layer. deleteWorkOrder stays open —
+      // archive cleanup is legitimate.
+      if (wo.gate_closure_docs_sha != null) throw new Error(`updateWorkOrder: ${workOrderId} is closed`);
       const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);

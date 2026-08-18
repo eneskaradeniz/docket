@@ -65,6 +65,10 @@ export function DetailStrip({
   const tone = PHASE_KIND_TONE[phase.kind];
   const anyCost = detail.sessions.some((s) => s.cost);
   const breathe = tone === 'signal';
+  // WO-0031f K1 — a closed work order is a record, not a document: the order.md writers are absent
+  // (the pencil with a reason line, the review badge inert) for the same write-path reason as a live
+  // drive. The permission badge was always display-only; Sil STAYS (an archive cleanup is legitimate).
+  const closed = detail.stage === 'closed';
   // The juice hairline (v4 §7): fills with done/total steps — a quiet progress read under the strip.
   const stepsTotal = detail.steps.length;
   const stepsDone = detail.steps.filter((s) => s.status === 'done').length;
@@ -139,9 +143,10 @@ export function DetailStrip({
 
       <div className="flex items-center gap-2">
         <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
-        {driveLive ? (
-          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit.
-          <span className="readout shrink-0">{UI.stripGateReason}</span>
+        {driveLive || closed ? (
+          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit —
+          // "önce oturumu durdur" while a drive spends, "Kapalı iş emri değişmez" in the archive.
+          <span className="readout shrink-0">{closed ? UI.closedImmutableReason : UI.stripGateReason}</span>
         ) : (
           <Button
             variant="ghost"
@@ -155,8 +160,9 @@ export function DetailStrip({
         )}
         {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
             WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
-            as the pencil — gated with it; the button is simply not rendered). */}
-        {driveLive ? (
+            as the pencil — gated with it; the button is simply not rendered). WO-0031f K1: closed is
+            the permanent form of that — the cadence is now a fact of history, not a setting. */}
+        {driveLive || closed ? (
           <span
             data-review-mode={detail.reviewMode}
             title={UI.reviewModeLabel}

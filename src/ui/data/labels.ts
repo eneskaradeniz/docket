@@ -519,6 +519,11 @@ export const UI = {
   dialogCloseAria: 'kapat',
   removeAria: 'kaldır',
   stripGateReason: 'önce oturumu durdur',
+  // WO-0031f K1 — the closed strip's one fact line where the pencil would sit (v5 §07: "talimat
+  // değil, durum fact'i"). The store layer refuses the write too.
+  closedImmutableReason: 'Kapalı iş emri değişmez',
+  // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
+  deleteWoFailed: 'Silinemedi — depo yazma hatası.',
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
   // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
   // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
