@@ -117,8 +117,9 @@ await store.closeWorkOrder(wo4.id, 'e2e closed');
 
 // 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment
 //    (ask card + `Sıra sende` substrip + glow-signal) rendered statically from the persisted session.
+//    WO-0031f: the step aim is distinctive — the H-4 band-focus spec reads it back.
 const wo5 = await mk('İzin bekliyor', 'E2E: a step paused on a permission ask.');
-await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"askı senaryosunu yürü","scope":"all"}]\n```\n');
 store.recordStep(wo5.id, 1, { status: 'active' });
 store.recordSession({
   providerSessionId: 'e2e-ask-session',

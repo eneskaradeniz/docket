@@ -789,6 +789,12 @@ export function WorkOrderDetail({
   const record = <RecordStack sections={recordSections} />;
   const flowAside = hasSteps ? `${detail.steps.filter((s) => s.status === 'done').length}/${detail.steps.length}` : undefined;
   const recordAside = `${detail.evidence.filter((e) => e.status === 'satisfied').length}/${detail.evidence.length}`;
+  // H-4 — the band's middle: what the console is ON right now. No new derivation: the open report's
+  // step, else the reviewed step, else the driven step's aim (the data the app already holds).
+  const substripFocus =
+    reportStep?.aim ??
+    (reviewIdx !== undefined ? detail.steps.find((s) => s.idx === reviewIdx)?.aim : undefined) ??
+    activeStep?.aim;
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', turnGlowClass(turn, phase.kind === 'done'))}>
@@ -807,6 +813,7 @@ export function WorkOrderDetail({
       />
       <Substrip
         turn={turn}
+        {...(substripFocus ? { focus: substripFocus } : {})}
         {...(segTotal > 0
           ? { segments: { done: segDone, total: segTotal, ...(segActive !== undefined ? { activeIdx: segActive } : {}) } }
           : {})}

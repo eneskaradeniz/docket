@@ -408,6 +408,26 @@ await spec('substrip: step segments replace the esc hint (adım N/T + cells)', a
   await backToBoard();
 });
 
+await spec('substrip band: sıra · odak · ilerleme in one breath (WO-0031f H-4)', async () => {
+  await openDetail('İzin bekliyor'); // the driven step's aim is the seeded 'askı senaryosunu yürü'
+  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  await page.waitForTimeout(400);
+  // DETAY: the FILLED band carries the three values — turn (left) · focus (middle) · segments + N/T
+  const band = page.locator('[data-substrip-band]');
+  assert.ok((await band.count()) >= 1, 'no band in DETAY');
+  assert.ok((await band.locator('[aria-live="polite"]').getByText('Sıra sende').count()) >= 1, 'the band carries no turn');
+  const focus = await band.locator('[data-substrip-focus]').textContent();
+  assert.equal(focus, 'askı senaryosunu yürü', `the band focus is not the active step's aim: ${focus}`);
+  assert.ok((await band.locator('[data-seg]').count()) >= 1, 'the band carries no segments');
+  // SADE keeps the calm line — no band, no focus cell
+  await page.getByRole('button', { name: 'SADE' }).first().click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[data-substrip-band]').count(), 0, 'SADE rendered the band');
+  assert.ok((await page.locator('[data-substrip]').count()) >= 1, 'SADE lost its line');
+  assert.equal(await page.locator('[data-substrip-focus]').count(), 0, 'SADE rendered a focus cell');
+  await backToBoard();
+});
+
 await spec('strip gates the order.md writers while a drive runs (absent + reason line)', async () => {
   await openDetail('Yeni iş emri örneği');
   // the drive may be fresh (Plan iste) or stopped from an earlier spec (Sürdür) — both start it
