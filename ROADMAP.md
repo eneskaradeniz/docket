@@ -235,7 +235,7 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       done line "Tamamlandı", never "Sonraki oturum bekleniyor". 472 tests (+8); E2E 29 specs (+3,
       seeded `raf` workspace). TD-036 untouched — `closeable` rides the existing `getWorkOrders`
       payload. Spec: `docs/work-orders/WO-0031e-tur-3-cila/order.md`.
-- [ ] **WO-0031f** — UI final turu: three mockup rounds on one day (v5, 12 rulings; v6 structure
+- [x] **WO-0031f** — UI final turu: three mockup rounds on one day (v5, 12 rulings; v6 structure
       tour after "Apple gibi — daha az yüzey"; v7 feel tour after "her şey gerektiğinde… sıcak,
       animasyonlu, oyunlaştırılmış, ödüllendirilmiş, çeken") become one restructure + one feel pass:
       DETAY's six tabs collapse into **Akış | Kayıt** — the live terminal lives **inside the active

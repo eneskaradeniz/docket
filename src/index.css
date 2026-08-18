@@ -146,10 +146,9 @@
     color: var(--color-inkdim);
   }
 
-  /* board load stagger — the one orchestrated moment */
-  .rise {
-    animation: rise 0.26s ease-out both;
-  }
+  /* board load stagger — .rise died with WO-0031f H-3 (the ADR-0012 r7 amendment: entrance glides
+     are the NAMED exception to "never on mount"); the keyframe survives — the kit Tooltip
+     (animate-[rise…] under .tooltip) and .dialog-rise still reference it. */
   @keyframes rise {
     from {
       opacity: 0;
@@ -159,6 +158,68 @@
       opacity: 1;
       transform: none;
     }
+  }
+
+  /* ===== WO-0031f v7 — the entrance glide (H-3, the r7 exception) =====
+     A surface ENTERING VIEW (first board open, a tab switch) glides in ONCE: ≤400ms (drawn at
+     300ms), translate+fade only — no scale, no rotation — siblings staggered ≤40ms. Re-renders and
+     live appends stay motionless (the board applies it to the first batch only); reduced-motion
+     kills it with everything else below. */
+  .glide {
+    animation: glide 0.3s ease-out both;
+  }
+  @keyframes glide {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* the tab pair's entering panel — display-based hiding (the kit's data-[state=inactive]:hidden)
+     restarts the animation on activation without remounting the xterm canvas */
+  .panel-glide[data-state='active'] {
+    animation: glide 0.3s ease-out both;
+  }
+  /* the all-done arrival: one green breath (H-1) — a STATE transition (the platform flip), ≤400ms,
+     then steady; arriving at all-done by mount never pulses */
+  .pulse-once {
+    animation: pulseonce 0.4s ease-out;
+  }
+  @keyframes pulseonce {
+    from {
+      background-color: color-mix(in srgb, var(--color-proceed) 18%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  /* the closed-list toggle (T1): full-width, mono uppercase, the arrow flipping */
+  .closedtoggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-inkdim);
+    border: 1px solid var(--color-hairline);
+    border-radius: 7px;
+    padding: 8px 12px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .closedtoggle:hover {
+    background: color-mix(in srgb, var(--color-raised) 60%, transparent);
+    color: var(--color-ink);
+  }
+  .closedtoggle .n {
+    color: var(--color-ink);
   }
 
   .alink {
@@ -173,6 +234,69 @@
     background: color-mix(in srgb, var(--color-info) 14%, transparent);
   }
 
+  /* ===== WO-0031f v6 — the two-surface chrome ===== */
+
+  /* The Akış | Kayıt tab pair (S1-C shrunk to two): mono uppercase, the 2px signal underline on the
+     active tab, the active count info-toned ("Kayıt 2/3" — the missing one reads at a glance). */
+  .flowtabs {
+    align-self: flex-start;
+  }
+  .flowtab {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+  .flowtab[data-state='active'] {
+    box-shadow: inset 0 -2px 0 var(--color-signal);
+  }
+  .flowtab-n {
+    margin-left: 0.375rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .flowtab[data-state='active'] .flowtab-n {
+    color: var(--color-info);
+  }
+
+  /* The report under its own row (R1): indented under the step it belongs to, a hairline spine
+     naming the ownership — "the detail always reads as belonging to its step". */
+  .repbody {
+    margin: 2px 0 4px 18px;
+    border-left: 2px solid var(--color-hairline);
+    padding: 8px 4px 8px 14px;
+  }
+
+  /* The ≥1080 rack IS Kayıt (v6): a surface-tinted side column, hairline-separated. */
+  .rack {
+    border-left: 1px solid var(--color-hairline);
+    padding-left: 14px;
+  }
+
+  /* The substrip band (v7 §1b treatment C): a surface-tinted band carrying three values — sıra kimde
+     · odak ne · ilerleme kaçta. The turn label is one notch bigger than a readout (12px mono 600);
+     the focus is a quiet mono line; SADE keeps the calm unbandaged line. */
+  .substrip-band {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+    background: color-mix(in srgb, var(--color-surface) 45%, var(--color-bg));
+  }
+  .subturn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .subfocus {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--color-inkdim);
+  }
+
   /* the kit Dialog's open rise (WO-0031d) — a NAMED class, not an arbitrary Tailwind animate
      utility, so the one reduced-motion block below can kill it like everything else */
   .dialog-rise[data-state='open'] {
@@ -182,13 +306,15 @@
   /* ===== Ambient glow (WO-0031c / v4 "durum ışığı") =====
      A static radial wash behind the console content, one hue per turn state: amber = waiting on the
      operator, blue = a session runs, green = done/closed, red = crashed. No animation at all — the
-     wash is reduced-motion safe by construction, not by exemption. */
+     wash is reduced-motion safe by construction, not by exemption.
+     WO-0031f D3 ("Sıcak"): the stage light is a tick stronger on the two live-waiting hues (signal
+     .14→.18, run .11→.16 — done/error untouched: calm states do not shout). */
   .glow-signal {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245, 181, 68, 0.14), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245, 181, 68, 0.18), transparent 62%),
       var(--color-bg);
   }
   .glow-run {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108, 160, 206, 0.11), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108, 160, 206, 0.16), transparent 62%),
       var(--color-bg);
   }
   .glow-done {
@@ -256,12 +382,116 @@
     transition: width 0.36s ease;
   }
 
-  /* ===== Step card (WO-0031c) — the plan's card language; hover lifts it a hair ===== */
+  /* ===== Step card (WO-0031c) — the plan's card language; hover lifts it a hair =====
+     WO-0031f D3: the card language gains its left edge — boxes stay, but a colored edge names the
+     thing ("kutular kalır + sol kenar renkli"); the plan cards carry the quiet hairline base edge. */
   .stepcard {
     transition: transform 0.12s ease, border-color 0.12s ease;
+    box-shadow: inset 3px 0 0 var(--color-hairline);
   }
   .stepcard:hover {
     transform: translateY(-1px);
+  }
+
+  /* ===== D3 "Sıcak" (WO-0031f Y1 / v5 §01 deltas) — the spine's state edges: the same lamp
+     grammar the strip speaks, as a 3px inset edge on each step row. Exactly four axes change in
+     this pass (step edges, section dots, audit role lamps, the stronger glow above) — palette,
+     fonts, typography scale, spacing band and the hover contract are untouched. ===== */
+  .step-edge {
+    box-shadow: inset 3px 0 0 var(--color-hairline);
+  }
+  .step-edge-done {
+    box-shadow: inset 3px 0 0 var(--color-proceed);
+  }
+  .step-edge-act {
+    box-shadow: inset 3px 0 0 var(--color-info);
+  }
+  /* the rack's section headers open with a dot ("readout nokta ile açılır") */
+  .rack section > h2.readout::before {
+    content: '● ';
+    color: var(--color-hairline);
+  }
+  /* ===== The gaze anchor + the row surface (WO-0031f v7 H-2) =====
+     The spine's row surface lives HERE (not as a Tailwind bg utility) so the spotlight states can
+     speak without specificity fights: the opened report's row is the OWNER (surface raises, its
+     edge names it), and while one holds the gaze the siblings quiet ONE notch by BACKGROUND only —
+     text contrast is untouched (the WO-0031c B4 lesson), and the driven/active row never dims. */
+  .steprow {
+    background: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+  }
+  .steprow.owner {
+    background: var(--color-raised);
+    border-color: #33445f;
+  }
+  .steps.dimmed .steprow:not(.owner):not(.act) {
+    background: color-mix(in srgb, var(--color-surface) 65%, var(--color-bg));
+  }
+  /* the report's arrival under its row: ≤200ms, a translate+fade reveal (the expansion is a state
+     transition caused by the click — the dialog-rise precedent, not a load-in) */
+  .reveal {
+    animation: reveal 0.2s ease-out;
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  /* H-1: the substrip segment flip rides a color transition (killed by reduced-motion below) */
+  .segcell {
+    transition: background-color 0.3s ease;
+  }
+
+  /* F7 (WO-0031f): the running-empty stream line — mono, quiet, a 5px run dot breathing. */
+  .streamline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-inkdim);
+  }
+
+  /* TD-037 (WO-0031f): the named load lines — one line + a static 5px dot, no skeletons; static by
+     construction, so reduced-motion needs no entry here. */
+  .loadline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-inkdim);
+  }
+  .loadline::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: var(--color-info);
+    flex: none;
+  }
+
+  /* the audit's role lamps (3px×11px): architect amber, implementer blue, verifier green */
+  .rlamp {
+    display: inline-block;
+    width: 3px;
+    height: 11px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .rlamp-architect {
+    background: var(--color-signal);
+  }
+  .rlamp-implementer {
+    background: var(--color-info);
+  }
+  .rlamp-verifier {
+    background: var(--color-proceed);
   }
 
   /* ===== Interaction contract (WO-0031d / ADR-0012 r1) — THE hover tokens =====
@@ -378,8 +608,17 @@
   .pop,
   .stepcard,
   .sealpop,
-  .dialog-rise {
+  .dialog-rise,
+  /* WO-0031f v7: the named exceptions die with everything else — the glide is contractual
+     precisely because its kill is contractual (one block, no per-component exemptions). */
+  .glide,
+  .panel-glide[data-state='active'],
+  .pulse-once,
+  .reveal {
     animation: none;
+    transition: none;
+  }
+  .segcell {
     transition: none;
   }
   .ibtn,
