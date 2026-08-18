@@ -35,7 +35,7 @@ function PlanStepsSummary({ steps }: { steps: StepSpec[] }) {
   return (
     <div className="flex flex-col gap-1.5" data-plan-summary={steps.length}>
       {steps.map((s) => (
-        <div key={s.idx} className="flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5">
+        <div key={s.idx} className="stepcard flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5">
           <span className="font-mono text-[11px] text-inkdim">{s.idx}</span>
           <RoleChip role={s.role} />
           <span className="min-w-0 truncate text-[12.5px] text-ink">{s.aim}</span>

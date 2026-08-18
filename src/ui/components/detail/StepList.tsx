@@ -152,6 +152,9 @@ export function StepList({
             <div
               className={cn(
                 'relative flex items-center gap-2 overflow-hidden rounded-md border border-hairline bg-surface px-2.5 py-1.5',
+                // D3: the row's 3px state edge — done speaks proceed, the driven/active row info,
+                // the rest the quiet hairline base.
+                s.status === 'done' ? 'step-edge-done' : s.status === 'active' || driven ? 'step-edge-act' : 'step-edge',
                 flash ? (flash.tone === 'ok' ? 'flash' : 'flash-err') : '',
               )}
             >

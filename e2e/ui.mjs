@@ -634,6 +634,10 @@ await spec('audit rows expand: the session transcript opens under its row (tur-3
   await page.waitForTimeout(300);
   await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(300);
+  // D3: every ledger row carries its role lamp beside the rolechip (architect/implementer/verifier)
+  const lamps = await page.locator('[data-audit-table] .rlamp').count();
+  const rolechips = await page.locator('[data-audit-table] .rounded-full').count();
+  assert.ok(lamps >= 1 && lamps === rolechips, `role lamps (${lamps}) do not match rolechips (${rolechips})`);
   await page.locator('[data-audit-toggle]').first().click();
   await page.waitForTimeout(300);
   const box = page.locator('[data-audit-transcript]');

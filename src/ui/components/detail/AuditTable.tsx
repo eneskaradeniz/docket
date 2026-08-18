@@ -11,7 +11,8 @@ import { Fragment, useState } from 'react';
 import type { SessionAuditRow } from '../../../core/derive';
 import { deriveSessionAudit } from '../../../core/derive';
 import type { SessionRef, StepSpec } from '../../../core/types';
-import { formatUsd, ROLE_LABELS, transcriptLineText, UI } from '../../data/labels';
+import { formatUsd, transcriptLineText, UI } from '../../data/labels';
+import { RoleChip } from './RoleChip';
 
 function nameText(row: SessionAuditRow): string {
   switch (row.name.kind) {
@@ -70,7 +71,14 @@ export function AuditTable({ sessions, steps }: { sessions: SessionRef[]; steps?
                       <span className="truncate">{nameText(r)}</span>
                     </span>
                   </td>
-                  <td className="px-1 py-1.5 text-inkdim">{ROLE_LABELS[r.role]}</td>
+                  <td className="px-1 py-1.5 text-inkdim">
+                    {/* D3: the row carries its role lamp (3px×11px) beside the rolechip — the same
+                        lamp grammar the strip speaks (architect amber, implementer blue, verifier green). */}
+                    <span className="flex items-center gap-1.5">
+                      <span className={`rlamp rlamp-${r.role}`} aria-hidden="true" />
+                      <RoleChip role={r.role} />
+                    </span>
+                  </td>
                   <td className="px-1 py-1.5 text-inkdim">{range(r)}</td>
                   <td className="px-1 py-1.5 text-right text-inkdim">{UI.formatDuration(r.durationMs)}</td>
                   <td className="px-1 py-1.5 text-right text-inkdim">
