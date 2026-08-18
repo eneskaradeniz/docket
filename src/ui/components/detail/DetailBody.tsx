@@ -87,11 +87,12 @@ export function DetailBody({
         </TabsList>
         {/* forceMount on both panels: the xterm canvas in the spine's driven row survives a Kayıt
             switch (scrollback intact); the kit's TabsContent hides the inactive panel. The ids anchor
-            the N/T jump and the tab-selection scroll. */}
-        <TabsContent value="flow" forceMount className="mt-3" id="sec-flow">
+            the N/T jump and the tab-selection scroll. panel-glide: the entering panel glides in once
+            (H-3 — the r7 exception; display-based hiding restarts it without a remount). */}
+        <TabsContent value="flow" forceMount className="panel-glide mt-3" id="sec-flow">
           {flow}
         </TabsContent>
-        <TabsContent value="record" forceMount className="mt-3" id="sec-record">
+        <TabsContent value="record" forceMount className="panel-glide mt-3" id="sec-record">
           {record}
         </TabsContent>
       </Tabs>

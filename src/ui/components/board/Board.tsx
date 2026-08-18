@@ -1,18 +1,34 @@
+import { useEffect, useRef, useState } from 'react';
 import type { WorkOrderCardView } from '../../../core/types';
 import { Button } from '../../kit';
 import { BUCKET_LABELS, UI } from '../../data/labels';
+import { ClosedToggle } from './ClosedToggle';
 import { WorkOrderCard } from './WorkOrderCard';
 
-// The dispatch board (WO-0031 "Kontrol Konsolu"): the two live queues sit side by side when there is
-// room (≥1200px) and stack below it; the closed drawer stays collapsed at the bottom. Cards load with a
-// 30ms stagger — the one orchestrated moment (reduced-motion kills it). A group with nothing in it is
-// ABSENT (ADR-0012 r2): no empty frame, no dashed box, no count of zero.
+// The dispatch board (WO-0031 "Kontrol Konsolu" → WO-0031f): the two live queues sit side by side
+// when there is room (≥1200px) and stack below it; the closed list sits behind the ONE toggle
+// pattern on every surface (T1 — "▸ N kapalı iş", collapsed past five). A group with nothing in it
+// is ABSENT (ADR-0012 r2): no empty frame, no dashed box, no count of zero.
+//
+// WO-0031f: ONE persistent root — the platform (all-done / awaiting-close / mixed) is a state of
+// this tree, not an early return, so the all-done ARRIVAL can pulse once as a state transition
+// (H-1: a state transition, never a mount — the ref only arms the pulse on a live flip, so loading
+// straight into all-done stays calm). The all-done line carries the peron INVITATION (T2) — the
+// r2 amendment's named case; the awaiting-close platform keeps exactly its one CTA.
+type Platform = 'mixed' | 'awaiting' | 'alldone';
+// The last platform THIS WORKSPACE's board was seen in — module state, so it survives the detail
+// trip (the last close happens in the detail; the board you RETURN to is the arrival) and dies with
+// the app (a reload arriving at all-done is calm, and so is a workspace's first-ever view).
+const lastPlatformByWs = new Map<string, Platform>();
 export function Board({
   cards,
   onSelect,
+  onNewWorkOrder,
 }: {
   cards: WorkOrderCardView[];
   onSelect: (id: WorkOrderCardView['id']) => void;
+  /** T2: opens the create modal from the all-done platform line (absent elsewhere). */
+  onNewWorkOrder: () => void;
 }) {
   const up = cards.filter((c) => c.bucket === 'up').sort((a, b) => a.actionRank - b.actionRank);
   const working = cards.filter((c) => c.bucket === 'working');
@@ -22,110 +38,128 @@ export function Board({
   // over an unanswered ask (deriveCardAction makes the same call for the ▸ line).
   const closableUp = up.filter((c) => c.closable && c.reason.kind !== 'stopped_asking');
   const otherUp = up.filter((c) => !c.closable || c.reason.kind === 'stopped_asking');
-  const stagger = (i: number): { animationDelay: string } | undefined =>
-    i < 12 ? { animationDelay: `${i * 30}ms` } : undefined;
 
-  // D1 (tur-2): a board with ONLY closed work orders is the "Bütün işler tamam" platform — a steady
-  // green dot (no breathe — nothing waits on the operator), the quiet cards OPEN in one column (no
-  // drawer to dig through), no body CTA (the appbar already carries it), calm on mount.
-  if (up.length === 0 && working.length === 0 && closed.length > 0) {
-    return (
-      <div data-board-all-done="">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-proceed" aria-hidden="true" />
-          <p className="readout text-proceed">{UI.boardAllDone}</p>
-        </div>
-        <div className="mt-4 flex flex-col gap-2">
-          {closed.map((c) => (
-            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  // D1 (tur-2) / T1: only closed work orders → the "Bütün işler tamam" platform — a steady green
+  // dot (no breathe — nothing waits on the operator), the closed cards behind the toggle, and the
+  // inline invitation. Awaiting-close (tur-3): no live work left, one short line + ONE CTA.
+  const platform: Platform =
+    up.length === 0 && working.length === 0 && closed.length > 0
+      ? 'alldone'
+      : working.length === 0 && otherUp.length === 0 && closableUp.length > 0
+        ? 'awaiting'
+        : 'mixed';
 
-  // WO-0031e tur-3: the awaiting-close platform — no live work left (no working, nothing in `up`
-  // that is not closable). One short line + exactly ONE CTA (ADR-0012 r2): the line names the
-  // count, the CTA opens the first closable detail where the Kapat card lives. Closable cards
-  // stay actionable (never quiet — they are the work); closed cards rest quietly below. The dot
-  // breathes nothing — but it is signal-colored: this platform DOES wait on the operator.
-  if (working.length === 0 && otherUp.length === 0 && closableUp.length > 0) {
-    return (
-      <div data-board-awaiting-close="">
-        <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
-          <p className="readout text-signal">{UI.boardAwaitingClose(closableUp.length)}</p>
-          <Button variant="secondary" size="sm" className="ml-2" onClick={() => onSelect(closableUp[0].id)}>
-            {UI.boardCloseCta}
-          </Button>
-        </div>
-        <div className="mt-4 flex flex-col gap-2">
-          {closableUp.map((c) => (
-            <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
-          ))}
-        </div>
-        {closed.length > 0 ? (
-          <div className="mt-4 flex flex-col gap-2">
-            {closed.map((c) => (
-              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
+  // H-1: the one green breath — the platform line re-keys ONCE when this workspace's board BECOMES
+  // all-done (a live flip, or returning from the detail where the last close happened), ≤400ms, then
+  // steady. First-ever sighting and same-state returns stay calm: the pulse is a transition, never
+  // a mount.
+  const wsKey = String(cards[0]?.workspace ?? 'empty');
+  const [pulse, setPulse] = useState(0);
+  useEffect(() => {
+    const prev = lastPlatformByWs.get(wsKey);
+    if (prev !== undefined && prev !== 'alldone' && platform === 'alldone') {
+      setPulse((n) => n + 1);
+    }
+    lastPlatformByWs.set(wsKey, platform);
+  }, [platform, wsKey]);
+
+  // H-3: the entrance glide fires for the FIRST batch only — cards appended later (a live close
+  // arriving, a create) mount motionless; re-renders never restart a completed animation.
+  const firstBatch = useRef<Set<string> | null>(null);
+  if (firstBatch.current === null) firstBatch.current = new Set(cards.map((c) => c.id));
+  const glide = (i: number, id: string): { animationDelay: string } | undefined =>
+    i < 12 && firstBatch.current?.has(id) ? { animationDelay: `${i * 30}ms` } : undefined;
 
   return (
-    <div>
-      <div className="grid gap-x-3.5 gap-y-4 xl:grid-cols-2">
-        {up.length ? (
-          <section>
-            <h2 className="readout mb-2 flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
-              {BUCKET_LABELS.up}
-              <span className="font-mono text-inkdim/60">{up.length}</span>
-            </h2>
-            <div className="flex flex-col gap-2">
-              {up.map((c, i) => (
-                <div key={c.id} className="rise" style={stagger(i)}>
-                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {working.length ? (
-          <section>
-            <h2 className="readout mb-2 flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
-              {BUCKET_LABELS.working}
-              <span className="font-mono text-inkdim/60">{working.length}</span>
-            </h2>
-            <div className="flex flex-col gap-2">
-              {working.map((c, i) => (
-                <div key={c.id} className="rise" style={stagger(i)}>
-                  <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </div>
-
-      {closed.length ? (
-        <details className="mt-10">
-          <summary className="readout">{UI.closedDrawer} · {closed.length}</summary>
-          {/* WO-0031c / B4: the closed drawer used to fade the whole column (opacity-60 ≈2.9:1 on the
-              reason line — AA fail). The quiet card keeps every line readable; the drawer whispers by
-              structure, not by contrast theft. */}
-          <div className="mt-2 flex flex-col gap-2">
+    <div
+      {...(platform === 'alldone' ? { 'data-board-all-done': '' } : platform === 'awaiting' ? { 'data-board-awaiting-close': '' } : {})}
+    >
+      {platform === 'alldone' ? (
+        <>
+          <div key={pulse} className={`flex items-center gap-2${pulse > 0 ? ' pulse-once' : ''}`}>
+            <span className="h-1.5 w-1.5 rounded-full bg-proceed" aria-hidden="true" />
+            <p className="readout text-proceed">{UI.boardAllDone}</p>
+            {/* T2 (the r2 amendment's named case): a finished surface may carry one invitation CTA
+                beside its state line — the board's appbar CTA is not enough when the day is done. */}
+            <Button variant="secondary" size="sm" className="ml-2" onClick={onNewWorkOrder}>
+              {UI.newWorkOrder}
+            </Button>
+          </div>
+          <ClosedToggle count={closed.length}>
             {closed.map((c) => (
               <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
             ))}
+          </ClosedToggle>
+        </>
+      ) : platform === 'awaiting' ? (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
+            <p className="readout text-signal">{UI.boardAwaitingClose(closableUp.length)}</p>
+            <Button variant="secondary" size="sm" className="ml-2" onClick={() => onSelect(closableUp[0]!.id)}>
+              {UI.boardCloseCta}
+            </Button>
           </div>
-        </details>
-      ) : null}
+          <div className="mt-4 flex flex-col gap-2">
+            {closableUp.map((c) => (
+              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
+            ))}
+          </div>
+          {closed.length > 0 ? (
+            <ClosedToggle count={closed.length}>
+              {closed.map((c) => (
+                <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+              ))}
+            </ClosedToggle>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div className="grid gap-x-3.5 gap-y-4 xl:grid-cols-2">
+            {up.length ? (
+              <section>
+                <h2 className="readout mb-2 flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden="true" />
+                  {BUCKET_LABELS.up}
+                  <span className="font-mono text-inkdim/60">{up.length}</span>
+                </h2>
+                <div className="flex flex-col gap-2">
+                  {up.map((c, i) => (
+                    <div key={c.id} className="glide" style={glide(i, c.id)}>
+                      <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {working.length ? (
+              <section>
+                <h2 className="readout mb-2 flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-info" aria-hidden="true" />
+                  {BUCKET_LABELS.working}
+                  <span className="font-mono text-inkdim/60">{working.length}</span>
+                </h2>
+                <div className="flex flex-col gap-2">
+                  {working.map((c, i) => (
+                    <div key={c.id} className="glide" style={glide(i, c.id)}>
+                      <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+
+          {closed.length > 0 ? (
+            <ClosedToggle count={closed.length}>
+              {closed.map((c) => (
+                <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+              ))}
+            </ClosedToggle>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

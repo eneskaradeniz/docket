@@ -230,9 +230,8 @@ await spec('SADE/DETAY is remembered across a reload (global view mode)', async 
 });
 
 await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the body (v4 §4)', async () => {
-  // the closed cards live in the collapsed drawer — open it first
-  await page.locator('details > summary').click();
-  await page.waitForTimeout(250);
+  // WO-0031f T1: the closed cards sit behind the toggle — 1 closed ≤5, so it starts OPEN
+  assert.ok((await page.locator('[data-closed-toggle]').count()) >= 1, 'no closed-list toggle on the mixed board');
   await openDetail('Kapandı');
   assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow on a closed WO');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no closure card');
@@ -543,10 +542,6 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await page.screenshot({ path: join(SHOTS, 'closure-results@980.png') });
   // reopening an already-closed WO is CALM — the seal renders without the animation class
   await backToBoard();
-  if ((await page.locator('details[open]').count()) === 0) {
-    await page.locator('details > summary').click();
-    await page.waitForTimeout(250);
-  }
   await openDetail('Uygulama sürüyor');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
@@ -565,7 +560,7 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await backToBoard();
 });
 
-await spec('only-closed board: the Bütün işler tamam platform + the OPEN quiet list', async () => {
+await spec('only-closed board: the Bütün işler tamam platform, the toggle, and the calm arrival (WO-0031f)', async () => {
   // switch to the 'arşiv' workspace (its only WO is closed) via the appbar switcher
   await page.locator('header button', { hasText: 'e2e' }).first().click();
   await page.waitForTimeout(300);
@@ -577,9 +572,15 @@ await spec('only-closed board: the Bütün işler tamam platform + the OPEN quie
   // is the done line — the real archive showed both on closed cards
   assert.equal(await page.getByText('Kapatılabilir').count(), 0, 'a closed card claims Kapatılabilir');
   assert.ok((await page.getByText('Tamamlandı', { exact: true }).count()) >= 1, 'closed card reason is not the done line');
-  // the closed list renders OPEN — no details drawer to dig through
-  assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the only-closed board');
+  // T1: the closed list sits behind the toggle — 1 closed ≤5, so it starts OPEN and the card shows
+  const toggle = page.locator('[data-closed-toggle]');
+  assert.equal(await toggle.count(), 1, 'not exactly one closed toggle');
+  assert.equal(await toggle.first().getAttribute('aria-expanded'), 'true', 'the ≤5 toggle does not start open');
+  assert.ok((await toggle.getByText('1 kapalı iş').count()) >= 1, 'the toggle label carries no count');
   assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closed card is not out in the open');
+  assert.equal(await page.locator('details > summary').count(), 0, 'a details drawer survived');
+  // H-1: arriving at all-done BY MOUNT is calm — no pulse (the pulse is a state transition only)
+  assert.equal(await page.locator('.pulse-once').count(), 0, 'the all-done platform pulsed on mount');
   await page.screenshot({ path: join(SHOTS, 'board-all-done@980.png') });
   // back to the busy workspace for the remaining specs
   await page.locator('header button', { hasText: 'arşiv' }).first().click();
@@ -589,40 +590,9 @@ await spec('only-closed board: the Bütün işler tamam platform + the OPEN quie
   assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
 });
 
-// ===== WO-0031e tur-3 specs (closable platform, audit transcript, tab scroll) =====
-
-await spec('closable platform: N iş kapatılmayı bekliyor + CTA + ▸ Kapatılabilir (tur-3)', async () => {
-  // switch to the 'raf' workspace (its only WO is closable, not closed) via the appbar switcher
-  await page.locator('header button', { hasText: 'e2e' }).first().click();
-  await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /raf/ }).first().click();
-  await page.waitForTimeout(600);
-  assert.ok((await page.getByText('1 iş kapatılmayı bekliyor').count()) >= 1, 'no awaiting-close line');
-  assert.ok((await page.locator('[data-board-awaiting-close]').count()) >= 1, 'no awaiting-close platform container');
-  assert.equal(await page.getByRole('button', { name: 'Kapanışa git', exact: true }).count(), 1, 'not exactly one CTA');
-  assert.equal(await page.locator('details > summary').count(), 0, 'the drawer rendered on the awaiting-close board');
-  assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closable card is not out in the open');
-  assert.ok((await page.getByText('Kapatılabilir').count()) >= 1, 'no ▸ Kapatılabilir on the card');
-  await page.screenshot({ path: join(SHOTS, 'board-awaiting-close@980.png') });
-  // the CTA opens the first closable detail — the Kapat card is the payoff
-  await page.getByRole('button', { name: 'Kapanışa git', exact: true }).click();
-  await page.waitForTimeout(500);
-  assert.ok((await page.getByText('Tüm adımlar tamam').count()) >= 1, 'the CTA did not open the closable detail');
-  assert.ok((await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).count()) >= 1, 'no Kapat card');
-  // tur-3 item 2: the strip progress hairline fills GREEN (--color-proceed #4cc38a)
-  const fill = await page.evaluate(() => {
-    const el = document.querySelector('.hairline-progress > div');
-    return el ? getComputedStyle(el).backgroundColor : 'missing';
-  });
-  assert.equal(fill, 'rgb(76, 195, 138)', `hairline fill is ${fill}, not --color-proceed`);
-  await backToBoard();
-  // back to the busy workspace for the remaining specs
-  await page.locator('header button', { hasText: 'raf' }).first().click();
-  await page.waitForTimeout(300);
-  await page.getByRole('button', { name: 'e2e', exact: false }).first().click();
-  await page.waitForTimeout(500);
-  assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
-});
+// ===== WO-0031e tur-3 specs (audit transcript, tab scroll) + the WO-0031f board package =====
+// (order matters: the audit/scroll specs need raf's WO still CLOSABLE — the closable spec ends by
+//  closing it, which stages the all-done arrival pulse)
 
 await spec('audit rows expand: the session transcript opens under its row (tur-3)', async () => {
   await page.locator('header button', { hasText: 'e2e' }).first().click();
@@ -683,6 +653,69 @@ await spec('tab switch scrolls the opened panel into view (tur-3, re-anchored to
   await backToBoard();
 });
 
+await spec('closable platform → live close → the all-done arrival pulses once + the peron invitation (WO-0031f)', async () => {
+  // the raf workspace (its only WO is closable, not closed) — the previous spec left us on its board
+  if ((await page.getByText('1 iş kapatılmayı bekliyor').count()) === 0) {
+    await page.locator('header button').first().click();
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: /raf/ }).first().click();
+    await page.waitForTimeout(600);
+  }
+  assert.ok((await page.getByText('1 iş kapatılmayı bekliyor').count()) >= 1, 'no awaiting-close line');
+  assert.ok((await page.locator('[data-board-awaiting-close]').count()) >= 1, 'no awaiting-close platform container');
+  // the platform keeps EXACTLY one CTA — the operator's explicit call (no invitation here; the
+  // appbar's own Yeni iş emri is chrome, not the platform's)
+  assert.equal(await page.getByRole('button', { name: 'Kapanışa git', exact: true }).count(), 1, 'not exactly one CTA');
+  assert.equal(
+    await page.locator('[data-board-awaiting-close]').getByRole('button', { name: /Yeni iş emri/ }).count(),
+    0,
+    'the awaiting platform grew a second CTA',
+  );
+  assert.equal(await page.locator('[data-wo-id]').count(), 1, 'the closable card is not out in the open');
+  assert.ok((await page.getByText('Kapatılabilir').count()) >= 1, 'no ▸ Kapatılabilir on the card');
+  await page.screenshot({ path: join(SHOTS, 'board-awaiting-close@980.png') });
+  // the CTA opens the first closable detail — the Kapat card is the payoff
+  await page.getByRole('button', { name: 'Kapanışa git', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByText('Tüm adımlar tamam').count()) >= 1, 'the CTA did not open the closable detail');
+  assert.ok((await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).count()) >= 1, 'no Kapat card');
+  // tur-3 item 2: the strip progress hairline fills GREEN (--color-proceed #4cc38a)
+  const fill = await page.evaluate(() => {
+    const el = document.querySelector('.hairline-progress > div');
+    return el ? getComputedStyle(el).backgroundColor : 'missing';
+  });
+  assert.equal(fill, 'rgb(76, 195, 138)', `hairline fill is ${fill}, not --color-proceed`);
+  // the live close — the board flips awaiting → all-done, and the arrival pulses ONCE (H-1)
+  await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Evet, kapat', exact: true }).click();
+  await page.waitForTimeout(900);
+  assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow after the close');
+  await backToBoard();
+  await page.waitForTimeout(600);
+  assert.ok((await page.getByText('Bütün işler tamam').count()) >= 1, 'no all-done platform after the last close');
+  assert.ok((await page.locator('[data-board-all-done]').count()) >= 1, 'no all-done container after the last close');
+  assert.ok((await page.locator('.pulse-once').count()) >= 1, 'the all-done arrival did not pulse');
+  // T2: the finished platform carries the inline invitation — it opens the create modal
+  await page.getByRole('button', { name: /Yeni iş emri/ }).first().click();
+  await page.waitForTimeout(350);
+  assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'the invitation CTA did not open the create modal');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  // T1: the closed card sits behind the toggle (1 ≤5 → open) with its quiet treatment
+  const toggle = page.locator('[data-closed-toggle]');
+  assert.equal(await toggle.count(), 1, 'no closed toggle on the all-done board');
+  assert.equal(await toggle.first().getAttribute('aria-expanded'), 'true', 'the ≤5 toggle does not start open');
+  assert.ok((await toggle.getByText('1 kapalı iş').count()) >= 1, 'the toggle label carries no count');
+  await page.screenshot({ path: join(SHOTS, 'board-all-done-live@980.png') });
+  // the archive body is the full Kayıt — spot-check via the reopened record (K1 strip asserted in
+  // the closure spec)
+  await openDetail('Raf işi');
+  assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) >= 1, 'no immutability line on the reopened archive');
+  await backToBoard();
+  // leave the workspace tidy for the empty-DB spec (it launches its own app)
+});
+
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
   // a SECOND app on a fresh DB path (the store never auto-seeds) — the first-run surface, end to end
   const emptyRoot = mkdtempSync(join(tmpdir(), 'docket-e2e-empty-'));
@@ -715,7 +748,7 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     assert.ok((await emptyPage.getByText('Haydi ilk iş emrini açalım').count()) >= 1, 'no zero-WO hero');
     assert.ok((await emptyPage.getByRole('button', { name: /Yeni iş emri/ }).count()) >= 1, 'no zero-WO CTA');
     assert.equal(await emptyPage.getByText('Sıra sende', { exact: true }).count(), 0, 'a bucket header rendered at zero WOs');
-    assert.equal(await emptyPage.locator('details > summary').count(), 0, 'the closed drawer rendered at zero WOs');
+    assert.equal(await emptyPage.locator('[data-closed-toggle]').count(), 0, 'a closed toggle rendered at zero WOs');
     await emptyPage.screenshot({ path: join(SHOTS, 'zero-wo-hero@980.png') });
   } finally {
     await emptyApp.close();

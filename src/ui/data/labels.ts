@@ -536,6 +536,9 @@ export const UI = {
   termLive: 'canlı',
   stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
   auditSessions: (n: number): string => `${n} oturum`,
+  // WO-0031f T1 — the closed-list toggle, ONE pattern on all three board surfaces ('▸ 3 kapalı iş';
+  // the count is data, the word is copy — >5 closed starts collapsed).
+  closedToggleWord: 'kapalı iş',
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
   // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
   // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).

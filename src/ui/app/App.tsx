@@ -241,7 +241,16 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} onSelect={setSelectedId} onNewWorkOrder={() => setWoCreateOpen(true)} />;
+    // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
+    // transition of the old one — the all-done pulse must not fire across the swap.
+    main = (
+      <BoardScreen
+        key={workspaceId ?? 'none'}
+        cards={cards}
+        onSelect={setSelectedId}
+        onNewWorkOrder={() => setWoCreateOpen(true)}
+      />
+    );
   }
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
