@@ -259,12 +259,16 @@
     color: var(--color-info);
   }
 
-  /* The report under its own row (R1): indented under the step it belongs to, a hairline spine
-     naming the ownership — "the detail always reads as belonging to its step". */
+  /* The report under its own row (R1): indented under the step it belongs to, the 2px spine naming
+     the ownership. WO-0031f review (operator): a thin full outline + a recessed ground, so the
+     report's EXTENT is visible — where it begins and ends. */
   .repbody {
     margin: 2px 0 4px 18px;
+    border: 1px solid var(--color-hairline);
     border-left: 2px solid var(--color-hairline);
-    padding: 8px 4px 8px 14px;
+    border-radius: 0 6px 6px 0;
+    background: var(--color-bg);
+    padding: 8px 10px 8px 14px;
   }
 
   /* The ≥1080 rack IS Kayıt (v6): a surface-tinted side column, hairline-separated. */
@@ -599,9 +603,11 @@
   }
 }
 
-/* Deep links/anchors must clear the pinned rail (TD-037, paid in WO-0031d). */
+/* Deep links/anchors must clear the pinned chrome (TD-037, paid in WO-0031d; the TOP margin is the
+   WO-0031f review pass: the sticky Akış|Kayıt bar must not cover what a scroll brought you to). */
 [id] {
   scroll-margin-block-end: 96px;
+  scroll-margin-block-start: 44px;
 }
 
 @media (prefers-reduced-motion: reduce) {
