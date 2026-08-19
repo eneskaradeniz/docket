@@ -631,6 +631,24 @@ describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
     expect(last[1]!.detail).toBe('full_auto');
   });
 
+  // WO-0031f K1 — a closed work order is a record, not a document: the pencil is absent in the UI and
+  // the store refuses the write (closed ⟺ gate_closure_docs_sha set — deriveStage's own test). Delete
+  // stays legitimate (an archive cleanup), so deleteWorkOrder is NOT guarded.
+  it('WO-0031f: updateWorkOrder throws on a closed work order (immutable archive)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot5(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'K1', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'r' });
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    // control: the edit works right up to the close
+    await store.updateWorkOrder(wo.id, { title: 'K1 önce' });
+    await store.closeWorkOrder(wo.id, 'done');
+    await expect(store.updateWorkOrder(wo.id, { title: 'K1 sonra' })).rejects.toThrow(/closed/i);
+    await expect(store.updateWorkOrder(wo.id, { permissionRule: 'full_auto' })).rejects.toThrow(/closed/i);
+    expect((await store.getWorkOrder(wo.id))!.title).toBe('K1 önce'); // nothing leaked through
+  });
+
   it('WO-0031c: approvePlan carries the edited count; permission decisions land in the log', async () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot5(store);

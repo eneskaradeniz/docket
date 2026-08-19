@@ -231,3 +231,12 @@ operator's calls: Y1 = D3 (the tour suggested D1), and the awaiting-close platfo
 CTA. The smooth-scroll CSS-route rule survives for the substrip N/T jump; the two-tab world makes
 S3 nearly moot. `durationMs` rides the existing `getWorkOrders` payload (TD-036). E2E's tab-scroll
 spec (WO-0031e) gets rewritten, not deleted — the N/T jump keeps its coverage.
+
+## Closure
+
+PR #38 (`wo-0031f-final-turu`, tek PR; dokuz commit `36e6aea…fb1d576`). ROADMAP `[x]` + TD-038
+closed / TD-037 narrowed + ADR-0012'in iki cümlesi `fb1d576`'de. Kapılar: typecheck (2 tsconfig) +
+480 test + `check:boundaries` + build + `test:ui` 39/39 (hedef ≥32). Stop-and-ask ikisi de PR
+gövdesinde operatöre sunuldu: ADR cümlelerinin tam metni + bitmiş-adım scrollback gözlemi. Dürüst
+sapmalar PR'da listelendi: 'İş emirleri okunuyor…' tek mockup-dışı metin; Kaynaklar Kayıt kuyruğu
+sonuna yerleşti; all-done nabzı çalışma-alanı hafızasıyla geçiş sayıldı (mount değil).

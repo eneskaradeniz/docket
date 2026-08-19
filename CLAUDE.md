@@ -26,6 +26,9 @@ rule restated with its reasons in two places is the duplication this repository 
 - An action whose evidence is unmet is absent, with a line stating why — never a disabled control. CI: no
   `disabled`, `aria-disabled`, or `data-disabled` attribute (incl. the `{...{ disabled: true }}` object-key
   form) in `src/ui/`.
+- Terminal-lock exception (2026-08-18 addendum): a control unavailable because the WO is CLOSED renders in
+  place, locked (kit `locked` — pointer-events + dim, attribute-free), not absent; transient gates (a live
+  drive) keep absent + reason.
 
 ## Interaction + copy contract — ADR-0012
 - Hover flows ONLY through the semantic classes in `src/index.css` (`.ibtn` / `.irow` / `.ichip`) or kit

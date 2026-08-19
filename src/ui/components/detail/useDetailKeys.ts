@@ -4,6 +4,12 @@
 // leave the screen. Enter (outside inputs) fires the rail's PRIMARY when one exists (⏎ onayla, ⏎
 // izin ver, ⏎ yeniden dene) — and NEVER while a dialog is open: Enter there belongs to the focused
 // dialog button alone (WO-0031d; this also keeps kapat ⏎'süz when its dialog holds the focus).
+//
+// WO-0031f review (operator): the dialog guard must run in the CAPTURE phase. In the bubble phase
+// Radix closes the dialog on the same keydown and React flushes it synchronously — by the time the
+// window listener ran, the dialog was GONE, the guard saw nothing, and one Esc closed the dialog
+// AND threw the operator back to the board. Capture sees the dialog before Radix does, stands down,
+// and Radix alone answers: one Esc, one layer.
 import { useEffect } from 'react';
 
 export function useDetailKeys({
@@ -32,7 +38,7 @@ export function useDetailKeys({
         onPrimary();
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [closeTopLayer, onBack, onPrimary]);
 }

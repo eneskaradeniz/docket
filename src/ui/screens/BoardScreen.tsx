@@ -19,7 +19,7 @@ export function BoardScreen({
   return (
     <main className="mx-auto w-full max-w-[840px] px-5 py-5">
       {cards.length ? (
-        <Board cards={cards} onSelect={onSelect} />
+        <Board cards={cards} onSelect={onSelect} onNewWorkOrder={onNewWorkOrder} />
       ) : (
         <InviteHero cta={UI.newWorkOrder} onCta={onNewWorkOrder} />
       )}

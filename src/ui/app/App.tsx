@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { StepView, WoEvent, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
+import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
@@ -32,7 +32,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const [loadNonce, setLoadNonce] = useState(0); // B4: the board-load retry trigger (WO-0026)
   const [workspaceId, setWorkspaceId] = useState<WorkspaceId | null>(null);
   const [selectedId, setSelectedId] = useState<WorkOrderId | null>(null);
-  const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string }; steps: StepView[]; events: WoEvent[] } | null>(null);
+  const [detail, setDetail] = useState<{ wo: WorkOrder; docs: { order: string; plan: string }; steps: StepView[] } | null>(null);
   const [detailNonce, setDetailNonce] = useState(0);
   const [detailError, setDetailError] = useState(false); // B3: a failed detail load must not render as loading (WO-0026)
   const [woCreateOpen, setWoCreateOpen] = useState(false);
@@ -66,15 +66,18 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     }
     let cancelled = false;
     setDetailError(false);
-    Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId), source.getWorkOrderSteps(selectedId), source.getWorkOrderEvents(selectedId)])
-      .then(([wo, docs, steps, events]) => {
+    // WO-0031f Y-2: the Çizelge surface died, so the event stream no longer rides the detail state —
+    // the fetch stays (the stored stream and its port are untouched; rare events surface via the
+    // audit row's detail and the step metas), the payload just stops crossing into the UI.
+    Promise.all([source.getWorkOrder(selectedId), source.getWorkOrderDocs(selectedId), source.getWorkOrderSteps(selectedId)])
+      .then(([wo, docs, steps]) => {
         if (cancelled) return;
         // A resolved-but-missing work order is the same surface as a failure: an honest error, not a spinner.
         if (!wo) {
           setDetailError(true);
           return;
         }
-        setDetail({ wo, docs, steps, events });
+        setDetail({ wo, docs, steps });
       })
       .catch(() => {
         if (!cancelled) {
@@ -183,7 +186,8 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
 
   let main;
   if (load === 'loading') {
-    main = <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>;
+    // TD-037: the named load line — what is actually being read, never a bare 'Yükleniyor…'.
+    main = <p className="loadline px-4 py-8">{UI.loadWorkOrders}</p>;
   } else if (load === 'error') {
     main = (
       <div className="px-6 py-8">
@@ -220,7 +224,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       <DetailScreen
         detail={toDetailView(detail.wo, detail.steps, parseOrderMd(detail.docs.order).reviewMode)}
         docs={detail.docs}
-        events={detail.events}
         permissionRule={orderMdCarriesRule(detail.docs.order) ? parseOrderMd(detail.docs.order).permissionRule : defaultRule}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
@@ -236,10 +239,19 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
       />
     ) : (
-      <p className="px-4 py-8 text-sm text-inkdim">{UI.loading}</p>
+      <p className="loadline px-4 py-8">{UI.loadSteps}</p>
     );
   } else {
-    main = <BoardScreen cards={cards} onSelect={setSelectedId} onNewWorkOrder={() => setWoCreateOpen(true)} />;
+    // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
+    // transition of the old one — the all-done pulse must not fire across the swap.
+    main = (
+      <BoardScreen
+        key={workspaceId ?? 'none'}
+        cards={cards}
+        onSelect={setSelectedId}
+        onNewWorkOrder={() => setWoCreateOpen(true)}
+      />
+    );
   }
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);

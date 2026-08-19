@@ -1,5 +1,6 @@
 // DetailStrip (WO-0031c / v4) — the console's top row: ‹ back · WO badge + stage · the phase readout ·
-// right-aligned metrics (Maliyet, Süre — hidden at the narrowest sizes) · the GLOBAL SADE|DETAY
+// right-aligned metrics (the price, bare — its word died with the operator's review; Süre — hidden
+// at the narrowest sizes) · the GLOBAL SADE|DETAY
 // segment · the quiet delete icon. The work-order title rides underneath with the two strip badges:
 // the review cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display;
 // the ask card changes it). WO-0031d: the pencil/trash/review-badge are ABSENT while a drive is live
@@ -65,6 +66,10 @@ export function DetailStrip({
   const tone = PHASE_KIND_TONE[phase.kind];
   const anyCost = detail.sessions.some((s) => s.cost);
   const breathe = tone === 'signal';
+  // WO-0031f K1 — a closed work order is a record, not a document: the order.md writers are absent
+  // (the pencil with a reason line, the review badge inert) for the same write-path reason as a live
+  // drive. The permission badge was always display-only; Sil STAYS (an archive cleanup is legitimate).
+  const closed = detail.stage === 'closed';
   // The juice hairline (v4 §7): fills with done/total steps — a quiet progress read under the strip.
   const stepsTotal = detail.steps.length;
   const stepsDone = detail.steps.filter((s) => s.status === 'done').length;
@@ -110,8 +115,9 @@ export function DetailStrip({
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2.5">
           {anyCost ? (
+            // WO-0031f review (operator): the price speaks for itself — the "Maliyet" prefix died.
             <span className="hidden whitespace-nowrap font-mono text-[11px] text-inkdim min-[520px]:inline">
-              {UI.stripCost} {formatUsd(detail.cost.usd)}
+              {formatUsd(detail.cost.usd)}
             </span>
           ) : null}
           {duration ? (
@@ -140,23 +146,29 @@ export function DetailStrip({
       <div className="flex items-center gap-2">
         <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
         {driveLive ? (
-          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit.
+          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit while
+          // a drive spends — a TRANSIENT gate whose cause is not otherwise on screen.
           <span className="readout shrink-0">{UI.stripGateReason}</span>
         ) : (
+          // WO-0031f (operator, ADR-0001 addendum): on a CLOSED work order the pencil stays in place,
+          // LOCKED — the terminal lock. The closed state is already named by the badge/faze beside it,
+          // so the old "Kapalı iş emri değişmez" line said nothing new and died with this change.
           <Button
             variant="ghost"
             size="icon"
             aria-label={UI.woEditAria}
             className="h-6 w-6 shrink-0"
             onClick={() => setEditing(true)}
+            {...(closed ? { locked: true } : {})}
           >
             <Pencil className="h-3 w-3" aria-hidden="true" />
           </Button>
         )}
         {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
             WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
-            as the pencil — gated with it; the button is simply not rendered). */}
-        {driveLive ? (
+            as the pencil — gated with it; the button is simply not rendered). WO-0031f K1: closed is
+            the permanent form of that — the cadence is now a fact of history, not a setting. */}
+        {driveLive || closed ? (
           <span
             data-review-mode={detail.reviewMode}
             title={UI.reviewModeLabel}

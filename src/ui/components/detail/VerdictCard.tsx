@@ -42,7 +42,7 @@ export function VerdictCard({
       <div className="flex-1 px-3.5 py-3">
         <p className={`readout ${titleTone}`}>{title}</p>
         {body === null ? (
-          <p className="text-xs text-inkdim">{UI.loading}</p>
+          <p className="loadline text-xs">{UI.loadReport}</p>
         ) : body.trim() ? (
           <MarkdownBody content={body} />
         ) : (

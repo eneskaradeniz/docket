@@ -420,10 +420,9 @@ export const UI = {
   architectRequest: 'Mimarın bir isteği var',
   // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
   inviteFirstWo: 'Haydi ilk iş emrini açalım',
-  // Plan adımları (WO-0017)
-  stepsHeader: 'Plan',
+  // Plan adımları (WO-0017). WO-0031f: stepsHeader/stepReportTitle died with the spine restructure —
+  // the spine carries no "Plan" header (the Akış count does) and the report header is reportTitle(idx).
   stepsUnit: 'adım',
-  stepReportTitle: 'Rapor',
   stepReportMissing: '(rapor henüz yok)',
   stepScopeAll: 'hepsi',
   stepBlockedHint: 'kapsam bir track ile eşleşmiyor',
@@ -513,12 +512,46 @@ export const UI = {
   closeShaAria: 'Kapanış kaydı — kopyala',
   copyDone: 'Kopyalandı',
   // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
-  stripCost: 'Maliyet',
+  // WO-0031f review (operator): stripCost died — the price speaks for itself ("$9,50", no prefix);
+  // the LEDGER's column header (auditColCost) stays, it names a column.
   stripDuration: 'Süre',
   objectTitle: 'İtirazın ne?',
   dialogCloseAria: 'kapat',
   removeAria: 'kaldır',
   stripGateReason: 'önce oturumu durdur',
+  // (WO-0031f review, operator: the old "Kapalı iş emri değişmez" line died — the pencil renders
+  // LOCKED in place on a closed WO instead; the closed state is already named beside it. The store
+  // still refuses the write — that layer is unchanged.)
+  // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
+  deleteWoFailed: 'Silinemedi — depo yazma hatası.',
+  // WO-0031f v6 — the two DETAY surfaces. Akış is the body itself (decision cards + the step spine);
+  // Kayıt is one drawer (kanıt chips + belgeler + döküm). The counts ride the tab (S1-C shrunk).
+  secFlow: 'Akış',
+  secRecord: 'Kayıt',
+  // WO-0031f v6 §01 — the spine's row metas + the report under its own row.
+  reportTitle: (idx: number): string => `Rapor · Adım ${idx}`,
+  repOpen: '▸ rapor',
+  repClose: '▾ rapor',
+  stepQueued: 'sırada',
+  stepRunningShort: 'çalışıyor',
+  termLive: 'canlı',
+  stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
+  auditSessions: (n: number): string => `${n} oturum`,
+  // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
+  // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
+  streamOpened: 'Oturum açıldı — çıktı bekleniyor',
+  // WO-0031f review — the plan-stage empty instrument's invitation line (a state fact: the architect
+  // is ready; the Plan iste action lives on the rail, not duplicated here).
+  planWaitingHint: 'Mimar plan için hazır',
+  // TD-037 — the named load lines replace the bare 'Yükleniyor…' (no skeletons, one line + a run
+  // dot). loadWorkOrders is the one string no mockup drew (the board reads work orders, not
+  // documents) — shown to the operator at PR review.
+  loadWorkOrders: 'İş emirleri okunuyor…',
+  loadSteps: 'Adımlar okunuyor…',
+  loadReport: 'Rapor okunuyor…',
+  // WO-0031f T1 — the closed-list toggle, ONE pattern on all three board surfaces ('▸ 3 kapalı iş';
+  // the count is data, the word is copy — >5 closed starts collapsed).
+  closedToggleWord: 'kapalı iş',
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
   // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
   // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
@@ -533,11 +566,10 @@ export const UI = {
   stepReady: 'hazır',
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
   planProposedSteps: (n: number) => `Mimar ${n} adım önerdi`,
-  // DETAY bölüm yüzeyleri — sekme adları @<1080 ve raf başlıkları @≥1080 aynı dili kullanır.
-  secTerminal: 'Terminal',
-  secSteps: 'Adımlar',
+  // DETAY bölüm yüzeyleri — WO-0031f v6: altı sekme öldü, iki yüzey var (Akış | Kayıt); Kayıt'ın
+  // kendi bölümleri (Kanıt/Belgeler/Kaynaklar) raf başlığı olarak aynı dili kullanır. secTerminal/
+  // secSteps/secTimeline died with the restructure (the spine IS Akış; Çizelge died with Y-2).
   secEvidence: 'Kanıt',
-  secTimeline: 'Çizelge',
   secDocs: 'Belgeler',
   secSources: 'Kaynaklar',
   secTracks: 'Repolar',

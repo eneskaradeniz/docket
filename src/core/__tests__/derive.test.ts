@@ -515,6 +515,58 @@ describe('deriveWorkOrderCost — WO cost derived from sessions (ADR-0010 rule 2
   });
 });
 
+// WO-0031f T3 / AC7 — the card Süre is the session-sum (the same arithmetic the strip and the audit
+// total speak), so the card, the strip and the Toplam row can never disagree. Drawn only when > 0.
+describe('toCardView durationMs — card Süre is the finished-session sum (WO-0031f T3 / AC7)', () => {
+  const T = (h: number, min = 0): string =>
+    `2026-08-18T${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}:00.000Z`;
+  const cardOf = (sessions: SessionRef[]): number =>
+    toCardView(aWorkOrder({ sessions: sessions as SessionRef[] })).durationMs;
+
+  it('zero sessions → 0', () => {
+    expect(cardOf([])).toBe(0);
+  });
+
+  it('a live-only session (startedAt, no endedAt) counts as 0, never NaN', () => {
+    expect(cardOf([aSession({ role: 'implementer', startedAt: T(9) })])).toBe(0);
+  });
+
+  it('sessions without any dates count as 0, never NaN', () => {
+    expect(cardOf([aSession({ role: 'implementer' }), aSession({ role: 'architect' })])).toBe(0);
+  });
+
+  it('multiple finished sessions → sums (6min + 1min = 7min)', () => {
+    expect(
+      cardOf([
+        aSession({ role: 'implementer', startedAt: T(9), endedAt: T(9, 6) }),
+        aSession({ role: 'architect', startedAt: T(10), endedAt: T(10, 1) }),
+      ]),
+    ).toBe(7 * 60_000);
+  });
+
+  it('counts all roles — the strip and the audit total count them all', () => {
+    expect(
+      cardOf(
+        (['implementer', 'architect', 'verifier'] as const).map((role) =>
+          aSession({ role, startedAt: T(9), endedAt: T(9, 1) }),
+        ),
+      ),
+    ).toBe(3 * 60_000);
+  });
+
+  it('a negative span (ended before started) clamps to 0, never negative', () => {
+    expect(cardOf([aSession({ role: 'implementer', startedAt: T(9, 6), endedAt: T(9) })])).toBe(0);
+  });
+
+  // Contract loop — the fixtures carry no session dates, so every fixture card draws no Süre (the
+  // "drawn only when > 0" rule); the loop also pins never-NaN across all six states.
+  it('every fixture card (no dated sessions) → 0', () => {
+    for (const w of workOrders) {
+      expect(toCardView(w).durationMs).toBe(0);
+    }
+  });
+});
+
 describe('deriveBucket + card action — board buckets (WO-0013)', () => {
   describe('deriveBucket', () => {
     it('closed stage → closed', () => {

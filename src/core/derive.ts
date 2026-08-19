@@ -322,6 +322,14 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
   const column = whoseTurn(wo);
   const action = deriveCardAction(wo);
   const active = wo.sessions.find((s) => s.status === 'running' || s.status === 'stopped_asking');
+  // WO-0031f T3 — the card Süre is the finished-session sum: the same arithmetic deriveSessionAudit's
+  // total speaks (Math.max(0, ended − started), 0 while either date is absent), so the card, the strip
+  // and the Toplam row can never disagree. Rides the existing getWorkOrders payload (TD-036).
+  const durationMs = wo.sessions.reduce(
+    (acc, s) =>
+      acc + (s.startedAt && s.endedAt ? Math.max(0, new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) : 0),
+    0,
+  );
   return {
     id: wo.id,
     title: wo.title,
@@ -338,6 +346,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
     trackCount: wo.tracks.length,
     sessionCount: wo.sessions.length,
     cost: wo.cost,
+    durationMs,
   };
 }
 

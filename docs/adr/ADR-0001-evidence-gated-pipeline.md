@@ -55,6 +55,14 @@ Gate *existence* is not configurable. Gate *contents* are: a workspace declares 
 gate requires. A fully configurable pipeline is a workflow engine with no opinion, and that is not this
 product.
 
+**2026-08-18 addendum (operator, WO-0031f review).** Consequence 1 keeps its letter — no `disabled`
+attribute ever enters `src/ui` (the CI grep stands) — but its reading narrows for TERMINAL states: when a
+control is unavailable because the work order itself is CLOSED, it renders in place, LOCKED, in the kit's
+`locked` idiom (pointer-events off + dimmed — visually the disabled button the operator asked for),
+instead of being absent with a reason line; the closed state is already named by the badge and the phase
+beside it, so a standing line says nothing new. Transient gates (a live drive) keep the absent + reason
+form — their cause is not otherwise on screen.
+
 ## Consequences
 
 - The most valuable surface of the app is the evidence model, not the screens. Screens follow it.

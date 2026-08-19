@@ -39,15 +39,21 @@ function readTokens(): ITheme {
 export function Terminal({
   entries,
   resetKey,
+  compact,
 }: {
   entries: TranscriptLine[];
   /** Changes when the stream should clear (a fresh drive). SessionPane feeds the provider session id. */
   resetKey?: string;
+  /** WO-0031f v6: the in-row form of the active step's spine row — a shorter floor (120px vs 220px). */
+  compact?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const writtenCountRef = useRef(0);
   const lastResetKeyRef = useRef<string | undefined>(undefined);
+  // TD-038.3: the pulse's dispose timer rides this ref — cleared on the effect's cleanup AND on
+  // unmount, so a disposed terminal is never decorated by a timer that outlived it.
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Create the terminal once; refit whenever the CONTAINER resizes; dispose on unmount. `disableStdin`
   // keeps it read-only (input stays the prompt + drive controls). A ResizeObserver (WO-0031c) — not the
@@ -129,16 +135,22 @@ export function Terminal({
         const marker = term.registerMarker(-1);
         if (marker) {
           const deco = term.registerDecoration({ marker, width: term.cols, backgroundColor: 'rgba(76, 195, 138, 0.12)' });
-          setTimeout(() => { deco?.dispose(); marker.dispose(); }, 400);
+          pulseTimerRef.current = setTimeout(() => { deco?.dispose(); marker.dispose(); }, 400);
         }
       } catch {
         // decoration surface unavailable — the pulse is optional by ruling
       }
     }
+    return () => {
+      if (pulseTimerRef.current !== null) {
+        clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+    };
   }, [entries, resetKey]);
 
   return (
-    <div className="h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5">
+    <div className={compact ? 'h-full min-h-[120px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5' : 'h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5'}>
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );

@@ -81,7 +81,8 @@ export interface WorkOrderSource {
 
   // Edit a work order after creation (WO-0031c): title/description → order.md (+ the DB title), review
   // mode / permission rule → order.md front-matter. Every edit appends a `wo_edited` event; a permission
-  // rule change additionally appends `rule_changed`. Throws when the WO or its order.md is missing.
+  // rule change additionally appends `rule_changed`. Throws when the WO or its order.md is missing, and
+  // — WO-0031f K1 — when the WO is closed (a closed work order is an immutable archive).
   updateWorkOrder(workOrderId: WorkOrderId, patch: UpdateWorkOrderInput): Promise<void>;
 
   // Record the operator's answer on a permission ask card (WO-0031c): the timeline carries what was

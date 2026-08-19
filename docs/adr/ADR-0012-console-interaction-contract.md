@@ -56,6 +56,9 @@ The first-run experience is the extreme case: an empty database shows the real a
 normal Settings — never a second, lesser chrome) and one invitation line with one CTA. The words are
 the operator's: "Haydi ilk iş emrini açalım".
 
+WO-0031f: a finished surface may carry one invitation CTA beside its state line (the peron
+invitation is the named case).
+
 ## Decision — no explainer copy
 
 Helper and instructional paragraphs are banned. Field names and option labels must carry their own
@@ -99,6 +102,10 @@ Motion is feedback, not decoration, and lives by six rules (the operator's, from
 5. **SADE stays calm**; juice lives in DETAY and in result moments.
 6. No meta-game: no points, no badges, no sound. Feedback is visual and short — a flash, a drawn ✓,
    a filling hairline, a closure seal.
+
+WO-0031f: entrance glides are the named exception to "never on mount" (a surface entering view on
+first open or tab change may glide in once, ≤400ms translate+fade; re-renders, live appends, and
+reduced-motion stay motionless — the reborn `.rise`, now contractual).
 
 ## Consequences
 

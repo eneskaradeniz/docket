@@ -1,7 +1,8 @@
 // AuditTable (WO-0031c / v4 §4) — the session ledger: Oturum | Rol | Zaman | Süre | Maliyet + the
 // total row. Rows come from core's deriveSessionAudit (structured names — labels render them); the
-// table is the archive's default body and DETAY's "Denetim" section. A missing cost renders "—",
-// never a fake $0,00 (the TD-030 honesty).
+// table lives inside the record stack on every surface (the Kayıt tab, the rack, the archive body),
+// and the STACK's section header carries the title — the table itself renders title-less (the old
+// internal header double-titled it). A missing cost renders "—", never a fake $0,00 (TD-030).
 // WO-0031e tur-3: a row with a transcript expands in place — the toggle (▸/▾ döküm) maps through
 // `sourceIdx` to `sessions[sourceIdx].transcript`, rendered as mono DOM via labels'
 // `transcriptLineText` (core's formatTranscriptLine is xterm-ANSI — never for DOM). Instant show
@@ -11,7 +12,8 @@ import { Fragment, useState } from 'react';
 import type { SessionAuditRow } from '../../../core/derive';
 import { deriveSessionAudit } from '../../../core/derive';
 import type { SessionRef, StepSpec } from '../../../core/types';
-import { formatUsd, ROLE_LABELS, transcriptLineText, UI } from '../../data/labels';
+import { formatUsd, transcriptLineText, UI } from '../../data/labels';
+import { RoleChip } from './RoleChip';
 
 function nameText(row: SessionAuditRow): string {
   switch (row.name.kind) {
@@ -34,9 +36,6 @@ export function AuditTable({ sessions, steps }: { sessions: SessionRef[]; steps?
     r.startedAt && r.endedAt ? UI.auditRange(r.startedAt, r.endedAt) : r.startedAt ? UI.auditClock(r.startedAt) : UI.auditCostNone;
   return (
     <section data-audit-table="">
-      <header className="mb-2 flex items-baseline gap-2.5">
-        <p className="readout text-proceed">{UI.auditTitle}</p>
-      </header>
       <table className="w-full font-mono text-[11px]">
         <thead>
           <tr className="border-b border-hairline text-inkdim">
@@ -70,7 +69,14 @@ export function AuditTable({ sessions, steps }: { sessions: SessionRef[]; steps?
                       <span className="truncate">{nameText(r)}</span>
                     </span>
                   </td>
-                  <td className="px-1 py-1.5 text-inkdim">{ROLE_LABELS[r.role]}</td>
+                  <td className="px-1 py-1.5 text-inkdim">
+                    {/* D3: the row carries its role lamp (3px×11px) beside the rolechip — the same
+                        lamp grammar the strip speaks (architect amber, implementer blue, verifier green). */}
+                    <span className="flex items-center gap-1.5">
+                      <span className={`rlamp rlamp-${r.role}`} aria-hidden="true" />
+                      <RoleChip role={r.role} />
+                    </span>
+                  </td>
                   <td className="px-1 py-1.5 text-inkdim">{range(r)}</td>
                   <td className="px-1 py-1.5 text-right text-inkdim">{UI.formatDuration(r.durationMs)}</td>
                   <td className="px-1 py-1.5 text-right text-inkdim">

@@ -117,8 +117,9 @@ await store.closeWorkOrder(wo4.id, 'e2e closed');
 
 // 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment
 //    (ask card + `Sıra sende` substrip + glow-signal) rendered statically from the persisted session.
+//    WO-0031f: the step aim is distinctive — the H-4 band-focus spec reads it back.
 const wo5 = await mk('İzin bekliyor', 'E2E: a step paused on a permission ask.');
-await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"askı senaryosunu yürü","scope":"all"}]\n```\n');
 store.recordStep(wo5.id, 1, { status: 'active' });
 store.recordSession({
   providerSessionId: 'e2e-ask-session',
@@ -197,6 +198,45 @@ store.recordSession({
   cost: { tokensIn: 9_000, tokensOut: 2_000, usd: 0.55 },
   startedAt: new Date('2026-08-16T16:00:00Z').toISOString(),
   endedAt: new Date('2026-08-16T16:05:00Z').toISOString(),
+});
+
+// 8) WO-0031f review: ten DONE steps with reports — the report-switch scroll spec (open an early
+//    report, then a late one: the sibling closes, the new one opens AND the view arrives at its top;
+//    ten rows guarantee real scroll travel under the 980×620 console).
+const wo8 = await mk('Rapor turu', 'E2E: ten done steps — the report switch scroll.');
+await store.approvePlan(
+  wo8.id,
+  '# E2E plan\n\n```steps\n' +
+    JSON.stringify(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ role: n % 2 === 0 ? 'verifier' : 'implementer', aim: `adım ${n} amacı`, scope: 'all' })),
+    ) +
+    '\n```\n',
+);
+for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+  store.recordStep(wo8.id, n, { status: 'done', reportPath: `reports/step-0${n}-${n % 2 === 0 ? 'verifier' : 'implementer'}.md` });
+  store.recordStepVerdict(wo8.id, n, 'proceed', 'ok');
+}
+store.recordSession({
+  providerSessionId: 'e2e-wo8-run1',
+  workOrderId: wo8.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 4_000, tokensOut: 900, usd: 0.31 },
+  startedAt: new Date('2026-08-16T16:20:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T16:24:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo8-run6',
+  workOrderId: wo8.id,
+  role: 'verifier',
+  status: 'idle',
+  stepIdx: 6,
+  transcript: [],
+  cost: { tokensIn: 6_000, tokensOut: 1_200, usd: 0.44 },
+  startedAt: new Date('2026-08-16T17:00:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T17:05:00Z').toISOString(),
 });
 
 console.log(`DB=${join(root, 'e2e.db')}`);
