@@ -473,11 +473,11 @@ function removeRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, path: string
 }
 
 // --- Work-order creation (WO-0015) ---
-// Resolve the decision store's local working-tree path for a workspace. Workspace.decisionStore is a
-// RepoId slug; the real path lives in the owned connection table. Fixture workspaces have no
-// connection row, so fall back to process.cwd() (Docket manages itself from its own working tree).
-// The path never crosses to the renderer (ADR-0001). M3 reads workspace.yaml + connection instead.
-function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string {
+// The workspace's decision-store path resolved STRICTLY from its connection rows (WO-0032): the same
+// slug match resolveDecisionStorePath applies, but undefined when no connection matches. DELETES
+// resolve through this only — a deletion must never operate on the process.cwd() fallback (fixture
+// workspaces resolve there, and under vitest cwd IS the operator's real repo).
+function connectedDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string | undefined {
   const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(workspaceId) as
     | { decision_store: string }
     | undefined;
@@ -488,7 +488,15 @@ function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): s
   for (const r of rows) {
     if (repoBase(r.local_path) === dsSlug) return r.local_path;
   }
-  return process.cwd();
+  return undefined;
+}
+
+// Resolve the decision store's local working-tree path for a workspace. Workspace.decisionStore is a
+// RepoId slug; the real path lives in the owned connection table. Fixture workspaces have no
+// connection row, so fall back to process.cwd() (Docket manages itself from its own working tree).
+// The path never crosses to the renderer (ADR-0001). M3 reads workspace.yaml + connection instead.
+function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string {
+  return connectedDecisionStorePath(db, workspaceId) ?? process.cwd();
 }
 
 /** The work order's repo root paths: its tracks' connected local paths (decision store included). The
@@ -611,9 +619,11 @@ function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: nu
   recordStepRow(db, workOrderId, idx, { status: 'done', reportPath });
 }
 
-// Cascade-delete a work order (WO-0020): children-first DB deletes, then the work_order row, then remove the
-// decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched.
-function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
+// The per-WO cascade, shared by deleteWorkOrder and deleteWorkspace (WO-0032): children-first DB
+// deletes, the work_order row, then the decision-store folder (order.md/plan.md/reports). `dir` must
+// be resolved BEFORE the deletes — the work_order DELETE orphans the resolver (the WO-0032 fix: the
+// old order resolved woDir after the DELETE, so dir was always undefined and the folder survived).
+function deleteWorkOrderRows(db: DatabaseSync, id: WorkOrderId, dir: string | undefined): void {
   db.prepare('DELETE FROM wo_event WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order_step WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM session WHERE work_order_id = ?').run(id);
@@ -621,8 +631,21 @@ function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
   db.prepare('DELETE FROM track WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order_source WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order WHERE id = ?').run(id);
-  const dir = woDir(db, id);
   if (dir) removeWorkOrderDir(dir, id);
+}
+
+// The WO's decision-store dir resolved STRICTLY for deletion (WO-0032): the workspace must exist and
+// carry a matching connection row, else undefined — a fixture workspace deletes DB rows only, never
+// a folder under the cwd fallback.
+function woConnectedDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
+  const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
+  return wo ? connectedDecisionStorePath(db, wid(wo.workspace_id)) : undefined;
+}
+
+// Cascade-delete a work order (WO-0020): children-first DB deletes, then the work_order row, then remove the
+// decision-store folder (order.md/plan.md/reports). Workspace + repo definitions are untouched.
+function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
+  deleteWorkOrderRows(db, id, woConnectedDir(db, id));
 }
 
 // Assemble a step session's prompt + resolved scope server-side, symmetric to architectPromptFor. Reads

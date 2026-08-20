@@ -685,3 +685,21 @@ describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
     expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every'); // …but the WO's own rule wins
   });
 });
+
+describe('SQLite store — WO deletion removes the decision-store dir (WO-0032 fix)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Del fix', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('deleteWorkOrder removes the WO dir from disk (woDir used to resolve after the row delete — a silent no-op)', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Dir fix', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const woDir = join(root, 'docs', 'work-orders', 'WO-0001-dir-fix');
+    expect(existsSync(woDir)).toBe(true); // order.md landed under the throwaway root
+    await store.deleteWorkOrder(wo.id);
+    expect(existsSync(woDir)).toBe(false); // …and the delete really removed it
+    expect((await store.getWorkOrders()).some((w) => w.id === wo.id)).toBe(false);
+  });
+});
