@@ -166,6 +166,24 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     setSelectedId(null);
     refreshWorkOrders();
   }, [source, selectedId, refreshWorkOrders]);
+  // WO-0032: delete a workspace (full cascade). If the OPEN detail belonged to it, return to the
+  // board; refreshWorkspaces falls back to another workspace — or the hero when none remain.
+  const handleDeleteWorkspace = useCallback(
+    async (ws: Workspace) => {
+      await source.deleteWorkspace(ws.id);
+      setSelectedId((prev) => (prev && workOrders.some((w) => w.id === prev && w.workspace === ws.id) ? null : prev));
+      refreshWorkspaces();
+      refreshWorkOrders();
+    },
+    [source, workOrders, refreshWorkspaces, refreshWorkOrders],
+  );
+  // The workspace's WO count (the confirm's consequence line) + its liveness (the Sil gate): both
+  // derive from the loaded workOrders — the same recorded rows the store guard reads (B13's mechanism).
+  const wsWoCount = useCallback((id: WorkspaceId) => workOrders.filter((w) => w.workspace === id).length, [workOrders]);
+  const wsDriveLive = useCallback(
+    (id: WorkspaceId) => workOrders.some((w) => w.workspace === id && w.sessions.some((s) => s.status === 'running')),
+    [workOrders],
+  );
   const handleGetStepVerdict = useCallback((idx: number) => source.getStepVerdict(selectedId!, idx), [source, selectedId]);
   const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
 
@@ -181,6 +199,9 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       source={source}
       onWorkspacesChanged={refreshWorkspaces}
       onNewWorkOrder={() => setWoCreateOpen(true)}
+      onDeleteWorkspace={handleDeleteWorkspace}
+      wsWoCount={wsWoCount}
+      wsDriveLive={wsDriveLive}
     />
   ) : null;
 
@@ -204,7 +225,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   } else if (workspaces.length === 0) {
     // Empty database (ADR-0009 + ADR-0012 r2): the appbar above is the real one; the body is the
     // invitation — one line, one CTA (create the first workspace; the first work order follows).
-    main = <InviteHero cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
+    main = <InviteHero line={UI.inviteFirstWs} cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
   } else if (selectedId) {
     main = detailError ? (
       <div className="px-6 py-8">

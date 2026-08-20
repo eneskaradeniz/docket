@@ -685,3 +685,101 @@ describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
     expect(await store.getPermissionRuleFor(wo.id)).toBe('ask_every'); // …but the WO's own rule wins
   });
 });
+
+describe('SQLite store — WO deletion removes the decision-store dir (WO-0032 fix)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Del fix', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  it('deleteWorkOrder removes the WO dir from disk (woDir used to resolve after the row delete — a silent no-op)', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Dir fix', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const woDir = join(root, 'docs', 'work-orders', 'WO-0001-dir-fix');
+    expect(existsSync(woDir)).toBe(true); // order.md landed under the throwaway root
+    await store.deleteWorkOrder(wo.id);
+    expect(existsSync(woDir)).toBe(false); // …and the delete really removed it
+    expect((await store.getWorkOrders()).some((w) => w.id === wo.id)).toBe(false);
+  });
+});
+
+describe('SQLite store — workspace deletion (WO-0032)', () => {
+  it('deleteWorkspace cascades every WO row + removes the decision-store dirs', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Cascade', repos: [{ path: root }] });
+    const woIds: string[] = [];
+    for (const title of ['Cascade one', 'Cascade two']) {
+      const wo = await store.createWorkOrder({ workspaceId: ws.id, title, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+      await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+      store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+      store.recordSession({ providerSessionId: `casc-${wo.id}`, workOrderId: wo.id, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.1 } });
+      woIds.push(wo.id as string);
+    }
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM work_order WHERE workspace_id = ?').get(ws.id) as { n: number }).n).toBe(2);
+
+    await store.deleteWorkspace(ws.id);
+
+    // every WO-child table is emptied for both ids
+    const cleared: Array<[string, string]> = [
+      ['work_order', 'id'],
+      ['work_order_source', 'work_order_id'],
+      ['track', 'work_order_id'],
+      ['work_order_step', 'work_order_id'],
+      ['session', 'work_order_id'],
+      ['wo_event', 'work_order_id'],
+    ];
+    for (const woId of woIds) {
+      for (const [t, col] of cleared) {
+        expect((store.db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE ${col} = ?`).get(woId) as { n: number }).n).toBe(0);
+      }
+    }
+    // both decision-store dirs are gone
+    expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0001-cascade-one'))).toBe(false);
+    expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0002-cascade-two'))).toBe(false);
+    // the definition + connection rows are gone, and the ports reflect it
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace WHERE id = ?').get(ws.id) as { n: number }).n).toBe(0);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace_repo WHERE workspace_id = ?').get(ws.id) as { n: number }).n).toBe(0);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM connection WHERE workspace_id = ?').get(ws.id) as { n: number }).n).toBe(0);
+    expect((await store.getWorkspaces()).some((w) => w.id === ws.id)).toBe(false);
+    expect((await store.getWorkOrders()).some((w) => woIds.includes(w.id as string))).toBe(false);
+  });
+
+  it('deleteWorkspace throws on a running session and deletes nothing', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Guard', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Live', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'live-1', workOrderId: wo.id, role: 'architect', status: 'running' });
+
+    await expect(store.deleteWorkspace(ws.id)).rejects.toThrow(/running/);
+
+    // the guard fired before any delete: WO row, session row, dir, workspace rows all intact
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM work_order WHERE id = ?').get(wo.id) as { n: number }).n).toBe(1);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM session WHERE work_order_id = ?').get(wo.id) as { n: number }).n).toBe(1);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace WHERE id = ?').get(ws.id) as { n: number }).n).toBe(1);
+    expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0001-live'))).toBe(true);
+
+    // once the drive ends, the same delete goes through
+    store.recordSession({ providerSessionId: 'live-1', workOrderId: wo.id, role: 'architect', status: 'idle' });
+    await store.deleteWorkspace(ws.id);
+    expect((await store.getWorkspaces()).some((w) => w.id === ws.id)).toBe(false);
+  });
+
+  it("a shared decision store loses only the deleted workspace's WO dirs (TD-035 shape)", async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const wsA = await store.createWorkspace({ label: 'Shared A', repos: [{ path: root }] });
+    const a = await store.createWorkOrder({ workspaceId: wsA.id, title: 'Stays', description: 'x', trackRepos: wsA.repos, reviewMode: 'gates', contextFiles: [] });
+    const wsB = await store.createWorkspace({ label: 'Shared B', repos: [{ path: root }] });
+    const b = await store.createWorkOrder({ workspaceId: wsB.id, title: 'Goes', description: 'x', trackRepos: wsB.repos, reviewMode: 'gates', contextFiles: [] });
+
+    await store.deleteWorkspace(wsB.id);
+
+    expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0001-stays'))).toBe(true);
+    expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0002-goes'))).toBe(false);
+    expect((await store.getWorkOrders()).some((w) => w.id === a.id)).toBe(true);
+    expect((await store.getWorkOrders()).some((w) => w.id === b.id)).toBe(false);
+  });
+});

@@ -15,6 +15,8 @@ export function Dialog({
   children,
   footer,
   wide,
+  narrow,
+  stacked,
   onOpenAutoFocus,
 }: {
   open: boolean;
@@ -24,17 +26,26 @@ export function Dialog({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** Focused confirm width (440px) — the yes/no dialogs. */
+  narrow?: boolean;
+  /** Opens OVER another open dialog (WO-0032): lifts this pair above the base dialog's z-40/z-50,
+   *  so this overlay dims/blurs the dialog beneath (Radix portals share one stacking context and
+   *  do not solve this). The app's z-ladder: 20 header · 40/50 base dialog · 60/70 stacked dialog
+   *  · 80 chrome floaters (Tooltip, toasts). Supported depth: ONE stack. */
+  stacked?: boolean;
   /** Radix focuses the first focusable (the close X) by default; pass this to focus a field instead. */
   onOpenAutoFocus?: (e: Event) => void;
 }) {
+  const zi = stacked ? { overlay: 'z-60', content: 'z-70' } : { overlay: 'z-40', content: 'z-50' };
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="dialog-rise fixed inset-0 z-40 bg-bg/70 backdrop-blur-[2px]" />
+        <DialogPrimitive.Overlay className={`dialog-rise fixed inset-0 ${zi.overlay} bg-bg/70 backdrop-blur-[2px]`} />
         <DialogPrimitive.Content
           {...(onOpenAutoFocus ? { onOpenAutoFocus } : {})}
           className={cn(
-            'dialog-rise fixed inset-x-4 top-[7vh] z-50 mx-auto flex max-h-[86vh] w-[min(92vw,540px)] flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-2xl',
+            `dialog-rise fixed inset-x-4 top-[7vh] ${zi.content} mx-auto flex max-h-[86vh] w-[min(92vw,540px)] flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-2xl`,
+            narrow && 'w-[min(92vw,440px)]',
             wide && 'w-[min(94vw,680px)]',
           )}
         >

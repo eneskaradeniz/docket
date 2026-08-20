@@ -133,4 +133,6 @@ describe('formatEvent — output formatter', () => {
 });
 // The CLI's `close` command is a thin store.closeWorkOrder call — covered by store.test.ts's
 // closeWorkOrder describe (preconditions, ## Closure note, gates/merged_at, stage → closed) and
-// core's can-close.test.ts; `doctor` wraps quickProviderCheck/checkProvider (adapter-side).
+// core's can-close.test.ts; `remove-workspace` (WO-0032) likewise thins into store.deleteWorkspace —
+// cascade + running guard covered by store.test.ts's workspace-deletion describe; `doctor` wraps
+// quickProviderCheck/checkProvider (adapter-side).

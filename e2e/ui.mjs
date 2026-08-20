@@ -833,6 +833,87 @@ await spec('closable platform → live close → the all-done arrival pulses onc
   // leave the workspace tidy for the empty-DB spec (it launches its own app)
 });
 
+// ===== WO-0032 specs (workspace deletion) — the deletion is permanent in the shared db, so these
+// run LAST among the first-app specs: after them only 'çöp' is gone, which nothing else references.
+
+await spec('WS sil: Sil stacks over the edit modal; Vazgeç returns with edits; Evet, sil → fallback board (WO-0032)', async () => {
+  // switch to the 'çöp' workspace — its two WOs are the deletion payload. The previous spec leaves
+  // the app on the raf board, so open the switcher by position (the first header button), not label.
+  await page.locator('header button').first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'çöp', exact: true }).first().click();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('[data-wo-id]').count(), 2, 'the çöp board does not show exactly its two WOs');
+  // the row gear opens the edit modal; an unsaved edit rides through the Vazgeç roundtrip
+  await page.locator('header button', { hasText: 'çöp' }).first().click();
+  await page.waitForTimeout(300);
+  await page.locator('div.w-72 > div').filter({ hasText: 'çöp' }).first().locator('button[aria-label="Workspace ayarları"]').click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).count()) >= 1, 'no Sil entry in the edit modal');
+  await page.locator('[role="dialog"] input').first().fill('çöp düzenlendi');
+  await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).click();
+  await page.waitForTimeout(300);
+  // the confirm stacks OVER the intact settings modal (the WO dialogs' pattern) — both present,
+  // the counted consequence line in the topmost dialog
+  assert.equal(await page.locator('[role="dialog"]').count(), 2, 'the confirm did not stack over the settings modal');
+  // the z-ladder regression guard: confirm z-70 OVER settings z-50, so its overlay (z-60) actually
+  // dims/blurs the parent — before the fix the parent painted above the overlay and stayed crisp
+  const zis = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"]')].map((d) => getComputedStyle(d).zIndex),
+  );
+  assert.deepEqual(zis, ['50', '70'], `the stacked z-ladder is wrong: ${zis.join('/')}`);
+  // narrower + same center, never offset (the macOS alert-over-sheet read)
+  const [parentBox, confirmBox] = await Promise.all([
+    page.locator('[role="dialog"]').first().boundingBox(),
+    page.locator('[role="dialog"]').last().boundingBox(),
+  ]);
+  assert.ok(parentBox && confirmBox, 'a stacked dialog has no bounding box');
+  assert.ok(confirmBox.width < parentBox.width, `the confirm is not narrower (${confirmBox.width} vs ${parentBox.width})`);
+  const centers = [parentBox.x + parentBox.width / 2, confirmBox.x + confirmBox.width / 2];
+  assert.ok(Math.abs(centers[0] - centers[1]) <= 1, `the confirm is not centered over the parent (${centers[0]} vs ${centers[1]})`);
+  const line = await page.locator('[role="dialog"]').last().textContent();
+  assert.ok(line?.includes('2 iş emri'), `the consequence line carries no count: ${line}`);
+  assert.ok(line?.includes('Geri alınamaz'), 'no irreversible line in the confirm');
+  await page.screenshot({ path: join(SHOTS, 'ws-delete-confirm@980.png') });
+  // Vazgeç returns to the settings modal — still open, the unsaved edit intact (operator finding)
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[role="dialog"]').count(), 1, 'Vazgeç closed the settings modal too');
+  assert.equal(await page.locator('[role="dialog"] input').first().inputValue(), 'çöp düzenlendi', 'Vazgeç lost the unsaved edit');
+  // round two: confirm for real
+  await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
+  await page.waitForTimeout(1000); // cascade + both list refreshes
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'dialogs remained after a successful delete');
+  assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'no fallback board after the workspace delete');
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Çöp işi' }).count(), 0, 'a deleted-workspace WO still has a card');
+  // the switcher no longer offers çöp
+  await page.locator('header button', { hasText: 'e2e' }).first().click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('div.w-72 > div').filter({ hasText: 'çöp' }).count(), 0, 'the switcher still offers çöp');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+});
+
+await spec('WS sil: a live drive hides the Sil entry and states the reason (WO-0032)', async () => {
+  // a running architect drive on the e2e workspace — the same recorded rows the store guard reads
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(800); // started → session row 'running' → the board refresh lands
+  // open the e2e row's settings: the Sil entry is absent, the reason line stands in (ADR-0001)
+  await page.locator('header button').first().click();
+  await page.waitForTimeout(300);
+  await page.locator('div.w-72 > div').filter({ hasText: 'e2e' }).first().locator('button[aria-label="Workspace ayarları"]').click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[role="dialog"]').getByRole('button', { name: 'Çalışma alanını sil' }).count(), 0, 'the Sil entry rendered under a live drive');
+  assert.ok((await page.locator('[role="dialog"]').getByText('önce oturumu durdur').count()) >= 1, 'no gate reason in the edit modal');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  await stopAllDrives();
+  await backToBoard();
+});
+
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
   // a SECOND app on a fresh DB path (the store never auto-seeds) — the first-run surface, end to end
   const emptyRoot = mkdtempSync(join(tmpdir(), 'docket-e2e-empty-'));
@@ -853,7 +934,8 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     await emptyPage.waitForTimeout(700);
     assert.ok((await emptyPage.getByText('Docket', { exact: true }).count()) >= 1, 'no brand on an empty DB');
     assert.ok((await emptyPage.locator('button[aria-label="Ayarlar"]').count()) >= 1, 'no normal Settings gear on an empty DB');
-    assert.ok((await emptyPage.getByText('Haydi ilk iş emrini açalım').count()) >= 1, 'no invitation line');
+    assert.ok((await emptyPage.getByText('Haydi ilk çalışma alanını oluşturalım').count()) >= 1, 'no workspace invitation line on an empty DB');
+    assert.equal(await emptyPage.getByText('Haydi ilk iş emrini açalım').count(), 0, 'the zero-WO line leaked onto the empty-DB hero (WO-0032 operator finding)');
     assert.ok((await emptyPage.getByRole('button', { name: 'Yeni çalışma alanı' }).count()) === 1, 'not exactly one CTA');
     await emptyPage.screenshot({ path: join(SHOTS, 'empty-db-hero@980.png') });
     // the CTA opens the workspace-create dialog; create one over a temp dir (typed, no native picker)

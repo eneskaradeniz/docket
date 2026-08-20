@@ -11,6 +11,7 @@ import { UI } from '../data/labels';
 import { Button, Tooltip } from '../kit';
 import { AppSettingsModal } from './AppSettingsModal';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { WsDeleteDialog } from './WsDeleteDialog';
 import { WsSettingsModal } from './WsSettingsModal';
 import { WsListModal } from './WsListModal';
 
@@ -22,6 +23,9 @@ export function AppShell({
   settings,
   onWorkspacesChanged,
   onNewWorkOrder,
+  onDeleteWorkspace,
+  wsWoCount,
+  wsDriveLive,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -31,9 +35,18 @@ export function AppShell({
   settings: AppSettings;
   onWorkspacesChanged: () => void;
   onNewWorkOrder: () => void;
+  /** WO-0032: delete the workspace (full cascade) — App owns the post-delete cleanup + refresh. */
+  onDeleteWorkspace: (ws: Workspace) => Promise<void>;
+  /** WO-0032: the workspace's work-order count — the confirm dialog's consequence line. */
+  wsWoCount: (id: WorkspaceId) => number;
+  /** WO-0032: any live drive in the workspace — gates the Sil entry (ADR-0001: absent + reason). */
+  wsDriveLive: (id: WorkspaceId) => boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [wsModal, setWsModal] = useState<'closed' | 'create' | 'edit'>('closed');
+  // WO-0032: 'delete' is the confirm that renders OVER 'edit' (the WO dialogs' pattern — the
+  // invoker stays mounted, Vazgeç returns to it with edits intact); only a successful delete
+  // closes both, so a deleted workspace's settings modal never reappears.
+  const [wsModal, setWsModal] = useState<'closed' | 'create' | 'edit' | 'delete'>('closed');
   const [editingWs, setEditingWs] = useState<Workspace | undefined>(undefined);
   const [wsListOpen, setWsListOpen] = useState(false);
 
@@ -78,13 +91,33 @@ export function AppShell({
         </div>
       </header>
       {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
-      {wsModal !== 'closed' ? (
+      {(wsModal === 'edit' || wsModal === 'delete') && editingWs ? (
         <WsSettingsModal
-          mode={wsModal}
+          mode="edit"
           workspace={editingWs}
           source={source}
           onClose={() => setWsModal('closed')}
           onSaved={onWorkspacesChanged}
+          onDeleteWorkspace={() => setWsModal('delete')}
+          driveLive={wsDriveLive(editingWs.id)}
+        />
+      ) : null}
+      {wsModal === 'create' ? (
+        <WsSettingsModal
+          mode="create"
+          workspace={editingWs}
+          source={source}
+          onClose={() => setWsModal('closed')}
+          onSaved={onWorkspacesChanged}
+        />
+      ) : null}
+      {wsModal === 'delete' && editingWs ? (
+        <WsDeleteDialog
+          workspace={editingWs}
+          woCount={wsWoCount(editingWs.id)}
+          onDelete={onDeleteWorkspace}
+          onCancel={() => setWsModal('edit')}
+          onDeleted={() => setWsModal('closed')}
         />
       ) : null}
       {wsListOpen && workspaceId !== null ? (

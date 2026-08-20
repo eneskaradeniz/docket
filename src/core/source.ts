@@ -61,6 +61,11 @@ export interface WorkOrderSource {
   // into the owned connection table; M3 git scanner reconciles.
   createWorkspace(input: CreateWorkspaceInput): Promise<Workspace>;
   updateWorkspace(id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }): Promise<void>;
+  // Delete a workspace with everything Docket recorded under it (WO-0032): every work order of the
+  // workspace and its rows (tracks, steps, sessions, events — the deleteWorkOrder cascade, including
+  // the Docket-authored docs/work-orders/WO-NNNN-* dirs in the decision store) plus the definition
+  // and connection rows. Repo code and git history are never touched. Throws while any session of
+  // the workspace is running, deleting nothing. The operator confirms in the UI before this fires.
   deleteWorkspace(id: WorkspaceId): Promise<void>;
   addRepoConnection(id: WorkspaceId, repo: RepoConnectionInput): Promise<void>;
   removeRepoConnection(id: WorkspaceId, path: string): Promise<void>;

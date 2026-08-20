@@ -12,6 +12,7 @@
 - [Addendum: M2 pragmatic CRUD (WO-0014, 2026-08-06)](#addendum-m2-pragmatic-crud-wo-0014-2026-08-06)
 - [Addendum: M2 work-order creation (WO-0015, 2026-08-06)](#addendum-m2-work-order-creation-wo-0015-2026-08-06)
 - [Addendum: M2 plan.md authoring (WO-0016, 2026-08-06)](#addendum-m2-planmd-authoring-wo-0016-2026-08-06)
+- [Addendum: workspace deletion (WO-0032, 2026-08-20)](#addendum-workspace-deletion-wo-0032-2026-08-20)
 
 - Status: accepted
 - Date: 2026-08-03
@@ -119,3 +120,28 @@ commits, exactly as for `order.md`. **M2 ruling:** the `plan_approval` gate is s
 flag, not by a commit sha — the "commit is the evidence" link (TD-005's structural fix) remains M3, where
 the git scanner re-observes `plan.md` and reconciliation ties the gate to a real commit. No plan text is
 cached in the DB (ADR-0010 rule 1 holds: writing to disk is not storing in the store).
+
+## Addendum: workspace deletion (WO-0032, 2026-08-20)
+
+The operator approved full-cascade workspace deletion, superseding the Remove ruling above at
+WORKSPACE level: deleting a workspace removes it with everything Docket recorded under it — every
+work order of the workspace and its rows (tracks, steps, sessions, events), the owned connection
+rows, and the Docket-authored `docs/work-orders/WO-NNNN-*` directories in the workspace's decision
+store. The per-WO delete (WO-0020) is the precedent this generalizes; its dormant dir-resolution
+bug (the folder was never actually removed — the path resolved after the row delete) is fixed in
+the same work order.
+
+What deletion still never touches: repo code and git history — and no `workspace.yaml` exists on
+disk in M2 (the pragmatic-CRUD addendum authors DB rows only); when M3's yaml lands, workspace
+deletion still never removes it. A workspace without a matching connection row deletes DB rows
+only — deletion never operates on the `process.cwd()` fallback.
+
+The safety mechanism moves from the label to the dialog: the action is honestly labelled "sil",
+and the confirm carries the counted irreversible-consequence line ("N iş emri … Geri alınamaz.")
+with no ⏎ path, plus a store-side guard that refuses while any session of the workspace is
+running (deleting nothing). The CLI mirror refuses without `--yes`, naming the blast radius.
+Disconnect-only removal survives at repo-connection level (`removeRepoConnection`).
+
+M3 note: a deleted workspace's committed documents (the operator may have committed them) simply
+remain in git; the scanner would read them as documents of an unknown workspace — the same
+reconcile class TD-021 records.

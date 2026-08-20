@@ -418,7 +418,9 @@ export const UI = {
   reply: 'Yanıtla',
   skipReply: 'Bilmiyorum',
   architectRequest: 'Mimarın bir isteği var',
-  // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
+  // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem). WO-0032: satır düğmenin
+  // ne oluşturacağını adlar — sıfır-workspace yüzeyi workspace davet eder, iş-emri satırı iş-emri tahtasına.
+  inviteFirstWs: 'Haydi ilk çalışma alanını oluşturalım',
   inviteFirstWo: 'Haydi ilk iş emrini açalım',
   // Plan adımları (WO-0017). WO-0031f: stepsHeader/stepReportTitle died with the spine restructure —
   // the spine carries no "Plan" header (the Akış count does) and the report header is reportTitle(idx).
@@ -654,6 +656,15 @@ export const UI = {
   titlePending: (n: number) => `(${n}) izin bekliyor`,
   // Create-modal: tek adımda mimar + yeni inceleme adları.
   createAndPlan: 'Oluştur ve plan iste',
+  // Çalışma alanı silme (WO-0032) — tam cascade: tanım + bağlantılar + iş emirleri + tüm kayıtlar +
+  // Docket'ın yazdığı docs/work-orders dizinleri. Sayılı sonuç satırı diyalogun güvenlik mekanizmasıdır.
+  wsDelete: 'Çalışma alanını sil',
+  wsDeleteHint: (n: number) => n > 0
+    ? `Bu çalışma alanı ve ${n} iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.`
+    : 'Bu çalışma alanı kalıcı olarak silinir. Geri alınamaz.',
+  wsDeleteConfirm: 'Evet, sil',
+  wsDeleteFailed: 'Silinemedi — önce oturumu durdur.',
+  wsDeleteGateReason: 'önce oturumu durdur',
 } as const;
 
 // WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;

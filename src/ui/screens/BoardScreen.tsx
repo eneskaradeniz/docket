@@ -21,7 +21,7 @@ export function BoardScreen({
       {cards.length ? (
         <Board cards={cards} onSelect={onSelect} onNewWorkOrder={onNewWorkOrder} />
       ) : (
-        <InviteHero cta={UI.newWorkOrder} onCta={onNewWorkOrder} />
+        <InviteHero line={UI.inviteFirstWo} cta={UI.newWorkOrder} onCta={onNewWorkOrder} />
       )}
     </main>
   );

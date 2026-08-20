@@ -13,7 +13,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           sideOffset={6}
-          className="z-50 rounded-md border border-hairline bg-raised px-2 py-1 text-[11px] text-ink shadow-lg data-[state=delayed-open]:animate-[rise_0.12s_ease-out]"
+          className="z-80 rounded-md border border-hairline bg-raised px-2 py-1 text-[11px] text-ink shadow-lg data-[state=delayed-open]:animate-[rise_0.12s_ease-out]"
         >
           {label}
         </TooltipPrimitive.Content>

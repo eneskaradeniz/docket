@@ -239,4 +239,15 @@ store.recordSession({
   endedAt: new Date('2026-08-16T17:05:00Z').toISOString(),
 });
 
+// 9) WO-0032: a fourth workspace ('çöp') with two WOs — the workspace-deletion specs' payload. Same
+//    shared decision store (TD-035 numbering). The delete spec removes this whole workspace; nothing
+//    else references it, so its permanent removal cannot disturb the other specs.
+const ws4 = await store.createWorkspace({
+  label: 'çöp',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 1', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
+await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 2', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
+
 console.log(`DB=${join(root, 'e2e.db')}`);
