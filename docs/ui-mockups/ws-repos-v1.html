@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docket — WS Ayarlar v1 · Depo bağlantıları + hata gösterimi (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* tokens — src/index.css birebir */
+  :root {
+    --bg: #0e1520; --surface: #16202e; --raised: #1d2938; --hairline: #263349;
+    --ink: #e7edf4; --inkdim: #8b95a7; --signal: #f5b544; --proceed: #4cc38a;
+    --info: #6ca0ce; --error: #e5484d;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 13px; letter-spacing: 0.01em; -webkit-font-smoothing: antialiased; color-scheme: dark; }
+  button { font-family: inherit; cursor: pointer; }
+  input { font-family: inherit; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 3px; }
+
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkdim); }
+  .mono { font-family: var(--mono); }
+  .note { font-size: 11px; color: var(--inkdim); line-height: 1.55; }
+  .note b { color: var(--ink); font-weight: 600; }
+  .ret { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; color: var(--error); border: 1px solid color-mix(in srgb, var(--error) 55%, transparent); border-radius: 4px; padding: 2px 7px; }
+
+  /* kit butonları — Button.tsx aynen (primary = bg-ink) */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; border-radius: 6px; border: 1px solid transparent; font-size: 12px; font-weight: 600; padding: 6px 12px; transition: transform .08s ease, background .12s ease, border-color .12s ease, color .12s ease; }
+  .btn:active { transform: scale(.955); }
+  .btn-sm { font-size: 11px; padding: 4px 10px; }
+  .btn-primary { background: var(--ink); color: var(--bg); }
+  .btn-primary:hover { filter: brightness(1.12); }
+  .btn-secondary { background: var(--raised); color: var(--ink); border-color: var(--hairline); }
+  .btn-secondary:hover { border-color: var(--inkdim); }
+  .btn-ghost { background: transparent; color: var(--inkdim); }
+  .btn-ghost:hover { color: var(--ink); background: var(--raised); }
+  .btn-ghost-danger { background: transparent; color: var(--error); }
+  .btn-ghost-danger:hover { background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+  /* interaction contract — .ibtn (ADR-0012 r1) */
+  .ibtn { display: inline-flex; align-items: center; justify-content: center; border: none; background: none; border-radius: 6px; padding: 6px; color: var(--inkdim); transition: background-color .12s ease, color .12s ease; }
+  .ibtn:hover { background: var(--raised); color: var(--ink); }
+  .ibtn-danger { color: var(--error); }
+  .ibtn-danger:hover { background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--error); }
+
+  /* kit Dialog chrome — Dialog.tsx aynen (540px) */
+  .dlg { width: 540px; max-width: 94vw; margin: 0 auto; border-radius: 12px; border: 1px solid var(--hairline); background: var(--surface); box-shadow: 0 24px 60px rgba(0,0,0,.5); overflow: hidden; }
+  .dlg-h { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+  .dlg-t { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+  .dlg-b { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 15px; }
+  .dlg-f { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hairline); background: color-mix(in srgb, var(--raised) 40%, transparent); }
+  .flex1 { flex: 1; }
+
+  /* kit form dili — Input.tsx / Field aynen */
+  .flabel { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--inkdim); margin-bottom: 6px; }
+  .input { width: 100%; border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg); padding: 6px 10px; font-size: 13px; color: var(--ink); }
+  .input::placeholder { color: color-mix(in srgb, var(--inkdim) 70%, transparent); }
+  .input-mono { font-family: var(--mono); font-size: 12px; }
+  .select { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg); padding: 6px 10px; font-size: 13px; color: var(--ink); }
+  .errline { display: block; font-size: 11px; color: var(--error); margin-top: 5px; }
+  .hintline { display: block; font-size: 11px; color: var(--inkdim); margin-top: 5px; }
+
+  /* svg glyph ölçüsü */
+  svg.g { width: 14px; height: 14px; flex: none; }
+  svg.gs { width: 12px; height: 12px; flex: none; }
+
+  /* ===== sayfa iskeleti ===== */
+  .pagehead { max-width: 1180px; margin: 0 auto; padding: 34px 18px 6px; }
+  .pagehead h1 { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+  .pagehead p { margin-top: 6px; }
+  .sec { max-width: 1180px; margin: 36px auto 0; padding: 0 18px; display: flex; align-items: center; gap: 12px; }
+  .sec .secline { flex: 1; height: 1px; background: var(--hairline); }
+  .idea { max-width: 1180px; margin: 10px auto 0; padding: 0 18px; }
+  .stage { max-width: 1180px; margin: 16px auto 0; padding: 0 18px; }
+  .miniwrap { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+  .mini { width: 262px; border: 1px solid var(--hairline); border-radius: 8px; background: color-mix(in srgb, var(--surface) 45%, var(--bg)); padding: 12px; }
+  .mini .minititle { display: block; margin-bottom: 8px; }
+  .panelrow { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+  .panel { width: 300px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .panel .ph { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--hairline); }
+  .panel .pb { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .panel .pn { padding: 9px 12px; border-top: 1px solid var(--hairline); }
+
+  /* ===== YÖN A — Defter ===== */
+  .ledger { border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); overflow: hidden; }
+  .lrow { padding: 8px 10px; }
+  .lrow + .lrow { border-top: 1px solid var(--hairline); }
+  .lrow-top { display: flex; align-items: center; gap: 8px; }
+  .lname { font-size: 12.5px; font-weight: 700; }
+  .lds { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--inkdim); }
+  .lds .dsdot { color: var(--signal); }
+  .lacts { margin-left: auto; display: flex; gap: 2px; }
+  .lpath { font-family: var(--mono); font-size: 11px; color: var(--inkdim); margin: 3px 0 0 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lg-ok { color: var(--proceed); }
+  .lg-bad { color: var(--error); }
+  .addrow { display: flex; gap: 6px; margin-top: 8px; }
+
+  /* ===== YÖN B — Çipler ===== */
+  .chiprow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); border-radius: 6px; padding: 3px 6px 3px 9px; font-family: var(--mono); font-size: 11px; color: var(--inkdim); background: none; transition: border-color .12s ease, color .12s ease, background-color .12s ease; }
+  .chip:hover { border-color: var(--inkdim); color: var(--ink); }
+  .chip-on { border-color: color-mix(in srgb, var(--info) 60%, transparent); background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--ink); }
+  .chip .dsdot { color: var(--signal); }
+  .chip .cx { display: inline-flex; align-items: center; justify-content: center; border: none; background: none; border-radius: 4px; padding: 2px 3px; color: var(--inkdim); }
+  .chip .cx:hover { background: color-mix(in srgb, var(--error) 14%, transparent); color: var(--error); }
+  .chip-add { border-style: dashed; padding: 3px 9px; }
+  .chip-add:hover { color: var(--info); border-color: color-mix(in srgb, var(--info) 55%, transparent); }
+  .chipexp { margin-top: 8px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg); padding: 6px 10px; font-family: var(--mono); font-size: 11.5px; color: var(--inkdim); }
+  .chipexp .lacts { margin-left: auto; }
+
+  /* ===== YÖN C — Terminal listesi ===== */
+  .termlist { border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg); overflow: hidden; }
+  .trow { display: flex; align-items: center; gap: 9px; padding: 7px 10px; font-family: var(--mono); font-size: 12px; color: var(--inkdim); }
+  .trow + .trow { border-top: 1px solid color-mix(in srgb, var(--hairline) 55%, transparent); }
+  .trow .tail { color: var(--info); font-weight: 600; font-size: 12.5px; }
+  .trow .dsdot { color: var(--signal); font-size: 10px; }
+  .trow .ract { margin-left: auto; display: flex; gap: 2px; opacity: .4; transition: opacity .12s ease; }
+  .trow:hover .ract { opacity: 1; }
+  .trow-add { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-top: 1px solid var(--hairline); }
+  .caret { width: 7px; height: 14px; border-radius: 1px; background: var(--signal); flex: none; }
+  .tadd { flex: 1; border: none; background: none; outline: none; font-family: var(--mono); font-size: 12px; color: var(--ink); caret-color: var(--signal); padding: 0; }
+  .tadd::placeholder { color: color-mix(in srgb, var(--inkdim) 70%, transparent); }
+
+  /* toast kopyası (§0, ret paneli) */
+  .toastdemo { width: 296px; display: flex; align-items: stretch; overflow: hidden; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--error) 50%, transparent); background: color-mix(in srgb, var(--surface) 95%, transparent); box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+  .toastdemo .tlamp { width: 3px; flex: none; background: var(--error); }
+  .toastdemo .tbody { flex: 1; min-width: 0; padding: 8px 12px; }
+  .toastdemo .tt { font-size: 12.5px; font-weight: 700; color: var(--error); }
+  .toastdemo .tb { margin-top: 2px; font-size: 11.5px; color: var(--inkdim); }
+
+  .footnote { max-width: 1180px; margin: 40px auto 60px; padding: 14px 18px; border-top: 1px solid var(--hairline); }
+</style>
+</head>
+<body>
+
+<header class="pagehead">
+  <h1>WS Ayarlar · v1 — Depo bağlantıları + hata gösterimi</h1>
+  <p class="readout">statik mockup · hover çalışır · seçim sonrası iş emri · 2026-08-21</p>
+  <p class="note" style="margin-top:10px;">Sözlük geçişi uygulanmış hâl varsayıldı: <b>repo → depo</b>, <b>Workspace ayarları → Çalışma alanı ayarları</b> (labels.ts; "depo" zaten kurulu — <span class="mono">✓ Depoda</span>, <span class="mono">depo yazma hatası</span>). Üç yön de DÜZENLEME modunu gösterir; oluşturma aynı bölümün satırsız hâlidir.</p>
+</header>
+
+<!-- ============ §0 HATA GÖSTERİMİ ============ -->
+<div class="sec" id="hata"><span class="readout">§0 · hata gösterimi — nereye?</span><span class="secline"></span></div>
+<div class="idea note">Form hataları ("Ad gerekli.", "En az bir geçerli depo yolu ekle…") bugün diyalog footer'ının <b>sol altında</b> tek slot olarak çıkıyor. Üç seçenek:</div>
+<div class="panelrow">
+
+  <div class="panel">
+    <div class="ph"><span class="readout">bugün</span></div>
+    <div class="pb">
+      <div>
+        <span class="flabel">Ad</span>
+        <div class="input" style="color: var(--inkdim);">Docket</div>
+      </div>
+      <div>
+        <span class="flabel">Depo bağlantıları</span>
+        <div class="input input-mono" style="color: var(--inkdim);">/Users/enes/source/docket</div>
+      </div>
+    </div>
+    <div class="pn" style="display:flex; align-items:center; gap:8px;">
+      <span style="flex:1; font-size:11px; color: var(--error);">Ad gerekli.</span>
+      <span class="btn btn-ghost btn-sm">Oluştur</span>
+    </div>
+    <div class="pn note">Hata gövdenin en ucunda; hangi alan olduğunu söylemez, odağı yönlendirmez.</div>
+  </div>
+
+  <div class="panel" style="border-color: color-mix(in srgb, var(--proceed) 45%, transparent);">
+    <div class="ph"><span class="readout" style="color: var(--proceed);">öneri — alan altı satır</span></div>
+    <div class="pb">
+      <div>
+        <span class="flabel">Ad</span>
+        <div class="input"></div>
+        <span class="errline">Ad gerekli.</span>
+      </div>
+      <div>
+        <span class="flabel">Depo bağlantıları</span>
+        <div class="addrow" style="margin-top:0;">
+          <div class="input input-mono" style="flex:1; color: var(--inkdim);">apps/web</div>
+        </div>
+        <span class="errline">Tam yol değil — / ile başlamalı.</span>
+      </div>
+    </div>
+    <div class="pn note">Hata nedeninin dibinde (kit <span class="mono">Field</span>'ın error slot'u — <span class="mono">Input.tsx:29</span>), düzelene dek kalır; submit'te <b>odak ilk hatalı alana</b> taşınır. Alana bağlanamayan hata (kaydetme hatası) footer'da tek satır olarak kalır. Toast mekaniği hiç karışmaz.</div>
+  </div>
+
+  <div class="panel" style="opacity:.82;">
+    <div class="ph"><span class="readout">sağ üst toast</span><span class="ret">RET</span></div>
+    <div class="pb" style="align-items:flex-end;">
+      <div class="toastdemo">
+        <span class="tlamp"></span>
+        <span class="tbody">
+          <span class="tt">Ad gerekli.</span>
+          <div class="tb">…ama hangi alan? 2,6 sn sonra kayboluyor.</div>
+        </span>
+      </div>
+    </div>
+    <div class="pn note">ToastHost'un kendi yazılı kuralı: <b>"ekrandaki bir eylemin sonucu ekran değişikliğidir, asla toast değildir."</b> Validasyon bir <b>durum</b> (alan yanlışken kalır), toast bir <b>olay</b> (saniyeler içinde kaybolur) — hata bağlamı kaybolur, göz forma değil sağ üst köşeye gider.</div>
+  </div>
+
+</div>
+
+<!-- ============ §A YÖN A — DEFTER ============ -->
+<div class="sec" id="a"><span class="readout">§A · yön a — defter (iki satırlı sicil)</span><span class="secline"></span></div>
+<div class="idea note">Her depo iki satırlı kayıt: ad üstte, <b>tam mono yol altta</b> — "hangi dizinde?" sorusu hiç etkileşim ödemeden yanıtlanır. Ekle / Klasör bugünkü yerinde; satır eylemleri (yol düzenle ✎, kaldır ✕) her zaman görünür.</div>
+<div class="stage">
+  <div class="dlg">
+    <div class="dlg-h">
+      <span class="dlg-t">Çalışma alanı ayarları</span>
+      <button class="ibtn" aria-label="kapat"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="dlg-b">
+      <div>
+        <span class="flabel">Ad</span>
+        <div class="input">Docket</div>
+      </div>
+      <div>
+        <span class="flabel">Depo bağlantıları</span>
+        <div class="ledger">
+          <div class="lrow">
+            <div class="lrow-top">
+              <svg class="g lg-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <span class="lname">docket</span>
+              <span class="lds"><span class="dsdot">●</span> karar deposu</span>
+              <span class="lacts">
+                <button class="ibtn" aria-label="Depo yolunu düzenle"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                <button class="ibtn ibtn-danger" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+              </span>
+            </div>
+            <div class="lpath">/Users/eneskaradeniz/source/docket</div>
+          </div>
+          <div class="lrow">
+            <div class="lrow-top">
+              <svg class="g lg-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+              <span class="lname">base-mobile</span>
+              <span class="lacts">
+                <button class="ibtn" aria-label="Depo yolunu düzenle"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                <button class="ibtn ibtn-danger" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+              </span>
+            </div>
+            <div class="lpath">/Users/eneskaradeniz/source/base-mobile</div>
+          </div>
+        </div>
+        <div class="addrow">
+          <div class="input input-mono" style="flex:1; color: var(--inkdim);">yerel depo yolu</div>
+          <button class="btn btn-secondary btn-sm">Ekle</button>
+          <button class="btn btn-ghost btn-sm"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 0-1.69.9l-.8 1.2A2 2 0 0 1 7.93 9H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>Klasör</button>
+        </div>
+      </div>
+      <div>
+        <span class="flabel">Karar deposu</span>
+        <div class="select"><span>docket</span><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </div>
+    <div class="dlg-f">
+      <button class="btn btn-ghost-danger btn-sm">Çalışma alanını sil</button>
+      <span class="flex1"></span>
+      <button class="btn btn-ghost btn-sm">Kapat</button>
+      <button class="btn btn-primary btn-sm">Kaydet</button>
+    </div>
+  </div>
+
+  <div class="miniwrap">
+    <div class="mini">
+      <span class="readout minititle">boş durum</span>
+      <div class="note" style="margin-bottom:8px;">Henüz depo yok.</div>
+      <div class="addrow" style="margin-top:0;">
+        <div class="input input-mono" style="flex:1; color: var(--inkdim);">yerel depo yolu</div>
+        <button class="btn btn-secondary btn-sm">Ekle</button>
+      </div>
+    </div>
+    <div class="mini">
+      <span class="readout minititle">geçersiz yol</span>
+      <div class="ledger">
+        <div class="lrow">
+          <div class="lrow-top">
+            <svg class="g lg-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            <span class="lname">web</span>
+            <span class="lacts">
+              <button class="ibtn ibtn-danger" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </span>
+          </div>
+          <div class="lpath">apps/web</div>
+        </div>
+      </div>
+      <span class="errline">Tam yol değil — / ile başlamalı.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ §B YÖN B — ÇİPLER ============ -->
+<div class="sec" id="b"><span class="readout">§B · yön b — çipler (wo-create ailesi)</span><span class="secline"></span></div>
+<div class="idea note">WoCreateModal'ın track çipleriyle aynı dil — <b>en kompakt yön</b>. Bedeli: yol yalnızca çip açılınca görünür; "hangi dizinde?" sorusu her seferinde bir tık öder.</div>
+<div class="stage">
+  <div class="dlg">
+    <div class="dlg-h">
+      <span class="dlg-t">Çalışma alanı ayarları</span>
+      <button class="ibtn" aria-label="kapat"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="dlg-b">
+      <div>
+        <span class="flabel">Ad</span>
+        <div class="input">Docket</div>
+      </div>
+      <div>
+        <span class="flabel">Depo bağlantıları</span>
+        <div class="chiprow">
+          <span class="chip chip-on"><span class="dsdot">●</span> docket</span>
+          <span class="chip">base-mobile<button class="cx" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></span>
+          <button class="chip chip-add"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> depo ekle</button>
+        </div>
+        <div class="chipexp">
+          <span>/Users/eneskaradeniz/source/base-mobile</span>
+          <span class="lacts">
+            <button class="ibtn" aria-label="Depo yolunu düzenle"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+          </span>
+        </div>
+        <div class="addrow">
+          <div class="input input-mono" style="flex:1; color: var(--inkdim);">yerel depo yolu</div>
+          <button class="btn btn-ghost btn-sm"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 0-1.69.9l-.8 1.2A2 2 0 0 1 7.93 9H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>Klasör</button>
+        </div>
+      </div>
+      <div>
+        <span class="flabel">Karar deposu</span>
+        <div class="select"><span>docket</span><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </div>
+    <div class="dlg-f">
+      <button class="btn btn-ghost-danger btn-sm">Çalışma alanını sil</button>
+      <span class="flex1"></span>
+      <button class="btn btn-ghost btn-sm">Kapat</button>
+      <button class="btn btn-primary btn-sm">Kaydet</button>
+    </div>
+  </div>
+
+  <div class="miniwrap">
+    <div class="mini">
+      <span class="readout minititle">boş durum</span>
+      <div class="chiprow">
+        <button class="chip chip-add"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> depo ekle</button>
+      </div>
+      <div class="note" style="margin-top:8px;">Henüz depo yok.</div>
+    </div>
+    <div class="mini">
+      <span class="readout minititle">geçersiz yol (açık çip)</span>
+      <div class="chiprow">
+        <span class="chip"><svg class="gs" style="color: var(--error);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg> web<button class="cx" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></span>
+      </div>
+      <div class="chipexp" style="margin-top:6px;"><span>apps/web</span></div>
+      <span class="errline">Tam yol değil — / ile başlamalı.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ §C YÖN C — TERMİNAL LİSTESİ ============ -->
+<div class="sec" id="c"><span class="readout">§C · yön c — terminal listesi (mono-first)</span><span class="secline"></span></div>
+<div class="idea note">Konsol kimliği en güçlü yön: satır = <b>tam mono yol</b>, kuyruk segmenti info tonunda parlar. Ekleme satırı listenin sonundaki boş satırın kendisidir — <b>Ekle butonu yok</b>, Enter commit eder; Klasör satırın sağında. Eylemler hover'da belirir.</div>
+<div class="stage">
+  <div class="dlg">
+    <div class="dlg-h">
+      <span class="dlg-t">Çalışma alanı ayarları</span>
+      <button class="ibtn" aria-label="kapat"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="dlg-b">
+      <div>
+        <span class="flabel">Ad</span>
+        <div class="input">Docket</div>
+      </div>
+      <div>
+        <span class="flabel">Depo bağlantıları</span>
+        <div class="termlist">
+          <div class="trow">
+            <span class="dsdot">●</span>
+            <span>/Users/eneskaradeniz/source/<span class="tail">docket</span></span>
+            <span class="ract">
+              <button class="ibtn" aria-label="Depo yolunu düzenle"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+              <button class="ibtn ibtn-danger" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </span>
+          </div>
+          <div class="trow">
+            <svg class="g lg-ok" style="width:10px; height:10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>/Users/eneskaradeniz/…/<span class="tail">base-mobile</span></span>
+            <span class="ract">
+              <button class="ibtn" aria-label="Depo yolunu düzenle"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+              <button class="ibtn ibtn-danger" aria-label="Depoyu kaldır"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </span>
+          </div>
+          <div class="trow-add">
+            <span class="caret"></span>
+            <input class="tadd" placeholder="yerel depo yolu — Enter satıra alır" />
+            <button class="btn btn-ghost btn-sm"><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 0-1.69.9l-.8 1.2A2 2 0 0 1 7.93 9H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"/></svg>Klasör</button>
+          </div>
+        </div>
+        <span class="hintline">● karar deposu — docket</span>
+      </div>
+      <div>
+        <span class="flabel">Karar deposu</span>
+        <div class="select"><span>docket</span><svg class="gs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></div>
+      </div>
+    </div>
+    <div class="dlg-f">
+      <button class="btn btn-ghost-danger btn-sm">Çalışma alanını sil</button>
+      <span class="flex1"></span>
+      <button class="btn btn-ghost btn-sm">Kapat</button>
+      <button class="btn btn-primary btn-sm">Kaydet</button>
+    </div>
+  </div>
+
+  <div class="miniwrap">
+    <div class="mini">
+      <span class="readout minititle">boş durum</span>
+      <div class="note" style="margin-bottom:6px;">Henüz depo yok.</div>
+      <div class="termlist">
+        <div class="trow-add" style="border-top:none;">
+          <span class="caret"></span>
+          <input class="tadd" placeholder="yerel depo yolu — Enter satıra alır" />
+        </div>
+      </div>
+    </div>
+    <div class="mini">
+      <span class="readout minititle">geçersiz yol</span>
+      <div class="termlist">
+        <div class="trow">
+          <svg class="g lg-bad" style="width:10px; height:10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          <span>apps/<span class="tail" style="color: var(--error);">web</span></span>
+        </div>
+      </div>
+      <span class="errline">Tam yol değil — / ile başlamalı.</span>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  <p class="note">Ortak sözleşme (üç yön için de): dolu yol ancak kaynak tarafında var — <span class="mono">Workspace</span> yalnızca basename taşır, yol <span class="mono">connection</span> tablosunda; source port'una okuma gerekiyor. Kaldırma üç bekçiyle absent+reason (ADR-0001): karar deposu · açık WO track'i · son depo. Yol düzenleme: ad (basename = RepoId) kilitli, yolu serbest. Tüm dizgeler labels.ts'e (ADR-0007); hover yalnızca <span class="mono">.ibtn</span> üzerinden (ADR-0012).</p>
+</div>
+
+</body>
+</html>
