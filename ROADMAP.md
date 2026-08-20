@@ -253,6 +253,16 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       error line); running-empty stream line; TD-038 (all five) + TD-037 load lines + two
       ADR-0012 amendment sentences. Spec: `docs/work-orders/WO-0031f-final-turu/order.md`; mockups
       `docs/ui-mockups/wo-0031-v5-final-turu.html` + `wo-0031-v6-yapi.html` + `wo-0031-v7-his.html`.
+- [x] **WO-0032** — Workspace deletion (full cascade, UI + CLI). Done: the existing-but-unwired
+      `deleteWorkspace` port/IPC became real — the store cascades every WO of the workspace (rows +
+      the Docket-authored `docs/work-orders/WO-*` dirs, reusing the per-WO delete) and guards on a
+      running session; `deleteWorkOrder`'s dormant dir bug (the folder was never removed — the path
+      resolved after the row delete) is fixed, and deletes resolve the decision store strictly from
+      connection rows, never the cwd fallback. UI: the edit-modal Sil entry (absent + reason under a
+      live drive) → the counted, ⏎'süz confirm; deleting the active or last workspace falls back to
+      another board / the hero. CLI: `remove-workspace <id|ad> [--yes]` (refuses without `--yes`,
+      naming the blast radius). ADR-0009 gained the workspace-deletion addendum. 484 tests (+4);
+      E2E 36 specs (+2, seeded `çöp` workspace). Spec: `docs/work-orders/WO-0032-workspace-silme/order.md`.
 
 ## M3 — Evidence layer
 
