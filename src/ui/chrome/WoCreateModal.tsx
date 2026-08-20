@@ -137,7 +137,7 @@ export function WoCreateModal({
           {contextFiles.length > 0 ? (
             <div className="mb-1.5 flex flex-wrap gap-1.5">
               {contextFiles.map((p, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
+                <span key={i} title={p} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
                   <button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button>
                 </span>

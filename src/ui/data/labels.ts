@@ -62,9 +62,9 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
   approve_plan: 'Planı onayla',
   resume: 'Oturumu sürdür',
   open_pr: 'PR aç',
-  merge_track: "Track'i mergele",
+  merge_track: 'Depoyu birleştir',
 // D3 (tur-2): merge is not a UI action today. When the command becomes real it belongs in the
-// RAIL, and this wording needs de-jargoning ('Repoyu birleştir'-style) per ADR-0012 r4.
+// RAIL. WO-0033 already applied the ADR-0012 r4 de-jargon the old wording deferred.
   request_verification: 'Doğrulama iste',
   audit: 'Denetim çalıştır',
   update_docs: 'Belgeleri güncelle',
@@ -74,7 +74,7 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
 export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
   awaiting_plan_commit: 'Plan onayı bekleniyor', // M2 wording (WO-0027/Bulgu 11): approval is the act; the commit-as-evidence link is M3
   docs_not_updated: 'ROADMAP ve tech-debt henüz güncellenmedi',
-  depends_on_open: 'Bağımlı track merge olmadı',
+  depends_on_open: 'Bağımlı depo merge olmadı',
   verifier_report_missing: 'Henüz doğrulayıcı raporu yok',
   step_not_resolved: 'Bir adımda revize kararı açık — Devam et ya da yeniden çalıştır',
   pointers_unresolved: 'Kanıt işaretçileri head sha’da çözülmüyor',
@@ -374,17 +374,30 @@ export const UI = {
   close: 'Kapat',
   // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)
   actionNeeded: 'Ne lazım',
-  // Workspace management (WO-0014)
-  wsSettings: 'Workspace ayarları',
+  // Workspace management (WO-0014). WO-0033: the vocabulary pass — repo → depo, workspace →
+  // çalışma alanı; the section becomes the Defter (two-line rows: ad + tam mono yol).
+  wsSettings: 'Çalışma alanı ayarları',
   wsCreate: 'Yeni çalışma alanı',
   wsNameLabel: 'Ad',
-  wsReposLabel: 'Repo bağlantıları',
+  wsReposLabel: 'Depo bağlantıları',
   wsRepoAddManual: 'Ekle',
   wsRepoPick: 'Klasör',
-  wsRepoPlaceholder: 'yerel repo yolu',
+  wsRepoPlaceholder: 'yerel depo yolu',
   wsDecisionStore: 'Karar deposu',
   wsErrName: 'Ad gerekli.',
-  wsErrRepo: 'En az bir geçerli repo yolu ekle (örn. /Users/.../proje).',
+  wsErrRepo: 'En az bir geçerli depo yolu ekle (örn. /Users/.../proje).',
+  // WO-0033 — Defter satır dili: satır eylemleri, bekçi gerekçeleri, alan-altı hata satırları.
+  wsRepoEditAria: 'Depo yolunu düzenle',
+  wsRepoRemoveAria: 'Depoyu kaldır',
+  wsDsMarker: 'karar deposu',
+  wsNoRepos: 'Henüz depo yok.',
+  wsErrPathInvalid: 'Tam yol değil — / ile başlamalı.',
+  wsErrPathName: 'Depo adı değişemez — yol aynı depoya işaret etmeli.',
+  wsErrRepoDup: 'Bu adda depo zaten var.',
+  // Kaldırma bekçileri (ADR-0001: eylem yok + sebep satırı; teyitsiz — yeniden eklemek bir yol yazmaktır).
+  wsGuardDs: 'karar deposu kaldırılamaz',
+  wsGuardOpenWo: (wo: string) => `${wo} kullanıyor`,
+  wsGuardLast: 'son depo kaldırılamaz',
   wsSave: 'Kaydet',
   wsCreateBtn: 'Oluştur',
   wsListTitle: 'Çalışma alanları',
@@ -401,8 +414,8 @@ export const UI = {
   woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
   woDescLabel: 'Açıklama / hedef',
   woDescPlaceholder: 'Bu iş emri neyi başarmalı? İlk prompt olarak mimar oturumuna gider.',
-  woTracksLabel: 'Repolar',
-  woContextLabel: 'Context (dosya)',
+  woTracksLabel: 'Depolar',
+  woContextLabel: 'Bağlam dosyaları',
   woContextAdd: '▸ Dosya ekle',
   woReviewLabel: 'Denetim',
   woCreateBtn: 'Oluştur',
@@ -427,7 +440,7 @@ export const UI = {
   stepsUnit: 'adım',
   stepReportMissing: '(rapor henüz yok)',
   stepScopeAll: 'hepsi',
-  stepBlockedHint: 'kapsam bir track ile eşleşmiyor',
+  stepBlockedHint: 'kapsam bir depoyla eşleşmiyor',
   noSteps: 'Onaylı plan çalışan bir adım listesi içermiyor — mimardan yeniden plan iste.',
   // İş emri silme (WO-0020)
   deleteWo: 'Sil',
@@ -574,7 +587,7 @@ export const UI = {
   secEvidence: 'Kanıt',
   secDocs: 'Belgeler',
   secSources: 'Kaynaklar',
-  secTracks: 'Repolar',
+  secTracks: 'Depolar',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
     const base = { interrupt_sent: '⏸ kesme sinyali gönderildi', session_closed: '■ oturum kapandı', force_killed: '■ zorla kesildi' }[kind];
