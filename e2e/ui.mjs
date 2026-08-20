@@ -856,6 +856,21 @@ await spec('WS sil: Sil stacks over the edit modal; Vazgeç returns with edits; 
   // the confirm stacks OVER the intact settings modal (the WO dialogs' pattern) — both present,
   // the counted consequence line in the topmost dialog
   assert.equal(await page.locator('[role="dialog"]').count(), 2, 'the confirm did not stack over the settings modal');
+  // the z-ladder regression guard: confirm z-70 OVER settings z-50, so its overlay (z-60) actually
+  // dims/blurs the parent — before the fix the parent painted above the overlay and stayed crisp
+  const zis = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="dialog"]')].map((d) => getComputedStyle(d).zIndex),
+  );
+  assert.deepEqual(zis, ['50', '70'], `the stacked z-ladder is wrong: ${zis.join('/')}`);
+  // narrower + same center, never offset (the macOS alert-over-sheet read)
+  const [parentBox, confirmBox] = await Promise.all([
+    page.locator('[role="dialog"]').first().boundingBox(),
+    page.locator('[role="dialog"]').last().boundingBox(),
+  ]);
+  assert.ok(parentBox && confirmBox, 'a stacked dialog has no bounding box');
+  assert.ok(confirmBox.width < parentBox.width, `the confirm is not narrower (${confirmBox.width} vs ${parentBox.width})`);
+  const centers = [parentBox.x + parentBox.width / 2, confirmBox.x + confirmBox.width / 2];
+  assert.ok(Math.abs(centers[0] - centers[1]) <= 1, `the confirm is not centered over the parent (${centers[0]} vs ${centers[1]})`);
   const line = await page.locator('[role="dialog"]').last().textContent();
   assert.ok(line?.includes('2 iş emri'), `the consequence line carries no count: ${line}`);
   assert.ok(line?.includes('Geri alınamaz'), 'no irreversible line in the confirm');

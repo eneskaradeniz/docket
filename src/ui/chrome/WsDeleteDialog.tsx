@@ -1,7 +1,8 @@
 // WsDeleteDialog — the workspace-deletion confirm (WO-0032), the WO Sil dialog's sibling: the
 // counted irreversible-consequence line, a danger confirm with no ⏎ path (deliberate friction on
 // the irreversible), and a failed delete that keeps the dialog open (the store guard fires before
-// any row — nothing was deleted). Rendered OVER the settings modal that invoked it, the WO
+// any row — nothing was deleted). Rendered OVER the settings modal that invoked it (stacked — the
+// parent recedes behind this overlay; narrow — a focused yes/no, centered, never offset), the WO
 // dialogs' pattern: Vazgeç (or Esc/overlay) returns to that modal with its edits intact; only a
 // successful delete closes both. All copy via labels.ts (ADR-0007).
 import { useState } from 'react';
@@ -43,6 +44,8 @@ export function WsDeleteDialog({
   return (
     <Dialog
       open
+      stacked
+      narrow
       onOpenChange={(o) => { if (!o && !deleting) onCancel(); }}
       title={UI.wsDelete}
       closeAria={UI.dialogCloseAria}

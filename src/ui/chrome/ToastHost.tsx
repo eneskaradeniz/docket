@@ -55,7 +55,7 @@ export function ToastHost() {
   }, []);
   if (items.length === 0) return null;
   return (
-    <div className="pointer-events-none fixed right-3 top-14 z-50 flex w-[296px] flex-col gap-2">
+    <div className="pointer-events-none fixed right-3 top-14 z-80 flex w-[296px] flex-col gap-2">
       {items.map((t) => (
         <div
           key={t.id}
