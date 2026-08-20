@@ -840,6 +840,7 @@ export function WorkOrderDetail({
       {confirmDelete ? (
         <Dialog
           open
+          narrow
           onOpenChange={(o) => { if (!o && !deleting) setConfirmDelete(false); }}
           title={UI.deleteWo}
           closeAria={UI.dialogCloseAria}
