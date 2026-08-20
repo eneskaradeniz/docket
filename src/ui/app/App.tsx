@@ -225,7 +225,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   } else if (workspaces.length === 0) {
     // Empty database (ADR-0009 + ADR-0012 r2): the appbar above is the real one; the body is the
     // invitation — one line, one CTA (create the first workspace; the first work order follows).
-    main = <InviteHero cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
+    main = <InviteHero line={UI.inviteFirstWs} cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
   } else if (selectedId) {
     main = detailError ? (
       <div className="px-6 py-8">

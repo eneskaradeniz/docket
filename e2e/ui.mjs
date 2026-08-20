@@ -934,7 +934,8 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     await emptyPage.waitForTimeout(700);
     assert.ok((await emptyPage.getByText('Docket', { exact: true }).count()) >= 1, 'no brand on an empty DB');
     assert.ok((await emptyPage.locator('button[aria-label="Ayarlar"]').count()) >= 1, 'no normal Settings gear on an empty DB');
-    assert.ok((await emptyPage.getByText('Haydi ilk iş emrini açalım').count()) >= 1, 'no invitation line');
+    assert.ok((await emptyPage.getByText('Haydi ilk çalışma alanını oluşturalım').count()) >= 1, 'no workspace invitation line on an empty DB');
+    assert.equal(await emptyPage.getByText('Haydi ilk iş emrini açalım').count(), 0, 'the zero-WO line leaked onto the empty-DB hero (WO-0032 operator finding)');
     assert.ok((await emptyPage.getByRole('button', { name: 'Yeni çalışma alanı' }).count()) === 1, 'not exactly one CTA');
     await emptyPage.screenshot({ path: join(SHOTS, 'empty-db-hero@980.png') });
     // the CTA opens the workspace-create dialog; create one over a temp dir (typed, no native picker)

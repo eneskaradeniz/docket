@@ -418,7 +418,9 @@ export const UI = {
   reply: 'Yanıtla',
   skipReply: 'Bilmiyorum',
   architectRequest: 'Mimarın bir isteği var',
-  // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem).
+  // Onboarding / davet (WO-0016 → WO-0031d: boş durum = 1 satır + 1 eylem). WO-0032: satır düğmenin
+  // ne oluşturacağını adlar — sıfır-workspace yüzeyi workspace davet eder, iş-emri satırı iş-emri tahtasına.
+  inviteFirstWs: 'Haydi ilk çalışma alanını oluşturalım',
   inviteFirstWo: 'Haydi ilk iş emrini açalım',
   // Plan adımları (WO-0017). WO-0031f: stepsHeader/stepReportTitle died with the spine restructure —
   // the spine carries no "Plan" header (the Akış count does) and the report header is reportTitle(idx).
