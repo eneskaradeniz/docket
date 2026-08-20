@@ -43,8 +43,9 @@ export function AppShell({
   wsDriveLive: (id: WorkspaceId) => boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // WO-0032: 'delete' is the confirm that follows 'edit' — the settings modal closes first, so the
-  // two never nest (one Radix dialog at a time); editingWs survives the swap.
+  // WO-0032: 'delete' is the confirm that renders OVER 'edit' (the WO dialogs' pattern — the
+  // invoker stays mounted, Vazgeç returns to it with edits intact); only a successful delete
+  // closes both, so a deleted workspace's settings modal never reappears.
   const [wsModal, setWsModal] = useState<'closed' | 'create' | 'edit' | 'delete'>('closed');
   const [editingWs, setEditingWs] = useState<Workspace | undefined>(undefined);
   const [wsListOpen, setWsListOpen] = useState(false);
@@ -90,15 +91,24 @@ export function AppShell({
         </div>
       </header>
       {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
-      {wsModal === 'edit' || wsModal === 'create' ? (
+      {(wsModal === 'edit' || wsModal === 'delete') && editingWs ? (
         <WsSettingsModal
-          mode={wsModal}
+          mode="edit"
           workspace={editingWs}
           source={source}
           onClose={() => setWsModal('closed')}
           onSaved={onWorkspacesChanged}
-          onDeleteWorkspace={wsModal === 'edit' && editingWs ? () => setWsModal('delete') : undefined}
-          driveLive={wsModal === 'edit' && editingWs ? wsDriveLive(editingWs.id) : undefined}
+          onDeleteWorkspace={() => setWsModal('delete')}
+          driveLive={wsDriveLive(editingWs.id)}
+        />
+      ) : null}
+      {wsModal === 'create' ? (
+        <WsSettingsModal
+          mode="create"
+          workspace={editingWs}
+          source={source}
+          onClose={() => setWsModal('closed')}
+          onSaved={onWorkspacesChanged}
         />
       ) : null}
       {wsModal === 'delete' && editingWs ? (
@@ -106,7 +116,8 @@ export function AppShell({
           workspace={editingWs}
           woCount={wsWoCount(editingWs.id)}
           onDelete={onDeleteWorkspace}
-          onClose={() => setWsModal('closed')}
+          onCancel={() => setWsModal('edit')}
+          onDeleted={() => setWsModal('closed')}
         />
       ) : null}
       {wsListOpen && workspaceId !== null ? (

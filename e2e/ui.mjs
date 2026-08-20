@@ -836,7 +836,7 @@ await spec('closable platform → live close → the all-done arrival pulses onc
 // ===== WO-0032 specs (workspace deletion) — the deletion is permanent in the shared db, so these
 // run LAST among the first-app specs: after them only 'çöp' is gone, which nothing else references.
 
-await spec('WS sil: edit modal → Sil → counted consequence → Evet, sil → fallback board (WO-0032)', async () => {
+await spec('WS sil: Sil stacks over the edit modal; Vazgeç returns with edits; Evet, sil → fallback board (WO-0032)', async () => {
   // switch to the 'çöp' workspace — its two WOs are the deletion payload. The previous spec leaves
   // the app on the raf board, so open the switcher by position (the first header button), not label.
   await page.locator('header button').first().click();
@@ -844,24 +844,33 @@ await spec('WS sil: edit modal → Sil → counted consequence → Evet, sil →
   await page.getByRole('button', { name: 'çöp', exact: true }).first().click();
   await page.waitForTimeout(600);
   assert.equal(await page.locator('[data-wo-id]').count(), 2, 'the çöp board does not show exactly its two WOs');
-  // the row gear opens the edit modal; the quiet Sil entry swaps it for the confirm dialog
+  // the row gear opens the edit modal; an unsaved edit rides through the Vazgeç roundtrip
   await page.locator('header button', { hasText: 'çöp' }).first().click();
   await page.waitForTimeout(300);
   await page.locator('div.w-72 > div').filter({ hasText: 'çöp' }).first().locator('button[aria-label="Workspace ayarları"]').click();
   await page.waitForTimeout(300);
   assert.ok((await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).count()) >= 1, 'no Sil entry in the edit modal');
+  await page.locator('[role="dialog"] input').first().fill('çöp düzenlendi');
   await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).click();
   await page.waitForTimeout(300);
-  // the settings modal closed and the confirm took its place: one dialog, no form, the counted line
-  assert.equal(await page.locator('[role="dialog"]').count(), 1, 'the confirm did not swap in as the one dialog');
-  assert.equal(await page.locator('[role="dialog"] input').count(), 0, 'the settings form is still behind the confirm');
-  const line = await page.locator('[role="dialog"]').textContent();
+  // the confirm stacks OVER the intact settings modal (the WO dialogs' pattern) — both present,
+  // the counted consequence line in the topmost dialog
+  assert.equal(await page.locator('[role="dialog"]').count(), 2, 'the confirm did not stack over the settings modal');
+  const line = await page.locator('[role="dialog"]').last().textContent();
   assert.ok(line?.includes('2 iş emri'), `the consequence line carries no count: ${line}`);
   assert.ok(line?.includes('Geri alınamaz'), 'no irreversible line in the confirm');
   await page.screenshot({ path: join(SHOTS, 'ws-delete-confirm@980.png') });
+  // Vazgeç returns to the settings modal — still open, the unsaved edit intact (operator finding)
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[role="dialog"]').count(), 1, 'Vazgeç closed the settings modal too');
+  assert.equal(await page.locator('[role="dialog"] input').first().inputValue(), 'çöp düzenlendi', 'Vazgeç lost the unsaved edit');
+  // round two: confirm for real
+  await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).click();
+  await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
   await page.waitForTimeout(1000); // cascade + both list refreshes
-  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the confirm dialog stayed open');
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'dialogs remained after a successful delete');
   assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'no fallback board after the workspace delete');
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Çöp işi' }).count(), 0, 'a deleted-workspace WO still has a card');
   // the switcher no longer offers çöp

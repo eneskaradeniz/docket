@@ -1,7 +1,9 @@
 // WsDeleteDialog — the workspace-deletion confirm (WO-0032), the WO Sil dialog's sibling: the
 // counted irreversible-consequence line, a danger confirm with no ⏎ path (deliberate friction on
 // the irreversible), and a failed delete that keeps the dialog open (the store guard fires before
-// any row — nothing was deleted). All copy via labels.ts (ADR-0007).
+// any row — nothing was deleted). Rendered OVER the settings modal that invoked it, the WO
+// dialogs' pattern: Vazgeç (or Esc/overlay) returns to that modal with its edits intact; only a
+// successful delete closes both. All copy via labels.ts (ADR-0007).
 import { useState } from 'react';
 import type { Workspace } from '../../core/types';
 import { UI } from '../data/labels';
@@ -11,12 +13,16 @@ export function WsDeleteDialog({
   workspace,
   woCount,
   onDelete,
-  onClose,
+  onCancel,
+  onDeleted,
 }: {
   workspace: Workspace;
   woCount: number;
   onDelete: (ws: Workspace) => Promise<void>;
-  onClose: () => void;
+  /** Back to the settings modal underneath — the invoker stays mounted, its edits survive. */
+  onCancel: () => void;
+  /** The delete succeeded: the workspace is gone, so BOTH dialogs close (AppShell decides). */
+  onDeleted: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
@@ -26,7 +32,7 @@ export function WsDeleteDialog({
     setDeleteError(false);
     try {
       await onDelete(workspace);
-      onClose(); // success closes — App's handler already refreshed the lists
+      onDeleted();
     } catch {
       setDeleteError(true); // the dialog stays open for a retry — a failed delete deletes nothing
     } finally {
@@ -37,12 +43,12 @@ export function WsDeleteDialog({
   return (
     <Dialog
       open
-      onOpenChange={(o) => { if (!o && !deleting) onClose(); }}
+      onOpenChange={(o) => { if (!o && !deleting) onCancel(); }}
       title={UI.wsDelete}
       closeAria={UI.dialogCloseAria}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>{UI.cancel}</Button>
+          <Button variant="ghost" size="sm" onClick={onCancel}>{UI.cancel}</Button>
           <Button variant="danger" size="sm" busy={deleting} onClick={() => void del()}>{UI.wsDeleteConfirm}</Button>
         </>
       }
