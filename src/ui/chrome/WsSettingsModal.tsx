@@ -13,19 +13,26 @@ const base = (p: string): string => {
 const valid = (p: string): boolean => p.startsWith('/') && p.length > 1 && !p.endsWith('/');
 
 // Workspace create/edit modal (WO-0014; WO-0031b kit restyle). Create = full form (name + folder-picked
-// OR typed repos + decision store). Edit = rename + set decision store + add repos.
+// OR typed repos + decision store). Edit = rename + set decision store + add repos. WO-0032: edit also
+// carries the deletion entry — quiet (ghost + error ink) here, loud (danger confirm) in WsDeleteDialog.
 export function WsSettingsModal({
   mode,
   workspace,
   source,
   onClose,
   onSaved,
+  onDeleteWorkspace,
+  driveLive,
 }: {
   mode: 'create' | 'edit';
   workspace?: Workspace;
   source: WorkOrderSource;
   onClose: () => void;
   onSaved: () => void;
+  /** WO-0032: edit mode only — hands the workspace up so AppShell can swap this modal for the confirm. */
+  onDeleteWorkspace?: (ws: Workspace) => void;
+  /** WO-0032: a live drive in this workspace — the Sil entry is absent with the reason (ADR-0001). */
+  driveLive?: boolean;
 }) {
   const [name, setName] = useState(workspace?.label ?? '');
   const [paths, setPaths] = useState<string[]>([]);
@@ -100,7 +107,16 @@ export function WsSettingsModal({
       closeAria={UI.dialogCloseAria}
       footer={
         <>
-          {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
+          <div className="mr-auto flex items-center gap-2">
+            {mode === 'edit' && workspace && onDeleteWorkspace ? (
+              driveLive ? (
+                <span className="readout">{UI.wsDeleteGateReason}</span>
+              ) : (
+                <Button variant="ghost" size="sm" className="text-error" onClick={() => onDeleteWorkspace(workspace)}>{UI.wsDelete}</Button>
+              )
+            ) : null}
+            {error ? <span className="text-[11px] text-error">{error}</span> : null}
+          </div>
           <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
           <Button variant="primary" size="sm" onClick={() => void save()}>{mode === 'create' ? UI.wsCreateBtn : UI.wsSave}</Button>
         </>

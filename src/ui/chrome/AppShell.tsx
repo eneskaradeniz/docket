@@ -11,6 +11,7 @@ import { UI } from '../data/labels';
 import { Button, Tooltip } from '../kit';
 import { AppSettingsModal } from './AppSettingsModal';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { WsDeleteDialog } from './WsDeleteDialog';
 import { WsSettingsModal } from './WsSettingsModal';
 import { WsListModal } from './WsListModal';
 
@@ -22,6 +23,9 @@ export function AppShell({
   settings,
   onWorkspacesChanged,
   onNewWorkOrder,
+  onDeleteWorkspace,
+  wsWoCount,
+  wsDriveLive,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -31,9 +35,17 @@ export function AppShell({
   settings: AppSettings;
   onWorkspacesChanged: () => void;
   onNewWorkOrder: () => void;
+  /** WO-0032: delete the workspace (full cascade) — App owns the post-delete cleanup + refresh. */
+  onDeleteWorkspace: (ws: Workspace) => Promise<void>;
+  /** WO-0032: the workspace's work-order count — the confirm dialog's consequence line. */
+  wsWoCount: (id: WorkspaceId) => number;
+  /** WO-0032: any live drive in the workspace — gates the Sil entry (ADR-0001: absent + reason). */
+  wsDriveLive: (id: WorkspaceId) => boolean;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [wsModal, setWsModal] = useState<'closed' | 'create' | 'edit'>('closed');
+  // WO-0032: 'delete' is the confirm that follows 'edit' — the settings modal closes first, so the
+  // two never nest (one Radix dialog at a time); editingWs survives the swap.
+  const [wsModal, setWsModal] = useState<'closed' | 'create' | 'edit' | 'delete'>('closed');
   const [editingWs, setEditingWs] = useState<Workspace | undefined>(undefined);
   const [wsListOpen, setWsListOpen] = useState(false);
 
@@ -78,13 +90,23 @@ export function AppShell({
         </div>
       </header>
       {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
-      {wsModal !== 'closed' ? (
+      {wsModal === 'edit' || wsModal === 'create' ? (
         <WsSettingsModal
           mode={wsModal}
           workspace={editingWs}
           source={source}
           onClose={() => setWsModal('closed')}
           onSaved={onWorkspacesChanged}
+          onDeleteWorkspace={wsModal === 'edit' && editingWs ? () => setWsModal('delete') : undefined}
+          driveLive={wsModal === 'edit' && editingWs ? wsDriveLive(editingWs.id) : undefined}
+        />
+      ) : null}
+      {wsModal === 'delete' && editingWs ? (
+        <WsDeleteDialog
+          workspace={editingWs}
+          woCount={wsWoCount(editingWs.id)}
+          onDelete={onDeleteWorkspace}
+          onClose={() => setWsModal('closed')}
         />
       ) : null}
       {wsListOpen && workspaceId !== null ? (
