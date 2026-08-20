@@ -14,7 +14,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
@@ -24,6 +24,7 @@ import { workOrders, workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
+  RepoId,
   SessionRef,
   WoEvent,
   WoEventKind,
@@ -420,11 +421,25 @@ function slugify(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'workspace';
 }
 
+// WO-0033: a repo's identity is its basename (the RepoId invariant every writer follows). Adding a
+// second repo with the same basename used to collapse silently — INSERT OR REPLACE over
+// workspace_repo's PK swallowed the first and the connection row overwrote. Refuse before any write.
+function assertNoRepoCollision(db: DatabaseSync, id: WorkspaceId, repoId: string): void {
+  const hit = db.prepare('SELECT 1 FROM workspace_repo WHERE workspace_id = ? AND repo_id = ?').get(id, repoId);
+  if (hit) throw new Error(`duplicate repo: ${repoId}`);
+}
+
 function createWorkspaceRow(db: DatabaseSync, input: CreateWorkspaceInput): Workspace {
   const id = wid(slugify(input.label));
+  const seen = new Set<string>();
   const repos = input.repos.map((r) => {
+    const baseName = repoBase(r.path);
+    // Intra-list check before any write (WO-0033): a duplicate basename rejects the whole create —
+    // the workspace row is not left half-written (the non-atomic-write class stays TD-021's).
+    if (seen.has(baseName)) throw new Error(`duplicate repo: ${baseName}`);
+    seen.add(baseName);
     const remote = r.remote ?? gitRemote(r.path);
-    return { id: rid(repoBase(r.path)), path: r.path, remote };
+    return { id: rid(baseName), path: r.path, remote };
   });
   const decisionStore = input.decisionStorePath ? rid(repoBase(input.decisionStorePath)) : (repos[0]?.id ?? rid('repo'));
   const now = new Date().toISOString();
@@ -475,6 +490,7 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
 function addRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, repo: RepoConnectionInput): void {
   const remote = repo.remote ?? gitRemote(repo.path);
   const repoId = rid(repoBase(repo.path));
+  assertNoRepoCollision(db, id, repoId as string);
   db.prepare('INSERT OR REPLACE INTO workspace_repo (workspace_id, repo_id) VALUES (?,?)').run(id, repoId);
   db.prepare('INSERT OR REPLACE INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(
     id, remote || repoId, repo.path,
@@ -485,6 +501,34 @@ function removeRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, path: string
   const repoId = rid(repoBase(path));
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ? AND repo_id = ?').run(id, repoId);
   db.prepare('DELETE FROM connection WHERE workspace_id = ? AND local_path = ?').run(id, path);
+}
+
+// The ledger read (WO-0033): the connection table's rows as {id, path}. Order is insert order
+// (rowid) — the UI merges onto the workspace's definition order and shows only these paths.
+function repoConnectionsRow(db: DatabaseSync, id: WorkspaceId): RepoConnectionView[] {
+  const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(id) as {
+    local_path: string;
+  }[];
+  return rows.map((r) => ({ id: rid(repoBase(r.local_path)), path: r.local_path }));
+}
+
+// Move a repo's local path (WO-0033): basename-is-identity first (a path naming a different
+// basename is a different repo — refuse, change nothing), then rewrite local_path on the ONE
+// matching connection row. repo_remote and the definition row are untouched.
+function updateRepoPathRow(db: DatabaseSync, id: WorkspaceId, repoId: RepoId, newPath: string): void {
+  if (repoBase(newPath) !== (repoId as string)) {
+    throw new Error(`updateRepoPath: ${newPath} is not repo ${repoId} (basename is the identity)`);
+  }
+  const row = (
+    db.prepare('SELECT repo_remote, local_path FROM connection WHERE workspace_id = ?').all(id) as {
+      repo_remote: string;
+      local_path: string;
+    }[]
+  ).find((r) => repoBase(r.local_path) === (repoId as string));
+  if (!row) throw new Error(`updateRepoPath: no connection for ${repoId} in ${id}`);
+  db.prepare('UPDATE connection SET local_path = ? WHERE workspace_id = ? AND repo_remote = ?').run(
+    newPath, id, row.repo_remote,
+  );
 }
 
 // --- Work-order creation (WO-0015) ---
@@ -776,7 +820,9 @@ export function createStore(dbPath: string): Store {
       const orderMdPath = woDir ? `${woDir}/order.md` : '';
       return architectPrompt({ ...parsed, orderMdPath });
     },
-    createWorkspace: (input: CreateWorkspaceInput) => Promise.resolve(createWorkspaceRow(db, input)),
+    // WO-0033: async so the duplicate-basename refusal REJECTS (the deleteWorkspace/addRepoConnection
+    // ruling — a sync escape is not a promise the caller can await).
+    createWorkspace: async (input: CreateWorkspaceInput): Promise<Workspace> => createWorkspaceRow(db, input),
     updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
       Promise.resolve(updateWorkspaceRow(db, id, patch)),
     // WO-0032: async so the running-session guard's throw REJECTS — the port is async, and the UI's
@@ -784,10 +830,17 @@ export function createStore(dbPath: string): Store {
     deleteWorkspace: async (id: WorkspaceId) => {
       deleteWorkspaceRow(db, id);
     },
-    addRepoConnection: (id: WorkspaceId, repo: RepoConnectionInput) =>
-      Promise.resolve(addRepoConnectionRow(db, id, repo)),
+    // WO-0033: async wrappers so a refusal REJECTS (the deleteWorkspace ruling — the UI's try/catch
+    // depends on the await contract, not a sync escape out of invoke).
+    addRepoConnection: async (id: WorkspaceId, repo: RepoConnectionInput) => {
+      addRepoConnectionRow(db, id, repo);
+    },
     removeRepoConnection: (id: WorkspaceId, path: string) =>
       Promise.resolve(removeRepoConnectionRow(db, id, path)),
+    repoConnections: (id: WorkspaceId) => Promise.resolve(repoConnectionsRow(db, id)),
+    updateRepoPath: async (id: WorkspaceId, repoId: RepoId, newPath: string) => {
+      updateRepoPathRow(db, id, repoId, newPath);
+    },
     // Orchestrates creation (WO-0015): resolve the decision-store path → allocate the next WO number →
     // author order.md into the working tree (no commit) → insert the observed row + tracks. The async
     // wrapper turns fs/DB errors into a rejected promise the UI can surface (modal stays open).
