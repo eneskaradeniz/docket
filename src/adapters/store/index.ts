@@ -451,7 +451,22 @@ function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: 
   }
 }
 
+// Delete a workspace WITH everything Docket recorded under it (WO-0032): guard first — a live drive
+// blocks the delete and an error must delete nothing — then the per-WO cascade for each of its work
+// orders (rows + the Docket-authored decision-store dirs), then the definition + connection rows.
+// Repo code and git history are never touched; the dir resolves STRICTLY from connection rows (a
+// workspace without a matching connection deletes DB rows only, never a folder under cwd). Global
+// app_setting rows are untouched.
 function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
+  const live = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM session WHERE status = 'running' AND work_order_id IN (SELECT id FROM work_order WHERE workspace_id = ?)",
+    )
+    .get(id) as { n: number };
+  if (live.n > 0) throw new Error(`deleteWorkspace: ${live.n} running session(s) in ${id}`);
+  const dir = connectedDecisionStorePath(db, id); // before the connection rows go
+  const woIds = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(id) as { id: string }[];
+  for (const x of woIds) deleteWorkOrderRows(db, woid(x.id), dir);
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
@@ -764,7 +779,11 @@ export function createStore(dbPath: string): Store {
     createWorkspace: (input: CreateWorkspaceInput) => Promise.resolve(createWorkspaceRow(db, input)),
     updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
       Promise.resolve(updateWorkspaceRow(db, id, patch)),
-    deleteWorkspace: (id: WorkspaceId) => Promise.resolve(deleteWorkspaceRow(db, id)),
+    // WO-0032: async so the running-session guard's throw REJECTS — the port is async, and the UI's
+    // try/catch (the dialog's error line) depends on the await contract, not a sync escape.
+    deleteWorkspace: async (id: WorkspaceId) => {
+      deleteWorkspaceRow(db, id);
+    },
     addRepoConnection: (id: WorkspaceId, repo: RepoConnectionInput) =>
       Promise.resolve(addRepoConnectionRow(db, id, repo)),
     removeRepoConnection: (id: WorkspaceId, path: string) =>
