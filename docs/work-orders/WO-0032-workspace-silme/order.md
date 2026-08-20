@@ -2,7 +2,7 @@
 id: WO-0032
 title: Workspace deletion — full cascade, UI + CLI
 workspace: docket
-status: implementing
+status: closed
 mode: plan
 tracks:
   - repo: app
@@ -103,3 +103,17 @@ Out of scope:
 - A CLI delete racing a GUI drive is refused by the store guard (safe direction; TD-031 class).
 - `wo_event` rows die with their work orders — the consequence line and the ADR addendum both say
   so; the audit's contract is per-WO, so nothing dangles.
+
+## Closure
+
+Merged PR #39 (`526b16d`), one PR, 11 commits: the work order, the strict resolver + the
+`deleteWorkOrder` dir fix, the cascade + running-session guard, the Sil flow (UI + CLI), E2E, the
+docs (ADR-0009 addendum, ROADMAP, TD-021), and the operator review round — four findings fixed
+in-PR: Vazgeç returns to the settings modal (the confirm now STACKS over its invoker), the stacked
+z-ladder + the narrow confirm vocabulary landed as kit capability (440px for the yes/no class;
+Tooltip + toasts lifted to z-80 floaters), the WO Sil dialog joined the narrow class, and the
+empty-DB hero invites the workspace (the line names what the button creates). Gates: typecheck ×2,
+484 tests (+4), build, boundaries, E2E 36/36 (+2, including the z-ladder and geometry regression
+guards), CLI scratch-db smoke; CI green on every push.
+
+_Closed 2026-08-21 at 526b16d_
