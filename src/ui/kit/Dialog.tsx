@@ -18,6 +18,7 @@ export function Dialog({
   narrow,
   stacked,
   onOpenAutoFocus,
+  onEscapeKeyDown,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -35,6 +36,9 @@ export function Dialog({
   stacked?: boolean;
   /** Radix focuses the first focusable (the close X) by default; pass this to focus a field instead. */
   onOpenAutoFocus?: (e: Event) => void;
+  /** WO-0033: Radix hears ESC on the DOCUMENT in capture — a child's stopPropagation cannot reach
+   *  it. Call preventDefault() here to keep the dialog open (an inner layer swallows the ESC). */
+  onEscapeKeyDown?: (e: KeyboardEvent) => void;
 }) {
   const zi = stacked ? { overlay: 'z-60', content: 'z-70' } : { overlay: 'z-40', content: 'z-50' };
   return (
@@ -43,6 +47,7 @@ export function Dialog({
         <DialogPrimitive.Overlay className={`dialog-rise fixed inset-0 ${zi.overlay} bg-bg/70 backdrop-blur-[2px]`} />
         <DialogPrimitive.Content
           {...(onOpenAutoFocus ? { onOpenAutoFocus } : {})}
+          {...(onEscapeKeyDown ? { onEscapeKeyDown } : {})}
           className={cn(
             `dialog-rise fixed inset-x-4 top-[7vh] ${zi.content} mx-auto flex max-h-[86vh] w-[min(92vw,540px)] flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-2xl`,
             narrow && 'w-[min(92vw,440px)]',

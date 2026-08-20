@@ -31,7 +31,7 @@ const spec = async (name, fn) => {
     console.log(`  ✓ ${name}`);
   } catch (e) {
     failures.push(name);
-    console.log(`  ✗ ${name}\n    ${String(e).split('\n')[0]}`);
+    console.log(`  ✗ ${name}\n    ${String(e).split('\n').slice(0, 3).join('\n    ')}`);
   }
 };
 
@@ -587,8 +587,9 @@ await spec('Kayıt: kanıt chips at the top of the drawer + Belgeler + döküm (
   await openDetail('Uygulama sürüyor'); // single-repo, implementation: 1 gate satisfied, rest absent
   await page.getByRole('button', { name: 'DETAY' }).first().click();
   await page.waitForTimeout(400);
-  // tur-2 D3 stands: the Repolar section stays gone — and the two-tab world has no room for it
-  assert.equal(await page.getByText('Repolar', { exact: true }).count(), 0, 'a Repolar surface still exists');
+  // tur-2 D3 stands: the Depolar section stays gone — and the two-tab world has no room for it
+  // (WO-0033 renamed the word; the surface-still-gone claim survives the rename)
+  assert.equal(await page.getByText('Depolar', { exact: true }).count(), 0, 'a Depolar surface still exists');
   await page.getByRole('tab', { name: /Kayıt/ }).click();
   await page.waitForTimeout(250);
   // v6: the three Kanıt chips sit at the TOP of the record (a summary, not a section)
@@ -847,7 +848,7 @@ await spec('WS sil: Sil stacks over the edit modal; Vazgeç returns with edits; 
   // the row gear opens the edit modal; an unsaved edit rides through the Vazgeç roundtrip
   await page.locator('header button', { hasText: 'çöp' }).first().click();
   await page.waitForTimeout(300);
-  await page.locator('div.w-72 > div').filter({ hasText: 'çöp' }).first().locator('button[aria-label="Workspace ayarları"]').click();
+  await page.locator('div.w-72 > div').filter({ hasText: 'çöp' }).first().locator('button[aria-label="Çalışma alanı ayarları"]').click();
   await page.waitForTimeout(300);
   assert.ok((await page.getByRole('button', { name: 'Çalışma alanını sil', exact: true }).count()) >= 1, 'no Sil entry in the edit modal');
   await page.locator('[role="dialog"] input').first().fill('çöp düzenlendi');
@@ -904,7 +905,7 @@ await spec('WS sil: a live drive hides the Sil entry and states the reason (WO-0
   // open the e2e row's settings: the Sil entry is absent, the reason line stands in (ADR-0001)
   await page.locator('header button').first().click();
   await page.waitForTimeout(300);
-  await page.locator('div.w-72 > div').filter({ hasText: 'e2e' }).first().locator('button[aria-label="Workspace ayarları"]').click();
+  await page.locator('div.w-72 > div').filter({ hasText: 'e2e' }).first().locator('button[aria-label="Çalışma alanı ayarları"]').click();
   await page.waitForTimeout(300);
   assert.equal(await page.locator('[role="dialog"]').getByRole('button', { name: 'Çalışma alanını sil' }).count(), 0, 'the Sil entry rendered under a live drive');
   assert.ok((await page.locator('[role="dialog"]').getByText('önce oturumu durdur').count()) >= 1, 'no gate reason in the edit modal');
@@ -912,6 +913,75 @@ await spec('WS sil: a live drive hides the Sil entry and states the reason (WO-0
   await page.waitForTimeout(300);
   await stopAllDrives();
   await backToBoard();
+});
+
+// ===== WO-0033 specs (depo bağlantıları) — run on the 'e2e' workspace AFTER the deletion specs:
+// the ledger spec adds a second repo and removes it before ending, so the shared db stays net-zero.
+
+await spec('WS depo: Defter rows — full path, guards, path edit, name collision (WO-0033)', async () => {
+  // the switcher's e2e row gear opens the edit modal (the pattern the WO-0032 specs use)
+  await page.locator('header button').first().click();
+  await page.waitForTimeout(300);
+  await page.locator('div.w-72 > div').filter({ hasText: 'e2e' }).first().locator('button[aria-label="Çalışma alanı ayarları"]').click();
+  await page.waitForTimeout(500); // connections + definition + open-WO map load
+  const dlg = page.locator('[role="dialog"]');
+  // AC 1: the single seeded repo is a two-line row — basename + the FULL mono path in `title`
+  assert.ok((await dlg.getByText('repo', { exact: true }).count()) >= 1, 'no basename row for the seeded repo');
+  const pathLine = dlg.locator('div[title^="/"]');
+  assert.ok((await pathLine.count()) >= 1, 'no full-path line on the ledger row');
+  assert.ok(((await pathLine.first().getAttribute('title')) ?? '').endsWith('/repo'), 'the row title is not the connection path');
+  // AC 4 (a)+(c) surfaces: the single repo is the decision store AND the last one — ✕ absent, reason in place
+  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 0, 'the guarded row still offers removal');
+  assert.ok((await dlg.getByText('karar deposu kaldırılamaz').count()) >= 1, 'no guard reason on the row');
+  assert.ok((await dlg.getByText('● karar deposu').count()) >= 1, 'no decision-store marker');
+  // the add row fires immediately: a second repo lands, unguarded (nothing references it)
+  const draft = dlg.locator('input[placeholder="yerel depo yolu"]');
+  await draft.fill('/tmp/e2e-ikinci-depo');
+  await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.ok((await dlg.getByText('e2e-ikinci-depo', { exact: true }).count()) >= 1, 'the immediate add did not land a row');
+  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 1, 'the second row is guarded too');
+  // AC 7: with two repos the select appears OPENING ON THE SAVED decision store ('repo')
+  assert.equal(await dlg.locator('select').inputValue(), 'repo', 'the decision-store select does not show the saved value');
+  // AC 9 in the UI: a same-basename add refuses with its line under the add row
+  await draft.fill('/tmp/other/repo');
+  await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
+  await page.waitForTimeout(400);
+  assert.ok((await dlg.getByText('Bu adda depo zaten var.').count()) >= 1, 'no collision line');
+  assert.equal(await dlg.locator('div[title^="/"]').count(), 2, 'the collision changed the row count');
+  await page.screenshot({ path: join(SHOTS, 'ws-repos-ledger@980.png') });
+  // path edit: same basename moves; a different basename refuses inline and ESC reverts.
+  // Row order is the workspace_repo PK scan order (repo_id lexicographic — 'e2e-ikinci-depo' sorts
+  // before 'repo'), so the spec targets rows BY PATH TITLE, never by index.
+  const rowByPath = (p) => dlg.locator(`div:has(div[title="${p}"])`).last();
+  await rowByPath('/tmp/e2e-ikinci-depo').getByRole('button', { name: 'Depo yolunu düzenle' }).click();
+  await page.waitForTimeout(250);
+  const editor = dlg.locator('input.font-mono:not([placeholder])');
+  assert.ok((await editor.count()) === 1, 'the ✎ did not open a path editor');
+  assert.equal(await editor.inputValue(), '/tmp/e2e-ikinci-depo', 'the editor seeded the wrong row');
+  await editor.fill('/tmp/yeni/yol/e2e-ikinci-depo');
+  await editor.press('Enter');
+  await page.waitForTimeout(500);
+  assert.ok((await dlg.locator('div[title="/tmp/yeni/yol/e2e-ikinci-depo"]').count()) >= 1, 'the path edit did not commit');
+  await rowByPath('/tmp/yeni/yol/e2e-ikinci-depo').getByRole('button', { name: 'Depo yolunu düzenle' }).click();
+  await page.waitForTimeout(250);
+  await editor.fill('/tmp/farkli-ad');
+  await editor.press('Enter');
+  await page.waitForTimeout(400);
+  assert.ok((await dlg.getByText('Depo adı değişemez', { exact: false }).count()) >= 1, 'no basename refusal line');
+  assert.equal((await editor.count()), 1, 'a failed commit closed the editor (the typed text would be lost)');
+  await editor.press('Escape');
+  await page.waitForTimeout(300);
+  assert.equal(await editor.count(), 0, 'ESC did not revert the editor');
+  assert.equal(await page.locator('[role="dialog"]').count(), 1, 'ESC closed the whole dialog instead of the editor');
+  assert.ok((await dlg.locator('div[title="/tmp/yeni/yol/e2e-ikinci-depo"]').count()) >= 1, 'ESC changed the committed path');
+  // confirmless removal brings the ledger back to one row (net zero for the suite)
+  await rowByPath('/tmp/yeni/yol/e2e-ikinci-depo').getByRole('button', { name: 'Depoyu kaldır' }).click();
+  await page.waitForTimeout(600);
+  assert.equal(await dlg.locator('div[title^="/"]').count(), 1, 'the removal did not land');
+  assert.ok((await dlg.getByText('karar deposu kaldırılamaz').count()) >= 1, 'the guard did not return with the single row');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
 });
 
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
@@ -943,11 +1013,46 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     await emptyPage.waitForTimeout(350);
     const wsRepo = join(emptyRoot, 'repo');
     mkdirSync(join(wsRepo, 'docs', 'work-orders'), { recursive: true });
-    await emptyPage.locator('[role="dialog"] input').first().fill('boş');
-    const repoInput = emptyPage.locator('[role="dialog"] input[placeholder="yerel repo yolu"]');
-    await repoInput.fill(wsRepo);
-    await emptyPage.getByRole('button', { name: 'Ekle', exact: true }).click();
+    const dlg = emptyPage.locator('[role="dialog"]');
+    // WO-0033: an empty submit is refused UNDER the field it failed on, and focus follows (AC 6)
+    await emptyPage.getByRole('button', { name: 'Oluştur', exact: true }).click();
     await emptyPage.waitForTimeout(250);
+    assert.ok((await dlg.getByText('Ad gerekli.').count()) >= 1, 'no name error under the Ad field');
+    assert.ok((await dlg.locator('[role="alert"]').count()) >= 1, 'the error line does not announce');
+    assert.equal(
+      await emptyPage.evaluate(() => document.activeElement?.tagName),
+      'INPUT',
+      'a failed submit did not focus the first invalid field',
+    );
+    await dlg.locator('input').first().fill('boş');
+    // an invalid typed path keeps its line under the add row — no row, no toast (§0's ruling)
+    const repoInput = dlg.locator('input[placeholder="yerel depo yolu"]');
+    await repoInput.fill('apps/web');
+    await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
+    await emptyPage.waitForTimeout(250);
+    assert.ok((await dlg.getByText('Tam yol değil — / ile başlamalı.').count()) >= 1, 'no invalid-path line under the add row');
+    assert.equal(await dlg.locator('div[title^="/"]').count(), 0, 'an invalid path became a row');
+    // a valid row lands; a ✎ that breaks the path keeps the editor + its line (nothing typed is lost)
+    await repoInput.fill(wsRepo);
+    await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
+    await emptyPage.waitForTimeout(250);
+    assert.ok((await dlg.locator(`div[title="${wsRepo}"]`).count()) >= 1, 'the valid row did not land');
+    await dlg.getByRole('button', { name: 'Depo yolunu düzenle' }).click();
+    await emptyPage.waitForTimeout(250);
+    const editor = dlg.locator('input.font-mono:not([placeholder])');
+    await editor.fill('apps/web');
+    await editor.press('Enter');
+    await emptyPage.waitForTimeout(300);
+    assert.ok((await dlg.getByText('Tam yol değil — / ile başlamalı.').count()) >= 1, 'no row-level invalid line');
+    assert.equal(await editor.count(), 1, 'a failed create-mode commit closed the editor');
+    await emptyPage.screenshot({ path: join(SHOTS, 'ws-create-errors@980.png') });
+    await editor.press('Escape');
+    await emptyPage.waitForTimeout(250);
+    // removal empties the ledger; Oluştur with a valid draft ABSORBS it before validation (AC 6)
+    await dlg.getByRole('button', { name: 'Depoyu kaldır' }).first().click();
+    await emptyPage.waitForTimeout(250);
+    assert.ok((await dlg.getByText('Henüz depo yok.').count()) >= 1, 'no empty-ledger line');
+    await repoInput.fill(wsRepo);
     await emptyPage.getByRole('button', { name: 'Oluştur', exact: true }).click();
     await emptyPage.waitForTimeout(800);
     // the zero-WO board is the SAME hero with the work-order CTA — no buckets, no drawer, no dashed boxes

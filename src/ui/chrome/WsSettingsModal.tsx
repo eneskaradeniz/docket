@@ -319,6 +319,14 @@ export function WsSettingsModal({
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={mode === 'create' ? UI.wsCreate : UI.wsSettings}
       closeAria={UI.dialogCloseAria}
+      // An open path editor swallows the ESC (revert it, keep the dialog) — Radix hears ESC on the
+      // document in capture, so this hook is the only place the close can be refused.
+      onEscapeKeyDown={(e) => {
+        if (rows.some((r) => r.editing !== undefined)) {
+          e.preventDefault();
+          setRows((prev) => prev.map((r) => ({ ...r, editing: undefined, err: undefined })));
+        }
+      }}
       footer={
         <>
           <div className="mr-auto flex items-center gap-2">
@@ -396,11 +404,6 @@ export function WsSettingsModal({
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             void commitPath(row, row.editing ?? '');
-                          } else if (e.key === 'Escape') {
-                            // Revert without closing the dialog (stop the ESC reaching Radix).
-                            e.stopPropagation();
-                            e.preventDefault();
-                            patchRow(row.name, { editing: undefined, err: undefined });
                           }
                         }}
                         onBlur={() => void commitPath(row, row.editing ?? '')}
