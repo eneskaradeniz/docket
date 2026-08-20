@@ -3,7 +3,8 @@
 // directly. Run via `npm run cli -- <command> ...` (tsx). This is what lets the pipeline run without Electron,
 // without a human at the keyboard for permission asks, and — with `--fake` — without SDK cost.
 //
-// Commands are primitives (`drive` / `approve-plan` / `close` / `doctor` / `ls` / `show`, plus the
+// Commands are primitives (`drive` / `approve-plan` / `close` / `remove-workspace` / `doctor` / `ls` /
+// `show`, plus the
 // bootstrap pair `create-workspace` / `create-work-order` — TD-032's first half: with them the CLI spans
 // workspace → WO → drive end-to-end, GUI never opened); a whole-WO run is sequenced by the caller (a test
 // or shell script). The reusable, testable cores live in ./drive.ts and ./create.ts; this file is I/O +
@@ -137,6 +138,37 @@ async function closeCommand(woIdArg: string | undefined, opts: Record<string, st
   return 0;
 }
 
+// WO-0032: the destructive workspace delete. `--yes` is the CLI's confirm dialog — without it the
+// command refuses, naming the blast radius; with it the store cascade runs (rows + the Docket-authored
+// decision-store dirs). The store's running-session guard still applies either way.
+async function removeWorkspaceCommand(arg: string | undefined, opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  if (!arg) {
+    process.stderr.write('usage: remove-workspace <id-or-label> [--yes]\n');
+    return 2;
+  }
+  const workspaces = await store.getWorkspaces();
+  // id (slug) first, label as the friendly spelling — the create-work-order resolution.
+  const ws = workspaces.find((w) => w.id === arg) ?? workspaces.find((w) => w.label === arg);
+  if (!ws) {
+    const known = workspaces.map((w) => `${w.id} (${w.label})`).join(', ') || 'none yet — run create-workspace first';
+    process.stderr.write(`✗ no workspace "${arg}" — known: ${known}\n`);
+    return 1;
+  }
+  const n = (await store.getWorkOrders()).filter((w) => w.workspace === ws.id).length;
+  if (opts.yes !== true) {
+    process.stderr.write(`refusing: would delete workspace ${ws.id} (${ws.label}) and its ${n} work order(s) — DB rows + decision-store folders. Pass --yes to delete.\n`);
+    return 2;
+  }
+  try {
+    await store.deleteWorkspace(ws.id);
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+  process.stdout.write(`deleted workspace ${ws.id} (${ws.label}) — ${n} work order(s) cascaded (rows + decision-store folders)\n`);
+  return 0;
+}
+
 // --- bootstrap commands (WO-0024 / TD-032): the mappers in ./create.ts shape argv (pure); these
 //     handlers own the store + identity side — branding (rid) and the data-dependent resolutions the
 //     mappers can't do: --workspace by id then label, --track slugs against the workspace's repos. ---
@@ -251,6 +283,7 @@ const HELP_TEXT =
   '          [--policy auto|ask] [--format stream|jsonl|quiet] [--approve-plan auto] [--resume SID]\n' +
   '  approve-plan <woId>                      approve the pending plan\n' +
   '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
+  '  remove-workspace <id-or-label> [--yes]   delete a workspace + its WOs (refuses without --yes)\n' +
   '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +
   '  ls                                       list work orders\n' +
   '  show <woId>                              show a work order + its steps\n' +
@@ -296,6 +329,7 @@ export async function main(argv: string[]): Promise<number> {
     case 'drive': return await driveCommand(positional[1], opts, store!);
     case 'approve-plan': return await approvePlanCommand(positional[1], store!);
     case 'close': return await closeCommand(positional[1], opts, store!);
+    case 'remove-workspace': return await removeWorkspaceCommand(positional[1], opts, store!);
     case 'doctor': return await doctorCommand(opts, dbPath, store);
     case 'ls': return await lsCommand(store!);
     case 'show': return await showCommand(positional[1], store!);
