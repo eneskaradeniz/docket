@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInput } from '../../../core/runner';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
-import { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { Button, Segmented, Textarea } from '../../kit';
 import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
@@ -26,6 +26,7 @@ export function SessionPane({
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
 }) {
+  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
   const store: DriveStore = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store, NOT this pane — navigating away keeps the
   // session running in the background; a remounted pane re-binds to the live fold state instantly.
@@ -157,8 +158,8 @@ export function SessionPane({
         <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}
 
-      {state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError} />
+      {state.status === 'error' || state.lastError ? (
+        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
       ) : null}
     </PaneShell>
   );

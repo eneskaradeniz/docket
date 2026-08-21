@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace, WorkspaceId } from '../../core/types';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Tooltip } from '../kit';
 
 const MAX_WS = 4;
@@ -20,6 +20,7 @@ export function WorkspaceSwitcher({
   onCreate: () => void;
   onOpenList: () => void;
 }) {
+  const { UI } = useLabels();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

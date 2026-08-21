@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { SimplePhase } from '../../../core/runner';
 import { cn } from '../../kit';
-import { UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 // --- lamp semantics: one color per state, amber only for "seni bekliyor" ---
 export type LampTone = 'idle' | 'signal' | 'run' | 'done' | 'error';
@@ -54,6 +54,7 @@ export function PhaseLine({ phase, label }: { phase: SimplePhase; label: string 
 // --- F7 (WO-0031f): the running-empty stream line — a session that started but wrote nothing yet
 //     says so; a blank terminal answers nothing. Leaves with the first transcript entry. ---
 export function StreamLine() {
+  const { UI } = useLabels();
   return (
     <p data-stream-line="" className="streamline">
       <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" />

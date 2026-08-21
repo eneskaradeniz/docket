@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TranscriptLine } from '../../../core/runner';
 import { formatTranscriptLine } from '../../../core/transcript-format';
-import { toolLabel, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 // xterm paints its own canvas and does NOT inherit CSS, so the terminal theme must be read from the app's
 // CSS tokens at construction (and re-read on a light/dark toggle). Values mirror src/index.css @theme; the
@@ -47,6 +47,7 @@ export function Terminal({
   /** WO-0031f v6: the in-row form of the active step's spine row — a shorter floor (120px vs 220px). */
   compact?: boolean;
 }) {
+  const { toolLabel, UI } = useLabels();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const writtenCountRef = useRef(0);
@@ -147,7 +148,7 @@ export function Terminal({
         pulseTimerRef.current = null;
       }
     };
-  }, [entries, resetKey]);
+  }, [entries, resetKey, toolLabel, UI]);
 
   return (
     <div className={compact ? 'h-full min-h-[120px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5' : 'h-full min-h-[220px] w-full flex-1 overflow-hidden rounded-md border border-hairline bg-bg p-1.5'}>

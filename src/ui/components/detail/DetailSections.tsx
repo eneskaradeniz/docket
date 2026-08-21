@@ -16,7 +16,7 @@
 import type { ReactNode } from 'react';
 import { parsePlanSteps, splitStepsFence } from '../../../core/plan-steps';
 import type { StepSpec, TrackId, WorkOrderDetailView } from '../../../core/types';
-import { UI } from '../../data/labels';
+import type { Labels } from '../../data/labels';
 import { AuditTable } from './AuditTable';
 import { EvidencePanel } from './EvidencePanel';
 import { RoleChip } from './RoleChip';
@@ -45,12 +45,17 @@ function PlanStepsSummary({ steps }: { steps: StepSpec[] }) {
   );
 }
 
+// WO-0035: this is a plain builder, not a component — the words arrive as a parameter (the caller's
+// useLabels() destructure), because a hook inside a useMemo callback would reorder hooks and go stale
+// on a locale switch. `UI` rides the args; the body reads it exactly as before.
 export function buildRecordSections({
   detail,
   docs,
+  UI,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
+  UI: Labels['UI'];
 }): DetailSection[] {
   const sections: DetailSection[] = [];
   const repoByTrack = new Map<TrackId, string>(detail.tracks.map((ln) => [ln.track.id, ln.track.repo as string]));

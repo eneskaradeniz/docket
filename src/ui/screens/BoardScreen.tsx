@@ -1,5 +1,5 @@
 import type { WorkOrderCardView, WorkOrderId } from '../../core/types';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Board } from '../components/board/Board';
 import { InviteHero } from '../components/InviteHero';
 
@@ -16,6 +16,7 @@ export function BoardScreen({
   onSelect: (id: WorkOrderId) => void;
   onNewWorkOrder: () => void;
 }) {
+  const { UI } = useLabels();
   return (
     <main className="mx-auto w-full max-w-[840px] px-5 py-5">
       {cards.length ? (

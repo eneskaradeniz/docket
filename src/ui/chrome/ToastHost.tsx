@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../kit';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 
 export interface ToastItem {
   id: number;
@@ -46,6 +46,7 @@ export const toast = {
 };
 
 export function ToastHost() {
+  const { UI } = useLabels();
   const [items, setItems] = useState<ToastItem[]>(toasts);
   useEffect(() => {
     listeners.add(setItems);

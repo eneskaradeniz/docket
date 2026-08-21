@@ -82,8 +82,11 @@ export function createDriveStore(runner: SessionRunner) {
           notify();
         }
       } catch {
+        // WO-0035: the crash is identified structurally, never by a string — the fold's error events
+        // always carry a message (+code when classified), so `status === 'error' && !lastErrorCode &&
+        // !lastError` is this catch path alone; the panes render UI.driveStreamCrashed for that shape.
         const cur = drives.get(key);
-        if (cur) drives.set(key, { ...cur, state: { ...cur.state, status: 'error', lastError: 'drive failed' } });
+        if (cur) drives.set(key, { ...cur, state: { ...cur.state, status: 'error' } });
         onError?.(key);
         notify();
       } finally {

@@ -4,12 +4,11 @@ import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../.
 import type { SessionRunner } from '../../core/runner';
 import { toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
-import { UI, woIdLabel } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { AppShell } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
-import { AppSettingsModal } from '../chrome/AppSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { InviteHero } from '../components/InviteHero';
@@ -26,6 +25,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 // in-flight/failed case. The runner is provided via context for the session pane.
 export function App({ source, settings, runner }: { source: WorkOrderSource;
   settings: AppSettings; runner: SessionRunner }) {
+  const { UI, woIdLabel } = useLabels();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [load, setLoad] = useState<LoadState>('loading');
@@ -37,7 +37,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const [detailError, setDetailError] = useState(false); // B3: a failed detail load must not render as loading (WO-0026)
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [wsCreateOpen, setWsCreateOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -336,13 +335,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         toast.push({ kind: 'error', title: UI.toastErrTitle(woIdLabel(wo)) });
       }
     };
-  }, [driveStore, refreshWorkOrders]);
+  }, [driveStore, refreshWorkOrders, UI, woIdLabel]);
 
   // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator.
   useEffect(() => {
     const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking')).length;
     document.title = waiting > 0 ? UI.titlePending(waiting) : UI.productName;
-  }, [workOrders]);
+  }, [workOrders, UI]);
 
   return (
     <ViewModeProvider>
@@ -372,7 +371,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
           onSaved={refreshWorkspaces}
         />
       ) : null}
-      {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
       </DriveStoreContext.Provider>
     </ViewModeProvider>
   );

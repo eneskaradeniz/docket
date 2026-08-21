@@ -2,7 +2,7 @@
 // family). Shared by the approval cards and the Belgeler step summary (WO-0031d tur-2: extracted
 // from PlanApprovalCards when the docs view adopted the card language too).
 import type { SessionRole } from '../../../core/types';
-import { ROLE_LABELS } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';
 
 const ROLE_CHIP: Record<SessionRole, string> = {
@@ -12,6 +12,7 @@ const ROLE_CHIP: Record<SessionRole, string> = {
 };
 
 export function RoleChip({ role, className }: { role: SessionRole; className?: string }) {
+  const { ROLE_LABELS } = useLabels();
   return (
     <span
       className={cn(

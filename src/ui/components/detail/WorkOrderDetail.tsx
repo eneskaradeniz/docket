@@ -6,7 +6,7 @@ import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
@@ -73,6 +73,7 @@ export function WorkOrderDetail({
   onDelete: () => Promise<void>;
   autoRequestPlan?: boolean;
 }) {
+  const { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
   // and when it completes the next pending step runs automatically — the operator does NOT click each step
   // (review_mode gates = autonomous between steps; the operator engages at plan approval, revisions, merge).
@@ -494,7 +495,7 @@ export function WorkOrderDetail({
     handleTabChange('flow');
   };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
-  const recordSections = useMemo(() => buildRecordSections({ detail, docs }), [detail, docs]);
+  const recordSections = useMemo(() => buildRecordSections({ detail, docs, UI }), [detail, docs, UI]);
   // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
   const toggleReport = (step: StepView): void => {
     setReportStep((cur) => (cur?.idx === step.idx ? undefined : step));
@@ -554,7 +555,7 @@ export function WorkOrderDetail({
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
         <div className="min-w-0 flex-1 px-3.5 py-3">
-          <p className="readout text-error">{state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : UI.failTitle}</p>
+          <p className="readout text-error">{state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError ? UI.failTitle : UI.driveStreamCrashed}</p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.failSpent(state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0))}</p>
           <div className="mt-1.5 flex items-center gap-3">
             <button type="button" className="alink text-[11px]" onClick={() => setFailDetailOpen((o) => !o)}>

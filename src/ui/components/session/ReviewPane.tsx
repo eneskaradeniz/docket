@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { initialSessionState, simplePhaseFromState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
-import { PROVIDER_ERROR_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { PaneError, PaneShell, PhaseLine } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
 import { Terminal } from './Terminal';
@@ -19,6 +19,7 @@ export function ReviewPane({
   step: StepView;
   workOrderId: WorkOrderId;
 }) {
+  const { PROVIDER_ERROR_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: review drives live in the app-level store like every other drive — the pane is
   // just a window onto them; the store's onEnd refreshes the detail when the review completes.
@@ -55,8 +56,8 @@ export function ReviewPane({
         )
       ) : null}
 
-      {state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError} />
+      {state.status === 'error' || state.lastError ? (
+        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
       ) : null}
     </PaneShell>
   );

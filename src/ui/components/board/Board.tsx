@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkOrderCardView } from '../../../core/types';
 import { Button } from '../../kit';
-import { BUCKET_LABELS, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { ClosedToggle } from './ClosedToggle';
 import { WorkOrderCard } from './WorkOrderCard';
 
@@ -30,6 +30,7 @@ export function Board({
   /** T2: opens the create modal from the all-done platform line (absent elsewhere). */
   onNewWorkOrder: () => void;
 }) {
+  const { BUCKET_LABELS, UI } = useLabels();
   const up = cards.filter((c) => c.bucket === 'up').sort((a, b) => a.actionRank - b.actionRank);
   const working = cards.filter((c) => c.bucket === 'working');
   const closed = cards.filter((c) => c.bucket === 'closed');

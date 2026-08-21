@@ -7,7 +7,7 @@ import { Plus, Settings2 } from 'lucide-react';
 import type { Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import type { AppSettings } from '../../core/app-settings';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Button, Tooltip } from '../kit';
 import { AppSettingsModal } from './AppSettingsModal';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -42,6 +42,7 @@ export function AppShell({
   /** WO-0032: any live drive in the workspace — gates the Sil entry (ADR-0001: absent + reason). */
   wsDriveLive: (id: WorkspaceId) => boolean;
 }) {
+  const { UI } = useLabels();
   const [settingsOpen, setSettingsOpen] = useState(false);
   // WO-0032: 'delete' is the confirm that renders OVER 'edit' (the WO dialogs' pattern — the
   // invoker stays mounted, Vazgeç returns to it with edits intact); only a successful delete

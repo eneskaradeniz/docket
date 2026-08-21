@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, Settings2 } from 'lucide-react';
 import type { Workspace, WorkspaceId } from '../../core/types';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Button, Dialog, Input, Tooltip } from '../kit';
 
 export function WsListModal({
@@ -19,6 +19,7 @@ export function WsListModal({
   onCreate: () => void;
   onClose: () => void;
 }) {
+  const { UI } = useLabels();
   const [q, setQ] = useState('');
   const filtered = workspaces.filter((w) => w.label.toLowerCase().includes(q.toLowerCase()));
   return (

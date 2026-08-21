@@ -12,15 +12,7 @@ import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import { Badge, Button, Dialog, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
-import {
-  formatUsd,
-  PERMISSION_RULE_SHORT,
-  PERMISSION_RULE_TINY,
-  phaseLabelText,
-  STAGE_LABELS,
-  UI,
-  woIdLabel,
-} from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import type { ViewMode } from '../../data/view-mode';
 import type { LampTone } from '../session/pane-chrome';
 import { lampClass } from '../session/pane-chrome';
@@ -63,6 +55,7 @@ export function DetailStrip({
   permissionRule: PermissionRule;
   onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
 }) {
+  const { formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
   const tone = PHASE_KIND_TONE[phase.kind];
   const anyCost = detail.sessions.some((s) => s.cost);
   const breathe = tone === 'signal';

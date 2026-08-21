@@ -17,7 +17,7 @@
 import type { ReactNode } from 'react';
 import { useDetailLayout } from './useDetailLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../kit';
-import { UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 export function DetailBody({
   viewMode,
@@ -44,6 +44,7 @@ export function DetailBody({
   /** A closed WO — one column, the record IS the body (v6 §03). */
   archive?: boolean;
 }) {
+  const { UI } = useLabels();
   const layout = useDetailLayout();
 
   if (archive) {

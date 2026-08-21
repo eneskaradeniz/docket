@@ -6,19 +6,11 @@
 // in one breath; the middle never sits empty while a focus exists). SADE keeps the calm line — the
 // standing "esc geri" hint stays gone (hints are never standing text, ADR-0012 r5).
 import type { TurnState } from '../../../core/derive';
-import { UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';
 import type { LampTone } from '../session/pane-chrome';
 import { lampClass } from '../session/pane-chrome';
 import { useViewMode } from '../../data/view-mode';
-
-const TURN_LABEL: Record<TurnState, string> = {
-  yours: UI.turnYours,
-  running: UI.turnRunning,
-  stopped: UI.turnStopped,
-  retry: UI.turnRetry,
-  done: UI.turnDone,
-};
 
 const TURN_TONE: Record<TurnState, LampTone> = {
   yours: 'signal',
@@ -67,6 +59,15 @@ export function Substrip({
   /** The segments are a JUMP control (tur-2 A7): DETAY + the Akış surface + scroll to it. */
   onJump?: () => void;
 }) {
+  const { UI } = useLabels();
+  // WO-0035: moved inside — the turn words read the hook's UI, so they re-localize with the locale.
+  const TURN_LABEL: Record<TurnState, string> = {
+    yours: UI.turnYours,
+    running: UI.turnRunning,
+    stopped: UI.turnStopped,
+    retry: UI.turnRetry,
+    done: UI.turnDone,
+  };
   const { mode: viewMode } = useViewMode();
   const tone = TURN_TONE[turn];
   const band = viewMode === 'detail';

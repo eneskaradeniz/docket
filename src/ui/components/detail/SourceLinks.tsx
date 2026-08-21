@@ -1,8 +1,9 @@
 import type { SourceLink } from '../../../core/types';
-import { SOURCE_KIND_LABELS, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 // Referenced documents are links only (ccd463e). Non-functional in the prototype; they point at git.
 export function SourceLinks({ sources }: { sources: SourceLink[] }) {
+  const { SOURCE_KIND_LABELS, UI } = useLabels();
   return (
     <section>
       <h2 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.sources}</h2>

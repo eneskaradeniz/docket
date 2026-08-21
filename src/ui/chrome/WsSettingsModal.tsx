@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BookMarked, FolderOpen, Pencil, Plus, X } from 'lucide-react';
 import type { RepoId, Workspace } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
-import { UI, woIdLabel } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Tooltip } from '../kit';
 
 const base = (p: string): string => {
@@ -49,6 +49,7 @@ export function WsSettingsModal({
   /** WO-0032: a live drive in this workspace — the Sil entry is absent with the reason (ADR-0001). */
   driveLive?: boolean;
 }) {
+  const { UI, woIdLabel } = useLabels();
   const [name, setName] = useState(workspace?.label ?? '');
   // Edit mode seeds from the definition (basename order); paths arrive from repoConnections on
   // mount. The prop snapshot goes stale the moment a per-action mutation lands — rows are the
