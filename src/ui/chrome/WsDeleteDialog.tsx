@@ -4,10 +4,10 @@
 // any row — nothing was deleted). Rendered OVER the settings modal that invoked it (stacked — the
 // parent recedes behind this overlay; narrow — a focused yes/no, centered, never offset), the WO
 // dialogs' pattern: Vazgeç (or Esc/overlay) returns to that modal with its edits intact; only a
-// successful delete closes both. All copy via labels.ts (ADR-0007).
+// successful delete closes both. All copy via the locale bundles (ADR-0007).
 import { useState } from 'react';
 import type { Workspace } from '../../core/types';
-import { UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Button, Dialog } from '../kit';
 
 export function WsDeleteDialog({
@@ -25,6 +25,7 @@ export function WsDeleteDialog({
   /** The delete succeeded: the workspace is gone, so BOTH dialogs close (AppShell decides). */
   onDeleted: () => void;
 }) {
+  const { UI } = useLabels();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
 

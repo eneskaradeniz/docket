@@ -296,9 +296,16 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 Presentation-only, no domain change. Cheap because ADR-0006 kept `core` free of display strings and
 WO-0002 routed all copy through `labels.ts`.
 
-- [ ] Locale `en` / `tr`, keyed labels, `en` fallback, preference persisted (ADR-0007)
-- [ ] Theme light / dark / system via semantic tokens, preference persisted (ADR-0007)
-- [ ] Lint rule against hardcoded strings and literal colours in components
+- [x] Locale `en` / `tr`, keyed labels, `en` fallback, preference persisted (ADR-0007) — delivered
+  early as WO-0035 (2026-08-21, pulled ahead of M3 by the operator): per-locale bundles in
+  `src/ui/data/labels/` read via `useLabels()`, the runtime en-fallback clause superseded by
+  compile-time completeness (`const en: Labels`), a fresh install detects the system language, the
+  stored choice wins.
+- [ ] Theme light / dark / system via semantic tokens, preference persisted (ADR-0007) — DEAD by the
+  dark-only ruling (ADR-0012, `src/index.css`); kept visible with this note rather than silently
+  deleted.
+- [ ] Lint rule against hardcoded strings and literal colours in components — WO-0035's share
+  (compiler-driven bundle completeness) landed; the grep itself remains open.
 
 ## M4 — Second workspace
 

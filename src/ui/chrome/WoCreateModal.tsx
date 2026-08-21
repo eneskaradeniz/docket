@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
-import { PERMISSION_RULE_LABELS, UI } from '../data/labels';
+import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
 
 const base = (p: string): string => {
@@ -31,6 +31,7 @@ export function WoCreateModal({
   /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
   onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
 }) {
+  const { PERMISSION_RULE_LABELS, UI } = useLabels();
   // PRODUCT.md §Decisions 6: the decision store is a workspace setting, not a track. For a multi-repo
   // workspace the dedicated decision-store repo is excluded; a single-repo workspace keeps its repo
   // (it serves both roles). Tracks are code repos only.

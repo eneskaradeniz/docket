@@ -1,6 +1,6 @@
 import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
 import { Badge, cn } from '../../kit';
-import { cardActionText, cardReasonText, formatCost, STAGE_LABELS, UI, woIdLabel } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 // The dispatch card (WO-0031 "Kontrol Konsolu"): a 3px signal lamp on the left edge — amber breathing
 // when the operator is needed, info pulse while a session runs, steady green when closed — over a calm
@@ -24,6 +24,7 @@ export function WorkOrderCard({
   onSelect: () => void;
   quiet?: boolean;
 }) {
+  const { cardActionText, cardReasonText, formatCost, STAGE_LABELS, UI, woIdLabel } = useLabels();
   return (
     <button
       type="button"

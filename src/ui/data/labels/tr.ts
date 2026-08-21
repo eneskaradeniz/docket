@@ -1,6 +1,9 @@
-// Tüm sabit arayüz metni burada (AC1: bileşenlerde gömlü metin yok).
-// Domain enum'ları görüntü dizgelerine eşlenir; dinamik parçalar (kontrol adı, kapı) veriden gelir.
-// ADR-0007: arayüz dili Türkçe'dir (WO-0013). en/tr seçici M3.5'te gelir.
+// src/ui/data/labels/tr.ts — the TURKISH bundle (WO-0035). Tüm sabit arayüz metni burada (AC1:
+// bileşenlerde gömlü metin yok); en.ts bu dosyadan türeyen Labels tipini sağlamak zorunda — eksik
+// anahtar derleme hatasıdır (ADR-0007'in "eksik anahtar için en fallback" maddesi tip sistemiyle
+// karşılanır). Domain enum'ları görüntü dizgelerine eşlenir; dinamik parçalar (kontrol adı, kapı)
+// veriden gelir. Yerel-arayüzden bağımsız glifler (✓ ► ⊘) marks.ts'tedir.
+// ADR-0007: arayüz dili Türkçe'dir (WO-0013); en/tr seçici WO-0035 ile geldi.
 import type {
   AbsentReason,
   ActionIntent,
@@ -16,12 +19,12 @@ import type {
   StageId,
   WorkOrderId,
   WoEventKind,
-} from '../../core/types';
-import type { LiveSessionStatus, SimplePhase } from '../../core/runner';
-import type { TranscriptLine } from '../../core/types';
-import type { PermissionRule } from '../../core/source';
-import type { WoPhase } from '../../core/derive';
-import type { ProviderErrorCode } from '../../core/runner';
+  TranscriptLine,
+} from '../../../core/types';
+import type { LiveSessionStatus, SimplePhase } from '../../../core/runner';
+import type { PermissionRule } from '../../../core/source';
+import type { WoPhase } from '../../../core/derive';
+import type { ProviderErrorCode } from '../../../core/runner';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 // Yeni iki kovalı tahta (WO-0013).
@@ -121,19 +124,12 @@ export function cardActionText(a: CardAction): string {
 // AC1 (return-pass): track aşaması, oturum durumu, mod ve kaynak türü için görüntü eşlemeleri +
 // bunları tümceye çeviren besteciler. Bunlarla hiçbir bileşen bir kod tanımlayıcıyı `.replace` ile
 // arayüz metnine çevirmez; bir çevirmenin dokunacağı her kelime burada.
-// Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘).
+// Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘ — işaretçiler marks.ts'te).
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   pending: 'Bekliyor',
   active: 'Çalışıyor',
   done: 'Tamam',
   blocked: 'Engelli',
-};
-
-export const STEP_MARK: Record<StepStatus, string> = {
-  done: '✓',
-  active: '►',
-  pending: '○',
-  blocked: '⊘',
 };
 
 // WO-0008: canlı oturum durumu (runner olay katlaması), yukarıdaki fixture SessionRef durumundan
@@ -226,7 +222,7 @@ export function stoppedAtGate(gate: string): string {
   return `durdu · ${gate}`;
 }
 
-// tr-TR ondalık ayraç (virgül) — mock'taki "$0,94" ile uyumlu.
+// tr-TR ondalık ayraç (virgül) — mock'taki "$0,94" ile uyumlu. en.ts 'en-US' ister (nokta).
 export function formatUsd(usd: number): string {
   const n = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd);
   return `$${n}`;
@@ -336,6 +332,8 @@ const ASKING_ROLE: Record<SessionRole, string> = {
 };
 
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.
+// WO-0035: as const BİLİNÇLİ olarak yok — literal özellik tipleri en.ts'i atanamaz yapardı; Labels
+// bu objeden türer (string + doğal fonksiyon imzaları).
 export const UI = {
   productName: 'Docket',
   backToBoard: '← İş emirleri',
@@ -660,6 +658,9 @@ export const UI = {
   railForceKill: 'Zorla kes',
   railStoppedMsg: 'Durduruldu. Rapor kısmi kalır.',
   failTitle: 'Oturum çöktü',
+  // WO-0035 — akış kopması (kod/ham mesaj taşımayan tek hata yolu; drive-store'daki dizgi silindi,
+  // durum yapısal: status==='error' && lastErrorCode yok && lastError yok → bu satır).
+  driveStreamCrashed: 'Akış koptu — kayıt korundu.',
   failSpent: (cost: string) => `Harcanan: ${cost} — kayıt korundu.`,
   failDetail: 'Ayrıntı',
   failCopy: 'Kopyala',
@@ -683,7 +684,7 @@ export const UI = {
   wsDeleteConfirm: 'Evet, sil',
   wsDeleteFailed: 'Silinemedi — önce oturumu durdur.',
   wsDeleteGateReason: 'önce oturumu durdur',
-} as const;
+};
 
 // WO-level faz etiketi — derivePhase çıktısını görüntü dizgesine çevirir (WO-0021). Faz birincil yüzey;
 // 9-aşama rayı ikincil ("Akışı göster" arkasında).
@@ -706,8 +707,44 @@ export function phaseLabelText(p: WoPhase): string {
   }
 }
 
-// Mimar karar işareti — done adımın yanında (WO-0020).
-export const VERDICT_MARK: Record<'proceed' | 'revise', string> = {
-  proceed: '✓',
-  revise: '↻',
+// Türkçe demet (WO-0035): bu modülün tüm görüntü üyeleri tek objede. Labels TÜRÜ bu demetten türer;
+// en.ts onu sağlamak zorunda — eksik anahtar derleme hatası. Yeni bir görüntü üyesi eklendiğinde
+// hem buraya hem en.ts'e girer (derleyici hatırlatır).
+const tr = {
+  UI,
+  BUCKET_LABELS,
+  ROLE_LABELS,
+  STAGE_LABELS,
+  EVIDENCE_LABELS,
+  ACTION_LABELS,
+  ABSENT_REASON_LABELS,
+  CARD_ACTION_AREA,
+  STEP_STATUS_LABELS,
+  LIVE_STATUS_LABELS,
+  SIMPLE_PHASE_LABELS,
+  TOOL_LABELS,
+  MODE_LABELS,
+  SOURCE_KIND_LABELS,
+  PROVIDER_ERROR_LABELS,
+  WO_EVENT_LABELS,
+  PERMISSION_RULE_LABELS,
+  PERMISSION_RULE_SHORT,
+  PERMISSION_RULE_TINY,
+  cardReasonText,
+  cardActionText,
+  toolLabel,
+  transcriptLineText,
+  permissionPrompt,
+  modeText,
+  stoppedAtGate,
+  formatUsd,
+  formatTokens,
+  formatCost,
+  woIdLabel,
+  eventDetailText,
+  formatDateTime,
+  askingRole,
+  phaseLabelText,
 };
+export type Labels = typeof tr;
+export default tr;

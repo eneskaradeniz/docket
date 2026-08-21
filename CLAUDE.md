@@ -14,13 +14,14 @@ rule restated with its reasons in two places is the duplication this repository 
 - `src/core/` is written test-first. React components are not — they are verified by running them.
 
 ## Display text — ADR-0007
-- Components carry no display copy: all fixed UI vocabulary lives in `src/ui/data/labels.ts`.
+- Components carry no display copy: all fixed UI vocabulary lives in the per-locale bundles in
+  `src/ui/data/labels/` (`tr.ts` / `en.ts`), read through `useLabels()` — never a static word import.
 - A raw identifier is never rendered as display text. CI bans `.replace(` in `src/ui/` as a **proxy** for this
   rule: it catches only the `.replace(` shape and misses JSX interpolation (`{id}`), template literals,
   `String()`/`.toString()`, concatenation, and `.replaceAll(`. A legitimate `.replace(` in `ui/` is an
   architect decision, not a thing to work around.
-- The work-order number (`WO-NNNN`) is the one identifier permitted as display — rendered through `labels.ts`
-  (`woIdLabel`), never raw `{id}`. The carve-out lives in ADR-0007.
+- The work-order number (`WO-NNNN`) is the one identifier permitted as display — rendered through the
+  locale bundles (`woIdLabel`), never raw `{id}`. The carve-out lives in ADR-0007.
 
 ## Absent, not disabled — ADR-0001
 - An action whose evidence is unmet is absent, with a line stating why — never a disabled control. CI: no
@@ -57,7 +58,8 @@ rule restated with its reasons in two places is the duplication this repository 
   constructor call outside `src/adapters/`, and the pilot name `dateapp` appears nowhere in `core/` or `ui/`.
 
 ## English — ADR-0007
-- Code and repository documents are English. UI copy is English.
+- Code and repository documents are English. UI copy is Turkish by default with an en/tr selector
+  (ADR-0007, WO-0035); repository documents stay English regardless of UI locale.
 
 ## Where things live — ADR-0003, ADR-0001
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { StepView } from '../../../core/types';
-import { UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { Button } from '../../kit';
 import { MarkdownBody } from './MarkdownBody';
 
@@ -19,6 +19,7 @@ export function VerdictCard({
   onContinue: () => void;
   onRevise: () => void;
 }) {
+  const { UI } = useLabels();
   const [body, setBody] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;

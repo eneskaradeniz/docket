@@ -1013,6 +1013,12 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   await page.waitForTimeout(250);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
+  // WO-0035: the spec used to leave the Defter modal open (two Escapes were not always enough once
+  // the row/editor focus moved) — the leftover dialog aria-hides the appbar for later specs. Close
+  // for real and prove it.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the Defter spec left its dialog open');
 });
 
 await spec('empty DB: the real appbar + the invitation hero; workspace create → zero-WO hero', async () => {
@@ -1108,6 +1114,92 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     assert.deepEqual(emptyConsoleErrors, [], `empty-DB console errors: ${emptyConsoleErrors.join(' | ')}`);
   } finally {
     await emptyApp.close();
+  }
+});
+
+// ===== WO-0035 — locale specs =====
+// The suite DB is seeded locale='tr' (e2e/seed.ts) — the 37 specs above stay Turkish. These three
+// own the toggle, detection, and DB-beats-detection proof, and end back in tr.
+
+await spec('language toggle flips the UI instantly (tr → en → tr, WO-0035)', async () => {
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(350);
+  const dlg = page.locator('[role="dialog"]');
+  await dlg.getByRole('button', { name: 'English' }).click();
+  await page.waitForTimeout(400);
+  // the modal re-localizes itself, the html lang follows, and — without any restart — the board
+  // speaks EN: bucket headers, the tr-TR cost comma flipped to the en-US point, duration units.
+  // (Board texts are substring matches: the bucket header reads "Your turn N" and the card meta
+  // composites the cost — exact would never hit them.)
+  assert.ok((await dlg.getByText('Language', { exact: true }).count()) >= 1, 'the modal header did not flip');
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('lang')), 'en', 'html lang did not follow');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+  assert.ok((await page.getByText('Your turn').count()) >= 1, 'no EN up-bucket header');
+  assert.ok((await page.getByText('$6.27').count()) >= 1, 'the cost decimal did not flip to en-US');
+  assert.ok((await page.getByText('8m 0s').count()) >= 1, 'the duration units did not localize');
+  await page.screenshot({ path: join(SHOTS, 'board-en@980.png') });
+  // and back to tr — the gear itself now speaks EN
+  await page.locator('button[aria-label="Settings"]').click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"]').getByRole('button', { name: 'Türkçe' }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('lang')), 'tr', 'html lang did not return');
+  assert.ok((await page.getByText('Sıra sende').count()) >= 1, 'the tr bucket header did not return');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+});
+
+const locRoot = mkdtempSync(join(tmpdir(), 'docket-e2e-loc-'));
+const locDb = join(locRoot, 'loc.db');
+const launchLoc = (dbPath) => electron.launch({
+  args: [join(ROOT, 'dist-electron', 'main.js'), '--lang=tr'],
+  env: { ...process.env, DOCKET_DB_PATH: dbPath, DOCKET_E2E: '1', NODE_ENV: 'production' },
+});
+
+await spec('a fresh install with a tr system language boots tr (detection, WO-0035)', async () => {
+  // --lang=tr makes navigator.language tr; nothing is stored → the detected locale stands
+  const a = await launchLoc(locDb);
+  try {
+    const pa = await a.firstWindow();
+    await pa.waitForLoadState('domcontentloaded');
+    await pa.waitForTimeout(700);
+    assert.equal(await pa.evaluate(() => navigator.language.startsWith('tr')), true, 'the --lang switch did not reach the renderer');
+    assert.ok((await pa.getByText('Haydi ilk çalışma alanını oluşturalım').count()) >= 1, 'detection did not boot tr');
+    assert.equal(await pa.evaluate(() => document.documentElement.getAttribute('lang')), 'tr', 'html lang is not tr');
+    // pick English explicitly, then WIPE the localStorage mirror before closing — the next boot
+    // must prove the DB row, not the mirror
+    await pa.locator('button[aria-label="Ayarlar"]').click();
+    await pa.waitForTimeout(350);
+    await pa.locator('[role="dialog"]').getByRole('button', { name: 'English' }).click();
+    await pa.waitForTimeout(400);
+    await pa.evaluate(() => localStorage.clear());
+  } finally {
+    await a.close();
+  }
+});
+
+await spec('a stored DB choice beats detection — and the empty-DB hero speaks it (WO-0035)', async () => {
+  // same DB, fresh boot with an empty mirror and a tr system language: EN boots anyway — the row won
+  const b = await launchLoc(locDb);
+  try {
+    const pb = await b.firstWindow();
+    const locConsoleErrors = [];
+    pb.on('console', (msg) => {
+      if (msg.type() === 'error') locConsoleErrors.push(msg.text());
+    });
+    pb.on('pageerror', (err) => locConsoleErrors.push(String(err)));
+    await pb.waitForLoadState('domcontentloaded');
+    await pb.waitForTimeout(700);
+    assert.ok((await pb.getByText("Let's create your first workspace").count()) >= 1, 'the stored en row did not win over tr detection');
+    assert.equal(await pb.evaluate(() => document.documentElement.getAttribute('lang')), 'en', 'html lang is not en');
+    // the empty-DB hero in EN: one line, exactly one CTA, no tr leak
+    assert.equal(await pb.getByText('Haydi ilk çalışma alanını oluşturalım').count(), 0, 'a tr line leaked onto the EN hero');
+    assert.ok((await pb.getByRole('button', { name: 'New workspace', exact: true }).count()) === 1, 'not exactly one EN CTA');
+    await pb.screenshot({ path: join(SHOTS, 'empty-db-hero-en@980.png') });
+    assert.deepEqual(locConsoleErrors, [], `locale-app console errors: ${locConsoleErrors.join(' | ')}`);
+  } finally {
+    await b.close();
   }
 });
 

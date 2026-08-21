@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { AppSettings } from '../src/core/app-settings';
+import type { AppSettings, Locale } from '../src/core/app-settings';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
@@ -52,6 +52,8 @@ const settings: AppSettings = {
   checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
   getPermissionRule: () => ipcRenderer.invoke('docket:settings:get-permission-rule'),
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
+  getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
+  setLocale: (locale: Locale): Promise<void> => ipcRenderer.invoke('docket:settings:set-locale', locale),
 };
 
 const runner = {

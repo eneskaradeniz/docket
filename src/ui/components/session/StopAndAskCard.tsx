@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FilePen, SquareTerminal } from 'lucide-react';
 import { summarizeToolInput } from '../../../core/runner';
 import { isRiskyPermission } from '../../../core/risky';
-import { permissionPrompt, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { Button, cn } from '../../kit';
 
 // The signal card (WO-0031b restyle; WO-0031c additions): a permission ask is THE amber moment — the
@@ -37,6 +37,7 @@ export function StopAndAskCard({
   /** WO-0031c: the diff peek loader for write tools — returns capped diff structure (or null). */
   diffPeek?: (filePath: string, newContent: string) => Promise<{ lines: Array<{ op: 'add' | 'del' | 'ctx'; text: string }>; truncated: number } | null>;
 }) {
+  const { permissionPrompt, UI } = useLabels();
   const detail = summarizeToolInput(input);
   const isShell = detail !== '' && !detail.includes('/');
   const risky = isRiskyPermission(tool, input);

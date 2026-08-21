@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
-import { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
 import { Terminal } from './Terminal';
 import { useViewMode } from '../../data/view-mode';
-import { formatUsd } from '../../data/labels';
 
 // The step session INSTRUMENT (WO-0017 → WO-0031c → WO-0031f). Drives ONE plan step through the
 // SessionRunner port — role/scope/stepIndex come from the step; main assembles the prompt server-side.
@@ -31,6 +30,7 @@ export function StepPane({
   /** The controller's one-second ticker (the strip's) — the live costline's elapsed reuses it. */
   now?: number;
 }) {
+  const { formatUsd, PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store — navigation keeps it running; this pane
   // re-binds to the LIVE fold state on remount, falling back to the persisted seed (F14) after a restart.
@@ -102,8 +102,8 @@ export function StepPane({
         ) : (
           <p className="text-xs text-inkdim">{UI.noSession}</p>
         )}
-        {state.lastError ? (
-          <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError} />
+        {state.status === 'error' || state.lastError ? (
+          <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
         ) : null}
       </div>
     );
@@ -121,8 +121,8 @@ export function StepPane({
         <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}
 
-      {state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError} />
+      {state.status === 'error' || state.lastError ? (
+        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
       ) : null}
     </PaneShell>
   );

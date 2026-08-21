@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SessionRef, StepRole, StepView, WorkOrderId } from '../../../core/types';
-import { ROLE_LABELS, STEP_MARK, UI, VERDICT_MARK, formatUsd } from '../../data/labels';
+import { STEP_MARK, VERDICT_MARK } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';
 import { MarkdownBody } from './MarkdownBody';
 import { RoleChip } from './RoleChip';
@@ -44,6 +45,7 @@ export function StepList({
   /** The controller's one-second ticker — StepPane's live costline reuses it. */
   now?: number;
 }) {
+  const { ROLE_LABELS, STEP_STATUS_LABELS, UI, formatUsd } = useLabels();
   // A step's ⏱/$ sums ITS sessions (the run + the review of that step) — the ledger's summary form.
   const stepMeta = (idx: number): string | undefined => {
     const own = (sessions ?? []).filter((s) => s.stepIdx === idx);
@@ -117,7 +119,7 @@ export function StepList({
 
         const rowLine = (
           <>
-            <span className={`w-4 shrink-0 text-center ${tone}`} aria-label={s.status}>
+            <span className={`w-4 shrink-0 text-center ${tone}`} aria-label={STEP_STATUS_LABELS[s.status]}>
               {drewProceed ? (
                 <svg
                   key={flash?.n ?? 0}
@@ -226,6 +228,7 @@ function StepReportBody({
   clock?: string;
   loadReport: () => Promise<string>;
 }) {
+  const { UI } = useLabels();
   const [body, setBody] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;

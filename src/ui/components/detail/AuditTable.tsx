@@ -12,26 +12,27 @@ import { Fragment, useState } from 'react';
 import type { SessionAuditRow } from '../../../core/derive';
 import { deriveSessionAudit } from '../../../core/derive';
 import type { SessionRef, StepSpec } from '../../../core/types';
-import { formatUsd, transcriptLineText, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { RoleChip } from './RoleChip';
 
-function nameText(row: SessionAuditRow): string {
-  switch (row.name.kind) {
-    case 'plan':
-      return UI.auditNamePlan;
-    case 'step':
-      return UI.auditNameStep(row.name.idx, row.name.aim);
-    case 'review':
-      return UI.auditNameReview(row.name.idx);
-    case 'unscoped':
-      return UI.auditNameUnscoped;
-  }
-}
-
 export function AuditTable({ sessions, steps }: { sessions: SessionRef[]; steps?: StepSpec[] }) {
+  const { formatUsd, transcriptLineText, UI } = useLabels();
   const { rows, total } = deriveSessionAudit(sessions, steps);
   const [open, setOpen] = useState<number | null>(null);
   if (rows.length === 0) return null;
+  // WO-0035: moved inside — it reads the hook's UI, so it re-localizes with the locale.
+  function nameText(row: SessionAuditRow): string {
+    switch (row.name.kind) {
+      case 'plan':
+        return UI.auditNamePlan;
+      case 'step':
+        return UI.auditNameStep(row.name.idx, row.name.aim);
+      case 'review':
+        return UI.auditNameReview(row.name.idx);
+      case 'unscoped':
+        return UI.auditNameUnscoped;
+    }
+  }
   const range = (r: SessionAuditRow): string =>
     r.startedAt && r.endedAt ? UI.auditRange(r.startedAt, r.endedAt) : r.startedAt ? UI.auditClock(r.startedAt) : UI.auditCostNone;
   return (

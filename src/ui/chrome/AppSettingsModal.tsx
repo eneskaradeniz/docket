@@ -1,15 +1,18 @@
 // App settings (WO-0031 restyle on the kit Dialog): auth status + Test + the DEFAULT permission rule
-// (WO-0031c — each work order carries its own; this is only the default new ones start from) + language
-// placeholder + version. Theme is gone (dark-only); the stored-API-key field was removed at the
-// operator's request — auth rides the provider CLI login, which Test verifies.
+// (WO-0031c — each work order carries its own; this is only the default new ones start from) + the
+// language selector (WO-0035 — live: writes the stored row + the localStorage mirror) + version. Theme
+// is gone (dark-only); the stored-API-key field was removed at the operator's request — auth rides the
+// provider CLI login, which Test verifies.
 import { useEffect, useState } from 'react';
 import type { AppSettings, ProviderStatus } from '../../core/app-settings';
 import type { PermissionRule } from '../../core/source';
-import { PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS, UI } from '../data/labels';
+import { useLabels, useLocale } from '../data/locale';
 import { VERSION } from '../data/version';
 import { Button, Dialog, Segmented, Spinner } from '../kit';
 
 export function AppSettingsModal({ settings, onClose }: { settings: AppSettings; onClose: () => void }) {
+  const { UI, PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS } = useLabels();
+  const { locale, setLocale } = useLocale();
   // Auth status (WO-0025 / B1): the quick check on open tells the operator where auth stands before the
   // first "Plan iste" throws; Test re-runs the zero-token handshake on demand.
   const [rule, setRule] = useState<PermissionRule>('risky_excluded');
@@ -77,8 +80,8 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
             {UI.language}
           </span>
           <Segmented
-            value="tr"
-            onValueChange={() => undefined}
+            value={locale}
+            onValueChange={(l) => setLocale(l)}
             options={[
               { value: 'tr', label: UI.langTr },
               { value: 'en', label: UI.langEn },

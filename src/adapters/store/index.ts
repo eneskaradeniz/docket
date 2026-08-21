@@ -14,6 +14,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
+import type { Locale } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
@@ -60,6 +61,10 @@ export interface AppSettingsData {
   setProviderKey(key: string | undefined): Promise<void>;
   getPermissionRule(): Promise<PermissionRule>;
   setPermissionRule(rule: PermissionRule): Promise<void>;
+  /** The operator's explicit UI-locale choice (WO-0035): undefined = none stored — the renderer
+   *  detects the system language; only a deliberate pick reaches this row. */
+  getLocale(): Promise<Locale | undefined>;
+  setLocale(locale: Locale): Promise<void>;
   /** Resolve the EFFECTIVE rule for a drive (WO-0031c): the work order's own order.md rule when it
    *  carries one, else the Settings default (a pre-c2 work order has no key — its behavior follows the
    *  operator's default, with the legacy ask/auto values mapped). */
@@ -599,6 +604,13 @@ function settingPermissionRule(db: DatabaseSync): PermissionRule {
   return legacy === 'auto' ? 'risky_excluded' : 'ask_every';
 }
 
+// The operator's explicit UI locale (WO-0035): only a deliberate choice is stored — an absent or garbage
+// row reads undefined and the renderer falls back to system-language detection. No legacy mapping.
+function settingLocale(db: DatabaseSync): Locale | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('locale') as { value: string } | undefined)?.value;
+  return value === 'tr' || value === 'en' ? value : undefined;
+}
+
 // The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
 // Settings default. A pre-c2 work order (no key) follows the operator's default — behavior never jumps
 // just because the app learned about rules.
@@ -993,6 +1005,11 @@ export function createStore(dbPath: string): Store {
     getPermissionRule: () => Promise.resolve(settingPermissionRule(db)),
     setPermissionRule: (rule: PermissionRule) => {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_rule', rule);
+      return Promise.resolve();
+    },
+    getLocale: () => Promise.resolve(settingLocale(db)),
+    setLocale: (locale: Locale) => {
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('locale', locale);
       return Promise.resolve();
     },
     getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),

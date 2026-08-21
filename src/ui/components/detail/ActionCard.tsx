@@ -1,10 +1,11 @@
 import type { WorkOrderDetailView } from '../../../core/types';
-import { ABSENT_REASON_LABELS, ACTION_LABELS, CARD_ACTION_AREA, UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 
 // The prominent "what's needed" banner at the top of the detail (WO-0013). Read-only — the actual
 // controls (allow/deny, approve, …) live in SessionPane, wired to the runner; this just surfaces the
 // one thing that matters. No buttons ⇒ no `disabled` control (ADR-0001). (Buttons wiring = a TD.)
 export function ActionCard({ detail }: { detail: WorkOrderDetailView }) {
+  const { ABSENT_REASON_LABELS, ACTION_LABELS, CARD_ACTION_AREA, UI } = useLabels();
   const stopped = detail.sessions.find((s) => s.status === 'stopped_asking');
   const running = detail.sessions.some((s) => s.status === 'running');
   const primary = detail.primaryAction;

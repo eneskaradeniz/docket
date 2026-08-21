@@ -5,7 +5,7 @@
 // (min 1), + Adım ekle appends — the rail carries the change counter and the "düzenlenmiş onay".
 import { parsePlanSteps } from '../../../core/plan-steps';
 import type { StepSpec } from '../../../core/types';
-import { UI } from '../../data/labels';
+import { useLabels } from '../../data/locale';
 import { Tooltip } from '../../kit';
 import { RoleChip } from './RoleChip';
 
@@ -29,6 +29,7 @@ export function PlanApprovalCards({
   onRemove?: (idx: number) => void;
   onAdd?: () => void;
 }) {
+  const { UI } = useLabels();
   const specs = editing ? steps ?? [] : plan !== undefined ? parsePlanSteps(plan) : [];
   return (
     <section data-plan-cards="" className="rounded-md border border-hairline bg-surface p-3.5 shadow-sm">

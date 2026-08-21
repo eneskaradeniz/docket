@@ -13,6 +13,10 @@ export type ProviderStatus =
   | { ok: true; source: string }
   | { ok: false; code: ProviderErrorCode; message: string };
 
+/** The UI locale (WO-0035 / ADR-0007): a pure union carrying no display strings — the words live in the
+ *  per-locale bundles in src/ui/data/labels/, keyed by this type. */
+export type Locale = 'tr' | 'en';
+
 export interface AppSettings {
   /** The stored provider API key, if the operator saved one. Never logged. */
   getProviderKey(): Promise<string | undefined>;
@@ -24,6 +28,12 @@ export interface AppSettings {
    *  rule; scope is the boundary, the rule is cadence. */
   getPermissionRule(): Promise<PermissionRule>;
   setPermissionRule(rule: PermissionRule): Promise<void>;
+  /** The operator's EXPLICIT UI-locale choice, if any (WO-0035). undefined = no choice made: the
+   *  renderer falls back to system-language detection (operator ruling 2026-08-21). Detection is
+   *  presentation, so only a deliberate choice is persisted (ADR-0007: a property of the operator,
+   *  never of the project — this row, not workspace.yaml). */
+  getLocale(): Promise<Locale | undefined>;
+  setLocale(locale: Locale): Promise<void>;
   /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
   checkProvider(): Promise<ProviderStatus>;
 }
