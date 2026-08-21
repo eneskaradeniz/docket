@@ -250,4 +250,9 @@ const ws4 = await store.createWorkspace({
 await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 1', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
 await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 2', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
 
+// WO-0035: pin the suite's locale to tr. The default is system detection and Playwright's Electron
+// runs under en-US — without this row the app would boot EN and every Turkish locator would break.
+// The row is load-bearing for as long as detection is the default (order.md Notes).
+await store.setLocale('tr');
+
 console.log(`DB=${join(root, 'e2e.db')}`);
