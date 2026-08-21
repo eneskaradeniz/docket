@@ -43,8 +43,9 @@ rule restated with its reasons in two places is the duplication this repository 
 - Juice: transitions only (never mount), ≤400ms, reduced-motion off via the one CSS block, the cost
   counter never animates, SADE stays calm.
 - Form errors sit under their field (persistent while invalid, first-invalid focused on submit, `role="alert"`);
-  the footer line is save failures only; validity never locks a submit. Required-ness is marked the minority
-  way — `aria-required` + an "(isteğe bağlı)" suffix — never asterisks or a legend (WO-0036).
+  save failures toast top-right (hata) — a dialog footer carries no error copy; validity never locks a submit.
+  Required-ness is marked the minority way — `aria-required` + an "(isteğe bağlı)" suffix — never asterisks
+  or a legend (WO-0036 + its review round).
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

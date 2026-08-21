@@ -4,6 +4,7 @@ import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
+import { toast } from './ToastHost';
 
 const base = (p: string): string => {
   let s = p;
@@ -17,7 +18,8 @@ const base = (p: string): string => {
 // single-repo workspace keeps its one repo as a track. The Dialog's flex column + internal scroll keep
 // it fully inside the viewport at ANY window size ≥ min.
 // WO-0036: form errors sit under the field that caused them (persistent while invalid, first-invalid
-// focused on submit); the footer's single line is save failures only — the WsSettingsModal contract.
+// focused on submit); save failures toast top-right (hata) — a dialog footer carries no error copy
+// (operator review round, 2026-08-21; the toast ladder sits above the dialog overlay by design).
 export function WoCreateModal({
   workspace,
   source,
@@ -47,7 +49,6 @@ export function WoCreateModal({
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [titleErr, setTitleErr] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish — footer, save failures only
   const titleRef = useRef<HTMLInputElement>(null);
 
   function toggleTrack(repo: RepoId) {
@@ -59,7 +60,7 @@ export function WoCreateModal({
       const picked = await window.docket.pickFiles();
       if (picked) setContextFiles((prev) => [...prev, ...picked.filter((p) => !prev.includes(p))]);
     } catch {
-      setError(UI.saveFailed);
+      toast.push({ kind: 'error', title: UI.saveFailed }); // B5: surface, don't vanish — as a toast
     }
   }
   function removeContext(i: number) {
@@ -74,7 +75,6 @@ export function WoCreateModal({
       return;
     }
     setTitleErr(null);
-    setError(null);
     try {
       const wo = await source.createWorkOrder({
         workspaceId: workspace.id,
@@ -88,7 +88,8 @@ export function WoCreateModal({
       onCreated(wo, withPlan);
       onClose();
     } catch {
-      setError(UI.saveFailed); // B5: the modal stays open — and says WHY
+      // B5: the modal stays open (the draft survives) — the refusal itself is a toast, never footer copy.
+      toast.push({ kind: 'error', title: UI.saveFailed });
     }
   }
 
@@ -104,7 +105,6 @@ export function WoCreateModal({
       onOpenAutoFocus={(e) => e.preventDefault()}
       footer={
         <>
-          {error ? <span role="alert" className="mr-auto text-[11px] text-error">{error}</span> : null}
           <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
           <Button variant="secondary" size="sm" onClick={() => void save()}>{UI.woCreateBtn}</Button>
           <Button variant="primary" size="sm" className="min-w-[150px]" onClick={() => void save(true)}>{UI.createAndPlan}</Button>

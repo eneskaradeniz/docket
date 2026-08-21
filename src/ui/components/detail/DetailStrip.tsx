@@ -12,6 +12,7 @@ import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import { Badge, Button, Dialog, Field, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
+import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
 import type { ViewMode } from '../../data/view-mode';
 import type { LampTone } from '../session/pane-chrome';
@@ -70,9 +71,9 @@ export function DetailStrip({
   const [title, setTitle] = useState(detail.title);
   const [description, setDescription] = useState(objective);
   const [saving, setSaving] = useState(false);
-  // WO-0036: the WsSettingsModal form contract — errors under their field, footer = save failures only.
+  // WO-0036: the WsSettingsModal form contract — errors under their field; save failures toast
+  // top-right (operator review round 2026-08-21; the footer carries no error copy).
   const [titleErr, setTitleErr] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null); // footer — save failures only
   const titleRef = useRef<HTMLInputElement>(null);
   // The dialog does NOT unmount on close (DetailStrip stays mounted) — every draft resets here.
   const closeEdit = (): void => {
@@ -80,7 +81,6 @@ export function DetailStrip({
     setTitle(detail.title);
     setDescription(objective);
     setTitleErr(null);
-    setError(null);
   };
   const save = async (): Promise<void> => {
     if (!title.trim()) {
@@ -98,9 +98,9 @@ export function DetailStrip({
       });
       setEditing(false);
       setTitleErr(null);
-      setError(null);
     } catch {
-      setError(UI.saveFailed); // the store refusal (closed-WO race, missing order.md) surfaces — B5
+      // the store refusal (closed-WO race, missing order.md) surfaces as a toast — B5, no footer copy
+      toast.push({ kind: 'error', title: UI.saveFailed });
     } finally {
       setSaving(false);
     }
@@ -226,7 +226,6 @@ export function DetailStrip({
           onOpenAutoFocus={onDialogOpenAutoFocus}
           footer={
             <>
-              {error ? <span role="alert" className="mr-auto text-[11px] text-error">{error}</span> : null}
               <Button variant="ghost" size="sm" onClick={closeEdit}>{UI.cancel}</Button>
               {/* WO-0036: never locked for validity — the refusal teaches, under the field it failed on. */}
               <Button variant="primary" size="sm" busy={saving} locked={saving} onClick={() => void save()}>

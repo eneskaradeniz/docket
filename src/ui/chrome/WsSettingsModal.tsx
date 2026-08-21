@@ -3,15 +3,17 @@
 // a two-line row — basename on top, full mono path below (middle-truncated, full path in title) —
 // and ONE anatomy for both modes. Edit mode commits per action (add/path-edit/remove fire the
 // store immediately; Kaydet applies name + decision store only). Form errors sit under the field
-// that caused them (persistent while invalid, first-invalid focused on submit); the footer's single
-// line is save failures only. WO-0032: edit also carries the deletion entry — quiet (ghost + error
-// ink) here, loud (danger confirm) in WsDeleteDialog.
+// that caused them (persistent while invalid, first-invalid focused on submit); save failures toast
+// top-right — a dialog footer carries no error copy (operator review round 2026-08-21). WO-0032:
+// edit also carries the deletion entry — quiet (ghost + error ink) here, loud (danger confirm) in
+// WsDeleteDialog.
 import { useEffect, useRef, useState } from 'react';
 import { BookMarked, FolderOpen, Pencil, Plus, X } from 'lucide-react';
 import type { RepoId, Workspace } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Tooltip } from '../kit';
+import { toast } from './ToastHost';
 
 const base = (p: string): string => {
   let s = p;
@@ -65,7 +67,6 @@ export function WsSettingsModal({
   const [decisionStore, setDecisionStore] = useState<string>(
     mode === 'edit' ? ((workspace?.decisionStore as string | undefined) ?? '') : '',
   );
-  const [error, setError] = useState<string | null>(null); // footer — save failures only
   const [acting, setActing] = useState(false); // a per-action store call is in flight
   const [saving, setSaving] = useState(false);
   /** The add row sits behind a `+ Depo ekle` reveal (operator review: both screens stay clean).
@@ -202,7 +203,7 @@ export function WsSettingsModal({
         await reloadRows();
         onSaved();
       } catch {
-        setError(UI.saveFailed);
+        toast.push({ kind: 'error', title: UI.saveFailed });
         return;
       } finally {
         setActing(false);
@@ -273,7 +274,7 @@ export function WsSettingsModal({
       const p = await window.docket.pickFolder();
       if (p) await addPath(p);
     } catch {
-      setError(UI.saveFailed);
+      toast.push({ kind: 'error', title: UI.saveFailed });
     }
   }
 
@@ -334,7 +335,7 @@ export function WsSettingsModal({
       onSaved();
       onClose();
     } catch {
-      setError(UI.saveFailed); // B5: surface, don't swallow (WO-0026)
+      toast.push({ kind: 'error', title: UI.saveFailed }); // B5: surface, don't swallow (WO-0026)
     } finally {
       setSaving(false);
     }
@@ -368,7 +369,6 @@ export function WsSettingsModal({
                 <Button variant="ghost" size="sm" className="text-error" onClick={() => onDeleteWorkspace(workspace)}>{UI.wsDelete}</Button>
               )
             ) : null}
-            {error ? <span role="alert" className="text-[11px] text-error">{error}</span> : null}
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
           <Button variant="primary" size="sm" busy={saving} locked={saving || acting} onClick={() => void submit()}>

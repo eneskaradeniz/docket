@@ -117,8 +117,11 @@ and joined it in WO-0036):
 - A validation error renders **under the field that caused it** — persistent while invalid, cleared
   the moment the user edits the field, and announced (`role="alert"`: a state, not an event).
 - A failed submit validates in visual order and **focuses the first invalid field**.
-- The footer's single error line is **save failures only**, and it announces too. A field error never
-  lives in the footer.
+- Save failures surface as a **top-right error toast** (hata — persistent, manual close, announced);
+  a dialog **footer carries no error copy**. The two channels answer different failures: a field line
+  is the form's refusal (the operator's own input), a toast is the environment's refusal (store/IPC).
+  (Review round 2026-08-21: the footer-line form shipped in the morning and was reversed by the
+  operator the same evening — the toast ladder already sits above dialog overlays.)
 - **Validity never locks a submit button.** ADR-0001's "no `disabled`" rule extends to `locked`: the
   kit's lock is for in-flight and terminal states, never for form validity — a click that teaches
   ("Başlık gerekli." under the field) beats a dim, mute button.
