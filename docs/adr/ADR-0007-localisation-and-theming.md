@@ -69,3 +69,23 @@ Theme is a user preference in the app database, alongside locale.
   applies everywhere else.
 - **Locale and theme in `workspace.yaml`.** They belong to the operator, not the project. A second operator
   on the same project should not inherit the first one's theme.
+
+## Addendum — 2026-08-21 (WO-0035: the en/tr selector ships)
+
+Two debts paid and one clause superseded:
+
+- **The live locale is `tr` — since WO-0013.** WO-0013 promised this addendum and never wrote it;
+  CLAUDE.md kept saying "UI copy is English" long after the Turkish pass landed. Recorded here,
+  corrected there.
+- **The selector shipped** (WO-0035): per-locale bundles at `src/ui/data/labels/{tr,en}.ts`, read
+  only through `useLabels()` (`src/ui/data/locale.tsx`); the preference persists in `app_setting`
+  exactly as this ADR ruled — a property of the operator, never of the project. A fresh install
+  with no stored choice detects the system language (`navigator.language` tr-prefix → tr, else en;
+  operator ruling 2026-08-21); detection is renderer-side presentation and only an explicit pick
+  is ever written.
+- **"En as the fallback for any missing key" is superseded by the type system.** Both bundles
+  satisfy one derived `Labels` type (`type Labels = typeof tr`), so a missing key is a compile
+  error — the fallback rule now holds vacuously. A runtime parity test remains as a belt
+  (`labels/labels.test.ts`).
+- **The theming half of this ADR is dead.** Dark-only is the ruling (ADR-0012, recorded in
+  `src/index.css`); the M3.5 theme bullet dies with it. Noted here, not re-decided.

@@ -170,19 +170,21 @@ Out of scope:
 
 ## Notes
 
-- Vocabulary spine (draft; finalized at the C7 gate):
+- Vocabulary spine (finalized 2026-08-21: the operator confirmed the view names translate —
+  SIMPLE/DETAIL; the remaining marked rows were deferred to the draft, one word in en.ts flips
+  any of them):
 
   | TR (live) | EN (proposed) | Note |
   | --- | --- | --- |
   | iş emri / çalışma alanı / depo | work order / workspace / repo | |
-  | karar deposu / Defter | decision store / Ledger | gate |
+  | karar deposu / Defter | decision store / Ledger | operator-deferred to draft |
   | kanıt / kaynaklar / oturum | evidence / Sources / session | |
   | Sıra sende / Çalışıyor / Kapalı | Your turn / Working / Closed | buckets |
   | Süre / Maliyet | Duration / Cost | |
   | Her seferinde sor / Riskli hariç / Tam otomatik | Ask every time / Risky excluded / Full auto | |
   | Akış / Kayıt | Flow / Record | |
-  | SADE / DETAY | SIMPLE / DETAY (or brand tokens) | gate |
-  | Mimar denetimi / Oturum dökümü | Architect review / Session log | gate |
+  | SADE / DETAY | SIMPLE / DETAIL | operator-confirmed 2026-08-21 |
+  | Mimar denetimi / Oturum dökümü | Architect review / Session log | operator-deferred to draft |
   | Durduruldu. Rapor kısmi kalır. | Stopped. The report stays partial. | E2E-asserted |
   | izin bekliyor (title) | waiting for permission | E2E-asserted |
 

@@ -451,8 +451,8 @@ export const UI = {
   woPhaseImplementing: 'Implementing',
   woPhaseClosing: 'Closing — update the docs',
   woPhaseDone: 'Completed',
-  // Vocabulary spine gate (order.md): SIMPLE/DETAIL is the draft; the operator may keep SADE/DETAY
-  // as brand tokens instead.
+  // Vocabulary spine (operator, 2026-08-21): the view names translate — SIMPLE/DETAIL in en,
+  // SADE/DETAY stay tr-only.
   viewModeSimple: 'SIMPLE',
   viewModeDetail: 'DETAIL',
   viewModeAria: 'View — Simple or Detail',
@@ -530,7 +530,8 @@ export const UI = {
   editRoleAria: (role: SessionRole) => `Role: ${ROLE_LABELS[role]} — click to change`,
   stepRef: (idx: number) => `step ${idx}`,
   stepSegments: (idx: number, total: number) => `step ${idx}/${total}`,
-  // Vocabulary spine gate (order.md): 'Session log' is the draft; 'Transcript' is the alternative.
+  // Vocabulary spine: 'Session log' — the operator deferred to this draft at the WO-0035 gate
+  // (2026-08-21); one word here flips it to 'Transcript' if the live app argues otherwise.
   auditTitle: 'Session log',
   auditColSession: 'Session',
   auditColRole: 'Role',
