@@ -2,7 +2,7 @@
 id: WO-0036
 title: İş emri form hataları — under-field validation in both WO dialogs + textarea heights
 workspace: docket
-status: implementing
+status: closed
 mode: direct
 tracks:
   - repo: app
@@ -121,3 +121,15 @@ Out of scope:
 - The edit dialog does not unmount on close (DetailStrip stays mounted) — explicit reset in
   `closeEdit` is load-bearing, unlike the create modal which resets by unmount.
 - Deferred (operator): glyph unification, Enter-to-submit.
+
+## Closure
+
+Merged PR #42 (`d60d39e`), one PR, 4 commits: the order, the compile-coupled feature commit (both
+dialogs + the label collapse — deleting `woEditTitleLabel`/`woEditDescLabel` only compiles with
+DetailStrip's Field rewrite in the same commit), the E2E round (+2 specs, the two WO-0036 shots), and
+the ADR-0012 decision + CLAUDE.md bullet. CI green on the PR (check + GitGuardian); locally
+typecheck ×2, 497 tests, build, boundaries, E2E 42/42 with zero renderer console errors. The two
+operator rulings taken mid-flight: description clearing saves empty, and required-ness is marked the
+minority way. Deferred to a later UI pass: the ▸/＋ glyph unification and Enter-to-submit.
+
+_Closed 2026-08-21 at d60d39e_

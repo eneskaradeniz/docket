@@ -277,6 +277,18 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       → Depoyu birleştir); no bare icon buttons anywhere (tooltips via labels.ts). A six-round
       operator review shaped the surface; E2E 37 specs. Spec:
       `docs/work-orders/WO-0033-depo-baglantilari/order.md`.
+- [x] **WO-0036** — İş emri form hataları. Done: both WO dialogs join the WO-0033 form contract —
+      errors under their field (`role="alert"`, persistent while invalid, cleared on typing),
+      first-invalid focused on a failed submit, footer = save failures only, and Kaydet never locked
+      for validity (ADR-0001's no-disabled rule extended to `locked`; ADR-0012 gained the
+      "form errors sit under their field" decision). The edit dialog's four UX-review P0s paid:
+      a cleared description now saves empty (the silent swallow dies), Vazgeç/ESC resets the
+      description too, `save()` catches the closed-WO store throw into the footer, the hand-rolled
+      labels became kit `Field` (label-key collapse + shared example placeholders). Textareas one
+      row up (3→4 create, 5→6 edit); required-ness marked the minority way (`aria-required` +
+      "(isteğe bağlı)" suffix — no asterisk/legend); the create dialog's stolen open-focus (Radix →
+      the close X) fixed. E2E 42 specs (+2). Spec:
+      `docs/work-orders/WO-0036-is-emri-form-hatalari/order.md`.
 
 ## M3 — Evidence layer
 
