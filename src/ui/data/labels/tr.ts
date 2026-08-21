@@ -415,7 +415,7 @@ export const UI = {
   woCreate: 'Yeni iş emri',
   woTitleLabel: 'Başlık',
   woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
-  woDescLabel: 'Açıklama / hedef',
+  woDescLabel: 'Açıklama / hedef (isteğe bağlı)', // WO-0036: minority marker — the one optional free-text field
   woDescPlaceholder: 'Bu iş emri neyi başarmalı? İlk prompt olarak mimar oturumuna gider.',
   woTracksLabel: 'Depolar',
   woContextLabel: 'Bağlam dosyaları',
@@ -609,8 +609,6 @@ export const UI = {
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
-  woEditTitleLabel: 'Başlık',
-  woEditDescLabel: 'Açıklama / hedef',
   // Plan düzenleme (onay öncesi).
   editPlan: 'Düzenle',
   editPlanDone: 'Bitti',

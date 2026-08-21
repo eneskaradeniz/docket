@@ -6,12 +6,12 @@
 // the ask card changes it). WO-0031d: the pencil/trash/review-badge are ABSENT while a drive is live
 // (wind-down included — still spending) with one reason line, and the pencil opens a kit Dialog
 // instead of replacing the title row.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
 import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { Badge, Button, Dialog, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
+import { Badge, Button, Dialog, Field, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
 import type { ViewMode } from '../../data/view-mode';
 import type { LampTone } from '../session/pane-chrome';
@@ -70,15 +70,37 @@ export function DetailStrip({
   const [title, setTitle] = useState(detail.title);
   const [description, setDescription] = useState(objective);
   const [saving, setSaving] = useState(false);
+  // WO-0036: the WsSettingsModal form contract — errors under their field, footer = save failures only.
+  const [titleErr, setTitleErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // footer — save failures only
+  const titleRef = useRef<HTMLInputElement>(null);
+  // The dialog does NOT unmount on close (DetailStrip stays mounted) — every draft resets here.
   const closeEdit = (): void => {
     setEditing(false);
     setTitle(detail.title);
+    setDescription(objective);
+    setTitleErr(null);
+    setError(null);
   };
   const save = async (): Promise<void> => {
+    if (!title.trim()) {
+      setTitleErr(UI.woErrTitle);
+      titleRef.current?.focus();
+      return;
+    }
     setSaving(true);
     try {
-      await onUpdateWorkOrder({ ...(title.trim() && title !== detail.title ? { title: title.trim() } : {}), ...(description.trim() && description !== objective ? { description: description.trim() } : {}) });
+      // Difference-based: a CLEARED description saves empty (WO-0036 — the old non-empty guard silently
+      // swallowed the clear; core treats an empty Objective as a valid surgical edit).
+      await onUpdateWorkOrder({
+        ...(title.trim() !== detail.title ? { title: title.trim() } : {}),
+        ...(description.trim() !== objective ? { description: description.trim() } : {}),
+      });
       setEditing(false);
+      setTitleErr(null);
+      setError(null);
+    } catch {
+      setError(UI.saveFailed); // the store refusal (closed-WO race, missing order.md) surfaces — B5
     } finally {
       setSaving(false);
     }
@@ -204,32 +226,38 @@ export function DetailStrip({
           onOpenAutoFocus={onDialogOpenAutoFocus}
           footer={
             <>
+              {error ? <span role="alert" className="mr-auto text-[11px] text-error">{error}</span> : null}
               <Button variant="ghost" size="sm" onClick={closeEdit}>{UI.cancel}</Button>
-              <Button variant="primary" size="sm" busy={saving} locked={saving || !title.trim()} onClick={() => void save()}>
+              {/* WO-0036: never locked for validity — the refusal teaches, under the field it failed on. */}
+              <Button variant="primary" size="sm" busy={saving} locked={saving} onClick={() => void save()}>
                 {UI.woEditSave}
               </Button>
             </>
           }
         >
           <div className="flex flex-col gap-3">
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-edit-title">{UI.woEditTitleLabel}</label>
-            <Input
-              id="wo-edit-title"
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={UI.woEditTitleLabel}
-              className="font-sans text-[14px]"
-            />
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-inkdim" htmlFor="wo-edit-desc">{UI.woEditDescLabel}</label>
-            <Textarea
-              id="wo-edit-desc"
-              rows={5}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={UI.woEditDescLabel}
-              className="font-sans text-[12.5px]"
-            />
+            <Field label={UI.woTitleLabel} error={titleErr}>
+              <Input
+                id="wo-edit-title"
+                ref={titleRef}
+                autoFocus
+                aria-required="true"
+                value={title}
+                onChange={(e) => { setTitle(e.target.value); setTitleErr(null); }}
+                placeholder={UI.woTitlePlaceholder}
+                className="font-sans text-[14px]"
+              />
+            </Field>
+            <Field label={UI.woDescLabel}>
+              <Textarea
+                id="wo-edit-desc"
+                rows={6}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={UI.woDescPlaceholder}
+                className="font-sans text-[12.5px]"
+              />
+            </Field>
           </div>
         </Dialog>
       ) : null}

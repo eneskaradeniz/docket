@@ -374,7 +374,7 @@ export const UI = {
   woCreate: 'New work order',
   woTitleLabel: 'Title',
   woTitlePlaceholder: 'e.g. Error while uploading the user profile avatar',
-  woDescLabel: 'Description / goal',
+  woDescLabel: 'Description / goal (optional)', // WO-0036: minority marker — the one optional free-text field
   woDescPlaceholder: 'What should this work order achieve? It goes to the architect session as the first prompt.',
   woTracksLabel: 'Repos',
   woContextLabel: 'Context files',
@@ -516,8 +516,6 @@ export const UI = {
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',
-  woEditTitleLabel: 'Title',
-  woEditDescLabel: 'Description / goal',
   editPlan: 'Edit',
   editPlanDone: 'Done',
   editAddStep: '+ Add step',

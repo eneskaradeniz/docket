@@ -10,6 +10,7 @@
 - [Decision — keyboard hints are never standing text](#decision--keyboard-hints-are-never-standing-text)
 - [Decision — a density band](#decision--a-density-band)
 - [Decision — a juice contract](#decision--a-juice-contract)
+- [Decision — form errors sit under their field](#decision--form-errors-sit-under-their-field)
 - [Consequences](#consequences)
 - [Alternatives rejected](#alternatives-rejected)
 
@@ -106,6 +107,24 @@ Motion is feedback, not decoration, and lives by six rules (the operator's, from
 WO-0031f: entrance glides are the named exception to "never on mount" (a surface entering view on
 first open or tab change may glide in once, ≤400ms translate+fade; re-renders, live appends, and
 reduced-motion stay motionless — the reborn `.rise`, now contractual).
+
+## Decision — form errors sit under their field
+
+WO-0036 (2026-08-21) promotes the contract WO-0033 gave the Defter dialog to a rule for every form
+surface (it already governed `WsSettingsModal`; the work-order dialogs were written before it existed
+and joined it in WO-0036):
+
+- A validation error renders **under the field that caused it** — persistent while invalid, cleared
+  the moment the user edits the field, and announced (`role="alert"`: a state, not an event).
+- A failed submit validates in visual order and **focuses the first invalid field**.
+- The footer's single error line is **save failures only**, and it announces too. A field error never
+  lives in the footer.
+- **Validity never locks a submit button.** ADR-0001's "no `disabled`" rule extends to `locked`: the
+  kit's lock is for in-flight and terminal states, never for form validity — a click that teaches
+  ("Başlık gerekli." under the field) beats a dim, mute button.
+- Required-ness is marked the **minority** way (NN/g; Material 3): `aria-required` on the required
+  inputs and an "(isteğe bağlı)" suffix on the one optional free-text label. No asterisks, no
+  standing "* = zorunlu" legend — a legend is exactly the instructional copy banned above.
 
 ## Consequences
 

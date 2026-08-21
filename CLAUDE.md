@@ -42,6 +42,9 @@ rule restated with its reasons in two places is the duplication this repository 
   işlemez" — stay), no jargon/mixed-case headers, no standing keyboard hints (only the rail ⏎ badge).
 - Juice: transitions only (never mount), ≤400ms, reduced-motion off via the one CSS block, the cost
   counter never animates, SADE stays calm.
+- Form errors sit under their field (persistent while invalid, first-invalid focused on submit, `role="alert"`);
+  the footer line is save failures only; validity never locks a submit. Required-ness is marked the minority
+  way — `aria-required` + an "(isteğe bağlı)" suffix — never asterisks or a legend (WO-0036).
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

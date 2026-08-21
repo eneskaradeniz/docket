@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
@@ -16,6 +16,8 @@ const base = (p: string): string => {
 // track list when the workspace has a dedicated decision-store repo (PRODUCT.md §Decisions 6); a
 // single-repo workspace keeps its one repo as a track. The Dialog's flex column + internal scroll keep
 // it fully inside the viewport at ANY window size ≥ min.
+// WO-0036: form errors sit under the field that caused them (persistent while invalid, first-invalid
+// focused on submit); the footer's single line is save failures only — the WsSettingsModal contract.
 export function WoCreateModal({
   workspace,
   source,
@@ -44,7 +46,9 @@ export function WoCreateModal({
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish
+  const [titleErr, setTitleErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // B5: a failed save must surface, not vanish — footer, save failures only
+  const titleRef = useRef<HTMLInputElement>(null);
 
   function toggleTrack(repo: RepoId) {
     setSelectedTracks((prev) => (prev.includes(repo) ? prev.filter((r) => r !== repo) : [...prev, repo]));
@@ -63,10 +67,13 @@ export function WoCreateModal({
   }
 
   async function save(withPlan = false) {
+    // WO-0036: the refusal lands under the field and takes the focus — the WsSettingsModal contract.
     if (!title.trim()) {
-      setError(UI.woErrTitle);
+      setTitleErr(UI.woErrTitle);
+      titleRef.current?.focus();
       return;
     }
+    setTitleErr(null);
     setError(null);
     try {
       const wo = await source.createWorkOrder({
@@ -92,9 +99,12 @@ export function WoCreateModal({
       title={UI.woCreate}
       closeAria={UI.dialogCloseAria}
       wide
+      // WO-0036: Radix would focus the first focusable (the close X); preventDefault lets the
+      // title Input's autoFocus win — the DetailStrip edit dialog's workaround, ported.
+      onOpenAutoFocus={(e) => e.preventDefault()}
       footer={
         <>
-          {error ? <span className="mr-auto text-[11px] text-error">{error}</span> : null}
+          {error ? <span role="alert" className="mr-auto text-[11px] text-error">{error}</span> : null}
           <Button variant="ghost" size="sm" onClick={onClose}>{UI.close}</Button>
           <Button variant="secondary" size="sm" onClick={() => void save()}>{UI.woCreateBtn}</Button>
           <Button variant="primary" size="sm" className="min-w-[150px]" onClick={() => void save(true)}>{UI.createAndPlan}</Button>
@@ -102,12 +112,19 @@ export function WoCreateModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <Field label={UI.woTitleLabel}>
-          <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={UI.woTitlePlaceholder} />
+        <Field label={UI.woTitleLabel} error={titleErr}>
+          <Input
+            ref={titleRef}
+            autoFocus
+            aria-required="true"
+            value={title}
+            onChange={(e) => { setTitle(e.target.value); setTitleErr(null); }}
+            placeholder={UI.woTitlePlaceholder}
+          />
         </Field>
 
         <Field label={UI.woDescLabel}>
-          <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={UI.woDescPlaceholder} className="font-sans text-[13px]" />
+          <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={UI.woDescPlaceholder} className="font-sans text-[13px]" />
         </Field>
 
         {trackOptions.length > 0 ? (
@@ -124,7 +141,7 @@ export function WoCreateModal({
                     onClick={() => toggleTrack(r)}
                     className={`ichip inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${checked ? 'ichip-on' : ''}`}
                   >
-                    <span className={`font-mono text-[11px] ${checked ? 'text-info' : ''}`}>{checked ? '✓' : '○'}</span>
+                    <span aria-hidden="true" className={`font-mono text-[11px] ${checked ? 'text-info' : ''}`}>{checked ? '✓' : '○'}</span>
                     <span className="font-mono text-[11px]">{r as string}</span>
                   </button>
                 );
@@ -138,7 +155,7 @@ export function WoCreateModal({
           {contextFiles.length > 0 ? (
             <div className="mb-1.5 flex flex-wrap gap-1.5">
               {contextFiles.map((p, i) => (
-                <span key={i} title={p} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
+                <span key={p} title={p} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
                   <Tooltip label={UI.removeAria}><button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button></Tooltip>
                 </span>
