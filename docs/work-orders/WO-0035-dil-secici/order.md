@@ -2,7 +2,7 @@
 id: WO-0035
 title: Dil seçici — en/tr label bundles, LocaleProvider, the settings selector
 workspace: docket
-status: draft
+status: implementing
 mode: plan
 tracks:
   - repo: app
