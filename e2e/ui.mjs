@@ -363,6 +363,30 @@ await spec('create + plan in one step: Oluştur ve plan iste starts the architec
   await backToBoard();
 });
 
+// WO-0036: the create dialog joins the WsSettingsModal form contract — an empty title is refused
+// UNDER the field it failed on (announced, focused), nothing is created, and the refusal dies the
+// moment the user types.
+await spec('create dialog: empty title refused under the field; focus follows; nothing created (WO-0036)', async () => {
+  await setSize(980, 620);
+  const before = await page.locator('[data-wo-id]').count();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  const dlg = page.locator('[role="dialog"]');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await dlg.getByText('Başlık gerekli.').count()) >= 1, 'no title error under the Başlık field');
+  assert.ok((await dlg.locator('[role="alert"]').count()) >= 1, 'the error line does not announce');
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', 'a failed submit did not focus the title');
+  assert.equal(await page.locator('[data-wo-id]').count(), before, 'an empty-title submit created a work order');
+  await page.screenshot({ path: join(SHOTS, 'wo-create-title-error@980.png') });
+  await dlg.locator('input').first().fill('x');
+  await page.waitForTimeout(150);
+  assert.equal(await dlg.getByText('Başlık gerekli.').count(), 0, 'the error line stayed after typing');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the create dialog did not close');
+});
+
 await spec('dialog FULLY visible at min window size (760×480)', async () => {
   await setSize(760, 480);
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
@@ -565,6 +589,39 @@ await spec('Düzenle is a dialog; the title edit persists and the screen stays i
   await page.locator('[role="dialog"] input#wo-edit-title').fill('Plan bekliyor');
   await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
   await page.waitForTimeout(600);
+  await backToBoard();
+});
+
+// WO-0036: the edit dialog joins the same contract — Kaydet is never locked for validity (the click
+// itself lands), the refusal sits under the field with focus, and a CLEARED description saves empty
+// (the old non-empty guard silently swallowed the clear).
+await spec('edit dialog: Kaydet stays live on an empty title; a cleared description saves (WO-0036)', async () => {
+  await openDetail('Plan bekliyor');
+  await stopAllDrives();
+  await page.waitForTimeout(400);
+  await page.locator('button[aria-label="İş emrini düzenle"]').first().click();
+  await page.waitForTimeout(300);
+  const dlg = page.locator('[role="dialog"]');
+  await dlg.locator('input#wo-edit-title').fill('');
+  await dlg.getByRole('button', { name: 'Kaydet', exact: true }).click(); // pointer-events live — the click lands
+  await page.waitForTimeout(250);
+  assert.ok((await dlg.getByText('Başlık gerekli.').count()) >= 1, 'no title error under the field');
+  assert.ok((await dlg.locator('[role="alert"]').count()) >= 1, 'the error line does not announce');
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', 'a refused save did not focus the title');
+  assert.equal(await dlg.count(), 1, 'the dialog closed on a refused save');
+  await page.screenshot({ path: join(SHOTS, 'wo-edit-title-error@980.png') });
+  // the cleared description now SAVES (an empty Objective is a valid surgical edit) — prove it, restore
+  await dlg.locator('input#wo-edit-title').fill('Plan bekliyor');
+  await dlg.locator('textarea#wo-edit-desc').fill('');
+  await dlg.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(700); // updateWorkOrder → reloadDetail
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the edit dialog did not close');
+  await page.locator('button[aria-label="İş emrini düzenle"]').first().click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[role="dialog"] textarea#wo-edit-desc').inputValue(), '', 'the cleared description did not save');
+  await page.locator('[role="dialog"] textarea#wo-edit-desc').fill('E2E: plan proposed, awaiting approval.');
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(700);
   await backToBoard();
 });
 
