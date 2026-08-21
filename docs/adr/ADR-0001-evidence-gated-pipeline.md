@@ -63,6 +63,15 @@ instead of being absent with a reason line; the closed state is already named by
 beside it, so a standing line says nothing new. Transient gates (a live drive) keep the absent + reason
 form — their cause is not otherwise on screen.
 
+**2026-08-21 addendum (operator, WO-0033 review).** The absent-with-reason form applies to actions whose
+gate is NOT visible on the same surface. Where the row itself already shows what the thing is (the
+decision-store marker sits on the very row), absence reads as a layout bug and a standing reason line
+reads as duplicated chrome — the operator's ruling: a GUARDED row action renders in place, dimmed, with
+the reason as a hover/focus tooltip (attribute-free as before: no `disabled`, no `aria-disabled`; the
+control keeps pointer events so the tooltip can open, and carries no click handler). First application:
+the repo ledger's ✕ under the three removal guards (WO-0033); the tooltip copy names the unblocking
+move, not just the refusal.
+
 ## Consequences
 
 - The most valuable surface of the app is the evidence model, not the screens. Screens follow it.

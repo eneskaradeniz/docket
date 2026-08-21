@@ -6,6 +6,7 @@
 import { parsePlanSteps } from '../../../core/plan-steps';
 import type { StepSpec } from '../../../core/types';
 import { UI } from '../../data/labels';
+import { Tooltip } from '../../kit';
 import { RoleChip } from './RoleChip';
 
 export function PlanApprovalCards({
@@ -58,30 +59,36 @@ export function PlanApprovalCards({
                 </span>
                 {editing ? (
                   <span className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      aria-label={UI.editMoveUpAria}
-                      onClick={() => onMove?.(s.idx, -1)}
-                      className="ibtn px-1 text-[11px]"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={UI.editMoveDownAria}
-                      onClick={() => onMove?.(s.idx, 1)}
-                      className="ibtn px-1 text-[11px]"
-                    >
-                      ▼
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={UI.editRemoveAria}
-                      onClick={() => onRemove?.(s.idx)}
-                      className="ibtn ibtn-danger px-1 text-[11px]"
-                    >
-                      ✕
-                    </button>
+                    <Tooltip label={UI.editMoveUpAria}>
+                      <button
+                        type="button"
+                        aria-label={UI.editMoveUpAria}
+                        onClick={() => onMove?.(s.idx, -1)}
+                        className="ibtn px-1 text-[11px]"
+                      >
+                        ▲
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={UI.editMoveDownAria}>
+                      <button
+                        type="button"
+                        aria-label={UI.editMoveDownAria}
+                        onClick={() => onMove?.(s.idx, 1)}
+                        className="ibtn px-1 text-[11px]"
+                      >
+                        ▼
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={UI.editRemoveAria}>
+                      <button
+                        type="button"
+                        aria-label={UI.editRemoveAria}
+                        onClick={() => onRemove?.(s.idx)}
+                        className="ibtn ibtn-danger px-1 text-[11px]"
+                      >
+                        ✕
+                      </button>
+                    </Tooltip>
                   </span>
                 ) : null}
               </div>

@@ -3,7 +3,7 @@ import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
 import { PERMISSION_RULE_LABELS, UI } from '../data/labels';
-import { Button, Dialog, Field, Input, Segmented, Textarea } from '../kit';
+import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
 
 const base = (p: string): string => {
   let s = p;
@@ -139,7 +139,7 @@ export function WoCreateModal({
               {contextFiles.map((p, i) => (
                 <span key={i} title={p} className="inline-flex items-center gap-1 rounded border border-hairline bg-bg px-2 py-0.5 font-mono text-[11px] text-inkdim">
                   {base(p)}
-                  <button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button>
+                  <Tooltip label={UI.removeAria}><button type="button" onClick={() => removeContext(i)} className="ibtn ibtn-danger px-0.5" aria-label={UI.removeAria}><X className="h-3 w-3" aria-hidden="true" /></button></Tooltip>
                 </span>
               ))}
             </div>

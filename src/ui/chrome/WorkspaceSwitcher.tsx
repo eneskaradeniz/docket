@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Workspace, WorkspaceId } from '../../core/types';
 import { UI } from '../data/labels';
+import { Tooltip } from '../kit';
 
 const MAX_WS = 4;
 
@@ -51,7 +52,7 @@ export function WorkspaceSwitcher({
                   <span className="w-3 text-center text-signal">{on ? '✓' : ''}</span>
                   <span className={on ? 'font-semibold text-ink' : 'text-ink'}>{w.label}</span>
                 </button>
-                <button type="button" onClick={() => { onEdit(w); setOpen(false); }} className="ibtn h-8 w-8 border border-hairline text-[14px]" aria-label={UI.wsSettings}>⚙</button>
+                <Tooltip label={UI.wsSettings}><button type="button" onClick={() => { onEdit(w); setOpen(false); }} className="ibtn h-8 w-8 border border-hairline text-[14px]" aria-label={UI.wsSettings}>⚙</button></Tooltip>
               </div>
             );
           })}

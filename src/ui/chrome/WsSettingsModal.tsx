@@ -7,11 +7,11 @@
 // line is save failures only. WO-0032: edit also carries the deletion entry — quiet (ghost + error
 // ink) here, loud (danger confirm) in WsDeleteDialog.
 import { useEffect, useRef, useState } from 'react';
-import { Check, CircleAlert, FolderOpen, Pencil, X } from 'lucide-react';
+import { BookMarked, FolderOpen, Pencil, Plus, X } from 'lucide-react';
 import type { RepoId, Workspace } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import { UI, woIdLabel } from '../data/labels';
-import { Button, Dialog, Field, Input } from '../kit';
+import { Button, Dialog, Field, Input, Tooltip } from '../kit';
 
 const base = (p: string): string => {
   let s = p;
@@ -67,12 +67,17 @@ export function WsSettingsModal({
   const [error, setError] = useState<string | null>(null); // footer — save failures only
   const [acting, setActing] = useState(false); // a per-action store call is in flight
   const [saving, setSaving] = useState(false);
+  /** The add row sits behind a `+ Depo ekle` reveal (operator review: both screens stay clean).
+   *  Create keeps it open after a successful Ekle (a listing flow); edit collapses — one action at
+   *  a time. Escape collapses it; a failed add keeps it open with its error line. */
+  const [adding, setAdding] = useState(false);
   /** repoName → the first OPEN work order whose track uses it (guard (b)'s named reason). */
   const [openWoByRepo, setOpenWoByRepo] = useState<Record<string, string>>({});
-  /** the row whose edit input takes focus once it mounts (submit's first-invalid rule). */
+  /** the row whose edit input takes focus once it mounts (submit's first-invalid rule); the
+   *  sentinel '__draft__' focuses the revealed add row. */
   const [focusRow, setFocusRow] = useState<string | null>(null);
+  const DRAFT_FOCUS = '__draft__';
   const nameRef = useRef<HTMLInputElement>(null);
-  const draftRef = useRef<HTMLInputElement>(null);
 
   function rowsFrom(ws: Workspace, conns: { id: RepoId; path: string }[]): Row[] {
     const byBase = new Map(conns.map((c) => [c.id as string, c.path]));
@@ -117,12 +122,16 @@ export function WsSettingsModal({
     return next;
   }
 
-  const allRepos = rows.map((r) => r.name);
-  const effectiveDs = decisionStore || allRepos[0] || '';
+  // The decision store is chosen IN THE LIST (operator review r2-r5): an explicit BookMarked-icon
+  // button beside ✎ (signal-tinted — same family as the ● marker; the book = the karar deposu's
+  // defter, the ribbon = the pick) picks it; the row itself is not a click target. Saved only by
+  // Kaydet/Oluştur.
+  const effectiveDs = decisionStore || (rows[0]?.name ?? '');
 
-  /** The removal guards (edit mode; AC 4, priority a > b > c): the ✕ is absent and the reason
-   *  stands in its place. The decision-store guard follows the LIVE selection — what the marker
-   *  shows is what is protected. */
+  /** The removal guards (edit mode; AC 4, priority a > b > c). The ✕ stays IN PLACE, dimmed, with
+   *  the reason as a hover/focus tooltip naming the unblocking move (ADR-0001 2026-08-21 addendum —
+   *  the row already shows what it is, so a standing reason line would be duplicated chrome). The
+   *  decision-store guard follows the LIVE selection — what the marker shows is what is protected. */
   function guardOf(row: Row): string | null {
     if (mode !== 'edit') return null;
     if (effectiveDs && row.name === effectiveDs) return UI.wsGuardDs;
@@ -229,6 +238,7 @@ export function WsSettingsModal({
       }
       await reloadRows();
       onSaved();
+      setAdding(false); // edit mode: the action landed — the ledger reads tidy again
     } else {
       setRows((prev) => [...prev, { name: base(t), path: t }]);
     }
@@ -239,6 +249,22 @@ export function WsSettingsModal({
   async function addDraft(): Promise<void> {
     if (!draft.trim()) return;
     if (await addPath(draft)) setDraft('');
+  }
+
+  /** The `+` reveal: the entry row appears focused. Hiding it is one move from two affordances —
+   *  the row's ✕ (Vazgeç, operator review r6) and ESC both land here; a landed edit-mode add
+   *  collapses it in addPath. */
+  function openAdd(): void {
+    if (acting || saving) return;
+    setDraftErr(null);
+    setAdding(true);
+    setFocusRow(DRAFT_FOCUS);
+  }
+
+  function closeAdd(): void {
+    setAdding(false);
+    setDraft('');
+    setDraftErr(null);
   }
 
   async function pick(): Promise<void> {
@@ -262,7 +288,7 @@ export function WsSettingsModal({
         setDraft('');
         working = mode === 'edit' && workspace ? await reloadRows() : [...rows, { name: base(t), path: t }];
       } else {
-        draftRef.current?.focus();
+        setFocusRow(DRAFT_FOCUS); // the revealed row is mounted — the ref callback focuses it
         return;
       }
     }
@@ -287,7 +313,7 @@ export function WsSettingsModal({
     }
     if (mode === 'create' && !working.some((r) => valid(r.path))) {
       setRepoErr(UI.wsErrRepo);
-      draftRef.current?.focus();
+      setFocusRow(DRAFT_FOCUS); // the revealed row is mounted — the ref callback focuses it
       return;
     }
     setRepoErr(null);
@@ -319,12 +345,16 @@ export function WsSettingsModal({
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={mode === 'create' ? UI.wsCreate : UI.wsSettings}
       closeAria={UI.dialogCloseAria}
-      // An open path editor swallows the ESC (revert it, keep the dialog) — Radix hears ESC on the
-      // document in capture, so this hook is the only place the close can be refused.
+      // An open path editor or the revealed add row swallows the ESC (revert/collapse it, keep the
+      // dialog) — Radix hears ESC on the document in capture, so this hook is the only place the
+      // close can be refused.
       onEscapeKeyDown={(e) => {
         if (rows.some((r) => r.editing !== undefined)) {
           e.preventDefault();
           setRows((prev) => prev.map((r) => ({ ...r, editing: undefined, err: undefined })));
+        } else if (adding) {
+          e.preventDefault();
+          closeAdd();
         }
       }}
       footer={
@@ -357,107 +387,139 @@ export function WsSettingsModal({
 
         <section>
           <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.wsReposLabel}</span>
-          {rows.length === 0 ? <p className="mb-2 text-[11px] text-inkdim">{UI.wsNoRepos}</p> : null}
-          {rows.length > 0 ? (
-            <div className="overflow-hidden rounded-md border border-hairline bg-bg">
-              {rows.map((row, i) => {
-                const guard = guardOf(row);
-                return (
-                  <div key={`${row.name}:${i}`} className={i > 0 ? 'border-t border-hairline' : ''}>
-                    <div className="flex items-center gap-2 px-2.5 py-2">
+          {rows.length === 0 && !adding ? <p className="mb-2 text-[11px] text-inkdim">{UI.wsNoRepos}</p> : null}
+          {/* One repo = one card, the console's row language (WorkOrderCard/WsListModal idiom):
+              border + bg-bg + px-3 py-2, 13px name, mono-11 dim path — never a boxed ledger list.
+              The decision store is picked with an EXPLICIT button beside ✎ (operator review r3 —
+              the row itself is not a click target); the ● label marks the pick. */}
+          <div className="flex flex-col gap-1.5">
+            {rows.map((row) => {
+              const guard = guardOf(row);
+              const selected = row.name === effectiveDs;
+              return (
+                <div key={row.name} className="rounded-md border border-hairline bg-bg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-ink">{row.name}</span>
+                    {selected ? (
+                      <span className="font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-inkdim">
+                        <span className="text-signal">●</span> {UI.wsDsMarker}
+                      </span>
+                    ) : null}
+                    <span className="ml-auto flex items-center gap-0.5">
+                      {!selected ? (
+                        <Tooltip label={UI.wsDsMake}>
+                          <button type="button" className="ibtn px-1 text-signal/70" aria-label={UI.wsDsMake} onClick={() => setDecisionStore(row.name)}>
+                            <BookMarked className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        </Tooltip>
+                      ) : null}
                       {row.path ? (
-                        valid(row.path) ? (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-proceed" aria-hidden="true" />
-                        ) : (
-                          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-error" aria-hidden="true" />
-                        )
-                      ) : null}
-                      <span className="text-[12.5px] font-semibold text-ink">{row.name}</span>
-                      {row.name === effectiveDs ? (
-                        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-inkdim">
-                          <span className="text-signal">●</span> {UI.wsDsMarker}
-                        </span>
-                      ) : null}
-                      <span className="ml-auto flex items-center gap-0.5">
-                        {row.path ? (
+                        <Tooltip label={UI.wsRepoEditAria}>
                           <button type="button" className="ibtn px-1" aria-label={UI.wsRepoEditAria} onClick={() => startEdit(row)}>
                             <Pencil className="h-3 w-3" aria-hidden="true" />
                           </button>
-                        ) : null}
-                        {guard ? (
-                          <span className="text-[10.5px] text-inkdim">{guard}</span>
-                        ) : row.path ? (
+                        </Tooltip>
+                      ) : null}
+                      {guard ? (
+                        <Tooltip label={guard}>
+                          <button type="button" className="ibtn ibtn-danger px-1 opacity-45" aria-label={UI.wsRepoRemoveAria}>
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </Tooltip>
+                      ) : row.path ? (
+                        <Tooltip label={UI.wsRepoRemoveAria}>
                           <button type="button" className="ibtn ibtn-danger px-1" aria-label={UI.wsRepoRemoveAria} onClick={() => void removeRow(row)}>
                             <X className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
-                        ) : null}
-                      </span>
-                    </div>
-                    {row.editing !== undefined ? (
-                      <Input
-                        value={row.editing}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          patchRow(row.name, { editing: v, err: undefined });
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            void commitPath(row, row.editing ?? '');
-                          }
-                        }}
-                        onBlur={() => void commitPath(row, row.editing ?? '')}
-                        ref={(el) => {
-                          if (el && focusRow === row.name) {
-                            el.focus();
-                            setFocusRow(null);
-                          }
-                        }}
-                        className="mx-2.5 mb-2 font-mono text-[11px]"
-                      />
-                    ) : row.path ? (
-                      <div className="ml-[22px] mb-1 truncate font-mono text-[11px] text-inkdim" title={row.path}>
-                        {midTrunc(row.path)}
-                      </div>
-                    ) : null}
-                    {row.err ? <span role="alert" className="mb-1.5 ml-[22px] block text-[11px] text-error">{row.err}</span> : null}
+                        </Tooltip>
+                      ) : null}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          ) : null}
-          {repoErr ? <span role="alert" className="mt-1.5 block text-[11px] text-error">{repoErr}</span> : null}
-          {/* Path entry: type a path + Add, or pick a folder. Both append a ledger row (edit mode:
-              the append is the store call itself). */}
-          <div className="mt-2 flex gap-1.5">
-            <Input
-              ref={draftRef}
-              value={draft}
-              onChange={(e) => { setDraft(e.target.value); setDraftErr(null); setRepoErr(null); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addDraft(); } }}
-              placeholder={UI.wsRepoPlaceholder}
-              className="flex-1 font-mono text-[12px]"
-            />
-            <Button variant="secondary" size="sm" locked={acting || saving} onClick={() => void addDraft()}>{UI.wsRepoAddManual}</Button>
-            <Button variant="ghost" size="sm" locked={acting || saving} onClick={() => void pick()}>
-              <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
-              {UI.wsRepoPick}
-            </Button>
+                  {row.editing !== undefined ? (
+                    <Input
+                      value={row.editing}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        // Live validation (operator review r2): the line shows WHILE typing —
+                        // the same rules commit will apply, so the refusal is never a surprise.
+                        const t = v.trim();
+                        const err = !valid(t)
+                          ? UI.wsErrPathInvalid
+                          : mode === 'edit' && base(t) !== row.name
+                            ? UI.wsErrPathName
+                            : rows.some((r) => r.name === base(t) && r.name !== row.name)
+                              ? UI.wsErrRepoDup
+                              : undefined;
+                        patchRow(row.name, { editing: v, err });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void commitPath(row, row.editing ?? '');
+                        }
+                      }}
+                      onBlur={() => void commitPath(row, row.editing ?? '')}
+                      ref={(el) => {
+                        if (el && focusRow === row.name) {
+                          el.focus();
+                          setFocusRow(null);
+                        }
+                      }}
+                      className="mt-1.5 font-mono text-[11px]"
+                    />
+                  ) : row.path ? (
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-inkdim" title={row.path}>
+                      {midTrunc(row.path)}
+                    </div>
+                  ) : null}
+                  {row.err ? <span role="alert" className="mt-1 block text-[11px] text-error">{row.err}</span> : null}
+                </div>
+              );
+            })}
           </div>
+          {repoErr ? <span role="alert" className="mt-1.5 block text-[11px] text-error">{repoErr}</span> : null}
+          {/* The + reveal (operator review): the entry row appears on press — both screens stay
+              clean at rest. Create keeps it open after a landed Ekle (a listing flow); edit
+              collapses. Escape collapses (the dialog-level hook). */}
+          {adding ? (
+            <div className="mt-1.5 flex gap-1.5">
+              {/* The entry row reads as one tidy bar: two square ghost buttons (Klasör, Vazgeç)
+                  flanking a secondary Ekle, every control at the kit's md height (h-8.5 ≈ the
+                  Input's ~33.5px — the sm size sat visibly shorter). The ✕ (operator review r6)
+                  is the visible Vazgeç — ESC does the same. */}
+              <Tooltip label={UI.wsRepoPick}>
+                <Button variant="ghost" className="w-8.5 px-0" aria-label={UI.wsRepoPick} locked={acting || saving} onClick={() => void pick()}>
+                  <FolderOpen className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </Tooltip>
+              <Input
+                ref={(el) => {
+                  if (el && focusRow === DRAFT_FOCUS) {
+                    el.focus();
+                    setFocusRow(null);
+                  }
+                }}
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); setDraftErr(null); setRepoErr(null); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addDraft(); } }}
+                placeholder={UI.wsRepoPlaceholder}
+                className="flex-1 font-mono text-[12px]"
+              />
+              <Button variant="secondary" locked={acting || saving} onClick={() => void addDraft()}>{UI.wsRepoAddManual}</Button>
+              <Tooltip label={UI.cancel}>
+                <Button variant="ghost" className="w-8.5 px-0 text-inkdim" aria-label={UI.cancel} onClick={closeAdd}>
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </Tooltip>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" className="mt-1.5" onClick={openAdd}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              {UI.wsRepoAdd}
+            </Button>
+          )}
           {draftErr ? <span role="alert" className="mt-1.5 block text-[11px] text-error">{draftErr}</span> : null}
         </section>
-
-        {allRepos.length >= 2 ? (
-          <Field label={UI.wsDecisionStore}>
-            <select
-              value={effectiveDs}
-              onChange={(e) => setDecisionStore(e.target.value)}
-              className="w-full rounded-md border border-hairline bg-bg px-2.5 py-1.5 text-[13px] text-ink focus-visible:border-signal focus-visible:outline-none"
-            >
-              {allRepos.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </Field>
-        ) : null}
       </div>
     </Dialog>
   );

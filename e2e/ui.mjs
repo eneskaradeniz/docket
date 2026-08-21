@@ -930,20 +930,47 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   const pathLine = dlg.locator('div[title^="/"]');
   assert.ok((await pathLine.count()) >= 1, 'no full-path line on the ledger row');
   assert.ok(((await pathLine.first().getAttribute('title')) ?? '').endsWith('/repo'), 'the row title is not the connection path');
-  // AC 4 (a)+(c) surfaces: the single repo is the decision store AND the last one — ✕ absent, reason in place
-  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 0, 'the guarded row still offers removal');
-  assert.ok((await dlg.getByText('karar deposu kaldırılamaz').count()) >= 1, 'no guard reason on the row');
+  // AC 4 (a)+(c) surfaces: the single repo is the decision store AND the last one — the ✕ renders
+  // LOCKED in place (ADR-0001 2026-08-21 addendum), the reason rides its hover tooltip, and the
+  // dead button removes nothing
+  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 1, 'the guarded row lost its ✕');
+  await dlg.getByRole('button', { name: 'Depoyu kaldır' }).hover();
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByRole('tooltip').getByText('Karar deposu').count()) >= 1, 'no guard tooltip on hover');
+  await dlg.getByRole('button', { name: 'Depoyu kaldır' }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await dlg.locator('div[title^="/"]').count(), 1, 'the locked ✕ removed something');
   assert.ok((await dlg.getByText('● karar deposu').count()) >= 1, 'no decision-store marker');
-  // the add row fires immediately: a second repo lands, unguarded (nothing references it)
+  // the `+` reveal: the entry row appears on press; the immediate add lands a second, unguarded row
+  const openAdd = () => dlg.getByRole('button', { name: 'Depo ekle' }).click();
   const draft = dlg.locator('input[placeholder="yerel depo yolu"]');
+  await openAdd();
+  await page.waitForTimeout(250);
   await draft.fill('/tmp/e2e-ikinci-depo');
   await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
   await page.waitForTimeout(500);
   assert.ok((await dlg.getByText('e2e-ikinci-depo', { exact: true }).count()) >= 1, 'the immediate add did not land a row');
-  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 1, 'the second row is guarded too');
-  // AC 7: with two repos the select appears OPENING ON THE SAVED decision store ('repo')
-  assert.equal(await dlg.locator('select').inputValue(), 'repo', 'the decision-store select does not show the saved value');
+  assert.equal(await dlg.getByRole('button', { name: 'Depoyu kaldır' }).count(), 2, 'the second row has no live ✕');
+  assert.equal(await dlg.locator('input[placeholder="yerel depo yolu"]').count(), 0, 'the edit-mode add row did not collapse');
+  // AC 7 (operator review r3 form): the decision store is picked with an EXPLICIT ○ button beside
+  // ✎ — the row itself is not a click target. The ● label opens on the SAVED store ('repo'); a
+  // press moves it, a press back keeps the db net-zero (Kaydet never fires in this spec).
+  // Row order is the workspace_repo PK scan order (repo_id lexicographic — 'e2e-ikinci-depo'
+  // sorts before 'repo'), so rows are targeted BY PATH TITLE, never by index.
+  const rowByPath = (p) => dlg.locator(`div:has(div[title="${p}"])`).last();
+  const rootPath = await dlg.locator('div[title^="/"][title$="/repo"]').first().getAttribute('title');
+  assert.ok(rootPath, 'no seeded repo row to anchor the DS assert');
+  assert.ok((await rowByPath(rootPath).getByText('karar deposu').count()) >= 1, 'the ● label does not open on the saved store');
+  assert.equal(await dlg.getByRole('button', { name: 'Karar deposu yap' }).count(), 1, 'not exactly one DS button with two repos');
+  await rowByPath('/tmp/e2e-ikinci-depo').getByRole('button', { name: 'Karar deposu yap' }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await rowByPath('/tmp/e2e-ikinci-depo').getByText('karar deposu').count()) >= 1, 'the DS button did not move the label');
+  await rowByPath(rootPath).getByRole('button', { name: 'Karar deposu yap' }).click();
+  await page.waitForTimeout(250);
+  assert.ok((await rowByPath(rootPath).getByText('karar deposu').count()) >= 1, 'the pick did not return to the saved store');
   // AC 9 in the UI: a same-basename add refuses with its line under the add row
+  await openAdd();
+  await page.waitForTimeout(250);
   await draft.fill('/tmp/other/repo');
   await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
   await page.waitForTimeout(400);
@@ -951,9 +978,6 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   assert.equal(await dlg.locator('div[title^="/"]').count(), 2, 'the collision changed the row count');
   await page.screenshot({ path: join(SHOTS, 'ws-repos-ledger@980.png') });
   // path edit: same basename moves; a different basename refuses inline and ESC reverts.
-  // Row order is the workspace_repo PK scan order (repo_id lexicographic — 'e2e-ikinci-depo' sorts
-  // before 'repo'), so the spec targets rows BY PATH TITLE, never by index.
-  const rowByPath = (p) => dlg.locator(`div:has(div[title="${p}"])`).last();
   await rowByPath('/tmp/e2e-ikinci-depo').getByRole('button', { name: 'Depo yolunu düzenle' }).click();
   await page.waitForTimeout(250);
   const editor = dlg.locator('input.font-mono:not([placeholder])');
@@ -968,18 +992,25 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   await editor.fill('/tmp/farkli-ad');
   await editor.press('Enter');
   await page.waitForTimeout(400);
-  assert.ok((await dlg.getByText('Depo adı değişemez', { exact: false }).count()) >= 1, 'no basename refusal line');
+  assert.ok((await dlg.getByText('Ad değişemez', { exact: false }).count()) >= 1, 'no basename refusal line');
   assert.equal((await editor.count()), 1, 'a failed commit closed the editor (the typed text would be lost)');
   await editor.press('Escape');
   await page.waitForTimeout(300);
   assert.equal(await editor.count(), 0, 'ESC did not revert the editor');
   assert.equal(await page.locator('[role="dialog"]').count(), 1, 'ESC closed the whole dialog instead of the editor');
   assert.ok((await dlg.locator('div[title="/tmp/yeni/yol/e2e-ikinci-depo"]').count()) >= 1, 'ESC changed the committed path');
-  // confirmless removal brings the ledger back to one row (net zero for the suite)
+  // confirmless removal brings the ledger back to one row (net zero for the suite); the guard
+  // tooltip returns with the single row's locked ✕
   await rowByPath('/tmp/yeni/yol/e2e-ikinci-depo').getByRole('button', { name: 'Depoyu kaldır' }).click();
   await page.waitForTimeout(600);
   assert.equal(await dlg.locator('div[title^="/"]').count(), 1, 'the removal did not land');
-  assert.ok((await dlg.getByText('karar deposu kaldırılamaz').count()) >= 1, 'the guard did not return with the single row');
+  await dlg.getByRole('button', { name: 'Depoyu kaldır' }).hover();
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByRole('tooltip').getByText('Karar deposu').count()) >= 1, 'the guard tooltip did not return');
+  // the add row is still open (the failed collision kept it) — one Escape collapses it, the next
+  // closes the dialog
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
 });
@@ -1025,8 +1056,11 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
       'a failed submit did not focus the first invalid field',
     );
     await dlg.locator('input').first().fill('boş');
-    // an invalid typed path keeps its line under the add row — no row, no toast (§0's ruling)
+    // an invalid typed path keeps its line under the add row — no row, no toast (§0's ruling).
+    // The add row sits behind the `+` reveal (WO-0033 operator review); create keeps it open.
     const repoInput = dlg.locator('input[placeholder="yerel depo yolu"]');
+    await dlg.getByRole('button', { name: 'Depo ekle' }).click();
+    await emptyPage.waitForTimeout(250);
     await repoInput.fill('apps/web');
     await dlg.getByRole('button', { name: 'Ekle', exact: true }).click();
     await emptyPage.waitForTimeout(250);
@@ -1048,10 +1082,20 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     await emptyPage.screenshot({ path: join(SHOTS, 'ws-create-errors@980.png') });
     await editor.press('Escape');
     await emptyPage.waitForTimeout(250);
-    // removal empties the ledger; Oluştur with a valid draft ABSORBS it before validation (AC 6)
+    // removal empties the ledger (create keeps the entry row open — it IS the empty state then);
+    // Oluştur with a valid draft ABSORBS it before validation (AC 6)
     await dlg.getByRole('button', { name: 'Depoyu kaldır' }).first().click();
     await emptyPage.waitForTimeout(250);
-    assert.ok((await dlg.getByText('Henüz depo yok.').count()) >= 1, 'no empty-ledger line');
+    assert.equal(await dlg.locator('div[title^="/"]').count(), 0, 'the removal left a row');
+    assert.equal(await dlg.locator('input[placeholder="yerel depo yolu"]').count(), 1, 'create collapsed the entry row');
+    // the entry row carries its own Vazgeç ✕ (operator review r6): it collapses the row, the `+`
+    // reveal returns, and reopening keeps working
+    await dlg.getByRole('button', { name: 'Vazgeç', exact: true }).click();
+    await emptyPage.waitForTimeout(250);
+    assert.equal(await dlg.locator('input[placeholder="yerel depo yolu"]').count(), 0, 'Vazgeç did not collapse the entry row');
+    assert.ok((await dlg.getByRole('button', { name: 'Depo ekle' }).count()) >= 1, 'the + reveal did not return');
+    await dlg.getByRole('button', { name: 'Depo ekle' }).click();
+    await emptyPage.waitForTimeout(250);
     await repoInput.fill(wsRepo);
     await emptyPage.getByRole('button', { name: 'Oluştur', exact: true }).click();
     await emptyPage.waitForTimeout(800);

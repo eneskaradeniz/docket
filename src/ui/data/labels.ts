@@ -386,18 +386,23 @@ export const UI = {
   wsDecisionStore: 'Karar deposu',
   wsErrName: 'Ad gerekli.',
   wsErrRepo: 'En az bir geçerli depo yolu ekle (örn. /Users/.../proje).',
-  // WO-0033 — Defter satır dili: satır eylemleri, bekçi gerekçeleri, alan-altı hata satırları.
+  // WO-0033 — Defter satır dili: satır eylemleri, bekçi tooltip'leri, alan-altı hata satırları.
   wsRepoEditAria: 'Depo yolunu düzenle',
   wsRepoRemoveAria: 'Depoyu kaldır',
+  wsRepoAdd: 'Depo ekle',
   wsDsMarker: 'karar deposu',
+  wsDsMake: 'Karar deposu yap',
   wsNoRepos: 'Henüz depo yok.',
   wsErrPathInvalid: 'Tam yol değil — / ile başlamalı.',
-  wsErrPathName: 'Depo adı değişemez — yol aynı depoya işaret etmeli.',
+  // Ad = RepoId = kimlik (ADR-0003'in basename kuralı): track'ler bu adla referans verir. Mesaj
+  // kuralı değil ÇAREYİ söyler — operator incelemesi (2026-08-21, tur 2).
+  wsErrPathName: 'Ad değişemez — ad, depo kimliğidir. Başka depo istiyorsan silip yeniden ekle.',
   wsErrRepoDup: 'Bu adda depo zaten var.',
-  // Kaldırma bekçileri (ADR-0001: eylem yok + sebep satırı; teyitsiz — yeniden eklemek bir yol yazmaktır).
-  wsGuardDs: 'karar deposu kaldırılamaz',
-  wsGuardOpenWo: (wo: string) => `${wo} kullanıyor`,
-  wsGuardLast: 'son depo kaldırılamaz',
+  // Kaldırma bekçileri (ADR-0001 2026-08-21 addendum: eylem yerinde, soluk; sebep hover tooltip'te —
+  // copy engeli DEĞİL çözümü adlar). Teyitsiz kaldırma — yeniden eklemek bir yol yazmaktır.
+  wsGuardDs: 'Karar deposu — seçimi başka depoya taşıyınca kaldırılabilir',
+  wsGuardOpenWo: (wo: string) => `${wo} kullanıyor — iş kapanınca kaldırılabilir`,
+  wsGuardLast: 'Son kalan depo — çalışma alanı bir depoya ihtiyaç duyar',
   wsSave: 'Kaydet',
   wsCreateBtn: 'Oluştur',
   wsListTitle: 'Çalışma alanları',

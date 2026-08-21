@@ -11,7 +11,7 @@ import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
 import type { WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { Badge, Button, Dialog, Input, Segmented, Textarea, cn } from '../../kit';
+import { Badge, Button, Dialog, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
 import {
   formatUsd,
   PERMISSION_RULE_SHORT,
@@ -96,14 +96,16 @@ export function DetailStrip({
   return (
     <header className="flex flex-col gap-1.5 pb-2">
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={UI.backToBoard}
-          className="ibtn h-7 w-7 shrink-0"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <Tooltip label={UI.backToBoard}>
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={UI.backToBoard}
+            className="ibtn h-7 w-7 shrink-0"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </Tooltip>
         <span className="shrink-0 font-mono text-[12px] text-inkdim">{woIdLabel(detail.id)}</span>
         <Badge>{STAGE_LABELS[detail.stage]}</Badge>
         <span className="flex min-w-0 items-center gap-1.5">
@@ -136,9 +138,11 @@ export function DetailStrip({
             ]}
           />
           {!driveLive ? (
-            <Button variant="ghost" size="icon" aria-label={UI.deleteWo} onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            </Button>
+            <Tooltip label={UI.deleteWo}>
+              <Button variant="ghost" size="icon" aria-label={UI.deleteWo} onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </Tooltip>
           ) : null}
         </div>
       </div>
@@ -153,16 +157,18 @@ export function DetailStrip({
           // WO-0031f (operator, ADR-0001 addendum): on a CLOSED work order the pencil stays in place,
           // LOCKED — the terminal lock. The closed state is already named by the badge/faze beside it,
           // so the old "Kapalı iş emri değişmez" line said nothing new and died with this change.
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={UI.woEditAria}
-            className="h-6 w-6 shrink-0"
-            onClick={() => setEditing(true)}
-            {...(closed ? { locked: true } : {})}
-          >
-            <Pencil className="h-3 w-3" aria-hidden="true" />
-          </Button>
+          <Tooltip label={UI.woEditAria}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={UI.woEditAria}
+              className="h-6 w-6 shrink-0"
+              onClick={() => setEditing(true)}
+              {...(closed ? { locked: true } : {})}
+            >
+              <Pencil className="h-3 w-3" aria-hidden="true" />
+            </Button>
+          </Tooltip>
         )}
         {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
             WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
