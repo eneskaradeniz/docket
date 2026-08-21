@@ -12,6 +12,7 @@ import { createStore } from '../src/adapters/store';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { unifiedDiffLines } from '../src/core/diff';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
+import type { Locale } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
@@ -213,6 +214,9 @@ ipcMain.handle('docket:settings:get-provider-key', () => store.getProviderKey())
 ipcMain.handle('docket:settings:set-provider-key', (_e, key: string | undefined) => store.setProviderKey(key));
 ipcMain.handle('docket:settings:get-permission-rule', () => store.getPermissionRule());
 ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule) => store.setPermissionRule(rule));
+// WO-0035: the UI locale — undefined (no explicit choice) survives the structured clone.
+ipcMain.handle('docket:settings:get-locale', () => store.getLocale());
+ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLocale(locale));
 ipcMain.handle('docket:settings:check-provider', async () => {
   const key = await store.getProviderKey();
   return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);

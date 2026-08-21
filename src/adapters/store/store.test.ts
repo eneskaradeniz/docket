@@ -611,6 +611,15 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     store.db.prepare("UPDATE app_setting SET value = 'ask' WHERE key = 'permission_mode'").run();
     expect(await store.getPermissionRule()).toBe('ask_every');
   });
+  it('locale round-trips; absent or garbage reads undefined (WO-0035)', async () => {
+    const store = createStore(freshDb());
+    // no row → undefined: the store never invents a choice; the renderer detects the system language
+    expect(await store.getLocale()).toBeUndefined();
+    await store.setLocale('en');
+    expect(await store.getLocale()).toBe('en');
+    store.db.prepare("UPDATE app_setting SET value = 'xx' WHERE key = 'locale'").run();
+    expect(await store.getLocale()).toBeUndefined();
+  });
 });
 
 describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {
