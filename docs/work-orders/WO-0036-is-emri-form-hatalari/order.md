@@ -87,6 +87,8 @@ Out of scope:
    (`role="alert"`), focuses the title input, creates nothing, and the line falls once the user
    types — E2E.
 2. Create dialog: the footer line carries only save failures and announces (`role="alert"`).
+   *(Superseded by the 2026-08-21 review round: save failures toast top-right as hata — a dialog
+   footer carries no error copy at all.)*
 3. Edit dialog: Kaydet is never locked for validity; an empty title on save shows the same
    under-field error + focus and the dialog stays open — E2E.
 4. Edit dialog: clearing the description and saving persists the empty Objective (re-open shows
@@ -95,8 +97,8 @@ Out of scope:
 5. Both title inputs carry `aria-required="true"`; the description label reads "(isteğe bağlı)" in
    tr and "(optional)" in en; `woEditTitleLabel`/`woEditDescLabel` no longer exist in either bundle.
 6. Textareas: create `rows={4}`, edit `rows={6}`; the 760×480 fit spec still passes.
-7. `save()` failures surface `UI.saveFailed` in the edit footer (no unhandled rejection on a
-   closed-WO store throw).
+7. `save()` failures surface `UI.saveFailed` (no unhandled rejection on a closed-WO store throw) —
+   as a top-right error toast per the review round, not the edit footer.
 8. ADR-0012 carries the dated amendment; CLAUDE.md carries the bullet; ROADMAP ticked at closure
    with the merge sha.
 9. CI green: typecheck (both), test, build, check:boundaries, test:ui (42 specs, zero renderer
@@ -132,4 +134,12 @@ typecheck ×2, 497 tests, build, boundaries, E2E 42/42 with zero renderer consol
 operator rulings taken mid-flight: description clearing saves empty, and required-ness is marked the
 minority way. Deferred to a later UI pass: the ▸/＋ glyph unification and Enter-to-submit.
 
-_Closed 2026-08-21 at d60d39e_
+**Review round (2026-08-21, same evening):** the operator reversed the footer-line form — save
+failures now surface as a **top-right error toast** (hata, persistent, manual close) in all three
+dialogs that had footer copy (create, edit, and WsSettingsModal — the pattern's own birthplace).
+A dialog footer carries no error copy, period; the field line (the form's refusal) and the toast
+(the environment's refusal) answer different failures. ToastHost's caller rule gained the named
+exception; the z-ladder already placed floaters (z-80) above dialog overlays (z-40/70), so the toast
+shows over an open dialog. ADR-0012's decision and the CLAUDE.md bullet updated with the ruling.
+
+_Closed 2026-08-21 at d60d39e (review round: footer → toast)_

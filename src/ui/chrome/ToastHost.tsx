@@ -2,6 +2,9 @@
 // click → the work order's detail), hata (red, persistent, manual close only), teyit (green, ~2.6s).
 // The RULE lives with the caller, not here: an on-screen action's result is a screen change, never a
 // toast — only events from a work order you are NOT looking at (and rule-change confirmations) toast.
+// WO-0036 review round (2026-08-21): dialog save failures are the named exception — a form's own
+// refusal is a field line, but the environment's refusal (store/IPC) has no field to sit under, so
+// it toasts hata; the z-ladder keeps floaters (80) above dialog overlays (40-70), so it shows.
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../kit';

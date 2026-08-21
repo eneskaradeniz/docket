@@ -279,7 +279,9 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       `docs/work-orders/WO-0033-depo-baglantilari/order.md`.
 - [x] **WO-0036** — İş emri form hataları. Done: both WO dialogs join the WO-0033 form contract —
       errors under their field (`role="alert"`, persistent while invalid, cleared on typing),
-      first-invalid focused on a failed submit, footer = save failures only, and Kaydet never locked
+      first-invalid focused on a failed submit, save failures as top-right hata toasts (review round:
+      no dialog footer carries error copy — create, edit AND WsSettingsModal converted), and Kaydet
+      never locked
       for validity (ADR-0001's no-disabled rule extended to `locked`; ADR-0012 gained the
       "form errors sit under their field" decision). The edit dialog's four UX-review P0s paid:
       a cleared description now saves empty (the silent swallow dies), Vazgeç/ESC resets the
