@@ -9,7 +9,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { AppSettings } from '../src/core/app-settings';
-import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
   getWorkspaces: () => ipcRenderer.invoke('docket:source:get-workspaces'),
@@ -24,6 +24,9 @@ const source: WorkOrderSource = {
     ipcRenderer.invoke('docket:source:add-repo-connection', id, repo),
   removeRepoConnection: (id: WorkspaceId, path: string) =>
     ipcRenderer.invoke('docket:source:remove-repo-connection', id, path),
+  repoConnections: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:repo-connections', id),
+  updateRepoPath: (id: WorkspaceId, repoId: RepoId, newPath: string) =>
+    ipcRenderer.invoke('docket:source:update-repo-path', id, repoId, newPath),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
   updateWorkOrder: (id: WorkOrderId, patch: UpdateWorkOrderInput) => ipcRenderer.invoke('docket:source:update-work-order', id, patch),
   recordPermissionDecision: (id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) =>

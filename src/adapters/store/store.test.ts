@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { strict as assert } from 'node:assert';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createStore, seedFixtureWorkOrders } from './index';
 import { OBSERVED_TABLES } from './schema';
-import { woid } from '../ids';
+import { rid, woid } from '../ids';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -267,6 +268,68 @@ describe('SQLite store — workspace CRUD (WO-0014)', () => {
     const ws2 = await store.getWorkspaces();
     const found = ws2.find((w) => w.id === ws.id)!;
     expect(found.label).toBe('NewName');
+  });
+
+  // ===== WO-0033 — the ledger read + the path move + the basename-collision refusal =====
+
+  it('repoConnections returns {id, path} from the connection table', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Ledger', repos: [{ path: '/tmp/api' }, { path: '/tmp/mobile' }] });
+    const conns = await store.repoConnections(ws.id);
+    expect(conns).toEqual([
+      { id: rid('api'), path: '/tmp/api' },
+      { id: rid('mobile'), path: '/tmp/mobile' },
+    ]);
+  });
+
+  it('updateRepoPath rewrites local_path only — remote + definition untouched', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Move', repos: [{ path: '/old/place/api', remote: 'git@x:api.git' }] });
+    await store.updateRepoPath(ws.id, rid('api'), '/new/place/api');
+    expect(await store.repoConnections(ws.id)).toEqual([{ id: rid('api'), path: '/new/place/api' }]);
+    const conn = store.db.prepare('SELECT repo_remote, local_path FROM connection WHERE workspace_id = ?').get(ws.id) as {
+      repo_remote: string;
+      local_path: string;
+    };
+    expect(conn.repo_remote).toBe('git@x:api.git'); // the row key survives the move
+    expect((await store.getWorkspaces()).find((w) => w.id === ws.id)!.repos).toEqual([rid('api')]);
+  });
+
+  it('updateRepoPath throws on a basename change and writes nothing', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Rename', repos: [{ path: '/tmp/api' }] });
+    await assert.rejects(() => store.updateRepoPath(ws.id, rid('api'), '/tmp/other'), /basename is the identity/);
+    expect(await store.repoConnections(ws.id)).toEqual([{ id: rid('api'), path: '/tmp/api' }]);
+  });
+
+  it('updateRepoPath throws on an unknown repo', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Unknown', repos: [{ path: '/tmp/api' }] });
+    await assert.rejects(() => store.updateRepoPath(ws.id, rid('ghost'), '/tmp/ghost'), /no connection/);
+  });
+
+  it('addRepoConnection refuses a basename collision — no silent swallow (AC 9)', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const ws = await store.createWorkspace({ label: 'Dup', repos: [{ path: '/tmp/a' }] });
+    await assert.rejects(() => store.addRepoConnection(ws.id, { path: '/elsewhere/a' }), /duplicate repo: a/);
+    // One row, the ORIGINAL path — the second repo neither replaced nor joined it.
+    expect((await store.getWorkspaces()).find((w) => w.id === ws.id)!.repos).toEqual([rid('a')]);
+    expect(await store.repoConnections(ws.id)).toEqual([{ id: rid('a'), path: '/tmp/a' }]);
+  });
+
+  it('createWorkspace refuses duplicate basenames in its own input — nothing half-written', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    await assert.rejects(
+      () => store.createWorkspace({ label: 'Double', repos: [{ path: '/tmp/a' }, { path: '/other/a' }] }),
+      /duplicate repo: a/,
+    );
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM workspace WHERE label = ?').get('Double') as { n: number }).n).toBe(0);
   });
 });
 

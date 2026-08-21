@@ -26,7 +26,8 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
       <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{label}</span>
       {children}
       {hint && !error ? <span className="mt-1 block text-[11px] text-inkdim">{hint}</span> : null}
-      {error ? <span className="mt-1 block text-[11px] text-error">{error}</span> : null}
+      {/* WO-0033: the error line announces (a state, not an event — it stays while invalid). */}
+      {error ? <span role="alert" className="mt-1 block text-[11px] text-error">{error}</span> : null}
     </label>
   );
 }

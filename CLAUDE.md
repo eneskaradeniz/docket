@@ -29,6 +29,9 @@ rule restated with its reasons in two places is the duplication this repository 
 - Terminal-lock exception (2026-08-18 addendum): a control unavailable because the WO is CLOSED renders in
   place, locked (kit `locked` — pointer-events + dim, attribute-free), not absent; transient gates (a live
   drive) keep absent + reason.
+- Guarded-row-action exception (2026-08-21 addendum): when the surface already shows what the row is (e.g.
+  the karar deposu marker), a guarded action renders in place, dimmed, tooltip carrying the reason — not
+  absent with a standing line.
 
 ## Interaction + copy contract — ADR-0012
 - Hover flows ONLY through the semantic classes in `src/index.css` (`.ibtn` / `.irow` / `.ichip`) or kit

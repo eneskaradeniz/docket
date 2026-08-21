@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Check, Settings2 } from 'lucide-react';
 import type { Workspace, WorkspaceId } from '../../core/types';
 import { UI } from '../data/labels';
-import { Button, Dialog, Input } from '../kit';
+import { Button, Dialog, Input, Tooltip } from '../kit';
 
 export function WsListModal({
   workspaces,
@@ -45,14 +45,16 @@ export function WsListModal({
                 <span className={`w-4 text-center ${on ? 'text-signal' : ''}`}>{on ? <Check className="inline h-3.5 w-3.5" aria-hidden="true" /> : null}</span>
                 <span className="text-ink">{w.label}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => onEdit(w)}
-                className="ibtn h-8 w-8 border border-hairline"
-                aria-label={UI.wsSettings}
-              >
-                <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+              <Tooltip label={UI.wsSettings}>
+                <button
+                  type="button"
+                  onClick={() => onEdit(w)}
+                  className="ibtn h-8 w-8 border border-hairline"
+                  aria-label={UI.wsSettings}
+                >
+                  <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
             </div>
           );
         }) : <p className="px-3 py-2 text-[13px] text-inkdim">{UI.wsListEmpty}</p>}

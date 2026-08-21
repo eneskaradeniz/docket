@@ -11,6 +11,13 @@ export interface RepoConnectionInput {
   remote?: string;
 }
 
+/** One connected repo for the ledger (WO-0033): the RepoId (the path's basename — the identity
+ *  invariant every writer follows) plus the full local path it lives at. */
+export interface RepoConnectionView {
+  id: RepoId;
+  path: string;
+}
+
 export interface CreateWorkspaceInput {
   label: string;
   repos: RepoConnectionInput[];
@@ -69,6 +76,15 @@ export interface WorkOrderSource {
   deleteWorkspace(id: WorkspaceId): Promise<void>;
   addRepoConnection(id: WorkspaceId, repo: RepoConnectionInput): Promise<void>;
   removeRepoConnection(id: WorkspaceId, path: string): Promise<void>;
+  // The workspace's connected repos for the settings ledger (WO-0033): one {id, path} per
+  // connection-table row. `Workspace.repos` carries basenames only — the full paths live in the
+  // store, so reading them in the UI goes through this port. Fixture-seeded repos have no
+  // connection row and do not appear here.
+  repoConnections(id: WorkspaceId): Promise<RepoConnectionView[]>;
+  // Move a repo's local path (WO-0033): rewrites connection.local_path ONLY — the RepoId, the
+  // definition row and the remote stay. Throws (changing nothing) when the new path's basename
+  // differs from the RepoId — identity is the basename; a different name is a different repo.
+  updateRepoPath(id: WorkspaceId, repoId: RepoId, newPath: string): Promise<void>;
 
   // Work-order creation (WO-0015). The store brands the id, authors order.md into the decision-store
   // working tree (Docket does NOT commit — operator commits; ADR-0009 M2 addendum), and inserts a thin

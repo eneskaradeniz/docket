@@ -13,7 +13,7 @@ import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { unifiedDiffLines } from '../src/core/diff';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
-import type { StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +124,9 @@ ipcMain.handle('docket:source:update-workspace', (_e, id: WorkspaceId, patch: { 
 ipcMain.handle('docket:source:delete-workspace', (_e, id: WorkspaceId) => store.deleteWorkspace(id));
 ipcMain.handle('docket:source:add-repo-connection', (_e, id: WorkspaceId, repo: RepoConnectionInput) => store.addRepoConnection(id, repo));
 ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, path: string) => store.removeRepoConnection(id, path));
+// WO-0033: the ledger read + the path move. Full paths never leave the store except through these.
+ipcMain.handle('docket:source:repo-connections', (_e, id: WorkspaceId) => store.repoConnections(id));
+ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: RepoId, newPath: string) => store.updateRepoPath(id, repoId, newPath));
 
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
