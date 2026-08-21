@@ -2,7 +2,7 @@
 id: WO-0035
 title: Dil seçici — en/tr label bundles, LocaleProvider, the settings selector
 workspace: docket
-status: implementing
+status: closed
 mode: plan
 tracks:
   - repo: app
@@ -197,3 +197,21 @@ Out of scope:
 - index.html keeps its static `lang="tr"` (no visible text before React mounts; the provider sets
   `lang` synchronously in the initializer). The pairing is commented in both files.
 - Ordering: WO-0034 stays pencilled to profiles (WO-0033 Notes); this order takes WO-0035.
+
+## Closure
+
+Merged PR #41 (`195c123`), one PR, 7 commits: the order, the plan (eight settled decisions), the
+Locale port (core union + store row + IPC bridge, +1 store test → 491), the bundles + provider +
+the 33-consumer migration + the live selector in one compile-coupled commit, the E2E round (3
+specs; the seed's `setLocale('tr')` is load-bearing — TD-041), the closure docs, and a reviewer
+round (the TD-040 table-row splice; two stale comment paths). AC-1's compile-completeness was
+demonstrated live: deleting `stripDuration` from en.ts → `error TS2741`, restored. The vocabulary
+gate resolved with the operator 2026-08-21: SIMPLE/DETAIL confirmed, Ledger and Session log
+deferred to the draft (one word flips either). Two genuine finds paid en route: the Defter E2E
+spec used to leave its modal open (later specs lost the appbar) and the EN draft's count
+composisors needed real plurals (`1 work order`, never `1 work orders`). Gates: typecheck ×2, 497
+tests, build, boundaries, E2E 40/40 (37 legacy untouched — additions only), CI green on every
+push. ADR-0007 addendum (pays WO-0013's live-locale debt), CLAUDE.md truth fix, ROADMAP M3.5 tick;
+TD-040 (write-time-locale scrollback) + TD-041 opened.
+
+_Closed 2026-08-21 at 195c123_
