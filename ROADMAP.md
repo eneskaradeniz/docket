@@ -263,6 +263,20 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       another board / the hero. CLI: `remove-workspace <id|ad> [--yes]` (refuses without `--yes`,
       naming the blast radius). ADR-0009 gained the workspace-deletion addendum. 484 tests (+4);
       E2E 36 specs (+2, seeded `çöp` workspace). Spec: `docs/work-orders/WO-0032-workspace-silme/order.md`.
+- [x] **WO-0033** — Depo bağlantıları (Defter). Done: two new ports — `repoConnections` (the full
+      paths, which `Workspace.repos` never carried) and `updateRepoPath` (basename-is-identity: a
+      path naming a different basename refuses) — over IPC; the basename-collision refusal on add
+      (the silent `INSERT OR REPLACE` collapse that lost the second repo dies). The settings modal's
+      repo section becomes the operator-ledger: two-line cards (basename + full mono path in
+      `title`), ONE anatomy for create and edit, per-action commits in edit mode (Kaydet applies
+      name + karar deposu only), confirmless removal with three guards (karar deposu · open-WO
+      track · last repo — locked-in-place ✕ + reason tooltip, ADR-0001's 2026-08-21 addendum), the
+      `+ Depo ekle` reveal with its Vazgeç ✕, in-list karar deposu pick (BookMarked button), inline
+      field errors (persistent while invalid, live while editing, first-invalid focused on submit),
+      and the vocabulary pass (repo → depo, Workspace ayarları → Çalışma alanı ayarları, merge_track
+      → Depoyu birleştir); no bare icon buttons anywhere (tooltips via labels.ts). A six-round
+      operator review shaped the surface; E2E 37 specs. Spec:
+      `docs/work-orders/WO-0033-depo-baglantilari/order.md`.
 
 ## M3 — Evidence layer
 

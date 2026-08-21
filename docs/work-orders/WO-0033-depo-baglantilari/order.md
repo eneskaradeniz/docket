@@ -2,7 +2,7 @@
 id: WO-0033
 title: Depo bağlantıları — Defter rows, inline field errors, vocabulary pass
 workspace: docket
-status: open
+status: closed
 mode: plan
 tracks:
   - repo: app
@@ -148,3 +148,22 @@ Out of scope:
 - The evidence strings that interpolate repo names (`evdPrMissing · ${repo}` etc.) are data and do
   not change; only fixed words change.
 - Ordering: the operator pencilled profiles next; that work shifts to WO-0034.
+
+## Closure
+
+Merged PR #40 (`42d9778`), one PR, 6 commits: the work order + mockup, the plan (operator-approved
+— the three stop-and-ask gates taken per the order's own stance), the ports + store + IPC bridge
+(+6 store tests → 490; the basename-collision refusal on add), the Defter modal + the vocabulary
+pass, the E2E round (+ the two real bugs the spec caught: Radix capture-phase ESC — the Dialog kit
+gained `onEscapeKeyDown` — and the workspace_repo PK-scan row order), and a six-round operator
+review that reshaped the surface while uncommitted: the app's card language for the rows, the
+guarded ✕ locked-in-place with a reason tooltip (ADR-0001's 2026-08-21 guarded-row-action
+addendum; CLAUDE.md line follows), the `+ Depo ekle` reveal with its Vazgeç ✕ at input height,
+Klasör icon-only leading, the in-list karar deposu pick (the bottom select died; a BookMarked
+button beside ✎), live path-edit validation with remedy-naming copy, and tooltips on every
+icon-only control (labels.ts; close ✕'s stay bare by ruling). AC-7's evidence moved with the
+control: the ● label opens on the saved store. Gates: typecheck ×2, 490 tests, build, boundaries,
+E2E 37/37, CI green on every push. TD-039 records the basename-identity limitation the order
+named out of scope.
+
+_Closed 2026-08-21 at 42d9778_
