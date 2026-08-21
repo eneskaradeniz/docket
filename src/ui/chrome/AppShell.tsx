@@ -1,6 +1,6 @@
 // AppShell — the console's top bar (WO-0031 "Kontrol Konsolu"). A 48px drag-region title bar (the
 // macOS traffic lights live in it via hiddenInset); the wordmark, a compact workspace switcher, the one
-// primary action (+ Yeni iş emri) and the settings gear. All copy via labels.ts (ADR-0007); the theme
+// primary action (+ Yeni iş emri) and the settings gear. All copy via the locale bundles (ADR-0007); the theme
 // toggle is gone (dark-only ruling).
 import { useState } from 'react';
 import { Plus, Settings2 } from 'lucide-react';
