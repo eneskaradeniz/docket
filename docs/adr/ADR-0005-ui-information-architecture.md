@@ -83,3 +83,10 @@ decisions in ADR-0002, so it is visible rather than inferred.
 - The transcript and stop-and-ask regions are **provisional** until WO-0001 reports. Their shape depends on
   whether permission prompts are observable. They are marked as such in the prototype.
 - UI copy is English, matching the repository language and the open-source destination.
+
+---
+
+**Addendum (2026-08-22, WO-0038 / ADR-0013):** the dual-surface (SADE|DETAY) and the tab/rack forks
+of the detail screen are superseded by the single-view dossier — one scroll, a merged header band,
+the record as sections. ADR-0013 carries the ruling; this document's board/derivation decisions
+stand.

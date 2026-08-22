@@ -147,3 +147,13 @@ and joined it in WO-0036):
   (Load-state skeletons remain a separate TD-037 question about *loading*, not emptiness.)
 - **Celebration escalation** (confetti, sounds, streaks). Rejected by the operator as meta-game;
   the seal and the flash are the ceiling.
+
+---
+
+**Addendum (2026-08-22, WO-0037/0038 / ADR-0013):** the transcript is the Ray reading column
+(WO-0037) — one outer frame, one text edge, role-barred turns, collapsible tool blocks; its motion
+contract: ONE 400ms proceed wash on a true append (reading variants only), the ▾ jump chip rides
+`.ichip`, archived columns are pulseless. "SADE stays calm" (r5) is restated for the DOSYA world:
+the CALM surface is the closed session card (özet only); the document scroll itself never animates
+on mount. The plan editor's staging model (Vazgeç/Bitti/Onayla) follows the r3 form rules: an empty
+aim is a field error (border + the rail names the row), never a lock on Bitti.

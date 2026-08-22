@@ -41,11 +41,23 @@ rule restated with its reasons in two places is the duplication this repository 
 - No explainer paragraphs (field names suffice; informative lines — reasons, consequences, "maliyet
   işlemez" — stay), no jargon/mixed-case headers, no standing keyboard hints (only the rail ⏎ badge).
 - Juice: transitions only (never mount), ≤400ms, reduced-motion off via the one CSS block, the cost
-  counter never animates, SADE stays calm.
+  counter never animates, the CLOSED session card stays calm (ADR-0012's 2026-08-22 restatement —
+  SADE no longer exists).
 - Form errors sit under their field (persistent while invalid, first-invalid focused on submit, `role="alert"`);
   save failures toast top-right (hata) — a dialog footer carries no error copy; validity never locks a submit.
   Required-ness is marked the minority way — `aria-required` + an "(isteğe bağlı)" suffix — never asterisks
   or a legend (WO-0036 + its review round).
+
+## Single view — ADR-0013
+- The work-order detail screen is ONE scroll at every width (DOSYA): a merged header band (turn lamp
+  spine + phase + step hairline) over decision cards → plan rows → the live instrument → the record
+  sections (Belgeler rows · Kaynaklar · Oturum cards) → the rail. No view mode, no tabs, no rack —
+  `view-mode`/`Substrip`/`DetailBody`/`useDetailLayout` are deleted; do not reintroduce layout forks.
+- Session history renders as CARDS: meta + the artifact-headline özet + the Ray transcript one click
+  away (the aç/kapa is the old SADE/DETAY distinction). The Kanıt section is dead — evidence is
+  contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is
+  ENFORCED in the pipeline (`SessionStore.planApprovedFor`): step/review drives on an unapproved plan
+  are refused with an error event before the runner spawns — never work around it in a host.
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

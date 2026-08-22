@@ -336,6 +336,8 @@ gate model, after the board and the detail view.
 - [ ] Open work orders grouped by whose turn it is
 - [ ] Open tech debt linked to the work orders that opened it
 - [ ] "Ready to start" computed from closed dependencies and unsatisfied gates
+- [x] WO-0037 — okunur akış: xterm retired; the Ray chat column (role-barred turns, collapsible tool blocks, colored code) everywhere transcripts live (2026-08-22)
+- [x] WO-0038 — DOSYA: the single-view dossier — SADE/DETAY, tabs/rack, substrip, plan cards, the audit table and the standing evidence showcase died; header band + one scroll + session cards with artifact-headline özet + an honest plan editor + the pipeline-level plan-approval guard (2026-08-22)
 - [ ] Recently closed, with closing sha
 
 ## Later
