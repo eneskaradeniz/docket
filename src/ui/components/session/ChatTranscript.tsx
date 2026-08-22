@@ -22,14 +22,16 @@ import { MarkdownBody } from '../detail/MarkdownBody';
 //                       body = its output, dim mono — a command and its echo can never blur into
 //                       paragraphs again. Collapsible: history sits CLOSED (one line — density),
 //                       the LIVE-EDGE block opens itself; a run without a result yet carries a
-//                       breathing dot. The ARCHIVED ledger never collapses — a record hides nothing.
+//                       breathing dot. ARCHIVED columns start COLLAPSED (operator ruling,
+//                       2026-08-22: "terminali görmek isteyen görsün" — the record hides nothing,
+//                       it just does not shout).
 //   system / note     — centered mono caps, the session's punctuation.
 //   code              — the ONE other volumetric element (CodeBlock: borderless recess).
 //
 // Live behavior (live + compact only): bottom-pin (a user within 48px of the bottom rides along;
 // one who scrolled up is never dragged back — a ▾ chip restores the bottom), and a 400ms proceed
 // wash on a TRUE append only (the appended tail GROUP; a resume seed 0→N stays calm). `archived`
-// is static: no pin, no pulse — the Kayıt ledger expansion. The list is capped at the last 800
+// is static: no pin, no pulse, tool blocks collapsed. The list is capped at the last 800
 // entries (head line says what fell off); windowing is a recorded debt.
 //
 // Run-verified, not unit-tested (ADR-0006: React components are verified by running them).

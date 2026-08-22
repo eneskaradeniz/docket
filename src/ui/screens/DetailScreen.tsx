@@ -4,7 +4,7 @@ import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
 // The console FRAME (WO-0031c / v4): the detail fills the viewport below the 48px AppShell bar — the
 // rail pins to the window bottom and the body row scrolls internally (the mockup's `.console` grid,
-// strip / substrip / body / rail). The board keeps its normal page scroll; only the detail is a console.
+// band / one scroll / rail). The board keeps its normal page scroll; only the detail is a console.
 export function DetailScreen({
   detail,
   docs,

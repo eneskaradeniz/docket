@@ -21,7 +21,7 @@ import type {
   WoEventKind,
   TranscriptLine,
 } from '../../../core/types';
-import type { LiveSessionStatus, SimplePhase } from '../../../core/runner';
+import type { LiveSessionStatus } from '../../../core/runner';
 import type { PermissionRule } from '../../../core/source';
 import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
@@ -138,20 +138,6 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Error',
 };
 
-export const SIMPLE_PHASE_LABELS: Record<SimplePhase, string> = {
-  planning_started: 'Building the plan…',
-  scanning: 'Scanning the code…',
-  thinking: 'Thinking about the plan…',
-  writing_decisions: 'Writing the decision store…',
-  running_command: 'Running a command…',
-  delegating: 'Subtask started…',
-  fetching: 'Searching sources…',
-  asking_input: 'The architect is waiting for you.',
-  asking_permission: 'The architect has a request.',
-  ready: 'Plan ready.',
-  errored: 'An error occurred.',
-  done: 'Done.',
-};
 
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Write file',
@@ -188,7 +174,7 @@ export function transcriptLineText(line: TranscriptLine): string {
   }
 }
 
-/** Mirrors tr's SADE-tail projection (WO-0037): an assistant turn collapses to its first
+/** Mirrors tr's one-line projection (WO-0037): an assistant turn collapses to its first
  *  non-empty line; everything else is the flat transcript line. */
 export function transcriptTailText(line: TranscriptLine): string {
   if (line.speaker === 'assistant') {
@@ -468,11 +454,6 @@ export const UI = {
   woPhaseImplementing: 'Implementing',
   woPhaseClosing: 'Closing — update the docs',
   woPhaseDone: 'Completed',
-  // Vocabulary spine (operator, 2026-08-21): the view names translate — SIMPLE/DETAIL in en,
-  // SADE/DETAY stay tr-only.
-  viewModeSimple: 'SIMPLE',
-  viewModeDetail: 'DETAIL',
-  viewModeAria: 'View — Simple or Detail',
   turnYours: 'Your turn',
   turnRunning: 'Working',
   turnStopped: 'Stopped — resume if you want',
@@ -523,8 +504,6 @@ export const UI = {
   railStopping: 'Stopping…',
   railRetry: 'Retry',
   stepReady: 'ready',
-  planProposedSteps: (n: number) => `The architect proposed ${n} step${n === 1 ? '' : 's'}`,
-  secEvidence: 'Evidence',
   secDocs: 'Documents',
   docSections: (n: number) => `${n} section${n === 1 ? '' : 's'}`,
   docOrderLabel: 'Work order',
@@ -564,12 +543,6 @@ export const UI = {
   // Vocabulary spine: 'Session log' — the operator deferred to this draft at the WO-0035 gate
   // (2026-08-21); one word here flips it to 'Transcript' if the live app argues otherwise.
   auditTitle: 'Session log',
-  auditColSession: 'Session',
-  auditColRole: 'Role',
-  auditColTime: 'Time',
-  auditColDuration: 'Duration',
-  auditColCost: 'Cost',
-  auditTotal: 'Total',
   auditCostNone: '—',
   auditClock: (iso: string) => {
     const d = new Date(iso);
@@ -647,7 +620,6 @@ const en: Labels = {
   CARD_ACTION_AREA,
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
-  SIMPLE_PHASE_LABELS,
   TOOL_LABELS,
   MODE_LABELS,
   SOURCE_KIND_LABELS,

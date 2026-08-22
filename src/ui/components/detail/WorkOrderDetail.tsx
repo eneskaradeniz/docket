@@ -43,13 +43,12 @@ function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
   }
 }
 
-// The console CONTROLLER (WO-0031c / v4). Faz B's state-blind two-pane grid is gone; the screen is the
-// v4 spine — Strip → Substrip → Body → Rail — and the content of every row is CONTENT-AWARE (derived
-// from the phase + the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the
-// runIdx/reviewIdx/verdictFor effects live verbatim below); what moved is chrome: cost/duration/status
-// to the strip (ONE ticker), stop/resume/plan-approval actions to the rail (the panes' dead
-// `onClick={stop}` is deleted with them), ask cards pinned above the instrument, and SADE/DETAY is the
-// global view mode.
+// The console CONTROLLER (WO-0031c / v4 → WO-0038 DOSYA). The spine is the HEADER BAND → the ONE
+// scroll → the rail (ADR-0013); the content of every row is CONTENT-AWARE (derived from the phase +
+// the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the runIdx/reviewIdx/
+// verdictFor effects live verbatim below); what moved over the years is chrome: cost/duration/status
+// to the band (ONE ticker), stop/resume/plan-approval actions to the rail, ask cards pinned above
+// the instrument.
 //
 // c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
 // "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
@@ -482,11 +481,14 @@ export function WorkOrderDetail({
           ...(proposedSteps.length > 0
             ? [{ id: 'edit', label: UI.editPlan, variant: 'secondary' as const, locked: approving, onActivate: openEditor }]
             : []),
-          ...(editEmptyAim
+          // Onayla needs a fence to rewrite (reviewer note 5): a fence-less re-proposal while the
+          // stage holds would approve the VERBATIM plan, not the staged rows — absent, and the
+          // planNoStepsWarn banner already says object.
+          ...(editEmptyAim || (staged && proposedSteps.length === 0)
             ? []
             : [{ id: 'approve', label: UI.railApprove, variant: 'primary' as const, busy: approving, locked: approving, onActivate: () => void approvePlan() }]),
         ];
-        if (!editEmptyAim) railPrimary = () => void approvePlan();
+        if (!editEmptyAim && !(staged && proposedSteps.length === 0)) railPrimary = () => void approvePlan();
       }
     } else if (planStage && !effectivePlan && !showQuestion) {
       // "Plan iste" covers BOTH plan stages — written (fresh) and architect_approval after an

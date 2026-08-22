@@ -13,10 +13,9 @@ import { ChatTranscript } from './ChatTranscript';
 // the instrument itself. On turn_complete the drive ends and the App-level onEnd reloads the detail so
 // the step shows done + the next is runnable.
 //
-// WO-0031f v6: DETAY no longer has an instrument card for steps — the pane renders INSIDE its spine
-// row, pinned open while the session runs (the live thing is never hidden behind a toggle): a
-// `Rol · canlı` readout + the live `$ · ⏱` costline over the compact chat (WO-0037). SADE keeps the
-// one calm card (PhaseLine + the activity tail) — the two modes share the drive logic verbatim.
+// WO-0031f v6 → WO-0038: the pane renders INSIDE its spine row, pinned open while the session runs
+// (the live thing is never hidden): a `Rol · canlı` readout + the live `$ · ⏱` costline over the
+// compact chat (WO-0037). The inline form is the ONLY form — the dual view died with the mode.
 export function StepPane({
   step,
   workOrderId,

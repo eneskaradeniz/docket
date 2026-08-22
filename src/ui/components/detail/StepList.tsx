@@ -20,7 +20,7 @@ import { StepPane } from '../session/StepPane';
 //
 // WO-0031d / v4 §7 — juice on TRANSITIONS only (never mount): a flip to done flashes the row green
 // and the proceed ✓ DRAWS; a flip to blocked flashes red; a done row fills its 2px mini bar. The
-// prev-state ref is fresh per mount, so a remount (SADE↔DETAY, reload) reads as "already seen" and
+// prev-state ref is fresh per mount, so a remount (navigation, reload) reads as "already seen" and
 // stays calm (ADR-0012 r7).
 export function StepList({
   steps,
@@ -38,7 +38,7 @@ export function StepList({
   workOrderId: WorkOrderId;
   /** The driven step (runIdx) — its row renders StepPane inline (the terminal is pinned open). */
   activeIdx?: number;
-  /** The one open report (lifted to the controller: one at a time + the substrip focus reads it). */
+  /** The one open report (lifted to the controller: one at a time (the header band reads it too)). */
   reportStep?: StepView;
   onToggleReport: (step: StepView) => void;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;

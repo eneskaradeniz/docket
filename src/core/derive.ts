@@ -363,7 +363,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
 // The board derives from store rows, and the session row is written only when the provider's first
 // event arrives — so for the subprocess boot window (and any moment the renderer's rows lag the
 // fold, e.g. right after an answered ask) the card would sit in "Sıra sende" while work is in
-// flight. The app's drive memory — the same source the detail substrip reads — overlays the card:
+// flight. The app's drive memory — the same source the detail header band reads — overlays the card:
 // a drive that is booting or running puts its WO in the working bucket, from the click. Every
 // other fold status is a no-op: those moments are the rows' to narrate (a stopped_asking reason
 // carries the gate, which only the row knows), and a closed archive is terminal.
@@ -462,7 +462,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
 
 // ===== Turn state (WO-0031c) =====
 //
-// ONE classifier for the three ambient surfaces of the console: the substrip turn line ("Sıra sende"),
+// ONE classifier for the three ambient surfaces of the console: the header band's turn line ("Sıra sende"),
 // the glow wash and the action rail's lamp. Precedence mirrors where the operator's attention must go:
 // a dead session (retry) outranks a pending ask, which outranks a running drive; the wind-down
 // (`stopping` — interrupt sent, session still open) is still a running (spending) session; `stopped` is
@@ -481,7 +481,7 @@ export function deriveTurnState(input: {
   starting?: boolean; // store.start() ran, no first RunnerEvent yet
 }): TurnState {
   // A closed work order is DONE — terminal, outranking any stale live state (tur-2: a closed WO used
-  // to fall through to 'yours' and the substrip claimed "Sıra sende" over an archive).
+  // to fall through to 'yours' and the header band claimed "Sıra sende" over an archive).
   if (input.phase.kind === 'done') return 'done';
   if (input.liveStatus === 'error') return 'retry';
   if (input.hasPendingAsks || input.liveStatus === 'stopped_asking') return 'yours';

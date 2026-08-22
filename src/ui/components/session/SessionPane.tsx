@@ -11,8 +11,9 @@ import { ChatTranscript } from './ChatTranscript';
 // cost/duration/status live in the strip, the stop control and the plan-approval actions live in the
 // rail, ask cards are pinned by the controller above the instrument, and SADE/DETAY is the global view
 // mode. What remains here is the drive machinery: role tabs (free-form), the prompt + start/resume row,
-// the architect question card, and the instrument itself (SADE: PhaseLine + the activity tail;
-// DETAY: the chat transcript — WO-0037, xterm retired).
+// the architect question card, and the instrument itself (the chat transcript — WO-0037, xterm retired).
+// At the plan-APPROVAL moment this pane does not render at all (the plan rows + the rail carry the
+// decision — see the instrument selector below).
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
 export function SessionPane({

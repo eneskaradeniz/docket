@@ -21,7 +21,7 @@ import type {
   WoEventKind,
   TranscriptLine,
 } from '../../../core/types';
-import type { LiveSessionStatus, SimplePhase } from '../../../core/runner';
+import type { LiveSessionStatus } from '../../../core/runner';
 import type { PermissionRule } from '../../../core/source';
 import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
@@ -150,22 +150,6 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Hata',
 };
 
-// SADE modu: canlı durumdan türetilen tek-satır faz etiketleri (WO-0016). Detay akışının yerine sakin
-// bir ilerleme satırı — "Kod taranıyor…", "Plan düşünülüyor…". Faz core'da (simplePhaseFromState).
-export const SIMPLE_PHASE_LABELS: Record<SimplePhase, string> = {
-  planning_started: 'Plan oluşturuluyor…',
-  scanning: 'Kod taranıyor…',
-  thinking: 'Plan düşünülüyor…',
-  writing_decisions: 'Karar deposu yazılıyor…',
-  running_command: 'Komut çalıştırılıyor…',
-  delegating: 'Alt görev başlatıldı…',
-  fetching: 'Kaynaklar aranıyor…',
-  asking_input: 'Mimar seni bekliyor.',
-  asking_permission: 'Mimarın bir isteği var.',
-  ready: 'Plan hazır.',
-  errored: 'Bir hata oluştu.',
-  done: 'Bitti.',
-};
 
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Dosya yaz',
@@ -527,10 +511,6 @@ export const UI = {
   woPhaseClosing: 'Kapanış — belgeleri güncelle',
   woPhaseDone: 'Tamamlandı',
   // ===== Kontrol Konsolu v2 (WO-0031c / v4 mockup) =====
-  // Görünüm modu — global, hatırlanır; strip'teki mono segment.
-  viewModeSimple: 'SADE',
-  viewModeDetail: 'DETAY',
-  viewModeAria: 'Görünüm — Sade veya Detay',
   // Sıra durumu (deriveTurnState çıktısı) — substrip satırı. Kısa metin kuralı (operatör): çalışan
   // durumda doldurma güvence cümlesi YOK — yalnız "Çalışıyor" + canlı satır; bilgi taşıyan satırlar
   // (maliyet donması gibi) kalır.
@@ -579,7 +559,7 @@ export const UI = {
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
   streamOpened: 'Oturum açıldı — çıktı bekleniyor',
-  // WO-0037 — the chat transcript (DETAY live flow + the Kayıt ledger expansion; xterm retired).
+  // WO-0037/0038 — the chat transcript (the session surfaces' terminal; xterm retired).
   // One reading column: assistant turns are markdown bubbles, tool calls compact rows, results
   // indented lines. The aria names the log; the jump chip restores the bottom; the head line caps
   // at the last 800 entries.
@@ -587,7 +567,7 @@ export const UI = {
   chatJumpLatest: '▾ en son',
   chatOlderLines: (n: number) => `… önceki ${n} satır`,
   // WO-0037 Ray turu (operatör, 2026-08-22): araç çağrıları blok + aç/kapa — komut çıktısının
-  // paragraf gibi akması bitti; geçmiş kapalı (yoğunluk), canlı kenar açık, arşiv hep açık.
+  // paragraf gibi akması bitti; geçmiş kapalı (yoğunluk), canlı kenar açık, arşiv de kapalı başlar.
   toolOutputAria: 'Komut çıktısı — aç/kapat',
   // WO-0031f review — the plan-stage empty instrument's invitation line (a state fact: the architect
   // is ready; the Plan iste action lives on the rail, not duplicated here).
@@ -614,11 +594,9 @@ export const UI = {
   // Adım kartı durum satırı (kart dili).
   stepReady: 'hazır',
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
-  planProposedSteps: (n: number) => `Mimar ${n} adım önerdi`,
   // DETAY bölüm yüzeyleri — WO-0031f v6: altı sekme öldü, iki yüzey var (Akış | Kayıt); Kayıt'ın
   // kendi bölümleri (Kanıt/Belgeler/Kaynaklar) raf başlığı olarak aynı dili kullanır. secTerminal/
   // secSteps/secTimeline died with the restructure (the spine IS Akış; Çizelge died with Y-2).
-  secEvidence: 'Kanıt',
   secDocs: 'Belgeler',
   // WO-0038: belgeler göster/gizle satırları — meta = bölüm sayısı (## başlığı). Görünen ad insan
   // kelimesi (İş emri / Plan); dosya adı sönük mono işaretçi olarak kalır (depoda yaşar, düzenlenir).
@@ -667,12 +645,6 @@ export const UI = {
   stepSegments: (idx: number, total: number) => `adım ${idx}/${total}`,
   // Denetim (oturum dökümü tablosu).
   auditTitle: 'Oturum dökümü',
-  auditColSession: 'Oturum',
-  auditColRole: 'Rol',
-  auditColTime: 'Zaman',
-  auditColDuration: 'Süre',
-  auditColCost: 'Maliyet',
-  auditTotal: 'Toplam',
   auditCostNone: '—',
   auditClock: (iso: string) => {
     const d = new Date(iso);
@@ -763,7 +735,6 @@ const tr = {
   CARD_ACTION_AREA,
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
-  SIMPLE_PHASE_LABELS,
   TOOL_LABELS,
   MODE_LABELS,
   SOURCE_KIND_LABELS,
