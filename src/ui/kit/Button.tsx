@@ -4,8 +4,10 @@
 // spent until it resolves (double-click impossible). WO-0031f review (ADR-0001 addendum): `locked` is
 // also the TERMINAL lock — a control unavailable because the work order is CLOSED renders in place,
 // locked, instead of absent; the mechanism stays attribute-free (pointer-events + dim), so the CI
-// grep's letter ("no `disabled` attribute in src/ui") holds. A transient gate (a live drive) keeps
-// the absent-at-the-call-site form — its cause is not otherwise on screen.
+// grep's letter ("no `disabled` attribute in src/ui") holds. WO-0037 (ADR-0001 2026-08-22 addendum):
+// a GATED control whose tooltip must open renders the guarded form at the call site — dim +
+// handler-less, pointer events KEPT (`locked` would swallow the hover); see DetailStrip's
+// pencil/trash. `locked` stays the in-flight/terminal lock.
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Loader2 } from 'lucide-react';

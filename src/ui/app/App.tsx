@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
-import { toCardView, toDetailView } from '../../core/derive';
+import { overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { useLabels } from '../data/locale';
 import { AppShell } from '../chrome/AppShell';
@@ -12,8 +12,7 @@ import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { InviteHero } from '../components/InviteHero';
-import { createDriveStore, DriveStoreContext } from '../components/session/drive-store';
-import { ViewModeProvider } from '../data/view-mode';
+import { createDriveStore, DriveStoreContext, useActiveDrive } from '../components/session/drive-store';
 import { ToastHost, toast } from '../chrome/ToastHost';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -89,9 +88,22 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     };
   }, [source, selectedId, detailNonce]);
 
+  // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. Created before
+  // the cards memo because the board reads its live snapshot (base-mobile trial).
+  const driveStore = useMemo(() => createDriveStore(runner), [runner]);
+  // base-mobile trial: the ONE active drive's facts (identity-stable between transitions — it does
+  // NOT re-render per transcript line). One subscription feeds the board overlay, the Sil gate and
+  // the title counter, so all three agree with the detail screen.
+  const activeDrive = useActiveDrive(driveStore);
+
   const cards = useMemo(
-    () => workOrders.filter((w) => w.workspace === workspaceId).map(toCardView),
-    [workOrders, workspaceId],
+    () =>
+      workOrders
+        .filter((w) => w.workspace === workspaceId)
+        .map((wo) =>
+          overlayLiveDrive(toCardView(wo), activeDrive !== undefined && activeDrive.woId === wo.id ? activeDrive : undefined),
+        ),
+    [workOrders, workspaceId, activeDrive],
   );
 
   const refreshWorkspaces = useCallback(() => {
@@ -162,9 +174,12 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const handleDeleteWorkOrder = useCallback(async () => {
     if (!selectedId) return;
     await source.deleteWorkOrder(selectedId);
+    // The store's second half of the delete: a deleted WO's live fold must not outlive its row —
+    // the next WO to recycle its number would inherit a foreign transcript (WO-0037/0038 E2E bug).
+    driveStore.forgetWo(selectedId);
     setSelectedId(null);
     refreshWorkOrders();
-  }, [source, selectedId, refreshWorkOrders]);
+  }, [source, selectedId, refreshWorkOrders, driveStore]);
   // WO-0032: delete a workspace (full cascade). If the OPEN detail belonged to it, return to the
   // board; refreshWorkspaces falls back to another workspace — or the hero when none remain.
   const handleDeleteWorkspace = useCallback(
@@ -180,8 +195,14 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // derive from the loaded workOrders — the same recorded rows the store guard reads (B13's mechanism).
   const wsWoCount = useCallback((id: WorkspaceId) => workOrders.filter((w) => w.workspace === id).length, [workOrders]);
   const wsDriveLive = useCallback(
-    (id: WorkspaceId) => workOrders.some((w) => w.workspace === id && w.sessions.some((s) => s.status === 'running')),
-    [workOrders],
+    (id: WorkspaceId) => {
+      // Rows carry a started drive; the LIVE fact closes the boot window, where no row exists yet
+      // (the store-side guard cannot see a pre-row drive either — this UI gate is the practical
+      // close; base-mobile trial).
+      const liveWs = activeDrive !== undefined ? workOrders.find((w) => w.id === activeDrive.woId)?.workspace : undefined;
+      return workOrders.some((w) => w.workspace === id && w.sessions.some((s) => s.status === 'running')) || liveWs === id;
+    },
+    [workOrders, activeDrive],
   );
   const handleGetStepVerdict = useCallback((idx: number) => source.getStepVerdict(selectedId!, idx), [source, selectedId]);
   const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
@@ -276,14 +297,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
 
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
 
-  // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. When ANY drive ends
+  // WO-0028 / Bulgu 12: the app-level drive store (created above the cards memo). When ANY drive ends
   // (wherever the operator is), the board aggregates refresh and the open detail (if any) reloads, so
   // cost/stage/steps are honest without navigating anywhere.
   // WO-0031c — the notification contract, all in ONE place: an event from a work order you are NOT
   // looking at toasts (haber amber / hata red); the SAME rule keeps on-screen results as screen changes,
   // never toasts. The window title carries the waiting counter; a background ask also raises the OS
   // notification (click → focus + go).
-  const driveStore = useMemo(() => createDriveStore(runner), [runner]);
   const selectedIdRef = useRef<WorkOrderId | null>(null);
   selectedIdRef.current = selectedId;
   useEffect(() => {
@@ -309,6 +329,11 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     // "Seni bekliyor" when an ask surfaces — the card derives both from the recorded rows; the refresh
     // was the missing half.
     driveStore.onStarted = () => refreshWorkOrders();
+    // base-mobile trial: the pipeline returns the session row to 'running' when the last ask is
+    // answered, but nothing else fires for ask_resolved — refresh here so the rows snapshot agrees
+    // with the fold. Without it the board card bounces working → Seni bekliyor → settled when the
+    // drive ends and the live overlay lifts off a stale stopped_asking row.
+    driveStore.onAskResolved = () => refreshWorkOrders();
     driveStore.onAsk = (key) => {
       refreshWorkOrders();
       const wo = woOf(key);
@@ -337,15 +362,17 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     };
   }, [driveStore, refreshWorkOrders, UI, woIdLabel]);
 
-  // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator.
+  // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator. The
+  // live fold outranks a stale stopped_asking row — an ask the operator already answered is being
+  // worked, not waited on (base-mobile trial; the row refresh follows via onAskResolved).
   useEffect(() => {
-    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking')).length;
+    const staleActive = activeDrive !== undefined && activeDrive.status !== 'stopped_asking' ? activeDrive.woId : undefined;
+    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking') && w.id !== staleActive).length;
     document.title = waiting > 0 ? UI.titlePending(waiting) : UI.productName;
-  }, [workOrders, UI]);
+  }, [workOrders, activeDrive, UI]);
 
   return (
-    <ViewModeProvider>
-      <DriveStoreContext.Provider value={driveStore}>
+    <DriveStoreContext.Provider value={driveStore}>
       {chrome}
       {main}
       <ToastHost />
@@ -371,7 +398,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
           onSaved={refreshWorkspaces}
         />
       ) : null}
-      </DriveStoreContext.Provider>
-    </ViewModeProvider>
+    </DriveStoreContext.Provider>
   );
 }

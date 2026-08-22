@@ -1,26 +1,14 @@
-// pane-chrome — the shared instrument chrome of the session panes (WO-0031b, slimmed in WO-0031c).
-// Before this, statusColor()/phaseTone() were duplicated verbatim in the three panes — one home now:
-// the lamp semantics (signal=needs you, info=running, proceed=done/ready, error=failed). The Faz B
-// PaneHeader/CostReadout/ViewModeToggle are gone — cost/duration/status live in the strip, the view
-// toggle is the global one in the strip, and the panes are instruments, not chrome.
+// pane-chrome — the shared instrument chrome of the session panes (WO-0031b, slimmed in WO-0031c →
+// WO-0038: the SADE phase line died with the dual view — the header band's lamp spine carries the
+// turn). One home for the lamp semantics (signal=needs you, info=running, proceed=done/ready,
+// error=failed). Cost/duration/status live in the strip; the panes are instruments, not chrome.
 import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import type { SimplePhase } from '../../../core/runner';
 import { cn } from '../../kit';
 import { useLabels } from '../../data/locale';
 
 // --- lamp semantics: one color per state, amber only for "seni bekliyor" ---
 export type LampTone = 'idle' | 'signal' | 'run' | 'done' | 'error';
-
-const PHASE_LAMP: Partial<Record<SimplePhase, LampTone>> = {
-  ready: 'done',
-  done: 'done',
-  errored: 'error',
-  asking_input: 'signal',
-  asking_permission: 'signal',
-  writing_decisions: 'run',
-  running_command: 'run',
-};
 
 export function lampClass(tone: LampTone, breathe = false): string {
   switch (tone) {
@@ -35,20 +23,6 @@ export function lampClass(tone: LampTone, breathe = false): string {
     default:
       return 'lamp-idle';
   }
-}
-
-export function phaseDotClass(phase: SimplePhase): string {
-  return lampClass(PHASE_LAMP[phase] ?? 'idle', phase === 'asking_permission');
-}
-
-// --- the SADE phase line: an instrument readout with the phase's lamp tone ---
-export function PhaseLine({ phase, label }: { phase: SimplePhase; label: string }) {
-  return (
-    <div className="flex items-center gap-2 py-2">
-      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', phaseDotClass(phase))} aria-hidden="true" />
-      <p className="truncate text-[13px] text-inkdim">{label}</p>
-    </div>
-  );
 }
 
 // --- F7 (WO-0031f): the running-empty stream line — a session that started but wrote nothing yet

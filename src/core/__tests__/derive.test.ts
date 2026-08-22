@@ -27,6 +27,7 @@ import {
   deriveTrackMerge,
   deriveTrackStage,
   deriveWorkOrderCost,
+  overlayLiveDrive,
   sessionForTrack,
   toCardView,
   toDetailView,
@@ -117,6 +118,129 @@ describe('closable card signal (WO-0031e tur-3)', () => {
 
   it('a CLOSED work order reason is the done line — never "Sonraki oturum bekleniyor"', () => {
     expect(deriveCardReason(aWorkOrder({ stage: 'closed', sessions: [] }))).toEqual({ kind: 'closed' });
+  });
+});
+
+// base-mobile trial (2026-08-21): the plan drive ran its whole course in the board's "Sıra sende"
+// bucket — whoseTurn checked unsatisfied gates BEFORE the running session, and during the plan drive
+// the gate is unsatisfied BECAUSE the session is still working toward it. A running session is the
+// actor on the WO; the operator's turn over a gated stage resumes when the session ends or stops to ask.
+describe('a running session outranks unsatisfied gates (base-mobile trial)', () => {
+  const planDrive = aWorkOrder({
+    stage: 'architect_approval',
+    sessions: [aSession({ role: 'architect', status: 'running' })],
+    gateInputs: { planApproved: false },
+  });
+
+  it('whoseTurn: the plan drive is running, not your_turn', () => {
+    expect(whoseTurn(planDrive)).toBe('running');
+  });
+
+  it('the card lands in the working bucket and says in_progress, not awaiting_plan_commit', () => {
+    expect(toCardView(planDrive).bucket).toBe('working');
+    expect(deriveCardReason(planDrive).kind).toBe('in_progress');
+  });
+
+  it('a working card carries no inline action', () => {
+    expect(deriveCardAction(planDrive)).toBeUndefined();
+  });
+
+  it('a stopped_asking session still outranks the gate (the ask is the operator\'s)', () => {
+    const w = aWorkOrder({
+      stage: 'architect_approval',
+      sessions: [aSession({ role: 'architect', status: 'stopped_asking', stopAndAsk: { question: 'devam mı?', gate: 'g' } })],
+      gateInputs: { planApproved: false },
+    });
+    expect(whoseTurn(w)).toBe('your_turn');
+    expect(deriveCardReason(w).kind).toBe('stopped_asking');
+  });
+
+  it('a finished plan drive returns to the operator — the gate speaks again', () => {
+    const w = aWorkOrder({
+      stage: 'architect_approval',
+      sessions: [aSession({ role: 'architect', status: 'idle' })],
+      gateInputs: { planApproved: false },
+    });
+    expect(whoseTurn(w)).toBe('your_turn');
+    expect(deriveCardReason(w).kind).toBe('awaiting_plan_commit');
+  });
+});
+
+// base-mobile trial (2026-08-22): the board derives from store rows, and the session row is written
+// only when the provider's first event arrives — so the boot window (and any rows-lag moment, e.g.
+// after an answered ask) left the card in "Sıra sende" while work was in flight. The app's drive
+// memory overlays the card view; these pin the overlay's exact contract.
+describe('overlayLiveDrive — the board is live from the click (base-mobile trial)', () => {
+  const fresh = aWorkOrder({ stage: 'written', sessions: [], gateInputs: { planApproved: false } });
+  const view = toCardView(fresh); // up bucket, ▸ Plan iste
+
+  it('no live fact → the view passes through untouched (same identity)', () => {
+    expect(overlayLiveDrive(view, undefined)).toBe(view);
+  });
+
+  it('the boot window (running, booting, fold idle) → the card works from the click', () => {
+    const v = overlayLiveDrive(view, { running: true, booting: true, status: 'idle' });
+    expect(v.bucket).toBe('working');
+    expect(v.column).toBe('running');
+    expect(v.reason).toEqual({ kind: 'in_progress' });
+    expect(v.action).toBeUndefined();
+    expect(v.actionRank).toBe(4); // deriveCardActionRank(undefined) — never a stale rows rank
+  });
+
+  it('a rows-lag mid-drive (fold running) overlays the same way', () => {
+    const v = overlayLiveDrive(view, { running: true, booting: false, status: 'running' });
+    expect(v.bucket).toBe('working');
+    expect(v.reason).toEqual({ kind: 'in_progress' });
+  });
+
+  it('held asks / proposed plan / fold-end / error → no-op (the rows own those moments)', () => {
+    for (const status of ['stopped_asking', 'plan_ready', 'done', 'error'] as const) {
+      expect(overlayLiveDrive(view, { running: true, booting: false, status })).toBe(view);
+    }
+  });
+
+  it('a drive that ended (running false) never overlays, whatever the fold says', () => {
+    for (const status of ['idle', 'running', 'done'] as const) {
+      expect(overlayLiveDrive(view, { running: false, booting: false, status })).toBe(view);
+    }
+  });
+
+  it('a closed archive card is never overlaid — closed is terminal', () => {
+    const closed = toCardView(aWorkOrder({ stage: 'closed', sessions: [] }));
+    expect(closed.bucket).toBe('closed');
+    expect(overlayLiveDrive(closed, { running: true, booting: true, status: 'idle' })).toBe(closed);
+  });
+
+  it('the overlay carries every row fact through (id/title/cost/duration/sessionCount)', () => {
+    const w = aWorkOrder({
+      stage: 'architect_approval',
+      sessions: [
+        aSession({
+          role: 'architect',
+          status: 'idle',
+          cost: { tokensIn: 1, tokensOut: 2, usd: 0.5 },
+          startedAt: '2026-08-21T10:00:00Z',
+          endedAt: '2026-08-21T10:01:00Z',
+        }),
+      ],
+      gateInputs: { planApproved: false },
+      cost: { tokensIn: 1, tokensOut: 2, usd: 0.5 },
+    });
+    const base = toCardView(w);
+    const v = overlayLiveDrive(base, { running: true, booting: true, status: 'idle' });
+    expect(v.id).toBe(base.id);
+    expect(v.title).toBe(base.title);
+    expect(v.cost).toBe(base.cost);
+    expect(v.durationMs).toBe(base.durationMs);
+    expect(v.sessionCount).toBe(base.sessionCount);
+  });
+
+  it('a live session outranks external CI — in_progress, not ci_running (a decision, not an accident)', () => {
+    const base = toCardView(wo('WO-1005')); // CI running → external column, working bucket
+    expect(base.reason.kind).toBe('ci_running');
+    const v = overlayLiveDrive(base, { running: true, booting: false, status: 'running' });
+    expect(v.column).toBe('running');
+    expect(v.reason).toEqual({ kind: 'in_progress' });
   });
 });
 

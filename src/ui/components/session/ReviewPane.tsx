@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { initialSessionState, simplePhaseFromState } from '../../../core/runner';
+import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneError, PaneShell, PhaseLine } from './pane-chrome';
+import { PaneError, PaneShell } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
-import { Terminal } from './Terminal';
-import { useViewMode } from '../../data/view-mode';
+import { ChatTranscript } from './ChatTranscript';
 
 // The architect REVIEW instrument (WO-0020 → WO-0031c). After a step's report is written, this drives
 // the architect to review it and emit a VERDICT (role:'architect' + reviewStepIndex; main fills the
@@ -19,13 +18,12 @@ export function ReviewPane({
   step: StepView;
   workOrderId: WorkOrderId;
 }) {
-  const { PROVIDER_ERROR_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
+  const { PROVIDER_ERROR_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: review drives live in the app-level store like every other drive — the pane is
   // just a window onto them; the store's onEnd refreshes the detail when the review completes.
   const driveKey = `${workOrderId}:review:${step.idx}`;
   const state = useDrive(store, driveKey, () => initialSessionState);
-  const { mode: viewMode } = useViewMode();
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(): void {
@@ -41,7 +39,6 @@ export function ReviewPane({
   }, [step.idx]);
 
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
-  const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
 
   return (
@@ -49,11 +46,7 @@ export function ReviewPane({
       {!hasStream ? <p className="text-xs text-inkdim">{UI.reviewHint}</p> : null}
 
       {hasStream ? (
-        viewMode === 'sade' ? (
-          <PhaseLine phase={phase} label={phase === 'asking_permission' ? UI.askingRole('architect') : SIMPLE_PHASE_LABELS[phase]} />
-        ) : (
-          <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
-        )
+        <ChatTranscript entries={state.entries} role="architect" resetKey={state.sessionId ?? ''} />
       ) : null}
 
       {state.status === 'error' || state.lastError ? (

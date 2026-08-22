@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
+import { initialSessionState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
+import { PaneError, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore } from './drive-store';
-import { Terminal } from './Terminal';
-import { useViewMode } from '../../data/view-mode';
+import { ChatTranscript } from './ChatTranscript';
 
 // The step session INSTRUMENT (WO-0017 → WO-0031c → WO-0031f). Drives ONE plan step through the
 // SessionRunner port — role/scope/stepIndex come from the step; main assembles the prompt server-side.
@@ -16,8 +15,8 @@ import { useViewMode } from '../../data/view-mode';
 //
 // WO-0031f v6: DETAY no longer has an instrument card for steps — the pane renders INSIDE its spine
 // row, pinned open while the session runs (the live thing is never hidden behind a toggle): a
-// `Rol · canlı` readout + the live `$ · ⏱` costline over a compact terminal. SADE keeps the one calm
-// card (PhaseLine) — the two modes share the drive logic verbatim.
+// `Rol · canlı` readout + the live `$ · ⏱` costline over the compact chat (WO-0037). SADE keeps the
+// one calm card (PhaseLine + the activity tail) — the two modes share the drive logic verbatim.
 export function StepPane({
   step,
   workOrderId,
@@ -30,7 +29,7 @@ export function StepPane({
   /** The controller's one-second ticker (the strip's) — the live costline's elapsed reuses it. */
   now?: number;
 }) {
-  const { formatUsd, PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
+  const { formatUsd, PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store — navigation keeps it running; this pane
   // re-binds to the LIVE fold state on remount, falling back to the persisted seed (F14) after a restart.
@@ -43,7 +42,6 @@ export function StepPane({
     [sessions, step.idx],
   );
   const state = useDrive(store, driveKey, () => seedState);
-  const { mode: viewMode } = useViewMode();
   const lastDriven = useRef<number | undefined>(undefined);
 
   function drive(resume?: string): void {
@@ -71,7 +69,6 @@ export function StepPane({
   }, [step.idx, step.status]);
 
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
-  const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
   // F7: running but nothing written yet — one honest line instead of a blank canvas.
   const emptyRun = state.status === 'running' && state.entries.length === 0;
@@ -86,44 +83,26 @@ export function StepPane({
     .filter((x): x is string => x !== undefined)
     .join(' · ');
 
-  if (viewMode === 'detail') {
-    return (
-      <div className="mt-2 flex flex-col gap-1.5" data-step-live={step.idx}>
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className="readout truncate">
-            {ROLE_LABELS[step.role]} · {UI.termLive}
-          </span>
-          {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
-        </div>
-        {emptyRun ? (
-          <StreamLine />
-        ) : hasStream ? (
-          <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} compact />
-        ) : (
-          <p className="text-xs text-inkdim">{UI.noSession}</p>
-        )}
-        {state.status === 'error' || state.lastError ? (
-          <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
-        ) : null}
-      </div>
-    );
-  }
-
+  // WO-0038: the spine's inline form is the ONLY form — the driven row carries its chat directly
+  // (the dual view that hid it behind SADE died with the mode).
   return (
-    <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
-      {hasStream ? (
-        // F7 rides the SADE phase line while the stream is empty — the same line, calmer skin.
-        <PhaseLine
-          phase={phase}
-          label={emptyRun ? UI.streamOpened : phase === 'asking_permission' ? UI.askingRole(step.role) : SIMPLE_PHASE_LABELS[phase]}
-        />
+    <div className="mt-2 flex flex-col gap-1.5" data-step-live={step.idx}>
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <span className="readout truncate">
+          {ROLE_LABELS[step.role]} · {UI.termLive}
+        </span>
+        {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
+      </div>
+      {emptyRun ? (
+        <StreamLine />
+      ) : hasStream ? (
+        <ChatTranscript entries={state.entries} role={step.role} resetKey={state.sessionId ?? ''} variant="compact" />
       ) : (
         <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}
-
       {state.status === 'error' || state.lastError ? (
         <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
       ) : null}
-    </PaneShell>
+    </div>
   );
 }

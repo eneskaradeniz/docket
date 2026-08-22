@@ -10,13 +10,17 @@ import type { StageId } from '../types';
 // (wind-down completed, Sürdür not yet clicked — controller-owned, cleared on resume).
 const phase = (stage: StageId) => derivePhase({ stage }, [], false);
 
-const turn = (liveStatus: LiveSessionStatus, over: { asks?: boolean; stopping?: boolean; stopped?: boolean; stage?: StageId } = {}) =>
+const turn = (
+  liveStatus: LiveSessionStatus,
+  over: { asks?: boolean; stopping?: boolean; stopped?: boolean; starting?: boolean; stage?: StageId } = {},
+) =>
   deriveTurnState({
     phase: phase(over.stage ?? 'implementation'),
     liveStatus,
     hasPendingAsks: over.asks ?? false,
     ...(over.stopping !== undefined ? { stopping: over.stopping } : {}),
     ...(over.stopped !== undefined ? { stopped: over.stopped } : {}),
+    ...(over.starting !== undefined ? { starting: over.starting } : {}),
   });
 
 describe('deriveTurnState (WO-0031c)', () => {
@@ -36,6 +40,17 @@ describe('deriveTurnState (WO-0031c)', () => {
   it('running stays running, including the wind-down (Durduruluyor… still spends)', () => {
     expect(turn('running')).toBe('running');
     expect(turn('running', { stopping: true })).toBe('running');
+  });
+
+  // base-mobile trial (2026-08-21): the boot window — store.start() ran but the provider session has
+  // not opened yet (fold still 'idle', no first event). The substrip said "Sıra sende" for the whole
+  // subprocess boot right after the operator's click; the turn is running from the click.
+  it('starting (drive begun, provider session not yet open) → running', () => {
+    expect(turn('idle', { starting: true })).toBe('running');
+  });
+
+  it('a boot failure outranks starting → retry', () => {
+    expect(turn('error', { starting: true })).toBe('retry');
   });
 
   it('a completed wind-down awaiting Sürdür → stopped', () => {

@@ -16,3 +16,9 @@ export const VERDICT_MARK: Record<'proceed' | 'revise', string> = {
   proceed: '✓',
   revise: '↻',
 };
+
+// WO-0037 Ray — the transcript gutter's type glyphs (▸ a tool call, · its result). They mark the
+// ENTRY TYPE in the left gutter, the way ✓/► mark step status; the words for the same rows
+// (toolLabel) live in the bundles.
+export const GUTTER_TOOL = '▸';
+export const GUTTER_RESULT = '·';

@@ -1,27 +1,20 @@
-// RecordSections (WO-0031c / v4 → WO-0031f v6) — the KAYIT side: one stack consumed by THREE
-// layouts — the <1080 Kayıt tab panel, the ≥1080 rack (the rack IS Kayıt), and the archive body
-// (where Kayıt is the whole body). Audit A4 rule: a section with nothing to show is ABSENT — no
-// header, no section. Evidence always shows (three WO-level items are ever-present by model);
-// the rest on presence.
+// RecordSections (WO-0031c / v4 → WO-0038 DOSYA) — the RECORD as sections of the ONE scroll (the
+// Kayıt tab, the ≥1080 rack and the archive special-case all died with the dual view). Audit A4
+// rule: a section with nothing to show is ABSENT.
 //
-// WO-0031f v6 rulings that shaped this list: the steps section DIED (the step list is Akış's own
-// body — the spine); the timeline section DIED (Y-2 — "who did what when" lives in the ledger rows'
-// timestamps and the step metas; the stored event stream is untouched, only the surface is gone);
-// Kanıt sits at the TOP as the summary it is; Kaynaklar rides last (the yuva tablosu names no home
-// for it — r2's absent rule gives it this one).
-//
-// WO-0031d tur-2: the Repolar section is GONE (D3 — the track state folds into Kanıt's chips);
-// Belgeler never renders the ```steps fence raw — the prose shows and the steps become a card
-// summary (A4, splitStepsFence).
-import type { ReactNode } from 'react';
-import { parsePlanSteps, splitStepsFence } from '../../../core/plan-steps';
-import type { StepSpec, TrackId, WorkOrderDetailView } from '../../../core/types';
+// WO-0038 rulings: the KANIT section DIED as a standing showcase (operator, 2026-08-22) — evidence
+// is contextual now: the close card carries the checklist at the decision moment, and a gated
+// action states its reason then and there; the mechanism (core derivation, order.md's Evidence
+// required) is untouched. Belgeler became COLLAPSED ROWS (the operator's wall-of-prose complaint):
+// filename + one-line teaser + section count; expansion is the .repbody idiom, height-capped.
+import { useRef, useState, type ReactNode } from 'react';
+import { splitStepsFence } from '../../../core/plan-steps';
+import type { WorkOrderDetailView } from '../../../core/types';
 import type { Labels } from '../../data/labels';
-import { AuditTable } from './AuditTable';
-import { EvidencePanel } from './EvidencePanel';
-import { RoleChip } from './RoleChip';
+import { useLabels } from '../../data/locale';
+import { SessionCards } from './SessionCards';
 import { SourceLinks } from './SourceLinks';
-import { MarkdownDoc } from './MarkdownDoc';
+import { MarkdownBody } from './MarkdownBody';
 
 export interface DetailSection {
   id: string;
@@ -30,17 +23,41 @@ export interface DetailSection {
   node: ReactNode;
 }
 
-/** The plan's steps in the card language — the fence NEVER renders raw (tur-2 A4). */
-function PlanStepsSummary({ steps }: { steps: StepSpec[] }) {
+/** WO-0038: a document is ONE COLLAPSED ROW (operator ruling — full prose rendered as a wall was
+ *  the complaint); expansion is the .repbody idiom, height-capped. NO teaser line (operator,
+ *  2026-08-22: the "first meaningful line" was `---` front-matter on order.md — a derived teaser is
+ *  a guess, and a wrong guess is worse than none); the meta counts `## ` sections. The visible name
+ *  is the HUMAN word (İş emri / Plan — operator: raw filenames are developer-speak); the filename
+ *  stays as a dim mono pointer (the file lives in the repo and gets edited). Opening scrolls the
+ *  row's header to the scroll's top — the same ruling the session cards took the same day. */
+function DocRow({ title, file, content }: { title: string; file: string; content: string }) {
+  const { UI } = useLabels();
+  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const toggle = (): void => {
+    const next = !open;
+    setOpen(next);
+    if (next) requestAnimationFrame(() => rowRef.current?.scrollIntoView({ block: 'start' }));
+  };
+  const sectionCount = content.split('\n').filter((l) => l.startsWith('## ')).length;
   return (
-    <div className="flex flex-col gap-1.5" data-plan-summary={steps.length}>
-      {steps.map((s) => (
-        <div key={s.idx} className="stepcard flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5">
-          <span className="font-mono text-[11px] text-inkdim">{s.idx}</span>
-          <RoleChip role={s.role} />
-          <span className="min-w-0 truncate text-[12.5px] text-ink">{s.aim}</span>
+    <div ref={rowRef}>
+      <button
+        type="button"
+        className="irow flex w-full items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-left"
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        <span className="shrink-0 font-mono text-[10px] text-inkdim" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span className="shrink-0 text-[12.5px] font-semibold text-ink">{title}</span>
+        <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{file}</span>
+        <span className="ml-auto shrink-0 font-mono text-[10.5px] text-inkdim">{UI.docSections(sectionCount)}</span>
+      </button>
+      {open ? (
+        <div className="repbody max-h-[320px] overflow-y-auto">
+          <MarkdownBody content={content} />
         </div>
-      ))}
+      ) : null}
     </div>
   );
 }
@@ -58,37 +75,17 @@ export function buildRecordSections({
   UI: Labels['UI'];
 }): DetailSection[] {
   const sections: DetailSection[] = [];
-  const repoByTrack = new Map<TrackId, string>(detail.tracks.map((ln) => [ln.track.id, ln.track.repo as string]));
-  const repoCount = new Set(repoByTrack.values()).size;
-  const satisfied = detail.evidence.filter((e) => e.status === 'satisfied').length;
-  sections.push({
-    id: 'evidence',
-    title: UI.secEvidence,
-    aside: `${satisfied}/${detail.evidence.length}`,
-    node: (
-      <EvidencePanel
-        items={detail.evidence}
-        tracks={detail.tracks}
-        repoOf={(id: TrackId) => repoByTrack.get(id)}
-        multiRepo={repoCount > 1}
-      />
-    ),
-  });
   if (docs.order || docs.plan) {
-    // A4: the fence never shows raw — the plan doc renders its prose plus the steps as cards.
-    const plan = docs.plan ? splitStepsFence(docs.plan) : undefined;
+    // The plan doc renders its PROSE only — the steps live in the PlanSection rows (the same grammar
+    // from proposal to done); the fence never renders raw (tur-2 A4).
+    const planProse = docs.plan ? splitStepsFence(docs.plan).prose : undefined;
     sections.push({
       id: 'docs',
       title: UI.secDocs,
       node: (
-        <div className="flex flex-col gap-2">
-          {docs.order ? <MarkdownDoc title={UI.orderDoc} content={docs.order} /> : null}
-          {plan ? (
-            <div className="flex flex-col gap-2">
-              <MarkdownDoc title={UI.planDoc} content={plan.prose} />
-              {plan.steps.length > 0 ? <PlanStepsSummary steps={plan.steps} /> : null}
-            </div>
-          ) : null}
+        <div className="flex flex-col gap-1.5">
+          {docs.order ? <DocRow title={UI.docOrderLabel} file={UI.orderDoc} content={docs.order} /> : null}
+          {planProse ? <DocRow title={UI.docPlanLabel} file={UI.planDoc} content={planProse} /> : null}
         </div>
       ),
     });
@@ -96,26 +93,25 @@ export function buildRecordSections({
   if (detail.sources.length > 0) {
     sections.push({ id: 'sources', title: UI.secSources, node: <SourceLinks sources={detail.sources} /> });
   }
-  // The ledger rides the stack in every layout: the tab/rack forms for a live WO, and the archive
-  // body — where this stack IS the body (DetailBody's archive branch renders it directly; the tab
-  // and rack branches are unreachable for a closed WO, so the ledger never draws twice).
+  // The ledger rides the stack — the session CARDS (artifact headline + aç/kapa terminal, WO-0038).
+  // detail.steps (the full views — verdicts included) replaces the parsed fence: the card headline
+  // reads its artifacts from it.
   if (detail.sessions.length > 0) {
     sections.push({
       id: 'audit',
       title: UI.auditTitle,
       aside: UI.auditSessions(detail.sessions.length),
-      node: <AuditTable sessions={detail.sessions} steps={parsePlanSteps(docs.plan)} />,
+      node: <SessionCards sessions={detail.sessions} steps={detail.steps} />,
     });
   }
   return sections;
 }
 
-/** The record's stacked form — the Kayıt tab panel, the ≥1080 rack, and the archive body all render
- *  this one stack. The id anchors the tab-selection scroll (tur-3, now `sec-evidence`/`sec-docs`/
- *  `sec-audit` — scroll-margin clears the pinned chrome). */
+/** The record's stacked form — sections of the one DOSYA scroll. The ids anchor deep links
+ *  (scroll-margin clears the pinned chrome). */
 export function RecordStack({ sections }: { sections: DetailSection[] }) {
   return (
-    <aside className="flex min-w-0 flex-col gap-3.5">
+    <div className="flex min-w-0 flex-col gap-3.5">
       {sections.map((s) => (
         <section key={s.id} id={`sec-${s.id}`}>
           <h2 className="readout mb-2 flex items-baseline gap-2">
@@ -125,6 +121,6 @@ export function RecordStack({ sections }: { sections: DetailSection[] }) {
           {s.node}
         </section>
       ))}
-    </aside>
+    </div>
   );
 }

@@ -40,6 +40,13 @@ export const ROLE_LABELS: Record<SessionRole, string> = {
   verifier: 'Doğrulayıcı',
 };
 
+// WO-0038 rol seçici — tek satırlık görev tanımı (menuitemradio alt satırı).
+export const ROLE_DUTY_LABELS: Record<SessionRole, string> = {
+  architect: 'planlar · adımları denetler',
+  implementer: 'uygular · kodu yazar, koşturur',
+  verifier: 'doğrular · bağımsız rapor verir',
+};
+
 export const STAGE_LABELS: Record<StageId, string> = {
   written: 'Yazıldı',
   plan_requested: 'Plan istendi',
@@ -180,8 +187,8 @@ export function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? 'Araç kullan';
 }
 
-/** One transcript line as PLAIN text (the fail card's detail + clipboard, WO-0031c) — the ANSI
- *  formatter is for xterm; this is its DOM/clipboard sibling, same label discipline. */
+/** One transcript line as PLAIN text (the fail card's detail + clipboard, WO-0031c; xterm's ANSI
+ *  twin died with it in WO-0037 — the chat renders structured rows, this is the flat projection). */
 export function transcriptLineText(line: TranscriptLine): string {
   switch (line.speaker) {
     case 'assistant':
@@ -195,6 +202,17 @@ export function transcriptLineText(line: TranscriptLine): string {
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
+}
+
+/** The SADE tail's one-line projection (WO-0037): an assistant turn collapses to its first
+ *  non-empty line (the bubble body is markdown; the tail is a teaser), everything else is the flat
+ *  transcript line. `split`, never `.replace(` — the CI ban holds here too. */
+export function transcriptTailText(line: TranscriptLine): string {
+  if (line.speaker === 'assistant') {
+    const first = line.text.split('\n').find((l) => l.trim().length > 0);
+    return first ?? '';
+  }
+  return transcriptLineText(line);
 }
 
 export function permissionPrompt(tool: string, detail: string): string {
@@ -529,6 +547,7 @@ export const UI = {
   // Tur-2 A3: the short closure sha (full sha in title/aria; click copies).
   closeShaAria: 'Kapanış kaydı — kopyala',
   copyDone: 'Kopyalandı',
+  codeCopyAria: 'Kodu kopyala', // WO-0037 — CodeBlock's header button; confirmation rides copyDone
   // Strip (başlık şeridi) ölçümleri + düzenleme katmanı.
   // WO-0031f review (operator): stripCost died — the price speaks for itself ("$9,50", no prefix);
   // the LEDGER's column header (auditColCost) stays, it names a column.
@@ -536,10 +555,12 @@ export const UI = {
   objectTitle: 'İtirazın ne?',
   dialogCloseAria: 'kapat',
   removeAria: 'kaldır',
-  stripGateReason: 'önce oturumu durdur',
-  // (WO-0031f review, operator: the old "Kapalı iş emri değişmez" line died — the pencil renders
-  // LOCKED in place on a closed WO instead; the closed state is already named beside it. The store
-  // still refuses the write — that layer is unchanged.)
+  // WO-0037 — the strip gate joined the guarded idiom (ADR-0001 2026-08-22 addendum): while a drive
+  // spends (and on a closed WO) the pencil/trash render in place, dimmed, handler-less, pointer
+  // events KEPT so the tooltip opens; the tooltip names the unblocking move. The standing "önce
+  // oturumu durdur" line died — the substrip already says Çalışıyor (the cause is on screen).
+  stripGateTooltip: 'Oturum çalışırken düzen kapalı — Durdur ile bitirince açılır.',
+  stripDeleteGateTooltip: 'Oturum çalışırken silinmez — Durdur ile bitirince açılır.',
   // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
   deleteWoFailed: 'Silinemedi — depo yazma hatası.',
   // WO-0031f v6 — the two DETAY surfaces. Akış is the body itself (decision cards + the step spine);
@@ -558,6 +579,16 @@ export const UI = {
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
   streamOpened: 'Oturum açıldı — çıktı bekleniyor',
+  // WO-0037 — the chat transcript (DETAY live flow + the Kayıt ledger expansion; xterm retired).
+  // One reading column: assistant turns are markdown bubbles, tool calls compact rows, results
+  // indented lines. The aria names the log; the jump chip restores the bottom; the head line caps
+  // at the last 800 entries.
+  chatAria: 'Oturum akışı',
+  chatJumpLatest: '▾ en son',
+  chatOlderLines: (n: number) => `… önceki ${n} satır`,
+  // WO-0037 Ray turu (operatör, 2026-08-22): araç çağrıları blok + aç/kapa — komut çıktısının
+  // paragraf gibi akması bitti; geçmiş kapalı (yoğunluk), canlı kenar açık, arşiv hep açık.
+  toolOutputAria: 'Komut çıktısı — aç/kapat',
   // WO-0031f review — the plan-stage empty instrument's invitation line (a state fact: the architect
   // is ready; the Plan iste action lives on the rail, not duplicated here).
   planWaitingHint: 'Mimar plan için hazır',
@@ -589,6 +620,18 @@ export const UI = {
   // secSteps/secTimeline died with the restructure (the spine IS Akış; Çizelge died with Y-2).
   secEvidence: 'Kanıt',
   secDocs: 'Belgeler',
+  // WO-0038: belgeler göster/gizle satırları — meta = bölüm sayısı (## başlığı). Görünen ad insan
+  // kelimesi (İş emri / Plan); dosya adı sönük mono işaretçi olarak kalır (depoda yaşar, düzenlenir).
+  docSections: (n: number) => `${n} bölüm`,
+  docOrderLabel: 'İş emri',
+  docPlanLabel: 'Plan',
+  // WO-0038: oturum kartının özet satırı — özet = oturumun ESERİNİN manşeti (operator onayı
+  // 2026-08-22): plan → fence sayımı, inceleme → verdict, adım/serbest → ajanın kapanış cümlesi.
+  // Asla uydurulmaz; eser yoksa satır da yok. (LLM'e özet yazdırma = B yolu, yalnız gerekirse.)
+  sessionSummary: 'Özet',
+  sessionSummaryPlan: (n: number) => `${n} adımlık plan önerdi`,
+  sessionSummaryProceed: 'Mimar: proceed — adım onaylandı',
+  sessionSummaryRevise: 'Mimar: revise — yeniden çalışma istendi',
   secSources: 'Kaynaklar',
   secTracks: 'Depolar',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
@@ -614,12 +657,12 @@ export const UI = {
   editPlanDone: 'Bitti',
   editAddStep: '+ Adım ekle',
   editNewStepAim: 'Yeni adım — yaz…',
-  editCounter: (n: number) => `${n} değişiklik — onayın "düzenlenmiş onay" olarak loglanır`,
-  editAimMissing: 'Bir adımın metni boş — doldurunca Onayla gelir.',
+  editAimMissing: (idx: number) => `Bir adımın metni boş (${idx}. satır) — doldurunca Onayla gelir.`,
   editMoveUpAria: 'Yukarı taşı',
   editMoveDownAria: 'Aşağı taşı',
   editRemoveAria: 'Adımı sil',
-  editRoleAria: (role: SessionRole) => `Rol: ${ROLE_LABELS[role]} — değiştirmek için tıkla`,
+  editRoleAria: (role: SessionRole) => `Rol seç · şu an: ${ROLE_LABELS[role]}`,
+  editRoleMenuAria: 'Rol seç',
   stepRef: (idx: number) => `adım ${idx}`,
   stepSegments: (idx: number, total: number) => `adım ${idx}/${total}`,
   // Denetim (oturum dökümü tablosu).
@@ -712,6 +755,7 @@ const tr = {
   UI,
   BUCKET_LABELS,
   ROLE_LABELS,
+  ROLE_DUTY_LABELS,
   STAGE_LABELS,
   EVIDENCE_LABELS,
   ACTION_LABELS,
@@ -732,6 +776,7 @@ const tr = {
   cardActionText,
   toolLabel,
   transcriptLineText,
+  transcriptTailText,
   permissionPrompt,
   modeText,
   stoppedAtGate,

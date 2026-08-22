@@ -79,8 +79,8 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
 
 interface FakeStoreCalls { method: string; args: unknown[] }
 
-/** Records every call; returns scripted prompts. */
-function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string }) {
+/** Records every call; returns scripted prompts. `planApproved` scripts the approval gate (WO-0038). */
+function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string }, planApproved = true) {
   const calls: FakeStoreCalls[] = [];
   const store = {
     recordSession: (i: unknown) => calls.push({ method: 'recordSession', args: [i] }),
@@ -91,6 +91,7 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     architectPromptFor: () => prompts.architect,
     stepPromptFor: () => prompts.step,
     stepReviewPromptFor: () => prompts.review,
+    planApprovedFor: () => planApproved,
   } as unknown as SessionStore;
   return { store, calls };
 }
@@ -124,6 +125,52 @@ describe('prepareDriveInput — prompt selection', () => {
   it('a resume/approve drive preserves the provided prompt (never clobbered)', () => {
     const { store } = fakeStore({ architect: 'PLAN (wrong)' });
     expect(prepareDriveInput(planDrive({ resume: 'sess-1', prompt: 'continue' }), store).prompt).toBe('continue');
+  });
+});
+
+// ===== the plan-approval gate (WO-0038 incident, 2026-08-22) =====
+// getWorkOrderSteps deliberately parses plan.md's fence into 'pending' rows BEFORE approval, so a
+// host that reaches the pipeline with a step/review drive (a GUI pane's mount auto-drive, the CLI's
+// `drive --step`) must be refused HERE — one error event, no runner spawn, no session/step rows.
+
+describe('plan-approval gate — step/review drives refused before approval', () => {
+  it('step drive: one error event, the runner never spawns, nothing is recorded', async () => {
+    const fr = fakeRunner([started(), txt('should never run'), done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, false);
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe('error');
+    expect((events[0] as { message: string }).message).toMatch(/plan not approved/);
+    expect(fr.drivenInputs).toHaveLength(0);
+    expect(methods(fs.calls)).not.toContain('recordStep');
+    expect(methods(fs.calls)).not.toContain('recordSession');
+  });
+
+  it('review drive: refused the same way', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ review: 'review step 2' }, false);
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, reviewDrive());
+    expect(events.map((e) => e.kind)).toEqual(['error']);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('plan and free drives pass with the gate closed (the gate governs step/review only)', async () => {
+    const fr = fakeRunner([started(), txt('thinking'), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, false);
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(events.map((e) => e.kind)).toEqual(['started', 'assistant_text', 'turn_complete']);
+  });
+
+  it('a step drive passes once the gate is open (the approval moment)', async () => {
+    const fr = fakeRunner([started(), txt('working'), done('done body')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, true);
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events.map((e) => e.kind)).toEqual(['started', 'assistant_text', 'turn_complete']);
+    expect(methods(fs.calls)).toContain('recordStep');
   });
 });
 
