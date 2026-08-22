@@ -72,7 +72,7 @@ const stopAllDrives = async () => {
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(700); // board load effect
 
-console.log('\nWO-0031c console specs');
+console.log('\nWO-0031c console specs (re-anchored to the WO-0037/0038 DOSYA screen)');
 
 await spec('window opens at the compact default (980×620, content)', async () => {
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getContentSize());
@@ -120,12 +120,21 @@ await spec('new-work-order dialog opens and ESC closes it (dialog outranks esc=b
   assert.ok(cards >= 1, 'board lost after dialog esc');
 });
 
-await spec('plan approval: step cards + rail Onayla/İtiraz; objection is an inline layer (esc peels it)', async () => {
+await spec('plan approval: PlanSection rows + rail İtiraz/Düzenle/Onayla; objection is an inline layer (esc peels it)', async () => {
   await openDetail('Plan bekliyor');
-  assert.ok((await page.getByText('Mimar 1 adım önerdi').count()) >= 1, 'no plan approval cards');
-  assert.ok((await page.getByRole('button', { name: 'Onayla', exact: true }).count()) >= 1, 'no rail Onayla');
-  const glow = await page.locator('.glow-signal').count();
-  assert.ok(glow >= 1, 'no amber glow at the decision moment');
+  // WO-0038: the proposal is compact ROWS (PlanSection) — role chip + aim + 'hazır' meta, no big cards
+  const rows = page.locator('[data-plan-cards] li');
+  const rowCount = await rows.count();
+  assert.equal(rowCount, 1, `expected 1 plan row, got ${rowCount}`);
+  const rowText = (await rows.first().textContent()) ?? '';
+  assert.ok(rowText.includes('Uygulayıcı'), `the row carries no role chip: ${rowText}`);
+  assert.ok(rowText.includes('hazır'), `the row carries no hazır meta: ${rowText}`);
+  const rail = page.locator('[data-rail]');
+  for (const label of ['İtiraz et', 'Düzenle', 'Onayla']) {
+    assert.equal(await rail.getByRole('button', { name: label, exact: true }).count(), 1, `no rail ${label}`);
+  }
+  assert.ok((await page.getByText('Onayla — adımlar sırayla koşar.').count()) >= 1, 'no rail hint');
+  assert.ok((await page.locator('.glow-signal').count()) >= 1, 'no amber glow at the decision moment');
   await page.getByRole('button', { name: 'İtiraz et' }).first().click();
   await page.waitForTimeout(250);
   assert.ok((await page.getByText('İtirazın ne?').count()) >= 1, 'objection layer did not open');
@@ -155,7 +164,7 @@ await spec('fake runner: Plan iste runs, rail owns the one Durdur (no filler lin
   await backToBoard();
 });
 
-await spec('stopped_asking: ask card + aria-live Sıra sende + quiet rail message (SADE)', async () => {
+await spec('stopped_asking: ask card + announced Sıra sende + quiet rail message', async () => {
   await openDetail('İzin bekliyor');
   const live = await page.locator('[aria-live="polite"]').getByText('Sıra sende').count();
   assert.ok(live >= 1, 'no aria-live Sıra sende line');
@@ -167,91 +176,82 @@ await spec('stopped_asking: ask card + aria-live Sıra sende + quiet rail messag
   assert.match(title, /^\(\d+\) izin bekliyor$/, `title counter missing: ${title}`);
 });
 
-await spec('DETAY at 980: two surfaces — Akış | Kayıt; the terminal lives in the driven row (WO-0031f)', async () => {
-  // still on 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the spine's
-  // driven row actually holds an xterm instance with content.
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
-  assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'no tab bar at 980');
-  // v6 Y-3: EXACTLY two tabs — Akış (done/total steps) and Kayıt (satisfied/total evidence)
-  const tabs = await page.locator('[role="tab"]').allTextContents();
-  assert.equal(tabs.length, 2, `expected exactly 2 tabs, got: ${tabs.join(' | ')}`);
-  assert.ok(tabs[0]?.includes('Akış'), `the first tab is not Akış: ${tabs[0]}`);
-  assert.ok(tabs[0]?.includes('0/1'), `Akış carries no done/total count: ${tabs[0]}`);
-  assert.ok(tabs[1]?.includes('Kayıt'), `the second tab is not Kayıt: ${tabs[1]}`);
-  assert.ok(/\d+\/\d+/.test(tabs[1] ?? ''), `Kayıt carries no evidence count: ${tabs[1]}`);
-  // S1-C: the active tab wears the signal underline
-  const underline = await page.evaluate(() => {
-    const el = document.querySelector('[role="tab"][data-state="active"]');
-    return el ? getComputedStyle(el).boxShadow : 'missing';
-  });
-  assert.ok(underline.includes('245, 181, 68'), `the active tab has no signal underline: ${underline}`);
-  // Y-2: the Çizelge surface is DEAD everywhere
-  assert.equal(await page.getByRole('tab', { name: /Çizelge/ }).count(), 0, 'a Çizelge tab still exists');
-  assert.equal(await page.getByText('Çizelge', { exact: true }).count(), 0, 'a Çizelge surface still exists');
-  // the terminal is INLINE in the driven step's row (pinned — no toggle hides it)
-  assert.ok((await page.locator('[data-step-live] .xterm').count()) >= 1, 'no xterm inside the driven step row');
-  await page.getByRole('tab', { name: /Kayıt/ }).click();
-  await page.waitForTimeout(250);
-  // tur-2 A2: the click actually SWITCHES panels — the active one is visible, the other hidden
-  // (forceMount keeps the xterm alive; the old spec passed tautologically with everything stacked).
-  assert.equal(await page.locator('[role="tabpanel"][data-state="active"]').count(), 1, 'not exactly one active panel');
-  assert.ok(await page.locator('[role="tabpanel"][data-state="active"]').isVisible(), 'the active panel is hidden');
-  const inactive = page.locator('[role="tabpanel"][data-state="inactive"]');
-  assert.ok((await inactive.count()) >= 1, 'no inactive panels to hide');
-  assert.ok(await inactive.first().isHidden(), 'an inactive panel stayed visible');
-  await page.getByRole('tab', { name: /Akış/ }).click();
-  await page.waitForTimeout(350);
-  assert.ok((await page.locator('.xterm').count()) >= 1, 'terminal canvas gone after a tab switch');
-  await page.screenshot({ path: join(SHOTS, 'detail-tabs@980.png') });
-});
-
-await spec('DETAY at 1240: the 250px rack beside the content, no tabs', async () => {
-  await setSize(1240, 620);
-  assert.equal(await page.locator('[role="tablist"]').count(), 0, 'tab bar at ≥1080');
-  const grid = await page.evaluate(() => {
-    const el = document.querySelector('main .grid');
-    return el ? getComputedStyle(el).gridTemplateColumns : '';
-  });
-  assert.ok(grid.includes('250px'), `expected a 250px rack column, got: ${grid}`);
-  await page.screenshot({ path: join(SHOTS, 'detail-rack@1240.png') });
-});
-
-await spec('SADE/DETAY is remembered across a reload (global view mode)', async () => {
-  await page.reload();
-  await page.waitForTimeout(700);
-  await setSize(980, 620); // back to the tab-width before asserting tabs (we were 1240/rack before reload)
+await spec('DOSYA at 980: ONE scroll — no tabs at any width; the chat lives in the driven row (WO-0038)', async () => {
+  // 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the spine's driven row
+  // actually holds the compact chat with content.
+  await backToBoard(); // defensive: the stopped_asking spec leaves the detail open
   await openDetail('İzin bekliyor');
-  await page.waitForTimeout(400);
-  assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'DETAY not remembered after reload');
-  await page.getByRole('button', { name: 'SADE' }).first().click(); // leave it tidy for later specs
-  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[role="tablist"]').count(), 0, 'a tab bar survived at 980');
+  assert.equal(await page.locator('[role="tab"]').count(), 0, 'a tab survived at 980');
+  // the driven row holds the compact chat INLINE (pinned — no toggle hides it)
+  assert.equal(await page.locator('[data-step-live="1"]').count(), 1, 'no driven-row hook on the active step');
+  const chat = page.locator('[data-step-live] [data-chat]');
+  assert.ok((await chat.count()) >= 1, 'no chat column inside the driven step row');
+  const chatText = (await chat.first().textContent()) ?? '';
+  assert.ok(chatText.includes('E2E: about to write a file.'), 'the persisted transcript did not seed the compact chat');
+  // the record rides the SAME scroll (Belgeler + Oturum dökümü sections below the spine)
+  assert.ok((await page.locator('section#sec-docs').count()) >= 1, 'no Belgeler section in the one scroll');
+  assert.ok((await page.locator('section#sec-audit').count()) >= 1, 'no Oturum dökümü section in the one scroll');
+  await page.screenshot({ path: join(SHOTS, 'detail@980.png') });
   await backToBoard();
 });
 
-await spec('closed WO: green glow, closure card, NO rail, and the ledger IS the body (v4 §4)', async () => {
+await spec('DOSYA at 1240: the same single column — no tabs, no rack (WO-0038)', async () => {
+  await setSize(1240, 620);
+  await openDetail('İzin bekliyor');
+  assert.equal(await page.locator('[role="tablist"]').count(), 0, 'a tab bar survived at 1240');
+  assert.equal(await page.locator('main .grid').count(), 0, 'the ≥1080 rack column survived');
+  assert.ok((await page.locator('[data-step-live] [data-chat]').count()) >= 1, 'the driven-row chat is gone at 1240');
+  await page.screenshot({ path: join(SHOTS, 'detail-wide@1240.png') });
+  await setSize(980, 620);
+  await backToBoard();
+});
+
+await spec('the SADE/DETAY control is gone everywhere (WO-0038: one view, no mode decision)', async () => {
+  assert.equal(await page.getByRole('button', { name: 'SADE', exact: true }).count(), 0, 'a SADE button lives on the board');
+  assert.equal(await page.getByRole('button', { name: 'DETAY', exact: true }).count(), 0, 'a DETAY button lives on the board');
+  await openDetail('İzin bekliyor');
+  assert.equal(await page.getByRole('button', { name: 'SADE', exact: true }).count(), 0, 'a SADE button lives on the detail');
+  assert.equal(await page.getByRole('button', { name: 'DETAY', exact: true }).count(), 0, 'a DETAY button lives on the detail');
+  await backToBoard();
+});
+
+await spec('closed WO: green glow, closure card, NO rail, and the session CARDS are the ledger (v4 §4 → WO-0038)', async () => {
   // WO-0031f T1: the closed cards sit behind the toggle — 1 closed ≤5, so it starts OPEN
   assert.ok((await page.locator('[data-closed-toggle]').count()) >= 1, 'no closed-list toggle on the mixed board');
   await openDetail('Kapandı');
   assert.ok((await page.locator('.glow-done').count()) >= 1, 'no green glow on a closed WO');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no closure card');
-  // tur-2 A1: the substrip says Kapandı (TurnState 'done'), never a false "Sıra sende"
-  assert.ok((await page.locator('[aria-live="polite"]').getByText('Kapandı').count()) >= 1, 'substrip does not say Kapandı');
+  // tur-2 A1: the header band's announced turn says Kapandı, never a false "Sıra sende"
+  assert.ok((await page.locator('[aria-live="polite"]').getByText('Kapandı').count()) >= 1, 'the announced turn does not say Kapandı');
   assert.equal(await page.locator('[aria-live="polite"]').getByText('Sıra sende').count(), 0, 'closed WO claims Sıra sende');
   // tur-2 A3: the closure sha is the short form (7 chars; the full sha rides the title attribute)
   // (the seeded repo has no commits — the store's honest 'uncommitted' marker rides the same short slot)
   const shaText = await page.locator('[data-closure-card] button').first().textContent();
   assert.ok(shaText && shaText.trim().length <= 7, `sha is not the short form: ${shaText}`);
   assert.equal(await page.locator('[data-rail]').count(), 0, 'a closed WO rendered a rail');
-  // the session ledger renders by default in the archive: 3 rows + the Toplam line
-  assert.ok((await page.locator('[data-audit-table] tbody tr').count()) >= 4, 'no audit table rows on the closed WO');
+  // WO-0038: the ledger is session CARDS — one per session, named, with its own cost; the audit
+  // table and its Toplam row died (the cards carry the numbers; the section aside carries the count)
+  const cards = page.locator('[data-session-card]');
+  const cardCount = await cards.count();
+  assert.equal(cardCount, 4, `expected 4 session cards, got ${cardCount}`);
   assert.ok((await page.getByText('Bağımsız', { exact: true }).count()) >= 1, 'the unscoped session is not named Bağımsız');
-  assert.equal(await page.getByText('Adım 0', { exact: false }).count(), 0, 'an "Adım 0" row leaked into the ledger');
-  assert.ok((await page.getByText('Toplam', { exact: true }).count()) >= 1, 'no Toplam row');
-  assert.ok((await page.getByText('$6,27', { exact: true }).count()) >= 1, 'the total cost is not the honest sum');
-  // WO-0031e tur-3: every session of this closed WO has an EMPTY transcript — no row may render
-  // an expander (absent, never disabled)
-  assert.equal(await page.locator('[data-audit-toggle]').count(), 0, 'expanders rendered for empty transcripts');
+  assert.equal(await page.getByText('Adım 0', { exact: false }).count(), 0, 'an "Adım 0" card leaked into the ledger');
+  assert.equal(await page.getByText('Toplam', { exact: true }).count(), 0, 'the dead table\'s Toplam row survived');
+  for (const cost of ['$1,84', '$2,40', '$2,03']) {
+    assert.ok((await cards.filter({ hasText: cost }).count()) >= 1, `no card carries its own ${cost}`);
+  }
+  assert.ok((await page.getByText('4 oturum').count()) >= 1, 'the section aside carries no session count');
+  // WO-0031e tur-3 stands: every session of this closed WO has an EMPTY transcript — opening a
+  // card renders NO chat (the toggle is honest; the body has nothing to show)
+  const firstToggle = page.locator('[data-session-toggle]').first();
+  await firstToggle.click();
+  await page.waitForTimeout(300);
+  assert.equal(await firstToggle.getAttribute('aria-expanded'), 'true', 'the card did not open');
+  assert.equal(await cards.first().locator('[data-chat]').count(), 0, 'an empty transcript rendered a chat');
+  await firstToggle.click();
+  await page.waitForTimeout(200);
+  assert.equal(await firstToggle.getAttribute('aria-expanded'), 'false', 'the card did not close');
   await backToBoard();
 });
 
@@ -288,6 +288,38 @@ await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline rec
   await backToBoard();
 });
 
+await spec('board live: answering an ask flips the card to Çalışıyor mid-drive; no flip-back at end', async () => {
+  const title = 'Yeni iş emri örneği';
+  const bucket = (name) => page.locator('section').filter({ has: page.locator('h2', { hasText: name }) });
+  await openDetail(title);
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(500);
+  // a risky ask parks the drive (row stopped_asking → the card waits in "Sıra sende")
+  await page.evaluate(() => window.docket.e2e?.emit({
+    kind: 'permission_request',
+    requestId: 'r-e2e-board-live',
+    tool: 'Write',
+    input: { file_path: '.github/workflows/board-live.yml', content: 'x' },
+  }));
+  await page.waitForTimeout(400);
+  await backToBoard();
+  await page.waitForTimeout(400);
+  assert.ok((await bucket('Sıra sende').locator(`[data-wo-id]`, { hasText: title }).count()) >= 1, 'card not waiting before the answer');
+  // answer it — the fold (and the onAskResolved row refresh) must move the card WITHOUT the drive ending
+  await openDetail(title);
+  await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
+  await page.waitForTimeout(500);
+  await backToBoard();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(SHOTS, 'board-live-after-answer@980.png') });
+  assert.ok((await bucket('Çalışıyor').locator(`[data-wo-id]`, { hasText: title }).count()) >= 1, 'card did not flip to Çalışıyor mid-drive');
+  assert.equal((await bucket('Sıra sende').locator(`[data-wo-id]`, { hasText: title }).count()), 0, 'card still waits after the answer');
+  // end the turn — the card settles to the waiting bucket directly, never bouncing through Seni bekliyor
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(600);
+  assert.ok((await bucket('Sıra sende').locator(`[data-wo-id]`, { hasText: title }).count()) >= 1, 'card did not settle back to Sıra sende');
+});
+
 await spec('rule lift from the ask card: badge flips, timeline logs, confirm toast', async () => {
   await openDetail('Yeni iş emri örneği');
   // the strip badge shows the default (risky_excluded) before the lift
@@ -310,28 +342,89 @@ await spec('rule lift from the ask card: badge flips, timeline logs, confirm toa
   await backToBoard();
 });
 
-await spec('plan editing: Düzenle → role cycle → aim edit → add → counter → edited approval lands', async () => {
+// WO-0038 (operator-approved staging model, 2026-08-22): the editor chrome and the staged plan are
+// SEPARATE — drafts stage in editSteps and survive Bitti (Vazgeç is the only discard); Onayla does
+// not render while the editor is open, and an empty aim holds the gate OUTSIDE the editor too.
+await spec('plan editing: role PICKER + honest staging — rail Vazgeç·Bitti; drafts survive Bitti; Vazgeç restores', async () => {
   await openDetail('Plan bekliyor');
-  await page.locator('[data-rail]').getByRole('button', { name: 'Düzenle' }).click();
+  const rail = page.locator('[data-rail]');
+  await rail.getByRole('button', { name: 'Düzenle' }).click();
   await page.waitForTimeout(300);
-  assert.ok((await page.getByText('+ Adım ekle').count()) >= 1, 'the editor did not open');
-  // cycle step 1's role chip: implementer → architect
-  await page.locator('[data-plan-cards] button[aria-label^="Rol:"]').first().click();
-  await page.waitForTimeout(150);
-  // edit step 1's aim
-  await page.locator('[data-plan-cards] input').first().fill('düzenlenmiş adım');
-  // add a second step and type into it
-  await page.getByRole('button', { name: '+ Adım ekle' }).click();
-  await page.waitForTimeout(150);
-  await page.locator('[data-plan-cards] input').nth(1).fill('eklenen adım');
+  assert.ok((await page.getByRole('button', { name: '+ Adım ekle' }).count()) >= 1, 'the editor did not open');
+  // the editor rail carries ONLY editing — no Onayla (deciding happens once the chrome is closed)
+  assert.equal(await rail.getByRole('button', { name: 'Vazgeç', exact: true }).count(), 1, 'no rail Vazgeç while editing');
+  assert.equal(await rail.getByRole('button', { name: 'Bitti', exact: true }).count(), 1, 'no rail Bitti while editing');
+  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla renders inside the editor');
+  assert.equal(await rail.getByRole('button', { name: 'İtiraz et' }).count(), 0, 'İtiraz renders inside the editor');
+  // the role chip opens a PICKER (Radix radio menu) — step 1: implementer → verifier
+  const trigger = page.locator('[data-plan-cards] button[aria-label^="Rol seç"]').first();
+  await trigger.click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.getByRole('menu', { name: 'Rol seç' }).count()) >= 1, 'the role menu did not open');
+  await page.getByRole('menuitemradio', { name: /Doğrulayıcı/ }).click();
   await page.waitForTimeout(250);
-  // the count is per-STEP (aim+role on one step = one change): step-1 edited + one added = 2
-  assert.ok((await page.getByText('2 değişiklik', { exact: false }).count()) >= 1, 'no change counter in the rail');
-  await page.getByRole('button', { name: 'Onayla', exact: true }).first().click();
-  await page.waitForTimeout(700);
-  // the plan is approved; WO-0031f Y-2 killed the Çizelge surface, so the edited approval is
-  // asserted in the stored event stream (detail 'edited:N' — what the dead timeline rendered from)
-  assert.ok((await page.getByText('Plan hazır', { exact: true }).count()) === 0, 'approval did not land');
+  assert.ok(((await trigger.getAttribute('aria-label')) ?? '').includes('Doğrulayıcı'), 'the picker did not move the role');
+  // edit step 1's aim
+  await page.locator('[data-plan-cards] input[aria-label="adım 1"]').fill('düzenlenmiş adım');
+  // '+ Adım ekle' lands a FOCUSED empty row (border-error — the WO-0036 field rule)
+  await page.getByRole('button', { name: '+ Adım ekle' }).click();
+  await page.waitForTimeout(200);
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+    'adım 2',
+    'the fresh row did not take the focus',
+  );
+  const emptyInput = page.locator('[data-plan-cards] input[aria-label="adım 2"]');
+  assert.ok(((await emptyInput.getAttribute('class')) ?? '').includes('border-error'), 'the empty aim wears no error border');
+  assert.ok((await page.getByText('Bir adımın metni boş (2. satır)').count()) >= 1, 'the rail does not name the empty row');
+  // Bitti with the empty stage: the gate holds OUTSIDE the editor — no Onayla, the reason stays
+  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla returned over an empty aim');
+  assert.ok((await page.getByText('Bir adımın metni boş (2. satır)').count()) >= 1, 'the empty-aim reason died with the editor');
+  // staging: reopen (the drafts are intact), fill the aim, Bitti — the normal decision rail returns
+  await rail.getByRole('button', { name: 'Düzenle', exact: true }).click();
+  await page.waitForTimeout(250);
+  await emptyInput.fill('eklenen adım');
+  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await rail.getByRole('button', { name: 'İtiraz et' }).count(), 1, 'the normal rail did not return after Bitti');
+  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'Onayla stayed absent with a full stage');
+  const stagedText = (await page.locator('[data-plan-cards]').textContent()) ?? '';
+  assert.ok(stagedText.includes('düzenlenmiş adım'), 'the staged aim did not survive Bitti');
+  assert.ok(stagedText.includes('eklenen adım'), 'the added step did not survive Bitti');
+  // Vazgeç is the ONLY discard: reopen (drafts intact) → Vazgeç → the proposal is restored
+  await rail.getByRole('button', { name: 'Düzenle', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[data-plan-cards] input[aria-label="adım 1"]').inputValue(), 'düzenlenmiş adım', 'reopening wiped the drafts');
+  await rail.getByRole('button', { name: 'Vazgeç', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[data-plan-cards] li').count(), 1, 'Vazgeç did not remove the added step');
+  const restoredText = (await page.locator('[data-plan-cards]').textContent()) ?? '';
+  assert.ok(!restoredText.includes('düzenlenmiş adım'), 'Vazgeç kept the edited aim');
+  await backToBoard();
+});
+
+await spec('plan editing: the staged approval lands as a düzenlenmiş onay (edited:2)', async () => {
+  await openDetail('Plan bekliyor');
+  const rail = page.locator('[data-rail]');
+  await rail.getByRole('button', { name: 'Düzenle' }).click();
+  await page.waitForTimeout(300);
+  await page.locator('[data-plan-cards] button[aria-label^="Rol seç"]').first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('menuitemradio', { name: /Doğrulayıcı/ }).click();
+  await page.waitForTimeout(250);
+  await page.locator('[data-plan-cards] input[aria-label="adım 1"]').fill('düzenlenmiş adım');
+  await page.getByRole('button', { name: '+ Adım ekle' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('[data-plan-cards] input[aria-label="adım 2"]').fill('eklenen adım');
+  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await page.waitForTimeout(250);
+  await rail.getByRole('button', { name: 'Onayla', exact: true }).click();
+  await page.waitForTimeout(900); // approvePlan → reloadDetail (+ the gates cadence auto-drive)
+  assert.ok((await page.getByText('Uygulama', { exact: true }).count()) >= 1, 'the stage badge did not advance past approval');
+  // WO-0031f Y-2 killed the Çizelge surface, so the edited approval is asserted in the stored
+  // event stream (detail 'edited:N' — what the dead timeline rendered from)
   const approved = await page.evaluate(async () => {
     const wos = await window.docket.source.getWorkOrders();
     const wo = wos.find((w) => w.title === 'Plan bekliyor');
@@ -341,8 +434,6 @@ await spec('plan editing: Düzenle → role cycle → aim edit → add → count
   assert.equal(approved, 'edited:2', `the edited approval did not land in the event stream: ${approved}`);
   // gates cadence: approval chained the drives ("Onayla — adımlar sırayla koşar") — stop the whole
   // chain (step + the auto-review it triggers) before leaving.
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
   await stopAllDrives();
   await backToBoard();
 });
@@ -413,48 +504,27 @@ await spec('no horizontal overflow at 940×560 on the board (A6: shot taken ON t
 
 // ===== WO-0031d specs (ADR-0012 contract, gating, dialogs, results card) =====
 
-await spec('substrip: step segments replace the esc hint (adım N/T + cells)', async () => {
+// WO-0038: the substrip died with the dual view — its two survivors moved into the HEADER BAND
+// (DetailStrip): the turn stays ANNOUNCED (visually hidden aria-live — audit B5 lives on) and the
+// step segments became the 2px progress hairline at the band's bottom.
+await spec('header band: the turn stays announced (sr-only aria-live) + the step hairline; the substrip is gone', async () => {
   await setSize(980, 620);
   await openDetail('İzin bekliyor'); // 1 step, active (not done)
-  assert.ok((await page.locator('[data-segments="1"]').count()) >= 1, 'no segment group in the substrip');
-  assert.ok((await page.locator('[data-seg]').count()) >= 1, 'no segment cells');
-  assert.ok((await page.getByText('adım 0/1').count()) >= 1, 'no adım N/T readout');
-  assert.equal(await page.getByText('esc geri').count(), 0, 'the standing esc hint still renders');
-  // tur-2 A7 → WO-0031f: the segments are a real jump — click → DETAY + the Akış surface active
-  await page.locator('button[data-segments]').first().click();
-  await page.waitForTimeout(500);
-  assert.ok((await page.locator('[role="tablist"]').count()) >= 1, 'the jump did not switch to DETAY');
-  const activeTab = await page.locator('[role="tab"][data-state="active"]').first().textContent();
-  assert.ok(activeTab && activeTab.includes('Akış'), `the jump did not select Akış: ${activeTab}`);
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(250);
-  await backToBoard();
-});
-
-await spec('substrip band: sıra · odak · ilerleme in one breath (WO-0031f H-4)', async () => {
-  await openDetail('İzin bekliyor'); // the driven step's aim is the seeded 'askı senaryosunu yürü'
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
-  // DETAY: the FILLED band carries the three values — turn (left) · focus (middle) · segments + N/T
-  const band = page.locator('[data-substrip-band]');
-  assert.ok((await band.count()) >= 1, 'no band in DETAY');
-  assert.ok((await band.locator('[aria-live="polite"]').getByText('Sıra sende').count()) >= 1, 'the band carries no turn');
-  const focus = await band.locator('[data-substrip-focus]').textContent();
-  assert.equal(focus, 'askı senaryosunu yürü', `the band focus is not the active step's aim: ${focus}`);
-  assert.ok((await band.locator('[data-seg]').count()) >= 1, 'the band carries no segments');
-  // SADE keeps the calm line — no band, no focus cell
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('[data-substrip-band]').count(), 0, 'SADE rendered the band');
-  assert.ok((await page.locator('[data-substrip]').count()) >= 1, 'SADE lost its line');
-  assert.equal(await page.locator('[data-substrip-focus]').count(), 0, 'SADE rendered a focus cell');
+  const turn = page.locator('header [aria-live="polite"]');
+  assert.ok((await turn.count()) >= 1, 'the announced turn line left the band');
+  const cls = (await turn.first().getAttribute('class')) ?? '';
+  assert.ok(cls.includes('sr-only'), `the turn line is not visually hidden: ${cls}`);
+  assert.ok(((await turn.first().textContent()) ?? '').includes('Sıra sende'), 'the announced turn is wrong');
+  assert.ok((await page.locator('.hairline-progress').count()) >= 1, 'no step hairline under the band');
+  // the substrip surfaces themselves (band, focus cell, segment cells) are dead at every width
+  assert.equal(await page.locator('[data-substrip]').count(), 0, 'a substrip hook survived');
+  assert.equal(await page.locator('[data-seg]').count(), 0, 'a segment cell survived');
+  assert.equal(await page.getByText('adım 0/1').count(), 0, 'the adım N/T readout survived');
   await backToBoard();
 });
 
 await spec('the report opens under its row and spotlights its owner (R1 + H-2)', async () => {
   await openDetail('Uygulama sürüyor'); // step 1 done with a report path → the row is a real toggle
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
   const row = page.locator('[data-step-idx="1"]');
   const toggleBtn = row.locator('button[data-step-toggle="1"]');
   assert.ok((await toggleBtn.count()) === 1, 'the done row is not a toggle button');
@@ -474,15 +544,11 @@ await spec('the report opens under its row and spotlights its owner (R1 + H-2)',
   assert.equal(await page.locator('[data-step-report]').count(), 0, 'the report did not close');
   assert.equal(await page.locator('ul.steps.dimmed').count(), 0, 'the spine stayed dimmed after closing');
   assert.equal(await page.locator('.steprow.owner').count(), 0, 'a row kept the owner surface');
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
   await backToBoard();
 });
 
 await spec('switching reports closes the sibling and arrives at the new one\'s top (WO-0031f)', async () => {
   await openDetail('Rapor turu'); // ten done steps, each row a report toggle
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
   const scroll = () => page.evaluate(() => document.querySelector('.flow-scroll')?.scrollTop ?? -1);
   // scroller-RELATIVE top (the viewport adds appbar+strip above the scroller); a late row can clamp
   // short of the very top when too little content follows it — "reading position" = fully in view.
@@ -510,26 +576,44 @@ await spec('switching reports closes the sibling and arrives at the new one\'s t
   // the honest contract, the arrival targets the row so an EARLY row lands right under the bar.)
   const rowTop = await topOf('[data-step-idx="8"]');
   assert.ok(rowTop >= -1 && rowTop < 300, `report 8's row heading is not in view (${rowTop})`);
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
   await backToBoard();
 });
 
-await spec('strip gates the order.md writers while a drive runs (absent + reason line)', async () => {
+await spec('strip gates the order.md writers while a drive runs (guarded in place + tooltip, WO-0037)', async () => {
   await openDetail('Yeni iş emri örneği');
   // the drive may be fresh (Plan iste) or stopped from an earlier spec (Sürdür) — both start it
   const start = await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first();
   await start.click();
   await page.waitForTimeout(500);
   assert.ok((await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count()) >= 1, 'drive not running');
-  assert.equal(await page.locator('button[aria-label="İş emrini düzenle"]').count(), 0, 'the pencil renders while a drive runs');
-  assert.equal(await page.locator('button[aria-label="Sil"]').count(), 0, 'the trash renders while a drive runs');
+  // ADR-0001 2026-08-22 addendum: the writers render IN PLACE, dimmed, handler-less — the cause
+  // ("Çalışıyor") is already announced on the surface (the header band), so no standing reason line.
+  const pencil = page.locator('button[aria-label="İş emrini düzenle"]');
+  const trash = page.locator('button[aria-label="Sil"]');
+  assert.ok((await pencil.count()) >= 1, 'the pencil is absent while a drive runs (guarded idiom expected)');
+  assert.ok((await trash.count()) >= 1, 'the trash is absent while a drive runs (guarded idiom expected)');
+  assert.equal(await page.getByText('önce oturumu durdur').count(), 0, 'the standing reason line survived');
   assert.equal(await page.locator('button[data-review-mode]').count(), 0, 'the review badge is still a button while a drive runs');
-  assert.ok((await page.getByText('önce oturumu durdur').count()) >= 1, 'no absence reason line');
+  // the guarded pencil does nothing on click — and its tooltip names the unblocking move (hover
+  // AFTER the click: the mouse is already over the button, so park it elsewhere first or the
+  // pointerenter never re-fires and the tooltip stays shut)
+  await pencil.first().click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the guarded pencil opened the edit dialog');
+  await page.locator('h1').first().hover();
+  await page.waitForTimeout(150);
+  await pencil.first().hover();
+  await page.waitForTimeout(600); // the kit Tooltip's 350ms delay
+  assert.ok((await page.getByText('Oturum çalışırken düzen kapalı').count()) >= 1, 'the gate tooltip did not open');
   await page.screenshot({ path: join(SHOTS, 'strip-gated@980.png') });
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();
   await page.waitForTimeout(800); // wind-down + detail reload
-  assert.ok((await page.locator('button[aria-label="İş emrini düzenle"]').count()) >= 1, 'the pencil did not return after the stop');
+  assert.ok((await pencil.count()) >= 1, 'the pencil did not survive the stop');
+  await pencil.first().click();
+  await page.waitForTimeout(350);
+  assert.ok((await page.locator('[role="dialog"]').count()) >= 1, 'the pencil did not open the edit dialog after the stop');
+  await page.keyboard.press('Escape'); // close the edit dialog
+  await page.waitForTimeout(300);
   await backToBoard();
 });
 
@@ -542,7 +626,7 @@ await spec('a running session with zero entries says so; the line leaves with th
   await page.waitForTimeout(1400); // create → the detail arrives
   await page.getByRole('button', { name: 'Plan iste' }).first().click();
   await page.waitForTimeout(500);
-  // running, nothing written yet — SADE's phase line carries the honest copy
+  // running, nothing written yet — the stream line carries the honest copy
   assert.ok((await page.getByText('Oturum açıldı — çıktı bekleniyor').count()) >= 1, 'no running-empty line');
   // the first transcript entry replaces it
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'assistant_text', text: 'İlk çıktı satırı geldi.' }));
@@ -555,6 +639,63 @@ await spec('a running session with zero entries says so; the line leaves with th
   await page.getByText('Evet, sil').click();
   await page.waitForTimeout(800);
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Boş akış' }).count(), 0, 'the throwaway F7 WO survived');
+});
+
+await spec('live transcript renders as chat: turn bars, tool BLOCKS, code; bottom-pin + the jump chip (WO-0037)', async () => {
+  await stopAllDrives(); // one drive at a time — stage this on a FRESH work order
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Sohbet denemesi');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400); // create → the detail arrives
+  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.waitForTimeout(500);
+  const emit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
+  await emit({ kind: 'assistant_text', text: 'Planı şöyle kuruyorum:\n\n```ts\nconst turn = deriveTurnState(state);\nif (turn.running) {\n  return { kind: "working" };\n}\n```\n' });
+  await emit({ kind: 'tool_use', callId: 'c1', tool: 'Bash', input: { command: 'npm test' } });
+  await emit({ kind: 'tool_result', callId: 'c1', summary: '504 geçti · 0 kaldı', isError: false });
+  await page.waitForTimeout(400);
+  // the instrument is the SessionPane's reading column (the plan is still being MADE — one scroll)
+  const chat = page.locator('[data-chat]').first();
+  assert.ok((await page.locator('[data-chat]').count()) >= 1, 'no chat column in the session pane');
+  assert.ok((await page.locator('[data-chat-entry="assistant"]').count()) >= 1, 'no assistant turn');
+  const chatText = (await chat.textContent()) ?? '';
+  assert.ok(chatText.includes('Planı şöyle kuruyorum:'), 'the assistant markdown did not render');
+  assert.ok(chatText.includes('Komut çalıştır — npm test'), 'the tool header names no command');
+  // a tool call is a BLOCK: its header is a labelled toggle; the live edge opens itself to the output
+  const toolBtn = chat.locator('[data-chat-entry="tool_use"] button');
+  assert.equal(await toolBtn.count(), 1, 'no tool block header');
+  assert.equal(await toolBtn.getAttribute('aria-label'), 'Komut çıktısı — aç/kapat', 'the tool header carries no aria');
+  const result = chat.locator('[data-chat-entry="tool_result"]');
+  assert.equal(await result.count(), 1, 'the live-edge tool block did not open its result');
+  assert.ok(((await result.textContent()) ?? '').includes('→ 504 geçti · 0 kaldı'), 'the tool output line is missing');
+  // the IDE code face: language readout + copy button (CodeBlock)
+  assert.ok((await page.locator('[data-code-lang="TS"]').count()) >= 1, 'the code block carries no language header');
+  assert.ok((await page.getByRole('button', { name: 'Kodu kopyala' }).count()) >= 1, 'no copy button on the code block');
+  // bottom-pin: fill past the column's cap and it rides along; scroll up and it lets go
+  for (let i = 0; i < 10; i++) {
+    await emit({ kind: 'assistant_text', text: `Doldurma satırı ${i} — `.padEnd(220, 'x') });
+  }
+  await page.waitForTimeout(400);
+  const atBottom = () => page.locator('[data-chat]').first().evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48);
+  assert.ok(await atBottom(), 'the column did not pin to the bottom while riding along');
+  await page.locator('[data-chat]').first().evaluate((el) => { el.scrollTop = 0; });
+  await page.waitForTimeout(200);
+  await emit({ kind: 'assistant_text', text: 'Yeni satır — yukarı kaydırılmışken geldi.' });
+  await page.waitForTimeout(300);
+  assert.ok(await page.locator('[data-chat]').first().evaluate((el) => el.scrollTop < 48), 'an append dragged the reader back to the bottom');
+  assert.ok((await page.locator('[data-chat-jump]').count()) >= 1, 'no jump chip while scrolled up');
+  await page.locator('[data-chat-jump]').first().click();
+  await page.waitForTimeout(200);
+  assert.ok(await atBottom(), 'the jump chip did not restore the bottom');
+  await page.screenshot({ path: join(SHOTS, 'chat-live@980.png') });
+  await stopAllDrives();
+  // cleanup: the throwaway work order leaves the way it came
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('Evet, sil').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Sohbet denemesi' }).count(), 0, 'the throwaway chat WO survived');
 });
 
 await spec('Düzenle is a dialog; the title edit persists and the screen stays intact', async () => {
@@ -640,36 +781,46 @@ await spec('Sil is a dialog and cascades (the throwaway WO from the create spec)
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Tek adımda' }).count(), 0, 'the deleted WO still has a card');
 });
 
-await spec('Kayıt: kanıt chips at the top of the drawer + Belgeler + döküm (WO-0031f v6)', async () => {
-  await openDetail('Uygulama sürüyor'); // single-repo, implementation: 1 gate satisfied, rest absent
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
-  // tur-2 D3 stands: the Depolar section stays gone — and the two-tab world has no room for it
-  // (WO-0033 renamed the word; the surface-still-gone claim survives the rename)
+await spec('DOSYA record: Belgeler rows + Oturum dökümü cards — evidence is contextual, no standing Kanıt (WO-0038)', async () => {
+  await openDetail('Uygulama sürüyor'); // single-repo, implementation: 1/1 done + proceed → closable
+  // the standing Kanıt showcase died — evidence lives ONLY in the close decision's own card
+  assert.equal(await page.getByText('Kanıt', { exact: true }).count(), 0, 'a standing Kanıt section survived');
+  // tur-2 D3 stands: the Depolar section stays gone (WO-0033 renamed the word; the claim survives)
   assert.equal(await page.getByText('Depolar', { exact: true }).count(), 0, 'a Depolar surface still exists');
-  await page.getByRole('tab', { name: /Kayıt/ }).click();
-  await page.waitForTimeout(250);
-  // v6: the three Kanıt chips sit at the TOP of the record (a summary, not a section)
-  const record = page.locator('#sec-record');
-  const first = await record.locator('section').first().textContent();
-  assert.ok(first?.includes('Kanıt'), `Kanıt is not the record's first section: ${first}`);
-  // D2: the aside carries n/total
-  const sum = await page.locator('[data-evidence-sum]').first().getAttribute('data-evidence-sum');
-  assert.ok(sum && /^\d+\/\d+$/.test(sum), `no n/total evidence summary: ${sum}`);
-  // chips: satisfied ✓, absence sentences in plain words (never a bare 'eksik')
-  assert.ok((await page.getByText('✓ plan onayı', { exact: true }).count()) >= 1, 'no satisfied plan-approval chip');
-  assert.ok((await page.getByText('henüz PR yok', { exact: true }).count()) >= 1, 'no track position chip');
-  assert.ok((await page.getByText('doğrulayıcı raporu yok', { exact: true }).count()) >= 1, 'no verification absence sentence');
+  // the evidence checklist renders INSIDE the allStepsDone close card (the moment it matters):
+  // satisfied ✓, absence sentences in plain words (never a bare 'eksik')
+  assert.ok((await page.getByText('Tüm adımlar tamam').count()) >= 1, 'no allStepsDone close card');
+  assert.ok((await page.getByText('✓ plan onayı', { exact: true }).count()) >= 1, 'no satisfied plan-approval chip in the close card');
+  assert.ok((await page.getByText('henüz PR yok', { exact: true }).count()) >= 1, 'no track position chip in the close card');
+  assert.ok((await page.getByText('doğrulayıcı raporu yok', { exact: true }).count()) >= 1, 'no verification absence sentence in the close card');
   assert.equal(await page.getByText('eksik', { exact: true }).count(), 0, 'a reasonless eksik leaked');
-  // v6 order: Kanıt → Belgeler → Oturum dökümü (+ Kaynaklar last, on presence) — the stack's own
-  // section headers only (MarkdownDoc renders the doc's own h2s nested deeper)
-  const titles = await record.locator('aside > section > h2').allTextContents();
-  const ids = ['Kanıt', 'Belgeler', 'Oturum dökümü'];
-  for (let i = 0; i < ids.length; i++) {
-    assert.ok(titles[i]?.includes(ids[i]), `record section ${i} is not ${ids[i]}: ${titles.join(' | ')}`);
-  }
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
+  // WO-0038 order: Belgeler → (Kaynaklar on presence) → Oturum dökümü — the one scroll's sections
+  const ids = await page.evaluate(() => [...document.querySelectorAll('.flow-scroll section[id]')].map((s) => s.id));
+  assert.deepEqual(ids, ['sec-docs', 'sec-audit'], `the record sections are wrong: ${ids.join(',')}`);
+  // Belgeler: ONE COLLAPSED ROW per doc — human word + dim filename pointer + the section count
+  const docs = page.locator('section#sec-docs');
+  const orderRow = docs.locator('button').filter({ hasText: 'order.md' });
+  const planRow = docs.locator('button').filter({ hasText: 'plan.md' });
+  assert.equal(await orderRow.count(), 1, 'no İş emri doc row');
+  assert.equal(await planRow.count(), 1, 'no Plan doc row');
+  assert.ok(((await orderRow.textContent()) ?? '').includes('İş emri'), 'the order row lost its human name');
+  assert.ok(((await planRow.textContent()) ?? '').includes('Plan'), 'the plan row lost its human name');
+  assert.ok((await orderRow.getByText(/\d+ bölüm/).count()) >= 1, 'the order row carries no section count');
+  assert.equal(await docs.locator('.repbody').count(), 0, 'a doc renders open by default');
+  await orderRow.click();
+  await page.waitForTimeout(300);
+  assert.equal(await orderRow.getAttribute('aria-expanded'), 'true', 'the doc row did not expand');
+  const repbody = docs.locator('.repbody');
+  assert.ok((await repbody.count()) >= 1, 'no .repbody after expanding');
+  assert.ok(((await repbody.first().textContent()) ?? '').includes('Objective'), 'the expanded row is not the order.md markdown');
+  // Oturum dökümü: the session CARDS — one per session, each with its ARTIFACT HEADLINE (özet)
+  const audit = page.locator('section#sec-audit');
+  assert.ok((await audit.getByText('2 oturum').count()) >= 1, 'the aside carries no session count');
+  const cards = audit.locator('[data-session-card]');
+  const cardCount = await cards.count();
+  assert.equal(cardCount, 2, `expected 2 session cards, got ${cardCount}`);
+  assert.ok((await audit.getByText('Özet — E2E: did the work').count()) >= 1, 'the step card carries no agent-closing özet');
+  assert.ok((await audit.getByText('Özet — Mimar: proceed — adım onaylandı').count()) >= 1, 'the review card carries no verdict özet');
   await backToBoard();
 });
 
@@ -708,21 +859,22 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await openDetail('Uygulama sürüyor');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
-  // WO-0031f K1 (operator review amendment): the closed strip's pencil stays IN PLACE, LOCKED — no
-  // standing line (the closed state is already named beside it); inert review badge; Sil STAYS
+  // WO-0031f K1 (operator review amendment): the closed strip's pencil stays IN PLACE — no standing
+  // line (the closed state is already named beside it); inert review badge; Sil STAYS. WO-0037: the
+  // lock is the GUARDED form (dim, handler-less, pointer events KEPT so the tooltip can open), not
+  // the kit `locked` pointer-events-none form.
   const closedPencil = page.getByRole('button', { name: 'İş emrini düzenle', exact: true });
   assert.ok((await closedPencil.count()) >= 1, 'the pencil vanished from the closed strip');
   const pencilClass = (await closedPencil.first().getAttribute('class')) ?? '';
-  assert.ok(pencilClass.includes('pointer-events-none'), `the closed pencil is not locked: ${pencilClass}`);
+  assert.ok(pencilClass.includes('opacity-45'), `the closed pencil is not dimmed: ${pencilClass}`);
+  assert.ok(!pencilClass.includes('pointer-events-none'), `the closed pencil swallows its tooltip (pointer events off): ${pencilClass}`);
   assert.ok((await page.getByText('Kapalı iş emri değişmez', { exact: true }).count()) === 0, 'the immutability line still renders');
   assert.ok((await page.locator('span[data-review-mode]').count()) >= 1, 'the review badge is not the inert span form');
   assert.ok((await page.getByRole('button', { name: 'Sil', exact: true }).count()) >= 1, 'Sil vanished from the closed strip');
-  // D3: the merged track speaks as a Kanıt chip ('✓ Depoda' — single repo, no suffix)
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
-  assert.ok((await page.getByText('✓ Depoda', { exact: true }).count()) >= 1, 'no merged-track chip');
-  await page.getByRole('button', { name: 'SADE' }).first().click();
-  await page.waitForTimeout(200);
+  // WO-0038: evidence is CONTEXTUAL — the close card that carried the checklist died with the
+  // decision, so a sealed archive shows no standing chip row; the record speaks as session cards
+  assert.equal(await page.locator('[data-evidence-chips]').count(), 0, 'the closed archive kept a standing chip row');
+  assert.ok((await page.locator('[data-session-card]').count()) >= 2, 'the sealed record lost its session cards');
   await backToBoard();
 });
 
@@ -756,73 +908,47 @@ await spec('only-closed board: the Bütün işler tamam platform, the toggle, an
   assert.ok((await page.locator('[data-wo-id]').count()) >= 3, 'did not switch back to the e2e workspace');
 });
 
-// ===== WO-0031e tur-3 specs (audit transcript, tab scroll) + the WO-0031f board package =====
-// (order matters: the audit/scroll specs need raf's WO still CLOSABLE — the closable spec ends by
+// ===== WO-0031e tur-3 → WO-0038 (the session-card ledger) + the WO-0031f board package =====
+// (order matters: the session-card spec needs raf's WO still OPEN — the closable spec ends by
 //  closing it, which stages the all-done arrival pulse)
 
-await spec('audit rows expand: the session transcript opens under its row (tur-3)', async () => {
+await spec('session cards expand: the archived chat under its header; tool blocks start collapsed (WO-0038)', async () => {
   await page.locator('header button', { hasText: 'e2e' }).first().click();
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: /raf/ }).first().click();
   await page.waitForTimeout(600);
   await openDetail('Raf işi');
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
+  const card = page.locator('[data-session-card]');
+  const cardCount = await card.count();
+  assert.equal(cardCount, 1, `expected 1 session card, got ${cardCount}`);
+  const cardText = (await card.first().textContent()) ?? '';
+  assert.ok(cardText.includes('Adım 1 · a'), `the card is not named for its step: ${cardText}`);
+  assert.ok(cardText.includes('Özet — Raf: döküm satırı 1'), 'the artifact headline (özet) is missing');
+  assert.ok((await card.locator('.rlamp').count()) >= 1, 'the card header carries no role lamp');
+  // history sits CLOSED: the archived chat hides behind the ONE toggle (header + özet, a single
+  // button — the aç/kapa IS the old SADE/DETAY distinction, now living on the card)
+  assert.equal(await card.locator('[data-chat]').count(), 0, 'the archived chat renders before opening');
+  const toggle = card.locator('[data-session-toggle]');
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'the card starts collapsed');
+  await toggle.click();
   await page.waitForTimeout(300);
-  await page.getByRole('tab', { name: /Kayıt/ }).click();
-  await page.waitForTimeout(300);
-  // D3: every ledger row carries its role lamp beside the rolechip (architect/implementer/verifier)
-  const lamps = await page.locator('[data-audit-table] .rlamp').count();
-  const rolechips = await page.locator('[data-audit-table] .rounded-full').count();
-  assert.ok(lamps >= 1 && lamps === rolechips, `role lamps (${lamps}) do not match rolechips (${rolechips})`);
-  await page.locator('[data-audit-toggle]').first().click();
-  await page.waitForTimeout(300);
-  const box = page.locator('[data-audit-transcript]');
-  assert.equal(await box.count(), 1, 'no transcript box under the row');
-  const text = (await box.textContent()) ?? '';
-  assert.ok(text.includes('Raf: döküm satırı 1'), 'the assistant line is missing');
-  assert.ok(text.includes('Komut çalıştır — npm test'), 'the tool_use line did not render through labels');
-  assert.ok(text.includes('→ Raf: döküm satırı 3'), 'the tool_result line is missing');
-  await page.screenshot({ path: join(SHOTS, 'audit-transcript@980.png') });
-  // toggle again — the box hides
-  await page.locator('[data-audit-toggle]').first().click();
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'the card did not open');
+  const chat = card.locator('[data-chat]');
+  assert.equal(await chat.count(), 1, 'no chat inside the opened card');
+  const chatText = (await chat.textContent()) ?? '';
+  assert.ok(chatText.includes('Raf: döküm satırı 1'), 'the assistant line is missing');
+  // archived tool blocks start COLLAPSED (terminal-on-demand) — expand the call to see its output
+  assert.equal(await chat.locator('[data-chat-entry="tool_result"]').count(), 0, 'the tool result renders before expanding');
+  await chat.locator('[data-chat-entry="tool_use"] button').click();
   await page.waitForTimeout(250);
-  assert.equal(await page.locator('[data-audit-transcript]').count(), 0, 'the transcript box did not hide');
-  await backToBoard();
-});
-
-await spec('tab switch scrolls the opened panel into view (tur-3, re-anchored to the two surfaces)', async () => {
-  // still on the raf workspace; the long Objective guarantees the Kayıt panel overflows 980×620
-  await openDetail('Raf işi');
-  await page.getByRole('button', { name: 'DETAY' }).first().click();
-  await page.waitForTimeout(400);
-  const read = () => page.evaluate(() => {
-    const panel = document.getElementById('sec-record');
-    const container = panel ? panel.closest('.overflow-y-auto') : null;
-    return {
-      top: container ? container.scrollTop : -1,
-      recordTop: panel ? panel.getBoundingClientRect().top : -1,
-      scrollable: container ? container.scrollHeight - container.clientHeight : -1,
-    };
-  });
-  await page.getByRole('tab', { name: /Kayıt/ }).click();
-  await page.waitForTimeout(300);
-  let state = await read();
-  assert.ok(state.scrollable > 40, `the record panel has no room to scroll (${state.scrollable})`);
-  assert.ok(state.top > 0, `selecting Kayıt did not scroll (scrollTop ${state.top})`);
-  assert.ok(state.recordTop < 240, `sec-record is not in view (${state.recordTop})`);
-  // WO-0031f review: the Akış|Kayıt bar STAYS PINNED while the content scrolls under it
-  const barTop = await page.evaluate(() => {
-    const bar = document.querySelector('[role="tablist"]');
-    const container = document.querySelector('.flow-scroll');
-    return bar && container ? bar.getBoundingClientRect().top - container.getBoundingClientRect().top : -1;
-  });
-  assert.ok(barTop >= -1 && barTop < 60, `the tab bar scrolled away (${barTop})`);
-  const afterRecord = state.top;
-  // back to Akış — the first surface; the scroll moves UP
-  await page.getByRole('tab', { name: /Akış/ }).click();
-  await page.waitForTimeout(300);
-  state = await read();
-  assert.ok(state.top < afterRecord, `switching back to Akış did not scroll up (${state.top} vs ${afterRecord})`);
+  const result = chat.locator('[data-chat-entry="tool_result"]');
+  assert.equal(await result.count(), 1, 'the tool block did not expand');
+  assert.ok(((await result.textContent()) ?? '').includes('→ Raf: döküm satırı 3'), 'the tool output line is missing');
+  await page.screenshot({ path: join(SHOTS, 'sessions@980.png') });
+  // toggle again — the chat hides
+  await toggle.click();
+  await page.waitForTimeout(250);
+  assert.equal(await card.locator('[data-chat]').count(), 0, 'the chat did not hide on toggle');
   await backToBoard();
 });
 
@@ -881,12 +1007,13 @@ await spec('closable platform → live close → the all-done arrival pulses onc
   assert.equal(await toggle.first().getAttribute('aria-expanded'), 'true', 'the ≤5 toggle does not start open');
   assert.ok((await toggle.getByText('1 kapalı iş').count()) >= 1, 'the toggle label carries no count');
   await page.screenshot({ path: join(SHOTS, 'board-all-done-live@980.png') });
-  // the reopened archive carries the terminal lock (the line died with the operator's amendment —
+  // the reopened archive carries the guarded lock (WO-0037: dim + handler-less, pointer events kept —
   // the K1 strip form is asserted in the closure spec)
   await openDetail('Raf işi');
   const rafPencil = page.getByRole('button', { name: 'İş emrini düzenle', exact: true });
   assert.ok((await rafPencil.count()) >= 1, 'the pencil vanished from the reopened archive');
-  assert.ok(((await rafPencil.first().getAttribute('class')) ?? '').includes('pointer-events-none'), 'the archive pencil is not locked');
+  const rafPencilClass = (await rafPencil.first().getAttribute('class')) ?? '';
+  assert.ok(rafPencilClass.includes('opacity-45'), 'the archive pencil is not dimmed');
   await backToBoard();
   // leave the workspace tidy for the empty-DB spec (it launches its own app)
 });

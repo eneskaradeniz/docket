@@ -40,4 +40,8 @@ export interface SessionStore {
   stepPromptFor(workOrderId: WorkOrderId, idx: number): { prompt: string; scope?: TrackId } | undefined;
   /** The architect's REVIEW prompt for a step (WO-0020). Undefined when plan/step/report missing. */
   stepReviewPromptFor(workOrderId: WorkOrderId, idx: number): string | undefined;
+  /** The work order's PLAN-APPROVAL gate. WO-0038 incident (2026-08-22): the pipeline REFUSES step
+   *  and review drives while it is closed — the gate is enforced at the pipeline/store layer, not
+   *  only derived in the UI (any host — GUI pane or CLI `drive --step` — is refused alike). */
+  planApprovedFor(workOrderId: WorkOrderId): boolean;
 }

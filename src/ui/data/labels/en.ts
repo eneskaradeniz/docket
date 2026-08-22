@@ -21,7 +21,7 @@ import type {
   WoEventKind,
   TranscriptLine,
 } from '../../../core/types';
-import type { LiveSessionStatus, SimplePhase } from '../../../core/runner';
+import type { LiveSessionStatus } from '../../../core/runner';
 import type { PermissionRule } from '../../../core/source';
 import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
@@ -37,6 +37,13 @@ export const ROLE_LABELS: Record<SessionRole, string> = {
   implementer: 'Implementer',
   architect: 'Architect',
   verifier: 'Verifier',
+};
+
+// WO-0038 role picker — the one-line duty under the name.
+export const ROLE_DUTY_LABELS: Record<SessionRole, string> = {
+  architect: 'plans · reviews each step',
+  implementer: 'implements · writes and runs the code',
+  verifier: 'verifies · reports independently',
 };
 
 export const STAGE_LABELS: Record<StageId, string> = {
@@ -131,20 +138,6 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Error',
 };
 
-export const SIMPLE_PHASE_LABELS: Record<SimplePhase, string> = {
-  planning_started: 'Building the plan…',
-  scanning: 'Scanning the code…',
-  thinking: 'Thinking about the plan…',
-  writing_decisions: 'Writing the decision store…',
-  running_command: 'Running a command…',
-  delegating: 'Subtask started…',
-  fetching: 'Searching sources…',
-  asking_input: 'The architect is waiting for you.',
-  asking_permission: 'The architect has a request.',
-  ready: 'Plan ready.',
-  errored: 'An error occurred.',
-  done: 'Done.',
-};
 
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Write file',
@@ -179,6 +172,16 @@ export function transcriptLineText(line: TranscriptLine): string {
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
+}
+
+/** Mirrors tr's one-line projection (WO-0037): an assistant turn collapses to its first
+ *  non-empty line; everything else is the flat transcript line. */
+export function transcriptTailText(line: TranscriptLine): string {
+  if (line.speaker === 'assistant') {
+    const first = line.text.split('\n').find((l) => l.trim().length > 0);
+    return first ?? '';
+  }
+  return transcriptLineText(line);
 }
 
 export function permissionPrompt(tool: string, detail: string): string {
@@ -451,11 +454,6 @@ export const UI = {
   woPhaseImplementing: 'Implementing',
   woPhaseClosing: 'Closing — update the docs',
   woPhaseDone: 'Completed',
-  // Vocabulary spine (operator, 2026-08-21): the view names translate — SIMPLE/DETAIL in en,
-  // SADE/DETAY stay tr-only.
-  viewModeSimple: 'SIMPLE',
-  viewModeDetail: 'DETAIL',
-  viewModeAria: 'View — Simple or Detail',
   turnYours: 'Your turn',
   turnRunning: 'Working',
   turnStopped: 'Stopped — resume if you want',
@@ -466,11 +464,15 @@ export const UI = {
   boardCloseCta: 'Go to closure',
   closeShaAria: 'Closure record — copy',
   copyDone: 'Copied',
+  codeCopyAria: 'Copy code', // WO-0037 — CodeBlock's header button; confirmation rides copyDone
   stripDuration: 'Duration',
   objectTitle: 'What is your objection?',
   dialogCloseAria: 'close',
   removeAria: 'remove',
-  stripGateReason: 'stop the session first',
+  // WO-0037 — guarded strip gate (ADR-0001 2026-08-22 addendum): dimmed in place, tooltip names
+  // the unblocking move; the standing reason line died (the substrip already says Working).
+  stripGateTooltip: 'Editing is closed while a session runs — it opens once you stop the session.',
+  stripDeleteGateTooltip: 'Cannot be deleted while a session runs — stop the session first.',
   deleteWoFailed: 'Could not delete — repo write error.',
   secFlow: 'Flow',
   secRecord: 'Record',
@@ -483,6 +485,11 @@ export const UI = {
   stepLiveMeta: (duration: string, cost: string): string => `running · ⏱ ${duration} · ${cost}`,
   auditSessions: (n: number): string => `${n} session${n === 1 ? '' : 's'}`,
   streamOpened: 'Session opened — waiting for output',
+  // WO-0037 — the chat transcript surface (mirrors tr's block).
+  chatAria: 'Session stream',
+  chatJumpLatest: '▾ latest',
+  chatOlderLines: (n: number) => `… ${n} earlier line${n === 1 ? '' : 's'}`,
+  toolOutputAria: 'Command output — toggle',
   planWaitingHint: 'The architect is ready to plan',
   loadWorkOrders: 'Reading work orders…',
   loadSteps: 'Reading steps…',
@@ -497,9 +504,14 @@ export const UI = {
   railStopping: 'Stopping…',
   railRetry: 'Retry',
   stepReady: 'ready',
-  planProposedSteps: (n: number) => `The architect proposed ${n} step${n === 1 ? '' : 's'}`,
-  secEvidence: 'Evidence',
   secDocs: 'Documents',
+  docSections: (n: number) => `${n} section${n === 1 ? '' : 's'}`,
+  docOrderLabel: 'Work order',
+  docPlanLabel: 'Plan',
+  sessionSummary: 'Summary',
+  sessionSummaryPlan: (n: number) => `proposed a ${n}-step plan`,
+  sessionSummaryProceed: 'Architect: proceed — step approved',
+  sessionSummaryRevise: 'Architect: revise — re-run requested',
   secSources: 'Sources',
   secTracks: 'Repos',
   noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
@@ -520,23 +532,17 @@ export const UI = {
   editPlanDone: 'Done',
   editAddStep: '+ Add step',
   editNewStepAim: 'New step — type…',
-  editCounter: (n: number) => `${n} change${n === 1 ? '' : 's'} — the approval is logged as edited`,
-  editAimMissing: "A step's text is empty — Approve appears once it is filled.",
+  editAimMissing: (idx: number) => `A step's text is empty (row ${idx}) — Approve appears once it is filled.`,
   editMoveUpAria: 'Move up',
   editMoveDownAria: 'Move down',
   editRemoveAria: 'Delete step',
-  editRoleAria: (role: SessionRole) => `Role: ${ROLE_LABELS[role]} — click to change`,
+  editRoleAria: (role: SessionRole) => `Choose role · current: ${ROLE_LABELS[role]}`,
+  editRoleMenuAria: 'Choose role',
   stepRef: (idx: number) => `step ${idx}`,
   stepSegments: (idx: number, total: number) => `step ${idx}/${total}`,
   // Vocabulary spine: 'Session log' — the operator deferred to this draft at the WO-0035 gate
   // (2026-08-21); one word here flips it to 'Transcript' if the live app argues otherwise.
   auditTitle: 'Session log',
-  auditColSession: 'Session',
-  auditColRole: 'Role',
-  auditColTime: 'Time',
-  auditColDuration: 'Duration',
-  auditColCost: 'Cost',
-  auditTotal: 'Total',
   auditCostNone: '—',
   auditClock: (iso: string) => {
     const d = new Date(iso);
@@ -606,6 +612,7 @@ const en: Labels = {
   UI,
   BUCKET_LABELS,
   ROLE_LABELS,
+  ROLE_DUTY_LABELS,
   STAGE_LABELS,
   EVIDENCE_LABELS,
   ACTION_LABELS,
@@ -613,7 +620,6 @@ const en: Labels = {
   CARD_ACTION_AREA,
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
-  SIMPLE_PHASE_LABELS,
   TOOL_LABELS,
   MODE_LABELS,
   SOURCE_KIND_LABELS,
@@ -626,6 +632,7 @@ const en: Labels = {
   cardActionText,
   toolLabel,
   transcriptLineText,
+  transcriptTailText,
   permissionPrompt,
   modeText,
   stoppedAtGate,

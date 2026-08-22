@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
-import { initialSessionState, simplePhaseFromState, seedLiveState, type DriveInput } from '../../../core/runner';
+import { initialSessionState, seedLiveState, type DriveInput } from '../../../core/runner';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { Button, Segmented, Textarea } from '../../kit';
-import { PaneError, PaneShell, PhaseLine, StreamLine } from './pane-chrome';
+import { PaneError, PaneShell, StreamLine } from './pane-chrome';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
-import { Terminal } from './Terminal';
-import { useViewMode } from '../../data/view-mode';
+import { ChatTranscript } from './ChatTranscript';
 
 // The free-form / plan-stage session INSTRUMENT (WO-0008 → WO-0031c). The console chrome moved out:
 // cost/duration/status live in the strip, the stop control and the plan-approval actions live in the
 // rail, ask cards are pinned by the controller above the instrument, and SADE/DETAY is the global view
 // mode. What remains here is the drive machinery: role tabs (free-form), the prompt + start/resume row,
-// the architect question card, and the instrument itself (PhaseLine or the xterm terminal).
+// the architect question card, and the instrument itself (the chat transcript — WO-0037, xterm retired).
+// At the plan-APPROVAL moment this pane does not render at all (the plan rows + the rail carry the
+// decision — see the instrument selector below).
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
 export function SessionPane({
@@ -26,7 +27,7 @@ export function SessionPane({
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
 }) {
-  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, SIMPLE_PHASE_LABELS, UI } = useLabels();
+  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
   const store: DriveStore = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store, NOT this pane — navigating away keeps the
   // session running in the background; a remounted pane re-binds to the live fold state instantly.
@@ -36,7 +37,6 @@ export function SessionPane({
   const [role, setRole] = useState<SessionRole>(stage === 'architect_approval' ? 'architect' : 'implementer');
   const [prompt, setPrompt] = useState('');
   const [replyText, setReplyText] = useState('');
-  const { mode: viewMode } = useViewMode();
   // F14 (WO-0026): the persisted-session seed is the FALLBACK when this key has no live drive in the store
   // (fresh mount after a restart). While a background drive exists, the store's state wins. The seed
   // RESULT is memoized — a fresh object per getSnapshot call loops React (#185, see StepPane).
@@ -70,8 +70,6 @@ export function SessionPane({
   const showQuestion = isPlanRequestStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const canStart = !running && !showAsk && !showQuestion;
-  // SADE mode derives one calm phase from the live state; DETAY shows the raw themed terminal.
-  const phase = simplePhaseFromState(state);
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
   // F7: running but nothing written yet — one honest line instead of a blank canvas.
   const emptyRun = state.status === 'running' && state.entries.length === 0;
@@ -143,17 +141,9 @@ export function SessionPane({
       ) : null}
 
       {emptyRun ? (
-        viewMode === 'sade' ? (
-          <PhaseLine phase={phase} label={UI.streamOpened} />
-        ) : (
-          <StreamLine />
-        )
+        <StreamLine />
       ) : hasStream ? (
-        viewMode === 'sade' ? (
-          <PhaseLine phase={phase} label={phase === 'asking_permission' ? UI.askingRole(role) : SIMPLE_PHASE_LABELS[phase]} />
-        ) : (
-          <Terminal entries={state.entries} resetKey={state.sessionId ?? ''} />
-        )
+        <ChatTranscript entries={state.entries} role={role} resetKey={state.sessionId ?? ''} />
       ) : (
         <p className="text-xs text-inkdim">{UI.noSession}</p>
       )}

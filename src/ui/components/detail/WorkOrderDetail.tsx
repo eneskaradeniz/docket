@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
-import type { StepRole, StepSpec, StepView, WorkOrderDetailView } from '../../../core/types';
+import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
+import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
 import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
@@ -11,12 +12,11 @@ import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { ActionCard } from './ActionCard';
 import { ActionRail, type RailAction } from './ActionRail';
-import { DetailBody } from './DetailBody';
 import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
-import { PlanApprovalCards } from './PlanApprovalCards';
+import { EvidencePanel } from './EvidencePanel';
+import { PlanSection } from './PlanSection';
 import { StepList } from './StepList';
-import { Substrip, turnGlowClass } from './Substrip';
 import { useDetailKeys } from './useDetailKeys';
 import { VerdictCard } from './VerdictCard';
 import type { LampTone } from '../session/pane-chrome';
@@ -25,15 +25,30 @@ import { StepPane } from '../session/StepPane';
 import { ReviewPane } from '../session/ReviewPane';
 import { StopAndAskCard } from '../session/StopAndAskCard';
 import { useDrive, useDriveStore } from '../session/drive-store';
-import { useViewMode } from '../../data/view-mode';
 
-// The console CONTROLLER (WO-0031c / v4). Faz B's state-blind two-pane grid is gone; the screen is the
-// v4 spine — Strip → Substrip → Body → Rail — and the content of every row is CONTENT-AWARE (derived
-// from the phase + the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the
-// runIdx/reviewIdx/verdictFor effects live verbatim below); what moved is chrome: cost/duration/status
-// to the strip (ONE ticker), stop/resume/plan-approval actions to the rail (the panes' dead
-// `onClick={stop}` is deleted with them), ask cards pinned above the instrument, and SADE/DETAY is the
-// global view mode.
+/** The console glow (was Substrip's) — the ambient wash behind the whole screen, by turn. */
+function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
+  if (phaseDone) return 'glow-done';
+  switch (turn) {
+    case 'yours':
+      return 'glow-signal';
+    case 'running':
+      return 'glow-run';
+    case 'retry':
+      return 'glow-error';
+    case 'stopped':
+      return ''; // the wash is removed while stopped (v4: "signal removed when stopped")
+    case 'done':
+      return 'glow-done'; // unreachable via turn (phaseDone covers it) — the classifier is terminal-safe
+  }
+}
+
+// The console CONTROLLER (WO-0031c / v4 → WO-0038 DOSYA). The spine is the HEADER BAND → the ONE
+// scroll → the rail (ADR-0013); the content of every row is CONTENT-AWARE (derived from the phase +
+// the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the runIdx/reviewIdx/
+// verdictFor effects live verbatim below); what moved over the years is chrome: cost/duration/status
+// to the band (ONE ticker), stop/resume/plan-approval actions to the rail, ask cards pinned above
+// the instrument.
 //
 // c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
 // "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
@@ -184,11 +199,6 @@ export function WorkOrderDetail({
     if (prev !== 'done' && phase.kind === 'done') setSealPop((n) => n + 1);
   }, [phase.kind]);
 
-  // The substrip's step segments (WO-0031d): adım N/T + filled cells, absent before a plan has steps.
-  const segTotal = detail.steps.length;
-  const segDone = detail.steps.filter((s) => s.status === 'done').length;
-  const segActive = detail.steps.find((s) => s.status === 'active')?.idx;
-
   // --- The controller's read-only subscription to the ACTIVE drive (the panes subscribe too; drives are
   //     only ever started by the panes' auto-drive effects or the rail's actions below). The seed mirrors
   //     the panes' seeding (F14) so a remount after restart re-seeds the fold — now including persisted
@@ -212,6 +222,10 @@ export function WorkOrderDetail({
   }, [reviewIdx, planStage, hasSteps, runIdx, detail.sessions]);
   const state = useDrive(store, driveKey, () => seedState);
   const running = store.get(driveKey)?.running ?? false;
+  // The store's booting flag: set at start(), cleared on the first folded event — the provider
+  // subprocess spawn window, including a resume-after-wind-down re-boot (the seed's fold status
+  // would misreport that one: a 'done' seed is not 'idle').
+  const booting = store.get(driveKey)?.booting ?? false;
   // WO-0031d: a live drive (running, or winding down — still spending) closes the strip's order.md
   // writers. `stopped` does not gate: the session is over, nothing is being written against.
   const driveLive = running || stopping;
@@ -228,6 +242,7 @@ export function WorkOrderDetail({
     phase,
     liveStatus: state.status,
     hasPendingAsks: state.pendingAsks.length > 0,
+    ...(booting ? { starting: true } : {}),
     ...(stopping ? { stopping: true } : {}),
     ...(stopped ? { stopped: true } : {}),
   });
@@ -272,12 +287,14 @@ export function WorkOrderDetail({
     if (!effectivePlan) return;
     setApproving(true);
     try {
-      // The edited approval requires a fence to rewrite — a fence-less plan is approved verbatim
-      // (the editor cannot be open for one; the belt guards the suspenders).
-      if (editOpen && editSteps.length > 0 && proposedSteps.length > 0) {
+      // The staging model (2026-08-22): Onayla approves what is ON SCREEN — the STAGE (editSteps),
+      // not the editor chrome. The edited approval requires a fence to rewrite; a fence-less plan
+      // is approved verbatim (the editor cannot open for one).
+      if (staged && proposedSteps.length > 0) {
         const editedCount = planEditCount;
         await onApprovePlan(applyStepEdits(effectivePlan, editSteps), { editedCount });
         setEditOpen(false);
+        setEditSteps([]);
       } else {
         await onApprovePlan(effectivePlan);
       }
@@ -289,6 +306,10 @@ export function WorkOrderDetail({
     store.start(driveKey, { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: feedback, ...(state.sessionId ? { resume: state.sessionId } : {}) }, state);
     setObjectionOpen(false);
     setObjectionText('');
+    // Objecting hands the plan back to the architect — the hand-edited stage dies with it (the
+    // architect re-proposes); Vazgeç inside the editor is the other discard path.
+    setEditSteps([]);
+    setEditOpen(false);
   };
   const requestPlan = (): void => {
     setStopped(false);
@@ -378,22 +399,36 @@ export function WorkOrderDetail({
     );
   };
 
-  // --- Pre-approval plan editing: the count is the honest diff against the proposed plan. ---
+  // --- Pre-approval plan editing — the honest STAGING model (operator-approved 2026-08-22, the
+  //     ui-ux-designer pass: Bitti used to be a false commit — three paths silently dropped drafts;
+  //     the editor chrome and the staged plan are now SEPARATE). editSteps IS the stage: it survives
+  //     Bitti and Esc (both just close the chrome), Vazgeç is the only discard (empties the stage),
+  //     and Onayla approves whatever is on screen — staged edits applied, "düzenlenmiş onay" logged. ---
   const proposedSteps = useMemo(() => (effectivePlan !== undefined ? parsePlanSteps(effectivePlan) : []), [effectivePlan]);
+  const staged = editSteps.length > 0;
   const planEditCount = useMemo(() => {
-    if (!editOpen) return 0;
+    if (!staged) return 0;
     let n = Math.abs(editSteps.length - proposedSteps.length);
     const shared = Math.min(editSteps.length, proposedSteps.length);
     for (let i = 0; i < shared; i++) {
       if (editSteps[i]!.aim !== proposedSteps[i]!.aim || editSteps[i]!.role !== proposedSteps[i]!.role) n++;
     }
     return n;
-  }, [editOpen, editSteps, proposedSteps]);
-  const editEmptyAim = editOpen && editSteps.some((s) => !s.aim.trim());
+  }, [staged, editSteps, proposedSteps]);
+  // Empty-aim is a property of the STAGE, not the editor chrome — after Bitti the gate and the
+  // reason line must hold just the same (an Onayla that submits an empty aim, or vanishes without
+  // saying why, are both wrong).
+  const editEmptyAim = editSteps.some((s) => !s.aim.trim());
+  const firstEmptyIdx = editSteps.find((s) => !s.aim.trim())?.idx;
   const openEditor = (): void => {
     if (proposedSteps.length === 0) return; // no fence → nothing to edit (see the rail's Düzenle rule)
-    setEditSteps(proposedSteps.map((s) => ({ ...s })));
+    // Seed from the proposal ONLY when the stage is empty — reopening after Bitti must not wipe drafts.
+    setEditSteps((cur) => (cur.length > 0 ? cur : proposedSteps.map((s) => ({ ...s }))));
     setEditOpen(true);
+  };
+  const cancelEdit = (): void => {
+    setEditSteps([]);
+    setEditOpen(false);
   };
 
   // --- The rail contract. Absent when closed ("arşivde ray yok"); quiet (message only) when nothing is
@@ -423,16 +458,21 @@ export function WorkOrderDetail({
       railMessage = UI.railStoppedMsg;
     } else if (planStage && effectivePlan) {
       if (editOpen) {
-        railMessage = editEmptyAim ? UI.editAimMissing : planEditCount > 0 ? UI.editCounter(planEditCount) : undefined;
+        // Operator rulings (2026-08-22, after hands-on testing): the EDITOR carries only editing —
+        // Vazgeç (discard the stage) + Bitti (close the chrome, keep the stage). Onayla does NOT
+        // render here (deciding happens once the editor is closed); ⏎ = Bitti.
+        railMessage = editEmptyAim ? UI.editAimMissing(firstEmptyIdx ?? 0) : undefined;
         railActions = [
+          { id: 'edit-cancel', label: UI.cancel, variant: 'ghost', onActivate: cancelEdit },
           { id: 'edit-done', label: UI.editPlanDone, variant: 'secondary', onActivate: () => setEditOpen(false) },
-          ...(editEmptyAim
-            ? []
-            : [{ id: 'approve', label: UI.railApprove, variant: 'primary' as const, busy: approving, locked: approving, onActivate: () => void approvePlan() }]),
         ];
-        if (!editEmptyAim) railPrimary = () => void approvePlan();
+        railPrimary = () => setEditOpen(false);
       } else {
-        railMessage = UI.railApproveHint;
+        // Bitti returns HERE — the NORMAL decision rail (İtiraz · Düzenle · Onayla), no special
+        // staged state: the staged edits stay visible in the rows, Onayla approves what is on
+        // screen (approvePlan applies the stage), and İtiraz hands the work order back to the
+        // architect (objectPlan clears the stage — objecting discards the hand edits).
+        railMessage = editEmptyAim ? UI.editAimMissing(firstEmptyIdx ?? 0) : UI.railApproveHint;
         // Editing needs a parsed steps fence: a fence-less plan has nothing to edit, and approving
         // editor-added steps would SILENTLY DROP them (applyStepEdits has no fence to rewrite) — the
         // Düzenle action is absent there, and the planNoStepsWarn banner already says object (ADR-0001).
@@ -441,9 +481,14 @@ export function WorkOrderDetail({
           ...(proposedSteps.length > 0
             ? [{ id: 'edit', label: UI.editPlan, variant: 'secondary' as const, locked: approving, onActivate: openEditor }]
             : []),
-          { id: 'approve', label: UI.railApprove, variant: 'primary', busy: approving, locked: approving, onActivate: () => void approvePlan() },
+          // Onayla needs a fence to rewrite (reviewer note 5): a fence-less re-proposal while the
+          // stage holds would approve the VERBATIM plan, not the staged rows — absent, and the
+          // planNoStepsWarn banner already says object.
+          ...(editEmptyAim || (staged && proposedSteps.length === 0)
+            ? []
+            : [{ id: 'approve', label: UI.railApprove, variant: 'primary' as const, busy: approving, locked: approving, onActivate: () => void approvePlan() }]),
         ];
-        railPrimary = () => void approvePlan();
+        if (!editEmptyAim && !(staged && proposedSteps.length === 0)) railPrimary = () => void approvePlan();
       }
     } else if (planStage && !effectivePlan && !showQuestion) {
       // "Plan iste" covers BOTH plan stages — written (fresh) and architect_approval after an
@@ -474,26 +519,6 @@ export function WorkOrderDetail({
   };
   useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
 
-  const { mode: viewMode, setMode: setViewMode } = useViewMode();
-  // tur-2 A7 → WO-0031f v6: the DETAY tab pair (Akış | Kayıt) is controlled so the substrip's adım
-  // N/T can jump to the spine. Every tab SELECTION scrolls the opened panel's top into view —
-  // switching used to only unhide, leaving the scroll container wherever the previous panel left it.
-  // Instant (no smooth — reduced-motion safe by construction); Radix fires onValueChange only on a
-  // real change, so a same-tab re-click never scrolls and nothing scrolls on mount.
-  const [detailTab, setDetailTab] = useState('flow');
-  const handleTabChange = (v: string): void => {
-    setDetailTab(v);
-    // two frames: a SADE→DETAY switch mounts the panels first, then the anchor exists
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        document.getElementById(`sec-${v}`)?.scrollIntoView({ block: 'start' });
-      });
-    });
-  };
-  const jumpToSteps = (): void => {
-    setViewMode('detail');
-    handleTabChange('flow');
-  };
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
   const recordSections = useMemo(() => buildRecordSections({ detail, docs, UI }), [detail, docs, UI]);
   // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
@@ -622,20 +647,11 @@ export function WorkOrderDetail({
       ) : null}
 
       {planStage && effectivePlan ? (
-        <PlanApprovalCards
-          plan={editOpen ? undefined : effectivePlan}
+        <PlanSection
           editing={editOpen}
-          steps={editSteps}
+          steps={editOpen || staged ? editSteps : proposedSteps}
           onAimChange={(idx, aim) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, aim } : s)))}
-          onRoleCycle={(idx) =>
-            setEditSteps((ss) =>
-              ss.map((s) =>
-                s.idx === idx
-                  ? { ...s, role: s.role === 'implementer' ? 'architect' : s.role === 'architect' ? 'verifier' : 'implementer' }
-                  : s,
-              ),
-            )
-          }
+          onRoleSelect={(idx, role) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, role } : s)))}
           onMove={(idx, dir) =>
             setEditSteps((ss) => {
               const at = ss.findIndex((s) => s.idx === idx);
@@ -717,15 +733,31 @@ export function WorkOrderDetail({
             </div>
           </div>
         ) : allStepsDone ? (
-          <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
-            <div className="lamp lamp-done" />
-            <div className="flex-1 px-3.5 py-3">
-              <p className="readout text-proceed">{UI.stepsAllDone}</p>
-              <Button variant="secondary" size="sm" className="mt-2" onClick={() => { setCloseError(false); setConfirmClose(true); }}>
-                {UI.closeWo}
-              </Button>
-            </div>
-          </div>
+          (() => {
+            // WO-0038: the evidence CHECKLIST lives HERE now — the close decision's own card. The
+            // standing Kanıt showcase died (operator, 2026-08-22); this is the moment it mattered.
+            const repoByTrack = new Map<TrackId, string>(detail.tracks.map((ln) => [ln.track.id, ln.track.repo as string]));
+            const repoCount = new Set(repoByTrack.values()).size;
+            return (
+              <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+                <div className="lamp lamp-done" />
+                <div className="flex-1 px-3.5 py-3">
+                  <p className="readout text-proceed">{UI.stepsAllDone}</p>
+                  <div className="mt-2">
+                    <EvidencePanel
+                      items={detail.evidence}
+                      tracks={detail.tracks}
+                      repoOf={(id: TrackId) => repoByTrack.get(id)}
+                      multiRepo={repoCount > 1}
+                    />
+                  </div>
+                  <Button variant="secondary" size="sm" className="mt-2" onClick={() => { setCloseError(false); setConfirmClose(true); }}>
+                    {UI.closeWo}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <ActionCard detail={detail} />
         )
@@ -753,8 +785,22 @@ export function WorkOrderDetail({
     </div>
   );
 
-  // The instrument: the pane whose drive is active (plan flow, current step, or the review).
-  const instrument = planStage || !hasSteps ? (
+  // The instrument: the pane whose drive is active. WO-0038 (operator, 2026-08-22): at the
+  // plan-APPROVAL moment (a plan is on the table) NO instrument renders — the decision surface is
+  // the plan rows + the rail, and the architect's transcript lives in its Oturum card (özet +
+  // aç/kapa). The live plan terminal shows while the plan is still being MADE; free-form work
+  // orders keep their session instrument throughout.
+  // INCIDENT (2026-08-22, same day): the earlier form of this condition let control fall through
+  // to the StepPane branch at the plan stage — and getWorkOrderSteps deliberately parses the plan's
+  // fence into 'pending' rows BEFORE approval, so StepPane's mount auto-drive started an
+  // unapproved implementer step the moment the detail opened. StepPane now renders ONLY past the
+  // plan stage (mirroring the old v4 guard); the pipeline's planApprovedFor guard is the second
+  // layer for every other host.
+  const instrument = planStage ? (
+    effectivePlan ? null : (
+      <SessionPane mode={detail.mode} stage={detail.stage} workOrderId={detail.id} sessions={detail.sessions} />
+    )
+  ) : !hasSteps ? (
     <SessionPane mode={detail.mode} stage={detail.stage} workOrderId={detail.id} sessions={detail.sessions} />
   ) : reviewIdx !== undefined ? (
     <ReviewPane step={detail.steps.find((s) => s.idx === reviewIdx)!} workOrderId={detail.id} />
@@ -762,13 +808,14 @@ export function WorkOrderDetail({
     <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} />
   ) : null;
 
-  // WO-0031f v6 — the two surfaces. Akış: the decision cards + the step spine (in DETAY, the driven
-  // row carries its terminal inline, so the StepPane instrument renders ONLY in SADE — never twice);
-  // a plan-stage / step-less / reviewing WO keeps its instrument card above whatever flow exists.
-  // Kayıt: the one record stack. The archive (a closed WO) is the record as the body, at every width.
-  const stepPaneLivesInSpine = viewMode === 'detail' && !planStage && hasSteps && reviewIdx === undefined && !!activeStep;
+  // WO-0038 DOSYA — the ONE scroll: decision cards first (what needs you), then the plan/step spine
+  // (the driven row carries its chat inline — the StepPane renders ONLY there, never twice; a
+  // plan-stage / step-less / reviewing WO keeps its instrument card above whatever flow exists),
+  // then the record sections (Belgeler rows · Kaynaklar · the session ledger). No tabs, no rack,
+  // no archive special-case — a closed WO is the same document, sealed.
+  const stepPaneLivesInSpine = !planStage && hasSteps && reviewIdx === undefined && !!activeStep;
   const spine =
-    viewMode === 'detail' && !planStage && hasSteps ? (
+    !planStage && hasSteps ? (
       <StepList
         steps={detail.steps}
         sessions={detail.sessions}
@@ -780,22 +827,6 @@ export function WorkOrderDetail({
         now={now}
       />
     ) : null;
-  const flow = (
-    <div className="flex min-w-0 flex-col gap-3.5">
-      {decision}
-      {stepPaneLivesInSpine ? null : instrument}
-      {spine}
-    </div>
-  );
-  const record = <RecordStack sections={recordSections} />;
-  const flowAside = hasSteps ? `${detail.steps.filter((s) => s.status === 'done').length}/${detail.steps.length}` : undefined;
-  const recordAside = `${detail.evidence.filter((e) => e.status === 'satisfied').length}/${detail.evidence.length}`;
-  // H-4 — the band's middle: what the console is ON right now. No new derivation: the open report's
-  // step, else the reviewed step, else the driven step's aim (the data the app already holds).
-  const substripFocus =
-    reportStep?.aim ??
-    (reviewIdx !== undefined ? detail.steps.find((s) => s.idx === reviewIdx)?.aim : undefined) ??
-    activeStep?.aim;
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col', turnGlowClass(turn, phase.kind === 'done'))}>
@@ -803,34 +834,21 @@ export function WorkOrderDetail({
         detail={detail}
         objective={objective}
         phase={phase}
+        turn={turn}
         duration={durationText}
         driveLive={driveLive}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
         onBack={onBack}
         onDelete={() => setConfirmDelete(true)}
         permissionRule={permissionRule}
         onUpdateWorkOrder={onUpdateWorkOrder}
       />
-      <Substrip
-        turn={turn}
-        {...(substripFocus ? { focus: substripFocus } : {})}
-        {...(segTotal > 0
-          ? { segments: { done: segDone, total: segTotal, ...(segActive !== undefined ? { activeIdx: segActive } : {}) } }
-          : {})}
-          onJump={jumpToSteps}
-      />
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        <DetailBody
-          viewMode={viewMode}
-          tab={detailTab}
-          onTabChange={handleTabChange}
-          flow={flow}
-          {...(flowAside !== undefined ? { flowAside } : {})}
-          record={record}
-          recordAside={recordAside}
-          archive={detail.stage === 'closed'}
-        />
+        <div className="flex min-w-0 flex-col gap-3.5">
+          {decision}
+          {stepPaneLivesInSpine ? null : instrument}
+          {spine}
+          <RecordStack sections={recordSections} />
+        </div>
       </div>
       <ActionRail tone={railTone} message={railMessage} actions={railActions} />
 

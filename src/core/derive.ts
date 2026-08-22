@@ -189,11 +189,15 @@ export function deriveSteps(specs: StepSpec[], observed: ReadonlyMap<number, Obs
 }
 
 // whoseTurn — first match wins; default your_turn (a work order matching no rule is on the operator).
+// A RUNNING session outranks an unsatisfied gate (base-mobile trial, 2026-08-21): during the plan
+// drive the plan_approval gate is unsatisfied BECAUSE the session is still working toward it — the
+// gate check first left the board claiming "Sıra sende" for the drive's whole run. The operator's
+// turn over a gated stage resumes when the session ends or stops to ask.
 export function whoseTurn(wo: WorkOrder): BoardColumn {
   if (wo.sessions.some((s) => s.status === 'stopped_asking')) return 'your_turn';
   if (wo.tracks.some((t) => t.ci.kind === 'run' && t.ci.state === 'failed')) return 'your_turn';
-  if (unsatisfiedGateKinds(wo).length > 0) return 'your_turn';
   if (wo.sessions.some((s) => s.status === 'running')) return 'running';
+  if (unsatisfiedGateKinds(wo).length > 0) return 'your_turn';
   if (ciActivelyRunning(wo)) return 'external';
   return 'your_turn';
 }
@@ -214,11 +218,15 @@ export function deriveCardReason(wo: WorkOrder): CardReason {
     return { kind: 'ci_failed', checkName: failing?.name ?? 'checks' };
   }
 
+  // The same precedence as whoseTurn: a running session is working TOWARD the gate — in_progress
+  // outranks the gate reasons (base-mobile trial, 2026-08-21; the plan drive said "Plan onayı
+  // bekleniyor" while the architect was still writing the plan).
+  if (wo.sessions.some((s) => s.status === 'running')) return { kind: 'in_progress' };
+
   const unsat = unsatisfiedGateKinds(wo);
   if (unsat.includes('plan_approval')) return { kind: 'awaiting_plan_commit' };
   if (unsat.includes('closure')) return { kind: 'docs_not_updated' };
 
-  if (wo.sessions.some((s) => s.status === 'running')) return { kind: 'in_progress' };
   if (ciActivelyRunning(wo)) return { kind: 'ci_running' };
   return { kind: 'awaiting_next_session' };
 }
@@ -350,6 +358,37 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
   };
 }
 
+// ===== The live-drive overlay (base-mobile trial, 2026-08-22) =====
+//
+// The board derives from store rows, and the session row is written only when the provider's first
+// event arrives — so for the subprocess boot window (and any moment the renderer's rows lag the
+// fold, e.g. right after an answered ask) the card would sit in "Sıra sende" while work is in
+// flight. The app's drive memory — the same source the detail header band reads — overlays the card:
+// a drive that is booting or running puts its WO in the working bucket, from the click. Every
+// other fold status is a no-op: those moments are the rows' to narrate (a stopped_asking reason
+// carries the gate, which only the row knows), and a closed archive is terminal.
+
+/** What the app's drive memory knows about the ONE active drive — the board overlay's input. */
+export interface LiveDriveFact {
+  running: boolean; // the drive handle is live (booting or streaming)
+  booting: boolean; // started, no first event folded yet — the subprocess spawn window
+  status: LiveSessionStatus; // the fold's status
+}
+
+export function overlayLiveDrive(view: WorkOrderCardView, live: LiveDriveFact | undefined): WorkOrderCardView {
+  if (!live || !live.running) return view;
+  if (!(live.booting || live.status === 'running')) return view;
+  if (view.bucket === 'closed') return view;
+  return {
+    ...view,
+    column: 'running',
+    bucket: 'working',
+    reason: { kind: 'in_progress' },
+    action: undefined,
+    actionRank: deriveCardActionRank(undefined),
+  };
+}
+
 // ===== WO-level phase (WO-0021) =====
 //
 // The plan-driven macro phase the operator is in — derived from the stage + the step list + whether a plan is
@@ -423,7 +462,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
 
 // ===== Turn state (WO-0031c) =====
 //
-// ONE classifier for the three ambient surfaces of the console: the substrip turn line ("Sıra sende"),
+// ONE classifier for the three ambient surfaces of the console: the header band's turn line ("Sıra sende"),
 // the glow wash and the action rail's lamp. Precedence mirrors where the operator's attention must go:
 // a dead session (retry) outranks a pending ask, which outranks a running drive; the wind-down
 // (`stopping` — interrupt sent, session still open) is still a running (spending) session; `stopped` is
@@ -436,14 +475,18 @@ export function deriveTurnState(input: {
   hasPendingAsks: boolean; // the runner holds unanswered permission asks
   stopping?: boolean; // interrupt sent, session not yet closed (Durduruluyor…)
   stopped?: boolean; // wind-down completed, awaiting Sürdür (controller-owned; cleared on resume)
+  /** The boot window (base-mobile trial, 2026-08-21): the drive was started but the provider session
+   *  has not opened yet (fold still 'idle' — no first event; the subprocess is spawning). The turn is
+   *  running from the click — "Sıra sende" over a drive the operator just launched is a lie. */
+  starting?: boolean; // store.start() ran, no first RunnerEvent yet
 }): TurnState {
   // A closed work order is DONE — terminal, outranking any stale live state (tur-2: a closed WO used
-  // to fall through to 'yours' and the substrip claimed "Sıra sende" over an archive).
+  // to fall through to 'yours' and the header band claimed "Sıra sende" over an archive).
   if (input.phase.kind === 'done') return 'done';
   if (input.liveStatus === 'error') return 'retry';
   if (input.hasPendingAsks || input.liveStatus === 'stopped_asking') return 'yours';
   if (input.liveStatus === 'plan_ready') return 'yours';
-  if (input.liveStatus === 'running' || input.stopping) return 'running';
+  if (input.liveStatus === 'running' || input.stopping || input.starting) return 'running';
   if (input.stopped) return 'stopped';
   return 'yours';
 }

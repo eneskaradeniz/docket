@@ -1029,6 +1029,10 @@ export function createStore(dbPath: string): Store {
     },
     // The architect's review prompt for a step — assembled server-side (WO-0020). Undefined → main leaves prompt.
     stepReviewPromptFor: (workOrderId: WorkOrderId, idx: number) => buildStepReviewPrompt(db, workOrderId, idx),
+    // WO-0038 incident guard: the pipeline refuses step/review drives while the plan gate is closed.
+    // A missing work order reads as closed (never approved) — fail closed.
+    planApprovedFor: (workOrderId: WorkOrderId) =>
+      (db.prepare('SELECT gate_plan_approved AS g FROM work_order WHERE id = ?').get(workOrderId) as { g: number } | undefined)?.g === 1,
     // A step verdict body, read at view time (WO-0020). '' when the verdict is absent.
     getStepVerdict: (id: WorkOrderId, idx: number) => {
       const dir = woDir(db, id);

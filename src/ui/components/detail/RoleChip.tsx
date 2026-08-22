@@ -1,6 +1,6 @@
 // RoleChip — the plan's card language (Mimar amber / Uyg mavi / Doğ yeşil — the lamp grammar's
 // family). Shared by the approval cards and the Belgeler step summary (WO-0031d tur-2: extracted
-// from PlanApprovalCards when the docs view adopted the card language too).
+// from the old plan cards when the docs view adopted the card language too).
 import type { SessionRole } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';

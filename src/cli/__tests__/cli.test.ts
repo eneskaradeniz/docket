@@ -41,6 +41,7 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     architectPromptFor: () => prompts.architect,
     stepPromptFor: () => prompts.step,
     stepReviewPromptFor: () => prompts.review,
+    planApprovedFor: () => true,
   } as unknown as SessionStore;
   return { store, calls };
 }

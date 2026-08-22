@@ -129,6 +129,15 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     const policy = di.permissionRule !== undefined ? policyForRule(di.permissionRule) : deps.permission;
     const stepIdx = input.stepIndex; // a step drive (WO-0017) when set
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
+    // WO-0038 incident (2026-08-22): the approval gate is ENFORCED here — not only derived in the
+    // UI. An unapproved plan's steps may exist as SPEC (plan.md's fence parses into 'pending' rows
+    // before approval — getWorkOrderSteps is deliberately optimistic), so any host that reaches the
+    // pipeline (a GUI pane's auto-drive, the CLI's `drive --step`) is refused with an error event
+    // BEFORE the runner spawns: no session row, no phantom step_started. Plan/free drives pass.
+    if ((stepIdx !== undefined || reviewIdx !== undefined) && !deps.store.planApprovedFor(input.workOrderId)) {
+      yield { kind: 'error', message: `drive refused: ${input.workOrderId} plan not approved` };
+      return;
+    }
     let providerSessionId: string | undefined;
     let assistantText = ''; // fallback body for the report/verdict when the SDK's `result` is absent
     // The same fold the panes run (WO-0026/F6): accumulating the live state here lets every record() call

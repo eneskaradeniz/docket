@@ -412,6 +412,16 @@ describe('SQLite store — plan approval + doc reads (WO-0016)', () => {
     expect(docs.plan).toBe('');
   });
 
+  it('planApprovedFor — closed until approvePlan, open after; a missing WO fails closed (WO-0038 guard)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Gated', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect(store.planApprovedFor(wo.id)).toBe(false);
+    await store.approvePlan(wo.id, '# The plan\n1. do the thing');
+    expect(store.planApprovedFor(wo.id)).toBe(true);
+    expect(store.planApprovedFor('WO-NONE' as never)).toBe(false);
+  });
+
   it('approvePlan writes plan.md and flips the plan_approval gate → stage advances to implementation', async () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot(store);

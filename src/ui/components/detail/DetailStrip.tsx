@@ -1,20 +1,21 @@
-// DetailStrip (WO-0031c / v4) — the console's top row: ‹ back · WO badge + stage · the phase readout ·
-// right-aligned metrics (the price, bare — its word died with the operator's review; Süre — hidden
-// at the narrowest sizes) · the GLOBAL SADE|DETAY
-// segment · the quiet delete icon. The work-order title rides underneath with the two strip badges:
-// the review cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display;
-// the ask card changes it). WO-0031d: the pencil/trash/review-badge are ABSENT while a drive is live
-// (wind-down included — still spending) with one reason line, and the pencil opens a kit Dialog
-// instead of replacing the title row.
+// DetailStrip (WO-0031c / v4 → WO-0038 DOSYA) — the console's HEADER BAND: the old strip and substrip
+// merged into one 46px band whose LEFT LAMP SPINE carries the turn state (amber breathing = sıra
+// sende, info = running — the .lamp grammar, vertical). ‹ back · WO badge + stage · the phase
+// readout · right-aligned metrics (the price, bare; Süre — hidden at the narrowest sizes) · the
+// quiet delete icon. The work-order title rides underneath with the two strip badges: the review
+// cadence (clickable — Kapılarda ↔ Her adımda, logged) and the permission rule (display; the ask
+// card changes it). The SADE|DETAY segment DIED with the dual view (WO-0038 — one view, no mode
+// decisions); the step hairline under the band is the substrip segments' survivor. The turn label
+// stays announced (aria-live, visually hidden — audit B5 lives on). WO-0037: the pencil/trash are
+// GUARDED while a drive spends; the pencil opens a kit Dialog instead of replacing the title row.
 import { useRef, useState } from 'react';
 import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
-import type { WoPhase } from '../../../core/derive';
+import type { TurnState, WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
-import { Badge, Button, Dialog, Field, Input, Segmented, Textarea, Tooltip, cn } from '../../kit';
+import { Badge, Button, Dialog, Field, Input, Textarea, Tooltip, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
-import type { ViewMode } from '../../data/view-mode';
 import type { LampTone } from '../session/pane-chrome';
 import { lampClass } from '../session/pane-chrome';
 
@@ -29,14 +30,22 @@ const PHASE_KIND_TONE: Record<WoPhase['kind'], LampTone> = {
   done: 'done',
 };
 
+/** The band spine speaks the turn (the substrip's lamp, moved to the band's left edge). */
+const TURN_LAMP: Record<TurnState, LampTone> = {
+  yours: 'signal',
+  running: 'run',
+  stopped: 'idle',
+  retry: 'error',
+  done: 'done',
+};
+
 export function DetailStrip({
   detail,
   objective,
   phase,
+  turn,
   duration,
   driveLive,
-  viewMode,
-  onViewModeChange,
   onBack,
   onDelete,
   permissionRule,
@@ -46,11 +55,11 @@ export function DetailStrip({
   /** The parsed order.md Objective — the description editor's starting text (WO-0031c). */
   objective: string;
   phase: WoPhase;
+  /** The console's turn state — the band spine's lamp (WO-0038, the substrip's survivor). */
+  turn: TurnState;
   duration?: string;
   /** A drive is spending right now (running or winding down) — order.md writers are absent (WO-0031d). */
   driveLive: boolean;
-  viewMode: ViewMode;
-  onViewModeChange: (m: ViewMode) => void;
   onBack: () => void;
   onDelete: () => void;
   permissionRule: PermissionRule;
@@ -58,6 +67,13 @@ export function DetailStrip({
 }) {
   const { formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
   const tone = PHASE_KIND_TONE[phase.kind];
+  const turnLabel: Record<TurnState, string> = {
+    yours: UI.turnYours,
+    running: UI.turnRunning,
+    stopped: UI.turnStopped,
+    retry: UI.turnRetry,
+    done: UI.turnDone,
+  };
   const anyCost = detail.sessions.some((s) => s.cost);
   const breathe = tone === 'signal';
   // WO-0031f K1 — a closed work order is a record, not a document: the order.md writers are absent
@@ -109,7 +125,14 @@ export function DetailStrip({
   const onDialogOpenAutoFocus = (e: Event): void => e.preventDefault();
 
   return (
-    <header className="flex flex-col gap-1.5 pb-2">
+    <header className="relative flex flex-col gap-1.5 pb-2 pl-3.5">
+      {/* The band spine — the ONE ambient lamp the substrip used to carry, now the band's own edge. */}
+      <div
+        className={cn('absolute bottom-2 left-0 top-0 w-[3px] rounded-br rounded-tr', lampClass(TURN_LAMP[turn], turn === 'yours'))}
+        aria-hidden="true"
+      />
+      {/* The turn stays ANNOUNCED even though its line is gone (audit B5). */}
+      <p aria-live="polite" className="sr-only">{turnLabel[turn]}</p>
       <div className="flex items-center gap-2">
         <Tooltip label={UI.backToBoard}>
           <button
@@ -142,49 +165,44 @@ export function DetailStrip({
               {UI.stripDuration} {duration}
             </span>
           ) : null}
-          <Segmented
-            size="sm"
-            aria-label={UI.viewModeAria}
-            value={viewMode}
-            onValueChange={(v) => onViewModeChange(v as ViewMode)}
-            options={[
-              { value: 'sade', label: UI.viewModeSimple },
-              { value: 'detail', label: UI.viewModeDetail },
-            ]}
-          />
-          {!driveLive ? (
-            <Tooltip label={UI.deleteWo}>
-              <Button variant="ghost" size="icon" aria-label={UI.deleteWo} onClick={onDelete}>
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </Button>
-            </Tooltip>
-          ) : null}
+          {/* WO-0037 (ADR-0001 2026-08-22 addendum): while a drive spends, the writers render IN
+              PLACE, dimmed, handler-less, pointer events KEPT — the tooltip opens and names the
+              unblocking move. The substrip's "Çalışıyor" already carries the cause on this surface,
+              so no standing reason line. */}
+          <Tooltip label={driveLive ? UI.stripDeleteGateTooltip : UI.deleteWo}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={UI.deleteWo}
+              className={driveLive ? 'opacity-45' : undefined}
+              {...(driveLive ? {} : { onClick: onDelete })}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
-        {driveLive ? (
-          // The absence reason (ADR-0001): one quiet line where the order.md writers would sit while
-          // a drive spends — a TRANSIENT gate whose cause is not otherwise on screen.
-          <span className="readout shrink-0">{UI.stripGateReason}</span>
-        ) : (
-          // WO-0031f (operator, ADR-0001 addendum): on a CLOSED work order the pencil stays in place,
-          // LOCKED — the terminal lock. The closed state is already named by the badge/faze beside it,
-          // so the old "Kapalı iş emri değişmez" line said nothing new and died with this change.
-          <Tooltip label={UI.woEditAria}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={UI.woEditAria}
-              className="h-6 w-6 shrink-0"
-              onClick={() => setEditing(true)}
-              {...(closed ? { locked: true } : {})}
-            >
-              <Pencil className="h-3 w-3" aria-hidden="true" />
-            </Button>
-          </Tooltip>
-        )}
+        {/* Operator ruling (2026-08-22): a long title truncates — hovering reveals the full text. */}
+        <Tooltip label={detail.title}>
+          <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-ink">{detail.title}</h1>
+        </Tooltip>
+        {/* The gated pencil joins the same guarded form (WO-0037): dim + handler-less while a drive
+            spends, and on a CLOSED work order (WO-0031f's terminal lock — the old kit `locked` had
+            pointer-events-none, so this tooltip could never open; the guarded form keeps them). The
+            closed state is already named by the badge beside it — the tooltip stays the plain aria. */}
+        <Tooltip label={driveLive ? UI.stripGateTooltip : UI.woEditAria}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={UI.woEditAria}
+            className={cn('h-6 w-6 shrink-0', (driveLive || closed) && 'opacity-45')}
+            {...(driveLive || closed ? {} : { onClick: () => setEditing(true) })}
+          >
+            <Pencil className="h-3 w-3" aria-hidden="true" />
+          </Button>
+        </Tooltip>
         {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
             WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
             as the pencil — gated with it; the button is simply not rendered). WO-0031f K1: closed is

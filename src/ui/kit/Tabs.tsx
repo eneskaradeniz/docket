@@ -23,7 +23,7 @@ export function TabsTrigger({ value, children, className }: { value: string; chi
   );
 }
 
-// forceMount keeps panels in the DOM (xterm scrollback) — Radix then never applies its own
+// forceMount keeps panels in the DOM (the chat column's scroll) — Radix then never applies its own
 // hidden (present === forceMount || selected), so the inactive panels must be hidden HERE
 // (WO-0031d tur-2 A2: the tab bar visually did nothing; every section stacked forever).
 export const TabsContent = ({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) => (

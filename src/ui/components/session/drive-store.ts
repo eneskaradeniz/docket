@@ -9,6 +9,8 @@
 // - `useDrive(key, seed)` binds a pane to a drive with useSyncExternalStore — a remounted pane re-renders
 //   the LIVE state instantly (the stream never stopped), falling back to the persisted seed when the key
 //   has no active/recent drive.
+// - `useActiveDrive(store)` binds the App to the ONE active drive (the board overlay's source) — the
+//   snapshot is identity-stable between real transitions (see activeSnapshot).
 // - One drive at a time (the runner's event channel is a broadcast — see audit F10); a second start while
 //   one runs is rejected, exactly like the panes' old `running` guard.
 // - `onEnd` is registered by the App: a completion refreshes the WO wherever the operator is (the board's
@@ -21,7 +23,20 @@ import type { SessionRunner } from '../../../core/runner';
 export interface DriveHandle {
   state: LiveSessionState;
   running: boolean;
+  /** Booting (base-mobile trial): started, no first event folded yet — the provider subprocess spawn
+   *  window. Cleared on the first folded event of ANY kind; read by the detail turn state (starting)
+   *  and the board overlay alike, so both surfaces cover a resume-after-wind-down re-boot too. */
+  booting: boolean;
   startedAt?: number; // epoch ms of store.start() — the live ticker's anchor (WO-0029 / 7c)
+}
+
+/** The active drive's card-level facts (the board overlay's input — feed to core's overlayLiveDrive). */
+export interface ActiveDriveSnapshot {
+  key: string;
+  woId: DriveInput['workOrderId'];
+  running: boolean;
+  booting: boolean;
+  status: LiveSessionState['status'];
 }
 
 type Listener = () => void;
@@ -36,12 +51,21 @@ export function createDriveStore(runner: SessionRunner) {
   // starts (the card flips to "Çalışıyor") or an ask surfaces in the background ("Seni bekliyor").
   let onStarted: ((key: string) => void) | undefined;
   let onAsk: ((key: string) => void) | undefined;
+  // base-mobile trial (2026-08-22): the pipeline returns the session row to 'running' when the last
+  // ask is answered, but no other callback fires for ask_resolved — the App refreshes here so the
+  // rows snapshot agrees with the fold. Without it the board card bounces working → Seni bekliyor →
+  // settled when the drive ends and the live overlay lifts off a stale stopped_asking row.
+  let onAskResolved: ((key: string) => void) | undefined;
   // WO-0031c: a drive DIED (a folded error event or the stream itself threw) — the notification
   // contract's error toast. Distinct from onEnd, which fires for every completion.
   let onError: ((key: string) => void) | undefined;
   let active: string | undefined; // the one running key (one drive at a time)
+  // The active-drive snapshot cache (identity-stable — see activeSnapshot).
+  let snapDirty = true;
+  let snap: ActiveDriveSnapshot | undefined;
 
   const notify = (): void => {
+    snapDirty = true;
     for (const l of listeners) l();
   };
 
@@ -55,6 +79,35 @@ export function createDriveStore(runner: SessionRunner) {
     return drives.get(key);
   }
 
+  /** The active drive's card-level facts. CACHED WITH CONTENT COMPARISON: notify() fires on every
+   *  folded transcript line, and useSyncExternalStore re-renders on identity change — a fresh object
+   *  per call would re-render the App per streamed line. The snapshot object is replaced only when
+   *  {key, woId, running, booting, status} actually change (start, a status transition, the end). */
+  function activeSnapshot(): ActiveDriveSnapshot | undefined {
+    if (!snapDirty) return snap;
+    snapDirty = false;
+    const key = active;
+    const h = key === undefined ? undefined : drives.get(key);
+    const woId = key === undefined ? undefined : keyWo.get(key);
+    if (!key || !h || woId === undefined) {
+      snap = undefined;
+      return snap;
+    }
+    const next: ActiveDriveSnapshot = { key, woId, running: h.running, booting: h.booting, status: h.state.status };
+    if (
+      snap &&
+      snap.key === next.key &&
+      snap.woId === next.woId &&
+      snap.running === next.running &&
+      snap.booting === next.booting &&
+      snap.status === next.status
+    ) {
+      return snap;
+    }
+    snap = next;
+    return snap;
+  }
+
   function snapshot(key: string, seed: () => LiveSessionState): LiveSessionState {
     return drives.get(key)?.state ?? seed();
   }
@@ -65,7 +118,7 @@ export function createDriveStore(runner: SessionRunner) {
     if (active !== undefined) return active === key; // already running this key → no-op true; another → false
     active = key;
     keyWo.set(key, input.workOrderId);
-    drives.set(key, { state: seed, running: true, startedAt: Date.now() });
+    drives.set(key, { state: seed, running: true, booting: true, startedAt: Date.now() });
     sessionIds.set(key, seed.sessionId);
     notify();
     void (async () => {
@@ -76,9 +129,11 @@ export function createDriveStore(runner: SessionRunner) {
             onStarted?.(key);
           }
           if (ev.kind === 'permission_request') onAsk?.(key);
+          if (ev.kind === 'ask_resolved') onAskResolved?.(key);
           if (ev.kind === 'error') onError?.(key);
-          const cur = drives.get(key) ?? { state: initialSessionState, running: true, startedAt: Date.now() };
-          drives.set(key, { ...cur, state: foldSessionEvent(cur.state, ev) });
+          // booting clears on the FIRST folded event (any kind) — the spawn window is over.
+          const cur = drives.get(key) ?? { state: initialSessionState, running: true, booting: false, startedAt: Date.now() };
+          drives.set(key, { ...cur, booting: false, state: foldSessionEvent(cur.state, ev) });
           notify();
         }
       } catch {
@@ -107,6 +162,22 @@ export function createDriveStore(runner: SessionRunner) {
   /** The branded work-order id a key belongs to (WO-0031c) — captured at start, so nothing in the UI
    *  ever constructs a branded id from the key string (ADR-0003). */
   const woId = (key: string): DriveInput['workOrderId'] | undefined => keyWo.get(key);
+  /** Drop every fold this store holds for a work order — the DELETE flow's second half. Without it
+   *  a deleted WO's live fold (transcript, pending question, 'done' status) outlives the row AND
+   *  leaks into the next WO that recycles its number (the decision store's nextWorkOrderNumber
+   *  reuses freed numbers): the new WO opened with a foreign transcript, an answerable question
+   *  card whose reply resumes the DEAD provider session, and no rail (found by the WO-0037/0038
+   *  E2E rewrite, 2026-08-22). Idempotent; the active drive is untouched (a live WO cannot be
+   *  deleted — the Sil gate holds while a drive spends). */
+  function forgetWo(id: DriveInput['workOrderId']): void {
+    for (const [key, wo] of keyWo) {
+      if (wo !== id) continue;
+      drives.delete(key);
+      keyWo.delete(key);
+      sessionIds.delete(key);
+    }
+    notify();
+  }
   /** WO-0031c: append an operator-side NOTE line to a drive's fold (the wind-down/force-kill terminal
    *  annotations). Live-only — a persisted transcript never carries Docket's own commentary. */
   function note(key: string, line: TranscriptLine): void {
@@ -122,11 +193,13 @@ export function createDriveStore(runner: SessionRunner) {
     subscribe,
     get,
     snapshot,
+    activeSnapshot,
     start,
     decide,
     interrupt,
     abort,
     note,
+    forgetWo,
     sessionId,
     woId,
     set onEnd(cb: (key: string) => void) {
@@ -137,6 +210,9 @@ export function createDriveStore(runner: SessionRunner) {
     },
     set onAsk(cb: (key: string) => void) {
       onAsk = cb;
+    },
+    set onAskResolved(cb: (key: string) => void) {
+      onAskResolved = cb;
     },
     set onError(cb: (key: string) => void) {
       onError = cb;
@@ -160,5 +236,16 @@ export function useDrive(store: DriveStore, key: string, seed: () => LiveSession
     (l) => store.subscribe(l),
     () => store.snapshot(key, seed),
     () => store.snapshot(key, seed),
+  );
+}
+
+/** Bind the App to the ONE active drive (the board overlay's source). The snapshot's identity is
+ *  stable between real transitions (see activeSnapshot), so this re-renders only on drive start,
+ *  status transitions and the end — never per streamed transcript line. */
+export function useActiveDrive(store: DriveStore): ActiveDriveSnapshot | undefined {
+  return useSyncExternalStore(
+    (l) => store.subscribe(l),
+    () => store.activeSnapshot(),
+    () => store.activeSnapshot(),
   );
 }

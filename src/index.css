@@ -179,7 +179,7 @@
     }
   }
   /* the tab pair's entering panel — display-based hiding (the kit's data-[state=inactive]:hidden)
-     restarts the animation on activation without remounting the xterm canvas */
+     restarts the animation on activation without remounting the chat column */
   .panel-glide[data-state='active'] {
     animation: glide 0.3s ease-out both;
   }
@@ -493,6 +493,15 @@
     border-radius: 2px;
     flex-shrink: 0;
   }
+  /* WO-0038 role picker: the caret flips (and brightens) while the menu is open — Radix stamps
+     data-state on the trigger; a transition only, killed with everything else below. */
+  .rolemenu-trigger[data-state='open'] .rolemenu-caret {
+    transform: rotate(180deg);
+    color: var(--color-ink);
+  }
+  .rolemenu-caret {
+    transition: transform 0.12s ease, color 0.12s ease;
+  }
   .rlamp-architect {
     background: var(--color-signal);
   }
@@ -501,6 +510,73 @@
   }
   .rlamp-verifier {
     background: var(--color-proceed);
+  }
+
+  /* ===== WO-0037 — the chat transcript column (xterm retired) =====
+     The transcript surface's motion is contractual (ADR-0012 addendum): ONE proceed wash on a true
+     live append (≤400ms — the retired terminal's decoration rule, kept), everything else static.
+     The component sets [data-live='1'] on the appended tail entry only — never on mount (a resume
+     seed 0→N stays calm); reduced-motion kills it in the block below. The jump chip and the code
+     copy hover through .ichip/.ibtn (r1) — no new hover tokens. */
+  .chat [data-live='1'] {
+    animation: linepulse 0.4s ease-out;
+  }
+  @keyframes linepulse {
+    from {
+      background-color: color-mix(in srgb, var(--color-proceed) 14%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  /* The hljs palette — rehype-highlight emits semantic classes and NO theme css is loaded, so this
+     block IS the theme. Colors are this app's own tokens, nothing new enters the theme:
+     keyword/literal → signal (amber), string → proceed, comment → dim italic, number/builtin →
+     info, title/function → ink, attr/variable → dim. Untagged fences stay unstyled (detect:false). */
+  .hljs-keyword,
+  .hljs-literal,
+  .hljs-selector-tag,
+  .hljs-section,
+  .hljs-name,
+  .hljs-tag {
+    color: var(--color-signal);
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition,
+  .hljs-attribute,
+  .hljs-meta .hljs-string {
+    color: var(--color-proceed);
+  }
+  .hljs-comment,
+  .hljs-quote {
+    color: var(--color-inkdim);
+    font-style: italic;
+  }
+  .hljs-number,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link,
+  .hljs-built_in,
+  .hljs-builtin-name {
+    color: var(--color-info);
+  }
+  .hljs-title,
+  .hljs-title.function_,
+  .hljs-function .hljs-title {
+    color: var(--color-ink);
+  }
+  .hljs-attr,
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-type,
+  .hljs-title.class_,
+  .hljs-class .hljs-title {
+    color: var(--color-inkdim);
+  }
+  .hljs-deletion {
+    color: var(--color-error);
   }
 
   /* ===== Interaction contract (WO-0031d / ADR-0012 r1) — THE hover tokens =====
@@ -625,7 +701,9 @@
   .glide,
   .panel-glide[data-state='active'],
   .pulse-once,
-  .reveal {
+  .reveal,
+  /* WO-0037: the chat's live-append wash dies with the rest. */
+  .chat [data-live='1'] {
     animation: none;
     transition: none;
   }
