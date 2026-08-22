@@ -2,7 +2,7 @@
 id: WO-0037
 title: Okunur akış — chat transcript (xterm retires), SADE activity tail, strip gate as guarded control
 workspace: docket
-status: open
+status: closed
 mode: direct
 tracks:
   - repo: app
@@ -156,3 +156,18 @@ later extended with collapsible tool blocks after operator review), CodeBlock + 
 the guarded strip gate (ADR-0001 addendum), the pipeline's bottom-pin/jump contract, and the xterm
 retirement. The tool-block aç/kapa and the open-command-wraps ruling are same-day operator reviews
 recorded in the components.
+
+## Closure
+
+Merged PR #44 (`cdb6261`, 2026-08-22) as one PR with WO-0038 — the operator's radical same-day
+tour folded both into a single branch. Four commits: the order/ADR docs, the compile-coupled
+feature (chat column + strip gate + the xterm/xterm-format/@xterm deletions + the base-mobile
+sync-fix riding along, declared), the E2E rewrite, and the reviewer round (comment truth, dead
+label sweep, the fence-less Onayla gate). CI green on both pushes (check + GitGuardian); locally
+typecheck ×2, 503 tests, build, boundaries, E2E 43/43 with zero renderer console errors. The
+reviewer agent returned no blockers — verified the pipeline guard's placement, the staging model's
+five paths, the deleted-surface sweep and E2E honesty. The SADE tail and the boxed-bubble first
+cut were operator-rejected mid-tour and superseded same-day (see the supersession note above);
+what ships is the Ray column + tool blocks + the guarded strip.
+
+_Closed 2026-08-22 at cdb6261._

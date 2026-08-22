@@ -2,7 +2,7 @@
 id: WO-0038
 title: DOSYA — tek görünüm (SADE/DETAY ölür), oturum kartları, bağlamsal kanıt, plan editörü
 workspace: docket
-status: open
+status: closed
 mode: direct
 tracks:
   - repo: app
@@ -69,3 +69,19 @@ aç/kapa, eski SADE/DETAY ayrımının yeni evidir), plan editörü dürüst bir
 - Zaman çizelgesi (Zaman) bölümü ertelendi: detay görünümünde olay listesi veri olarak bağlı değil
   (wo_event yalnız DB'de); gerekirse ayrı iş emri.
 - ChatTranscript penceresizdir (memo + 800 satır tavan); sanallaştırma kayıtlı borç.
+
+## Closure
+
+Merged PR #44 (`cdb6261`, 2026-08-22) with WO-0037 (one branch, one PR — the same-day tour made
+them inseparable). The full arc: mockup tour over the operator's real WO-0001 → in-app iteration
+rounds (session cards, artifact headlines, plan editor staging + role picker, doc rows, the
+Kanıt ruling) → the incident (unapproved auto-step-drive: root-caused to this order's first
+instrument condition + the store's pre-approval 'pending' rows; fixed two-layer — UI guard +
+`planApprovedFor` in the pipeline/port, 5 core tests; DB cleaned with a backup) → the E2E rewrite
+(which surfaced the deleted-WO fold leak → `forgetWo`). Reviewer agent: no blockers; every
+should-fix/note applied in the review commit. CI green (check + GitGuardian); E2E 43/43, 503
+unit tests, both typechecks, boundaries clean. Deferred: the Zaman section (no event data wired
+to the detail view) and Faz 2 of the özet (agent-written `SessionRef.summary`) — recorded in Notes
+and tech-debt.
+
+_Closed 2026-08-22 at cdb6261._
