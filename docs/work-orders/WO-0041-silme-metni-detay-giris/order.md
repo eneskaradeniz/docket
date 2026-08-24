@@ -2,7 +2,7 @@
 id: WO-0041
 title: Delete copy in user terms + the detail's entrance cascade
 workspace: docket
-status: in-progress
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -78,9 +78,14 @@ exit animation, any new CSS.
 ## Evidence required
 
 - plan_approval: n/a (`mode: direct`, `review: light` — solo; gates operator-covered)
-- operator_checkpoint: app run, cascade + calm-closed + both delete dialogs seen in-app
-- ci: typecheck / test / build / boundaries green post-approval
-- closure: ROADMAP tick (+ tech-debt only if something lands), commit sha
+- operator_checkpoint: app presented live (seeded temp DB) + `docs/ui-shots/wo0041-*.png` —
+  cascade mid-flight opacities `[0.56, 0.43, 0.14, 0.00]` → settled all `1`, CLOSED `.glide`
+  count 0 at +110ms; operator approved 2026-08-24 ("tamam olmuş eline sağlık. onaylıyorum")
+- ci: typecheck (both) / `npm test` 540/540 / `check:boundaries` / `build` / `test:ui` all specs
+  green post-approval. The first `test:ui` run's 3 reds were the WS-depo guard-tooltip flake +
+  its modal domino — proven diff-independent (clean main and this branch each reran green) → TD-048
+- review: reviewer agent on the PR #47 diff — no blocking findings (4 notes, all no-action)
+- closure: ROADMAP ticked + TD-048 — merged #47 (`1af3983`)
 
 ## Notes
 
