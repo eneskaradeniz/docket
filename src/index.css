@@ -570,7 +570,9 @@
   .chat {
     --chat-measure: 100%;
   }
-  .chat > * {
+  /* The measure addresses the CONTENT column's children — since 2026-08-25 the scroller holds one
+     observable wrapper (.chat-col) between itself and the lines. */
+  .chat-col > * {
     max-width: var(--chat-measure);
   }
 
