@@ -40,6 +40,13 @@ const app = await electron.launch({
   env: { ...process.env, DOCKET_DB_PATH: DB, DOCKET_E2E: '1', NODE_ENV: 'production' },
 });
 const page = await app.firstWindow();
+// the console collectors attach BEFORE the theme pin's reload (listeners survive it — the boot
+// the specs exercise must not skip the zero-errors spec; review round 2026-08-24)
+const consoleErrors = [];
+page.on('console', (msg) => {
+  if (msg.type() === 'error') consoleErrors.push(msg.text());
+});
+page.on('pageerror', (err) => consoleErrors.push(String(err)));
 // WO-0040: pin the emulated color scheme DARK — Sistem is the default and would otherwise follow
 // the host OS, making every color-pinned assert (e.g. the rgb(76, 195, 138) hairline fill) and
 // every screenshot host-dependent. Load-bearing like seed.ts's locale='tr' (TD-041's twin).
@@ -50,11 +57,6 @@ await page.emulateMedia({ colorScheme: 'dark' });
 await page.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
 await page.reload();
 await page.waitForTimeout(700);
-const consoleErrors = [];
-page.on('console', (msg) => {
-  if (msg.type() === 'error') consoleErrors.push(msg.text());
-});
-page.on('pageerror', (err) => consoleErrors.push(String(err)));
 
 const setSize = async (w, h) => {
   await app.evaluate(({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0].setContentSize(width, height), [w, h]);
@@ -1441,18 +1443,19 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
   });
   try {
     const emptyPage = await emptyApp.firstWindow();
-    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
-    await emptyPage.emulateMedia({ colorScheme: 'dark' });
-    await emptyPage.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
-    await emptyPage.reload();
-    await emptyPage.waitForTimeout(700);
     // TD-038.5: the second app gets its own console collector — its renderer errors used to pass
-    // the zero-errors spec silently.
+    // the zero-errors spec silently. Attaches BEFORE the theme pin's reload (the boot must not
+    // skip it; review round 2026-08-24).
     const emptyConsoleErrors = [];
     emptyPage.on('console', (msg) => {
       if (msg.type() === 'error') emptyConsoleErrors.push(msg.text());
     });
     emptyPage.on('pageerror', (err) => emptyConsoleErrors.push(String(err)));
+    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
+    await emptyPage.emulateMedia({ colorScheme: 'dark' });
+    await emptyPage.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+    await emptyPage.reload();
+    await emptyPage.waitForTimeout(700);
     await emptyPage.waitForLoadState('domcontentloaded');
     await emptyPage.waitForTimeout(700);
     assert.ok((await emptyPage.getByText('Docket', { exact: true }).count()) >= 1, 'no brand on an empty DB');
@@ -1605,16 +1608,17 @@ await spec('a stored DB choice beats detection — and the empty-DB hero speaks 
   const b = await launchLoc(locDb);
   try {
     const pb = await b.firstWindow();
-    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
-    await pb.emulateMedia({ colorScheme: 'dark' });
-    await pb.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
-    await pb.reload();
-    await pb.waitForTimeout(700);
     const locConsoleErrors = [];
     pb.on('console', (msg) => {
       if (msg.type() === 'error') locConsoleErrors.push(msg.text());
     });
     pb.on('pageerror', (err) => locConsoleErrors.push(String(err)));
+    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot;
+    // the collectors above attach first so the rebooted boot stays covered)
+    await pb.emulateMedia({ colorScheme: 'dark' });
+    await pb.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+    await pb.reload();
+    await pb.waitForTimeout(700);
     await pb.waitForLoadState('domcontentloaded');
     await pb.waitForTimeout(700);
     assert.ok((await pb.getByText("Let's create your first workspace").count()) >= 1, 'the stored en row did not win over tr detection');
@@ -1630,8 +1634,9 @@ await spec('a stored DB choice beats detection — and the empty-DB hero speaks 
 });
 
 await spec('Tema: Açık/Karanlık pin, Sistem follows the OS live (WO-0040)', async () => {
-  // the pin above emulated dark; with nothing stored, Sistem resolves dark
-  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'Sistem did not resolve dark under the pin');
+  // the boot pin stamped the mirror 'dark' (an explicit Karanlık) AND emulated a dark OS — both
+  // channels agree on dark; the live Sistem proof comes at the spec's end
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'the pinned dark face did not apply');
   assert.equal(
     await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
     'rgb(0, 0, 0)',

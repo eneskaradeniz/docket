@@ -1,5 +1,9 @@
 # Tema sistemi: Sistem / Açık / Karanlık — WO-0040
 
+> Bu plan 2026-08-24'te tur-1 (tema sistemi) için onaylandı. Tur-2 — Ray dökümünde araç ailesi
+> renkleri (exec/write/remote) — ayrı bir operatör talebi olarak aynı gün geldi ve order.md'in
+> Scope/Notes bölümlerinde kayıtlı; planın kendisi tur-1'i anlatmaya devam eder.
+
 ## Context
 
 Docket bugün dark-only (ADR-0012 mütakip, lacivert `#0e1520` konsol). Operatör üç modlu bir tema sistemi istedi — **Sistem** (OS'u izler, varsayılan), **Açık** (beyaz), **Karanlık** (siyah) — seçici Ayarlar modalında Dil section'ının altında. Mockup seçenekleri sunuldu; operatör onayı alındı (2026-08-24):

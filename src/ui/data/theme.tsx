@@ -5,8 +5,8 @@
 // CLI to read. The resolved theme lands on documentElement's data-theme; index.css owns both faces
 // through the semantic tokens (dark = the @theme defaults, light = the [data-theme='light']
 // override). Under Sistem the OS matchMedia is followed LIVE; an explicit pick needs no listener.
-// This component never throws (it sits above the only ErrorBoundary; every storage access is
-// initializer-or-guarded).
+// Storage access is catch-guarded throughout; matchMedia is Electron-guaranteed (unguarded by
+// design — this component sits above the only ErrorBoundary).
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -67,10 +67,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyTheme(resolved);
   }, [resolved]);
 
-  // Sistem follows the OS LIVE; an explicit pick needs no listener (unsubscribed when not Sistem)
+  // Sistem follows the OS LIVE; an explicit pick needs no listener (unsubscribed when not Sistem).
+  // Re-sync on (re)subscribe: the OS may have flipped while an explicit pick held the listener
+  // off, and a stale systemDark would paint Sistem the wrong face until the next flip
+  // (review round, 2026-08-24).
   useEffect(() => {
     if (mode !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemDark(mq.matches);
     const onChange = (e: MediaQueryListEvent): void => setSystemDark(e.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -78,7 +82,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setMode = (next: ThemeMode): void => {
     setModeState(next); // a no-op setState when next === mode — React bails out
-    applyTheme(resolveTheme(next, systemDark)); // adopt optimistically (the locale precedent)
+    // adopt optimistically (the locale precedent) — under Sistem read the OS LIVE: the stored
+    // state may be stale (the re-sync effect corrects it one paint later)
+    applyTheme(resolveTheme(next, next === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches : systemDark));
     writeMirror(next);
   };
 
