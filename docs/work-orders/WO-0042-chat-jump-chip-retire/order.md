@@ -61,6 +61,7 @@ reason is gone; it must retire.
 
 ## Notes
 
-- The full-suite `test:ui` run regenerates every checked-in shot (seed timestamps ride the UI);
-  only the shots this change legitimately alters are committed (`chat-collapse-retired` new,
-  `chat-live` — its content now carries the spec's Read pair).
+- The full-suite `test:ui` run regenerates every checked-in shot (seed timestamps ride the UI).
+  Only one shot legitimately alters: `chat-collapse-retired` (new). `chat-live` regenerates
+  byte-identical — its viewport is bottom-pinned and the spec's Read row rides above the frame
+  (review finding 1, PR #48: the shot list is the evidence ledger; it names exactly what shipped).

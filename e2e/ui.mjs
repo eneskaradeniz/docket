@@ -907,7 +907,7 @@ await spec('live transcript renders as chat: turn bars, tool BLOCKS, code; botto
   await emit({ kind: 'tool_use', callId: 'c2', tool: 'Read', input: { file_path: 'src/büyük-dosya.ts' } });
   await emit({ kind: 'tool_result', callId: 'c2', summary: 'SATIR '.repeat(600), isError: false });
   await page.waitForTimeout(300);
-  const readBtn = chat.locator('[data-chat-entry="tool_use"]').nth(1).locator('button');
+  const readBtn = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'büyük-dosya' }).locator('button');
   await readBtn.click(); // open the long output → the column overflows
   await page.waitForTimeout(300);
   await chat.evaluate((el) => { el.scrollTop = 0; }); // read from the top — the chip shows
