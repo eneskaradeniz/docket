@@ -3,6 +3,7 @@ import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { PaneError, PaneShell } from './pane-chrome';
+import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
 
@@ -14,9 +15,12 @@ import { ChatTranscript } from './ChatTranscript';
 export function ReviewPane({
   step,
   workOrderId,
+  drive,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
+  /** WO-0039: the active drive's process controls in this pane's header (the dead rail's job). */
+  drive?: DriveState;
 }) {
   const { PROVIDER_ERROR_LABELS, UI } = useLabels();
   const store = useDriveStore();
@@ -26,14 +30,14 @@ export function ReviewPane({
   const state = useDrive(store, driveKey, () => initialSessionState);
   const lastDriven = useRef<number | undefined>(undefined);
 
-  function drive(): void {
+  function startDrive(): void {
     store.start(driveKey, { role: 'architect', workOrderId, mode: 'direct', reviewStepIndex: step.idx, prompt: '' }, initialSessionState);
   }
 
   useEffect(() => {
     if (lastDriven.current !== step.idx) {
       lastDriven.current = step.idx;
-      drive();
+      startDrive();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.idx]);
@@ -43,6 +47,20 @@ export function ReviewPane({
 
   return (
     <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
+      {/* WO-0039: the process-control header (readout + Durdur/Zorla kes/▶ Sürdür). */}
+      {drive ? (
+        <div className="mb-2 flex min-w-0 items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            {store.get(driveKey)?.running && !(store.get(driveKey)?.booting ?? false) ? (
+              <span className="dot-run shrink-0" aria-hidden="true" />
+            ) : null}
+            <span className="readout truncate">{UI.reviewHeader}</span>
+          </span>
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
+            <DriveControls drive={drive} />
+          </div>
+        </div>
+      ) : null}
       {!hasStream ? <p className="text-xs text-inkdim">{UI.reviewHint}</p> : null}
 
       {hasStream ? (

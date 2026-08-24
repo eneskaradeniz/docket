@@ -157,3 +157,13 @@ contract: ONE 400ms proceed wash on a true append (reading variants only), the �
 the CALM surface is the closed session card (özet only); the document scroll itself never animates
 on mount. The plan editor's staging model (Vazgeç/Bitti/Onayla) follows the r3 form rules: an empty
 aim is a field error (border + the rail names the row), never a lock on Bitti.
+
+---
+
+**Addendum (2026-08-22, WO-0039 — the rail dies):** the single-⏎ exception no longer names a rail:
+Enter fires ONE derived primary wherever it lives, and the badge is now actually drawn on that
+button (`EnterMark` — Onayla / Bitti / ▶ Sürdür / Yeniden dene / Plan iste). The badge's negative
+space is contract: never on Kapat (deliberate friction on the irreversible), never while an ask is
+pending, never on Durdur (stop is an aimed click, not a keystroke). The bottom action bar itself is
+dissolved — see ADR-0013's same-day addendum; the empty-aim line moved with the decision band under
+the plan rows (the rail no longer names the row; the band does).

@@ -129,6 +129,26 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     },
     [source, selectedId, reloadDetail],
   );
+  // 2026-08-23 ("Bitti = kaydet"): the editor's finish persists the edited steps as the PENDING
+  // plan — the memory-only stage died with navigation, taking "saved" edits with it.
+  const handleSavePlanDraft = useCallback(
+    async (planText: string) => {
+      if (!selectedId) return;
+      await source.savePlanDraft(selectedId, planText);
+      reloadDetail();
+    },
+    [source, selectedId, reloadDetail],
+  );
+  // "İlk öneriye dön": read the agent's snapshotted original / restore it as the pending plan.
+  const handleGetOriginalPlan = useCallback(
+    async () => (selectedId ? source.getOriginalPlan(selectedId) : null),
+    [source, selectedId],
+  );
+  const handleRestoreOriginalPlan = useCallback(async () => {
+    if (!selectedId) return;
+    await source.restoreOriginalPlan(selectedId);
+    reloadDetail();
+  }, [source, selectedId, reloadDetail]);
   // WO-0031c: inline WO editing (title/description/reviewMode/permissionRule) + the ask-card decisions.
   const handleUpdateWorkOrder = useCallback(
     async (patch: UpdateWorkOrderInput) => {
@@ -154,6 +174,15 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   }, [settings]);
   // "Oluştur ve plan iste" (WO-0031c): after creating, navigate AND auto-start the architect.
   const [autoPlanFor, setAutoPlanFor] = useState<WorkOrderId | null>(null);
+  // 2026-08-23 (operator, live run: "geri dönüp tekrar girince otomatik ajanı çalıştırıyor"): the
+  // flag is ONE-SHOT — it dies the moment the detail it named consumes it. It used to stick for
+  // the app's whole lifetime, so EVERY re-entry of that work order re-fired the auto-start (a
+  // stopped session restarted itself on the next visit). The clear is gated on the detail DATA
+  // (DetailScreen mounts only then): on that commit the child's effect runs before this one, so
+  // WorkOrderDetail sees the true prop exactly once.
+  useEffect(() => {
+    if (autoPlanFor !== null && detail?.wo.id === autoPlanFor) setAutoPlanFor(null);
+  }, [autoPlanFor, detail]);
   const handleOverrideVerdict = useCallback(
     async (idx: number) => {
       if (!selectedId) return;
@@ -268,6 +297,9 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         permissionRule={orderMdCarriesRule(detail.docs.order) ? parseOrderMd(detail.docs.order).permissionRule : defaultRule}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
+        onSavePlanDraft={handleSavePlanDraft}
+        onGetOriginalPlan={handleGetOriginalPlan}
+        onRestoreOriginalPlan={handleRestoreOriginalPlan}
         onUpdateWorkOrder={handleUpdateWorkOrder}
         onRecordPermissionDecision={handleRecordPermissionDecision}
         onCloseWorkOrder={handleCloseWorkOrder}

@@ -101,8 +101,12 @@ export function cardReasonText(r: CardReason): string {
       return 'In progress';
     case 'just_written':
       return UI.cardJustWritten;
+    case 'session_stopped':
+      return 'Session stopped';
     case 'awaiting_plan_commit':
-      return 'Awaiting plan commit';
+      // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Awaiting plan
+      // commit" twin is dead (one state, one sentence; "commit" never reaches the operator).
+      return ABSENT_REASON_LABELS.awaiting_plan_commit;
     case 'docs_not_updated':
       return 'Docs not updated';
     case 'awaiting_next_session':
@@ -135,6 +139,7 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   stopped_asking: 'Waiting for you',
   plan_ready: 'Plan ready',
   done: 'Done',
+  stopped: 'Stopped',
   error: 'Error',
 };
 
@@ -156,7 +161,28 @@ export const TOOL_LABELS: Record<string, string> = {
 };
 
 export function toolLabel(tool: string): string {
-  return TOOL_LABELS[tool] ?? 'Use tool';
+  return TOOL_LABELS[tool] ?? 'Tool call';
+}
+
+// 2026-08-23 (§3): the SADE activity line's progressive verbs (tr's twin).
+export const TOOL_VERBS: Record<string, string> = {
+  Write: 'Writing file',
+  Edit: 'Editing file',
+  MultiEdit: 'Editing files',
+  NotebookEdit: 'Editing notebook',
+  NotebookEditNew: 'Editing notebook',
+  Bash: 'Running command',
+  Read: 'Reading file',
+  Grep: 'Searching',
+  Glob: 'Finding files',
+  Task: 'Delegating',
+  WebFetch: 'Fetching page',
+  WebSearch: 'Searching the web',
+  ExitPlanMode: 'Finishing plan',
+};
+
+export function toolVerb(tool: string): string {
+  return TOOL_VERBS[tool] ?? 'Running a tool';
 }
 
 export function transcriptLineText(line: TranscriptLine): string {
@@ -239,6 +265,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
 export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   created: 'Created',
   plan_saved: 'Plan proposed (pending)',
+  plan_save_refused: 'Degenerate plan proposal refused',
   plan_approved: 'Plan approved',
   step_started: 'Step started',
   step_done: 'Step completed',
@@ -255,6 +282,11 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
 export function eventDetailText(kind: WoEventKind, detail: string): string {
   if (!detail) return '';
   switch (kind) {
+    case 'plan_saved':
+      // 2026-08-23 ("Bitti = kaydet"): the operator's editor save rides the proposal event kind.
+      if (detail === 'operator-edit') return 'operator edit';
+      if (detail === 'restored-original') return "restored the agent's original proposal";
+      return detail;
     case 'plan_approved': {
       const m = /^edited:(\d+)$/.exec(detail);
       return m ? `edited approval · ${m[1]} changes` : detail;
@@ -450,6 +482,7 @@ export const UI = {
   stepVerdictMissing: '(no verdict yet)',
   woPhaseJustWritten: 'Work order written — request a plan',
   woPhasePlanning: 'The architect is thinking about the plan…',
+  woPhasePlanStopped: 'Plan proposal stopped',
   woPhasePlanReady: 'Plan ready — approve it',
   woPhaseImplementing: 'Implementing',
   woPhaseClosing: 'Closing — update the docs',
@@ -481,29 +514,28 @@ export const UI = {
   repClose: '▾ report',
   stepQueued: 'queued',
   stepRunningShort: 'running',
-  termLive: 'live',
   stepLiveMeta: (duration: string, cost: string): string => `running · ⏱ ${duration} · ${cost}`,
-  auditSessions: (n: number): string => `${n} session${n === 1 ? '' : 's'}`,
   streamOpened: 'Session opened — waiting for output',
   // WO-0037 — the chat transcript surface (mirrors tr's block).
   chatAria: 'Session stream',
-  chatJumpLatest: '▾ latest',
+  chatJumpLatest: 'Jump to latest',
   chatOlderLines: (n: number) => `… ${n} earlier line${n === 1 ? '' : 's'}`,
   toolOutputAria: 'Command output — toggle',
-  planWaitingHint: 'The architect is ready to plan',
+  // WO-0039: the plan-stage invitation line died with the empty-state card (see tr).
   loadWorkOrders: 'Reading work orders…',
   loadSteps: 'Reading steps…',
   loadReport: 'Reading report…',
   closedToggleWord: 'closed',
   objectLinePlaceholder: 'Write one sentence — the architect will fix the plan…',
-  railApprove: 'Approve',
-  railApproveHint: 'Approve — the steps run in order.',
-  railCloseHint: 'Close — it goes to the archive; you can leave a note.',
-  railAskHint: 'The session stopped — cost is not accruing.',
-  railResume: '▶ Resume',
-  railStopping: 'Stopping…',
-  railRetry: 'Retry',
-  stepReady: 'ready',
+  // WO-0039 — the rail died: decisions moved to the plan section's decision band (planApprove*),
+  // process control to the live pane header (drive*), hints to their target cards.
+  planApprove: 'Approve',
+  // (the consequence hints died with the 2026-08-23 fourth pass — see tr.)
+  closeHint: 'It goes to the archive — you can leave a note.',
+  askHint: 'The session stopped — cost is not accruing.',
+  driveResume: '▶ Resume',
+  driveStopping: 'Stopping…',
+  driveRetry: 'Retry',
   secDocs: 'Documents',
   docSections: (n: number) => `${n} section${n === 1 ? '' : 's'}`,
   docOrderLabel: 'Work order',
@@ -514,8 +546,23 @@ export const UI = {
   sessionSummaryRevise: 'Architect: revise — re-run requested',
   secSources: 'Sources',
   secTracks: 'Repos',
-  noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
-    const base = { interrupt_sent: '⏸ interrupt sent', session_closed: '■ session closed', force_killed: '■ force-killed' }[kind];
+  noteFor: (
+    kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
+    detail?: string,
+  ) => {
+    const base = {
+      interrupt_sent: '⏸ interrupt sent',
+      session_closed: '■ session closed',
+      force_killed: '■ force-killed',
+      interrupted: '⏸ session stopped',
+      session_started: '● session started',
+      session_done: '■ session ended',
+    }[kind];
+    // The FOLD's lifecycle notes carry an ISO stamp — the locale's clock renders it. The
+    // UI-composed notes pass display-ready detail through untouched.
+    if ((kind === 'session_started' || kind === 'session_done' || kind === 'interrupted') && detail) {
+      return `${base} — ${UI.auditClock(detail)}`;
+    }
     return detail ? `${base} — ${detail}` : base;
   },
   permRuleLabel: 'Permission rule',
@@ -530,11 +577,20 @@ export const UI = {
   woEditSave: 'Save',
   editPlan: 'Edit',
   editPlanDone: 'Done',
+  editPlanRestore: 'Restore proposal',
+  restoreTitle: 'Restore proposal',
+  restoreBody: "Returns to the steps the agent proposed — your edits and saves are discarded.",
+  restoreConfirm: 'Yes, restore',
   editAddStep: '+ Add step',
   editNewStepAim: 'New step — type…',
-  editAimMissing: (idx: number) => `A step's text is empty (row ${idx}) — Approve appears once it is filled.`,
-  editMoveUpAria: 'Move up',
-  editMoveDownAria: 'Move down',
+  editAimMissing: (idx: number) => `A step's text is empty (row ${idx}) — Approve unlocks once it is filled.`,
+  // 2026-08-23 drag-and-drop (see tr): the grip + dnd-kit's announcements/instructions.
+  editDragHandleAria: 'Drag the step',
+  dragSrInstructions: 'To move a step, focus the grip, press Space to lift, the arrow keys to place, Space to drop.',
+  dragAnnounceStart: (idx: number) => `Step ${idx} lifted.`,
+  dragAnnounceOver: (idx: number) => `Over step ${idx}.`,
+  dragAnnounceEnd: (idx: number) => `Step ${idx} dropped.`,
+  dragAnnounceCancel: (idx: number) => `Step ${idx} move cancelled.`,
   editRemoveAria: 'Delete step',
   editRoleAria: (role: SessionRole) => `Choose role · current: ${ROLE_LABELS[role]}`,
   editRoleMenuAria: 'Choose role',
@@ -557,13 +613,32 @@ export const UI = {
   auditNameUnscoped: 'Unscoped',
   auditShowTranscript: '▸ log',
   auditHideTranscript: '▾ log',
+  auditNoTranscript: 'No transcript record.',
   stepCostMeta: (duration: string, cost: string) => `done · ⏱ ${duration} · ${cost}`,
   diffPeek: '▸ diff',
   diffPeekHide: '▾ diff',
   diffTruncated: (n: number) => `… ${n} line${n === 1 ? '' : 's'}`,
   diffEmpty: 'No changes',
-  railForceKill: 'Force kill',
-  railStoppedMsg: 'Stopped. The report stays partial.',
+  driveForceKill: 'Force kill',
+  driveStoppedMsg: 'Stopped. The report stays partial.',
+  // (planEmptyLine died with the 2026-08-23 ruling — see tr.)
+  // 2026-08-23 (canlı panel revizyonu): the SADE state line + the verb toggle + the orphan row.
+  actThinking: 'Thinking',
+  planClosing: 'Plan ready — closing the session',
+  transcriptOpen: 'Show transcript',
+  transcriptClose: 'Hide transcript',
+  // 2026-08-23 (düzeltme): the SDK ends a plan-mode turn with a synthetic 'User has approved
+  // your plan…' pseudo-result — that is the HARNESS accepting the agent's submission, NOT the
+  // operator's Docket approval (which records its own plan_approved event). The line speaks
+  // PROPOSAL language, like the card's 'N adımlık plan önerdi'.
+  planApprovedNote: 'The architect submitted its plan',
+  planRejectedNote: "The architect's plan was sent back",
+  liveSessionGo: 'Live session',
+  toolNoResult: '→ no result',
+  orphanResult: 'result — no matching call',
+  reviewModeGatesHint: 'The steps run on their own — the architect returns to you at three gates: plan approval, revise calls, closure. Click: Every step',
+  reviewModeEveryHint: "After every step the architect's verdict reaches you — the next step runs once you approve. Click: At gates",
+  roleDutyTip: (role: SessionRole) => `${ROLE_LABELS[role]} — ${ROLE_DUTY_LABELS[role]}`,
   failTitle: 'The session crashed',
   driveStreamCrashed: 'The stream broke — the record is safe.',
   failSpent: (cost: string) => `Spent: ${cost} — the record is safe.`,
@@ -595,6 +670,8 @@ export function phaseLabelText(p: WoPhase): string {
       return UI.woPhaseJustWritten;
     case 'planning':
       return UI.woPhasePlanning;
+    case 'plan_stopped':
+      return UI.woPhasePlanStopped;
     case 'plan_ready':
       return UI.woPhasePlanReady;
     case 'implementing':
@@ -621,6 +698,7 @@ const en: Labels = {
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
   TOOL_LABELS,
+  TOOL_VERBS,
   MODE_LABELS,
   SOURCE_KIND_LABELS,
   PROVIDER_ERROR_LABELS,
@@ -631,6 +709,7 @@ const en: Labels = {
   cardReasonText,
   cardActionText,
   toolLabel,
+  toolVerb,
   transcriptLineText,
   transcriptTailText,
   permissionPrompt,

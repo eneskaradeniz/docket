@@ -167,6 +167,8 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
         };
       case 'running':
         return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
+      case 'stopped':
+        return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
       case 'idle':
         return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
       case 'none':
@@ -316,12 +318,31 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WO-0029 / B17: a RESUMED session is the same row — accumulate the cost across its turns and keep the
   // EARLIEST start (the old DELETE+INSERT kept only the last turn's cost, so a resumed plan session's
   // earlier $2.15 vanished from the WO aggregate).
+  // 2026-08-23 (döküm kaybı): the transcript joins the monotonic columns — the LONGER row wins. The
+  // upsert is DELETE+INSERT, so a late record carrying a SHORTER fold (a post-restart stop whose
+  // re-seed was empty, a fresh-reset turn) used to overwrite a fuller checkpoint with []. Like
+  // started_at/ended_at, the row may only GROW.
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at FROM session WHERE provider_session_id = ?')
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript FROM session WHERE provider_session_id = ?')
     .get(input.providerSessionId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null }
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null }
     | undefined;
-  db.prepare('DELETE FROM session WHERE provider_session_id = ?').run(input.providerSessionId);
+  const priorTranscript = (() => {
+    if (!prior?.transcript) return undefined;
+    try {
+      const parsed = JSON.parse(prior.transcript) as unknown[];
+      return Array.isArray(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const transcript =
+    input.transcript && priorTranscript && priorTranscript.length > input.transcript.length ? priorTranscript : (input.transcript ?? []);
+  // Reviewer round (2026-08-24): the upsert is scoped to THIS work order — a provider id is only
+  // ever unique within its session's work order as far as the schema can promise (the e2e fake's
+  // once-shared per-role ids proved the hole by moving a row between WOs); a foreign row survives
+  // instead of being stolen.
+  db.prepare('DELETE FROM session WHERE provider_session_id = ? AND work_order_id = ?').run(input.providerSessionId, input.workOrderId);
   const acc = (() => {
     if (!input.cost) return prior?.cost_usd == null ? undefined : { tokensIn: prior.cost_tokens_in ?? 0, tokensOut: prior.cost_tokens_out ?? 0, usd: prior.cost_usd };
     if (prior?.cost_usd == null) return input.cost;
@@ -346,7 +367,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.role,
     input.scope ?? null,
     input.status,
-    JSON.stringify(input.transcript ?? []),
+    JSON.stringify(transcript),
     stopAndAsk,
     acc?.tokensIn ?? null,
     acc?.tokensOut ?? null,
@@ -392,12 +413,41 @@ function migrate(db: DatabaseSync): void {
   if (!stepCols.has('verdict')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict TEXT');
   if (!stepCols.has('verdict_path')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict_path TEXT');
 
-  // WO-0031c: wo_event's kind CHECK widens (wo_edited/rule_changed/permission_decision). A CHECK lives in
-  // the table definition, so — like the legacy track.stage rebuild above — rename → recreate (the widened
-  // SCHEMA_SQL) → id-preserving copy (append order is the audit's meaning) → drop.
+  // 2026-08-24: session.status gains 'stopped' (the durable interrupted fact — WO-0039 round 4). A
+  // CHECK lives in the table definition, so — the established rebuild: rename → recreate (the
+  // widened SCHEMA_SQL) → id-preserving copy → drop. Runs AFTER the column ALTERs above (the copy
+  // then sees every column on every vintage; a fresh rebuild supersedes them anyway). Reviewer
+  // round: the rebuild is TRANSACTIONAL — a crash mid-sequence would otherwise leave the recreated
+  // empty table (whose fresh SQL already carries 'stopped', failing the rebuild condition) plus an
+  // orphaned *_legacy, silently losing every session row.
+  const sessionSql =
+    (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='session'").get() as { sql: string } | undefined)?.sql ?? '';
+  if (sessionSql && !sessionSql.includes("'stopped'")) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec('ALTER TABLE session RENAME TO session_legacy');
+      db.exec(SCHEMA_SQL);
+      db.exec(
+        'INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
+          'cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx) ' +
+          'SELECT provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
+          'cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx FROM session_legacy',
+      );
+      db.exec('DROP TABLE session_legacy');
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
+  // WO-0031c: wo_event's kind CHECK widens (wo_edited/rule_changed/permission_decision; WO-0039
+  // stabilization adds plan_save_refused). A CHECK lives in the table definition, so — like the
+  // legacy track.stage rebuild above — rename → recreate (the widened SCHEMA_SQL) → id-preserving
+  // copy (append order is the audit's meaning) → drop.
   const woEventSql =
     (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wo_event'").get() as { sql: string } | undefined)?.sql ?? '';
-  if (woEventSql && !woEventSql.includes("'wo_edited'")) {
+  if (woEventSql && (!woEventSql.includes("'wo_edited'") || !woEventSql.includes("'plan_save_refused'"))) {
     db.exec('ALTER TABLE wo_event RENAME TO wo_event_legacy');
     db.exec(SCHEMA_SQL);
     db.exec(
@@ -894,6 +944,50 @@ export function createStore(dbPath: string): Store {
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
       appendEvent(db, workOrderId as string, 'plan_approved', opts?.editedCount !== undefined ? `edited:${opts.editedCount}` : '');
     },
+    // "Bitti = kaydet" (2026-08-23): persist the operator's edited steps as the PENDING plan —
+    // the same write the pipeline's plan_ready fold makes (plan.md + plan_saved), no gate flip.
+    // The memory-only editor stage died with navigation, silently discarding "saved" edits.
+    // The FIRST operator overwrite snapshots the agent's proposal (plan_original) — the restore
+    // action's source ("ilk öneriye dön").
+    savePlanDraft: async (workOrderId: WorkOrderId, planText: string) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) throw new Error(`savePlanDraft: work order ${workOrderId} not found`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const current = readWoDocs(dir, workOrderId).plan;
+      if (current) {
+        db.prepare('INSERT OR IGNORE INTO plan_original (work_order_id, plan_text, at) VALUES (?,?,?)').run(
+          workOrderId,
+          current,
+          new Date().toISOString(),
+        );
+      }
+      writePlanMdById(dir, workOrderId, planText);
+      appendEvent(db, workOrderId as string, 'plan_saved', 'operator-edit');
+    },
+    // "İlk öneriye dön" (2026-08-23): the agent's snapshotted original, if one exists.
+    getOriginalPlan: (workOrderId: WorkOrderId) => {
+      const row = db.prepare('SELECT plan_text FROM plan_original WHERE work_order_id = ?').get(workOrderId) as
+        | { plan_text: string }
+        | undefined;
+      return Promise.resolve(row?.plan_text ?? null);
+    },
+    // Restore writes the original back as the pending plan (plan.md + plan_saved) — the operator's
+    // saved edits are discarded, the approval gate is untouched.
+    restoreOriginalPlan: async (workOrderId: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!wo) throw new Error(`restoreOriginalPlan: work order ${workOrderId} not found`);
+      const row = db.prepare('SELECT plan_text FROM plan_original WHERE work_order_id = ?').get(workOrderId) as
+        | { plan_text: string }
+        | undefined;
+      if (!row) throw new Error(`restoreOriginalPlan: no original plan for ${workOrderId}`);
+      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      writePlanMdById(dir, workOrderId, row.plan_text);
+      appendEvent(db, workOrderId as string, 'plan_saved', 'restored-original');
+    },
     // Edit a work order after creation (WO-0031c): surgical order.md rewrite (applyOrderMdEdits preserves
     // everything else — Closure notes included), the DB title follows, and the timeline records what
     // changed (wo_edited, plus rule_changed when the permission rule moved).
@@ -1042,10 +1136,22 @@ export function createStore(dbPath: string): Store {
     resetStep: (id: WorkOrderId, idx: number) => Promise.resolve(resetStepRow(db, id, idx)),
     // Persist the proposed plan to plan.md as PENDING (gate 0) on plan_ready — survives restart (WO-0020/TD-025).
     // approvePlan re-writes + flips the gate; idempotent if called again with the same text.
+    // 2026-08-23 ("ilk öneriye dön"): a fresh AGENT proposal is the new original — any operator-edit
+    // snapshot is cleared so restore always means "the agent's latest proposal".
+    // WO-0039 stabilization (2026-08-23, the overwrite incident): a plan that PARSES never falls to a
+    // plan that does NOT. A post-stop resume once re-submitted ExitPlanMode with "bekliyorum" and
+    // clobbered the real plan.md; this mechanical guard (no judgment — parsePlanSteps both sides)
+    // is the store's own layer under the prompt rule and the question-card gate.
     savePendingPlan: (workOrderId: WorkOrderId, planText: string) => {
       // (event appended after the write below)
       const dir = woDir(db, workOrderId);
       if (!dir) return; // no WO dir yet — nothing to persist to
+      const current = readWoDocs(dir, workOrderId).plan;
+      if (current && parsePlanSteps(current).length > 0 && parsePlanSteps(planText).length === 0) {
+        appendEvent(db, workOrderId as string, 'plan_save_refused');
+        return; // disk keeps the real plan; the original snapshot stays too
+      }
+      db.prepare('DELETE FROM plan_original WHERE work_order_id = ?').run(workOrderId);
       writePlanMdById(dir, workOrderId, planText);
       appendEvent(db, workOrderId as string, 'plan_saved');
     },

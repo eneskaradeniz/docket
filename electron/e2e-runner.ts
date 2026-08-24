@@ -30,7 +30,12 @@ export function createE2eRunner(): E2eRunner {
           closed = true;
           wake?.();
         };
-        yield { kind: 'started', sessionId: `e2e-${input.role}` };
+        // 2026-08-24: the id is unique per (work order, role) — the real SDK never reuses a session
+        // id across work orders, and the store's upsert is GLOBAL by provider id: one shared
+        // `e2e-<role>` id let a later drive on ANOTHER work order inherit (and, via the
+        // longer-transcript-wins merge, keep) a foreign transcript. Re-drives on the SAME work
+        // order still share the id — the resume-like single accumulating row.
+        yield { kind: 'started', sessionId: `e2e-${String(input.workOrderId).toLowerCase()}-${input.role}`, at: new Date().toISOString() };
         let read = 0; // (renamed from the obvious word — the vendor-name grep matches it)
         for (;;) {
           if (read < queue.length) {
@@ -62,8 +67,11 @@ export function createE2eRunner(): E2eRunner {
       return [...held.values()].map((h) => h.ask);
     },
     async interrupt(): Promise<void> {
-      // The wind-down: close the current turn with an interrupted stop reason and a small honest cost.
-      push?.({ kind: 'turn_complete', stopReason: 'interrupted', cost: { tokensIn: 120, tokensOut: 24, usd: 0.02 } });
+      // The wind-down: the SAME calm terminal the real adapter emits on an intentional abort
+      // (WO-0039 stabilization) — `interrupted` folds to 'stopped' (Durduruldu + ▶ Sürdür), no
+      // step report, no verdict. The scripted cost is the fake's "observed" one; the real adapter
+      // has none (the abort beats the result message).
+      push?.({ kind: 'interrupted', cost: { tokensIn: 120, tokensOut: 24, usd: 0.02 }, at: new Date().toISOString() });
       finish?.();
     },
     async abort(): Promise<void> {

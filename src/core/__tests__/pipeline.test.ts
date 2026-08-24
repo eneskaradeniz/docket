@@ -176,6 +176,129 @@ describe('plan-approval gate — step/review drives refused before approval', ()
 
 // ===== createPipeline — the drive loop =====
 
+describe('createPipeline — ended_at honesty (2026-08-23 süre şişmesi: the idle wait is not billed)', () => {
+  /** A plan-mode drive that HANGS after plan_ready — the real-world shape: the SDK stream awaits an
+   *  in-session plan approval Docket never gives (approval is a host action), so the generator stays
+   *  open until the operator stops it. The stop used to stamp ended_at = NOW, billing the idle wait
+   *  (WO-0001 pilot: 4dk of work, 34dk displayed). ended_at must be the LAST ACTIVITY moment. */
+  function hangingPlanRunner() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const runner = {
+      drive: async function* (): AsyncIterable<RunnerEvent> {
+        yield started('s1');
+        yield plan('# P\n\n```steps\n[]\n```');
+        await gate; // the plan-mode wait — no further events, ever
+      },
+      async decide() {},
+      pendingAsks: async () => [],
+      async interrupt() {},
+      async abort() {},
+    } as SessionRunner;
+    return { runner, release };
+  }
+
+  it('a drive interrupted long after its last event records ended_at at the LAST activity, not the stop', async () => {
+    const { runner, release } = hangingPlanRunner();
+    const { store, calls } = fakeStore({ architect: 'a' });
+    const pipe = createPipeline({ runner, store, permission: askOperatorPolicy() });
+    const drive = pipe.drive(planDrive()) as AsyncGenerator<RunnerEvent>;
+    await drive.next(); // started
+    await drive.next(); // plan_ready — the last activity
+    await new Promise((r) => setTimeout(r, 40)); // the idle wait (would be billed by the old NOW stamp)
+    release(); // the generator ends — the completion guarantee's cleanup record fires
+    await drive.next(); // drain: the for-await completes, the finally runs
+    const rows = calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { startedAt?: string; endedAt?: string });
+    const last = rows.at(-1);
+    expect(last?.endedAt).toBeTruthy();
+    expect(last?.startedAt).toBeTruthy();
+    // The span is the work (~0ms here), NOT the 40ms+ wait: the stamp is the last event's moment.
+    expect(Date.parse(last!.endedAt!) - Date.parse(last!.startedAt!)).toBeLessThan(30);
+  });
+
+  it('a thrown drive records ended_at at the last activity too (the catch path)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const runner = {
+      drive: async function* (): AsyncIterable<RunnerEvent> {
+        yield started('s1');
+        yield txt('working');
+        await gate;
+        throw new Error('late blow-up');
+      },
+      async decide() {},
+      pendingAsks: async () => [],
+      async interrupt() {},
+      async abort() {},
+    } as SessionRunner;
+    const { store, calls } = fakeStore({ architect: 'a' });
+    const pipe = createPipeline({ runner, store, permission: askOperatorPolicy() });
+    const drive = pipe.drive(planDrive()) as AsyncGenerator<RunnerEvent>;
+    await drive.next();
+    await drive.next();
+    await new Promise((r) => setTimeout(r, 40));
+    release();
+    await drive.next(); // the error event; the catch/finally records on the way out
+    const rows = calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { startedAt?: string; endedAt?: string });
+    const last = rows.at(-1);
+    expect(Date.parse(last!.endedAt!) - Date.parse(last!.startedAt!)).toBeLessThan(30);
+  });
+});
+
+describe('createPipeline — transcript checkpoints (2026-08-23 döküm kaybı: the running fold must live in the ROW)', () => {
+  it('every tool_result checkpoints a running row carrying the fold so far — a restart or stop cannot lose it', async () => {
+    // The incident: a plan drive that never asks and never completes had ONE record (the empty
+    // 'started') — 4dk of tool lines lived only in the pane's memory and vanished on restart/stop.
+    const script: RunnerEvent[] = [
+      started('s1'),
+      txt('referansları okuyorum'),
+      { kind: 'tool_use', callId: 'c1', tool: 'Read', input: {} },
+      { kind: 'tool_result', callId: 'c1', summary: 'okundu', isError: false },
+      plan('# P\n\n```steps\n[]\n```'),
+    ];
+    const { runner } = fakeRunner(script);
+    const { store, calls } = fakeStore({ architect: 'a' });
+    await collect(createPipeline({ runner, store, permission: askOperatorPolicy() }), planDrive());
+    const rows = calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { status: string; transcript: unknown[] });
+    // started (running, empty) → tool_result checkpoint (running, carrying the fold) — BEFORE any
+    // terminal record; the row tracked the session mid-drive, not only at its boundaries.
+    const checkpoint = rows[1];
+    expect(checkpoint?.status).toBe('running');
+    expect((checkpoint?.transcript ?? []).length).toBeGreaterThanOrEqual(3); // text + tool_use + tool_result
+  });
+});
+
+describe('createPipeline — the synthesized plan-exit close records carried cost (2026-08-23 maliyet kaybı)', () => {
+  it('a PLAN_EXIT_WITHOUT_RESULT close with a REAL cost records it (the $0 plan bug)', async () => {
+    // The adapter now captures cost incrementally; its synthesized close carries the last known
+    // cost. The pipeline used to record NO cost for the synthesized stopReason (the honest
+    // no-claim rule) — which turned a $1.5 plan into $0.00 when the grace abort beat the result.
+    const script: RunnerEvent[] = [
+      started('s1'),
+      plan('# P\n\n```steps\n[]\n```'),
+      { kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { usd: 1.5, tokensIn: 900, tokensOut: 400 } },
+    ];
+    const { runner } = fakeRunner(script);
+    const { store, calls } = fakeStore({ architect: 'a' });
+    await collect(createPipeline({ runner, store, permission: askOperatorPolicy() }), planDrive());
+    const rows = calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { cost?: CostSummary });
+    expect(rows.at(-1)?.cost).toEqual({ usd: 1.5, tokensIn: 900, tokensOut: 400 });
+  });
+
+  it('a zero-cost synthesized close still records NO cost (the honest no-claim stands)', async () => {
+    const script: RunnerEvent[] = [
+      started('s1'),
+      plan('# P\n\n```steps\n[]\n```'),
+      { kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { usd: 0, tokensIn: 0, tokensOut: 0 } },
+    ];
+    const { runner } = fakeRunner(script);
+    const { store, calls } = fakeStore({ architect: 'a' });
+    await collect(createPipeline({ runner, store, permission: askOperatorPolicy() }), planDrive());
+    const rows = calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { cost?: CostSummary });
+    expect(rows.at(-1)?.cost).toBeUndefined();
+  });
+});
+
 describe('createPipeline — characterization', () => {
   it('step drive records the step active then the report at turn_complete', async () => {
     const fr = fakeRunner([started(), txt('working'), done('done body')]);
@@ -366,8 +489,11 @@ describe('createPipeline — WO-0026 hardening', () => {
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
     await collect(p, stepDrive());
     const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { transcript: unknown[] };
+    // 2026-08-24: the transcript opens/closes with the session's lifecycle notes (started/done).
     expect(last.transcript).toEqual([
+      { speaker: 'note', kind: 'session_started' },
       { speaker: 'assistant', text: 'merhaba' },
+      { speaker: 'note', kind: 'session_done' },
     ]);
   });
 
@@ -379,5 +505,39 @@ describe('createPipeline — WO-0026 hardening', () => {
     await collect(p, planDrive());
     const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { cost?: unknown };
     expect(last.cost).toBeUndefined();
+  });
+});
+
+// WO-0039 stabilization (2026-08-23, "Durdur must never say Oturum çöktü"): the runner's
+// `interrupted` event is a terminal, calm close. A stopped STEP stays 'active' (Sürdür resumes
+// it — "Rapor kısmi kalır"), so NO report is captured; the session records idle with whatever
+// cost the runner could observe.
+describe('createPipeline — the interrupted close (WO-0039 stabilization)', () => {
+  it('records the session STOPPED (the durable fact the WO-level derivations read), captures NO step report, and forwards the event for the fold', async () => {
+    const fr = fakeRunner([started(), txt('yarıda kaldı'), { kind: 'interrupted' }]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const out = await collect(p, stepDrive());
+    const session = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { status: string };
+    expect(session.status).toBe('stopped');
+    expect(methods(fs.calls)).not.toContain('recordStepReport');
+    expect(out.at(-1)).toEqual({ kind: 'interrupted' });
+  });
+
+  it('a review drive captures NO verdict on an interrupted close', async () => {
+    const fr = fakeRunner([started(), txt('inceleme yarıda kaldı'), { kind: 'interrupted' }]);
+    const fs = fakeStore({ review: 'review step 2' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, reviewDrive());
+    expect(methods(fs.calls)).not.toContain('recordStepVerdict');
+  });
+
+  it('carries an observed cost into the idle record (a scripted runner can observe one)', async () => {
+    const fr = fakeRunner([started(), { kind: 'interrupted', cost: { tokensIn: 120, tokensOut: 24, usd: 0.02 } }]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { cost?: unknown };
+    expect(last.cost).toEqual({ tokensIn: 120, tokensOut: 24, usd: 0.02 });
   });
 });

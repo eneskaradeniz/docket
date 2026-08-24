@@ -66,6 +66,26 @@ describe('deriveCardReason — every card states why it is in its column (AC13)'
   it('WO-1006 in progress (running)', () => expect(deriveCardReason(wo('WO-1006')).kind).toBe('in_progress'));
 });
 
+// 2026-08-24 (operator, live run): a STOPPED session row is its own reason — the drive resumes, it
+// did not end. Without this the card fell to the gate reasons and said "Plan onayı bekleniyor"
+// over a plan that does not exist.
+describe('deriveCardReason — a stopped session row (2026-08-24)', () => {
+  const stopped = aWorkOrder({
+    stage: 'architect_approval',
+    gateInputs: { planApproved: false },
+    sessions: [aSession({ role: 'architect', status: 'stopped' })],
+  });
+
+  it('the card says the session was stopped, not that a plan awaits approval', () => {
+    expect(deriveCardReason(stopped)).toEqual({ kind: 'session_stopped' });
+  });
+
+  it('a RUNNING session still outranks the old stop (in_progress wins)', () => {
+    const mixed = aWorkOrder({ ...stopped, sessions: [...stopped.sessions, aSession({ role: 'implementer', status: 'running' })] });
+    expect(deriveCardReason(mixed).kind).toBe('in_progress');
+  });
+});
+
 describe('deriveCardReason — freshly written work order (WO-0015)', () => {
   it('a just-written WO (stage written, no sessions) → just_written', () => {
     const w = aWorkOrder({ stage: 'written', sessions: [], gateInputs: { planApproved: false } });

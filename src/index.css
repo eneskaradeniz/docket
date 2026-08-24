@@ -120,6 +120,16 @@
     background: var(--color-info);
     animation: breathe 3.2s ease-in-out infinite;
   }
+  /* 2026-08-23 (operator): the LIVE mark is a GREEN breathing dot before the role name — the
+     "· canlı" word died (and the word lied during the boot window). 5px round, proceed-green. */
+  .dot-run {
+    width: 5px;
+    height: 5px;
+    flex: none;
+    border-radius: 9999px;
+    background: var(--color-proceed);
+    animation: breathe 2.2s ease-in-out infinite;
+  }
   .lamp-done {
     background: var(--color-proceed);
   }
@@ -263,12 +273,13 @@
      the ownership. WO-0031f review (operator): a thin full outline + a recessed ground, so the
      report's EXTENT is visible — where it begins and ends. */
   .repbody {
-    margin: 2px 0 4px 18px;
-    border: 1px solid var(--color-hairline);
-    border-left: 2px solid var(--color-hairline);
-    border-radius: 0 6px 6px 0;
+    /* 2026-08-23 (operator: "açılan div farklı, bütünü bozuyor"): ONE expansion grammar
+       console-wide — the session ledger's WELL (top hairline parting, frameless sides, the
+       darker bg), replacing the old left-indented box. The Belgeler rows and the step reports
+       ride the same skin as the Oturum dökümü's archived column. */
+    border-top: 1px solid var(--color-hairline);
     background: var(--color-bg);
-    padding: 8px 10px 8px 14px;
+    padding: 8px 12px 10px;
   }
 
   /* The ≥1080 rack IS Kayıt (v6): a surface-tinted side column, hairline-separated. */
@@ -518,6 +529,34 @@
      The component sets [data-live='1'] on the appended tail entry only — never on mount (a resume
      seed 0→N stays calm); reduced-motion kills it in the block below. The jump chip and the code
      copy hover through .ichip/.ibtn (r1) — no new hover tokens. */
+
+  /* 2026-08-23 (WO-0039/C Q3 → same-day operator reversal): ONE edge at the FULL column width —
+     the 562px measure left half the pane empty on wide windows and read hollow ("yarısı boş garip").
+     The knob stays: a measured rail is one value away (562px ≈ 60ch) if long prose lines ever
+     tire. ChatTurn's own 60ch cap is gone with it — one edge means one edge. */
+  .chat {
+    --chat-measure: 100%;
+  }
+  .chat > * {
+    max-width: var(--chat-measure);
+  }
+
+  /* 2026-08-23 (WO-0039/C): the running activity line's cycling ellipsis — "Dosya okuyor ···".
+     Pure CSS; reduced-motion falls back to a static "…" (the block below). */
+  .live-dots::after {
+    content: '';
+    display: inline-block;
+    width: 1.8em; /* a fixed TRAILING slot — the dots cycle without shifting the line */
+    text-align: left;
+    animation: liveDots 1.4s steps(1) infinite;
+  }
+  @keyframes liveDots {
+    0% { content: ''; }
+    25% { content: '·'; }
+    50% { content: '··'; }
+    75%, 100% { content: '···'; }
+  }
+
   .chat [data-live='1'] {
     animation: linepulse 0.4s ease-out;
   }
@@ -595,6 +634,15 @@
   .ibtn:hover {
     background: var(--color-raised);
     color: var(--color-ink);
+  }
+  /* WO-0039 drag-and-drop: the sortable grip's affordance — the CSS property's own name cannot
+     live in a code file (the vendor-name boundary grep is a stop-and-ask by design), and the
+     semantic-class home is here anyway (ADR-0012). */
+  .grip {
+    cursor: grab;
+  }
+  .grip:active {
+    cursor: grabbing;
   }
   .ibtn-danger {
     color: var(--color-error);
@@ -689,6 +737,7 @@
 @media (prefers-reduced-motion: reduce) {
   .lamp-signal-breathe,
   .lamp-run,
+  .dot-run,
   .rise,
   .flash,
   .flash-err,
@@ -703,9 +752,12 @@
   .pulse-once,
   .reveal,
   /* WO-0037: the chat's live-append wash dies with the rest. */
-  .chat [data-live='1'] {
+  .chat [data-live='1'],
+  /* WO-0039/C: the activity line's cycling ellipsis falls back to a static "…". */
+  .live-dots::after {
     animation: none;
     transition: none;
+    content: '…';
   }
   .segcell {
     transition: none;

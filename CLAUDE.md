@@ -39,7 +39,9 @@ rule restated with its reasons in two places is the duplication this repository 
   variants; focus is the global ring, active is the kit press scale. Empty surface = 1 short line + ≤1
   action; empty groups render absent.
 - No explainer paragraphs (field names suffice; informative lines — reasons, consequences, "maliyet
-  işlemez" — stay), no jargon/mixed-case headers, no standing keyboard hints (only the rail ⏎ badge).
+  işlemez" — stay), no jargon/mixed-case headers, no standing keyboard hints (only the current
+  primary's ⏎ badge — `EnterMark`; never on Kapat, never during an ask; the rail itself died with
+  WO-0039).
 - Juice: transitions only (never mount), ≤400ms, reduced-motion off via the one CSS block, the cost
   counter never animates, the CLOSED session card stays calm (ADR-0012's 2026-08-22 restatement —
   SADE no longer exists).
@@ -51,8 +53,12 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Single view — ADR-0013
 - The work-order detail screen is ONE scroll at every width (DOSYA): a merged header band (turn lamp
   spine + phase + step hairline) over decision cards → plan rows → the live instrument → the record
-  sections (Belgeler rows · Kaynaklar · Oturum cards) → the rail. No view mode, no tabs, no rack —
-  `view-mode`/`Substrip`/`DetailBody`/`useDetailLayout` are deleted; do not reintroduce layout forks.
+  sections (Belgeler rows · Kaynaklar · Oturum cards). No view mode, no tabs, no rack, no bottom
+  rail — decisions render in their flow (the plan section's decision band + heading Düzenle, the
+  lone Plan iste button on a bare plan stage, the fail card's retry) and process control rides the
+  live pane's header (`DriveControls`);
+  `view-mode`/`Substrip`/`DetailBody`/`useDetailLayout`/`ActionRail` are deleted; do not reintroduce
+  layout forks or a command bar.
 - Session history renders as CARDS: meta + the artifact-headline özet + the Ray transcript one click
   away (the aç/kapa is the old SADE/DETAY distinction). The Kanıt section is dead — evidence is
   contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is

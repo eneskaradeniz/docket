@@ -2,15 +2,18 @@ import type { StepRole, WorkOrderDetailView } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../core/source';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
-// The console FRAME (WO-0031c / v4): the detail fills the viewport below the 48px AppShell bar — the
-// rail pins to the window bottom and the body row scrolls internally (the mockup's `.console` grid,
-// band / one scroll / rail). The board keeps its normal page scroll; only the detail is a console.
+// The console FRAME (WO-0031c / v4 → WO-0039 rail-free): the detail fills the viewport below the
+// 48px AppShell bar — one DOSYA scroll under the header band (ADR-0013; the bottom rail died with
+// WO-0039). The board keeps its normal page scroll; only the detail is a console.
 export function DetailScreen({
   detail,
   docs,
   permissionRule,
   onBack,
   onApprovePlan,
+  onSavePlanDraft,
+  onGetOriginalPlan,
+  onRestoreOriginalPlan,
   onUpdateWorkOrder,
   onRecordPermissionDecision,
   onGetStepReport,
@@ -28,6 +31,9 @@ export function DetailScreen({
   permissionRule: PermissionRule;
   onBack: () => void;
   onApprovePlan: (planText: string, opts?: { editedCount?: number }) => Promise<void>;
+  onSavePlanDraft: (planText: string) => Promise<void>;
+  onGetOriginalPlan: () => Promise<string | null>;
+  onRestoreOriginalPlan: () => Promise<void>;
   onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
   onRecordPermissionDecision: (input: { allowed: boolean; tool: string; target: string }) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
@@ -47,6 +53,9 @@ export function DetailScreen({
         docs={docs}
         onBack={onBack}
         onApprovePlan={onApprovePlan}
+        onSavePlanDraft={onSavePlanDraft}
+        onGetOriginalPlan={onGetOriginalPlan}
+        onRestoreOriginalPlan={onRestoreOriginalPlan}
         onUpdateWorkOrder={onUpdateWorkOrder}
         onRecordPermissionDecision={onRecordPermissionDecision}
         permissionRule={permissionRule}

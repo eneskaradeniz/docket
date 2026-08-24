@@ -11,7 +11,7 @@
 import { useRef, useState } from 'react';
 import type { SessionAuditRow } from '../../../core/derive';
 import { deriveSessionAudit } from '../../../core/derive';
-import type { SessionRef, StepView } from '../../../core/types';
+import type { SessionRef, SessionRole, StepView } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';
 import { ChatTranscript } from '../session/ChatTranscript';
@@ -125,26 +125,132 @@ function SessionCard({
           <span className="block pb-2" aria-hidden="true" />
         )}
       </button>
-      {open && session.transcript.length > 0 ? (
-        <ChatTranscript entries={session.transcript} role={row.role} variant="archived" />
+      {open ? (
+        session.transcript.length > 0 ? (
+          <ChatTranscript entries={session.transcript} role={row.role} variant="archived" />
+        ) : (
+          // 2026-08-23 (döküm kaybı): the ledger's body is THE AGENT'S RECORD — what it did, tool
+          // call by tool call. A session whose transcript never got persisted (the incident's
+          // pre-checkpoint rows) says so in ONE quiet line instead of opening empty and reading
+          // broken; new sessions checkpoint every tool result and are never empty.
+          <p className="border-t border-hairline bg-bg px-3 py-2 text-[12px] text-inkdim">
+            {UI.auditNoTranscript}
+          </p>
+        )
       ) : null}
     </div>
   );
 }
 
-export function SessionCards({ sessions, steps }: { sessions: SessionRef[]; steps: StepView[] }) {
+/** The pointer card's fact shape — shared with the controller's liveRow prop. */
+export interface LiveSessionRow {
+  role: SessionRole;
+  name: { kind: 'plan' } | { kind: 'step'; idx: number; aim?: string } | { kind: 'review'; idx: number } | { kind: 'unscoped' };
+  startedAt: number;
+  costUsd: number;
+}
+
+/** WO-0039/C — the RUNNING drive's POINTER card: the pane owns the live stream (one live
+ *  surface); the ledger carries the run's card-level facts + one jump. Card-level only — this
+ *  component never subscribes to the transcript fold, so streaming re-renders nothing here. */
+function LiveSessionCard({
+  liveRow,
+  now,
+  onGoLive,
+}: {
+  liveRow: LiveSessionRow;
+  now?: number;
+  onGoLive: () => void;
+}) {
+  const { formatUsd, UI } = useLabels();
+  const liveName =
+    liveRow.name.kind === 'plan'
+      ? UI.auditNamePlan
+      : liveRow.name.kind === 'step'
+        ? UI.auditNameStep(liveRow.name.idx, liveRow.name.aim)
+        : liveRow.name.kind === 'review'
+          ? UI.auditNameReview(liveRow.name.idx)
+          : UI.auditNameUnscoped;
+  return (
+    // 2026-08-23 (operator: "tamamını kapsasın"): ONE interactive zone — the WHOLE card is the
+    // jump (the session-card grammar: one hover wash, one target), not a small text link. It is
+    // still NOT a toggle (nothing to expand here — a chevron would promise the ledger's aç/kapa
+    // grammar); the pointer line rides where the Özet sits, under the meta row.
+    <div className="overflow-hidden rounded-md border border-hairline bg-surface">
+    <button
+      type="button"
+      data-session-card=""
+      data-session-live-pointer=""
+      onClick={onGoLive}
+      className="irow block w-full text-left"
+    >
+      <span className="flex w-full items-center gap-2.5 px-3 pt-2">
+        <span className="dot-run" aria-hidden="true" />
+        <span className={cn('rlamp', `rlamp-${liveRow.role}`)} aria-hidden="true" />
+        <span className="min-w-0 shrink-0 truncate text-[12.5px] font-semibold text-ink">{liveName}</span>
+        <RoleChip role={liveRow.role} />
+        <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5 font-mono text-[10.5px] text-inkdim">
+          <span className="text-info">{UI.actionRunning}</span>
+          <span className="whitespace-nowrap">{UI.auditClock(new Date(liveRow.startedAt).toISOString())}</span>
+          {now ? <span className="whitespace-nowrap">{UI.formatDuration(Math.max(0, now - liveRow.startedAt))}</span> : null}
+          {liveRow.costUsd > 0 ? <span className="whitespace-nowrap">{formatUsd(liveRow.costUsd)}</span> : null}
+        </span>
+      </span>
+      <span className="flex items-center gap-2 px-3 pb-2 pl-9 font-mono text-[11px] text-info">
+        <span aria-hidden="true">▸</span> {UI.liveSessionGo}
+      </span>
+    </button>
+    </div>
+  );
+}
+
+export function SessionCards({
+  sessions,
+  steps,
+  liveRow,
+  liveSessionId,
+  now,
+  onGoLive,
+}: {
+  sessions: SessionRef[];
+  steps: StepView[];
+  liveRow?: LiveSessionRow;
+  /** WO-0039 stabilization (2026-08-23, the re-entry dupe): the live drive's provider session id.
+   *  A session ROW carrying this id IS the live drive — it renders as the POINTER card, in its own
+   *  sorted position, and no second card is appended. One session, one card, whatever the reload
+   *  timing (the row lands with onStarted's refresh or a re-entry load; the boot window before the
+   *  row exists still gets the appended pointer). */
+  liveSessionId?: string;
+  now?: number;
+  onGoLive?: () => void;
+}) {
   const { rows } = deriveSessionAudit(sessions, steps);
+  const pointer = liveRow && onGoLive ? liveRow : undefined;
+  const isLiveRow = (s: SessionRef | undefined): boolean =>
+    pointer !== undefined && s?.providerSessionId !== undefined && s.providerSessionId === liveSessionId;
+  const hasLiveRow = sessions.some(isLiveRow);
   return (
     <div className="flex flex-col gap-2">
-      {rows.map((row) => (
-        <SessionCard
-          key={row.sourceIdx}
-          row={row}
-          session={sessions[row.sourceIdx]!}
-          steps={steps}
-          defaultOpen={sessions[row.sourceIdx]?.status === 'running'}
-        />
-      ))}
+      {rows.map((row) => {
+        const session = sessions[row.sourceIdx]!;
+        // The live drive's own row: the pointer, IN PLACE (WO-0039/C — the pane owns the live
+        // stream; the ledger marks it and jumps). Everything else is the archive card.
+        if (isLiveRow(session) && pointer) {
+          return <LiveSessionCard key={row.sourceIdx} liveRow={pointer} now={now} onGoLive={onGoLive!} />;
+        }
+        return (
+          <SessionCard
+            key={row.sourceIdx}
+            row={row}
+            session={session}
+            steps={steps}
+            defaultOpen={session.status === 'running' && !isLiveRow(session)}
+          />
+        );
+      })}
+      {/* The boot window's pointer: the drive runs but no row exists yet (the provider session has
+          not opened / the load predates it). Skipped the moment the row lands. */}
+      {pointer && !hasLiveRow ? <LiveSessionCard liveRow={pointer} now={now} onGoLive={onGoLive!} /> : null}
     </div>
   );
 }

@@ -155,6 +155,12 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
   const askDetails = new Map<string, PermissionAsk>();
   let currentQueue: AsyncQueue<RunnerEvent> | undefined;
   let currentAbort: AbortController | undefined;
+  // WO-0039 stabilization (2026-08-23): an interrupt's INTENT, set the moment interrupt() fires and
+  // read by the drive's catch/finally. An abort can surface as a non-AbortError throw or an
+  // error-shaped result message — the interrupt's echo, not a provider failure. Swallowing only
+  // `name === 'AbortError'` let that echo through as an error event → the fold landed in 'error' →
+  // the fail card said "Oturum çöktü" for an intentional Durdur. Cleared at each drive start.
+  let interruptRequested = false;
 
   function resolvePermissionMode(input: DriveInput): PermissionMode {
     if (input.approve) return 'default'; // resuming after plan_ready → implement (fence + ask active)
@@ -176,9 +182,33 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     const abort = new AbortController();
     currentQueue = queue;
     currentAbort = abort;
+    interruptRequested = false;
+    // 2026-08-23 (same-day correction): the 5s plan-exit grace abort is DEAD — the hang it
+    // guarded was the AUTO-APPROVED plan gate (see canUseTool); with the gate denied the SDK
+    // ends the turn on its own and the result (cost included) arrives naturally. Aborting was
+    // also what LOST the cost: total_cost_usd rides the result message only, and a mid-turn
+    // abort throws before it. The synthesized close below survives as the ABORT safety net
+    // (an operator Durdur mid-plan) with honest zeros (a no-claim, WO-0026/TD-030).
 
     const canUseTool: CanUseTool = (toolName, toolInput, o) =>
       new Promise<PermissionResult>((settle) => {
+        // 2026-08-23 (maliyet kaybı, PROVEN via SDK probes 3+4): the ExitPlanMode PLAN GATE must
+        // be DENIED, not auto-allowed. Allowing it tells the SDK "the host approved the plan" →
+        // the model starts CODING → the turn never ends → the result message (the SDK's ONLY
+        // cost carrier) never arrives → $0.00 sessions. Denying it with this message ends the
+        // turn naturally: result + cost arrive, the stream closes on its own — no grace abort.
+        // The plan itself is unaffected: plan_ready fires from the tool_use (before this gate),
+        // and the operator's REAL approval is Docket's own gate (approvePlan).
+        if (toolName === 'ExitPlanMode' && isPlanDrive) {
+          // Reviewer round (2026-08-24): the in-the-wild parenthetical is gone — it spent tokens
+          // putting the exact artifact the agent must NOT investigate into its head (the incident
+          // trail stays in WO-0039's order.md, where humans read it).
+          return settle({
+            behavior: 'deny',
+            message:
+              'Plan submitted. STOP: end your turn now with no further tool calls. Do not investigate approval status, do not resubmit — the operator reviews the plan in Docket.',
+          });
+        }
         const attempt = classifyAttempt(toolName, toolInput, cwd);
         const verdict = fenceDecision(scope, attempt);
         if (verdict === 'allow') return settle({ behavior: 'allow' });
@@ -203,7 +233,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       const out: RunnerEvent[] = [];
       switch (msg.type) {
         case 'system':
-          if (msg.subtype === 'init' && msg.session_id) out.push({ kind: 'started', sessionId: msg.session_id });
+          if (msg.subtype === 'init' && msg.session_id) out.push({ kind: 'started', sessionId: msg.session_id, at: new Date().toISOString() });
           break;
         case 'assistant':
           for (const b of msg.message?.content ?? []) {
@@ -244,8 +274,8 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           // step report at turn_complete. Omitted when absent (the fold ignores it either way).
           out.push(
             msg.result
-              ? { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), result: msg.result }
-              : { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg) },
+              ? { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), result: msg.result, at: new Date().toISOString() }
+              : { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), at: new Date().toISOString() },
           );
           break;
         }
@@ -269,13 +299,19 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       for await (const msg of query({ prompt: input.prompt, options })) {
         for (const e of translate(msg as unknown as AnyMsg)) {
           if (e.kind === 'turn_complete') turnCompleteEmitted = true;
+          // An error-shaped message after an interrupt request is the abort's echo (e.g. an
+          // error_during_execution result), not a provider failure — never surface it (WO-0039
+          // stabilization: Durdur must not render the fail card).
+          if (interruptRequested && e.kind === 'error') continue;
           queue.push(e);
         }
       }
     } catch (e) {
       const err = e as { name?: string; message?: string };
-      // An interrupt is intentional — end the stream without an error event.
-      if (err?.name !== 'AbortError') {
+      // An interrupt is intentional — end the stream without an error event. Post-interrupt
+      // throws of ANY shape are the abort's echo (the subprocess kill surfaces as more than
+      // AbortError), not a provider failure.
+      if (err?.name !== 'AbortError' && !interruptRequested) {
         const raw = err?.message ?? String(e);
         queue.push({ kind: 'error', message: raw, ...(classifyProviderError(raw) ? { code: classifyProviderError(raw) } : {}) });
       }
@@ -284,12 +320,18 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       currentAbort = undefined;
       pending.clear();
       askDetails.clear();
-      // If a plan-mode turn emitted plan_ready but the SDK ended the stream without a result (so no
-      // turn_complete), synthesise one — so the architect plan session still records cost + the main
-      // capture side-effects fire (WO-0021). Cost is honest zeros when the SDK gave none; result is left
-      // absent so main falls back to its accumulated assistantText for review verdicts.
+      // If a plan-mode turn emitted plan_ready but the SDK ended the stream without a result (an
+      // operator Durdur aborting mid-plan — the denied gate ends turns naturally now), synthesise
+      // one so the session still closes and the main capture side-effects fire (WO-0021). Cost is
+      // honest zeros: total_cost_usd rides the result message only, and an abort throws before it
+      // (the honest no-claim, WO-0026/TD-030).
       if (shouldSynthesiseTurnComplete(planReadyEmitted, turnCompleteEmitted)) {
-        queue.push({ kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { usd: 0, tokensIn: 0, tokensOut: 0 } });
+        queue.push({ kind: 'turn_complete', stopReason: PLAN_EXIT_WITHOUT_RESULT, cost: { usd: 0, tokensIn: 0, tokensOut: 0 }, at: new Date().toISOString() });
+      } else if (interruptRequested && !turnCompleteEmitted) {
+        // WO-0039 stabilization: an intentional interrupt that closed the stream with no
+        // turn_complete ends CALM — the `interrupted` event folds to 'stopped' (Durduruldu +
+        // ▶ Sürdür), never a stale-'running' fold or the fail card.
+        queue.push({ kind: 'interrupted', at: new Date().toISOString() });
       }
       queue.close();
     }
@@ -325,6 +367,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       return [...askDetails.values()];
     },
     async interrupt(): Promise<void> {
+      interruptRequested = true;
       currentAbort?.abort();
     },
     // WO-0031c abort: no harder mechanism exists on the provider surface — the alias is honest

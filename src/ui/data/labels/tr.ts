@@ -104,8 +104,12 @@ export function cardReasonText(r: CardReason): string {
       return 'Devam ediyor';
     case 'just_written':
       return UI.cardJustWritten;
+    case 'session_stopped':
+      return 'Oturum durduruldu';
     case 'awaiting_plan_commit':
-      return 'Plan commiti bekleniyor';
+      // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Plan commiti
+      // bekleniyor" twin is dead (one state, one sentence; "commit" never reaches the operator).
+      return ABSENT_REASON_LABELS.awaiting_plan_commit;
     case 'docs_not_updated':
       return 'Belgeler güncellenmedi';
     case 'awaiting_next_session':
@@ -147,6 +151,7 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   stopped_asking: 'Seni bekliyor',
   plan_ready: 'Plan hazır',
   done: 'Bitti',
+  stopped: 'Durduruldu',
   error: 'Hata',
 };
 
@@ -168,7 +173,32 @@ export const TOOL_LABELS: Record<string, string> = {
 };
 
 export function toolLabel(tool: string): string {
-  return TOOL_LABELS[tool] ?? 'Araç kullan';
+  // 2026-08-23 (canlı panel revizyonu, §5): an unknown tool's row carries a NAME-honest label —
+  // "Araç kullan" said nothing; the raw tool name rides the detail slot as DATA.
+  return TOOL_LABELS[tool] ?? 'Araç çağrısı';
+}
+
+// 2026-08-23 (§3): the SADE activity line renders a STATE, not content — per-tool progressive
+// verbs (Turkish harmony is regular but not derivable: Ara → Arıyor is suppletive). The fallback
+// matches toolLabel's "Araç çağrısı" in spirit.
+export const TOOL_VERBS: Record<string, string> = {
+  Write: 'Dosya yazıyor',
+  Edit: 'Dosya düzenliyor',
+  MultiEdit: 'Dosyaları düzenliyor',
+  NotebookEdit: 'Notebook düzenliyor',
+  NotebookEditNew: 'Notebook düzenliyor',
+  Bash: 'Komut çalıştırıyor',
+  Read: 'Dosya okuyor',
+  Grep: 'Arıyor', // Ara → Arıyor (suppletive; not derivable from the label)
+  Glob: 'Dosya buluyor',
+  Task: 'Devrediyor',
+  WebFetch: 'Sayfa getiriyor',
+  WebSearch: "Web'de arıyor",
+  ExitPlanMode: 'Planı bitiriyor',
+};
+
+export function toolVerb(tool: string): string {
+  return TOOL_VERBS[tool] ?? 'Araç çalıştırıyor';
 }
 
 /** One transcript line as PLAIN text (the fail card's detail + clipboard, WO-0031c; xterm's ANSI
@@ -261,6 +291,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
 export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   created: 'Oluşturuldu',
   plan_saved: 'Plan önerildi (pending)',
+  plan_save_refused: 'Bozuk plan önerisi reddedildi',
   plan_approved: 'Plan onaylandı',
   step_started: 'Adım başladı',
   step_done: 'Adım tamamlandı',
@@ -277,6 +308,12 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
 export function eventDetailText(kind: WoEventKind, detail: string): string {
   if (!detail) return '';
   switch (kind) {
+    case 'plan_saved':
+      // "Bitti = kaydet" (2026-08-23): the operator's editor save rides the same event kind the
+      // architect's proposal does — the detail says WHO proposed.
+      if (detail === 'operator-edit') return 'operatör düzenlemesi';
+      if (detail === 'restored-original') return 'ajanın ilk önerisine dönüldü';
+      return detail;
     case 'plan_approved': {
       const m = /^edited:(\d+)$/.exec(detail);
       return m ? `düzenlenmiş onay · ${m[1]} değişiklik` : detail;
@@ -506,6 +543,7 @@ export const UI = {
   // Pipeline faz göstergesi (WO-0021)
   woPhaseJustWritten: 'İş emri yazıldı — plan iste',
   woPhasePlanning: 'Mimar planı düşünüyor…',
+  woPhasePlanStopped: 'Plan önerisi durduruldu',
   woPhasePlanReady: 'Plan hazır — onayla',
   woPhaseImplementing: 'Uygulama',
   woPhaseClosing: 'Kapanış — belgeleri güncelle',
@@ -553,9 +591,7 @@ export const UI = {
   repClose: '▾ rapor',
   stepQueued: 'sırada',
   stepRunningShort: 'çalışıyor',
-  termLive: 'canlı',
   stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
-  auditSessions: (n: number): string => `${n} oturum`,
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
   streamOpened: 'Oturum açıldı — çıktı bekleniyor',
@@ -564,14 +600,13 @@ export const UI = {
   // indented lines. The aria names the log; the jump chip restores the bottom; the head line caps
   // at the last 800 entries.
   chatAria: 'Oturum akışı',
-  chatJumpLatest: '▾ en son',
+  chatJumpLatest: 'En alta git',
   chatOlderLines: (n: number) => `… önceki ${n} satır`,
   // WO-0037 Ray turu (operatör, 2026-08-22): araç çağrıları blok + aç/kapa — komut çıktısının
   // paragraf gibi akması bitti; geçmiş kapalı (yoğunluk), canlı kenar açık, arşiv de kapalı başlar.
   toolOutputAria: 'Komut çıktısı — aç/kapat',
-  // WO-0031f review — the plan-stage empty instrument's invitation line (a state fact: the architect
-  // is ready; the Plan iste action lives on the rail, not duplicated here).
-  planWaitingHint: 'Mimar plan için hazır',
+  // WO-0031f review → WO-0039: the plan-stage invitation line died with the empty-state card
+  // ("Henüz plan yok." + Plan iste owns the bare plan stage now).
   // TD-037 — the named load lines replace the bare 'Yükleniyor…' (no skeletons, one line + a run
   // dot). loadWorkOrders is the one string no mockup drew (the board reads work orders, not
   // documents) — shown to the operator at PR review.
@@ -582,17 +617,18 @@ export const UI = {
   // the count is data, the word is copy — >5 closed starts collapsed).
   closedToggleWord: 'kapalı iş',
   objectLinePlaceholder: 'Bir cümle yaz — mimar planı düzeltir…',
-  // Ray (alt aksiyon çubuğu) — düğme + mesaj dili (v4 kısa metin). Çalışırken mesaj yok — rail yalnız
-  // Durdur taşır ("Çalışıyor"u substrip söyler); mesajlar bilgi taşır (maliyet işlemez gibi).
-  railApprove: 'Onayla',
-  railApproveHint: 'Onayla — adımlar sırayla koşar.',
-  railCloseHint: 'Kapat — arşive gider, not bırakabilirsin.',
-  railAskHint: 'Oturum durdu — maliyet işlemez.',
-  railResume: '▶ Sürdür',
-  railStopping: 'Durduruluyor…',
-  railRetry: 'Yeniden dene',
-  // Adım kartı durum satırı (kart dili).
-  stepReady: 'hazır',
+  // WO-0039 — ray öldü: kararlar plan bölümünün karar bandına (planApprove*), süreç denetimi canlı
+  // panelin başlığına (drive*), ipuçları hedef kartlarına (askHint/closeHint) indi. Çalışırken mesaj
+  // yok kuralı aynen — panel yalnız Durdur taşır; mesajlar bilgi taşır (maliyet işlemez gibi).
+  planApprove: 'Onayla',
+  // (planApproveHint 'Onayla — adımlar sırayla koşar.' + planApproveHintEdited died on the
+  // 2026-08-23 fourth operator pass: no standing consequence lines beside decisions — the gate
+  // reason (an empty aim) is the only line the row carries; the staged count lives in the record.)
+  closeHint: 'Arşive gider — istersen not bırakabilirsin.',
+  askHint: 'Oturum durdu — maliyet işlemez.',
+  driveResume: '▶ Sürdür',
+  driveStopping: 'Durduruluyor…',
+  driveRetry: 'Yeniden dene',
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
   // DETAY bölüm yüzeyleri — WO-0031f v6: altı sekme öldü, iki yüzey var (Akış | Kayıt); Kayıt'ın
   // kendi bölümleri (Kanıt/Belgeler/Kaynaklar) raf başlığı olarak aynı dili kullanır. secTerminal/
@@ -613,8 +649,23 @@ export const UI = {
   secSources: 'Kaynaklar',
   secTracks: 'Depolar',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
-  noteFor: (kind: 'interrupt_sent' | 'session_closed' | 'force_killed', detail?: string) => {
-    const base = { interrupt_sent: '⏸ kesme sinyali gönderildi', session_closed: '■ oturum kapandı', force_killed: '■ zorla kesildi' }[kind];
+  noteFor: (
+    kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
+    detail?: string,
+  ) => {
+    const base = {
+      interrupt_sent: '⏸ kesme sinyali gönderildi',
+      session_closed: '■ oturum kapandı',
+      force_killed: '■ zorla kesildi',
+      interrupted: '⏸ oturum durduruldu',
+      session_started: '● oturum açıldı',
+      session_done: '■ oturum bitti',
+    }[kind];
+    // The FOLD's lifecycle notes carry an ISO stamp — the locale's clock renders it ("hangi saniye",
+    // 2026-08-24). The UI-composed notes pass display-ready detail through untouched.
+    if ((kind === 'session_started' || kind === 'session_done' || kind === 'interrupted') && detail) {
+      return `${base} — ${UI.auditClock(detail)}`;
+    }
     return detail ? `${base} — ${detail}` : base;
   },
   // ===== c2 (WO-0031c): kural, düzenleme, denetim, bildirim =====
@@ -633,11 +684,23 @@ export const UI = {
   // Plan düzenleme (onay öncesi).
   editPlan: 'Düzenle',
   editPlanDone: 'Bitti',
+  // 2026-08-23 ("ilk öneriye dön" — replaces the in-session Sıfırla): restore the AGENT's
+  // originally proposed steps; confirm-gated (the operator's saved edits die with it).
+  editPlanRestore: 'Önerine dön',
+  restoreTitle: 'Önerine dön',
+  restoreBody: 'Ajanın önerdiği adımlara dönülür — düzenlemelerin ve kaydettiklerin silinir.',
+  restoreConfirm: 'Evet, dön',
   editAddStep: '+ Adım ekle',
   editNewStepAim: 'Yeni adım — yaz…',
-  editAimMissing: (idx: number) => `Bir adımın metni boş (${idx}. satır) — doldurunca Onayla gelir.`,
-  editMoveUpAria: 'Yukarı taşı',
-  editMoveDownAria: 'Aşağı taşı',
+  editAimMissing: (idx: number) => `Bir adımın metni boş (${idx}. satır) — doldurunca Onayla açılır.`,
+  // 2026-08-23 drag-and-drop: the ▲▼ aria pair died; the grip + dnd-kit's announcements/instructions
+  // are bundle copy (ADR-0007 — the library's English defaults never render).
+  editDragHandleAria: 'Adımı sürükle',
+  dragSrInstructions: 'Bir adımı taşımak için tutamağa odaklan, Space ile kaldır, ok tuşlarıyla yeni yerine getir, Space ile bırak.',
+  dragAnnounceStart: (idx: number) => `${idx}. adım kaldırıldı.`,
+  dragAnnounceOver: (idx: number) => `${idx}. adım üzerine gelindi.`,
+  dragAnnounceEnd: (idx: number) => `${idx}. adım bırakıldı.`,
+  dragAnnounceCancel: (idx: number) => `${idx}. adım taşımı iptal edildi.`,
   editRemoveAria: 'Adımı sil',
   editRoleAria: (role: SessionRole) => `Rol seç · şu an: ${ROLE_LABELS[role]}`,
   editRoleMenuAria: 'Rol seç',
@@ -661,6 +724,9 @@ export const UI = {
   // auditTitle). Rendered only when the session HAS a transcript — absent, never disabled.
   auditShowTranscript: '▸ döküm',
   auditHideTranscript: '▾ döküm',
+  // 2026-08-23 (döküm kaybı): the pre-checkpoint rows' honest line — the card opens, the record
+  // itself never existed. New sessions checkpoint every tool result and are never empty.
+  auditNoTranscript: 'Döküm kaydı yok.',
   stepCostMeta: (duration: string, cost: string) => `tamam · ⏱ ${duration} · ${cost}`,
   // Diff peek (yazma izni kartı).
   diffPeek: '▸ fark',
@@ -668,8 +734,29 @@ export const UI = {
   diffTruncated: (n: number) => `… ${n} satır`,
   diffEmpty: 'Değişiklik yok',
   // Durum: wind-down, force-kill, hata kartı.
-  railForceKill: 'Zorla kes',
-  railStoppedMsg: 'Durduruldu. Rapor kısmi kalır.',
+  driveForceKill: 'Zorla kes',
+  driveStoppedMsg: 'Durduruldu. Rapor kısmi kalır.',
+  // WO-0039 — panel durduruldu sözcüğü, çip tooltip'leri. (planEmptyLine 'Henüz plan yok.' died on
+  // the 2026-08-23 operator pass: the bare plan stage is ONLY the Plan iste button — the header
+  // band's phase line already states it.)
+  // 2026-08-23 (canlı panel revizyonu): the SADE state line + the verb toggle + the orphan row.
+  actThinking: 'Düşünüyor',
+  planClosing: 'Plan hazır — oturum kapanıyor',
+  transcriptOpen: 'Dökümü aç',
+  transcriptClose: 'Dökümü kapat',
+  // 2026-08-23 (düzeltme): the SDK ends a plan-mode turn with a synthetic 'User has approved
+  // your plan…' pseudo-result — that is the HARNESS accepting the agent's submission, NOT the
+  // operator's Docket approval (which records its own plan_approved event). The line speaks
+  // PROPOSAL language, like the card's 'N adımlık plan önerdi'.
+  planApprovedNote: 'Mimar planını sundu',
+  planRejectedNote: 'Mimarın planı geri çevrildi',
+  liveSessionGo: 'Canlı oturum',
+  toolNoResult: '→ sonuç yok',
+  orphanResult: 'sonuç — eşleşen çağrı yok',
+  reviewModeGatesHint: 'Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış. Tıkla: Her adımda',
+  reviewModeEveryHint: 'Her adımın sonunda mimarın rapor kararı sana gelir — onaylayınca sıradaki koşar. Tıkla: Kapılarda',
+  // Rol görev tooltip'i — besteci, yeni söz yok: rozetin hover'ı görev satırını açığa çıkarır.
+  roleDutyTip: (role: SessionRole) => `${ROLE_LABELS[role]} — ${ROLE_DUTY_LABELS[role]}`,
   failTitle: 'Oturum çöktü',
   // WO-0035 — akış kopması (kod/ham mesaj taşımayan tek hata yolu; drive-store'daki dizgi silindi,
   // durum yapısal: status==='error' && lastErrorCode yok && lastError yok → bu satır).
@@ -707,6 +794,8 @@ export function phaseLabelText(p: WoPhase): string {
       return UI.woPhaseJustWritten;
     case 'planning':
       return UI.woPhasePlanning;
+    case 'plan_stopped':
+      return UI.woPhasePlanStopped;
     case 'plan_ready':
       return UI.woPhasePlanReady;
     case 'implementing':
@@ -736,6 +825,7 @@ const tr = {
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
   TOOL_LABELS,
+  TOOL_VERBS,
   MODE_LABELS,
   SOURCE_KIND_LABELS,
   PROVIDER_ERROR_LABELS,
@@ -746,6 +836,7 @@ const tr = {
   cardReasonText,
   cardActionText,
   toolLabel,
+  toolVerb,
   transcriptLineText,
   transcriptTailText,
   permissionPrompt,

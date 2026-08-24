@@ -42,8 +42,11 @@ export function WorkOrderCard({
           <Badge tone={STAGE_TONE[card.bucket]}>{STAGE_LABELS[card.stage]}</Badge>
           <span className="ml-auto font-mono text-[11px] text-inkdim">
             {/* WO-0031f T3 — Süre is the finished-session sum, drawn beside the cost only when > 0
-                (a never-run card draws neither; a live-only card draws cost but no Süre). */}
-            {card.sessionCount > 0 ? formatCost(card.cost) : null}
+                (a never-run card draws neither; a live-only card draws cost but no Süre).
+                2026-08-24: the COST draws only when some session actually carried one — a summed
+                $0.00 over zero observed rows is a claim (an interrupted drive spent real money the
+                abort could not record; TD-030's honesty rule, now on the card too). */}
+            {card.costKnown ? formatCost(card.cost) : null}
             {card.durationMs > 0 ? ` · ${UI.formatDuration(card.durationMs)}` : null}
           </span>
         </div>

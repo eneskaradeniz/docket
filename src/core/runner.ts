@@ -17,7 +17,7 @@ import type { PermissionRule } from './source';
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
 export type RunnerEvent =
-  | { kind: 'started'; sessionId: string }
+  | { kind: 'started'; sessionId: string; at?: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown> }
   | { kind: 'tool_result'; callId: string; summary: string; isError: boolean }
@@ -27,7 +27,17 @@ export type RunnerEvent =
   // "any event clears the ask" and made sibling cards vanish while still held (Bulgu 10).
   | { kind: 'ask_resolved'; requestId: string }
   | { kind: 'plan_ready'; planText: string }
-  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string }
+  // 2026-08-24 (operator: "hangi saniye… onun dışında olmuş gibi duruyor"): the lifecycle events
+  // carry an ISO receive-time stamp — the fold turns each into a CLOCKED transcript note, so the
+  // döküm reads as a timeline in BOTH the live pane and the archived card (the fold is pure; the
+  // stamp comes from the adapter's receive moment, "hangi saniye" resolution).
+  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string; at?: string }
+  // WO-0039 stabilization (2026-08-23, "Durdur must never say Oturum çöktü"): the runner emits this
+  // when an INTENTIONAL interrupt closed the stream without a turn_complete. It is a terminal,
+  // calm close — the fold lands in 'stopped' (Durduruldu + ▶ Sürdür), never 'error' (the fail
+  // card). `cost` rides only when the runner could observe it (a scripted fake can; a real abort
+  // throws before the result message that carries cost — the honest no-claim, WO-0026/TD-030).
+  | { kind: 'interrupted'; cost?: CostSummary; at?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -324,7 +334,7 @@ export function summarizeToolInput(input: Record<string, unknown>): string {
 // ===== Event → live-session-state fold (pure; the pane renders this) =====
 export type { TranscriptLine } from './types';
 
-export type LiveSessionStatus = 'idle' | 'running' | 'stopped_asking' | 'plan_ready' | 'done' | 'error';
+export type LiveSessionStatus = 'idle' | 'running' | 'stopped_asking' | 'plan_ready' | 'done' | 'stopped' | 'error';
 
 /** One surfaced permission ask. The agent may issue SEVERAL in parallel (multiple tool calls in one
  *  message) — each carries its own requestId and is answered independently (WO-0027 / Bulgu 10). */
@@ -356,17 +366,20 @@ export const initialSessionState: LiveSessionState = {
  *  and the store checkpointed, plus the recorded cost and provider id, so a resumed pane appends to what
  *  already happened instead of opening blank. `asks` re-seeds persisted-but-unanswered permission asks
  *  (WO-0027 / Bulgu 9) — the pane offers to answer them; the resolver is still held in the host's runner.
- *  Pure; empty input → the initial state. */
+ *  2026-08-24: a row whose status is 'stopped' seeds the fold's 'stopped' — the Sürdür offer and the
+ *  "Durduruldu" turn line then derive after an app RESTART too (the fold's own memory dies with the
+ *  renderer; the row does not). Pure; empty input → the initial state. */
 export function seedLiveState(
-  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId'>,
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status'>,
   asks: PermissionAsk[] = [],
 ): LiveSessionState {
-  if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0) {
+  if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0 && session.status === 'none') {
     return initialSessionState;
   }
   return {
     ...initialSessionState,
     entries: session.transcript,
+    ...(session.status === 'stopped' ? { status: 'stopped' as const } : {}),
     ...(asks.length ? { status: 'stopped_asking' as const, pendingAsks: asks } : {}),
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
@@ -377,15 +390,26 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
   switch (event.kind) {
     case 'started':
       // A new/resumed drive supersedes a pending plan (e.g. after approval) and any stale asks.
-      return { ...state, status: 'running', sessionId: event.sessionId, pendingPlan: undefined, pendingAsks: [] };
+      // The drive's OPENING rides the transcript as a clocked note — a resumed session accumulates
+      // one per run, so the döküm reads as the multi-run timeline it is (2026-08-24).
+      return {
+        ...state,
+        status: 'running',
+        sessionId: event.sessionId,
+        pendingPlan: undefined,
+        pendingAsks: [],
+        entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
+      };
     case 'assistant_text':
       return { ...state, status: state.status === 'idle' ? 'running' : state.status, entries: [...state.entries, { speaker: 'assistant', text: event.text }] };
     case 'tool_use':
-      return { ...state, entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input) }] };
+      // callId rides the entry (2026-08-23 §5): the transcript pairs a result to ITS call —
+      // adjacency pairing broke on parallel calls (orphan headerless result walls).
+      return { ...state, entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId }] };
     case 'tool_result':
       // NOTE: a tool_result does NOT clear asks — with parallel asks we cannot know WHICH ask it answers
       // (the result carries callId, the ask carries requestId). Only `ask_resolved` removes an ask.
-      return { ...state, entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError }] };
+      return { ...state, entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId }] };
     case 'permission_request':
       if (state.pendingAsks.some((a) => a.requestId === event.requestId)) return state; // dedupe on resume replays
       return {
@@ -403,7 +427,31 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
     case 'plan_ready':
       return { ...state, status: 'plan_ready', pendingPlan: event.planText };
     case 'turn_complete':
-      return { ...state, status: 'done', cost: event.cost, pendingAsks: [] };
+      // The turn's OWN closing line rides the transcript (2026-08-24: a completed session showed
+      // only its work — reads, commands — with no lifecycle at all; the stop had a line, the end
+      // did not). Clock via the event's `at` stamp.
+      return {
+        ...state,
+        status: 'done',
+        cost: event.cost,
+        pendingAsks: [],
+        entries: [...state.entries, { speaker: 'note', kind: 'session_done', ...(event.at ? { detail: event.at } : {}) }],
+      };
+    case 'interrupted':
+      // An intentional stop: terminal and calm. The asks die with the abort (the runner's finally
+      // clears its held resolvers); a stale-'running' fold (the pre-stabilization bug) or an
+      // interrupt-echo error must never survive an intentional Durdur. The fold also APPENDS the
+      // session's own fact line ('interrupted') to the transcript — the pipeline records after
+      // folding, so the LEDGER card's transcript carries the stop too (operator, 2026-08-23: the
+      // archived döküm ended at the last tool checkpoint and read stale after Durdur; the ⏸/■
+      // operator notes stay live-only by ruling — this line is the session's fact, not commentary).
+      return {
+        ...state,
+        status: 'stopped',
+        pendingAsks: [],
+        entries: [...state.entries, { speaker: 'note', kind: 'interrupted', ...(event.at ? { detail: event.at } : {}) }],
+        ...(event.cost ? { cost: event.cost } : {}),
+      };
     case 'error':
       return { ...state, status: 'error', lastError: event.message, pendingAsks: [], ...(event.code ? { lastErrorCode: event.code } : {}) };
   }

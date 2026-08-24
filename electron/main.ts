@@ -189,6 +189,9 @@ ipcMain.handle('docket:diff-peek', (_e, workOrderId: WorkOrderId, filePath: stri
 // --- Plan approval (WO-0016). Writes plan.md into the working tree (no commit) + flips the
 //   plan_approval gate. Path resolution stays server-side (ADR-0001). ---
 ipcMain.handle('docket:source:approve-plan', (_e, id: WorkOrderId, planText: string, opts?: { editedCount?: number }) => store.approvePlan(id, planText, opts));
+ipcMain.handle('docket:source:save-plan-draft', (_e, id: WorkOrderId, planText: string) => store.savePlanDraft(id, planText));
+ipcMain.handle('docket:source:get-original-plan', (_e, id: WorkOrderId) => store.getOriginalPlan(id));
+ipcMain.handle('docket:source:restore-original-plan', (_e, id: WorkOrderId) => store.restoreOriginalPlan(id));
 
 // --- Step list + reports (WO-0017). The step specs are parsed from plan.md's ```steps fence; reports are
 //   read from the decision store at view time (ADR-0010). Path resolution stays server-side (ADR-0001). ---

@@ -108,6 +108,40 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   return `---\n${nextFront}\n---\n${nextBody}`;
 }
 
+/** The ORDER DOCUMENT VIEW: drop `##` sections whose body is only the creation template's
+ *  skeleton markers — the bare `-` list line, the `- _(added during planning)_` placeholder, the
+ *  bare `1.` numbering, the `In scope:` / `Out of scope:` sub-labels (2026-08-23 operator ruling:
+ *  "görünümde sök" — unfilled sections read like a broken document). One real line saves the
+ *  section; everything before the first `##` (frontmatter, the `#` title) passes through. The
+ *  FILE is never touched — this is the view's prose, the repo's discipline keeps its template. */
+export function stripUnfilledSections(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/^##\s/.test(lines[i]!)) {
+      let j = i + 1;
+      while (j < lines.length && !/^##\s/.test(lines[j]!)) j++;
+      const body = lines.slice(i + 1, j);
+      const filled = body.some((l) => {
+        const t = l.trim();
+        if (!t) return false;
+        if (t === '-') return false;
+        if (/^-\s*_\([^)]*\)_\s*$/.test(t)) return false;
+        if (/^\d+\.\s*$/.test(t)) return false;
+        if (/^(In scope:|Out of scope:)\s*$/.test(t)) return false;
+        return true;
+      });
+      if (filled) out.push(lines[i]!, ...body);
+      i = j;
+    } else {
+      out.push(lines[i]!);
+      i++;
+    }
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 export function architectPrompt(input: { objective: string; reviewMode: ReviewMode; orderMdPath: string }): string {
   const cadence =
     input.reviewMode === 'every-step'
@@ -131,11 +165,23 @@ export function architectPrompt(input: { objective: string; reviewMode: ReviewMo
     ``,
     '```steps',
     `[`,
-    `  { "role": "implementer" | "verifier" | "architect", "aim": "<short label>", "scope": "<track repo slug, or 'all' for the whole work order>" }`,
+    `  { "role": "implementer" | "verifier" | "architect", "aim": "<short Turkish label>", "scope": "<track repo slug, or 'all' for the whole work order>" }`,
     `]`,
     '```',
     ``,
+    // WO-0039: the aim renders VERBATIM in Docket's UI (plan proposal rows, the step spine, session
+    // card names) — it is operator-facing display text, not agent notes. The prompt body stays
+    // agent-facing English; the aim alone is asked in the operator's console language (tr).
+    `Write each "aim" as a SHORT TURKISH label the operator reads at a glance (e.g. "varyasyon A'yı uygula", "bağımsız doğrulama raporu") — Docket shows it verbatim in the plan list and step rows. Never English, never a sentence.`,
+    ``,
     `One object per step, in run order — include only the minimum steps the work needs. Call ExitPlanMode when the plan — including the steps block — is ready for the operator to approve. Without a valid steps block the plan has no runnable steps.`,
+    ``,
+    `After you submit the plan you will receive a stop notice ("Plan submitted. STOP"). Obey it: end your turn immediately. NEVER investigate approval status, read Docket's own files, or resubmit the plan — the operator decides in Docket, on their own time.`,
+    ``,
+    // WO-0039 stabilization (2026-08-23, the overwrite incident): a detail RE-ENTRY resumed the
+    // session after the stop notice and the agent called ExitPlanMode AGAIN — with "bekliyorum" as
+    // the plan. A resume after the stop notice is never a new submission; it is at most an answer.
+    `If your session resumes AFTER the plan-submission stop notice, do NOT call ExitPlanMode again — answer in one short sentence and end your turn.`,
   ].join('\n');
 }
 

@@ -865,3 +865,107 @@ describe('SQLite store — workspace deletion (WO-0032)', () => {
     expect((await store.getWorkOrders()).some((w) => w.id === b.id)).toBe(false);
   });
 });
+
+
+// ===== WO-0039 stabilization (2026-08-24, reviewer round) — this order's store rules =====
+// The reviewer round named the gap: the parse-guard, the snapshot lifecycle, the transcript merge,
+// the upsert scope and the session CHECK migration carried only single e2e assertions while the
+// CHECK had ALREADY failed once live (round 4 — the record threw, the pipeline surfaced a fail
+// card for an intentional Durdur). These pin them against real SQLite.
+
+const GOOD_PLAN = ['# Gerçek plan', '', '```steps', '[{"role":"implementer","aim":"a","scope":"all"}]', '```', ''].join('\n');
+
+// A work order under a throwaway decision-store root (the helpers' freshRoot idiom).
+const woUnder = (store: ReturnType<typeof createStore>) =>
+  store.createWorkspace({ label: 'st', repos: [{ path: freshRoot(), remote: 'r' }], decisionStorePath: freshRoots.at(-1) }).then((ws) =>
+    store.createWorkOrder({ workspaceId: ws.id, title: 'Guard test', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] }),
+  );
+
+describe('store — savePendingPlan parse-guard (the overwrite incident)', () => {
+  it('a parseable plan on disk survives a fence-less resubmission, and the refusal is audited', async () => {
+    const store = createStore(freshDb());
+    const wo = await woUnder(store);
+    store.savePendingPlan(wo.id, GOOD_PLAN);
+    store.savePendingPlan(wo.id, 'bekliyorum'); // the incident's degenerate re-submission
+    const { plan } = await store.getWorkOrderDocs(wo.id);
+    expect(plan).toBe(GOOD_PLAN);
+    expect((await store.getWorkOrderEvents(wo.id)).some((e) => e.kind === 'plan_save_refused')).toBe(true);
+  });
+
+  it('a GOOD re-proposal (a plan that parses) still overwrites — the guard is degeneracy-only', async () => {
+    const store = createStore(freshDb());
+    const wo = await woUnder(store);
+    const better = GOOD_PLAN.replace('"aim":"a"', '"aim":"b"');
+    store.savePendingPlan(wo.id, better);
+    const { plan } = await store.getWorkOrderDocs(wo.id);
+    expect(plan).toBe(better);
+  });
+
+  it('the plan_original snapshot survives a REFUSED save; a fresh agent proposal clears it', async () => {
+    const store = createStore(freshDb());
+    const wo = await woUnder(store);
+    store.savePendingPlan(wo.id, GOOD_PLAN);
+    await store.savePlanDraft(wo.id, GOOD_PLAN.replace('"aim":"a"', '"aim":"edited"')); // first overwrite → snapshot
+    expect(await store.getOriginalPlan(wo.id)).toBe(GOOD_PLAN);
+    store.savePendingPlan(wo.id, 'bekliyorum'); // refused → the snapshot must NOT be cleared
+    expect(await store.getOriginalPlan(wo.id)).toBe(GOOD_PLAN);
+    store.savePendingPlan(wo.id, GOOD_PLAN.replace('"aim":"a"', '"aim":"yeni"')); // a real proposal clears it
+    expect(await store.getOriginalPlan(wo.id)).toBeNull();
+  });
+});
+
+describe('store — the session row rules (transcript merge + upsert scope)', () => {
+  it('the LONGER transcript wins — a late short record cannot wipe a fuller checkpoint (döküm kaybı)', async () => {
+    const store = createStore(freshDb());
+    const wo = await woUnder(store);
+    store.recordSession({ providerSessionId: 's-merge', workOrderId: wo.id, role: 'implementer', status: 'idle', transcript: [
+      { speaker: 'note', kind: 'session_started' },
+      { speaker: 'assistant', text: 'çalıştı' },
+      { speaker: 'tool_use', tool: 'Bash', detail: 'ls', callId: 'c1' },
+    ], startedAt: '2026-08-24T01:00:00Z', endedAt: '2026-08-24T01:01:00Z' });
+    store.recordSession({ providerSessionId: 's-merge', workOrderId: wo.id, role: 'implementer', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
+    const hydrated = await store.getWorkOrder(wo.id);
+    expect(hydrated?.sessions[0]?.transcript).toHaveLength(3);
+    expect(hydrated?.sessions[0]?.status).toBe('stopped'); // the status still follows the LAST record
+  });
+
+  it('the upsert is work-order-scoped — a foreign row with the same provider id survives (the e2e incident)', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'scope', repos: [{ path: root }] });
+    const woA = await store.createWorkOrder({ workspaceId: ws.id, title: 'WO A', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const woB = await store.createWorkOrder({ workspaceId: ws.id, title: 'WO B', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'shared-id', workOrderId: woA.id, role: 'architect', status: 'idle', transcript: [] });
+    store.recordSession({ providerSessionId: 'shared-id', workOrderId: woB.id, role: 'architect', status: 'stopped', transcript: [] });
+    const [a, b] = await Promise.all([store.getWorkOrder(woA.id), store.getWorkOrder(woB.id)]);
+    expect(a?.sessions.some((s) => s.providerSessionId === 'shared-id' && s.status === 'idle')).toBe(true);
+    expect(b?.sessions.some((s) => s.providerSessionId === 'shared-id' && s.status === 'stopped')).toBe(true);
+  });
+});
+
+describe('store — the session CHECK migration (round 4: the live failure this guards against)', () => {
+  it('an old-shape DB migrates: rows preserved, and a stopped session records without a CHECK throw', () => {
+    const p = freshDb();
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      'CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_session_id TEXT, work_order_id TEXT NOT NULL, ' +
+        "role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')), scope_track_id TEXT, " +
+        "status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','none')), transcript TEXT NOT NULL, stop_and_ask TEXT, " +
+        'cost_tokens_in INTEGER, cost_tokens_out INTEGER, cost_usd REAL, started_at TEXT, ended_at TEXT, step_idx INTEGER)',
+    );
+    raw
+      .prepare('INSERT INTO session (provider_session_id, work_order_id, role, status, transcript, started_at, ended_at) VALUES (?,?,?,?,?,?,?)')
+      .run('legacy-1', 'WO-LEGACY', 'architect', 'idle', '[]', '2026-08-23T20:00:00Z', '2026-08-23T20:01:00Z');
+    raw.close();
+
+    const store = createStore(p); // migrate() runs here — the widen this test pins
+    const kept = store.db.prepare('SELECT provider_session_id, status FROM session').all() as Array<{ provider_session_id: string; status: string }>;
+    expect(kept).toEqual([{ provider_session_id: 'legacy-1', status: 'idle' }]);
+    // the pre-fix behavior: this INSERT threw (CHECK rejected 'stopped') and the pipeline's catch
+    // surfaced it as a fail card for an intentional Durdur
+    store.recordSession({ providerSessionId: 'legacy-1', workOrderId: woid('WO-LEGACY'), role: 'architect', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
+    const stopped = store.db.prepare("SELECT status FROM session WHERE provider_session_id = 'legacy-1'").get() as { status: string };
+    expect(stopped.status).toBe('stopped');
+    expect(store.db.prepare("SELECT name FROM sqlite_master WHERE name = 'session_legacy'").get()).toBeUndefined();
+  });
+});

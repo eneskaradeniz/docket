@@ -54,10 +54,30 @@ function lastStepsFenceRange(md: string): [number, number] | null {
  * when its body is malformed (raw JSON is banned from the screen either way); `steps` then degrades
  * to `[]` exactly like `parsePlanSteps`.
  */
+/** Reorder the editor's stage by ARRAY POSITION (drag-and-drop, 2026-08-23): splice the `from`
+ *  element to `to`, then renumber the 1-based `idx` to the new order. Same index or out-of-bounds
+ *  is a no-op that returns the SAME array reference (the caller's state bail-out). Generic so the
+ *  caller's row identities (the editor's stable `uid`) ride the reorder untouched. */
+export function moveStep<T extends StepSpec>(steps: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= steps.length || to >= steps.length) return steps;
+  const next = [...steps];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next.map((s, i) => ({ ...s, idx: i + 1 }));
+}
+
 export function splitStepsFence(md: string): { prose: string; steps: StepSpec[] } {
   const range = lastStepsFenceRange(md ?? '');
   if (range == null) return { prose: md ?? '', steps: parsePlanSteps(md ?? '') };
-  const prose = (md.slice(0, range[0]) + md.slice(range[1])).replace(/\n{3,}/g, '\n\n').trimEnd();
+  // 2026-08-23 (operator ruling): after the fence leaves the prose, a trailing "## Steps" heading
+  // whose ONLY content was that fence is a dangling stump (the steps render as the PLAN HAZIR
+  // rows) — the document view ends at its last real paragraph. A heading with text after the
+  // fence is a real section and the regex's $ anchor leaves it alone.
+  const prose = (md.slice(0, range[0]) + md.slice(range[1]))
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd()
+    .replace(/\n##\s+[Ss]teps\s*$/, '')
+    .trimEnd();
   return { prose, steps: parsePlanSteps(md) };
 }
 

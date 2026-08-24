@@ -3,6 +3,7 @@ import { initialSessionState, seedLiveState, type DriveInput, type LiveSessionSt
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { PaneError, StreamLine } from './pane-chrome';
+import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
 
@@ -21,12 +22,16 @@ export function StepPane({
   workOrderId,
   sessions,
   now,
+  drive,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
   /** The controller's one-second ticker (the strip's) — the live costline's elapsed reuses it. */
   now?: number;
+  /** WO-0039: the active drive's process controls (Durdur / Zorla kes / ▶ Sürdür) — the dead rail's
+   *  job, now riding this pane's header (passed through StepList from the controller). */
+  drive?: DriveState;
 }) {
   const { formatUsd, PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
   const store = useDriveStore();
@@ -37,13 +42,13 @@ export function StepPane({
   // object per call (any session with a transcript) force-rerenders forever (React #185 — surfaced by
   // WO-0031c's persisted-session E2E seed; latent since F14).
   const seedState = useMemo<LiveSessionState>(
-    () => seedLiveState(sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId) ?? { transcript: [] }),
+    () => seedLiveState(sessions.find((s) => s.stepIdx === step.idx && s.providerSessionId) ?? { status: 'none', transcript: [] }),
     [sessions, step.idx],
   );
   const state = useDrive(store, driveKey, () => seedState);
   const lastDriven = useRef<number | undefined>(undefined);
 
-  function drive(resume?: string): void {
+  function startDrive(resume?: string): void {
     const input: DriveInput = {
       role: step.role,
       workOrderId,
@@ -58,11 +63,11 @@ export function StepPane({
   }
 
   // Auto-drive a pending step once when it becomes the active step. An 'active' step (interrupted) does not
-  // auto-drive — the rail offers "Sürdür" so the operator chooses to resume.
+  // auto-drive — the pane header offers "Sürdür" so the operator chooses to resume (WO-0039).
   useEffect(() => {
     if (step.status === 'pending' && lastDriven.current !== step.idx) {
       lastDriven.current = step.idx;
-      drive();
+      startDrive();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.idx, step.status]);
@@ -86,11 +91,13 @@ export function StepPane({
   // (the dual view that hid it behind SADE died with the mode).
   return (
     <div className="mt-2 flex flex-col gap-1.5" data-step-live={step.idx}>
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <span className="readout truncate">
-          {ROLE_LABELS[step.role]} · {UI.termLive}
-        </span>
-        {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
+      <div className="flex min-w-0 items-center gap-2">
+        {running && !(store.get(driveKey)?.booting ?? false) ? <span className="dot-run shrink-0" aria-hidden="true" /> : null}
+        <span className="readout min-w-0 truncate">{ROLE_LABELS[step.role]}</span>
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
+          {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
+          {drive ? <DriveControls drive={drive} /> : null}
+        </div>
       </div>
       {emptyRun ? (
         <StreamLine />
