@@ -7,6 +7,7 @@
 - [Decision — theming](#decision--theming)
 - [Consequences](#consequences)
 - [Alternatives rejected](#alternatives-rejected)
+- [Addendum — 2026-08-24 (WO-0040: theming revived)](#addendum--2026-08-24-wo-0040-theming-revived)
 
 - Status: accepted
 - Date: 2026-08-03
@@ -89,3 +90,29 @@ Two debts paid and one clause superseded:
   (`labels/labels.test.ts`).
 - **The theming half of this ADR is dead.** Dark-only is the ruling (ADR-0012, recorded in
   `src/index.css`); the M3.5 theme bullet dies with it. Noted here, not re-decided.
+
+## Addendum — 2026-08-24 (WO-0040: theming revived)
+
+The operator reversed the 2026-08-21 dead-note; the 2026-08-24 ruling below supersedes it. The
+earlier note stands as history.
+
+- **Three modes.** Sistem (follows the OS, the default when nothing is picked — live, via
+  `matchMedia`), Açık, Karanlık. One `Tema` Segmented in Settings under the DİL section (the
+  WO-0035 pattern). A fresh install with no stored choice never writes one — detection is
+  presentation, the locale precedent.
+- **The faces.** Karanlık is layered black (`#000000` ground, `#0a0a0a` surface, `#171717`
+  raised, `#262626` hairline, `#f2f2f2`/`#8f8f8f` ink) — replacing the navy palette, per the
+  operator's explicit ask. Açık is pure white (`#ffffff` ground and surface, `#f2f2f0` raised,
+  `#e3e3e0` hairline, `#191917`/`#6e6e69` ink). Accents keep their dark values in Karanlık and
+  gain light variants holding ~4.5:1 as text on white (`#9a6700` signal, `#1a7f37` proceed,
+  `#0969da` info, `#cf222e` error); lamps and glows follow via `color-mix`.
+- **Persistence narrowed vs the original body** ("a user preference in the app database,
+  alongside locale"): theme is renderer-local localStorage (`docket.theme`), per the standing
+  ruling in `src/core/app-settings.ts` — only the GUI renders colour, so the preference is
+  presentation-only and machine-local, like window state. No port member, no DB row; the locale
+  keeps its `app_setting` row (words travel across hosts, colour does not).
+- **The mechanism is the original decision's, unchanged:** semantic tokens only. `@theme` holds
+  the dark defaults (and doubles as the no-attribute fallback, so a dark room never flashes);
+  one `:root[data-theme='light']` block in `@layer base` is the whole light theme; `src/ui`
+  keeps zero colour literals. ADR-0012's interaction/motion contract is theme-agnostic and
+  untouched by this revival.

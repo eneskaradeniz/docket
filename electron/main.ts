@@ -3,7 +3,7 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, dialog, ipcMain, screen, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -91,6 +91,10 @@ function createWindow() {
     ...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
     minWidth: 760,
     minHeight: 480,
+    // The pre-render native fill follows the OS (WO-0040): a light-OS boot shows white, not the
+    // CSS-default black, for the gap before the renderer paints. The in-app explicit pick is
+    // renderer-local (localStorage) and not visible here — accepted residue, noted in tech-debt.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
     useContentSize: true,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 16 },

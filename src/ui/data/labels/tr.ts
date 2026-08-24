@@ -408,6 +408,11 @@ export const UI = {
   language: 'Dil',
   langEn: 'English',
   langTr: 'Türkçe',
+  // Tema seçici (WO-0040 — Sistem OS'u izler, Açık/Karanlık sabitler).
+  theme: 'Tema',
+  themeSystem: 'Sistem',
+  themeLight: 'Açık',
+  themeDark: 'Karanlık',
   close: 'Kapat',
   // ActionCard (salt-okunur "ne lazım" banner'ı — butonlar SessionPane'de)
   actionNeeded: 'Ne lazım',
