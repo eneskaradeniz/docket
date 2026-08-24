@@ -40,6 +40,16 @@ const app = await electron.launch({
   env: { ...process.env, DOCKET_DB_PATH: DB, DOCKET_E2E: '1', NODE_ENV: 'production' },
 });
 const page = await app.firstWindow();
+// WO-0040: pin the emulated color scheme DARK — Sistem is the default and would otherwise follow
+// the host OS, making every color-pinned assert (e.g. the rgb(76, 195, 138) hairline fill) and
+// every screenshot host-dependent. Load-bearing like seed.ts's locale='tr' (TD-041's twin).
+// The userData is the operator's REAL one (no E2E isolation): a crashed prior run may have left
+// an explicit mirror, which beats the pin — stamp 'dark' and reboot once (found live 2026-08-24:
+// a leftover 'light' flipped the suite's whole palette). The harness tail removes the key again.
+await page.emulateMedia({ colorScheme: 'dark' });
+await page.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+await page.reload();
+await page.waitForTimeout(700);
 const consoleErrors = [];
 page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -1431,6 +1441,11 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
   });
   try {
     const emptyPage = await emptyApp.firstWindow();
+    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
+    await emptyPage.emulateMedia({ colorScheme: 'dark' });
+    await emptyPage.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+    await emptyPage.reload();
+    await emptyPage.waitForTimeout(700);
     // TD-038.5: the second app gets its own console collector — its renderer errors used to pass
     // the zero-errors spec silently.
     const emptyConsoleErrors = [];
@@ -1563,6 +1578,11 @@ await spec('a fresh install with a tr system language boots tr (detection, WO-00
   const a = await launchLoc(locDb);
   try {
     const pa = await a.firstWindow();
+    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
+    await pa.emulateMedia({ colorScheme: 'dark' });
+    await pa.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+    await pa.reload();
+    await pa.waitForTimeout(700);
     await pa.waitForLoadState('domcontentloaded');
     await pa.waitForTimeout(700);
     assert.equal(await pa.evaluate(() => navigator.language.startsWith('tr')), true, 'the --lang switch did not reach the renderer');
@@ -1585,6 +1605,11 @@ await spec('a stored DB choice beats detection — and the empty-DB hero speaks 
   const b = await launchLoc(locDb);
   try {
     const pb = await b.firstWindow();
+    // WO-0040 — same determinism pin as the main app (emulated dark + mirror stamp + one reboot)
+    await pb.emulateMedia({ colorScheme: 'dark' });
+    await pb.evaluate(() => localStorage.setItem('docket.theme', 'dark'));
+    await pb.reload();
+    await pb.waitForTimeout(700);
     const locConsoleErrors = [];
     pb.on('console', (msg) => {
       if (msg.type() === 'error') locConsoleErrors.push(msg.text());
@@ -1604,10 +1629,59 @@ await spec('a stored DB choice beats detection — and the empty-DB hero speaks 
   }
 });
 
+await spec('Tema: Açık/Karanlık pin, Sistem follows the OS live (WO-0040)', async () => {
+  // the pin above emulated dark; with nothing stored, Sistem resolves dark
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'Sistem did not resolve dark under the pin');
+  assert.equal(
+    await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+    'rgb(0, 0, 0)',
+    'the dark palette (layered black) did not apply',
+  );
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(350);
+  const dlg = page.locator('[role="dialog"]');
+  // Açık pins light: the attribute, the computed ground and the mirror
+  await dlg.getByRole('button', { name: 'Açık', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light', 'Açık did not pin light');
+  assert.equal(
+    await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+    'rgb(255, 255, 255)',
+    'the light palette (pure white) did not apply',
+  );
+  assert.equal(await page.evaluate(() => localStorage.getItem('docket.theme')), 'light', 'the explicit pick did not reach the mirror');
+  await page.screenshot({ path: join(SHOTS, 'settings-light@980.png') }); // the operator reviews the light face
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: join(SHOTS, 'board-light@980.png') });
+  // Karanlık pins dark explicitly
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(350);
+  await dlg.getByRole('button', { name: 'Karanlık', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'Karanlık did not pin dark');
+  assert.equal(await page.evaluate(() => localStorage.getItem('docket.theme')), 'dark', 'the dark pick did not reach the mirror');
+  // Sistem + a LIVE OS flip re-resolves with no click (the matchMedia listener)
+  await dlg.getByRole('button', { name: 'Sistem', exact: true }).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => localStorage.getItem('docket.theme')), 'system', 'the system pick did not reach the mirror');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'light', 'Sistem did not follow the live OS flip');
+  // restore dark for whatever follows, close the dialog
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'Sistem did not follow the OS flip back');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });
 
+// leave the operator's real app on Sistem (the userData is shared — see the boot pin note)
+await page.evaluate(() => localStorage.removeItem('docket.theme')).catch(() => undefined);
 await app.close();
 console.log(failures.length ? `\n${failures.length} failing: ${failures.join(', ')}` : '\nall UI specs green');
 process.exit(failures.length ? 1 : 0);
