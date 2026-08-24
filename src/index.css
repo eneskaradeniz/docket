@@ -7,22 +7,32 @@
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
-/* ===== "Kontrol Konsolu" design tokens (WO-0031) =====
-   A dispatch console for one operator: dark room, calm layered surfaces, data in mono, and ONE lamp
-   color that means "this needs you". Dark-only by ruling (ADR-0012). Tailwind v4
-   @theme tokens generate bg-/text-/border- utilities. The migration-era aliases (surface2/brass/
-   denim/sage/clay) are GONE — the last user (ErrorBoundary's bg-clay) was restyled in WO-0031c. */
+/* ===== "Kontrol Konsolu" design tokens (WO-0031 / WO-0040) =====
+   A dispatch console for one operator: calm layered surfaces, data in mono, and ONE lamp color that
+   means "this needs you". Three faces — Sistem/Açık/Karanlık (WO-0040, reviving ADR-0007's theming
+   half per its 2026-08-24 addendum). These @theme tokens are the DARK defaults AND the no-attribute
+   fallback: with no data-theme on <html> (no JS yet, pre-paint) the console is dark, so a dark room
+   never flashes. The light face is the :root[data-theme='light'] override in @layer base below —
+   one block, the whole theme; every utility, the hljs palette, the lamps and the glows ride
+   var(--color-*). ADR-0012's interaction/motion contract is theme-agnostic. */
 @theme {
-  --color-bg: #0e1520;
-  --color-surface: #16202e;
-  --color-raised: #1d2938;
-  --color-hairline: #263349;
-  --color-ink: #e7edf4;
-  --color-inkdim: #8b95a7;
+  --color-bg: #000000;
+  --color-surface: #0a0a0a;
+  --color-raised: #171717;
+  --color-hairline: #262626;
+  --color-ink: #f2f2f2;
+  --color-inkdim: #8f8f8f;
   --color-signal: #f5b544;
   --color-proceed: #4cc38a;
   --color-info: #6ca0ce;
   --color-error: #e5484d;
+  /* Tool KIND families (WO-0040, operator 2026-08-24: "renkler belli olmuyor") — the Ray
+     transcript's label column only; disjoint from the role/state hues by design:
+     exec = a command ran · write = the repo changed · remote = it left the machine.
+     Reads/unknown ride the quiet inkdim track (the noise floor). */
+  --color-exec: #4ac3ce;
+  --color-write: #a371f7;
+  --color-remote: #d879b8;
   --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius-sm: 6px;
@@ -33,6 +43,29 @@
 @layer base {
   :root {
     color-scheme: dark;
+  }
+  /* Açık (WO-0040): the pure-white face. Layer order (base beats theme) plus selector specificity
+     make this the single source of the light theme; dark is the @theme defaults above. Accents
+     darken to hold ~4.5:1 as TEXT on white (#9a6700/#1a7f37/#0969da/#cf222e — the dark values
+     read ~1.9:1 there); the lamps/glows follow via color-mix. color-scheme rides the same selector
+     so native controls and scrollbars never disagree with the tokens. */
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --color-bg: #ffffff;
+    --color-surface: #ffffff;
+    --color-raised: #f2f2f0;
+    --color-hairline: #e3e3e0;
+    --color-ink: #191917;
+    --color-inkdim: #6e6e69;
+    --color-signal: #9a6700;
+    --color-proceed: #1a7f37;
+    --color-info: #0969da;
+    --color-error: #cf222e;
+    /* tool families darken like the accents; exec leans teal — away from info blue, the original
+       sin was "everything blue" */
+    --color-exec: #0f766e;
+    --color-write: #8250df;
+    --color-remote: #bf3989;
   }
   html,
   body {
@@ -58,7 +91,7 @@
     border: 2px solid var(--color-bg);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3a4a63;
+    background: color-mix(in srgb, var(--color-inkdim) 25%, var(--color-hairline));
   }
   ::-webkit-scrollbar-corner {
     background: transparent;
@@ -325,19 +358,19 @@
      WO-0031f D3 ("Sıcak"): the stage light is a tick stronger on the two live-waiting hues (signal
      .14→.18, run .11→.16 — done/error untouched: calm states do not shout). */
   .glow-signal {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(245, 181, 68, 0.18), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, color-mix(in srgb, var(--color-signal) 18%, transparent), transparent 62%),
       var(--color-bg);
   }
   .glow-run {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(108, 160, 206, 0.16), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, color-mix(in srgb, var(--color-info) 16%, transparent), transparent 62%),
       var(--color-bg);
   }
   .glow-done {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(76, 195, 138, 0.1), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, color-mix(in srgb, var(--color-proceed) 10%, transparent), transparent 62%),
       var(--color-bg);
   }
   .glow-error {
-    background: radial-gradient(ellipse 90% 55% at 50% 0%, rgba(229, 72, 77, 0.14), transparent 62%),
+    background: radial-gradient(ellipse 90% 55% at 50% 0%, color-mix(in srgb, var(--color-error) 14%, transparent), transparent 62%),
       var(--color-bg);
   }
 
@@ -437,7 +470,7 @@
   }
   .steprow.owner {
     background: var(--color-raised);
-    border-color: #33445f;
+    border-color: color-mix(in srgb, var(--color-inkdim) 35%, var(--color-hairline));
   }
   .steps.dimmed .steprow:not(.owner):not(.act) {
     background: color-mix(in srgb, var(--color-surface) 65%, var(--color-bg));

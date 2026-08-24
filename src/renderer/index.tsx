@@ -8,6 +8,7 @@ import { App } from '../ui/app/App';
 import { ErrorBoundary } from '../ui/chrome/ErrorBoundary';
 import { TooltipProvider } from '../ui/kit';
 import { LocaleProvider } from '../ui/data/locale';
+import { ThemeProvider } from '../ui/data/theme';
 import { createRunnerPort } from './runner';
 import '../index.css';
 
@@ -16,11 +17,13 @@ if (root) {
   createRoot(root).render(
     <React.StrictMode>
       <LocaleProvider settings={window.docket.settings}>
-        <ErrorBoundary>
-          <TooltipProvider>
-            <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
-          </TooltipProvider>
-        </ErrorBoundary>
+        <ThemeProvider>
+          <ErrorBoundary>
+            <TooltipProvider>
+              <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} />
+            </TooltipProvider>
+          </ErrorBoundary>
+        </ThemeProvider>
       </LocaleProvider>
     </React.StrictMode>,
   );
