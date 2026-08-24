@@ -2,7 +2,7 @@
 id: WO-0040
 title: Tema seçici — Sistem/Açık/Karanlık, ThemeProvider, the settings selector
 workspace: docket
-status: draft
+status: closed
 mode: plan
 tracks:
   - repo: app
@@ -161,3 +161,24 @@ Out of scope:
   reboots once (a crashed prior run's leftover 'light' beats `emulateMedia` — an explicit pick
   needs no listener), and the tail removes the key (the operator stays on Sistem). A tech-debt
   entry at closure: give the suite an isolated userData.
+
+## Closure
+
+Merged PR #46 (`2a6bfa2`), 7 commits: the order + plan, the theme system (ThemeProvider +
+black `@theme` + the one light override + stray-literal color-mix + Electron native fill + the
+ADR-0007 2026-08-24 addendum), the Ray tool-family colors (round 2 — exec/write/remote tokens +
+`TOOL_FAMILY`, the ui-ux-designer spec with computed contrast), the e2e pin round, the closure
+docs, the re-shot ui-shots, and a review-tour fix. Two rounds of operator mockup approval
+(2026-08-24: layered black / pure white / settings-modal selector; then the tool-family colors)
+with in-app screenshots in both themes; final verification was deterministic DOM reads
+(`rgb(74,195,206)` dark / `rgb(15,118,110)` light labels), not vision-model reads. The review
+tour's two should-fixes landed before merge: the Sistem re-sync (a stale `systemDark` painted the
+return-to-Sistem wrong until the next OS flip) and the e2e console collectors now attach before
+the pin reload (the rebooted boot stays inside the zero-errors spec). Live finds en route: no
+E2E userData isolation (TD-044 — a leftover 'light' mirror flipped the suite's palette
+mid-verification), and `emulateMedia` works on this Playwright/Electron pair (no fallback
+needed). Gates: typecheck ×2, 540 tests, build, boundaries, E2E 46/46 green (45 legacy + the new
+theme spec), CI green on every push. ROADMAP theme bullet ticked (the DEAD note reversed);
+TD-044..047 opened.
+
+_Closed 2026-08-24 at 2a6bfa2_
