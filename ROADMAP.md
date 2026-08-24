@@ -315,9 +315,10 @@ WO-0002 routed all copy through `labels.ts`.
   `src/ui/data/labels/` read via `useLabels()`, the runtime en-fallback clause superseded by
   compile-time completeness (`const en: Labels`), a fresh install detects the system language, the
   stored choice wins.
-- [ ] Theme light / dark / system via semantic tokens, preference persisted (ADR-0007) — DEAD by the
-  dark-only ruling (ADR-0012, `src/index.css`); kept visible with this note rather than silently
-  deleted.
+- [x] Theme light / dark / system via semantic tokens, preference persisted (ADR-0007) — delivered
+  as WO-0040 (2026-08-24): Sistem/Açık/Karanlık in Settings, dark re-tuned to layered black, light
+  pure white, renderer-local localStorage per the standing app-settings ruling (ADR-0007's
+  2026-08-24 addendum reverses the 2026-08-21 dark-only note).
 - [ ] Lint rule against hardcoded strings and literal colours in components — WO-0035's share
   (compiler-driven bundle completeness) landed; the grep itself remains open.
 
