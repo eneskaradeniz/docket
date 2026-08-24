@@ -2,7 +2,7 @@
 id: WO-0042
 title: The live transcript's ▾ chip retires when content fits again
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -56,8 +56,12 @@ reason is gone; it must retire.
   et") — `docs/ui-shots/chat-collapse-retired@980.png`
 - ci: typecheck (both) / `npm test` 540/540 / `check:boundaries` / `build` / `test:ui` all specs
   green post-approval
-- review: reviewer agent on the PR diff — no blocking findings
-- closure: ROADMAP ticked; no new tech debt — merged #NN (`sha`)
+- review: reviewer agent on the PR #48 diff — no blocking findings. Dispositions: the shot-ledger
+  note corrected in order.md (only `chat-collapse-retired` ships; `chat-live` regenerates
+  byte-identical); the e2e locator made self-describing (`hasText: 'büyük-dosya'` instead of
+  `nth(1)`) and the suite re-run green; the chip-scope note declined — the ▾ chip is a DOM SIBLING
+  of `[data-chat]`, so page scope is the only available scope and the established idiom.
+- closure: ROADMAP ticked; no new tech debt — merged #48 (`8f2bdeb`)
 
 ## Notes
 
