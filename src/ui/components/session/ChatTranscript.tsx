@@ -32,7 +32,9 @@ import { MarkdownBody } from '../detail/MarkdownBody';
 //   code              — the ONE other volumetric element (CodeBlock: borderless recess).
 //
 // Live behavior (live + compact only): bottom-pin (a user within 48px of the bottom rides along;
-// one who scrolled up is never dragged back — a ▾ chip restores the bottom), and a 400ms proceed
+// one who scrolled up is never dragged back — a ▾ chip restores the bottom), a ▾ chip that retires
+// the moment content shrinks back into full view (a collapsed tool block — no scroll event fires
+// for that, a ResizeObserver on the content column watches the geometry), and a 400ms proceed
 // wash on a TRUE append only (the appended tail GROUP; a resume seed 0→N stays calm). `archived`
 // is static: no pin, no pulse, tool blocks collapsed. The list is capped at the last 800
 // entries (head line says what fell off); windowing is a recorded debt.
@@ -281,6 +283,28 @@ function ChatLog({
 
   const [showJump, setShowJump] = useState(false);
 
+  // The scroll handler covers POSITION changes; a ResizeObserver on the CONTENT column covers the
+  // GEOMETRY changes no scroll event ever reports (operator repro 2026-08-25): collapsing a tool
+  // block above the reading position shrinks scrollHeight without touching scrollTop — the browser
+  // clamps nothing, fires nothing, and the ▾ chip floated over a column already fully visible.
+  // Only the shrink-to-fit transition needs a case: growth rides the pin effect while pinned, and
+  // an unpinned reader already has the chip up.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content || !scrollable) return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < PIN_MARGIN) {
+        pinnedRef.current = true;
+        setShowJump(false);
+      }
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [scrollable]);
+
   const jump = (): void => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -376,7 +400,7 @@ function ChatLog({
         ref={scrollRef}
         onScroll={scrollable ? onScroll : undefined}
         className={cn(
-          'chat flex flex-col overflow-y-auto px-3 py-2.5',
+          'chat overflow-y-auto px-3 py-2.5',
           // The reading variants carry their own terminal-like box; ARCHIVED is the session card's
           // terminal WELL — frameless sides (the card is the frame), a top hairline parting it from
           // the header/summary, tool blocks collapsed (terminal-on-demand, operator 2026-08-22).
@@ -386,34 +410,39 @@ function ChatLog({
           heights,
         )}
       >
-        {head > 0 ? (
-          <div className="text-center font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-inkdim">
-            {UI.chatOlderLines(head)}
-          </div>
-        ) : null}
-        {groups.map((g, i) => {
-          const pulse = i === pulseIndex;
-          // The head line counts as a first child — the rhythm starts right after it.
-          const top = i > 0 || head > 0 ? GROUP_TOP[g.kind] : undefined;
-          switch (g.kind) {
-            case 'turn':
-              return <ChatTurn key={i} className={top} texts={g.texts} role={role} pulse={pulse} />;
-            case 'tool':
-              return <ToolPair key={i} className={top} tool={g.tool} detail={g.detail} result={g.result} pulse={pulse} />;
-            case 'result':
-              return (
-                <ResultRow
-                  key={i}
-                  className={top}
-                  summary={g.orphan ? UI.orphanResult : g.summary}
-                  isError={g.isError}
-                  pulse={pulse}
-                />
-              );
-            case 'sys':
-              return <SysRow key={i} className={top} text={g.text} pulse={pulse} />;
-          }
-        })}
+        {/* The content column — one wrapper so its OWN size is observable (the ResizeObserver above
+            rides it; the scroller's box is capped by max-height and tracks content only while
+            under it). The CSS measure (index.css `.chat-col > *`) addresses its children. */}
+        <div ref={contentRef} className="chat-col flex flex-col">
+          {head > 0 ? (
+            <div className="text-center font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-inkdim">
+              {UI.chatOlderLines(head)}
+            </div>
+          ) : null}
+          {groups.map((g, i) => {
+            const pulse = i === pulseIndex;
+            // The head line counts as a first child — the rhythm starts right after it.
+            const top = i > 0 || head > 0 ? GROUP_TOP[g.kind] : undefined;
+            switch (g.kind) {
+              case 'turn':
+                return <ChatTurn key={i} className={top} texts={g.texts} role={role} pulse={pulse} />;
+              case 'tool':
+                return <ToolPair key={i} className={top} tool={g.tool} detail={g.detail} result={g.result} pulse={pulse} />;
+              case 'result':
+                return (
+                  <ResultRow
+                    key={i}
+                    className={top}
+                    summary={g.orphan ? UI.orphanResult : g.summary}
+                    isError={g.isError}
+                    pulse={pulse}
+                  />
+                );
+              case 'sys':
+                return <SysRow key={i} className={top} text={g.text} pulse={pulse} />;
+            }
+          })}
+        </div>
       </div>
       {showJump ? (
         // 2026-08-23 redesign: a 28px circular icon button — solid raised ground + hairline so it
