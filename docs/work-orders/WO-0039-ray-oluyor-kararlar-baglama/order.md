@@ -2,7 +2,7 @@
 id: WO-0039
 title: Ray öldü — kararlar bağlamına indi (plan karar bandı, panel başlığında süreç denetimi, sözlük)
 workspace: docket
-status: in-progress
+status: closed
 mode: direct
 tracks:
   - repo: app
@@ -456,3 +456,19 @@ Out of scope:
   keeps the degenerate text off the plan surface; a boolean return is a future port widening), and
   the App's one-shot `autoPlanFor` clear holding if the detail LOAD fails (the next entry of that WO
   auto-starts once — a real-but-rare edge, named).
+
+## Closure
+
+Merged PR #45 (`921d386`, 2026-08-24) — the mega-WO (the rail dissolution, operator-approved on the
+mockup) and the five stabilization rounds its live testing drove, in one branch: the overwrite
+incident's guard trio, the durable 'stopped' session fact with every surface deriving from it, the
+re-entry repairs (one-shot auto-plan, the ledger identity merge, the fold-derived Sürdür), the
+clocked transcript timeline, and ADR-0014. The reviewer agent swept the pending diff pre-merge: no
+blockers; the NaN drag announcements, the stale-rail comments, the mockup home, the store unit suite
+(6 tests incl. the CHECK migration the live run had broken), the transactional rebuild, the stamped
+synthesized close and the lean gate message all landed in the same commit. CI green on the PR (check
++ GitGuardian); locally typecheck ×2, 540 vitest, build, boundaries, E2E 45/45 with zero renderer
+console errors. Deliberately not changed, on record in the Notes: the silent void refusal (a future
+port widening) and the one-shot clear's failed-load edge.
+
+_Closed 2026-08-24 at 921d386._
