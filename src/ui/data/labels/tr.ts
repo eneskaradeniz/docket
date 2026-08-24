@@ -491,7 +491,7 @@ export const UI = {
   noSteps: 'Onaylı plan çalışan bir adım listesi içermiyor — mimardan yeniden plan iste.',
   // İş emri silme (WO-0020)
   deleteWo: 'Sil',
-  deleteWoHint: 'Bu iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.',
+  deleteWoHint: 'Bu iş emri kalıcı olarak silinir — iş emri dokümanı, plan, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.',
   deleteWoConfirm: 'Evet, sil',
   cancel: 'Vazgeç',
   stepsAllDone: 'Tüm adımlar tamam',
@@ -784,7 +784,7 @@ export const UI = {
   // Docket'ın yazdığı docs/work-orders dizinleri. Sayılı sonuç satırı diyalogun güvenlik mekanizmasıdır.
   wsDelete: 'Çalışma alanını sil',
   wsDeleteHint: (n: number) => n > 0
-    ? `Bu çalışma alanı ve ${n} iş emri kalıcı olarak silinir — order.md, plan.md, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.`
+    ? `Bu çalışma alanı ve ${n} iş emri kalıcı olarak silinir — iş emri dokümanları, planlar, raporlar ve tüm oturum kayıtları kaldırılır. Geri alınamaz.`
     : 'Bu çalışma alanı kalıcı olarak silinir. Geri alınamaz.',
   wsDeleteConfirm: 'Evet, sil',
   wsDeleteFailed: 'Silinemedi — önce oturumu durdur.',
