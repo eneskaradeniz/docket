@@ -2,7 +2,7 @@
 id: WO-0043
 title: Dead-code cleanup — the residue the restructures left behind
 workspace: docket
-status: review
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -89,10 +89,10 @@ Out of scope:
 - verification: typecheck (both) / `npm test` 530/530 / `check:boundaries` / `build` / `test:ui`
   46 specs + zero renderer console errors green at PR head; 4-shot pixel diff vs HEAD — no layout
   shift (deltas: timestamp clusters + the environment-dependent provider-status line)
-- ci: typecheck (both) / `npm test` / `build` / `check:boundaries` green on the PR (recorded at
-  closure)
-- closure: ROADMAP.md + docs/tech-debt.md updated (TD-006/011/018/037/047 closed, TD-023
-  addendum), merge PR + sha (recorded at closure)
+- ci: `check` green on PR #49 (typecheck both / `npm test` / `build` / `check:boundaries;
+  GitGuardian pass) — 2026-08-25
+- closure: merged #49 (`3b6bfe3`); ROADMAP.md entry checked off, tech-debt closures
+  (TD-006/011/018/037/047) + TD-023 addendum rode the merge commit
 
 ## Stop-and-ask gates
 
