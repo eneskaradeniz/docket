@@ -898,11 +898,30 @@ await spec('live transcript renders as chat: turn bars, tool BLOCKS, code; botto
   assert.ok((await page.locator('[data-code-lang="TS"]').count()) >= 1, 'the code block carries no language header');
   assert.ok((await page.getByRole('button', { name: 'Kodu kopyala' }).count()) >= 1, 'no copy button on the code block');
   // bottom-pin: fill past the column's cap and it rides along; scroll up and it lets go
+  const atBottom = () => page.locator('[data-chat]').first().evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48);
+  // 2026-08-25 (operator repro): a tool block whose long output OVERFLOWS the column, read from
+  // the top (chip up), then collapsed back under the cap — the transcript fits again, so the ▾
+  // chip must retire. It used to float over a fully-visible column: the collapse shrinks
+  // scrollHeight without touching scrollTop — no clamp, no scroll event, stale chip state. The
+  // ResizeObserver on the content column is the fix's witness.
+  await emit({ kind: 'tool_use', callId: 'c2', tool: 'Read', input: { file_path: 'src/büyük-dosya.ts' } });
+  await emit({ kind: 'tool_result', callId: 'c2', summary: 'SATIR '.repeat(600), isError: false });
+  await page.waitForTimeout(300);
+  const readBtn = chat.locator('[data-chat-entry="tool_use"]').nth(1).locator('button');
+  await readBtn.click(); // open the long output → the column overflows
+  await page.waitForTimeout(300);
+  await chat.evaluate((el) => { el.scrollTop = 0; }); // read from the top — the chip shows
+  await page.waitForTimeout(200);
+  assert.ok((await page.locator('[data-chat-jump]').count()) >= 1, 'no jump chip while the long block is open and the reader is up');
+  await readBtn.click(); // collapse → the short transcript fits again
+  await page.waitForTimeout(300);
+  assert.ok(await atBottom(), 'the collapsed transcript is not fully visible');
+  assert.equal(await page.locator('[data-chat-jump]').count(), 0, 'the jump chip stayed over a fully-visible column');
+  await page.screenshot({ path: join(SHOTS, 'chat-collapse-retired@980.png') });
   for (let i = 0; i < 10; i++) {
     await emit({ kind: 'assistant_text', text: `Doldurma satırı ${i} — `.padEnd(220, 'x') });
   }
   await page.waitForTimeout(400);
-  const atBottom = () => page.locator('[data-chat]').first().evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48);
   assert.ok(await atBottom(), 'the column did not pin to the bottom while riding along');
   await page.locator('[data-chat]').first().evaluate((el) => { el.scrollTop = 0; });
   await page.waitForTimeout(200);
