@@ -438,7 +438,7 @@ export const UI = {
   stepBlockedHint: 'scope matches no repo',
   noSteps: 'The approved plan contains no runnable steps — ask the architect for a new plan.',
   deleteWo: 'Delete',
-  deleteWoHint: 'This work order is permanently deleted — order.md, plan.md, reports and all session records are removed. Cannot be undone.',
+  deleteWoHint: 'This work order is permanently deleted — the work order document, the plan, reports and all session records are removed. Cannot be undone.',
   deleteWoConfirm: 'Yes, delete',
   cancel: 'Cancel',
   stepsAllDone: 'All steps done',
@@ -659,7 +659,7 @@ export const UI = {
   createAndPlan: 'Create and request a plan',
   wsDelete: 'Delete the workspace',
   wsDeleteHint: (n: number) => n > 0
-    ? `This workspace and its ${n} work order${n === 1 ? '' : 's'} are permanently deleted — order.md, plan.md, reports and all session records are removed. Cannot be undone.`
+    ? `This workspace and its ${n} work order${n === 1 ? '' : 's'} are permanently deleted — the work order document${n === 1 ? '' : 's'}, the plan${n === 1 ? '' : 's'}, reports and all session records are removed. Cannot be undone.`
     : 'This workspace is permanently deleted. Cannot be undone.',
   wsDeleteConfirm: 'Yes, delete',
   wsDeleteFailed: 'Could not delete — stop the session first.',

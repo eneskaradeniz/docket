@@ -1112,26 +1112,41 @@ export function WorkOrderDetail({
       />
     ) : null;
 
+  // WO-0041 — the detail's entrance: ADR-0012 r7's sibling case. The DOSYA's bands glide in
+  // reading order (strip → decision → instrument → steps → records), the board's 30ms step,
+  // once per mount. A CLOSED work order opens calm (r1 — a record, not a celebration). The
+  // wrappers are deliberately UNKEYED: a reloadDetail re-render must never restart the glide.
+  const entrance = (slot: number) =>
+    phase.kind === 'done'
+      ? {}
+      : { className: 'glide min-w-0', style: { animationDelay: `${slot * 30}ms` } };
+
   return (
     <div className={cn('flex h-full min-h-0 flex-col', turnGlowClass(turn, phase.kind === 'done'))}>
-      <DetailStrip
-        detail={detail}
-        objective={objective}
-        phase={phase}
-        turn={turn}
-        duration={durationText}
-        driveLive={driveLive}
-        onBack={onBack}
-        onDelete={() => setConfirmDelete(true)}
-        permissionRule={permissionRule}
-        onUpdateWorkOrder={onUpdateWorkOrder}
-      />
+      <div {...entrance(0)}>
+        <DetailStrip
+          detail={detail}
+          objective={objective}
+          phase={phase}
+          turn={turn}
+          duration={durationText}
+          driveLive={driveLive}
+          onBack={onBack}
+          onDelete={() => setConfirmDelete(true)}
+          permissionRule={permissionRule}
+          onUpdateWorkOrder={onUpdateWorkOrder}
+        />
+      </div>
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="flex min-w-0 flex-col gap-3.5">
-          {decision}
-          {stepPaneLivesInSpine ? null : instrument}
-          {spine}
-          <RecordStack sections={recordSections} />
+          <div {...entrance(1)}>{decision}</div>
+          {stepPaneLivesInSpine || !instrument ? null : (
+            <div {...entrance(2)}>{instrument}</div>
+          )}
+          {spine ? <div {...entrance(3)}>{spine}</div> : null}
+          <div {...entrance(4)}>
+            <RecordStack sections={recordSections} />
+          </div>
         </div>
       </div>
 
