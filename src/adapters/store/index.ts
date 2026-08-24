@@ -5,11 +5,14 @@
 //
 // Per ADR-0010 the schema encodes ownership (schema.ts): observed tables cache git/forge
 // facts with observed_at and are discardable; owned tables (session, connection) hold
-// Docket's decisions. No document text is stored (getWorkOrderDocs reads fixtures in M2,
-// git in M3). No stage is stored — hydrate sets WorkOrder.stage via core's deriveStage.
+// Docket's decisions. No document text is stored — getWorkOrderDocs reads the authored
+// order.md/plan.md from the working tree (WO-0016; git/forge facts arrive with M3).
+// No stage is stored — hydrate sets WorkOrder.stage via core's deriveStage.
 //
-// Seeded from the fixture constants on first run (empty DB). M3 replaces the seed with
-// live git/forge observation feeding reseedObserved().
+// The workspace rows seed `reseedObserved()` from the fixture constants on first run (empty DB);
+// the work-order fixture constants are core-test contract data — their seed helper lives in
+// store.test.ts (WO-0043 took it out of the production module). M3 replaces the seed with live
+// git/forge observation.
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
@@ -21,7 +24,7 @@ import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, re
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { rid, tid, wid, woid } from '../ids';
-import { workOrders, workspaces } from '../fixtures';
+import { workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
@@ -251,56 +254,6 @@ function seedObserved(db: DatabaseSync): void {
     );
     for (const repo of ws.repos) {
       db.prepare('INSERT INTO workspace_repo (workspace_id, repo_id) VALUES (?, ?)').run(ws.id, repo);
-    }
-  }
-}
-
-// The fixture work orders + their sessions are TEST DATA, not production seed (WO-0015: the board
-// starts empty — the operator creates work orders). Kept here as an explicit helper so the six-state
-// store coverage survives the un-seeding of the production path. Clears observed WO tables + session
-// first so it is safe to call on an already-seeded DB. Production createStore never calls this.
-export function seedFixtureWorkOrders(db: DatabaseSync): void {
-  db.exec('DELETE FROM session');
-  for (const t of ['track_depends_on', 'track', 'work_order_source', 'work_order']) db.exec(`DELETE FROM ${t}`);
-  for (const wo of workOrders) {
-    db.prepare(
-      `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
-       gate_closure_docs_sha, cost_tokens_in, cost_tokens_out, cost_usd, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(
-      wo.id, wo.workspace, wo.title, wo.mode,
-      wo.gateInputs.planApproved ? 1 : 0,
-      wo.gateInputs.verifierReport?.resolvablePointers ? 1 : null,
-      wo.gateInputs.closureDocsSha ?? null,
-      0, 0, 0, SEED_OBSERVED_AT, // work_order.cost_* inert — derived from session rows at hydrate (TD-023)
-    );
-    wo.sources.forEach((s, idx) => {
-      db.prepare('INSERT INTO work_order_source (work_order_id, idx, kind, label, ref) VALUES (?, ?, ?, ?, ?)').run(
-        wo.id, idx, s.kind, s.label, s.ref,
-      );
-    });
-    for (const t of wo.tracks) {
-      const ciBlob =
-        t.ci.kind === 'exempt'
-          ? JSON.stringify({ reason: t.ci.reason })
-          : JSON.stringify({ state: t.ci.state, checks: t.ci.checks });
-      db.prepare(
-        `INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      ).run(t.id, wo.id, t.repo, t.pr?.url ?? null, t.pr?.headSha ?? null, t.ci.kind, ciBlob, t.merge?.at ?? null, SEED_OBSERVED_AT);
-      for (const dep of t.dependsOn) {
-        db.prepare('INSERT INTO track_depends_on (track_id, depends_on_track_id) VALUES (?, ?)').run(t.id, dep);
-      }
-    }
-  }
-  for (const wo of workOrders) {
-    for (const s of wo.sessions) {
-      db.prepare(
-        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(
-        wo.id, s.role, s.scope ?? null, s.status, JSON.stringify(s.transcript),
-        s.status === 'stopped_asking' ? JSON.stringify(s.stopAndAsk) : null,
-        s.cost?.tokensIn ?? null, s.cost?.tokensOut ?? null, s.cost?.usd ?? null,
-      );
     }
   }
 }

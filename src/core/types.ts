@@ -210,7 +210,6 @@ export type ActionIntent =
   | 'merge_track'
   | 'request_verification'
   | 'audit'
-  | 'update_docs'
   | 'close';
 
 export type AbsentReason =
@@ -218,7 +217,6 @@ export type AbsentReason =
   | 'docs_not_updated'
   | 'depends_on_open'
   | 'verifier_report_missing'
-  | 'pointers_unresolved'
   | 'step_not_resolved';
 
 export type PrimaryAction =

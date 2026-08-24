@@ -74,7 +74,6 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
   merge_track: 'Merge repo',
   request_verification: 'Request verification',
   audit: 'Run review',
-  update_docs: 'Update docs',
   close: 'Close the work order',
 };
 
@@ -84,7 +83,6 @@ export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
   depends_on_open: 'A dependency repo has not merged',
   verifier_report_missing: 'No verifier report yet',
   step_not_resolved: 'A step has an open revise decision — Proceed or re-run',
-  pointers_unresolved: 'Evidence pointers do not resolve at the head sha',
 };
 
 export function cardReasonText(r: CardReason): string {
@@ -329,16 +327,6 @@ export function formatDateTime(iso: string): string {
   return `${d.getDate()} ${MONTHS_EN[d.getMonth()]} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function askingRole(role: SessionRole): string {
-  return ASKING_ROLE[role];
-}
-
-const ASKING_ROLE: Record<SessionRole, string> = {
-  implementer: 'The implementer has a request.',
-  architect: 'The architect has a request.',
-  verifier: 'The verifier has a request.',
-};
-
 // The English UI object — mirrors tr's key-for-key (Labels enforces it). Endonyms stay endonyms:
 // the language options are 'Türkçe'/'English' in BOTH bundles.
 export const UI = {
@@ -360,7 +348,6 @@ export const UI = {
   planDoc: 'plan.md',
   loading: 'Loading…',
   loadError: 'Work orders failed to load.',
-  closedDrawer: 'Closed',
   permissionRequested: 'Permission requested',
   startSession: 'Start session',
   resumeSession: 'Resume',
@@ -386,7 +373,6 @@ export const UI = {
   wsRepoAddManual: 'Add',
   wsRepoPick: 'Folder',
   wsRepoPlaceholder: 'local repo path',
-  wsDecisionStore: 'Decision store',
   wsErrName: 'Name is required.',
   wsErrRepo: 'Add at least one valid repo path (e.g. /Users/.../project).',
   wsRepoEditAria: 'Edit repo path',
@@ -434,7 +420,6 @@ export const UI = {
   inviteFirstWo: "Let's open your first work order",
   stepsUnit: 'steps',
   stepReportMissing: '(no report yet)',
-  stepScopeAll: 'all',
   stepBlockedHint: 'scope matches no repo',
   noSteps: 'The approved plan contains no runnable steps — ask the architect for a new plan.',
   deleteWo: 'Delete',
@@ -463,7 +448,6 @@ export const UI = {
   overrideVerdictBtn: 'Proceed (override)',
   overrideVerdictHint: "Overrides the architect's 'revise' verdict with proceed — the architect's original text stays in the verdict file.",
   allowAll: 'Allow all',
-  askingRole: (role: SessionRole) => ASKING_ROLE[role],
   formatDuration: (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
     const sec = Math.floor(ms / 1000);
@@ -507,18 +491,15 @@ export const UI = {
   dialogCloseAria: 'close',
   removeAria: 'remove',
   // WO-0037 — guarded strip gate (ADR-0001 2026-08-22 addendum): dimmed in place, tooltip names
-  // the unblocking move; the standing reason line died (the substrip already says Working).
+  // the unblocking move; the standing reason line died (the header band already says Working).
   stripGateTooltip: 'Editing is closed while a session runs — it opens once you stop the session.',
   stripDeleteGateTooltip: 'Cannot be deleted while a session runs — stop the session first.',
   deleteWoFailed: 'Could not delete — repo write error.',
-  secFlow: 'Flow',
-  secRecord: 'Record',
   reportTitle: (idx: number): string => `Report · Step ${idx}`,
   repOpen: '▸ report',
   repClose: '▾ report',
   stepQueued: 'queued',
   stepRunningShort: 'running',
-  stepLiveMeta: (duration: string, cost: string): string => `running · ⏱ ${duration} · ${cost}`,
   streamOpened: 'Session opened — waiting for output',
   // WO-0037 — the chat transcript surface (mirrors tr's block).
   chatAria: 'Session stream',
@@ -549,7 +530,6 @@ export const UI = {
   sessionSummaryProceed: 'Architect: proceed — step approved',
   sessionSummaryRevise: 'Architect: revise — re-run requested',
   secSources: 'Sources',
-  secTracks: 'Repos',
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
     detail?: string,
@@ -599,7 +579,6 @@ export const UI = {
   editRoleAria: (role: SessionRole) => `Choose role · current: ${ROLE_LABELS[role]}`,
   editRoleMenuAria: 'Choose role',
   stepRef: (idx: number) => `step ${idx}`,
-  stepSegments: (idx: number, total: number) => `step ${idx}/${total}`,
   // Vocabulary spine: 'Session log' — the operator deferred to this draft at the WO-0035 gate
   // (2026-08-21); one word here flips it to 'Transcript' if the live app argues otherwise.
   auditTitle: 'Session log',
@@ -615,8 +594,6 @@ export const UI = {
   auditNameStep: (idx: number, aim?: string) => (aim ? `Step ${idx} · ${aim}` : `Step ${idx}`),
   auditNameReview: (idx: number) => `Review ${idx}`,
   auditNameUnscoped: 'Unscoped',
-  auditShowTranscript: '▸ log',
-  auditHideTranscript: '▾ log',
   auditNoTranscript: 'No transcript record.',
   stepCostMeta: (duration: string, cost: string) => `done · ⏱ ${duration} · ${cost}`,
   diffPeek: '▸ diff',
@@ -725,7 +702,6 @@ const en: Labels = {
   woIdLabel,
   eventDetailText,
   formatDateTime,
-  askingRole,
   phaseLabelText,
 };
 export default en;

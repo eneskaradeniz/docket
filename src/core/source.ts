@@ -60,7 +60,7 @@ export interface WorkOrderSource {
   getWorkspaces(): Promise<Workspace[]>;
   getWorkOrders(): Promise<WorkOrder[]>;
   getWorkOrder(id: WorkOrderId): Promise<WorkOrder | undefined>;
-  // Document text is NOT stored (ADR-0010) — served from fixtures in M2, git in M3.
+  // Document text is NOT stored (ADR-0010) — read from the working tree (WO-0016; git in M3).
   getWorkOrderDocs(id: WorkOrderId): Promise<{ order: string; plan: string }>;
 
   // Workspace management (WO-0014). The store brands ids + resolves the GitHub remote (best-effort).
