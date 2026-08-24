@@ -77,7 +77,6 @@ export const ACTION_LABELS: Record<ActionIntent, string> = {
 // RAIL. WO-0033 already applied the ADR-0012 r4 de-jargon the old wording deferred.
   request_verification: 'Doğrulama iste',
   audit: 'Denetim çalıştır',
-  update_docs: 'Belgeleri güncelle',
   close: 'İş emrini kapat',
 };
 
@@ -87,7 +86,6 @@ export const ABSENT_REASON_LABELS: Record<AbsentReason, string> = {
   depends_on_open: 'Bağımlı depo merge olmadı',
   verifier_report_missing: 'Henüz doğrulayıcı raporu yok',
   step_not_resolved: 'Bir adımda revize kararı açık — Devam et ya da yeniden çalıştır',
-  pointers_unresolved: 'Kanıt işaretçileri head sha’da çözülmüyor',
 };
 
 export function cardReasonText(r: CardReason): string {
@@ -128,7 +126,7 @@ export const CARD_ACTION_AREA: Record<CardActionKind, string> = {
 export function cardActionText(a: CardAction): string {
   if (a.kind === 'link') return ACTION_LABELS[a.intent];
   // WO-0031e tur-3: the closure-stage card names its state — Kapatılabilir (canClose holds; the
-  // detail's Kapat card is live). ACTION_LABELS.update_docs stays for the rail's ActionCard.
+  // detail's Kapat card is live).
   return { permission: 'İzin ver', plan: 'Planı onayla', closure: 'Kapatılabilir' }[a.kind];
 }
 
@@ -358,18 +356,6 @@ export function formatDateTime(iso: string): string {
   return `${d.getDate()} ${MONTHS_TR[d.getMonth()]} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// Rol-farkında byline (WO-0031b): 'mimar'/'uygulayıcı'/'doğrulayıcı' — hardcode değil.
-export function askingRole(role: SessionRole): string {
-  return ASKING_ROLE[role];
-}
-
-// Rol-farkında izin satırı (WO-0027 / Bulgu 8) — ekTürkçe ekler sabit tablada, kural değil.
-const ASKING_ROLE: Record<SessionRole, string> = {
-  implementer: 'Uygulayıcının bir isteği var.',
-  architect: 'Mimarın bir isteği var.',
-  verifier: 'Doğrulayıcının bir isteği var.',
-};
-
 // Chrome dizgeleri — ayrıca veriye yönlendirilir, böylece bileşenlerde literal metin yoktur.
 // WO-0035: as const BİLİNÇLİ olarak yok — literal özellik tipleri en.ts'i atanamaz yapardı; Labels
 // bu objeden türer (string + doğal fonksiyon imzaları).
@@ -393,7 +379,6 @@ export const UI = {
   planDoc: 'plan.md',
   loading: 'Yükleniyor…',
   loadError: 'İş emirleri yüklenemedi.',
-  closedDrawer: 'Kapalı',
   // Canlı oturum bölmesi (WO-0008)
   permissionRequested: 'İzin istendi',
   startSession: 'Oturumu başlat',
@@ -425,7 +410,6 @@ export const UI = {
   wsRepoAddManual: 'Ekle',
   wsRepoPick: 'Klasör',
   wsRepoPlaceholder: 'yerel depo yolu',
-  wsDecisionStore: 'Karar deposu',
   wsErrName: 'Ad gerekli.',
   wsErrRepo: 'En az bir geçerli depo yolu ekle (örn. /Users/.../proje).',
   // WO-0033 — Defter satır dili: satır eylemleri, bekçi tooltip'leri, alan-altı hata satırları.
@@ -486,7 +470,6 @@ export const UI = {
   // the spine carries no "Plan" header (the Akış count does) and the report header is reportTitle(idx).
   stepsUnit: 'adım',
   stepReportMissing: '(rapor henüz yok)',
-  stepScopeAll: 'hepsi',
   stepBlockedHint: 'kapsam bir depoyla eşleşmiyor',
   noSteps: 'Onaylı plan çalışan bir adım listesi içermiyor — mimardan yeniden plan iste.',
   // İş emri silme (WO-0020)
@@ -520,8 +503,6 @@ export const UI = {
   overrideVerdictBtn: 'Devam et (geçersiz kıl)',
   overrideVerdictHint: "Mimarın 'revize' kararını geçersiz kılıp proceed yapar — mimarın özgün metni verdict dosyasında kalır.",
   allowAll: 'Tümüne izin ver',
-  // Rol-farkında askı satırı (Bulgu 8): 'Mimarın bir isteği var' sabitti; isteyen rol hangisiyse o.
-  askingRole: (role: SessionRole) => ASKING_ROLE[role],
   // Süre (İstek 7)
   formatDuration: (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
@@ -554,7 +535,7 @@ export const UI = {
   woPhaseClosing: 'Kapanış — belgeleri güncelle',
   woPhaseDone: 'Tamamlandı',
   // ===== Kontrol Konsolu v2 (WO-0031c / v4 mockup) =====
-  // Sıra durumu (deriveTurnState çıktısı) — substrip satırı. Kısa metin kuralı (operatör): çalışan
+  // Sıra durumu (deriveTurnState çıktısı) — the header band's turn line. Kısa metin kuralı (operatör): çalışan
   // durumda doldurma güvence cümlesi YOK — yalnız "Çalışıyor" + canlı satır; bilgi taşıyan satırlar
   // (maliyet donması gibi) kalır.
   turnYours: 'Sıra sende',
@@ -581,22 +562,17 @@ export const UI = {
   // WO-0037 — the strip gate joined the guarded idiom (ADR-0001 2026-08-22 addendum): while a drive
   // spends (and on a closed WO) the pencil/trash render in place, dimmed, handler-less, pointer
   // events KEPT so the tooltip opens; the tooltip names the unblocking move. The standing "önce
-  // oturumu durdur" line died — the substrip already says Çalışıyor (the cause is on screen).
+  // oturumu durdur" line died — the header band already says Çalışıyor (the cause is on screen).
   stripGateTooltip: 'Oturum çalışırken düzen kapalı — Durdur ile bitirince açılır.',
   stripDeleteGateTooltip: 'Oturum çalışırken silinmez — Durdur ile bitirince açılır.',
   // TD-038.4 — the Sil dialog's error line (a failed delete deletes nothing; the dialog stays open).
   deleteWoFailed: 'Silinemedi — depo yazma hatası.',
-  // WO-0031f v6 — the two DETAY surfaces. Akış is the body itself (decision cards + the step spine);
-  // Kayıt is one drawer (kanıt chips + belgeler + döküm). The counts ride the tab (S1-C shrunk).
-  secFlow: 'Akış',
-  secRecord: 'Kayıt',
   // WO-0031f v6 §01 — the spine's row metas + the report under its own row.
   reportTitle: (idx: number): string => `Rapor · Adım ${idx}`,
   repOpen: '▸ rapor',
   repClose: '▾ rapor',
   stepQueued: 'sırada',
   stepRunningShort: 'çalışıyor',
-  stepLiveMeta: (duration: string, cost: string): string => `çalışıyor · ⏱ ${duration} · ${cost}`,
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
   streamOpened: 'Oturum açıldı — çıktı bekleniyor',
@@ -652,7 +628,6 @@ export const UI = {
   sessionSummaryProceed: 'Mimar: proceed — adım onaylandı',
   sessionSummaryRevise: 'Mimar: revise — yeniden çalışma istendi',
   secSources: 'Kaynaklar',
-  secTracks: 'Depolar',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
@@ -710,7 +685,6 @@ export const UI = {
   editRoleAria: (role: SessionRole) => `Rol seç · şu an: ${ROLE_LABELS[role]}`,
   editRoleMenuAria: 'Rol seç',
   stepRef: (idx: number) => `adım ${idx}`,
-  stepSegments: (idx: number, total: number) => `adım ${idx}/${total}`,
   // Denetim (oturum dökümü tablosu).
   auditTitle: 'Oturum dökümü',
   auditCostNone: '—',
@@ -725,10 +699,6 @@ export const UI = {
   auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
   auditNameUnscoped: 'Bağımsız',
-  // WO-0031e tur-3 — the per-row transcript show/hide (the diffPeek ▸/▾ idiom; "döküm" echoes
-  // auditTitle). Rendered only when the session HAS a transcript — absent, never disabled.
-  auditShowTranscript: '▸ döküm',
-  auditHideTranscript: '▾ döküm',
   // 2026-08-23 (döküm kaybı): the pre-checkpoint rows' honest line — the card opens, the record
   // itself never existed. New sessions checkpoint every tool result and are never empty.
   auditNoTranscript: 'Döküm kaydı yok.',
@@ -853,7 +823,6 @@ const tr = {
   woIdLabel,
   eventDetailText,
   formatDateTime,
-  askingRole,
   phaseLabelText,
 };
 export type Labels = typeof tr;

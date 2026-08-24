@@ -135,7 +135,5 @@ export const OBSERVED_TABLES = [
   'workspace',
 ] as const;
 
-export const OWNED_TABLES = ['session', 'connection', 'wo_event'] as const;
-
 // Synthetic, for the fixture-era seed. M3 writes the real observation time.
 export const SEED_OBSERVED_AT = '2026-08-05T00:00:00Z';

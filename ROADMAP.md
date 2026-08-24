@@ -6,7 +6,8 @@ Updating this file is a closure gate. A work order is not closed until its entry
 > evidence-gated loop. This roadmap is being reordered toward that spec (2026-08-06): workspace +
 > repo management → work-order creation with context → plan-driven steps + architect review loop →
 > real forge (gh) for PR/CI/merge. The approved UI direction (warm-dark "evidence-ticket" design,
-> Turkish) lives in `design-mock/`.
+> Turkish) has lived in the real renderer since WO-0013 (the `design-mock/` staging dir was deleted
+> by WO-0043).
 
 ## M0 — Probe the ground
 
@@ -304,6 +305,11 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 - [ ] PR / head sha / check-run ingestion
 - [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
 - [ ] Gate engine: transitions absent, not disabled, when evidence is missing
+- [ ] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
+      the operator-commits ruling (the decision-store adapter's design note) — needs an ADR and a
+      fence/risky review (commit/PR are writes)
+- [ ] **Operator git console** — the diff-peek idiom grown into a work-order Changes surface
+      (repo-jailed) with one-click commit / PR / merge
 
 ## M3.5 — Shell foundations
 
@@ -321,6 +327,10 @@ WO-0002 routed all copy through `labels.ts`.
   2026-08-24 addendum reverses the 2026-08-21 dark-only note).
 - [ ] Lint rule against hardcoded strings and literal colours in components — WO-0035's share
   (compiler-driven bundle completeness) landed; the grep itself remains open.
+- [ ] **Prompt overrides** — the role/plan prompt templates (architect / implementer / verifier /
+  review, today compile-time constants in `src/core/order-md.ts`) editable in Settings: the
+  AppSettings port → `app_setting` rows → IPC → a modal section; prompt assembly falls back to
+  the built-ins when an override is absent.
 
 ## M4 — Second workspace
 
@@ -343,9 +353,13 @@ gate model, after the board and the detail view.
 - [x] WO-0039 — Ray öldü, kararlar bağlamına indi: the decision band under the plan rows, Düzenle in the section heading, DriveControls on the live pane's header, the EnterMark ⏎ badge, Turkish step aims — plus the stabilization round (2026-08-23→24): the overwrite incident's guard trio (store parse-guard + the resume-after-stop prompt rule + the planOnTable question-card gate), the "Plan submitted." sys-line classifier, an intentional Durdur ending STOPPED via the `interrupted` event (never the fail card), and ADR-0014 (one adapter per vendor over a machine-readable mode; terminal scraping rejected) — merged #45 (`921d386`)
 - [x] WO-0041 — silme metni + detayın girişi: the delete confirmations speak user terms ("iş emri dokümanı, plan, raporlar ve tüm oturum kayıtları" — no order.md/plan.md), and the detail opens as the DOSYA's own banded cascade (strip → karar → enstrüman → adımlar → kayıtlar, the board's `.glide` reused verbatim — no new motion vocabulary — and a CLOSED order opens calm per r1) — merged #47 (`1af3983`)
 - [x] WO-0042 — canlı döküm ▾ oku: a collapsed tool block that leaves the column fully visible retires the jump chip and re-arms the bottom-pin — a ResizeObserver on the content column (geometry, not scroll events; the collapse fires none), the measure rule moved to `.chat-col > *` — merged #48 (`8f2bdeb`)
+- [ ] WO-0043 — dead-code cleanup: the residue the restructures left behind (kit Tabs/ScrollArea + the two Radix deps, MarkdownDoc, the docs fixture, the SADE simplePhase cluster, TD-006's enum variants, 10 dead label keys + the `askingRole` family, dead CSS blocks, `shot.mjs`, `design-mock/`, the Google Fonts link; `seedFixtureWorkOrders` relocated test-side) — deletions only, zero behavior change (PR pending)
 - [ ] Recently closed, with closing sha
 
 ## Later
 
 - Packaging and distribution
 - Open source release: docs, workspace.yaml authoring, contribution guide
+- **Customization & freedom pass** — Docket stays fully user-owned: user-definable roles/aims
+  (PRODUCT.md's open question — custom aims defining their own write-scope/fence), every knob
+  Docket itself controls (prompts, rules, vocabulary) surfaced as user data, not constants

@@ -4,9 +4,9 @@ import rehypeHighlight from 'rehype-highlight';
 import { cn } from '../../kit';
 import { CodeBlock } from './CodeBlock';
 
-// The shared markdown body styling (inline code/h1/h2/li/p + GFM tables). Factored out of MarkdownDoc so the
-// plan-ready card + step reports embed the same rendering without a double border (MarkdownDoc wraps this in
-// its own bordered <section>, which the plan card must not nest). remark-gfm adds tables/strikethrough/
+// The shared markdown body styling (inline code/h1/h2/li/p + GFM tables) — the plan-ready card and
+// step reports embed the same rendering bare, with no wrapping bordered section of their own.
+// remark-gfm adds tables/strikethrough/
 // autolink — verifier reports use markdown tables. WO-0037: fenced code renders through CodeBlock (the
 // `pre` override — the single recessed volume + copy + rehype-highlight, detect: false so only fence-tagged
 // blocks paint; unknown languages pass through, never throw); the wrapper's pre rules moved there with it —

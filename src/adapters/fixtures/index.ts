@@ -1,9 +1,7 @@
-// Fixture data — the seed for the SQLite store (WO-0009) and the source for core tests.
-// The createFixtureSource port impl is gone: the SQLite store (src/adapters/store) is the
-// data source now, seeded from these constants.
-import { workOrderDocs } from './docs';
+// Fixture data — workspaces seed the store's reseed helper (WO-0009); the work-order constants
+// are the contract data for core tests (derive.test.ts reads them directly).
 import { workOrderById, workOrders } from './work-orders';
 import { workspaces } from './workspaces';
 
 // Re-exported so the store seed and core tests share one definition.
-export { workOrderDocs, workOrderById, workOrders, workspaces };
+export { workOrderById, workOrders, workspaces };
