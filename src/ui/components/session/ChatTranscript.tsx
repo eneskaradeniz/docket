@@ -46,6 +46,26 @@ const ROLE_BAR: Record<SessionRole, string> = {
   verifier: 'before:bg-proceed',
 };
 
+/** Tool FAMILY — the label column's hue answers "what kind of thing" (operator 2026-08-24:
+ *  "renkler belli olmuyor"). exec = a command ran · write = the repo changed · remote = it left
+ *  the machine; reads/search/unknown ride the quiet inkdim track (the noise floor — coloring the
+ *  majority rows would BE the rainbow). Kind, state and role stay three disjoint hue sets. */
+const TOOL_FAMILY: Record<string, string> = {
+  Bash: 'text-exec',
+  Write: 'text-write',
+  Edit: 'text-write',
+  MultiEdit: 'text-write',
+  NotebookEdit: 'text-write',
+  NotebookEditNew: 'text-write',
+  Read: 'text-inkdim',
+  Grep: 'text-inkdim',
+  Glob: 'text-inkdim',
+  WebFetch: 'text-remote',
+  WebSearch: 'text-remote',
+  Task: 'text-remote',
+  ExitPlanMode: 'text-inkdim',
+};
+
 /** One rendered group — the grouping IS the design: consecutive assistant entries share a turn,
  *  and a tool_result merges into the call it answers (the pair is one instrument block). */
 type ChatGroup =
@@ -129,8 +149,8 @@ const ToolPair = memo(function ToolPair({
           start it at different offsets), and the closed row is a SINGLE clamped line. Open: the
           full command still wraps in the detail cell (the long form, 2026-08-22 ruling). */}
       <span className="grid min-w-0 flex-1 grid-cols-[12px_7rem_12px_1fr] items-center gap-1.5">
-        <span className="shrink-0 text-[10px] text-info" aria-hidden="true">{GUTTER_TOOL}</span>
-        <span className="min-w-0 truncate font-medium text-info">{toolLabel(tool)}</span>
+        <span className="shrink-0 text-[10px] text-inkdim" aria-hidden="true">{GUTTER_TOOL}</span>
+        <span className={cn('min-w-0 truncate font-medium', TOOL_FAMILY[tool] ?? 'text-inkdim')}>{toolLabel(tool)}</span>
         <span className="shrink-0 text-inkdim" aria-hidden="true">{detail || !knownTool ? '—' : ''}</span>
         <span className={cn('min-w-0 text-ink', open ? 'whitespace-normal break-words' : 'truncate')}>
           {!knownTool ? tool + (detail ? ` · ${detail}` : '') : detail}
