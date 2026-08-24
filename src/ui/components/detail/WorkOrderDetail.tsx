@@ -4,22 +4,23 @@ import { initialSessionState, seedLiveState, summarizeToolInput } from '../../..
 import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
 import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
-import { applyStepEdits, parsePlanSteps } from '../../../core/plan-steps';
+import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import { useLabels } from '../../data/locale';
 import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
+import { EnterMark } from '../EnterMark';
 import { ActionCard } from './ActionCard';
-import { ActionRail, type RailAction } from './ActionRail';
 import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
 import { EvidencePanel } from './EvidencePanel';
 import { PlanSection } from './PlanSection';
+import type { LiveSessionRow } from './SessionCards';
 import { StepList } from './StepList';
 import { useDetailKeys } from './useDetailKeys';
 import { VerdictCard } from './VerdictCard';
-import type { LampTone } from '../session/pane-chrome';
+import { DriveControls, type DriveState } from '../session/DriveControls';
 import { SessionPane } from '../session/SessionPane';
 import { StepPane } from '../session/StepPane';
 import { ReviewPane } from '../session/ReviewPane';
@@ -43,16 +44,18 @@ function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
   }
 }
 
-// The console CONTROLLER (WO-0031c / v4 → WO-0038 DOSYA). The spine is the HEADER BAND → the ONE
-// scroll → the rail (ADR-0013); the content of every row is CONTENT-AWARE (derived from the phase +
-// the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the runIdx/reviewIdx/
-// verdictFor effects live verbatim below); what moved over the years is chrome: cost/duration/status
-// to the band (ONE ticker), stop/resume/plan-approval actions to the rail, ask cards pinned above
+// The console CONTROLLER (WO-0031c / v4 → WO-0038 DOSYA → WO-0039 rail-free). The spine is the
+// HEADER BAND → the ONE scroll (ADR-0013); the content of every row is CONTENT-AWARE (derived from
+// the phase + the live drive fold). All sequencing logic is unchanged from WO-0020..0030 (the
+// runIdx/reviewIdx/verdictFor effects live verbatim below); what moved over the years is chrome:
+// cost/duration/status to the band (ONE ticker), then WO-0039 dissolved the bottom rail — decisions
+// into the flow (the plan section's decision band + heading Düzenle, the empty-state card, the fail
+// card's retry), process control into the live pane headers (DriveControls), ask cards pinned above
 // the instrument.
 //
 // c2 additions: the permission rule surfaces (badge/ask-card lift), pre-approval plan EDITING with the
-// "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the rail's
-// primary, permission decisions into the timeline, and the Denetim surfaces.
+// "düzenlenmiş onay" counter, the Durdur wind-down + 5s Zorla kes, the step-fail card, ⏎ on the ONE
+// derived primary, permission decisions into the timeline, and the Denetim surfaces.
 // WO-0031d: Düzenle/Sil/Kapat confirmations are kit Dialogs (screen intact); the strip's order.md
 // writers stand down while a drive is live; closure renders the results card with the one-shot seal.
 export function WorkOrderDetail({
@@ -61,6 +64,9 @@ export function WorkOrderDetail({
   permissionRule,
   onBack,
   onApprovePlan,
+  onSavePlanDraft,
+  onGetOriginalPlan,
+  onRestoreOriginalPlan,
   onUpdateWorkOrder,
   onRecordPermissionDecision,
   onGetStepReport,
@@ -77,6 +83,9 @@ export function WorkOrderDetail({
   permissionRule: PermissionRule;
   onBack: () => void;
   onApprovePlan: (planText: string, opts?: { editedCount?: number }) => Promise<void>;
+  onSavePlanDraft: (planText: string) => Promise<void>;
+  onGetOriginalPlan: () => Promise<string | null>;
+  onRestoreOriginalPlan: () => Promise<void>;
   onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
   onRecordPermissionDecision: (input: { allowed: boolean; tool: string; target: string }) => Promise<void>;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
@@ -88,11 +97,11 @@ export function WorkOrderDetail({
   onDelete: () => Promise<void>;
   autoRequestPlan?: boolean;
 }) {
-  const { PROVIDER_ERROR_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
+  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
   // and when it completes the next pending step runs automatically — the operator does NOT click each step
   // (review_mode gates = autonomous between steps; the operator engages at plan approval, revisions, merge).
-  // An 'active' step at restart offers "Sürdür" (the rail) instead; a 'done' step whose review was interrupted
+  // An 'active' step at restart offers "Sürdür" (DriveControls) instead; a 'done' step whose review was interrupted
   // (no verdict yet) resumes the review before any pending step runs (WO-0023 / P1-3).
   const [runIdx, setRunIdx] = useState<number | undefined>(
     () =>
@@ -148,7 +157,10 @@ export function WorkOrderDetail({
   const [stopped, setStopped] = useState(false);
   // Pre-approval plan editing (c2): editSteps mirrors the parsed plan; editCount is the honest diff.
   const [editOpen, setEditOpen] = useState(false);
-  const [editSteps, setEditSteps] = useState<StepSpec[]>([]);
+  // The editor's stage rows carry a STABLE uid (2026-08-23): drag keys by position made the drop
+  // remount rows — every transform reset at once (the "animation resets" jank). The uid rides
+  // reorders; applyStepEdits serializes role/aim/scope explicitly, so it never reaches the fence.
+  const [editSteps, setEditSteps] = useState<(StepSpec & { uid: string })[]>([]);
   // "Bu iş emri için hep otomatik" in flight.
   const [liftingRule, setLiftingRule] = useState(false);
   const handleClose = async (): Promise<void> => {
@@ -200,7 +212,7 @@ export function WorkOrderDetail({
   }, [phase.kind]);
 
   // --- The controller's read-only subscription to the ACTIVE drive (the panes subscribe too; drives are
-  //     only ever started by the panes' auto-drive effects or the rail's actions below). The seed mirrors
+  //     only ever started by the panes' auto-drive effects or the in-flow actions below). The seed mirrors
   //     the panes' seeding (F14) so a remount after restart re-seeds the fold — now including persisted
   //     unanswered asks (WO-0027 / Bulgu 9), so a restart re-surfaces the ask cards.
   const store = useDriveStore();
@@ -218,7 +230,7 @@ export function WorkOrderDetail({
           ? detail.sessions.find((s) => s.stepIdx === runIdx && s.providerSessionId)
           : detail.sessions.find((s) => s.role === 'architect' && s.providerSessionId);
     const asks = found?.status === 'stopped_asking' ? (found.stopAndAsk.asks ?? []) : [];
-    return reviewIdx !== undefined ? initialSessionState : seedLiveState(found ?? { transcript: [] }, asks);
+    return reviewIdx !== undefined ? initialSessionState : seedLiveState(found ?? { status: 'none', transcript: [] }, asks);
   }, [reviewIdx, planStage, hasSteps, runIdx, detail.sessions]);
   const state = useDrive(store, driveKey, () => seedState);
   const running = store.get(driveKey)?.running ?? false;
@@ -232,11 +244,26 @@ export function WorkOrderDetail({
 
   // A live plan_ready takes precedence; otherwise fall back to a plan persisted to plan.md (restart recovery,
   // WO-0020/TD-025) so the operator can still approve after the live state was lost.
-  const livePlan = state.status === 'plan_ready' ? state.pendingPlan : undefined;
-  const effectivePlan = livePlan ?? (planStage ? docs.plan || undefined : undefined);
+  // 2026-08-23 (canlı panel revizyonu, §6): the plan surface is gated on SESSION END, not on the
+  // plan_ready fold. S2 (plan delivered, drive winding down ≤5s) shows NO plan — the pane's SADE
+  // line carries "Plan hazır — oturum kapanıyor" and Durdur stays armed; S3 (turn_complete, or a
+  // Durdur mid-grace — "ended" is the gate, not "completed") flips the stage on reload and the
+  // plan rows + decision row land in ONE transition. Without this, a re-proposal's STALE
+  // docs.plan leaked through during the wind-down (the fold's fresh plan hid it; the buttons raced).
+  const planClosing = running && state.status === 'plan_ready';
+  // WO-0039/C (mockup 04, the closed hole): an objection RE-PLAN (a live drive while a plan is on
+  // the table, fold not plan_ready) renders the instrument — the run was watchable NOWHERE before
+  // (the plan hid the pane; the ledger was blind). Only the plan_ready wind-down keeps the slim
+  // strip (WO-0038's no-instrument-at-approval ruling, preserved for the deliberation it made).
+  const replanning = planStage && running && state.status !== 'plan_ready';
+  const livePlan = !planClosing && state.status === 'plan_ready' ? state.pendingPlan : undefined;
+  const effectivePlan = planClosing ? undefined : livePlan ?? (planStage ? docs.plan || undefined : undefined);
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const lastAssistant = [...state.entries].reverse().find((e) => e.speaker === 'assistant');
-  const showQuestion = planStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
+  // WO-0039 stabilization (2026-08-23): a plan on DISK closes the question card at the controller
+  // too (SessionPane's twin gate) — the overwrite incident's re-entry resume answered a plan that
+  // already existed. A plan on the table IS the answer.
+  const showQuestion = planStage && state.status === 'done' && !state.pendingPlan && !docs.plan && !!lastAssistant;
 
   const turn = deriveTurnState({
     phase,
@@ -249,15 +276,23 @@ export function WorkOrderDetail({
 
   // The wind-down's bookkeeping: when the drive ends after an interrupt, freeze visibly (the close note
   // carries the last known cost + elapsed) and hold the `stopped` turn state until Sürdür.
+  // 2026-08-23 (operator, round 3): the stopped OFFER must survive navigation — the controller's
+  // `stopped` flag dies with the component, but the app-level fold (status 'stopped', made durable
+  // by the `interrupted` event) does not. `stoppedNow` derives from BOTH: the flag for the
+  // just-wound-down moment, the fold for every re-entry.
+  const stoppedNow = stopped || state.status === 'stopped';
   useEffect(() => {
     if (!stopping || running) return;
     setStopping(false);
     setForceArmed(false);
     setStopped(true);
+    // 2026-08-24 (operator: "hangi saniye"): the close note leads with the clock — the döküm reads
+    // as a timeline, not events floating outside of time.
+    const clock = UI.auditClock(new Date().toISOString());
     const cost = state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0);
     const liveStart = store.get(driveKey)?.startedAt;
     const elapsed = liveStart ? UI.formatDuration(Math.max(0, Date.now() - liveStart)) : UI.auditCostNone;
-    store.note(driveKey, { speaker: 'note', kind: 'session_closed', detail: `${cost} · ${elapsed}` });
+    store.note(driveKey, { speaker: 'note', kind: 'session_closed', detail: `${clock} · ${cost} · ${elapsed}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, stopping]);
   // 5s stuck → arm Zorla kes.
@@ -298,6 +333,11 @@ export function WorkOrderDetail({
       } else {
         await onApprovePlan(effectivePlan);
       }
+    } catch {
+      // 2026-08-23 (süre şişmesi turu): a failed approval was a SILENT unhandled rejection — the
+      // button just went quiet and the stage never flipped. It surfaces as an error toast now
+      // (the same form contract as the dialogs' save failures).
+      toast.push({ kind: 'error', title: UI.saveFailed });
     } finally {
       setApproving(false);
     }
@@ -311,14 +351,17 @@ export function WorkOrderDetail({
     setEditSteps([]);
     setEditOpen(false);
   };
+  // 2026-08-23 (operator, round 3): the persisted architect PLAN session, when one exists — the
+  // empty-state button's honest label ("Sürdür", not "Plan iste": requestPlan RESUMES this session)
+  // and requestPlan's resume id, derived ONCE from the rows. Survives app restarts (the fold does
+  // not); the fold covers the in-app re-entry (stoppedNow).
+  const planResumeId = detail.sessions.find((s) => s.role === 'architect' && s.stepIdx === undefined && s.providerSessionId)?.providerSessionId;
   const requestPlan = (): void => {
     setStopped(false);
     // Prompt is empty by design — main fills it from order.md (architectPromptFor). Architect → plan mode.
     // WO-0031d: a plan retry/Sürdür RESUMES the persisted architect session when one survived (same
     // pattern as the step retry below) instead of silently starting a fresh conversation.
-    const resumeId =
-      state.sessionId ??
-      detail.sessions.find((s) => s.role === 'architect' && s.stepIdx === undefined && s.providerSessionId)?.providerSessionId;
+    const resumeId = state.sessionId ?? planResumeId;
     store.start(
       driveKey,
       { role: 'architect', workOrderId: detail.id, mode: detail.mode, prompt: '', ...(resumeId ? { resume: resumeId } : {}) },
@@ -353,7 +396,7 @@ export function WorkOrderDetail({
       setLiftingRule(false);
     }
   };
-  // An interrupted step ('active' at restart, not running) — the rail's Sürdür resumes it (F14 append).
+  // An interrupted step ('active' at restart, not running) — DriveControls' Sürdür resumes it (F14 append).
   const stepResumeId =
     !planStage && hasSteps && activeStep?.status === 'active' && !running
       ? detail.sessions.find((s) => s.stepIdx === activeStep.idx && s.providerSessionId)?.providerSessionId
@@ -378,7 +421,7 @@ export function WorkOrderDetail({
   // The wind-down: one click, no confirm dialog — the note lands in the terminal, the glow flips amber.
   const stop = (): void => {
     setStopping(true);
-    store.note(driveKey, { speaker: 'note', kind: 'interrupt_sent' });
+    store.note(driveKey, { speaker: 'note', kind: 'interrupt_sent', detail: UI.auditClock(new Date().toISOString()) });
     void store.interrupt();
   };
   // Retry after a dead session: re-drive — resume when a session survived, fresh otherwise.
@@ -421,90 +464,181 @@ export function WorkOrderDetail({
   const editEmptyAim = editSteps.some((s) => !s.aim.trim());
   const firstEmptyIdx = editSteps.find((s) => !s.aim.trim())?.idx;
   const openEditor = (): void => {
-    if (proposedSteps.length === 0) return; // no fence → nothing to edit (see the rail's Düzenle rule)
+    if (proposedSteps.length === 0) return; // no fence → nothing to edit (the section heading's Düzenle rule)
     // Seed from the proposal ONLY when the stage is empty — reopening after Bitti must not wipe drafts.
-    setEditSteps((cur) => (cur.length > 0 ? cur : proposedSteps.map((s) => ({ ...s }))));
+    setEditSteps((cur) => (cur.length > 0 ? cur : proposedSteps.map((s) => ({ ...s, uid: crypto.randomUUID() }))));
     setEditOpen(true);
   };
   const cancelEdit = (): void => {
     setEditSteps([]);
     setEditOpen(false);
   };
+  // "Bitti = kaydet" (operator ruling, 2026-08-23): finishing the editor PERSISTS a valid stage to
+  // the pending plan.md — the old memory-only stage died with navigation, silently discarding a
+  // "saved" edit. An empty aim, a fence-less stage, or a NO-DIFF stage (e.g. right after Önerine dön)
+  // writes nothing; those close the chrome only, drafts staying in memory as before. Esc keeps
+  // its old meaning too (close the chrome, keep the drafts).
+  const finishEditing = async (): Promise<void> => {
+    setEditOpen(false);
+    if (!effectivePlan || !staged || editEmptyAim || proposedSteps.length === 0 || planEditCount === 0) return;
+    try {
+      await onSavePlanDraft(applyStepEdits(effectivePlan, editSteps));
+      setEditSteps([]); // the proposal now IS the stage — reopening re-seeds from it
+    } catch {
+      toast.push({ kind: 'error', title: UI.saveFailed });
+    }
+  };
+  // "İlk öneriye dön" (operator ruling, 2026-08-23 — replaces the in-session Sıfırla): restore
+  // the AGENT's originally proposed steps, discarding saved AND unsaved operator edits. The
+  // original is snapshotted at the first operator overwrite (store.plan_original) and cleared
+  // when the architect re-proposes; a confirm dialog guards the destructive act.
+  const [originalPlan, setOriginalPlan] = useState<string | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!planStage) {
+      setOriginalPlan(null);
+      return;
+    }
+    void onGetOriginalPlan().then((t) => {
+      if (!cancelled) setOriginalPlan(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.id, docs.plan, planStage]);
+  // Guarded when there is no original to restore, or the table already shows it with nothing
+  // unsaved on top (a bright nothing-button reads broken).
+  const restoreAvailable = originalPlan !== null && (originalPlan !== effectivePlan || planEditCount > 0);
+  const doRestore = async (): Promise<void> => {
+    setRestoring(true);
+    setRestoreError(false);
+    try {
+      await onRestoreOriginalPlan();
+      setEditSteps([]);
+      setEditOpen(false);
+      setRestoreOpen(false);
+      reloadDetail();
+    } catch {
+      setRestoreError(true);
+    } finally {
+      setRestoring(false);
+    }
+  };
 
-  // --- The rail contract. Absent when closed ("arşivde ray yok"); quiet (message only) when nothing is
-  //     asked of the operator; the ONE Durdur lives here; ⏎ fires the primary (never on close — v4).
-  const railTone: LampTone = turn === 'yours' ? 'signal' : turn === 'running' ? 'run' : turn === 'retry' ? 'error' : 'idle';
-  let railMessage: string | undefined;
-  let railActions: RailAction[] | undefined;
-  let railPrimary: (() => void) | undefined;
+  // --- WO-0039 — the rail is DEAD (operator ruling, mockup-approved). Its two jobs split:
+  //     DOSSIER DECISIONS render in the flow — İtiraz/Onayla in the plan section's decision band,
+  //     Düzenle in that section's heading, Plan iste in the empty-state card, Yeniden dene on the
+  //     fail card; the ask hint sits on the ask cards and the close hint on the close card.
+  //     PROCESS CONTROL (Durdur / Zorla kes / ▶ Sürdür) rides the LIVE PANE's header via the
+  //     `drive` bundle below. ⏎ still fires ONE derived primary — its badge marks that button
+  //     wherever it lives; close keeps NO ⏎ (v4 deliberate friction). ---
+  // 2026-08-23 (süre şişmesi, C katmanı): a plan-mode drive whose fold says plan_ready has
+  // DELIVERED its plan and is awaiting the operator — that is the approval moment, not work
+  // (the SDK stream lingers waiting for an in-session approval Docket never gives).
+  const planAwaitingOperator = planStage && state.status === 'plan_ready';
+  let primary: (() => void) | undefined;
+  // What primary IS (not just which closure) — DriveControls draws the ⏎ on ▶ Sürdür only when
+  // the resume is really the screen's primary (the decision row outranks it when both render).
+  let primaryKind: 'retry' | 'resume' | 'done' | 'approve' | 'request' | 'object' | undefined;
   if (phase.kind !== 'done') {
     if (showAsk) {
-      railMessage = UI.railAskHint;
-    } else if (turn === 'retry') {
-      railActions = [{ id: 'retry', label: UI.railRetry, variant: 'primary', onActivate: retry }];
-      railPrimary = retry;
-    } else if (running) {
-      // While running the rail carries ONLY the stop — no filler line ("Çalışıyor" already lives in the
-      // substrip; the operator's copy-trim rule bans reassurance sentences).
-      railActions = forceArmed
-        ? [
-            { id: 'force', label: UI.railForceKill, variant: 'danger', onActivate: forceKill },
-            { id: 'stop', label: UI.railStopping, variant: 'secondary', busy: stopping, locked: true, onActivate: () => undefined },
-          ]
-        : [{ id: 'stop', label: stopping ? UI.railStopping : UI.interrupt, variant: 'secondary', busy: stopping, locked: stopping, onActivate: stop }];
-    } else if (stopped) {
-      railActions = [{ id: 'resume', label: UI.railResume, variant: 'primary', onActivate: stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry }];
-      railPrimary = stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry;
-      railMessage = UI.railStoppedMsg;
-    } else if (planStage && effectivePlan) {
-      if (editOpen) {
-        // Operator rulings (2026-08-22, after hands-on testing): the EDITOR carries only editing —
-        // Vazgeç (discard the stage) + Bitti (close the chrome, keep the stage). Onayla does NOT
-        // render here (deciding happens once the editor is closed); ⏎ = Bitti.
-        railMessage = editEmptyAim ? UI.editAimMissing(firstEmptyIdx ?? 0) : undefined;
-        railActions = [
-          { id: 'edit-cancel', label: UI.cancel, variant: 'ghost', onActivate: cancelEdit },
-          { id: 'edit-done', label: UI.editPlanDone, variant: 'secondary', onActivate: () => setEditOpen(false) },
-        ];
-        railPrimary = () => setEditOpen(false);
-      } else {
-        // Bitti returns HERE — the NORMAL decision rail (İtiraz · Düzenle · Onayla), no special
-        // staged state: the staged edits stay visible in the rows, Onayla approves what is on
-        // screen (approvePlan applies the stage), and İtiraz hands the work order back to the
-        // architect (objectPlan clears the stage — objecting discards the hand edits).
-        railMessage = editEmptyAim ? UI.editAimMissing(firstEmptyIdx ?? 0) : UI.railApproveHint;
-        // Editing needs a parsed steps fence: a fence-less plan has nothing to edit, and approving
-        // editor-added steps would SILENTLY DROP them (applyStepEdits has no fence to rewrite) — the
-        // Düzenle action is absent there, and the planNoStepsWarn banner already says object (ADR-0001).
-        railActions = [
-          { id: 'object', label: UI.object, variant: 'ghost', locked: approving, onActivate: () => setObjectionOpen(true) },
-          ...(proposedSteps.length > 0
-            ? [{ id: 'edit', label: UI.editPlan, variant: 'secondary' as const, locked: approving, onActivate: openEditor }]
-            : []),
-          // Onayla needs a fence to rewrite (reviewer note 5): a fence-less re-proposal while the
-          // stage holds would approve the VERBATIM plan, not the staged rows — absent, and the
-          // planNoStepsWarn banner already says object.
-          ...(editEmptyAim || (staged && proposedSteps.length === 0)
-            ? []
-            : [{ id: 'approve', label: UI.railApprove, variant: 'primary' as const, busy: approving, locked: approving, onActivate: () => void approvePlan() }]),
-        ];
-        if (!editEmptyAim && !(staged && proposedSteps.length === 0)) railPrimary = () => void approvePlan();
+      // No primary while an ask is pending — the ask cards own the moment (v4 rule, unchanged).
+    } else if (objectionOpen) {
+      // WO-0039 (2026-08-23 fifth pass): while the objection layer is open ⏎ = GÖNDER — never
+      // Onayla (the operator hit exactly that ambiguity). The empty text holds the primary absent.
+      if (objectionText.trim()) {
+        primary = () => objectPlan(objectionText.trim());
+        primaryKind = 'object';
       }
+    } else if (turn === 'retry') {
+      primary = retry; // ⏎ = Yeniden dene (the fail card's button)
+      primaryKind = 'retry';
+    } else if (running && !planAwaitingOperator) {
+      // No primary while running — Durdur is deliberately NOT ⏎'s target (v4 rule, unchanged).
+      // The exception: a plan-mode drive that already DELIVERED its plan (the SDK awaits an
+      // in-session approval Docket never gives — süre şişmesi, 2026-08-23) is the approval
+      // moment, not work: the decision row stays and Onayla keeps the ⏎.
+    } else if (planStage && effectivePlan && !stopping) {
+      // The plan is on the table and no drive is rewriting it: ⏎ = Bitti while the editor chrome
+      // is open, Onayla once it is closed (absent while an aim is empty or a fence-less stage
+      // holds — the decision row's hint says why). Outranks ▶ Sürdür: at a stopped re-plan the
+      // DECISION on the plan in hand is the fresher intent.
+      if (editOpen) {
+        primary = () => void finishEditing(); // ⏎ = Bitti — and Bitti saves (2026-08-23)
+        primaryKind = 'done';
+      } else if (!editEmptyAim && !(staged && proposedSteps.length === 0)) {
+        primary = () => void approvePlan();
+        primaryKind = 'approve';
+      }
+    } else if (stoppedNow) {
+      primary = stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry; // ⏎ = ▶ Sürdür
+      primaryKind = 'resume';
     } else if (planStage && !effectivePlan && !showQuestion) {
-      // "Plan iste" covers BOTH plan stages — written (fresh) and architect_approval after an
-      // interrupted plan drive (the stage flips on the first recorded session, Faz B's isPlanRequestStage).
-      railActions = [{ id: 'request-plan', label: UI.requestPlan, variant: 'primary', onActivate: requestPlan }];
-      railPrimary = requestPlan;
+      primary = requestPlan; // ⏎ = Plan iste (the decision row's lone button)
+      primaryKind = 'request';
     } else if (stepResumeId !== undefined) {
-      railActions = [{ id: 'resume', label: UI.railResume, variant: 'primary', onActivate: resumeStep }];
-      railPrimary = resumeStep;
-    } else if (allStepsDone) {
-      railMessage = UI.railCloseHint; // the close card owns the action; close has NO ⏎ (v4)
+      primary = resumeStep; // an interrupted 'active' step at restart
+      primaryKind = 'resume';
     }
+    // allStepsDone: close keeps NO ⏎ — the close card's button is a deliberate, aimed click (v4).
   }
+  // The process-control bundle for the ACTIVE drive — handed to whichever pane renders it: through
+  // StepList into the driven row's StepPane, or straight into SessionPane / ReviewPane. The old
+  // rail's precedence, kept: while an ASK is pending the ask cards own the moment (no controls),
+  // and the retry turn belongs to the fail card's Yeniden dene — never a second primary. `enter`
+  // says whether ▶ Sürdür carries the ONE ⏎ (the decision row outranks it when both render).
+  const drive: DriveState | undefined =
+    !showAsk && turn !== 'retry' && (running || stopping || stoppedNow || stepResumeId !== undefined)
+      ? {
+          running,
+          stopping,
+          forceArmed,
+          // The stopped readout rides only the STOPPED moment — not the resume's boot window (the
+          // fold stays 'stopped' until the resumed drive's first event lands).
+          stopped: stoppedNow && !running && !stopping,
+          resumable: stoppedNow || stepResumeId !== undefined,
+          enter: primaryKind === 'resume',
+          onStop: stop,
+          onForceKill: forceKill,
+          onResume: stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry,
+        }
+      : undefined;
+  // WO-0039 revizyon (operator, 2026-08-23): TEK KARAR KONUMU — the plan flow's actions sit in ONE
+  // slot (the old lone Plan iste pixels), in the dead rail's grammar. 2026-08-23 (süre şişmesi,
+  // C katmanı): a plan-mode drive that already DELIVERED its plan (the fold says plan_ready) is
+  // AWAITING THE OPERATOR, not rewriting — the row stays (the stand-down was hiding Onayla for the
+  // whole deliberation; the operator had to Durdur first). Only an actual RE-plan (an objection
+  // drive — running without a plan_ready fold) hides the row; a bare plan stage hides for any drive.
+  const decisionRowHidden =
+    !planStage ||
+    showQuestion ||
+    objectionOpen || // the objection layer owns the moment — its own Gönder/Vazgeç carry it
+    (drive !== undefined && effectivePlan === undefined) ||
+    (drive !== undefined && (running || stopping) && !planAwaitingOperator);
+  // The hint chain (2026-08-23 fourth pass): the standing consequence lines DIED with the operator's
+  // ruling ("Onayla — adımlar sırayla koşar. kaldır") — no reassurance text beside decisions. What
+  // survives is the GATE reason and only that: an empty aim must say why Onayla is absent (ADR-0001).
+  // The staged edit count lives in the record (plan_approved → "düzenlenmiş onay · N değişiklik"),
+  // not on the row.
+  const planHint = effectivePlan && editEmptyAim ? UI.editAimMissing(firstEmptyIdx ?? 0) : undefined;
+  // Every editOpen FLIP anchors the decision row to reading position (the report-open precedent:
+  // the operator must see the ⏎ primary the moment it changes identity). First mount stays calm.
+  const prevEditOpen = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevEditOpen.current;
+    prevEditOpen.current = editOpen;
+    if (prev === null || prev === editOpen) return;
+    requestAnimationFrame(() => {
+      document.getElementById('plan-decision-row')?.scrollIntoView({ block: 'start' });
+    });
+  }, [editOpen]);
 
   // --- Esc layering + ⏎: peel one inline layer at a time; only a bare esc leaves the screen; Enter
-  //     (outside inputs, outside dialogs) fires the rail's primary when one exists. The Sil/Kapat/Düzenle
+  //     (outside inputs, outside dialogs) fires the ONE derived primary when it exists. The Sil/Kapat/Düzenle
   //     dialogs are Radix-owned — their Esc never reaches here (WO-0031d). ---
   const closeTopLayer = (): boolean => {
     if (objectionOpen) {
@@ -517,17 +651,55 @@ export function WorkOrderDetail({
     }
     return false;
   };
-  useDetailKeys({ closeTopLayer, onBack, onPrimary: railPrimary });
+  useDetailKeys({ closeTopLayer, onBack, onPrimary: primary });
 
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
-  const recordSections = useMemo(() => buildRecordSections({ detail, docs, UI }), [detail, docs, UI]);
+  // WO-0039/C (Q1): the RUNNING drive's ledger POINTER card — card-level facts only (the pane
+  // owns the stream; this never re-renders per transcript line). liveLogNonce carries the
+  // pointer's "jump + open" intent to the SessionPane (one bump = one open).
+  const [liveLogNonce, setLiveLogNonce] = useState(0);
+  const liveRow = useMemo(() => {
+    if (!(running || stopping)) return undefined;
+    const startedAt = store.get(driveKey)?.startedAt;
+    if (!startedAt) return undefined;
+    const name: LiveSessionRow['name'] = reviewIdx !== undefined
+      ? { kind: 'review', idx: reviewIdx }
+      : !planStage && runIdx !== undefined
+        ? { kind: 'step', idx: runIdx, aim: detail.steps.find((st) => st.idx === runIdx)?.aim }
+        : planStage
+          ? { kind: 'plan' }
+          : { kind: 'unscoped' };
+    const role: LiveSessionRow['role'] = name.kind === 'step' ? (detail.steps.find((st) => st.idx === runIdx)?.role ?? 'implementer') : 'architect';
+    return { role, name, startedAt, costUsd: state.cost.usd };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, stopping, driveKey, reviewIdx, runIdx, planStage, state.cost.usd, detail.steps]);
+  const goLive = (): void => {
+    // One intent, one click: land on the live surface AND open its döküm. Step drives live in
+    // their spine row (chat always inline) — those just scroll.
+    if (!planStage && runIdx !== undefined && reviewIdx === undefined) {
+      document.getElementById(`step-row-${runIdx}`)?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    setLiveLogNonce((n) => n + 1);
+    requestAnimationFrame(() => document.getElementById('live-pane')?.scrollIntoView({ block: 'start' }));
+  };
+  // WO-0039 stabilization (2026-08-23, the re-entry dupe): the live drive's provider session id —
+  // the ledger row carrying it renders AS the pointer (one session, one card), and the appended
+  // pointer stays only for the boot window before the row exists.
+  const liveSessionId = running || stopping ? store.sessionId(driveKey) : undefined;
+  const recordSections = useMemo(
+    () => buildRecordSections({ detail, docs, UI, now, onGoLive: goLive, ...(liveRow ? { liveRow } : {}), ...(liveSessionId ? { liveSessionId } : {}) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [detail, docs, UI, liveRow, liveSessionId, now],
+  );
   // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
   const toggleReport = (step: StepView): void => {
     setReportStep((cur) => (cur?.idx === step.idx ? undefined : step));
   };
 
   // Ask cards are pinned above everything in every mode (v4: the amber moment outranks). Rule lift +
-  // the diff peek ride them; risky writes wear the tag (core/risky decides).
+  // the diff peek ride them; risky writes wear the tag (core/risky decides). WO-0039: the dead
+  // rail's ask hint rides the stack — one informative line, not chrome.
   const askCards = showAsk ? (
     <div className="flex flex-col gap-2">
       {state.pendingAsks.length > 1 ? (
@@ -536,6 +708,7 @@ export function WorkOrderDetail({
           <Button variant="signal" size="sm" onClick={() => { for (const a of state.pendingAsks) allowAsk(a); }}>{UI.allowAll}</Button>
         </div>
       ) : null}
+      <p className="text-[11.5px] text-inkdim">{UI.askHint}</p>
       {state.pendingAsks.map((a) => (
         <StopAndAskCard
           key={a.requestId}
@@ -591,6 +764,12 @@ export function WorkOrderDetail({
                 {failCopied ? UI.failCopied : UI.failCopy}
               </button>
             ) : null}
+            {/* WO-0039: the dead rail's retry — the error card IS the one-button stop's home. ⏎'s
+                target while the retry turn holds. */}
+            <Button variant="primary" size="sm" className="ml-auto" onClick={retry}>
+              {UI.driveRetry}
+              <EnterMark />
+            </Button>
           </div>
           {failDetailOpen ? (
             <pre className="mt-2 max-h-56 overflow-auto rounded border border-hairline bg-bg p-2 font-mono text-[11px] leading-relaxed text-inkdim">
@@ -617,31 +796,107 @@ export function WorkOrderDetail({
       {failCard}
 
       {objectionOpen ? (
-        <div className="flex items-stretch overflow-hidden rounded-md border border-signal/40 bg-surface">
-          <div className="lamp lamp-signal" />
-          <div className="flex-1 px-3.5 py-3">
+        // WO-0039 (2026-08-23 fifth pass) — the objection layer redesigned in the current idiom:
+        // the amber moment's own card (breathing signal lamp), the readout question, a full-width
+        // one-line input, and the decision grammar — GÖNDER primary LEFT carrying the ⏎, Vazgeç
+        // right. While this layer is open the decision row stands down and ⏎ IS Gönder (never
+        // Onayla); Enter in the input sends too (the same action, both focus paths agree).
+        <div data-objection-card="" className="flex items-stretch overflow-hidden rounded-md border border-signal/40 bg-surface">
+          <div className="lamp lamp-signal-breathe" />
+          <div className="min-w-0 flex-1 px-3.5 py-3">
             <p className="readout text-signal">{UI.objectTitle}</p>
             <Input
               autoFocus
               value={objectionText}
               onChange={(e) => setObjectionText(e.target.value)}
               placeholder={UI.objectLinePlaceholder}
-              className="mb-2 mt-2 font-sans text-[13px]"
+              className="mt-2 font-sans text-[13px]"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && objectionText.trim()) objectPlan(objectionText.trim());
               }}
             />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setObjectionOpen(false)}>{UI.objectCancel}</Button>
+            <div className="mt-2 flex min-w-0 items-center gap-2">
               <Button
                 variant="primary"
                 size="sm"
+                className="min-w-[92px]"
                 locked={!objectionText.trim()}
                 onClick={() => objectPlan(objectionText.trim())}
               >
                 {UI.objectSend}
+                {objectionText.trim() ? <EnterMark /> : null}
+              </Button>
+              <Button variant="ghost" size="sm" className="min-w-[92px]" onClick={() => setObjectionOpen(false)}>
+                {UI.objectCancel}
               </Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {planStage && effectivePlan && drive && !replanning ? (
+        // WO-0039: while a plan IS on the table no instrument renders (WO-0038 ruling) — but a LIVE
+        // drive (a stop mid-drive, the plan_ready wind-down) still needs its controls now that the
+        // rail is dead. This slim strip is that home: readout + DriveControls, nothing else; the
+        // drive's transcript keeps living in its Oturum card. WO-0039/C: an objection RE-PLAN
+        // renders the full instrument instead (the run is watchable work, not a wind-down).
+        <div data-plan-drive="" className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+          <div className={cn('lamp', drive.running || drive.stopping ? 'lamp-run' : 'lamp-idle')} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3.5 py-2">
+            <span className="flex min-w-0 items-center gap-2">
+              {running && !booting ? <span className="dot-run shrink-0" aria-hidden="true" /> : null}
+              <span className="readout truncate">{ROLE_LABELS.architect}</span>
+            </span>
+            <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
+              <DriveControls drive={drive} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {planStage && !showQuestion && !decisionRowHidden ? (
+        // WO-0039 revizyon (2026-08-23, beşinci tur düzeltmesi): TEK KARAR KONUMU — Onayla ve
+        // İtiraz et YAN YANA solda (birincil önde; kenarlara yayılma yok); editörde Bitti + Vazgeç
+        // aynı biçimde. Ayakta ipucu yok; düğme çiftinin sağı yalnız KAPI gerekçesini taşır (boş
+        // aim — Onayla'nın yokluğunun sebebi, ADR-0001). İtiraz et SECONDARY (yeniden iş, kayıp
+        // değil).
+        <div
+          id="plan-decision-row"
+          {...(effectivePlan ? { 'data-plan-decision': '' } : { 'data-plan-empty': '' })}
+          className="flex min-w-0 items-center gap-3"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {effectivePlan ? (
+              <>
+                {editOpen ? (
+                  // 2026-08-23 seventh pass: while the editor owns the moment the decision pair
+                  // stays VISIBLE, inert — the kit `locked` form (attribute-free, ADR-0001's
+                  // terminal-lock exception), no ⏎ (Bitti owns it from the section heading).
+                  <Button variant="primary" size="sm" className="min-w-[92px]" locked onClick={() => void approvePlan()}>
+                    {UI.planApprove}
+                  </Button>
+                ) : editEmptyAim || (staged && proposedSteps.length === 0) ? null : (
+                  // Onayla needs a fence to rewrite: a fence-less re-proposal while the stage holds
+                  // would approve the VERBATIM plan, not the staged rows (reviewer note 5).
+                  <Button variant="primary" size="sm" className="min-w-[92px]" busy={approving} locked={approving} onClick={() => void approvePlan()}>
+                    {UI.planApprove}
+                    <EnterMark />
+                  </Button>
+                )}
+                {/* 2026-08-23 sixth pass: İtiraz et = SIGNAL (amber — the operator-judgment action,
+                    the ask cards' allowAll grammar; red stays the machine stop) and the same
+                    min-width as Onayla — the pair reads as one equal-sized decision. */}
+                <Button variant="signal" size="sm" className="min-w-[92px]" locked={approving || editOpen} onClick={() => setObjectionOpen(true)}>
+                  {UI.object}
+                </Button>
+                {planHint ? <p className="min-w-0 flex-1 truncate text-[12px] text-inkdim">{planHint}</p> : null}
+              </>
+            ) : (
+              <Button variant="primary" size="sm" className="min-w-[92px]" onClick={requestPlan}>
+                {planResumeId ? UI.driveResume : UI.requestPlan}
+                <EnterMark />
+              </Button>
+            )}
           </div>
         </div>
       ) : null}
@@ -652,23 +907,21 @@ export function WorkOrderDetail({
           steps={editOpen || staged ? editSteps : proposedSteps}
           onAimChange={(idx, aim) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, aim } : s)))}
           onRoleSelect={(idx, role) => setEditSteps((ss) => ss.map((s) => (s.idx === idx ? { ...s, role } : s)))}
-          onMove={(idx, dir) =>
-            setEditSteps((ss) => {
-              const at = ss.findIndex((s) => s.idx === idx);
-              const to = at + dir;
-              if (at < 0 || to < 0 || to >= ss.length) return ss;
-              const next = [...ss];
-              const [moved] = next.splice(at, 1);
-              next.splice(to, 0, moved!);
-              return next.map((s, i) => ({ ...s, idx: i + 1 }));
-            })
-          }
+          // 2026-08-23 drag-and-drop: the ▲▼ dir-move died; the drop carries array positions and
+          // the pure core moveStep renumbers (test-first in plan-steps).
+          onReorder={(from, to) => setEditSteps((ss) => moveStep(ss, from, to))}
           onRemove={(idx) => setEditSteps((ss) => (ss.length <= 1 ? ss : ss.filter((s) => s.idx !== idx).map((s, i) => ({ ...s, idx: i + 1 }))))}
-          onAdd={() => setEditSteps((ss) => [...ss, { idx: ss.length + 1, role: 'implementer', aim: '', scope: { kind: 'all' } }])}
+          onAdd={() => setEditSteps((ss) => [...ss, { idx: ss.length + 1, role: 'implementer', aim: '', scope: { kind: 'all' }, uid: crypto.randomUUID() }])}
+          // Düzenle needs a parsed steps fence: a fence-less plan has nothing to edit, and approving
+          // editor-added steps would SILENTLY DROP them (applyStepEdits has no fence to rewrite) —
+          // absent there; the planNoStepsWarn banner already says object (ADR-0001).
+          onEdit={proposedSteps.length > 0 ? openEditor : undefined}
+          editLocked={approving}
+          editorActions={{ onDone: () => void finishEditing(), onCancel: cancelEdit, ...(restoreAvailable ? { onRestore: () => setRestoreOpen(true) } : {}) }}
         />
       ) : null}
 
-      {!planStage || !effectivePlan ? (
+      {!planStage ? (
         detail.stage === 'closed' ? (
           // WO-0031d / v4 §7: closure is a RESULTS card, not a flat line — the seal pops ONCE on the
           // in-session flip to done (prevPhaseKind ref, seeded with the current kind → reopening an
@@ -751,6 +1004,9 @@ export function WorkOrderDetail({
                       multiRepo={repoCount > 1}
                     />
                   </div>
+                  {/* WO-0039: the dead rail's close hint moved INTO the card (the "Kapat —" prefix
+                      died; the button is right here). Close keeps NO ⏎ — a deliberate, aimed click. */}
+                  <p className="mt-2 text-[12px] text-inkdim">{UI.closeHint}</p>
                   <Button variant="secondary" size="sm" className="mt-2" onClick={() => { setCloseError(false); setConfirmClose(true); }}>
                     {UI.closeWo}
                   </Button>
@@ -796,14 +1052,41 @@ export function WorkOrderDetail({
   // unapproved implementer step the moment the detail opened. StepPane now renders ONLY past the
   // plan stage (mirroring the old v4 guard); the pipeline's planApprovedFor guard is the second
   // layer for every other host.
+  // WO-0039: at the plan stages the SessionPane renders only when there is something to READ — a
+  // live drive, a transcript, an ask, or the architect's question card. A bare plan stage belongs
+  // to the lone Plan iste button (2026-08-23 ruling), not to a tall instrument that repeats the
+  // invitation (the pane's own invitation line stands down with it).
+  const planPaneLive = running || showAsk || state.entries.length > 0 || showQuestion;
   const instrument = planStage ? (
-    effectivePlan ? null : (
-      <SessionPane mode={detail.mode} stage={detail.stage} workOrderId={detail.id} sessions={detail.sessions} />
+    (effectivePlan && !replanning) || (!planPaneLive && !replanning) ? null : (
+      <SessionPane
+        mode={detail.mode}
+        stage={detail.stage}
+        workOrderId={detail.id}
+        sessions={detail.sessions}
+        planOnTable={!!docs.plan}
+        now={now}
+        logOpenSignal={liveLogNonce}
+        {...(drive ? { drive } : {})}
+      />
     )
   ) : !hasSteps ? (
-    <SessionPane mode={detail.mode} stage={detail.stage} workOrderId={detail.id} sessions={detail.sessions} />
+    <SessionPane
+      mode={detail.mode}
+      stage={detail.stage}
+      workOrderId={detail.id}
+      sessions={detail.sessions}
+      planOnTable={!!docs.plan}
+      now={now}
+      logOpenSignal={liveLogNonce}
+      {...(drive ? { drive } : {})}
+    />
   ) : reviewIdx !== undefined ? (
-    <ReviewPane step={detail.steps.find((s) => s.idx === reviewIdx)!} workOrderId={detail.id} />
+    <ReviewPane
+      step={detail.steps.find((s) => s.idx === reviewIdx)!}
+      workOrderId={detail.id}
+      {...(drive ? { drive } : {})}
+    />
   ) : activeStep ? (
     <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} />
   ) : null;
@@ -825,6 +1108,7 @@ export function WorkOrderDetail({
         onToggleReport={toggleReport}
         onGetStepReport={onGetStepReport}
         now={now}
+        {...(drive ? { drive } : {})}
       />
     ) : null;
 
@@ -850,12 +1134,33 @@ export function WorkOrderDetail({
           <RecordStack sections={recordSections} />
         </div>
       </div>
-      <ActionRail tone={railTone} message={railMessage} actions={railActions} />
 
       {/* WO-0031d: the destructive/edit confirmations are dialogs over an intact screen (operator's
           explicit reversal of the old inline-confirm preference). No <form> anywhere — Enter in the
           note input does nothing, and useDetailKeys stands down while any dialog is open, so kapat
           stays ⏎'süz (v4: deliberate friction on the irreversible). */}
+      {/* "İlk öneriye dön" (2026-08-23): the destructive restore asks first — the operator's saved
+          and unsaved edits die with it. A failed restore keeps the dialog open for a retry. */}
+      {restoreOpen ? (
+        <Dialog
+          open
+          narrow
+          onOpenChange={(o) => { if (!o && !restoring) setRestoreOpen(false); }}
+          title={UI.restoreTitle}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setRestoreOpen(false)}>{UI.cancel}</Button>
+              <Button variant="danger" size="sm" busy={restoring} onClick={() => void doRestore()}>{UI.restoreConfirm}</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-2">
+            <p className="text-[12px] text-inkdim">{UI.restoreBody}</p>
+            {restoreError ? <p className="text-xs text-error">{UI.saveFailed}</p> : null}
+          </div>
+        </Dialog>
+      ) : null}
       {confirmDelete ? (
         <Dialog
           open

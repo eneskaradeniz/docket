@@ -50,9 +50,16 @@ export function PaneError({ message }: { message: string }) {
 // --- the pane shell itself: one card, one instrument ---
 export function PaneShell({ children, tone }: { children: ReactNode; tone: LampTone }) {
   return (
-    <section className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
+    // 2026-08-23 (§4 → same-day operator tune): the pane is viewport-BOUNDED (an outer safety
+    // cap only — the full-height fill felt cavernous) and the open transcript caps at the LEDGER's
+    // height (see ChatLog's live variant) — one expansion height console-wide. The min-h-0 chain
+    // keeps the header pinned while the column scrolls inside; the page stays THE scroller.
+    <section
+      id="live-pane"
+      className="flex max-h-[calc(100dvh-140px)] items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm"
+    >
       <div className={cn('lamp', lampClass(tone))} />
-      <div className="min-w-0 flex-1 flex-col p-3">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-3">{children}</div>
     </section>
   );
 }

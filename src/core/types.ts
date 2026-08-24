@@ -66,11 +66,17 @@ export type SessionRole = 'implementer' | 'architect' | 'verifier';
 // `note` (WO-0031c) is the OPERATOR-side synthetic line — the Durdur wind-down, the session-close cost
 // freeze, the force kill. It is appended to the live fold only; a persisted transcript never carries it,
 // so a resumed session replays provider history without Docket's own commentary.
-export type TranscriptNoteKind = 'interrupt_sent' | 'session_closed' | 'force_killed';
+export type TranscriptNoteKind =
+  | 'interrupt_sent'
+  | 'session_closed'
+  | 'force_killed'
+  | 'interrupted'
+  | 'session_started' // 2026-08-24: the drive opened (resumes add one each — the multi-run timeline)
+  | 'session_done'; // 2026-08-24: the turn completed — the transcript's own closing line
 export type TranscriptLine =
   | { speaker: 'assistant'; text: string }
-  | { speaker: 'tool_use'; tool: string; detail: string }
-  | { speaker: 'tool_result'; summary: string; isError: boolean }
+  | { speaker: 'tool_use'; tool: string; detail: string; callId?: string }
+  | { speaker: 'tool_result'; summary: string; isError: boolean; callId?: string }
   | { speaker: 'system'; text: string }
   | { speaker: 'note'; kind: TranscriptNoteKind; detail?: string };
 
@@ -98,6 +104,7 @@ export type SessionRef = (
   | { status: 'running' }
   | { status: 'stopped_asking'; stopAndAsk: StopAndAsk }
   | { status: 'idle' }
+  | { status: 'stopped' } // 2026-08-24: the OPERATOR interrupted the drive (Durdur) — resumable, not ended
   | { status: 'none' }
 ) & {
   role: SessionRole;
@@ -167,6 +174,7 @@ export interface Track {
 export type WoEventKind =
   | 'created'
   | 'plan_saved'
+  | 'plan_save_refused'
   | 'plan_approved'
   | 'step_started'
   | 'step_done'
@@ -286,6 +294,7 @@ export type CardReason =
   | { kind: 'ci_running' }
   | { kind: 'in_progress' }
   | { kind: 'just_written' }
+  | { kind: 'session_stopped' } // 2026-08-24: the operator stopped a drive — it resumes, it did not end
   | { kind: 'awaiting_plan_commit' }
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };
@@ -313,6 +322,10 @@ export interface WorkOrderCardView {
   trackCount: number;
   sessionCount: number;
   cost: CostSummary;
+  /** 2026-08-24 (operator, live run): did ANY session ever carry an observed cost? A summed $0.00
+   *  over zero observed rows is a CLAIM (an interrupted drive spent real money the abort could not
+   *  record — TD-030's honesty rule); the card draws the cost segment only when this is true. */
+  costKnown: boolean;
   durationMs: number; // WO-0031f T3 — finished-session sum (the strip/audit arithmetic); drawn only when > 0
 }
 

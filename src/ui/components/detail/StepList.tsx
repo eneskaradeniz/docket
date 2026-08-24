@@ -6,6 +6,7 @@ import { cn } from '../../kit';
 import { MarkdownBody } from './MarkdownBody';
 import { RoleChip } from './RoleChip';
 import { StepPane } from '../session/StepPane';
+import type { DriveState } from '../session/DriveControls';
 
 // The step SPINE (WO-0017 → WO-0031f v6): the step list is Akış's body — a bare <ul> of rows (the
 // old outer card + "Plan n/toplam" header died; the Akış tab count carries the number). Anatomy per
@@ -31,6 +32,7 @@ export function StepList({
   onToggleReport,
   onGetStepReport,
   now,
+  drive,
 }: {
   steps: StepView[];
   /** The WO's sessions — the per-step duration/cost summary + the report header's clock. */
@@ -44,6 +46,8 @@ export function StepList({
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   /** The controller's one-second ticker — StepPane's live costline reuses it. */
   now?: number;
+  /** WO-0039: the active drive's process controls, forwarded to the DRIVEN row's StepPane header. */
+  drive?: DriveState;
 }) {
   const { ROLE_LABELS, STEP_STATUS_LABELS, UI, formatUsd } = useLabels();
   // A step's ⏱/$ sums ITS sessions (the run + the review of that step) — the ledger's summary form.
@@ -203,7 +207,7 @@ export function StepList({
             </div>
             {driven ? (
               // The live thing in front (v6): the driven step's terminal pinned inside its row.
-              <StepPane step={s} workOrderId={workOrderId} sessions={sessions ?? []} now={now} />
+              <StepPane step={s} workOrderId={workOrderId} sessions={sessions ?? []} now={now} {...(drive ? { drive } : {})} />
             ) : null}
             {open && hasReport ? (
               <StepReportBody step={s} clock={stepClock(s.idx)} loadReport={() => onGetStepReport(s.idx, s.role)} />

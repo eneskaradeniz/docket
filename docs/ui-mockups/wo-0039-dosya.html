@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WO-0039 · Mockup — DOSYA: ray öldü, kararlar bağlamına indi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token'larıyla birebir (WO-0039 mockup tabakası) */
+  :root {
+    --bg: #0e1520; --surface: #16202e; --raised: #1d2938; --hairline: #263349;
+    --ink: #e7edf4; --dim: #8b95a7;
+    --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; letter-spacing: 0.01em;
+    padding: 40px 20px 80px;
+  }
+  .plate { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+
+  /* --- tabaka kromu (uygulamada YOK — sadece bu onay sayfası) --- */
+  .plate-head h1 { font-size: 17px; font-weight: 700; letter-spacing: 0; }
+  .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  .plate-head .verdict {
+    margin-top: 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px dashed var(--hairline); border-radius: 8px; padding: 8px 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em;
+  }
+  .plate-head .verdict b { color: var(--signal); font-weight: 600; }
+  .legend { display: flex; gap: 16px; margin-top: 12px; font-family: var(--mono); font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 3px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  figure { display: flex; flex-direction: column; gap: 10px; }
+  .figcap { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); }
+  .figcap .no { color: var(--signal); font-weight: 600; }
+  .figcap .tag { color: var(--info); }
+  .why {
+    border-left: 2px solid var(--signal); padding: 2px 0 2px 10px;
+    font-size: 12px; line-height: 1.65; color: var(--dim);
+  }
+  .why b { color: var(--ink); font-weight: 600; }
+
+  /* --- ortak uygulama parçaları --- */
+  .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; display: flex; }
+  .card > .body { flex: 1; min-width: 0; padding: 10px 14px; }
+  .lamp { width: 3px; flex-shrink: 0; }
+  .lamp.signal { background: var(--signal); } .lamp.breathe { animation: breathe 2.4s ease-in-out infinite; }
+  .lamp.run { background: var(--info); } .lamp.done { background: var(--proceed); }
+  .lamp.error { background: var(--error); } .lamp.idle { background: #3a4a63; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .lamp.breathe { animation: none; } }
+
+  .readout { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); }
+  .readout.amber { color: var(--signal); }
+  .meta { font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .05em; }
+
+  .chip {
+    display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 7px;
+    font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em;
+    border: 1px solid var(--hairline); color: var(--dim); background: transparent;
+  }
+  .role { cursor: default; position: relative; }
+  .role.mimar { color: var(--signal); border-color: rgba(245, 181, 68, .38); }
+  .role.uyg { color: var(--info); border-color: rgba(108, 160, 206, .38); }
+  .role.dogrulayici { color: var(--proceed); border-color: rgba(76, 195, 138, .38); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 28px; padding: 0 12px; border-radius: 6px; font-family: var(--sans);
+    font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap;
+    border: 1px solid transparent; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); min-width: 92px; }
+  .btn.primary:hover { background: #fff; }
+  .btn.secondary { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  .btn.secondary:hover { background: var(--raised); }
+  .btn.ghost { background: transparent; color: var(--dim); }
+  .btn.ghost:hover { color: var(--ink); background: var(--raised); }
+  .btn.danger { background: rgba(229, 72, 77, .08); color: var(--error); border-color: rgba(229, 72, 77, .45); }
+  .btn.danger:hover { background: rgba(229, 72, 77, .16); }
+  .btn.locked { opacity: .45; pointer-events: none; }
+  .kbd {
+    font-family: var(--mono); font-size: 10px; font-weight: 500; line-height: 1;
+    border: 1px solid currentColor; opacity: .55; border-radius: 4px; padding: 2px 4px 1px;
+  }
+  .btn.primary .kbd { color: var(--bg); }
+  .btn.secondary .kbd, .btn.danger .kbd { color: var(--dim); }
+
+  /* tooltip (kit Tooltip görünümü) */
+  .tt-host { position: relative; display: inline-flex; }
+  .tt {
+    position: absolute; z-index: 5; bottom: calc(100% + 7px); left: -4px;
+    background: var(--raised); border: 1px solid var(--hairline); border-radius: 6px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45); padding: 8px 11px;
+    font-size: 12px; line-height: 1.6; color: var(--ink); width: max-content; max-width: 300px;
+  }
+  .tt.dim { color: var(--dim); }
+  .tt .click { display: block; margin-top: 3px; color: var(--signal); font-size: 11px; }
+
+  /* 01 · başlık bandı */
+  .band-r1 { display: flex; align-items: center; gap: 10px; }
+  .band-r1 .wo { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .band-r1 .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--signal); animation: breathe 2.4s ease-in-out infinite; }
+  .band-r1 .phase { font-size: 12px; color: var(--dim); }
+  .band-r1 .right { margin-left: auto; display: flex; gap: 12px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .band-r2 { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+  .band-r2 h2 { font-size: 15px; font-weight: 600; letter-spacing: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .band-r2 .pencil { margin-left: 1px; color: var(--dim); opacity: .6; font-size: 13px; }
+  .hairline-progress { height: 2px; background: var(--hairline); border-radius: 1px; margin: 12px -14px -10px; overflow: hidden; }
+  .hairline-progress > div { height: 100%; width: 0%; background: var(--proceed); }
+
+  /* plan bölümü */
+  .plan-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+  .steps { display: flex; flex-direction: column; gap: 6px; }
+  .step {
+    display: flex; align-items: center; gap: 9px; background: var(--surface);
+    border: 1px solid var(--hairline); border-left-width: 2px; border-radius: 6px; padding: 6px 10px;
+  }
+  .step .idx { font-family: var(--mono); font-size: 11px; color: var(--dim); flex-shrink: 0; }
+  .step .aim { font-size: 12.5px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step .scope { margin-left: auto; flex-shrink: 0; }
+  .edge-mimar { border-left-color: var(--signal); }
+  .edge-uyg { border-left-color: var(--info); }
+  .edge-dogrulayici { border-left-color: var(--proceed); }
+
+  /* karar bandı — rayın mirası, plan bölümünün dibi */
+  .band {
+    display: flex; align-items: center; gap: 12px; margin-top: 10px;
+    border-top: 1px dashed var(--hairline); padding-top: 10px;
+  }
+  .band .msg { font-size: 12px; color: var(--dim); min-width: 0; }
+  .band .msg.warn { color: var(--signal); }
+  .band .actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+
+  /* düzenleyici */
+  .step.edit { padding: 4px 8px; }
+  .picker { display: inline-flex; align-items: center; gap: 4px; border-radius: 5px; padding: 2px 4px; }
+  .picker:hover { background: var(--raised); }
+  .picker .caret { color: var(--dim); font-size: 8px; }
+  .aim-input {
+    flex: 1; min-width: 0; height: 24px; background: var(--bg); border: 1px solid var(--hairline);
+    border-radius: 6px; color: var(--ink); font-family: var(--sans); font-size: 12.5px; padding: 0 9px;
+    display: flex; align-items: center;
+  }
+  .aim-input.err { border-color: var(--error); }
+  .edgebtn { width: 22px; height: 22px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); font-size: 10px; }
+  .edgebtn.on:hover { background: var(--raised); color: var(--ink); }
+  .edgebtn.off { opacity: .45; }
+  .edgebtn.danger:hover { background: rgba(229, 72, 77, .14); color: var(--error); }
+  .add-step {
+    width: 100%; text-align: left; background: transparent; border: 1px dashed var(--hairline);
+    border-radius: 6px; padding: 6px 10px; color: var(--dim); font-family: var(--mono); font-size: 11px; cursor: pointer;
+  }
+  .add-step:hover { color: var(--ink); }
+  .menu {
+    position: absolute; z-index: 6; top: calc(100% + 6px); left: 0; width: 224px;
+    background: var(--raised); border: 1px solid var(--hairline); border-radius: 8px; padding: 4px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  }
+  .menu .opt { display: grid; grid-template-columns: 3px 1fr 14px; gap: 9px; align-items: center; padding: 7px 8px; border-radius: 6px; }
+  .menu .opt:hover { background: rgba(231, 237, 244, .05); }
+  .menu .opt .nm { font-size: 12px; font-weight: 600; }
+  .menu .opt .dt { font-family: var(--mono); font-size: 10px; color: var(--dim); line-height: 1.4; margin-top: 1px; }
+  .menu .opt .ck { color: var(--ink); font-size: 11px; visibility: hidden; }
+  .menu .opt.sel .ck { visibility: visible; }
+  .rlamp { width: 3px; height: 100%; min-height: 26px; border-radius: 2px; }
+  .rlamp.architect { background: var(--signal); } .rlamp.implementer { background: var(--info); } .rlamp.verifier { background: var(--proceed); }
+
+  /* omurga + canlı panel */
+  .spine-row { display: flex; align-items: center; gap: 9px; padding: 7px 10px; }
+  .spine-row .mark { font-family: var(--mono); font-size: 11px; width: 12px; text-align: center; flex-shrink: 0; }
+  .mark.done { color: var(--proceed); } .mark.active { color: var(--info); } .mark.pending { color: #3a4a63; }
+  .pane { margin: 2px 0 8px 26px; display: flex; flex-direction: column; gap: 7px; }
+  .pane-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .pane-head .cost { margin-left: auto; }
+  .tline { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.7; padding-left: 2px; }
+  .tline .who { color: var(--info); }
+  .tool { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--hairline); border-radius: 5px; padding: 2px 8px; margin: 3px 0; color: var(--dim); }
+  .tool::before { content: "▸"; color: #3a4a63; }
+  .variant { border: 1px solid var(--hairline); border-radius: 8px; padding: 9px 12px; display: flex; flex-direction: column; gap: 7px; background: var(--surface); }
+  .variant .vh { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .12em; color: #3a4a63; }
+  .variant-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .variant-row .grow { flex: 1; min-width: 0; }
+
+  /* kartlar (hata / izin / kapanış / boş) */
+  .card .body .line { font-size: 12.5px; line-height: 1.6; }
+  .card .body .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .hintline { margin-top: 9px; font-size: 11.5px; color: var(--dim); }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; }
+  .check .ok { color: var(--proceed); font-family: var(--mono); font-size: 11px; }
+
+  /* pano kartı */
+  .board-card .body { padding: 10px 13px; }
+  .board-top { display: flex; align-items: center; gap: 9px; }
+  .board-top .wo { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+  .board-top .right { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .board-title { font-size: 13px; font-weight: 600; margin-top: 5px; }
+  .board-reason { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .board-reason .why-not { font-size: 11.5px; color: var(--dim); }
+  .board-reason .go { margin-left: auto; font-size: 12px; color: var(--signal); }
+
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .twocol { grid-template-columns: 1fr; } }
+
+  footer.note { border-top: 1px solid var(--hairline); padding-top: 18px; font-size: 12.5px; color: var(--dim); line-height: 1.7; }
+  footer.note b { color: var(--ink); }
+  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
+  <header class="plate-head">
+    <h1>WO-0039 · Mockup — DOSYA: ray öldü, kararlar bağlamına indi</h1>
+    <p class="sub">
+      Onaya sunulan tasarım tabakası. Onaylanmadan tek satır uygulama kodu yazılmaz; düzeltme istenirse bu dosya güncellenir.
+      Yerleşim + hiyerarşi + metin sözleşmesi gösterilir — piksel CSS değil. 5–7 numaralı kart gövdeleri mevcut kartlardır;
+      mockup yalnızca <b>yeni konumları</b> gösterir.
+    </p>
+    <div class="verdict"><span>⚡ ana iddia:</span> alt bar (ray) <b>hiçbir durumda yok</b> — kararlar bağlamında, süreç denetimi canlı panelin başlığında</div>
+    <div class="legend">
+      <span><i style="background:var(--signal)"></i>mimar</span>
+      <span><i style="background:var(--info)"></i>uygulayıcı</span>
+      <span><i style="background:var(--proceed)"></i>doğrulayıcı</span>
+      <span style="color:var(--signal)">amber = "seni bekliyor"</span>
+    </div>
+  </header>
+
+  <!-- ═══════════════ 01 · BAŞLIK BANDI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> BAŞLIK BANDI <span class="tag">— kaydırmadan hep görünür (telafi burada)</span></figcaption>
+    <div class="card">
+      <div class="lamp signal breathe"></div>
+      <div class="body">
+        <div class="band-r1">
+          <span style="color:var(--dim);font-size:13px">←</span>
+          <span class="wo">WO-0001</span>
+          <span class="chip">MİMAR ONAYI</span>
+          <span class="dot"></span>
+          <span class="phase">Plan hazır — onayla</span>
+          <span class="right"><span>$2,08</span><span>Süre 7dk 48sn</span></span>
+        </div>
+        <div class="band-r2">
+          <h2>Faz 6c-3 varlıklar — placeholder JPG'ler, petrol logo/splash</h2>
+          <span class="pencil">✎</span>
+          <span class="tt-host"><span class="chip role" style="cursor:pointer">KAPILARDA</span>
+            <span class="tt">
+              Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış.
+              <span class="click">Tıkla: Her adımda</span>
+            </span>
+          </span>
+          <span class="chip">İZİN: SORAR</span>
+        </div>
+        <div class="hairline-progress"><div></div></div>
+      </div>
+    </div>
+    <p class="why"><b>Neden:</b> "Kapılarda" çipi bugün ne yaptığını anlatmıyor ve tıklanabilirliği gizli. Tooltip çipin adını tanımlar
+    ("üç kapıda döner") — sözcük kendi kendini öğretir. Bar kalktığı için bu bandın hep görünür oluşu, kararın kaydırma konumundan bağımsız habercisidir:
+    amber lamba + "Plan hazır — onayla" faz satırı.</p>
+  </figure>
+
+  <!-- ═══════════════ 02 · PLAN BÖLÜMÜ — ÖNERİ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> PLAN BÖLÜMÜ · ÖNERİ DURUMU <span class="tag">— karar bandı bölüme indi</span></figcaption>
+    <div>
+      <!-- 2026-08-23 revizyon: TEK KARAR KONUMU — satırların altındaki bant öldü; karar satırı
+           Plan iste'nin piksellerinde, bölümün ÜSTÜNDE (rayın grameri: mesaj solda, eylemler sağda). -->
+      <!-- 2026-08-23 beşinci tur düzeltmesi: Onayla + İtiraz et YAN YANA solda (birincil önde). -->
+      <div class="band" style="border-top:none;padding-top:0;margin:0 0 9px;justify-content:flex-start">
+        <button class="btn primary" style="width:92px">Onayla <span class="kbd">⏎</span></button>
+        <!-- altıncı tur: İtiraz et = amber (signal) ve eşit genişlikte (92px). -->
+        <button class="btn" style="margin-left:8px;width:92px;background:var(--signal);color:var(--bg)">İtiraz et</button>
+      </div>
+      <div class="plan-head">
+        <span class="readout amber">PLAN HAZIR</span>
+        <button class="btn ghost">Düzenle</button>
+      </div>
+      <div class="steps">
+        <div class="step edge-mimar">
+          <span class="idx">1</span>
+          <span class="tt-host" style="top:auto">
+            <span class="chip role mimar">MİMAR</span>
+            <span class="tt" style="bottom:auto;top:calc(100% + 7px)">Mimar — planlar · adımları denetler</span>
+          </span>
+          <span class="aim">varyasyon A'yı planla</span>
+          <span class="meta scope">· docs</span>
+        </div>
+        <div class="step edge-uyg">
+          <span class="idx">2</span>
+          <span class="chip role uyg">UYGULAYICI</span>
+          <span class="aim">varyasyon A'yı uygula</span>
+        </div>
+        <div class="step edge-dogrulayici">
+          <span class="idx">3</span>
+          <span class="chip role dogrulayici">DOĞRULAYICI</span>
+          <span class="aim">bağımsız doğrulama raporu yaz</span>
+        </div>
+        <div class="step edge-mimar">
+          <span class="idx">4</span>
+          <span class="chip role mimar">MİMAR</span>
+          <span class="aim">sonuçları değerlendir, kapanış öner</span>
+        </div>
+      </div>
+    </div>
+    <p class="why">
+      <b>(2026-08-23 revizyon)</b> Karar satırı TEK konumda — Onayla + İtiraz et YAN YANA solda (beşinci tur düzeltmesi; ipucu yok, yalnız kapı gerekçesi konuşur). İtiraz et secondary (bağımsız alternatif, kırmızı değil — yeniden iş, kayıp değil). Satırların altındaki
+      bant öldü. <b>Düzenle başlıkta</b> kalır. Satırlardan <del>"hazır"×N</del> silindi; sağ meta yalnız kapsamlı satırda
+      (<span class="meta">· docs</span>). Görev adları operatör dilinde gelir (üretici istem); rol rozeti tooltip'i görevi anlatır.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 03 · PLAN BÖLÜMÜ — DÜZENLEYİCİ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> PLAN BÖLÜMÜ · DÜZENLEYİCİ <span class="tag">— göz tek karar konumu öğrenir</span></figcaption>
+    <div>
+      <!-- 2026-08-23: düzenleyici bant da AYNI konumda (göz tek karar konumu öğrenir). -->
+      <!-- Yedinci tur: karar çifti yerinde KİLİTLİ; Bitti+Vazgeç Düzenle'nin başlık slotunda. -->
+      <div class="band" style="border-top:none;padding-top:0;margin:0 0 9px;justify-content:flex-start">
+        <button class="btn primary locked" style="width:92px">Onayla</button>
+        <button class="btn secondary locked" style="margin-left:8px;width:92px">İtiraz et</button>
+        <span class="msg warn" style="margin-left:12px">Bir adımın metni boş (2. satır) — doldurunca Onayla açılır.</span>
+      </div>
+      <div class="plan-head">
+        <span class="readout amber">PLAN HAZIR</span>
+        <span style="display:flex;gap:8px">
+          <button class="btn secondary" style="width:92px">Bitti <span class="kbd">⏎</span></button>
+          <button class="btn ghost" style="width:92px">Vazgeç</button>
+        </span>
+      </div>
+      <div class="steps">
+        <div class="step edit edge-mimar">
+          <span class="idx">1</span>
+          <span class="tt-host">
+            <span class="edgebtn on" style="cursor:grab" title="sürükle">⋮</span><span class="picker"><span class="chip role mimar">MİMAR</span><span class="caret">▾</span></span>
+            <span class="menu">
+              <div class="opt"><span class="rlamp architect"></span><span><span class="nm">Mimar</span><span class="dt" style="display:block">planlar · adımları denetler</span></span><span class="ck">✓</span></div>
+              <div class="opt"><span class="rlamp implementer"></span><span><span class="nm">Uygulayıcı</span><span class="dt" style="display:block">uygular · kodu yazar, koşturur</span></span><span class="ck">✓</span></div>
+              <div class="opt"><span class="rlamp verifier"></span><span><span class="nm">Doğrulayıcı</span><span class="dt" style="display:block">doğrular · bağımsız rapor verir</span></span><span class="ck">✓</span></div>
+            </span>
+          </span>
+          <span class="aim-input">varyasyon A'yı planla</span>
+          <span class="edgebtn danger on">✕</span>
+        </div>
+        <div class="step edit edge-uyg">
+          <span class="idx">2</span>
+          <span class="edgebtn on" style="cursor:grab" title="sürükle">⋮</span><span class="picker"><span class="chip role uyg">UYGULAYICI</span><span class="caret">▾</span></span>
+          <span class="aim-input err">&nbsp;</span>
+          <span class="edgebtn danger on">✕</span>
+        </div>
+        <div class="step edit edge-dogrulayici">
+          <span class="idx">3</span>
+          <span class="edgebtn on" style="cursor:grab" title="sürükle">⋮</span><span class="picker"><span class="chip role dogrulayici">DOĞRULAYICI</span><span class="caret">▾</span></span>
+          <span class="aim-input">bağımsız doğrulama raporu yaz</span>
+          <span class="edgebtn danger on">✕</span>
+        </div>
+        <button class="add-step">+ Adım ekle</button>
+      </div>
+    </div>
+    <p class="why">
+      Düzenleyici açıkken başlıktaki Düzenle görünmez (ikinci giriş gürültü olur). Rol seçici tanıma listesidir — her rolün görev satırı menüde.
+      Korunan ▲▼✕ sönük ama görülür (kapalı değil — ev kuralı). Boş aim hata kenarı taşır; <b>Vazgeç / Bitti bandı, kararıyla AYNI konumda</b>:
+      göz tek karar konumu öğrenir. Taslaklar Bitti'de sahnede kalır (mevcut dürüst model aynen).
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 04 · OMURGA + CANLI PANEL ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">04</span> ONAY SONRASI OMURGA + CANLI PANEL <span class="tag">— Durdur artık burada yaşıyor</span></figcaption>
+    <div class="card">
+      <div class="lamp run"></div>
+      <div class="body" style="padding:6px 10px 10px">
+        <div class="spine-row">
+          <span class="mark done">✓</span><span class="idx" style="font-family:var(--mono);font-size:11px;color:var(--dim)">1</span>
+          <span class="chip role mimar">MİMAR</span>
+          <span class="aim" style="font-size:12.5px;font-weight:600">varyasyon A'yı planla</span>
+          <span class="meta" style="margin-left:auto">tamam · ⏱ 4dk 12sn · $0,41 · <span style="color:var(--info)">▸ rapor</span></span>
+        </div>
+        <div class="spine-row" style="background:var(--raised);border-radius:6px;border:1px solid var(--hairline)">
+          <span class="mark active">►</span><span class="idx" style="font-family:var(--mono);font-size:11px;color:var(--dim)">2</span>
+          <span class="chip role uyg">UYGULAYICI</span>
+          <span class="aim" style="font-size:12.5px;font-weight:600">varyasyon A'yı uygula</span>
+          <span class="meta" style="margin-left:auto">çalışıyor · docs</span>
+        </div>
+        <div class="pane">
+          <div class="pane-head">
+            <span class="readout">UYGULAYICI · CANLI</span>
+            <span class="meta cost">$0,41 · 00:14</span>
+            <button class="btn danger">Durdur</button>
+          </div>
+          <p class="tline"><span class="who"> uygulayıcı ▸</span> Asset'leri hazırlıyorum — önce petrol logosu ve splash…</p>
+          <div><span class="tool">bash · npm test -- --run</span></div>
+          <p class="tline"><span class="who"> uygulayıcı ▸</span> 14 test geçti, 0 kaldı. Şimdi photos overflow'ı düzeltiyorum…</p>
+        </div>
+        <div class="spine-row">
+          <span class="mark pending">○</span><span class="idx" style="font-family:var(--mono);font-size:11px;color:var(--dim)">3</span>
+          <span class="chip role dogrulayici">DOĞRULAYICI</span>
+          <span class="aim" style="font-size:12.5px;font-weight:600">bağımsız doğrulama raporu yaz</span>
+          <span class="meta" style="margin-left:auto">sırada</span>
+        </div>
+      </div>
+    </div>
+    <div class="twocol" style="margin-top:2px">
+      <div class="variant">
+        <span class="vh">5 sn takıldı → zorla kes açılır</span>
+        <div class="variant-row">
+          <span class="readout" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">UYGULAYICI · CANLI</span>
+          <button class="btn danger" style="margin-left:auto">Zorla kes</button>
+          <button class="btn secondary locked">Durduruluyor…</button>
+        </div>
+      </div>
+      <div class="variant">
+        <span class="vh">durduruldu → sürdür</span>
+        <div class="variant-row">
+          <span class="readout">UYGULAYICI · DURDURULDU</span>
+          <button class="btn primary" style="margin-left:auto">▶ Sürdür <span class="kbd">⏎</span></button>
+        </div>
+        <span class="hintline" style="margin-top:0">Durduruldu. Rapor kısmi kalır.</span>
+      </div>
+    </div>
+    <p class="why">
+      Onay sonrası omurga anatomisi değişmez — içerik Türkçeleşir. <b>Süreç denetimi canlı panelin başlık satırına iner:</b>
+      Durdur / Zorla kes / ▶ Sürdür + durmuş mesajı. Çalışırken mesaj yok kuralı korunur (yalnız Durdur).
+      Kabul edilen takas: Durdur kaydırınca uzaklaşır — telafi, hep görünür başlık bandındaki mavi lamba + "Çalışıyor" fazı;
+      pratikte acıtırsa ince bir canlı göstergesi sonradan konuşulur.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 05-07 · KARTLAR ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">05–07</span> HEDEF KARTLARINA İNEN SATIRLAR <span class="tag">— rayın kalan üç işi</span></figcaption>
+    <div class="twocol">
+      <div class="variant">
+        <span class="vh">05 · hata kartı — yeniden dene artık burada</span>
+        <div class="card" style="margin-top:2px">
+          <div class="lamp error"></div>
+          <div class="body">
+            <p class="line">Oturum hata verdi — sağlayıcı akışı kesildi.</p>
+            <div class="actions"><button class="btn primary">Yeniden dene <span class="kbd">⏎</span></button></div>
+          </div>
+        </div>
+      </div>
+      <div class="variant">
+        <span class="vh">06 · izin kartı — ipucu satırı karta taşındı</span>
+        <div class="card" style="margin-top:2px">
+          <div class="lamp signal breathe"></div>
+          <div class="body">
+            <p class="line">Uygulayıcı izin istiyor: <span class="meta" style="font-size:11px">bash · git push</span></p>
+            <div class="actions"><button class="btn primary">İzin ver</button><button class="btn ghost">Reddet</button></div>
+            <p class="hintline">Oturum durdu — maliyet işlemez.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="twocol" style="margin-top:12px">
+      <div class="variant">
+        <span class="vh">07 · kapanış kartı — ipucu kartın içinde</span>
+        <div class="card" style="margin-top:2px">
+          <div class="lamp done"></div>
+          <div class="body">
+            <span class="readout" style="color:var(--proceed)">TÜM ADIMLAR TAMAM</span>
+            <div style="margin-top:7px">
+              <div class="check"><span class="ok">✓</span> plan onayı</div>
+              <div class="check"><span class="ok">✓</span> PR açık · CI yeşil</div>
+              <div class="check"><span class="ok">✓</span> doğrulama raporu</div>
+            </div>
+            <p class="hintline">Arşive gider — istersen not bırakabilirsin.</p>
+            <div class="actions"><button class="btn secondary">İş emrini kapat</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="variant">
+        <span class="vh">08 · plan yok — yalnız düğme (2026-08-23 düzeltmesi)</span>
+        <div style="margin-top:6px"><button class="btn primary">Plan iste <span class="kbd">⏎</span></button></div>
+      </div>
+    </div>
+    <p class="why">
+      Rayın kalan üç işi hedef kartlarına iner: <b>Yeniden dene</b> hata kartına, <b>izin ipucu</b> izin kartına,
+      <b>kapanış ipucu</b> kapanış kartının içine ("Kapat —" öneki düşer; düğme zaten kartta). Kapat bilinçli olarak
+      <b>⏎ taşımaz</b> (yanlışlıkla kapanma sürtünmesi — mevcut kural). "Plan iste" boş durumu karar alanına taşınır;
+      ActionCard'ın plan aşaması dalı söner (çifte düğme olmasın).
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 09 · PANO KARTI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">09</span> PANO KARTI <span class="tag">— "commit" sızıntısı ölür</span></figcaption>
+    <div class="card board-card" style="max-width:430px">
+      <div class="lamp signal breathe"></div>
+      <div class="body">
+        <div class="board-top">
+          <span class="wo">WO-0039</span>
+          <span class="chip">MİMAR ONAYI</span>
+          <span class="right">$0,12 · 3dk</span>
+        </div>
+        <div class="board-title">Varyasyon A denemesi</div>
+        <div class="board-reason">
+          <span class="why-not">Plan onayı bekleniyor <del style="margin-left:6px">Plan commiti bekleniyor</del></span>
+          <span class="go">▸ Planı onayla</span>
+        </div>
+      </div>
+    </div>
+    <p class="why">
+      Aynı durum ("plan önerildi, onay sende") artık iki yüzde aynı sözle: <b>Plan onayı bekleniyor</b>.
+      Pano satırı detaydaki ikizden okur — ikiz metin ve "commit" jargonu ölür.
+    </p>
+  </figure>
+
+  <footer class="note">
+    <b>Kabul özeti — neyi neden yapıyoruz:</b> ray, karar ile denetimi tek çubukta birleştiriyordu; kararların bağlamından
+    fiziksel uzaklığı eylem-bağlam mesafesi yaratıyordu. Bu tasarım kararları dosyanın akışına (plan bölümü, hata/izin/kapanış kartları),
+    süreç denetimini canlı panelin başlığına yerleştirir ve boşuyken hiçbir şey render etmez. <b>⏎</b> hâlâ geçerli birinciyi ateşler
+    (Onayla / Bitti / Sürdür / Yeniden dene / Plan iste) — asla Kapat'ta, asla izin anında. "hazır"×N, "Plan commiti bekleniyor" ve
+    İngilizce görev adları (üretici istem + WO-0001'de elle düzeltme) gider; "Kapılarda" çipi tooltip ile ne yaptığını anlatır.
+    <br /><br />
+    Onayla → kod (Faz B: PlanSection karar bandı · ActionRail dosyası silinir · panellere DriveControls · etiket paketleri tr/en ·
+    architectPrompt aim dili · ADR-0012/0013 ek maddeleri · E2E yeniden yazım).
+  </footer>
+
+</div>
+</body>
+</html>

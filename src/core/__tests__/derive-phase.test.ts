@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { derivePhase } from '../derive';
-import type { StageId, StepStatus } from '../types';
+import type { SessionRef, StageId, StepStatus } from '../types';
 
 // A minimal step view slice (idx/status/verdict) — what derivePhase consumes.
 const sv = (idx: number, status: StepStatus, verdict?: 'proceed' | 'revise') => ({ idx, status, verdict });
-const phase = (stage: StageId, steps: ReturnType<typeof sv>[] = [], hasPlan = false) =>
-  derivePhase({ stage } as { stage: StageId }, steps, hasPlan);
+const stoppedRow = { role: 'architect', status: 'stopped', transcript: [] } as SessionRef;
+const phase = (stage: StageId, steps: ReturnType<typeof sv>[] = [], hasPlan = false, sessions: SessionRef[] = []) =>
+  derivePhase({ stage, sessions }, steps, hasPlan);
 
 describe('derivePhase (WO-0021)', () => {
   it('written → just_written', () => {
@@ -14,6 +15,17 @@ describe('derivePhase (WO-0021)', () => {
 
   it('architect_approval + no pending plan → planning', () => {
     expect(phase('architect_approval', [], false)).toEqual({ kind: 'planning' });
+  });
+
+  // 2026-08-24 (operator, live run): the phase's voice follows the ROWS — a stopped proposal
+  // session is not "düşünüyor"; the line says the proposal sits stopped (restart-safe: rows, not
+  // the renderer fold).
+  it('architect_approval + no plan + a STOPPED session row → plan_stopped (2026-08-24)', () => {
+    expect(phase('architect_approval', [], false, [stoppedRow])).toEqual({ kind: 'plan_stopped' });
+  });
+
+  it('a plan on the table outranks the stopped row (plan_ready wins)', () => {
+    expect(phase('architect_approval', [], true, [stoppedRow])).toEqual({ kind: 'plan_ready' });
   });
 
   it('architect_approval + pending plan → plan_ready (TD-025 restart recovery)', () => {

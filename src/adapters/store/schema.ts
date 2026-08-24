@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS session (
   work_order_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')),
   scope_track_id TEXT,
-  status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','none')),
+  status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','stopped','none')),
   transcript TEXT NOT NULL,
   stop_and_ask TEXT,
   cost_tokens_in INTEGER,
@@ -89,6 +89,15 @@ CREATE TABLE IF NOT EXISTS work_order_step (
   observed_at TEXT NOT NULL,
   PRIMARY KEY (work_order_id, idx)
 );
+-- The AGENT's original proposed plan (2026-08-23, "ilk öneriye dön"): snapshotted the first time
+-- an operator edit is about to overwrite plan.md, cleared whenever the architect re-proposes.
+-- Document text in the DB is ADR-0010's line — this is not the live document (plan.md stays the
+-- truth); it is the one historical fact the restore action needs and git cannot give mid-flight.
+CREATE TABLE IF NOT EXISTS plan_original (
+  work_order_id TEXT PRIMARY KEY,
+  plan_text TEXT NOT NULL,
+  at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS connection (
   workspace_id TEXT NOT NULL,
   repo_remote TEXT NOT NULL,
@@ -104,7 +113,7 @@ CREATE TABLE IF NOT EXISTS connection (
 CREATE TABLE IF NOT EXISTS wo_event (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_order_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision')),
+  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision')),
   detail TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL
 );

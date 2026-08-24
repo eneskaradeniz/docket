@@ -134,9 +134,20 @@ describe('foldSessionEvent — live session state', () => {
     let s = foldSessionEvent(initialSessionState, { kind: 'tool_use', callId: 'c1', tool: 'Write', input: { file_path: '/a' } });
     s = foldSessionEvent(s, { kind: 'tool_result', callId: 'c1', summary: 'wrote 1 line', isError: false });
     expect(s.entries).toEqual([
-      { speaker: 'tool_use', tool: 'Write', detail: '/a' },
-      { speaker: 'tool_result', summary: 'wrote 1 line', isError: false },
+      { speaker: 'tool_use', tool: 'Write', detail: '/a', callId: 'c1' },
+      { speaker: 'tool_result', summary: 'wrote 1 line', isError: false, callId: 'c1' },
     ]);
+  });
+
+  // 2026-08-23 (canlı panel revizyonu, §5): the fold KEEPS callId — the transcript's grouping pairs
+  // a result to ITS call (parallel calls broke adjacency pairing; orphan headerless result walls
+  // were the symptom). Optional: pre-callId persisted rows still pair by adjacency fallback.
+  it('parallel calls keep distinct callIds through the fold', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'tool_use', callId: 'c1', tool: 'Bash', input: { command: 'ls' } });
+    s = foldSessionEvent(s, { kind: 'tool_use', callId: 'c2', tool: 'Read', input: { file_path: '/b' } });
+    s = foldSessionEvent(s, { kind: 'tool_result', callId: 'c2', summary: 'b ok', isError: false });
+    s = foldSessionEvent(s, { kind: 'tool_result', callId: 'c1', summary: 'ls ok', isError: false });
+    expect(s.entries.map((e) => (e as { callId?: string }).callId)).toEqual(['c1', 'c2', 'c2', 'c1']);
   });
 
   it('permission_request stops at the gate; ask_resolved (not tool_result) clears it back to running', () => {
@@ -188,7 +199,7 @@ describe('foldSessionEvent — live session state', () => {
 
   it('seedLiveState re-seeds persisted asks as stopped_asking (WO-0027 / Bulgu 9)', () => {
     const s = seedLiveState(
-      { transcript: [], cost: undefined, providerSessionId: 'sess-1' },
+      { transcript: [], cost: undefined, providerSessionId: 'sess-1', status: 'idle' as const },
       [{ requestId: 'r1', tool: 'Write', input: { file_path: '/a' } }],
     );
     expect(s.status).toBe('stopped_asking');
@@ -237,8 +248,48 @@ describe('foldSessionEvent — live session state', () => {
     expect(s.status).toBe('stopped_asking');
     s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
     expect(s.status).toBe('done');
-    expect(s.entries).toHaveLength(1);
+    // 2026-08-24: the transcript opens and closes with the session's own lifecycle notes.
+    expect(s.entries).toEqual([
+      { speaker: 'note', kind: 'session_started' },
+      { speaker: 'assistant', text: 'planning…' },
+      { speaker: 'note', kind: 'session_done' },
+    ]);
     expect(s.pendingAsks).toHaveLength(0);
+  });
+
+  // 2026-08-24 (operator: "hangi saniye… onun dışında olmuş gibi duruyor"): the lifecycle events
+  // carry an ISO stamp and the fold copies it into the note's detail — the döküm's timeline.
+  it('the lifecycle notes carry the event stamps (started / done / interrupted)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's', at: '2026-08-24T02:22:01.000Z' });
+    expect(s.entries.at(-1)).toEqual({ speaker: 'note', kind: 'session_started', detail: '2026-08-24T02:22:01.000Z' });
+    s = foldSessionEvent(s, { kind: 'interrupted', at: '2026-08-24T02:23:07.000Z' });
+    expect(s.entries.at(-1)).toEqual({ speaker: 'note', kind: 'interrupted', detail: '2026-08-24T02:23:07.000Z' });
+    s = foldSessionEvent(s, { kind: 'started', sessionId: 's2', at: '2026-08-24T02:23:40.000Z' });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 }, at: '2026-08-24T02:24:15.000Z' });
+    // a resumed session accumulates one start/stop pair per run — the multi-run timeline
+    expect(s.entries.filter((e) => e.speaker === 'note').map((e) => (e as { kind: string }).kind)).toEqual([
+      'session_started', 'interrupted', 'session_started', 'session_done',
+    ]);
+  });
+
+  // WO-0039 stabilization (2026-08-23, "Durdur must never say Oturum çöktü"): an intentional
+  // interrupt folds to 'stopped' — terminal and calm, never 'error' (the fail card) and never a
+  // stale-'running' fold (the glow that would not land).
+  it('interrupted → stopped: terminal, calm, asks cleared (WO-0039 stabilization)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's' });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r1', tool: 'Write', input: {} });
+    s = foldSessionEvent(s, { kind: 'interrupted' });
+    expect(s.status).toBe('stopped');
+    expect(s.pendingAsks).toHaveLength(0);
+    // The session's own fact line rides the transcript — the pipeline records after folding, so
+    // the LEDGER card carries the stop too (the archived döküm must not end at the last checkpoint).
+    expect(s.entries.at(-1)).toEqual({ speaker: 'note', kind: 'interrupted' });
+  });
+
+  it('interrupted carries an observed cost when the runner has one (a scripted fake can)', () => {
+    const s = ev({ kind: 'interrupted', cost: { tokensIn: 120, tokensOut: 24, usd: 0.02 } });
+    expect(s.status).toBe('stopped');
+    expect(s.cost).toEqual({ tokensIn: 120, tokensOut: 24, usd: 0.02 });
   });
 });
 
@@ -448,6 +499,7 @@ describe('seedLiveState — resume seeding from a persisted session (WO-0026 / F
       ],
       cost: { tokensIn: 10, tokensOut: 2, usd: 0.5 },
       providerSessionId: 'sess-9',
+      status: 'idle' as const,
     });
     expect(s.entries).toHaveLength(2);
     expect(s.cost).toEqual({ tokensIn: 10, tokensOut: 2, usd: 0.5 });
@@ -455,7 +507,12 @@ describe('seedLiveState — resume seeding from a persisted session (WO-0026 / F
     expect(s.status).toBe('idle');
   });
   it('an empty session seeds the initial state', () => {
-    const s = seedLiveState({ transcript: [], cost: undefined, providerSessionId: undefined });
+    const s = seedLiveState({ transcript: [], cost: undefined, providerSessionId: undefined, status: 'none' as const });
     expect(s).toEqual(initialSessionState);
+  });
+  it('a STOPPED row seeds the fold stopped — the Sürdür offer and the Durduruldu turn line derive after an app restart (2026-08-24)', () => {
+    const s = seedLiveState({ transcript: [{ speaker: 'assistant', text: 'yarıda' }], cost: undefined, providerSessionId: 'sess-s', status: 'stopped' as const });
+    expect(s.status).toBe('stopped');
+    expect(s.sessionId).toBe('sess-s');
   });
 });

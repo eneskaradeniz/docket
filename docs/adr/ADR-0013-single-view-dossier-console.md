@@ -64,3 +64,27 @@ The detail screen is ONE scroll at every width — a dossier, read top-to-bottom
   "two places to look" fatigue the ruling targets.
 - **Keeping SADE/DETAY for the transcript only** (a per-card toggle): rejected by the operator's
   simpler form — the card's own aç/kapa IS that distinction.
+
+---
+
+**Addendum (2026-08-22, WO-0039 — the rail dissolves, decisions go contextual):** the DOSYA scroll
+no longer ends with a rail; `ActionRail.tsx` is deleted. Its two jobs split by nature: DOSSIER
+DECISIONS render in the flow they decide on — İtiraz et + Onayla in a decision band directly under
+the plan rows (the rail's message-left/actions-right grammar, inherited), Düzenle in the "PLAN
+HAZIR" heading, Plan iste in an empty-state card (1 line + ≤1 action; the SessionPane's invitation
+line and ActionCard's plan-stage branch died with it — exactly one Plan iste on the screen), Yeniden
+dene on the fail card, the ask hint on the ask stack, the close hint inside the close card. PROCESS
+CONTROL (Durdur / Zorla kes / ▶ Sürdür) rides the LIVE pane's header (`DriveControls`) — including
+a slim plan-stage strip for a live re-planning drive while a plan is on the table (the WO-0038
+"no instrument at the approval moment" ruling stands for the idle moment). The operator took the
+full-removal ruling over the designer's split recommendation, accepting the trade on record:
+Durdur scrolls away with its pane; the always-visible header band (turn lamp + phase line) and the
+global ⏎ compensate. The proposal rows also lost their constant "hazır" column (zero information)
+and gained the scoped row's repo suffix (StepList parity); the architect prompt now asks for short
+Turkish aims (the aim is operator display text, rendered verbatim — ADR-0007's tension resolved at
+the producer).
+
+**Ruling (2026-08-23, first hands-on pass of WO-0039):** the bare plan stage carries ONLY the Plan
+iste button — the "Henüz plan yok." empty-state card died on the operator's hand. The header band's
+phase line already states the condition ("İş emri yazıldı — plan iste"); a line echoing it is
+background noise. One action, zero lines.

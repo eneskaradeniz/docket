@@ -8,7 +8,7 @@ import type { StageId } from '../types';
 // fold status (idle when no drive ran in this app session), whether the runner holds unanswered
 // asks, the wind-down flag (interrupt sent, session still open) and the post-stop memory
 // (wind-down completed, Sürdür not yet clicked — controller-owned, cleared on resume).
-const phase = (stage: StageId) => derivePhase({ stage }, [], false);
+const phase = (stage: StageId) => derivePhase({ stage, sessions: [] }, [], false);
 
 const turn = (
   liveStatus: LiveSessionStatus,
@@ -55,6 +55,17 @@ describe('deriveTurnState (WO-0031c)', () => {
 
   it('a completed wind-down awaiting Sürdür → stopped', () => {
     expect(turn('idle', { stopped: true })).toBe('stopped');
+  });
+
+  // WO-0039 stabilization (2026-08-23): the fold itself carries the intentional stop (the
+  // `interrupted` event) — it must land as stopped even without the controller's memory flag,
+  // and a stale-'running' fold can no longer mask the completed wind-down.
+  it("the fold's own stopped status (the interrupted event) → stopped, no controller flag needed", () => {
+    expect(turn('stopped')).toBe('stopped');
+  });
+
+  it('an error still outranks a stopped fold (a real crash after the interrupt is not silenced)', () => {
+    expect(turn('error', { stopped: true })).toBe('retry');
   });
 
   it('a closed work order → done — the calm "Kapandı" line, never a false "Sıra sende" (WO-0031d tur-2)', () => {

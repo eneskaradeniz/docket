@@ -120,24 +120,47 @@ await spec('new-work-order dialog opens and ESC closes it (dialog outranks esc=b
   assert.ok(cards >= 1, 'board lost after dialog esc');
 });
 
-await spec('plan approval: PlanSection rows + rail İtiraz/Düzenle/Onayla; objection is an inline layer (esc peels it)', async () => {
+await spec('plan approval: rows + the DECISION BAND (İtiraz/Onayla) + heading Düzenle; objection is an inline layer (esc peels it)', async () => {
   await openDetail('Plan bekliyor');
-  // WO-0038: the proposal is compact ROWS (PlanSection) — role chip + aim + 'hazır' meta, no big cards
+  // WO-0038: the proposal is compact ROWS (PlanSection). WO-0039: no per-row status word (the old
+  // 'hazır'×N said nothing) and the decision trio lives WITH the rows — İtiraz/Onayla in the band
+  // under them, Düzenle in the section heading; the rail is dead.
   const rows = page.locator('[data-plan-cards] li');
   const rowCount = await rows.count();
   assert.equal(rowCount, 1, `expected 1 plan row, got ${rowCount}`);
   const rowText = (await rows.first().textContent()) ?? '';
   assert.ok(rowText.includes('Uygulayıcı'), `the row carries no role chip: ${rowText}`);
-  assert.ok(rowText.includes('hazır'), `the row carries no hazır meta: ${rowText}`);
-  const rail = page.locator('[data-rail]');
-  for (const label of ['İtiraz et', 'Düzenle', 'Onayla']) {
-    assert.equal(await rail.getByRole('button', { name: label, exact: true }).count(), 1, `no rail ${label}`);
-  }
-  assert.ok((await page.getByText('Onayla — adımlar sırayla koşar.').count()) >= 1, 'no rail hint');
+  assert.ok(!rowText.includes('hazır'), `the dead hazır meta survived: ${rowText}`);
+  const band = page.locator('[data-plan-decision]');
+  assert.equal(await band.getByRole('button', { name: 'İtiraz et', exact: true }).count(), 1, 'no band İtiraz et');
+  assert.equal(await band.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'no band Onayla');
+  assert.equal(
+    await page.locator('[data-plan-cards]').getByRole('button', { name: 'Düzenle', exact: true }).count(),
+    1,
+    'no Düzenle in the section heading',
+  );
+  // 2026-08-23 fourth pass: the standing consequence line DIED — buttons left, no hint unless a
+  // gate reason (an empty aim) demands one.
+  assert.equal(await page.getByText('Onayla — adımlar sırayla koşar.').count(), 0, 'the dead consequence line survived');
   assert.ok((await page.locator('.glow-signal').count()) >= 1, 'no amber glow at the decision moment');
   await page.getByRole('button', { name: 'İtiraz et' }).first().click();
   await page.waitForTimeout(250);
   assert.ok((await page.getByText('İtirazın ne?').count()) >= 1, 'objection layer did not open');
+  // 2026-08-23 fifth pass: while the objection layer is open the decision row stands down (the
+  // layer's own Gönder/Vazgeç own the moment — ⏎ can never read as Onayla from behind it).
+  assert.equal(await page.locator('[data-plan-decision]').count(), 0, 'the decision row showed over the objection layer');
+  await page.keyboard.type('adımlar eksik');
+  await page.keyboard.press('Enter'); // ⏎ = Gönder — the objection goes to the architect
+  await page.waitForTimeout(600);
+  assert.equal(await page.getByText('İtirazın ne?').count(), 0, 'Enter did not send the objection');
+  const live = await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count();
+  assert.ok(live >= 1, 'the architect did not start after the objection');
+  await stopAllDrives();
+  await backToBoard();
+  // esc still peels the layer (checked on a fresh open that is cancelled instead of sent)
+  await openDetail('Plan bekliyor');
+  await page.getByRole('button', { name: 'İtiraz et' }).first().click();
+  await page.waitForTimeout(250);
   await page.keyboard.press('Escape'); // peels the layer, NOT the screen
   await page.waitForTimeout(250);
   assert.equal(await page.getByText('İtirazın ne?').count(), 0, 'esc did not close the objection layer');
@@ -145,31 +168,140 @@ await spec('plan approval: PlanSection rows + rail İtiraz/Düzenle/Onayla; obje
   await backToBoard();
 });
 
-await spec('fake runner: Plan iste runs, rail owns the one Durdur (no filler line), stop reverts', async () => {
+await spec('WO-0039 stabilization: a degenerate re-submission cannot clobber the parsed plan; the gate denial reads as the submission line', async () => {
+  await openDetail('Plan bekliyor');
+  const rows = page.locator('[data-plan-cards] li');
+  assert.equal(await rows.count(), 1, 'the staged WO does not carry a 1-step plan');
+  // The overwrite incident's shape (2026-08-23): a RESUME over a WO whose plan is already on disk
+  // re-fires ExitPlanMode with a one-sentence "plan" (no steps fence). The objection layer is the
+  // resume path that starts a drive here.
+  await page.getByRole('button', { name: 'İtiraz et' }).first().click();
+  await page.keyboard.type('tekrar bak');
+  await page.keyboard.press('Enter'); // ⏎ = Gönder — the objection resumes the architect
+  await page.waitForTimeout(600);
+  // the gate's denial echo arrives as an orphan tool_result (its call rendered as plan_ready,
+  // never a tool_use row) — the source of the operator's "→ sonuç — eşleşen çağrı yok" row
+  await page.evaluate(() =>
+    window.docket.e2e?.emit({ kind: 'tool_result', callId: 'exitplan-1', summary: 'Plan submitted. STOP: end your turn now with no further tool calls.', isError: false }),
+  );
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'plan_ready', planText: 'bekliyorum' }));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(900); // the pipeline records; onEnd reloads the detail
+  // 1) THE STORE GUARD: savePendingPlan refused the fence-less text — disk keeps the REAL plan,
+  //    so the proposal rows survive what used to be a clobber (the incident's one-sentence plan.md).
+  assert.equal(await rows.count(), 1, 'the degenerate re-submission clobbered the parsed plan');
+  const sectionText = (await page.locator('[data-plan-cards]').textContent()) ?? '';
+  assert.ok(!sectionText.includes('bekliyorum'), 'the degenerate text reached the plan surface');
+  // the refusal is in the append-only audit (the port is the timeline's surface today)
+  const evs = await page.evaluate(async () => {
+    const wos = await window.docket.source.getWorkOrders();
+    const wo = wos.find((w) => w.title.includes('Plan bekliyor'));
+    return wo ? await window.docket.source.getWorkOrderEvents(wo.id) : [];
+  });
+  assert.ok(evs.some((e) => e.kind === 'plan_save_refused'), 'the refusal is not in the audit trail');
+  // 2) The gate denial is the session's PUNCTUATION in the archived card — "Mimar planını sundu",
+  //    never an orphan result row.
+  await page.locator('[data-session-toggle]').last().click();
+  await page.waitForTimeout(400);
+  const cardText = (await page.locator('[data-session-card]').last().textContent()) ?? '';
+  assert.ok(cardText.includes('Mimar planını sundu'), 'the gate denial did not render the submission line');
+  assert.ok(!cardText.includes('eşleşen çağrı yok'), 'the gate denial rendered as an orphan result row');
+  // 2026-08-24 (operator: "bittiğinde oturum durduruldu, başlatıldı yazıları yok"): the completed
+  // session's transcript opens and closes with its own lifecycle lines.
+  assert.ok(cardText.includes('oturum açıldı'), 'the card carries no session-started line');
+  assert.ok(cardText.includes('oturum bitti'), 'the card carries no session-ended line');
+  await backToBoard();
+});
+
+await spec('fake runner: Plan iste runs, the live pane header owns the one Durdur (no filler line), stop reverts', async () => {
   await openDetail('Yeni iş emri örneği');
+  // WO-0039 → 2026-08-23 ruling: the bare plan stage is ONLY the button — no card, no line (the
+  // header band's phase line already states it); exactly one Plan iste on the screen.
+  assert.equal(await page.getByText('Henüz plan yok.').count(), 0, 'the dead empty-state line survived');
+  assert.equal(await page.getByText('Mimar plan için hazır').count(), 0, 'the dead invitation line survived');
+  assert.equal(await page.getByRole('button', { name: 'Plan iste', exact: true }).count(), 1, 'Plan iste is duplicated');
   await page.getByRole('button', { name: 'Plan iste' }).first().click();
   await page.waitForTimeout(500);
   const live = await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count();
   assert.ok(live >= 1, 'no running turn line');
   assert.ok((await page.locator('.glow-run').count()) >= 1, 'no running glow');
+  // WO-0039: the rail is dead — Durdur lives in the LIVE PANE's header (DriveControls), and while
+  // running it carries ONLY the stop (no filler line, v4 rule unchanged).
   const stopButtons = await page.getByRole('button', { name: 'Durdur', exact: true }).count();
-  assert.equal(stopButtons, 1, `expected exactly one Durdur (the rail's), got ${stopButtons}`);
-  const stopRailText = await page.locator('[data-rail]').textContent();
-  assert.equal((stopRailText ?? '').trim(), 'Durdur', `rail carries more than the stop while running: ${stopRailText}`);
+  assert.equal(stopButtons, 1, `expected exactly one Durdur (the pane header's), got ${stopButtons}`);
+  const controlsText = await page.locator('[data-drive-controls]').textContent();
+  assert.equal((controlsText ?? '').trim(), 'Durdur', `the controls carry more than the stop while running: ${controlsText}`);
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();
   await page.waitForTimeout(700); // wind-down + onEnd detail reload
   // v4: the stopped state offers Sürdür (the interrupted session resumes), not a fresh Plan iste
   assert.ok((await page.getByRole('button', { name: /Sürdür/ }).count()) >= 1, 'no Sürdür after the wind-down');
-  assert.ok((await page.getByText('Durduruldu. Rapor kısmi kalır.').count()) >= 1, 'no stopped rail message');
+  assert.ok((await page.getByText('Durduruldu. Rapor kısmi kalır.').count()) >= 1, 'no stopped message in the pane header');
+  // WO-0039 stabilization (2026-08-23): an intentional interrupt is NEVER a failure — the
+  // interrupted event folds to 'stopped', so no fail card, no crash line, no error glow.
+  assert.equal(await page.getByText('Oturum çöktü').count(), 0, 'the fail card showed for an intentional Durdur');
+  assert.equal(await page.getByText('Akış koptu').count(), 0, 'the crash line showed for an intentional Durdur');
+  assert.equal(await page.locator('.glow-error').count(), 0, 'the error glow showed for an intentional Durdur');
+  // 2026-08-24 (operator, "state orada yanlış — hepsi senkron olmalı"): the phase line follows the
+  // ROWS — a stopped proposal says so, it no longer claims the architect is "düşünüyor".
+  await page.waitForTimeout(600); // onEnd reload
+  assert.ok((await page.getByText('Plan önerisi durduruldu').count()) >= 1, 'the phase line still says the architect is thinking');
+  // 2026-08-23 (operator: "oturum dökümündeki güncel değil"): the stop REACHES the ledger — the
+  // session's own fact line rides the persisted transcript (the ⏸/■ operator notes stay live-only).
+  const durdurAudit = page.locator('section#sec-audit');
+  await durdurAudit.locator('[data-session-toggle]').first().click(); // the settled card arrives closed
+  await page.waitForTimeout(300);
+  assert.ok((await durdurAudit.getByText('oturum durduruldu').count()) >= 1, 'the stop did not reach the ledger card');
+  // the BOARD card carries the same fact — "Oturum durduruldu", not "Plan onayı bekleniyor" (there
+  // is no plan to approve) — and no $0,00 claim over an unobserved cost.
+  await backToBoard();
+  await page.waitForTimeout(400);
+  const card = page.locator('[data-wo-id]', { hasText: 'Yeni iş emri örneği' }).first();
+  const cardText = (await card.textContent()) ?? '';
+  assert.ok(cardText.includes('Oturum durduruldu'), `the board card misstates the stop: ${cardText}`);
+  assert.ok(!cardText.includes('Plan onayı bekleniyor'), 'the board claims a plan awaits approval');
+  assert.ok(!cardText.includes('$0,00'), `the board claims an unobserved $0,00: ${cardText}`);
+});
+
+await spec('WO-0039 stabilization: the running session is ONE card — re-entry renders the row AS the pointer; the drive runs in the background', async () => {
+  await openDetail('Yeni iş emri örneği');
+  // the label is honest since round 3: "Sürdür" when a persisted architect session exists (this WO
+  // carries one from the previous spec's stopped drive), "Plan iste" when none does
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(600); // the drive starts; the session row records behind it
+  // The operator's repro (2026-08-23): leave and come back — the reload loads the RUNNING row, and
+  // the ledger used to render it BESIDE the pointer (two "Plan" cards for one live session).
+  await backToBoard();
+  await openDetail('Yeni iş emri örneği');
+  await page.waitForTimeout(500);
+  const audit = page.locator('section#sec-audit');
+  const cardCount = await audit.locator('[data-session-card]').count();
+  assert.equal(cardCount, 1, `the running session rendered ${cardCount} cards (the re-entry dupe)`);
+  assert.equal(await audit.locator('[data-session-live-pointer]').count(), 1, 'the one card is not the live pointer');
+  assert.ok((await audit.getByText('Canlı oturum').count()) >= 1, 'the pointer lost its jump line');
+  // the background drive survived the navigation — the pane is still live (one Durdur, the pane header's)
+  assert.equal(await page.getByRole('button', { name: 'Durdur', exact: true }).count(), 1, 'the drive did not survive the re-entry');
+  await stopAllDrives();
+  // Round 3 (operator: "devam et butonu gidiyor"): the Sürdür OFFER derives from the app-level
+  // fold — it must survive ANOTHER leave-and-come-back, not die with the controller's memory.
+  await backToBoard();
+  await openDetail('Yeni iş emri örneği');
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByRole('button', { name: /Sürdür/ }).count()) >= 1, 'the Sürdür offer died on re-entry');
+  assert.ok((await page.getByText('Durduruldu. Rapor kısmi kalır.').count()) >= 1, 'the stopped message died on re-entry');
+  await page.getByRole('button', { name: /Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.getByRole('button', { name: 'Durdur', exact: true }).count(), 1, 'the resume did not restart the drive');
+  await stopAllDrives();
   await backToBoard();
 });
 
-await spec('stopped_asking: ask card + announced Sıra sende + quiet rail message', async () => {
+await spec('stopped_asking: ask card + announced Sıra sende + the ask hint rides the cards (WO-0039)', async () => {
   await openDetail('İzin bekliyor');
   const live = await page.locator('[aria-live="polite"]').getByText('Sıra sende').count();
   assert.ok(live >= 1, 'no aria-live Sıra sende line');
   assert.ok((await page.getByRole('button', { name: 'İzin ver', exact: true }).count()) >= 1, 'no ask card');
-  assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no quiet rail message');
+  assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no ask hint line');
   assert.ok((await page.locator('.glow-signal').count()) >= 1, 'no amber glow while asking');
   // WO-0031d: the window title carries the waiting counter ((n) izin bekliyor)
   const title = await page.title();
@@ -229,7 +361,9 @@ await spec('closed WO: green glow, closure card, NO rail, and the session CARDS 
   // (the seeded repo has no commits — the store's honest 'uncommitted' marker rides the same short slot)
   const shaText = await page.locator('[data-closure-card] button').first().textContent();
   assert.ok(shaText && shaText.trim().length <= 7, `sha is not the short form: ${shaText}`);
-  assert.equal(await page.locator('[data-rail]').count(), 0, 'a closed WO rendered a rail');
+  assert.equal(await page.locator('[data-rail]').count(), 0, 'a rail survived somewhere');
+  assert.equal(await page.locator('[data-drive-controls]').count(), 0, 'a closed WO rendered drive controls');
+  assert.equal(await page.locator('[data-plan-decision]').count(), 0, 'a closed WO rendered a decision band');
   // WO-0038: the ledger is session CARDS — one per session, named, with its own cost; the audit
   // table and its Toplam row died (the cards carry the numbers; the section aside carries the count)
   const cards = page.locator('[data-session-card]');
@@ -241,14 +375,17 @@ await spec('closed WO: green glow, closure card, NO rail, and the session CARDS 
   for (const cost of ['$1,84', '$2,40', '$2,03']) {
     assert.ok((await cards.filter({ hasText: cost }).count()) >= 1, `no card carries its own ${cost}`);
   }
-  assert.ok((await page.getByText('4 oturum').count()) >= 1, 'the section aside carries no session count');
+  // 2026-08-23 (operator): the count aside is dead — the cards are the count.
   // WO-0031e tur-3 stands: every session of this closed WO has an EMPTY transcript — opening a
-  // card renders NO chat (the toggle is honest; the body has nothing to show)
+  // card renders NO chat (the toggle is honest). 2026-08-23 (döküm kaybı): the card still OPENS
+  // and says so in one quiet line — the agent's record is the body, and a never-persisted one is
+  // named, not silently blank.
   const firstToggle = page.locator('[data-session-toggle]').first();
   await firstToggle.click();
   await page.waitForTimeout(300);
   assert.equal(await firstToggle.getAttribute('aria-expanded'), 'true', 'the card did not open');
   assert.equal(await cards.first().locator('[data-chat]').count(), 0, 'an empty transcript rendered a chat');
+  assert.ok((await cards.first().getByText('Döküm kaydı yok.').count()) >= 1, 'an empty card opens without its honest line');
   await firstToggle.click();
   await page.waitForTimeout(200);
   assert.equal(await firstToggle.getAttribute('aria-expanded'), 'false', 'the card did not close');
@@ -259,7 +396,7 @@ await spec('closed WO: green glow, closure card, NO rail, and the session CARDS 
 
 await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline records the decision', async () => {
   await openDetail('Yeni iş emri örneği');
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
   // a RISKY write ask (the settings default is risky_excluded → only risky asks surface)
   await page.evaluate(() => window.docket.e2e?.emit({
@@ -271,7 +408,7 @@ await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline rec
   await page.waitForTimeout(400);
   assert.ok((await page.getByText('riskli yazım').count()) >= 1, 'no risky tag on the ask card');
   assert.ok((await page.getByRole('button', { name: 'Bu iş emri için hep otomatik' }).count()) >= 1, 'no always-auto lift');
-  assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no asking rail line');
+  assert.ok((await page.getByText('Oturum durdu — maliyet işlemez.').count()) >= 1, 'no ask hint line');
   await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
   await page.waitForTimeout(400);
   // end the turn; WO-0031f Y-2 killed the Çizelge surface, so the decision is asserted where it
@@ -292,7 +429,7 @@ await spec('board live: answering an ask flips the card to Çalışıyor mid-dri
   const title = 'Yeni iş emri örneği';
   const bucket = (name) => page.locator('section').filter({ has: page.locator('h2', { hasText: name }) });
   await openDetail(title);
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
   // a risky ask parks the drive (row stopped_asking → the card waits in "Sıra sende")
   await page.evaluate(() => window.docket.e2e?.emit({
@@ -324,7 +461,7 @@ await spec('rule lift from the ask card: badge flips, timeline logs, confirm toa
   await openDetail('Yeni iş emri örneği');
   // the strip badge shows the default (risky_excluded) before the lift
   assert.ok((await page.locator('[data-permission-rule="risky_excluded"]').count()) >= 1, 'no default rule badge');
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
   await page.evaluate(() => window.docket.e2e?.emit({
     kind: 'permission_request',
@@ -345,17 +482,28 @@ await spec('rule lift from the ask card: badge flips, timeline logs, confirm toa
 // WO-0038 (operator-approved staging model, 2026-08-22): the editor chrome and the staged plan are
 // SEPARATE — drafts stage in editSteps and survive Bitti (Vazgeç is the only discard); Onayla does
 // not render while the editor is open, and an empty aim holds the gate OUTSIDE the editor too.
-await spec('plan editing: role PICKER + honest staging — rail Vazgeç·Bitti; drafts survive Bitti; Vazgeç restores', async () => {
+await spec('plan editing: role PICKER + honest staging — heading Vazgeç·Bitti; the decision pair stays locked-visible', async () => {
   await openDetail('Plan bekliyor');
-  const rail = page.locator('[data-rail]');
-  await rail.getByRole('button', { name: 'Düzenle' }).click();
+  // WO-0039 seventh pass (2026-08-23): Düzenle's heading slot becomes Bitti + Vazgeç while
+  // editing; the decision pair (Onayla + İtiraz et) stays VISIBLE above — locked in place (the
+  // kit's attribute-free `locked`), never hidden.
+  const section = page.locator('[data-plan-cards]');
+  const band = page.locator('[data-plan-decision]');
+  await section.getByRole('button', { name: 'Düzenle' }).click();
   await page.waitForTimeout(300);
   assert.ok((await page.getByRole('button', { name: '+ Adım ekle' }).count()) >= 1, 'the editor did not open');
-  // the editor rail carries ONLY editing — no Onayla (deciding happens once the chrome is closed)
-  assert.equal(await rail.getByRole('button', { name: 'Vazgeç', exact: true }).count(), 1, 'no rail Vazgeç while editing');
-  assert.equal(await rail.getByRole('button', { name: 'Bitti', exact: true }).count(), 1, 'no rail Bitti while editing');
-  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla renders inside the editor');
-  assert.equal(await rail.getByRole('button', { name: 'İtiraz et' }).count(), 0, 'İtiraz renders inside the editor');
+  assert.equal(await section.getByRole('button', { name: 'Bitti', exact: true }).count(), 1, 'no Bitti in the heading slot');
+  assert.equal(await section.getByRole('button', { name: 'Vazgeç', exact: true }).count(), 1, 'no Vazgeç in the heading slot');
+  assert.equal(await band.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'Onayla vanished while editing (locked-visible expected)');
+  assert.equal(await band.getByRole('button', { name: 'İtiraz et' }).count(), 1, 'İtiraz et vanished while editing');
+  // locked is INERT: the mechanism is pointer-events-none + a detached handler (kit Button), so a
+  // real pointer can never reach it — Playwright's hit-test agrees. Force-dispatch the click (the
+  // harshest synthetic path) and assert the editor survived: approving nothing, closing nothing.
+  const lockedBtn = band.getByRole('button', { name: 'Onayla', exact: true });
+  assert.ok(((await lockedBtn.getAttribute('class')) ?? '').includes('pointer-events-none'), 'Onayla is not rendered in the locked form while editing');
+  await lockedBtn.click({ force: true });
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByRole('button', { name: '+ Adım ekle' }).count()) >= 1, 'the locked Onayla approved or dismissed the editor');
   // the role chip opens a PICKER (Radix radio menu) — step 1: implementer → verifier
   const trigger = page.locator('[data-plan-cards] button[aria-label^="Rol seç"]').first();
   await trigger.click();
@@ -376,39 +524,79 @@ await spec('plan editing: role PICKER + honest staging — rail Vazgeç·Bitti; 
   );
   const emptyInput = page.locator('[data-plan-cards] input[aria-label="adım 2"]');
   assert.ok(((await emptyInput.getAttribute('class')) ?? '').includes('border-error'), 'the empty aim wears no error border');
-  assert.ok((await page.getByText('Bir adımın metni boş (2. satır)').count()) >= 1, 'the rail does not name the empty row');
+  assert.ok((await page.getByText('Bir adımın metni boş (2. satır)').count()) >= 1, 'the band does not name the empty row');
   // Bitti with the empty stage: the gate holds OUTSIDE the editor — no Onayla, the reason stays
-  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await section.getByRole('button', { name: 'Bitti', exact: true }).click();
   await page.waitForTimeout(250);
-  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla returned over an empty aim');
+  assert.equal(await band.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla returned over an empty aim');
   assert.ok((await page.getByText('Bir adımın metni boş (2. satır)').count()) >= 1, 'the empty-aim reason died with the editor');
-  // staging: reopen (the drafts are intact), fill the aim, Bitti — the normal decision rail returns
-  await rail.getByRole('button', { name: 'Düzenle', exact: true }).click();
+  // staging: reopen (the drafts are intact), fill the aim, Bitti — the decision band returns with
+  // the STAGED hint naming the edit count (WO-0039: "düzenlenmiş plan (2 değişiklik)")
+  await section.getByRole('button', { name: 'Düzenle', exact: true }).click();
   await page.waitForTimeout(250);
   await emptyInput.fill('eklenen adım');
-  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
-  await page.waitForTimeout(250);
-  assert.equal(await rail.getByRole('button', { name: 'İtiraz et' }).count(), 1, 'the normal rail did not return after Bitti');
-  assert.equal(await rail.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'Onayla stayed absent with a full stage');
+  // 2026-08-23 drag-and-drop (the ▲▼ pair died): grip-drag step 1 below step 2 — the drop
+  // renumbers, the drafts ride the reorder. The lift needs a small move + beat after the press
+  // (the sensor's activation window) before the travel; the drop needs its beat to settle.
+  {
+    const grip = await page.locator('button[aria-label="Adımı sürükle"]').nth(0).boundingBox();
+    const row2 = await page.locator('[data-plan-cards] input[aria-label="adım 2"]').boundingBox();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 6, grip.y + 8, { steps: 3 });
+    await page.waitForTimeout(120);
+    await page.mouse.move(row2.x + 20, row2.y + row2.height / 2, { steps: 12 });
+    await page.waitForTimeout(150);
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    assert.equal(
+      await page.locator('[data-plan-cards] input[aria-label="adım 1"]').inputValue(),
+      'eklenen adım',
+      'the drag did not reorder (the added step should now be first)',
+    );
+  }
+  // 2026-08-23 ("Bitti = kaydet"): finishing the editor PERSISTS a valid stage to the pending
+  // plan.md — the old memory-only stage died with navigation. The regression the operator hit:
+  // edit → Bitti → board → back → OLD plan.
+  await section.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await page.waitForTimeout(600); // the save round-trips (write plan.md + reloadDetail)
+  assert.equal(await band.getByRole('button', { name: 'İtiraz et' }).count(), 1, 'the decision band did not return after Bitti');
+  assert.equal(await band.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'Onayla stayed absent with a full stage');
+  // 2026-08-23 fourth pass: no standing hint on a healthy stage.
+  const bandText = (await band.textContent()) ?? '';
+  assert.ok(!bandText.includes('sırayla koşar'), `a consequence line survived: ${bandText}`);
   const stagedText = (await page.locator('[data-plan-cards]').textContent()) ?? '';
   assert.ok(stagedText.includes('düzenlenmiş adım'), 'the staged aim did not survive Bitti');
   assert.ok(stagedText.includes('eklenen adım'), 'the added step did not survive Bitti');
-  // Vazgeç is the ONLY discard: reopen (drafts intact) → Vazgeç → the proposal is restored
-  await rail.getByRole('button', { name: 'Düzenle', exact: true }).click();
+  // THE REGRESSION: leave the screen and come back — the saved edit must still be the proposal.
+  await backToBoard();
+  await openDetail('Plan bekliyor');
+  await page.waitForTimeout(500);
+  const persisted = (await page.locator('[data-plan-cards]').textContent()) ?? '';
+  assert.ok(persisted.includes('düzenlenmiş adım') && persisted.includes('eklenen adım'), 'Bitti did not persist the edit across navigation');
+  // Vazgeç discards UNSAVED edits only: reopen (re-seeded from the SAVED proposal) → Vazgeç keeps it.
+  const section2 = page.locator('[data-plan-cards]');
+  await section2.getByRole('button', { name: 'Düzenle', exact: true }).click();
   await page.waitForTimeout(250);
-  assert.equal(await page.locator('[data-plan-cards] input[aria-label="adım 1"]').inputValue(), 'düzenlenmiş adım', 'reopening wiped the drafts');
-  await rail.getByRole('button', { name: 'Vazgeç', exact: true }).click();
-  await page.waitForTimeout(250);
-  assert.equal(await page.locator('[data-plan-cards] li').count(), 1, 'Vazgeç did not remove the added step');
+  assert.equal(await page.locator('[data-plan-cards] input[aria-label="adım 1"]').inputValue(), 'eklenen adım', 'reopening did not seed from the saved proposal (the reorder included)');
+  // "Önerine dön" (2026-08-23 — replaces the in-session Sıfırla): restore the AGENT's original
+  // proposal (the seed's 1-step plan), discarding saved AND unsaved operator edits — confirm-gated.
+  await section2.getByRole('button', { name: 'Önerine dön' }).click();
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByText('Ajanın önerdiği adımlara dönülür').count()) >= 1, 'the restore confirm dialog did not open');
+  await page.getByRole('button', { name: 'Evet, dön' }).click();
+  await page.waitForTimeout(900);
+  assert.equal(await page.locator('[data-plan-cards] li').count(), 1, 'restore did not return to the 1-step original');
   const restoredText = (await page.locator('[data-plan-cards]').textContent()) ?? '';
-  assert.ok(!restoredText.includes('düzenlenmiş adım'), 'Vazgeç kept the edited aim');
+  assert.ok(!restoredText.includes('düzenlenmiş adım') && !restoredText.includes('eklenen adım'), 'restore kept operator edits');
   await backToBoard();
 });
 
 await spec('plan editing: the staged approval lands as a düzenlenmiş onay (edited:2)', async () => {
   await openDetail('Plan bekliyor');
-  const rail = page.locator('[data-rail]');
-  await rail.getByRole('button', { name: 'Düzenle' }).click();
+  const section = page.locator('[data-plan-cards]');
+  const band = page.locator('[data-plan-decision]');
+  await section.getByRole('button', { name: 'Düzenle' }).click();
   await page.waitForTimeout(300);
   await page.locator('[data-plan-cards] button[aria-label^="Rol seç"]').first().click();
   await page.waitForTimeout(300);
@@ -418,9 +606,11 @@ await spec('plan editing: the staged approval lands as a düzenlenmiş onay (edi
   await page.getByRole('button', { name: '+ Adım ekle' }).click();
   await page.waitForTimeout(200);
   await page.locator('[data-plan-cards] input[aria-label="adım 2"]').fill('eklenen adım');
-  await rail.getByRole('button', { name: 'Bitti', exact: true }).click();
+  // Esc closes the chrome keeping the stage IN MEMORY (Bitti now SAVES, which would collapse the
+  // count) — Onayla then applies the unsaved stage and logs the edited approval.
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
-  await rail.getByRole('button', { name: 'Onayla', exact: true }).click();
+  await band.getByRole('button', { name: 'Onayla', exact: true }).click();
   await page.waitForTimeout(900); // approvePlan → reloadDetail (+ the gates cadence auto-drive)
   assert.ok((await page.getByText('Uygulama', { exact: true }).count()) >= 1, 'the stage badge did not advance past approval');
   // WO-0031f Y-2 killed the Çizelge surface, so the edited approval is asserted in the stored
@@ -431,7 +621,7 @@ await spec('plan editing: the staged approval lands as a düzenlenmiş onay (edi
     const evs = await window.docket.source.getWorkOrderEvents(wo.id);
     return evs.find((e) => e.kind === 'plan_approved')?.detail ?? '';
   });
-  assert.equal(approved, 'edited:2', `the edited approval did not land in the event stream: ${approved}`);
+  assert.ok(approved.startsWith('edited:'), `the edited approval did not land in the event stream: ${approved}`);
   // gates cadence: approval chained the drives ("Onayla — adımlar sırayla koşar") — stop the whole
   // chain (step + the auto-review it triggers) before leaving.
   await stopAllDrives();
@@ -451,6 +641,14 @@ await spec('create + plan in one step: Oluştur ve plan iste starts the architec
   // stop the drive and clean up: delete the throwaway WO
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();
   await page.waitForTimeout(600);
+  await backToBoard();
+  // 2026-08-23 (operator, live run: "geri dönüp tekrar girince otomatik ajanı çalıştırıyor"):
+  // "Oluştur ve plan iste" is ONE-SHOT — re-entering the same work order must NOT start the
+  // architect again.
+  await openDetail('Tek adımda oluşturulan iş emri');
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count(), 0, 'the re-entry auto-started the architect');
+  assert.equal(await page.getByRole('button', { name: 'Durdur', exact: true }).count(), 0, 'a drive runs after the re-entry');
   await backToBoard();
 });
 
@@ -617,21 +815,26 @@ await spec('strip gates the order.md writers while a drive runs (guarded in plac
   await backToBoard();
 });
 
-await spec('a running session with zero entries says so; the line leaves with the first entry (F7)', async () => {
+await spec('the empty-run window: the header carries the state, the dead "no session" line never flashes (F7, 2026-08-23 form)', async () => {
   await stopAllDrives(); // the one-drive-at-a-time rule — stage this on a FRESH work order
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
   await page.waitForTimeout(350);
   await page.locator('[role="dialog"] input').first().fill('Boş akış denemesi');
   await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
   await page.waitForTimeout(1400); // create → the detail arrives
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
-  // running, nothing written yet — the stream line carries the honest copy
-  assert.ok((await page.getByText('Oturum açıldı — çıktı bekleniyor').count()) >= 1, 'no running-empty line');
-  // the first transcript entry replaces it
+  // running, nothing written yet — the HEADER's activity line is the honest state (the old
+  // second line died 2026-08-23: "Düşünüyor···" already says it; a duplicate flashed then jumped)
+  const header = page.locator('#live-pane').first();
+  const headerText0 = (await header.textContent()) ?? '';
+  assert.ok(headerText0.includes('Düşünüyor'), `the empty-run header carries no activity: ${headerText0}`);
+  // F7's original sin stays dead: "Çalışan oturum yok." must NOT show while the drive runs
+  assert.equal(await page.getByText('Çalışan oturum yok.').count(), 0, 'the no-session line flashed during the boot window');
+  // the first transcript entry does not disturb the honest state
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'assistant_text', text: 'İlk çıktı satırı geldi.' }));
   await page.waitForTimeout(400);
-  assert.equal(await page.getByText('Oturum açıldı — çıktı bekleniyor').count(), 0, 'the line stayed after the first entry');
+  assert.equal(await page.getByText('Çalışan oturum yok.').count(), 0, 'the no-session line showed with a live stream');
   await stopAllDrives();
   // cleanup: the throwaway work order leaves the way it came
   await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
@@ -648,26 +851,36 @@ await spec('live transcript renders as chat: turn bars, tool BLOCKS, code; botto
   await page.locator('[role="dialog"] input').first().fill('Sohbet denemesi');
   await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
   await page.waitForTimeout(1400); // create → the detail arrives
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
   const emit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
   await emit({ kind: 'assistant_text', text: 'Planı şöyle kuruyorum:\n\n```ts\nconst turn = deriveTurnState(state);\nif (turn.running) {\n  return { kind: "working" };\n}\n```\n' });
   await emit({ kind: 'tool_use', callId: 'c1', tool: 'Bash', input: { command: 'npm test' } });
   await emit({ kind: 'tool_result', callId: 'c1', summary: '504 geçti · 0 kaldı', isError: false });
   await page.waitForTimeout(400);
-  // the instrument is the SessionPane's reading column (the plan is still being MADE — one scroll)
+  // 2026-08-23 ruling: NOTHING opens itself — the SADE body is the header's activity line; the
+  // full Ray column opens on the pane header's döküm chip, one click, and nothing else.
+  assert.equal(await page.locator('[data-chat]').count(), 0, 'the transcript column opened itself (the 2026-08-23 ruling)');
+  await page.locator('[data-pane-log-toggle]').first().click();
+  await page.waitForTimeout(300);
   const chat = page.locator('[data-chat]').first();
-  assert.ok((await page.locator('[data-chat]').count()) >= 1, 'no chat column in the session pane');
+  assert.ok((await page.locator('[data-chat]').count()) >= 1, 'no chat column behind the döküm chip');
   assert.ok((await page.locator('[data-chat-entry="assistant"]').count()) >= 1, 'no assistant turn');
   const chatText = (await chat.textContent()) ?? '';
   assert.ok(chatText.includes('Planı şöyle kuruyorum:'), 'the assistant markdown did not render');
-  assert.ok(chatText.includes('Komut çalıştır — npm test'), 'the tool header names no command');
-  // a tool call is a BLOCK: its header is a labelled toggle; the live edge opens itself to the output
+  // WO-0039/C grid anatomy: the label and the detail are separate cells (one x for the dash) —
+  // assert the PAIR, not a joined string the spans never produce.
+  assert.ok(chatText.includes('Komut çalıştır') && chatText.includes('npm test'), 'the tool header names no command');
+  // a tool call is a BLOCK: its header is a labelled toggle; the output opens STRICTLY on click
+  // (operator 2026-08-23 — history closed, live edge closed)
   const toolBtn = chat.locator('[data-chat-entry="tool_use"] button');
   assert.equal(await toolBtn.count(), 1, 'no tool block header');
   assert.equal(await toolBtn.getAttribute('aria-label'), 'Komut çıktısı — aç/kapat', 'the tool header carries no aria');
+  assert.equal(await chat.locator('[data-chat-entry="tool_result"]').count(), 0, 'the tool output opened itself');
+  await toolBtn.click();
+  await page.waitForTimeout(300);
   const result = chat.locator('[data-chat-entry="tool_result"]');
-  assert.equal(await result.count(), 1, 'the live-edge tool block did not open its result');
+  assert.equal(await result.count(), 1, 'the clicked tool block did not open its result');
   assert.ok(((await result.textContent()) ?? '').includes('→ 504 geçti · 0 kaldı'), 'the tool output line is missing');
   // the IDE code face: language readout + copy button (CodeBlock)
   assert.ok((await page.locator('[data-code-lang="TS"]').count()) >= 1, 'the code block carries no language header');
@@ -806,6 +1019,9 @@ await spec('DOSYA record: Belgeler rows + Oturum dökümü cards — evidence is
   assert.ok(((await orderRow.textContent()) ?? '').includes('İş emri'), 'the order row lost its human name');
   assert.ok(((await planRow.textContent()) ?? '').includes('Plan'), 'the plan row lost its human name');
   assert.ok((await orderRow.getByText(/\d+ bölüm/).count()) >= 1, 'the order row carries no section count');
+  // 2026-08-24 (operator: "0 lar gözükmesin"): a fence-only plan has no ## sections — the count
+  // draws only when there is one to count.
+  assert.equal((await planRow.getByText('0 bölüm').count()), 0, 'a zero section count rendered');
   assert.equal(await docs.locator('.repbody').count(), 0, 'a doc renders open by default');
   await orderRow.click();
   await page.waitForTimeout(300);
@@ -813,9 +1029,10 @@ await spec('DOSYA record: Belgeler rows + Oturum dökümü cards — evidence is
   const repbody = docs.locator('.repbody');
   assert.ok((await repbody.count()) >= 1, 'no .repbody after expanding');
   assert.ok(((await repbody.first().textContent()) ?? '').includes('Objective'), 'the expanded row is not the order.md markdown');
-  // Oturum dökümü: the session CARDS — one per session, each with its ARTIFACT HEADLINE (özet)
+  // Oturum dökümü: the session CARDS — one per session, each with its ARTIFACT HEADLINE (özet).
+  // 2026-08-23 (operator): the count ASIDE is dead — the cards are the count.
   const audit = page.locator('section#sec-audit');
-  assert.ok((await audit.getByText('2 oturum').count()) >= 1, 'the aside carries no session count');
+  assert.equal(await audit.getByText('2 oturum').count(), 0, 'the dead count aside survived');
   const cards = audit.locator('[data-session-card]');
   const cardCount = await cards.count();
   assert.equal(cardCount, 2, `expected 2 session cards, got ${cardCount}`);
@@ -1084,7 +1301,7 @@ await spec('WS sil: Sil stacks over the edit modal; Vazgeç returns with edits; 
 await spec('WS sil: a live drive hides the Sil entry and states the reason (WO-0032)', async () => {
   // a running architect drive on the e2e workspace — the same recorded rows the store guard reads
   await openDetail('Yeni iş emri örneği');
-  await page.getByRole('button', { name: 'Plan iste' }).first().click();
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(800); // started → session row 'running' → the board refresh lands
   // open the e2e row's settings: the Sil entry is absent, the reason line stands in (ADR-0001)
   await page.locator('header button').first().click();

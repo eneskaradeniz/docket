@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WO-0039/C · Defter–Canlı yüzeyleri · Mockup (onaya tabi)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0e1520; --surface: #16202e; --raised: #1d2938; --hairline: #263349;
+    --ink: #e7edf4; --dim: #8b95a7;
+    --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
+    --sans: "Manrope", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+    --measure: 562px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; padding: 36px 20px 90px; }
+  .plate { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+  .plate-head h1 { font-size: 17px; font-weight: 700; }
+  .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  figure { display: flex; flex-direction: column; gap: 10px; }
+  .figcap { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); }
+  .figcap .no { color: var(--signal); font-weight: 600; }
+  .why { border-left: 2px solid var(--signal); padding: 2px 0 2px 10px; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .why b { color: var(--ink); }
+  .proscons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .proscons div { border: 1px solid var(--hairline); border-radius: 8px; padding: 9px 12px; font-size: 12px; line-height: 1.6; color: var(--dim); }
+  .proscons b { display: block; margin-bottom: 4px; font-size: 10.5px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+  .proscons .p b { color: var(--proceed); } .proscons .c b { color: var(--error); }
+  .proscons .pick { border-color: var(--signal); }
+  .proscons .pick::after { content: "SEÇİLEN"; float: right; font-family: var(--mono); font-size: 9px; color: var(--signal); letter-spacing: .12em; }
+
+  .readout { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); }
+  .meta { font-family: var(--mono); font-size: 10px; color: var(--dim); letter-spacing: .05em; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+  .btn.danger { background: rgba(229,72,77,.09); color: var(--error); border-color: rgba(229,72,77,.45); height: 24px; padding: 0 9px; font-size: 11px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hairline); border-radius: 5px; padding: 2px 8px; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); height: 24px; }
+  .chip.on { color: var(--info); border-color: rgba(108,160,206,.5); background: rgba(108,160,206,.08); }
+  .role { border-radius: 999px; padding: 1px 7px; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; border: 1px solid; }
+  .role.mimar { color: var(--signal); border-color: rgba(245,181,68,.4); }
+  .role.uyg { color: var(--info); border-color: rgba(108,160,206,.4); }
+
+  /* the pane mock */
+  .pane { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); display: flex; overflow: hidden; }
+  .pane .lamp { width: 3px; background: var(--info); flex-shrink: 0; }
+  .pane .body { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px 12px; }
+  .p-head { display: flex; align-items: center; gap: 10px; }
+  .p-act { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--info); flex-shrink: 0; }
+  .chatbox { margin-top: 9px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg); padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; min-height: 300px; overflow: hidden; position: relative; }
+  /* 2026-08-23 ince rötuş: TEK SATIR — grid [glyph][etiket 118px][çizgi][detay][şevron];
+     etiket sütunu sabit → "—" her satırda AYNI hizada; detay asla satır aşmaz (ellipsis). */
+  .trow { display: grid; grid-template-columns: 12px 118px 14px 1fr 14px; align-items: center; background: var(--raised); border-radius: 6px; padding: 6px 10px; font-family: var(--mono); font-size: 11px; max-width: var(--measure); white-space: nowrap; }
+  .trow .g { color: var(--info); font-size: 10px; }
+  .trow .lbl { color: var(--info); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .trow .dash { color: var(--dim); }
+  .trow .det { color: var(--ink); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .trow .ch { color: var(--dim); }
+  .prose { max-width: var(--measure); font-size: 13px; line-height: 1.6; border-left: 3px solid var(--signal); padding-left: 12px; }
+  .edge { position: absolute; top: 0; bottom: 0; left: calc(12px + var(--measure)); width: 1px; background: repeating-linear-gradient(to bottom, rgba(245,181,68,.35) 0 4px, transparent 4px 9px); }
+  .edgelbl { position: absolute; top: 6px; left: calc(18px + var(--measure)); font-family: var(--mono); font-size: 9px; color: var(--signal); letter-spacing: .08em; writing-mode: vertical-rl; }
+
+  /* ledger card mock */
+  .card { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .c-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px 0; }
+  .rlamp { width: 3px; height: 14px; border-radius: 2px; }
+  .rlamp.mimar { background: var(--signal); }
+  .c-meta { margin-left: auto; display: flex; gap: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .c-meta .live { color: var(--info); }
+  .ptr { display: flex; align-items: center; gap: 8px; padding: 8px 12px 9px 34px; font-family: var(--mono); font-size: 11px; color: var(--info); }
+  .archived-sum { padding: 7px 12px 9px 34px; font-size: 12px; color: var(--dim); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+  del { color: var(--error); opacity: .7; }
+  .old { opacity: .55; }
+  .sticky-note { border: 1px dashed var(--hairline); border-radius: 8px; padding: 8px 12px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+
+  /* 2026-08-23 canlı his: lamba + nokta yumuşak nefes (çalışıyor), fiil satırının ardından
+     dönen üç nokta — salt CSS, reduced-motion'da tamamen susar (statik "…"). */
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @keyframes dots { 0% { content: ""; } 25% { content: "·"; } 50% { content: "··"; } 75%, 100% { content: "···"; } }
+  .dot, .c-head .dot { animation: breathe 2.2s ease-in-out infinite; }
+  .pane .lamp.run-live { animation: breathe 2.6s ease-in-out infinite; }
+  .live-dots::after { content: ""; display: inline-block; width: 2.2em; text-align: left; color: var(--info); animation: dots 1.4s steps(1) infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .dot, .c-head .dot, .pane .lamp.run-live, .live-dots::after { animation: none; }
+    .live-dots::after { content: "…"; }
+  }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <header class="plate-head">
+    <h1>WO-0039/C — Defter &amp; Canlı yüzeyleri · tasarım tabakası (onaya tabi, koda dokunulmadı)</h1>
+    <p class="sub">Dört sorun, dört karar. Her kararın altında neden-seçim ve seçilmeyenler. Uygulama yalnız onayından sonra başlar.</p>
+  </header>
+
+  <!-- ═══════════ Q1 ═══════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> TEK CANLI YÜZEY — defterin koşan kartı işaretçi olur</figcaption>
+    <div class="two-col">
+      <div>
+        <p class="readout" style="margin-bottom:7px">SEÇİLEN (B) — PANEL SAHİP, DEFTER İŞARET EDER</p>
+        <div class="card">
+          <div class="c-head">
+            <span class="dot"></span>
+            <span class="rlamp mimar"></span>
+            <span style="font-size:12.5px;font-weight:600">Plan</span>
+            <span class="role mimar">MİMAR</span>
+            <span class="c-meta"><span class="live">Çalışıyor</span><span>02:37</span><span>4dk 12sn</span><span>$0,87</span></span>
+          </div>
+          <div class="ptr">▸ Canlı oturum</div>
+        </div>
+        <div class="card" style="margin-top:8px; opacity:.8">
+          <div class="c-head">
+            <span class="rlamp mimar" style="background:#3a4a63"></span>
+            <span style="font-size:12.5px;font-weight:600">Plan</span>
+            <span class="role mimar">MİMAR</span>
+            <span class="c-meta"><span>01:00 – 01:35</span><span>34dk 34sn</span><span>$1,58</span></span>
+          </div>
+          <div class="archived-sum"><b style="color:var(--ink)">Özet —</b> 3 adımlık plan önerdi</div>
+        </div>
+        <p class="meta" style="margin-top:8px">Koşan kart: meta canlı, gövde = tek satır işaretçi (tıkla → panele kaydır + dökümü aç). Bitince normal arşiv kartına döner.</p>
+      </div>
+      <div>
+        <p class="readout" style="margin-bottom:7px">REDDEDİLENLER</p>
+        <div class="sticky-note">(a) Defter kartı da canlı aksın — <del>iki canlı döküm</del>: aynı akışa iki okuyucu, iki altta-pin makinesi ayrı karar verir, bitişte kaynak değiştirme yarışı. Senin "ikisine de gerek yok" cümlen zaten reddediyor.</div>
+        <div class="sticky-note" style="margin-top:8px">(c) Defter aksın, panel sade kalsın — canlı kuyruk belgenin EN DİBİNDE görünür; Durdur'a Fitts mesafesi bir sayfa kaydırma büyür. "Header sabit dursun, Durdur diyeym" isteğinle çelişir.</div>
+      </div>
+    </div>
+    <div class="proscons">
+      <div class="p pick"><b>Artı</b>Tek akış tek okuyucu; Durdur + döküm aynı yerde; koşu sırasında defter saniye sıfırda dolu (P1 kökten); bitişte zaten olan yenileme yeter (P2); satır-başına render yarıya iner.</div>
+      <div class="c"><b>Eksi</b>Koşuyu belgenin dibinden izleyemezsin — yukarı kaydırıp panele gelmen gerek (işaretçi tek tıkla götürür).</div>
+    </div>
+    <p class="why"><b>Neden B:</b> operatörün iki cümlesini aynı anda sağlayan tek seçenek — "header sabit, oradan durdurayım" + "ikisine de canlı akış gerek yok". (a) senkronizasyon böceği doğurur, (c) durdurma akışını koparır.</p>
+  </figure>
+
+  <!-- ═══════════ Q2 ═══════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> SABİT BAŞLIK + KESİN YÜKSEKLİK — döküm açıkken panel ekran sınırına kilitlenir</figcaption>
+    <div class="pane" style="height: 480px">
+      <div class="lamp run-live"></div>
+      <div class="body">
+        <div class="p-head">
+          <span class="readout">MİMAR · CANLI</span>
+          <span class="meta" style="margin-left:auto">$0,87 · 04:12</span>
+          <button class="btn danger">■ Durdur</button>
+        </div>
+        <div class="p-act">
+          <span class="dot"></span>
+          <span class="meta" style="min-width:0;flex:1"><span class="live-dots" style="display:inline-flex;align-items:baseline">Dosya okuyor</span></span>
+          <span class="chip on">▾ Dökümü kapat</span>
+        </div>
+        <div class="chatbox">
+          <div class="prose">Uzun bir planlama turu: önce dosyaları okuyorum, sonra komutları koşturacağım.</div>
+          <div class="trow"><span class="g">▸</span><span class="lbl">Dosya oku</span><span class="dash">—</span><span class="det">…/base-mobile/docs/work-orders/WO-0001…/order.md</span><span class="ch">›</span></div>
+          <div class="trow"><span class="g">▸</span><span class="lbl">Komut çalıştır</span><span class="dash">—</span><span class="det">grep -rn "picsum" …/base-mobile --include="*.dart" --include="*.yaml" -i</span><span class="ch">›</span></div>
+          <div class="trow"><span class="g">▸</span><span class="lbl">Komut çalıştır</span><span class="dash">—</span><span class="det">ls -la …/base-mobile &amp;&amp; cat pubspec.yaml | head -80</span><span class="ch">›</span></div>
+          <div class="trow" style="opacity:.55"><span class="g">▸</span><span class="lbl">Dosya oku</span><span class="dash">—</span><span class="det">…/pubspec.yaml</span><span class="ch">›</span></div>
+          <div class="trow" style="opacity:.3"><span class="g">▸</span><span class="lbl">Komut çalıştır</span><span class="dash">—</span><span class="det">find … -iname "*photos*" -o -iname "*photo_*" | head -30; echo "---"; grep -rn "114" …/features/profile</span><span class="ch">›</span></div>
+          <div class="sticky-note" style="max-width:420px">… döküm BURADA, panelin içinde kayar (sağda ince kaydırma). Başlık + fiil satırı + Durdur + aç/kapa çipi HİÇ KIPARDAMAZ.</div>
+        </div>
+      </div>
+    </div>
+    <div class="proscons">
+      <div class="p pick"><b>Artı</b>"En başta header, sonra döküm" birebir; açıkken panel hep 480px (ekran−140) — Durdur ve çip öğrenilmiş sabit hedef; satır akarken sayfa altı hiç kıpırdamaz; kapat = tam tersi işlem, sıçrama yok.</div>
+      <div class="c"><b>Eksi</b>3 satırlık döküm açınca altta boşluk görünür (terminal görünümlü araçların doğası); yükseklik geçişi animasyonsuz — anında açılır (bilinçli: animasyon belgeyi sallar).</div>
+    </div>
+    <p class="why" style="border-color:var(--info)"><b>İnce rötuş (bu tur):</b> araç satırları TEK satır — grid [▸][etiket 118px][—][detay][›]: etiket sütunu sabit olduğu için çizgi her satırda aynı hizada; detay asla satır aşmaz (açıktaki uzun komut hâlâ sarar — okuma formu). <b>Canlı his:</b> panel lambası + nokta yumuşak nefes alır, fiil satırının ucunda dönen üç nokta (····) — salt CSS, reduced-motion'da statik "…"e döner.</p>
+    <p class="why"><b>İki düzeltme birden:</b> (i) mekanik hata — flex zincirinde <span class="meta">min-h-0</span> eksikti: döküm kolonu panelin TAŞINA kadar büyüyüp alt yarısı GİZLİ kalıyordu (ölçtük: kolon 994px, panel 478px). (ii) kesin kural — döküm açıkken panel yüksekliği sabit. Neden sayfa-kaydırmalı+yapışkan değil: sayfa belgedir (ADR-0013); canlı kuyruk sayfayı sürükler, altındaki plan satırlarını okunmaz eder; kapatınca belge altı yüzlerce px çöker.</p>
+  </figure>
+
+  <!-- ═══════════ Q3 ═══════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> TEK SAĞ KENAR — sohbet ve araç blokları aynı ölçüde (562px)</figcaption>
+    <div class="two-col">
+      <div>
+        <p class="readout" style="margin-bottom:7px">BUGÜN (tutarsız — ölçüldü)</p>
+        <div class="chatbox" style="min-height:0">
+          <div class="prose" style="max-width:300px">Sohbet 562px'te bitiyor…</div>
+          <div class="trow" style="max-width:100%"><span class="g">▸</span><span class="lbl">Komut çalıştır</span><span class="dash">—</span><span class="det">grep -rn "picsum" …/base-mobile --include="*.dart" — 871px'e kadar uzuyor, satır sarıyor</span><span class="ch">›</span></div>
+        </div>
+      </div>
+      <div>
+        <p class="readout" style="margin-bottom:7px">SEÇİLEN — TEK KENAR</p>
+        <div class="chatbox" style="min-height:0">
+          <div class="edge"></div><div class="edgelbl">tek kenar · 562px</div>
+          <div class="prose">Sohbet satırı ölçüsünü korur (60ch ≈ 562px)…</div>
+          <div class="trow"><span class="g">▸</span><span class="lbl">Komut çalıştır</span><span class="dash">—</span><span class="det">grep -rn "picsum" …/base-mobile --include="*.dart"</span><span class="ch">›</span></div>
+          <div class="trow"><span class="g">▸</span><span class="lbl">Dosya oku</span><span class="dash">—</span><span class="det">…/pubspec.yaml</span><span class="ch">›</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="proscons">
+      <div class="p pick"><b>Artı</b>Göz tek kenar öğrenir; mono 11px'te ~85 kolon (standart terminal ≥80); tek CSS değişkeni (--chat-measure) — ileride 640px'e çekmek tek sayı.</div>
+      <div class="c"><b>Eksi</b>Çok uzun komutlar kapalıyken eskisi gibi ellipsis'te (zaten öyleydi); sağda terminalin doğal boş luğu görünür.</div>
+    </div>
+    <p class="why"><b>Neden tek kenar:</b> "tutarsız" diyen sensin — iki kenarı yumuşatmak (b seçeneği: monoya ayrı geniş ölçü) aritmetik olarak imkânsız: 72ch mono ≈ 475px, naaskelden dar. Durum quo (c: araçlar tam genişlik) spec'te anlamlı, ekranda derlenmemiş görünür — 309px ölü bölge sırayla dolup boşalır.</p>
+  </figure>
+
+  <!-- ═══════════ bonus ═══════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">04</span> KAPANAN DELİK — itiraz/yeniden-plan koşusu artık her yerde izlenebilir</figcaption>
+    <p class="why" style="border-color:var(--info)">Bugün: itiraz gönderip mimar yeniden plan yazarken ekranda <b>hiçbir canlı yüzey yok</b> (plan masada olduğu için panel çizilmiyor, defter de kör). Seçilen tasarımla: plan aşamasında sürüş canlı ve <span class="meta">plan_ready</span> değilken panel GÖSTERİLİR (üstteki işaretçi kartı da); yalnız "plan hazır, oturum kapanıyor" penceresinde panel ince şeride döner (WO-0038 kuralı — onay anında enstrüman yok).</p>
+  </figure>
+
+  <footer class="why" style="border-color:var(--proceed)">
+    <b>Uygulama sırası (onaydan sonra):</b> ① min-h-0 zincir düzeltmesi (gizli içerik kurtulur) → ② panele kesin yükseklik + id → ③ tek kenar CSS kuralı → ④ defterin canlı işaretçi kartı + geçiş + itiraz deliği → ⑤ tek yeni anahtar ("Canlı oturum" tr/en). Hepsi mevcut kit dili içinde; yeni geçiş/animasyon yok; ⏎ kuralı dokunulmaz.
+  </footer>
+
+</div>
+</body>
+</html>

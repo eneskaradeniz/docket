@@ -223,6 +223,11 @@ export function deriveCardReason(wo: WorkOrder): CardReason {
   // bekleniyor" while the architect was still writing the plan).
   if (wo.sessions.some((s) => s.status === 'running')) return { kind: 'in_progress' };
 
+  // 2026-08-24 (operator, live run): a STOPPED session row — the operator interrupted a drive; it
+  // resumes, it did not end. Without this the card fell through to the gate reasons and said
+  // "Plan onayı bekleniyor" over a plan that does not exist.
+  if (wo.sessions.some((s) => s.status === 'stopped')) return { kind: 'session_stopped' };
+
   const unsat = unsatisfiedGateKinds(wo);
   if (unsat.includes('plan_approval')) return { kind: 'awaiting_plan_commit' };
   if (unsat.includes('closure')) return { kind: 'docs_not_updated' };
@@ -354,6 +359,7 @@ export function toCardView(wo: WorkOrder): WorkOrderCardView {
     trackCount: wo.tracks.length,
     sessionCount: wo.sessions.length,
     cost: wo.cost,
+    costKnown: wo.sessions.some((s) => s.cost !== undefined),
     durationMs,
   };
 }
@@ -398,6 +404,7 @@ export function overlayLiveDrive(view: WorkOrderCardView, live: LiveDriveFact | 
 export type WoPhase =
   | { kind: 'just_written' }
   | { kind: 'planning' } // architect_approval, no plan.md yet
+  | { kind: 'plan_stopped' } // 2026-08-24: planning, and the proposal session was STOPPED by the operator
   | { kind: 'plan_ready' } // architect_approval, plan.md present (pending — TD-025 restart recovery)
   | { kind: 'implementing'; done: number; total: number }
   | { kind: 'reviewing'; stepIdx: number } // first done step with no verdict (the WO-0020 review trigger)
@@ -405,7 +412,7 @@ export type WoPhase =
   | { kind: 'done' };
 
 export function derivePhase(
-  wo: Pick<WorkOrder, 'stage'>,
+  wo: Pick<WorkOrder, 'stage' | 'sessions'>,
   steps: ReadonlyArray<Pick<StepView, 'idx' | 'status' | 'verdict'>>,
   hasPendingPlan: boolean,
 ): WoPhase {
@@ -416,7 +423,12 @@ export function derivePhase(
     case 'plan_ready':
     case 'architect_approval':
       // In M2 deriveStage collapses these to architect_approval; the plan_pending flag distinguishes them.
-      return hasPendingPlan ? { kind: 'plan_ready' } : { kind: 'planning' };
+      if (hasPendingPlan) return { kind: 'plan_ready' };
+      // 2026-08-24 (operator, live run): a STOPPED proposal session changes the phase's voice — the
+      // architect is not "düşünüyor" while interrupted; the proposal sits stopped, awaiting Sürdür.
+      // Read from the ROWS: survives restarts (the live fold does not).
+      if (wo.sessions.some((s) => s.status === 'stopped')) return { kind: 'plan_stopped' };
+      return { kind: 'planning' };
     case 'implementation': {
       const reviewing = steps.find((s) => s.status === 'done' && !s.verdict);
       if (reviewing) return { kind: 'reviewing', stepIdx: reviewing.idx };
@@ -487,7 +499,10 @@ export function deriveTurnState(input: {
   if (input.hasPendingAsks || input.liveStatus === 'stopped_asking') return 'yours';
   if (input.liveStatus === 'plan_ready') return 'yours';
   if (input.liveStatus === 'running' || input.stopping || input.starting) return 'running';
-  if (input.stopped) return 'stopped';
+  // WO-0039 stabilization (2026-08-23): the fold itself carries the intentional stop now (the
+  // `interrupted` event) — not only the controller's `stopped` memory. A stale-'running' fold can
+  // no longer mask the completed wind-down (the glow used to stay run-colored after Durdur).
+  if (input.liveStatus === 'stopped' || input.stopped) return 'stopped';
   return 'yours';
 }
 

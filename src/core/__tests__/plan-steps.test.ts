@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyStepScope, parsePlanSteps, splitStepsFence } from '../plan-steps';
+import { classifyStepScope, moveStep, parsePlanSteps, splitStepsFence } from '../plan-steps';
 import type { StepSpec } from '../types';
 
 // Helper: wrap a JSON body in a ```steps fence (the last fence wins; here there is only one).
@@ -134,5 +134,51 @@ describe('splitStepsFence (WO-0031d tur-2)', () => {
     expect(prose).toContain('Sonra.');
     expect(prose).not.toContain('```steps');
     expect(steps).toEqual([]);
+  });
+
+  // 2026-08-23 (operator ruling, "boş başlığı da sök"): a trailing "## Steps" heading whose ONLY
+  // content was the fence is a dangling stump in the document view — the steps render as the
+  // PLAN HAZIR rows above, so the prose ends at its last real paragraph. A heading that still
+  // carries text after the fence is a real section and stays.
+  it('strips a trailing ## Steps heading whose only content was the fence', () => {
+    const md = '# Hedef\n\nKapılar koşulur.\n\n## Steps\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n';
+    const { prose } = splitStepsFence(md);
+    expect(prose.endsWith('Kapılar koşulur.')).toBe(true);
+    expect(prose).not.toContain('Steps');
+  });
+
+  it('KEEPS the heading when text follows the fence — the section is not empty', () => {
+    const md = '## Steps\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n\nSon söz.\n';
+    const { prose } = splitStepsFence(md);
+    expect(prose).toContain('## Steps');
+    expect(prose).toContain('Son söz.');
+  });
+});
+
+// 2026-08-23 (operator: drag-and-drop reordering): the pure move the editor's drag end calls —
+// the arrow-button onMove(dir) died with the arrows; this is order-based (from → to), renumbering
+// the 1-based idx after every move.
+describe('moveStep (drag-and-drop reorder)', () => {
+  const spec = (idx: number, aim: string): StepSpec => ({ idx, role: 'implementer', aim, scope: { kind: 'all' } });
+  const three = (): StepSpec[] => [spec(1, 'bir'), spec(2, 'iki'), spec(3, 'üç')];
+
+  it('moves down and renumbers (1 → 3): iki bir üç', () => {
+    const out = moveStep(three(), 0, 2);
+    expect(out.map((s) => s.aim)).toEqual(['iki', 'üç', 'bir']);
+    expect(out.map((s) => s.idx)).toEqual([1, 2, 3]);
+  });
+
+  it('moves up and renumbers (3 → 1): üç bir iki', () => {
+    const out = moveStep(three(), 2, 0);
+    expect(out.map((s) => s.aim)).toEqual(['üç', 'bir', 'iki']);
+    expect(out.map((s) => s.idx)).toEqual([1, 2, 3]);
+  });
+
+  it('no-op on same index or out-of-bounds (the list object identity survives)', () => {
+    const steps = three();
+    expect(moveStep(steps, 1, 1)).toBe(steps);
+    expect(moveStep(steps, -1, 0)).toBe(steps);
+    expect(moveStep(steps, 0, 3)).toBe(steps);
+    expect(moveStep(steps, 3, 0)).toBe(steps);
   });
 });

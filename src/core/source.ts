@@ -100,6 +100,17 @@ export interface WorkOrderSource {
   // event (the "düzenlenmiş onay" — the timeline says what changed, not just that it happened).
   approvePlan(workOrderId: WorkOrderId, planText: string, opts?: { editedCount?: number }): Promise<void>;
 
+  // Save the operator's edited plan as the PENDING proposal (2026-08-23, "Bitti = kaydet"): writes
+  // plan.md + a plan_saved event, flips NO gate — approval stays its own act. The editor's stage
+  // used to live only in memory; navigating away silently discarded a "saved" edit.
+  savePlanDraft(workOrderId: WorkOrderId, planText: string): Promise<void>;
+
+  // "İlk öneriye dön" (2026-08-23): the AGENT's original proposed plan, snapshotted at the first
+  // operator overwrite (cleared when the architect re-proposes). null when none exists. Restore
+  // writes it back as the pending plan — the operator's saved edits are discarded.
+  getOriginalPlan(workOrderId: WorkOrderId): Promise<string | null>;
+  restoreOriginalPlan(workOrderId: WorkOrderId): Promise<void>;
+
   // Edit a work order after creation (WO-0031c): title/description → order.md (+ the DB title), review
   // mode / permission rule → order.md front-matter. Every edit appends a `wo_edited` event; a permission
   // rule change additionally appends `rule_changed`. Throws when the WO or its order.md is missing, and

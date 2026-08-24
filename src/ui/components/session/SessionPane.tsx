@@ -1,18 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { initialSessionState, seedLiveState, type DriveInput } from '../../../core/runner';
+import type { TranscriptLine } from '../../../core/types';
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { Button, Segmented, Textarea } from '../../kit';
-import { PaneError, PaneShell, StreamLine } from './pane-chrome';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Button, Segmented, Textarea, cn } from '../../kit';
+import { PaneError, PaneShell } from './pane-chrome';
+import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
 
-// The free-form / plan-stage session INSTRUMENT (WO-0008 → WO-0031c). The console chrome moved out:
-// cost/duration/status live in the strip, the stop control and the plan-approval actions live in the
-// rail, ask cards are pinned by the controller above the instrument, and SADE/DETAY is the global view
-// mode. What remains here is the drive machinery: role tabs (free-form), the prompt + start/resume row,
-// the architect question card, and the instrument itself (the chat transcript — WO-0037, xterm retired).
-// At the plan-APPROVAL moment this pane does not render at all (the plan rows + the rail carry the
+// The free-form / plan-stage session INSTRUMENT (WO-0008 → WO-0039). The console chrome moved out:
+// cost/duration/status live in the header band, process control (Durdur / Zorla kes / ▶ Sürdür) rides
+// THIS pane's header via DriveControls, ask cards are pinned by the controller above the instrument,
+// and the body is the SADE activity line + the Ray column behind the döküm chip. What remains here is
+// the drive machinery: role tabs (free-form), the prompt + start/resume row, the architect question
+// card, and the instrument itself (the chat transcript — WO-0037, xterm retired). At the
+// plan-APPROVAL moment this pane does not render at all (the plan rows + the decision band carry the
 // decision — see the instrument selector below).
 const ROLE_ORDER: SessionRole[] = ['implementer', 'architect', 'verifier'];
 
@@ -21,13 +25,29 @@ export function SessionPane({
   stage,
   workOrderId,
   sessions,
+  planOnTable,
+  drive,
+  now,
+  logOpenSignal,
 }: {
   mode: 'plan' | 'direct';
   stage: StageId;
   workOrderId: WorkOrderId;
   sessions: SessionRef[];
+  /** WO-0039 stabilization (2026-08-23): a plan is already on disk (plan.md). A plan on the table
+   *  IS the answer — the architect's question card ("Mimar seni bekliyor" + Yanıtla) must not
+   *  render over it, whatever resume path restarted the session. */
+  planOnTable: boolean;
+  /** WO-0039: the active drive's process controls in this pane's header (the dead rail's job). */
+  drive?: DriveState;
+  /** The controller's one-second ticker — the live costline's elapsed reuses it (StepPane parity). */
+  now?: number;
+  /** WO-0039/C: the ledger pointer's "▸ Canlı oturum" click bumps this nonce — the pane opens its
+   *  döküm once per bump (one intent: jump AND open). A nonce, not a boolean: remounts and repeat
+   *  clicks each count exactly once. */
+  logOpenSignal?: number;
 }) {
-  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
+  const { LIVE_STATUS_LABELS, PROVIDER_ERROR_LABELS, ROLE_LABELS, UI, formatUsd, toolVerb } = useLabels();
   const store: DriveStore = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store, NOT this pane — navigating away keeps the
   // session running in the background; a remounted pane re-binds to the live fold state instantly.
@@ -41,11 +61,66 @@ export function SessionPane({
   // (fresh mount after a restart). While a background drive exists, the store's state wins. The seed
   // RESULT is memoized — a fresh object per getSnapshot call loops React (#185, see StepPane).
   const seedState = useMemo(
-    () => seedLiveState(sessions.find((s) => s.role === role && s.providerSessionId) ?? { transcript: [] }),
+    () => seedLiveState(sessions.find((s) => s.role === role && s.providerSessionId) ?? { status: 'none', transcript: [] }),
     [sessions, role],
   );
   const state = useDrive(store, driveKey, () => seedState);
   const running = store.get(driveKey)?.running ?? false;
+  const booting = store.get(driveKey)?.booting ?? false;
+
+  // WO-0039 (operator, 2026-08-23): the pane's SADE form — the session card's özet→döküm grammar.
+  // The body shows ONE activity line (the latest transcript line, truncated); the full Ray column
+  // opens behind the ▸ döküm toggle. The old firehose-by-default rendered every tool call and
+  // wrapped path walls — "sade detay gibi görünüş olmalı". Opening scrolls the activity row (the
+  // expansion's header) to reading position — you see what you opened; closing never scrolls.
+  const [logOpen, setLogOpen] = useState(false);
+  const seenSignal = useRef<number | null>(null);
+  // The pointer's nonce: open the log once per NEW bump. The FIRST value seen is ADOPTED silently
+  // (a remount with the current nonce — or the initial 0 — must not open anything on its own);
+  // only a later bump (an actual pointer click) opens.
+  if (logOpenSignal !== undefined && logOpenSignal !== seenSignal.current) {
+    const isFirstSight = seenSignal.current === null;
+    seenSignal.current = logOpenSignal;
+    if (!isFirstSight && !logOpen) setLogOpen(true);
+  }
+  const activityRef = useRef<HTMLDivElement>(null);
+  const toggleLog = (): void => {
+    const next = !logOpen;
+    setLogOpen(next);
+    if (next) requestAnimationFrame(() => activityRef.current?.scrollIntoView({ block: 'start' }));
+  };
+  // 2026-08-23 (canlı panel revizyonu, §3+§6): the SADE line is a STATE, not content.
+  //  plan_ready + running → the wind-down sentence (§6's S2); running → "Düşünüyor" or the
+  //  newest UNMATCHED tool's progressive verb (callId-matched); not running → the fold's own
+  //  state word (Seni bekliyor / Bitti / Hata), frozen.
+  // The `— activity` segment shows when there is something to say: a live/booting drive, a
+  // stopped-asking moment, or an ended-but-recorded fold. A bare idle free-form pane is just the
+  // role name (no noise).
+  const showActivity = running || state.status !== 'idle' || state.entries.length > 0;
+  const activityLine = (() => {
+    if (state.status === 'plan_ready' && running) return UI.planClosing;
+    if (running) {
+      const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
+      const pending = [...state.entries]
+        .reverse()
+        .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
+      if (pending) return toolVerb(pending.tool);
+      return UI.actThinking;
+    }
+    if (state.status === 'stopped_asking') return LIVE_STATUS_LABELS.stopped_asking;
+    if (state.status === 'done') return LIVE_STATUS_LABELS.done;
+    if (state.status === 'stopped') return LIVE_STATUS_LABELS.stopped; // WO-0039: an intentional Durdur, frozen
+    if (state.status === 'error') return LIVE_STATUS_LABELS.error;
+    return UI.actThinking;
+  })();
+  // The drive's own live $ · ⏱ (StepPane's costline, mirrored — the strip carries the WO total).
+  const liveStart = store.get(driveKey)?.startedAt;
+  const costline = [
+    state.cost.usd > 0 ? formatUsd(state.cost.usd) : undefined,
+    running && liveStart && now ? UI.formatDuration(Math.max(0, now - liveStart)) : undefined,
+  ]
+    .filter((x): x is string => x !== undefined)
+    .join(' · ');
 
   // During the plan stages (written = propose, architect_approval = approve/object) the only session is the
   // architect's — role tabs are hidden. They show only past the plan stage (free-form implementer/verifier).
@@ -66,8 +141,11 @@ export function SessionPane({
   // The architect stopped without producing a plan (plan mode turn ended, no plan_ready). In plan mode
   // that almost always means it needs input — surface its last message as an answerable question. Walk
   // back to the last assistant message in case the turn ended with a tool_result (e.g. a timed-out tool).
+  // WO-0039 stabilization (2026-08-23): a plan on the table closes the card — a plan on disk IS the
+  // answer (the overwrite incident's re-entry resume rendered "Mimar seni bekliyor" over a saved plan,
+  // and its Yantla restarted the session).
   const lastAssistant = [...state.entries].reverse().find((e) => e.speaker === 'assistant');
-  const showQuestion = isPlanRequestStage && state.status === 'done' && !state.pendingPlan && !!lastAssistant;
+  const showQuestion = isPlanRequestStage && state.status === 'done' && !state.pendingPlan && !planOnTable && !!lastAssistant;
   const showAsk = state.status === 'stopped_asking' && state.pendingAsks.length > 0;
   const canStart = !running && !showAsk && !showQuestion;
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
@@ -81,20 +159,52 @@ export function SessionPane({
     runDrive({ role, workOrderId, mode, prompt: prompt.trim() || 'Continue.', resume: resumeSessionId }, false);
   };
 
-  // WO-0031f review (operator): the plan-stage instrument with nothing running is an INVITATION, not
-  // a tall empty card that reads like an input and leaves a hole — one breathing dot, one line,
-  // centered; the action itself lives on the rail (Plan iste), it is not duplicated here.
-  if (isPlanRequestStage && !hasStream) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2.5 rounded-md border border-hairline bg-surface px-4 py-10 text-center">
-        <span className="h-2 w-2 rounded-full lamp-signal-breathe" aria-hidden="true" />
-        <p className="readout">{UI.planWaitingHint}</p>
-      </div>
-    );
-  }
+  // WO-0039: the plan-stage "invitation" branch died — a bare plan stage (no stream, no question)
+  // belongs to the controller's empty-state card ("Henüz plan yok." + Plan iste, 1 line + ≤1
+  // action); this pane renders only when there is something to READ (a live drive, a transcript,
+  // an ask, or the architect's question card).
 
   return (
-    <PaneShell tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' || state.status === 'plan_ready' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}>
+    <PaneShell
+      tone={state.status === 'error' ? 'error' : state.status === 'stopped_asking' || state.status === 'plan_ready' ? 'signal' : state.status === 'running' ? 'run' : state.status === 'done' ? 'done' : 'idle'}
+    >
+      {/* 2026-08-23 (operator, tek satır): the header IS the activity line — `● MİMAR — Düşünüyor···`
+          + costline + Durdur + the döküm chip, ONE row (two stacked rows with two dots read
+          redundant). The green dot breathes only while actually live (none during the boot
+          window); the `— activity` segment rides the same readout voice, and the toggle moved up
+          here so opening the döküm pins THIS row (the anchor the scroll targets). */}
+      <div ref={activityRef} className="flex min-w-0 shrink-0 items-center gap-2">
+        {running && !booting ? <span className="dot-run shrink-0" aria-hidden="true" /> : null}
+        <span className="readout shrink-0 truncate">{ROLE_LABELS[isPlanRequestStage ? 'architect' : role]}</span>
+        {showActivity ? (
+          <span className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-info">
+            <span className="text-inkdim/60">— </span>
+            <span className={running ? 'live-dots' : undefined}>{activityLine}</span>
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" aria-hidden="true" />
+        )}
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
+          {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
+          {drive ? <DriveControls drive={drive} /> : null}
+          {hasStream && !emptyRun ? (
+            <button
+              type="button"
+              data-pane-log-toggle=""
+              aria-expanded={logOpen}
+              onClick={toggleLog}
+              className={cn(
+                'ichip flex h-6 shrink-0 items-center gap-1 rounded px-2 font-mono text-[10px] uppercase tracking-wider',
+                logOpen ? 'ichip-on' : '',
+              )}
+            >
+              {logOpen ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : <ChevronRight className="h-3 w-3" aria-hidden="true" />}
+              {logOpen ? UI.transcriptClose : UI.transcriptOpen}
+            </button>
+          ) : null}
+        </div>
+      </div>
+
       {/* Role tabs are hidden on a written work order — the only session is the architect plan session. */}
       {isPlanRequestStage ? null : (
         <Segmented
@@ -140,13 +250,19 @@ export function SessionPane({
         </div>
       ) : null}
 
-      {emptyRun ? (
-        <StreamLine />
-      ) : hasStream ? (
-        <ChatTranscript entries={state.entries} role={role} resetKey={state.sessionId ?? ''} />
-      ) : (
-        <p className="text-xs text-inkdim">{UI.noSession}</p>
-      )}
+      {/* The body is JUST the transcript (the SADE state line merged into the header). The
+          empty-run window needs NO second line — the header's "Düşünüyor···" is the honest
+          state (F7's purpose), and a separate StreamLine here made the pane read two lines then
+          jump to one on the first entry (operator, 2026-08-23). */}
+      {hasStream && !emptyRun && logOpen ? (
+        <div className="mt-3 flex min-h-0 flex-1 flex-col">
+          <ChatTranscript entries={state.entries} role={role} resetKey={state.sessionId ?? ''} />
+        </div>
+      ) : null}
+      {/* noSession only when TRULY nothing — NOT during the boot window (running=true before the
+          first folded event; hasStream alone flashed "Çalışan oturum yok." for the provider's
+          1-3s spawn, then deleted it — operator, 2026-08-23). */}
+      {!hasStream && !running ? <p className="text-xs text-inkdim">{UI.noSession}</p> : null}
 
       {state.status === 'error' || state.lastError ? (
         <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />

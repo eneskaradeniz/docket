@@ -23,6 +23,7 @@ import { lampClass } from '../session/pane-chrome';
 const PHASE_KIND_TONE: Record<WoPhase['kind'], LampTone> = {
   just_written: 'idle',
   planning: 'run',
+  plan_stopped: 'idle', // 2026-08-24: the proposal sits interrupted — nothing runs (the turn spine carries the stop)
   plan_ready: 'signal',
   implementing: 'run',
   reviewing: 'run',
@@ -206,25 +207,31 @@ export function DetailStrip({
         {/* The review cadence badge is the change surface (v4 freedom 2); the rule badge only shows.
             WO-0031d: while a drive is live the badge states its fact and goes inert (same write path
             as the pencil — gated with it; the button is simply not rendered). WO-0031f K1: closed is
-            the permanent form of that — the cadence is now a fact of history, not a setting. */}
+            the permanent form of that — the cadence is now a fact of history, not a setting.
+            WO-0039: the chip TEACHES — a kit Tooltip per mode replaces the dead "İnceleme" title
+            (it said nothing and hid the clickability); the word "Kapılarda" now defines itself. */}
         {driveLive || closed ? (
-          <span
-            data-review-mode={detail.reviewMode}
-            title={UI.reviewModeLabel}
-            className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
-          >
-            {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
-          </span>
+          <Tooltip label={detail.reviewMode === 'gates' ? UI.reviewModeGatesHint : UI.reviewModeEveryHint}>
+            <span
+              data-review-mode={detail.reviewMode}
+              title={UI.reviewModeLabel}
+              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
+            >
+              {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
+            </span>
+          </Tooltip>
         ) : (
-          <button
-            type="button"
-            data-review-mode={detail.reviewMode}
-            title={UI.reviewModeLabel}
-            onClick={() => void onUpdateWorkOrder({ reviewMode: detail.reviewMode === 'gates' ? 'every-step' : 'gates' })}
-            className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
-          >
-            {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
-          </button>
+          <Tooltip label={detail.reviewMode === 'gates' ? UI.reviewModeGatesHint : UI.reviewModeEveryHint}>
+            <button
+              type="button"
+              data-review-mode={detail.reviewMode}
+              title={UI.reviewModeLabel}
+              onClick={() => void onUpdateWorkOrder({ reviewMode: detail.reviewMode === 'gates' ? 'every-step' : 'gates' })}
+              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
+            >
+              {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
+            </button>
+          </Tooltip>
         )}
         <span
           data-permission-rule={permissionRule}

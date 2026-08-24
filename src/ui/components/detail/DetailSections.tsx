@@ -8,8 +8,9 @@
 // required) is untouched. Belgeler became COLLAPSED ROWS (the operator's wall-of-prose complaint):
 // filename + one-line teaser + section count; expansion is the .repbody idiom, height-capped.
 import { useRef, useState, type ReactNode } from 'react';
+import { stripUnfilledSections } from '../../../core/order-md';
 import { splitStepsFence } from '../../../core/plan-steps';
-import type { WorkOrderDetailView } from '../../../core/types';
+import type { SessionRole, WorkOrderDetailView } from '../../../core/types';
 import type { Labels } from '../../data/labels';
 import { useLabels } from '../../data/locale';
 import { SessionCards } from './SessionCards';
@@ -41,17 +42,22 @@ function DocRow({ title, file, content }: { title: string; file: string; content
   };
   const sectionCount = content.split('\n').filter((l) => l.startsWith('## ')).length;
   return (
-    <div ref={rowRef}>
+    // 2026-08-23 (operator: "aynı tasarımı kullan"): the doc row is a CARD like the session
+    // card — one enclosing border holds the toggle row AND the expansion (the well's top hairline
+    // parts them). The old form bordered only the button and left the body hanging frameless.
+    <div ref={rowRef} className="overflow-hidden rounded-md border border-hairline bg-surface">
       <button
         type="button"
-        className="irow flex w-full items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-left"
+        className="irow flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
         aria-expanded={open}
         onClick={toggle}
       >
         <span className="shrink-0 font-mono text-[10px] text-inkdim" aria-hidden="true">{open ? '▾' : '▸'}</span>
         <span className="shrink-0 text-[12.5px] font-semibold text-ink">{title}</span>
         <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{file}</span>
-        <span className="ml-auto shrink-0 font-mono text-[10.5px] text-inkdim">{UI.docSections(sectionCount)}</span>
+        {/* 2026-08-24 (operator: "0 lar gözükmesin"): a fence-only plan has no ## sections — a "0
+            bölüm" count says nothing. The count draws only when there is one to count. */}
+        {sectionCount > 0 ? <span className="ml-auto shrink-0 font-mono text-[10.5px] text-inkdim">{UI.docSections(sectionCount)}</span> : null}
       </button>
       {open ? (
         <div className="repbody max-h-[320px] overflow-y-auto">
@@ -69,10 +75,31 @@ export function buildRecordSections({
   detail,
   docs,
   UI,
+  liveRow,
+  liveSessionId,
+  now,
+  onGoLive,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
   UI: Labels['UI'];
+  /** WO-0039/C: the RUNNING drive's pointer card (meta + "▸ Canlı oturum") — the pane owns the
+   *  live stream; the ledger marks it and jumps there. Card-level facts only (identity-stable,
+   *  never per-line), so streaming never re-renders the record stack. */
+  liveRow?: {
+    role: SessionRole;
+    name: { kind: 'plan' } | { kind: 'step'; idx: number; aim?: string } | { kind: 'review'; idx: number } | { kind: 'unscoped' };
+    startedAt: number;
+    costUsd: number;
+  };
+  /** WO-0039 stabilization (2026-08-23): the live drive's provider session id — the ledger row
+   *  carrying it renders AS the pointer (one session, one card; kills the re-entry dupe of the
+   *  running row card beside the appended pointer). */
+  liveSessionId?: string;
+  /** The controller's one-second ticker + the pointer's jump handler (the live card's duration
+   *  ticks and its click lands on the live surface). */
+  now?: number;
+  onGoLive?: () => void;
 }): DetailSection[] {
   const sections: DetailSection[] = [];
   if (docs.order || docs.plan) {
@@ -84,7 +111,12 @@ export function buildRecordSections({
       title: UI.secDocs,
       node: (
         <div className="flex flex-col gap-1.5">
-          {docs.order ? <DocRow title={UI.docOrderLabel} file={UI.orderDoc} content={docs.order} /> : null}
+          {/* 2026-08-23 (operator ruling): the ORDER view drops the creation template's unfilled
+              skeleton sections (Context placeholder, bare Scope lists, empty Acceptance) — the
+              document shows what exists. The count follows the view text, so it stays honest. */}
+          {docs.order ? (
+            <DocRow title={UI.docOrderLabel} file={UI.orderDoc} content={stripUnfilledSections(docs.order)} />
+          ) : null}
           {planProse ? <DocRow title={UI.docPlanLabel} file={UI.planDoc} content={planProse} /> : null}
         </div>
       ),
@@ -95,13 +127,15 @@ export function buildRecordSections({
   }
   // The ledger rides the stack — the session CARDS (artifact headline + aç/kapa terminal, WO-0038).
   // detail.steps (the full views — verdicts included) replaces the parsed fence: the card headline
-  // reads its artifacts from it.
-  if (detail.sessions.length > 0) {
+  // reads its artifacts from it. WO-0039/C: a RUNNING drive's pointer card renders even with ZERO
+  // persisted rows (the first plan run must not leave an empty ledger).
+  if (detail.sessions.length > 0 || liveRow) {
     sections.push({
       id: 'audit',
       title: UI.auditTitle,
-      aside: UI.auditSessions(detail.sessions.length),
-      node: <SessionCards sessions={detail.sessions} steps={detail.steps} />,
+      // 2026-08-23 (operator): the count aside is dead — the cards are the count (the PLAN HAZIR
+      // ruling, applied to the ledger's own heading).
+      node: <SessionCards sessions={detail.sessions} steps={detail.steps} liveRow={liveRow} liveSessionId={liveSessionId} now={now} onGoLive={onGoLive} />,
     });
   }
   return sections;

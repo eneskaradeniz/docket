@@ -145,6 +145,13 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     let live: LiveSessionState = initialSessionState;
     let terminated = false; // a terminal record already happened — the finally must not double-record
     let startedAtIso: string | undefined; // preserved across every record of the drive (İstek 7)
+    // 2026-08-23 süre şişmesi (WO-0001 pilot): a drive can HANG after its real work — the plan-mode
+    // stream awaits an in-session approval Docket never gives, so the generator stays open until the
+    // operator stops it (4dk of work displayed as 34dk). ended_at is therefore the LAST ACTIVITY
+    // moment, refreshed by every event; the terminal/cleanup records stamp THAT, never `new Date()`
+    // at the (possibly much later) close. Honest undercount: a tool interrupted mid-run bills until
+    // its last logged event — the old overcount (idle wait billed as work) was the worse lie.
+    let lastActivityIso: string | undefined;
 
     const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
       if (!providerSessionId) return;
@@ -168,6 +175,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     try {
       for await (const ev of deps.runner.drive(di)) {
         live = foldSessionEvent(live, ev);
+        lastActivityIso = new Date().toISOString();
         switch (ev.kind) {
           case 'assistant_text':
             if (ev.text) assistantText += ev.text;
@@ -208,11 +216,30 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             if (live.pendingAsks.length === 0) record('running');
             yield ev;
             break;
+          case 'interrupted':
+            // WO-0039 stabilization (2026-08-23): an intentional interrupt is a terminal, calm
+            // close. The session records STOPPED (2026-08-24 — the durable fact every WO-level
+            // derivation reads: the board card reason, the phase line, the restart-time Sürdür
+            // seed; 'idle' made a stopped drive indistinguishable from an ended one), cost only
+            // when the runner observed one, and NO step report / verdict is captured — a stopped
+            // step stays 'active' so Sürdür resumes it ("Durduruldu. Rapor kısmi kalır."), never
+            // the architect-review-of-a-partial-report path a turn_complete would trigger.
+            terminated = true;
+            record('stopped', ev.cost, lastActivityIso ?? startedAtIso);
+            yield ev;
+            break;
           case 'turn_complete':
             terminated = true;
-            // The synthesized plan-exit turn carries NO cost data — record without one (a NULL row, an honest
-            // "no claim") instead of a fake $0.00 (WO-0026 / TD-030).
-            record('idle', ev.stopReason === PLAN_EXIT_WITHOUT_RESULT ? undefined : ev.cost, new Date().toISOString());
+            // The synthesized plan-exit turn carries the adapter's INCREMENTALLY CAPTURED cost
+            // (2026-08-23, maliyet kaybı: the grace abort beats the result message on live plan
+            // turns, and a result-only read recorded $0 for real spend). A REAL (>0) cost records;
+            // all-zero still records none — the honest no-claim (WO-0026 / TD-030). ended_at =
+            // this event's arrival (== lastActivityIso — same tick).
+            {
+              const synthExit = ev.stopReason === PLAN_EXIT_WITHOUT_RESULT;
+              const carryable = synthExit && (ev.cost.usd > 0 || ev.cost.tokensIn > 0 || ev.cost.tokensOut > 0);
+              record('idle', synthExit && !carryable ? undefined : ev.cost, lastActivityIso ?? new Date().toISOString());
+            }
             if (stepIdx !== undefined) {
               const body = ev.result ?? assistantText;
               const reportBody = body.trim()
@@ -231,23 +258,33 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             }
             yield ev;
             break;
-          default: // tool_use, tool_result, a runner-emitted error — forward as-is
+          case 'tool_result':
+            // 2026-08-23 (döküm kaybı): checkpoint the fold at every tool result — the running
+            // transcript must live in the ROW, not only in the pane's memory. The incident: a plan
+            // drive that never asks and never completes had a single empty 'started' record, so a
+            // restart or a later stop left a $-spending session with an empty history.
+            record('running');
+            yield ev;
+            break;
+          default: // tool_use, a runner-emitted error — forward as-is
             yield ev;
             break;
         }
       }
     } catch (e) {
       terminated = true;
-      record('idle', undefined, new Date().toISOString());
+      record('idle', undefined, lastActivityIso ?? startedAtIso);
       yield { kind: 'error', message: (e as Error)?.message ?? String(e) };
     } finally {
       // The completion guarantee (WO-0026 / F5): a session that started but never got a terminal record —
       // the stream ended without a turn_complete (an interrupt), or the consumer closed the generator (a
       // window close) — must not stay `running` in the store. Runs on normal end, on throw, AND on the
       // return-injection a consumer abort triggers; the `terminated` flag keeps it idempotent.
+      // ended_at = the last activity (süre şişmesi, 2026-08-23): an interrupted drive bills its
+      // work span, never the idle wait that preceded the stop.
       if (providerSessionId && !terminated) {
         terminated = true;
-        record('idle', undefined, new Date().toISOString());
+        record('idle', undefined, lastActivityIso ?? startedAtIso);
       }
     }
   };

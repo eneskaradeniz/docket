@@ -25,6 +25,9 @@ const buttonVariants = cva(
         danger: 'bg-error text-ink font-semibold hover:brightness-110',
       },
       size: {
+        // 2026-08-23 (canlı panel revizyonu): xs for the pane header's Durdur — 28px solid red
+        // over-weighted the readout row; 24px is the WCAG 2.5.8 floor, "smaller" stops here.
+        xs: 'h-6 gap-1 px-2 text-[11px]',
         sm: 'h-7 px-2.5 text-xs',
         md: 'h-8.5 px-3.5 text-[13px]',
         lg: 'h-10 px-5 text-sm',
