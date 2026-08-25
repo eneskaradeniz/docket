@@ -16,7 +16,6 @@ import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
 import { EvidencePanel } from './EvidencePanel';
 import { PlanSection } from './PlanSection';
-import type { LiveSessionRow } from './SessionCards';
 import { StepList } from './StepList';
 import { useDetailKeys } from './useDetailKeys';
 import { VerdictCard } from './VerdictCard';
@@ -586,11 +585,12 @@ export function WorkOrderDetail({
     }
     // allStepsDone: close keeps NO ⏎ — the close card's button is a deliberate, aimed click (v4).
   }
-  // The process-control bundle for the ACTIVE drive — handed to whichever pane renders it: through
-  // StepList into the driven row's StepPane, or straight into SessionPane / ReviewPane. The old
-  // rail's precedence, kept: while an ASK is pending the ask cards own the moment (no controls),
-  // and the retry turn belongs to the fail card's Yeniden dene — never a second primary. `enter`
-  // says whether ▶ Sürdür carries the ONE ⏎ (the decision row outranks it when both render).
+  // The process-control bundle for the ACTIVE drive — handed to whichever pane renders the TOP
+  // instrument (SessionPane / ReviewPane / StepPane — WO-0044 tur 2: all three ride the one seat).
+  // The old rail's precedence, kept: while an ASK is pending the ask cards own the moment (no
+  // controls), and the retry turn belongs to the fail card's Yeniden dene — never a second
+  // primary. `enter` says whether ▶ Sürdür carries the ONE ⏎ (the decision row outranks it when
+  // both render).
   const drive: DriveState | undefined =
     !showAsk && turn !== 'retry' && (running || stopping || stoppedNow || stepResumeId !== undefined)
       ? {
@@ -654,43 +654,17 @@ export function WorkOrderDetail({
   useDetailKeys({ closeTopLayer, onBack, onPrimary: primary });
 
   const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
-  // WO-0039/C (Q1): the RUNNING drive's ledger POINTER card — card-level facts only (the pane
-  // owns the stream; this never re-renders per transcript line). liveLogNonce carries the
-  // pointer's "jump + open" intent to the SessionPane (one bump = one open).
-  const [liveLogNonce, setLiveLogNonce] = useState(0);
-  const liveRow = useMemo(() => {
-    if (!(running || stopping)) return undefined;
-    const startedAt = store.get(driveKey)?.startedAt;
-    if (!startedAt) return undefined;
-    const name: LiveSessionRow['name'] = reviewIdx !== undefined
-      ? { kind: 'review', idx: reviewIdx }
-      : !planStage && runIdx !== undefined
-        ? { kind: 'step', idx: runIdx, aim: detail.steps.find((st) => st.idx === runIdx)?.aim }
-        : planStage
-          ? { kind: 'plan' }
-          : { kind: 'unscoped' };
-    const role: LiveSessionRow['role'] = name.kind === 'step' ? (detail.steps.find((st) => st.idx === runIdx)?.role ?? 'implementer') : 'architect';
-    return { role, name, startedAt, costUsd: state.cost.usd };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, stopping, driveKey, reviewIdx, runIdx, planStage, state.cost.usd, detail.steps]);
-  const goLive = (): void => {
-    // One intent, one click: land on the live surface AND open its döküm. Step drives live in
-    // their spine row (chat always inline) — those just scroll.
-    if (!planStage && runIdx !== undefined && reviewIdx === undefined) {
-      document.getElementById(`step-row-${runIdx}`)?.scrollIntoView({ block: 'start' });
-      return;
-    }
-    setLiveLogNonce((n) => n + 1);
-    requestAnimationFrame(() => document.getElementById('live-pane')?.scrollIntoView({ block: 'start' }));
-  };
-  // WO-0039 stabilization (2026-08-23, the re-entry dupe): the live drive's provider session id —
-  // the ledger row carrying it renders AS the pointer (one session, one card), and the appended
-  // pointer stays only for the boot window before the row exists.
+  // WO-0044 (2026-08-25): the ledger is PURE HISTORY — no liveRow pointer, no goLive jump, no
+  // logOpenSignal nonce (WO-0039/C's pointer card died: it duplicated the driven row's live
+  // header one scroll below in a grammar the completed cards do not speak). The record stack
+  // rides only the WO view + ONE live fact (reviewer round): the live drive's session id — the
+  // persisted 'running' row it matches is skipped, so even the mid-run re-entry renders no card
+  // for the run in flight. The ONE live surface is the instrument.
   const liveSessionId = running || stopping ? store.sessionId(driveKey) : undefined;
   const recordSections = useMemo(
-    () => buildRecordSections({ detail, docs, UI, now, onGoLive: goLive, ...(liveRow ? { liveRow } : {}), ...(liveSessionId ? { liveSessionId } : {}) }),
+    () => buildRecordSections({ detail, docs, UI, ...(liveSessionId ? { liveSessionId } : {}) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [detail, docs, UI, liveRow, liveSessionId, now],
+    [detail, docs, UI, liveSessionId],
   );
   // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
   const toggleReport = (step: StepView): void => {
@@ -1014,7 +988,12 @@ export function WorkOrderDetail({
               </div>
             );
           })()
-        ) : (
+        ) : turn === 'running' ? null : (
+          // WO-0044 (operator, 2026-08-25): while a drive is live NOTHING needs you — the ActionCard
+          // is absent, not a read-only "Çalışıyor / Oturumu sürdür" banner (the band's lamp + phase
+          // line and the driven row's instrument already carry the state; the old prompt was the
+          // label of a button that died in WO-0027). The gate is the turn state, not the card's own
+          // persisted-row check — a first-run drive has no persisted row yet.
           <ActionCard detail={detail} />
         )
       ) : null}
@@ -1066,7 +1045,6 @@ export function WorkOrderDetail({
         sessions={detail.sessions}
         planOnTable={!!docs.plan}
         now={now}
-        logOpenSignal={liveLogNonce}
         {...(drive ? { drive } : {})}
       />
     )
@@ -1078,37 +1056,34 @@ export function WorkOrderDetail({
       sessions={detail.sessions}
       planOnTable={!!docs.plan}
       now={now}
-      logOpenSignal={liveLogNonce}
       {...(drive ? { drive } : {})}
     />
   ) : reviewIdx !== undefined ? (
     <ReviewPane
       step={detail.steps.find((s) => s.idx === reviewIdx)!}
       workOrderId={detail.id}
+      now={now}
       {...(drive ? { drive } : {})}
     />
   ) : activeStep ? (
-    <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} />
+    <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} {...(drive ? { drive } : {})} />
   ) : null;
 
-  // WO-0038 DOSYA — the ONE scroll: decision cards first (what needs you), then the plan/step spine
-  // (the driven row carries its chat inline — the StepPane renders ONLY there, never twice; a
-  // plan-stage / step-less / reviewing WO keeps its instrument card above whatever flow exists),
-  // then the record sections (Belgeler rows · Kaynaklar · the session ledger). No tabs, no rack,
-  // no archive special-case — a closed WO is the same document, sealed.
-  const stepPaneLivesInSpine = !planStage && hasSteps && reviewIdx === undefined && !!activeStep;
+  // WO-0038 DOSYA → WO-0044 tur 2 (mockup-approved 2026-08-25): the ONE scroll reads
+  // decision cards (what needs you) → THE LIVE INSTRUMENT, band-adjacent — every drive kind sits
+  // here now; the spine row stopped carrying the pane (the driven row is a plain status row) →
+  // the plan/step spine (a pure status list: Aktif / Bekliyor / tamam) → the record sections
+  // (Belgeler rows · Kaynaklar · the session ledger). No tabs, no rack, no archive special-case —
+  // a closed WO is the same document, sealed.
   const spine =
     !planStage && hasSteps ? (
       <StepList
         steps={detail.steps}
         sessions={detail.sessions}
-        workOrderId={detail.id}
         {...(reviewIdx === undefined && activeStep ? { activeIdx: activeStep.idx } : {})}
         {...(reportStep ? { reportStep } : {})}
         onToggleReport={toggleReport}
         onGetStepReport={onGetStepReport}
-        now={now}
-        {...(drive ? { drive } : {})}
       />
     ) : null;
 
@@ -1140,9 +1115,7 @@ export function WorkOrderDetail({
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="flex min-w-0 flex-col gap-3.5">
           <div {...entrance(1)}>{decision}</div>
-          {stepPaneLivesInSpine || !instrument ? null : (
-            <div {...entrance(2)}>{instrument}</div>
-          )}
+          {instrument ? <div {...entrance(2)}>{instrument}</div> : null}
           {spine ? <div {...entrance(3)}>{spine}</div> : null}
           <div {...entrance(4)}>
             <RecordStack sections={recordSections} />

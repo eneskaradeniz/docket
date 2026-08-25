@@ -88,3 +88,47 @@ the producer).
 iste button — the "Henüz plan yok." empty-state card died on the operator's hand. The header band's
 phase line already states the condition ("İş emri yazıldı — plan iste"); a line echoing it is
 background noise. One action, zero lines.
+
+**Addendum (2026-08-25, WO-0044 — one live grammar; the ledger is pure history):** the first REAL
+step-drive dogfood (base-mobile WO-0001 run inside Docket) re-ruled two prior clauses, superseding
+them dated (their text stands above). Revised same day by the tur-2 addendum below where noted.
+
+- **"The running session's card opens itself" (this ADR) and WO-0039/C's Q1 pointer clause are
+  REVERSED**: the ledger ("Oturum dökümü") is PURE HISTORY — a running drive carries NO card there at
+  all (not the self-opening card, not the "▸ Canlı oturum" pointer; the pointer duplicated the driven
+  row's live facts one scroll below in a grammar the completed cards do not speak). A session joins
+  the ledger as a plain card the moment it ends; a first plan run renders no ledger (the empty group
+  is absent, ADR-0012).
+- **The ONE live surface is the driven row's instrument, and it speaks ONE grammar** — the
+  SessionPane form WO-0039's 2026-08-23 revision gave it, now shared in `pane-chrome`
+  (`usePaneActivity` + `PaneLogChip` + `usePaneLog`): the header row `● ROL — <etkinlik fiili>` +
+  costline + DriveControls + the "Dökümü aç/kapat" chip, the Ray column BEHIND the chip, closed by
+  default. StepPane's always-open inline transcript (v6's "never hidden behind a toggle" comment)
+  and ReviewPane's toggle-less form died with it — three live surfaces, one language. The live thing
+  still travels with its step (the accepted trade above stands); its DETAIL is one click away.
+- **The ActionCard is absent while a drive is live, and never renders the resume intent** — the
+  read-only "Çalışıyor / Oturumu sürdür" pairing was the label of a button that died in WO-0027,
+  reading as a standing offer; Sürdür lives only in DriveControls ('▶ Sürdür', ⏎'s target).
+- Word ownership, once each: "Çalışıyor" the WORD lives in the header band (lamp + sr-only line);
+  live surfaces speak in activity verbs ("Dosya okuyor…"); the implementation phase line carries
+  only the count ("0/2 adım" — the stage badge says the word); the driven row's meta carries its
+  scope only; the review cadence chip names itself ("Denetim: kapıda"). (Revised by tur 2 below:
+  the row's meta reopens with its state word — "Aktif", not "Çalışıyor".)
+
+**Tur-2 addendum (2026-08-25, same day, mockup-approved `docs/ui-mockups/wo-0044-live-top.html` —
+the operator drove a real review session on the tur-1 build and re-ruled the layout):**
+
+- **The live instrument rides at the TOP, band-adjacent — every drive kind (step, review,
+  plan/free).** This reverses both ADR-0013's "the driven row carries its live chat inline" trade
+  and tur 1's "the live thing travels with its step" restatement: finding the live thing meant
+  scrolling INTO the spine mid-run. The architect's live plan pane's old seat is the one seat.
+- **The spine below is a pure STATUS list**: every row's meta opens with its state word —
+  "Aktif" (the operator's word; TRUE even for an interrupted step, where "Çalışıyor" lied) ·
+  "Bekliyor" ("sırada" flattened) · done keeps "tamam · ⏱ · $" + ▸ rapor. The driven row carries
+  no pane and no live detail.
+- **The record cards declare themselves**: the session card's first line is the KİM — ROL readout
+  (`PLAN — MİMAR` · `ADIM 1 — UYGULAYICI` · `İNCELEME 1 — MİMAR` — the role word in its role hue,
+  the 3px role edge, the step's aim on its own line), and every record card (session + document
+  rows) wears the visible `--bord` edge — the same brightened hairline `.steprow.owner` uses; flow
+  surfaces (step rows, the instrument) keep the plain hairline. "Whose session is this" reads at a
+  glance; nothing floats frameless.

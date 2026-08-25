@@ -52,15 +52,25 @@ rule restated with its reasons in two places is the duplication this repository 
 
 ## Single view — ADR-0013
 - The work-order detail screen is ONE scroll at every width (DOSYA): a merged header band (turn lamp
-  spine + phase + step hairline) over decision cards → plan rows → the live instrument → the record
-  sections (Belgeler rows · Kaynaklar · Oturum cards). No view mode, no tabs, no rack, no bottom
+  spine + phase + step hairline) over decision cards → the LIVE INSTRUMENT band-adjacent (every
+  drive kind; WO-0044 tur 2 — the spine row carries no pane) → the plan/step spine as a pure STATUS
+  list (Aktif / Bekliyor / tamam — no live detail) → the record sections (Belgeler rows · Kaynaklar ·
+  Oturum cards). No view mode, no tabs, no rack, no bottom
   rail — decisions render in their flow (the plan section's decision band + heading Düzenle, the
   lone Plan iste button on a bare plan stage, the fail card's retry) and process control rides the
   live pane's header (`DriveControls`);
   `view-mode`/`Substrip`/`DetailBody`/`useDetailLayout`/`ActionRail` are deleted; do not reintroduce
   layout forks or a command bar.
-- Session history renders as CARDS: meta + the artifact-headline özet + the Ray transcript one click
-  away (the aç/kapa is the old SADE/DETAY distinction). The Kanıt section is dead — evidence is
+- Session history renders as CARDS: the KİM — ROL head line (role word in its role hue, 3px role
+  edge, the step's aim on its own line) + the artifact-headline özet + the Ray transcript one click
+  away (the aç/kapa is the old SADE/DETAY distinction); record cards wear the visible `--bord`
+  edge. The ledger is PURE HISTORY — a running drive
+  carries no card there (ADR-0013's 2026-08-25 addendum); the ONE live surface is the TOP
+  instrument (band-adjacent), which speaks the shared live grammar (`pane-chrome`: activity verb
+  line + "Dökümü aç/kapat" chip, the transcript behind the chip — StepPane/ReviewPane/SessionPane
+  alike).
+  The ActionCard is absent while a drive runs and never renders the resume intent (Sürdür lives only
+  in DriveControls). The Kanıt section is dead — evidence is
   contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is
   ENFORCED in the pipeline (`SessionStore.planApprovedFor`): step/review drives on an unapproved plan
   are refused with an error event before the runner spawns — never work around it in a host.

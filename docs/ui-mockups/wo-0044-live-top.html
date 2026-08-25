@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WO-0044 · Mockup — canlı alet üste, omurga durum dikişi, defter kartı kenarları</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞERLERİYLE birebir (WO-0040 sonrası
+     saf-siyah tema; WO-0039 mockup'ındaki eski mavi-siyah değerleri KULLANILMADI). */
+  :root {
+    --bg: #000000; --surface: #0a0a0a; --raised: #171717; --hairline: #262626;
+    --ink: #f2f2f2; --dim: #8f8f8f;
+    --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
+    /* araç TÜR aileleri (WO-0040) — dökümün etiket sütunu */
+    --exec: #4ac3ce; --write: #a371f7; --remote: #d879b8;
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* WO-0044 önerisi — kayıt kartının GÖRÜNÜR kenarı: steprow.owner'ın karışımı (yeni renk değil) */
+    --bord: color-mix(in srgb, var(--dim) 35%, var(--hairline));
+    --bord-on: color-mix(in srgb, var(--dim) 45%, var(--hairline));
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; letter-spacing: 0.01em;
+    padding: 40px 20px 80px;
+  }
+  .plate { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 46px; }
+
+  /* --- tabaka kromu (uygulamada YOK — sadece bu onay sayfası) --- */
+  .plate-head h1 { font-size: 17px; font-weight: 700; letter-spacing: 0; }
+  .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  .verdict {
+    margin-top: 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px dashed var(--hairline); border-radius: 8px; padding: 8px 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em;
+  }
+  .verdict b { color: var(--signal); font-weight: 600; }
+  .kararlar { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .kararlar div { font-size: 12.5px; line-height: 1.6; color: var(--dim); }
+  .kararlar b { color: var(--ink); font-weight: 600; }
+  .kararlar .no { font-family: var(--mono); font-size: 10.5px; color: var(--signal); margin-right: 7px; }
+  .legend { display: flex; gap: 16px; margin-top: 14px; font-family: var(--mono); font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 3px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  figure { display: flex; flex-direction: column; gap: 10px; }
+  .figcap { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); }
+  .figcap .no { color: var(--signal); font-weight: 600; }
+  .figcap .tag { color: var(--info); }
+  .why { border-left: 2px solid var(--signal); padding: 2px 0 2px 10px; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .why b { color: var(--ink); font-weight: 600; }
+  .why .m { font-family: var(--mono); font-size: 11px; }
+
+  /* --- ortak parçalar --- */
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .meta { font-family: var(--mono); font-size: 10.5px; color: var(--dim); letter-spacing: .02em; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .lamp-run-v { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .dot-run { width: 5px; height: 5px; flex: none; border-radius: 9999px; background: var(--proceed); animation: breathe 2.2s ease-in-out infinite; }
+  .live-dots::after { content: ''; display: inline-block; width: 1.8em; text-align: left; animation: liveDots 1.4s steps(1) infinite; }
+  @keyframes liveDots { 0% { content: ''; } 25% { content: '·'; } 50% { content: '··'; } 75%, 100% { content: '···'; } }
+
+  .chip {
+    display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 7px;
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    border: 1px solid var(--hairline); color: var(--dim); background: transparent; white-space: nowrap;
+  }
+  .chip.perm { color: var(--info); border-color: rgba(108, 160, 206, .4); }
+  .btn-danger {
+    display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 12px;
+    border-radius: 6px; font-family: var(--sans); font-size: 12px; font-weight: 600; white-space: nowrap;
+    background: rgba(229, 72, 77, .08); color: var(--error); border: 1px solid rgba(229, 72, 77, .45); cursor: pointer;
+  }
+  .ichip {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px;
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    border: 1px solid var(--hairline); color: var(--dim); background: transparent; cursor: pointer; white-space: nowrap;
+  }
+  .ichip.on { border-color: rgba(108, 160, 206, .6); background: rgba(108, 160, 206, .1); color: var(--ink); }
+
+  /* --- başlık bandı (DetailStrip: kartsız, sayfa zemininde, 3px omurga solda) --- */
+  .band { position: relative; padding: 2px 4px 10px 16px; }
+  .band .spine { position: absolute; left: 0; top: 0; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; }
+  .band-r1 { display: flex; align-items: center; gap: 9px; }
+  .band-r1 .back { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); font-size: 15px; border-radius: 6px; }
+  .band-r1 .wo { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .band-r1 .pdot { width: 6px; height: 6px; border-radius: 9999px; }
+  .band-r1 .phase { font-size: 12px; color: var(--dim); }
+  .band-r1 .right { margin-left: auto; display: flex; gap: 12px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .band-r2 { display: flex; align-items: center; gap: 9px; margin-top: 8px; padding-left: 37px; }
+  .band-r2 h2 { font-size: 15px; font-weight: 600; letter-spacing: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .band-r2 .pencil { color: var(--dim); opacity: .45; font-size: 12px; }
+  .band-r2 .chip.gated { opacity: .45; }
+  .hairline-progress { height: 2px; background: var(--hairline); border-radius: 1px; margin: 12px 4px 0 37px; overflow: hidden; }
+  .hairline-progress > div { height: 100%; width: 50%; background: var(--proceed); }
+
+  /* --- CANLI ALET (PaneShell: kart + info lamba kenarı; WO-0044'te bandın altına taşınır) --- */
+  .inst { display: flex; margin-top: 14px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .inst .lamp { width: 3px; flex: none; }
+  .inst .body { flex: 1; min-width: 0; padding: 10px 12px; }
+  .inst-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .inst-head .verb { min-width: 0; flex: 1; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--info); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .inst-head .verb .da { color: rgba(143, 143, 143, .6); }
+  .inst-head .cost { font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+
+  /* aletin açık dökümü — kuyu dokusu (üst saç + zemin zemin) */
+  .log { border-top: 1px solid var(--hairline); background: var(--bg); margin: 10px -12px -10px; padding: 10px 14px 12px; }
+  .sysline { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.7; }
+  .trow {
+    display: flex; align-items: center; gap: 8px; background: rgba(23, 23, 23, .4);
+    border-radius: 6px; padding: 5px 10px; margin-top: 6px; font-family: var(--mono); font-size: 11px;
+  }
+  .trow .g { display: grid; grid-template-columns: 12px 7rem 12px 1fr; gap: 6px; align-items: center; flex: 1; min-width: 0; }
+  .trow .gl { color: var(--dim); }
+  .trow .lb { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .trow .lb.exec { color: var(--exec); } .trow .lb.write { color: var(--write); } .trow .lb.read { color: var(--dim); }
+  .trow .da { color: var(--dim); }
+  .trow .dt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .trow .ck { color: var(--dim); font-size: 10px; flex: none; }
+  .trow .rdot { width: 5px; height: 5px; border-radius: 9999px; background: var(--info); animation: breathe 2.2s ease-in-out infinite; flex: none; }
+  .turn { position: relative; padding-left: 24px; margin-top: 10px; font-size: 12.5px; line-height: 1.6; }
+  .turn::before { content: ''; position: absolute; left: 6px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; }
+  .turn.v::before { background: var(--proceed); }
+  .turn.u::before { background: var(--info); }
+
+  /* --- ADIM OMURGASI — saf durum dikişi (WO-0044: durum sözcüğü satıra geri döner) --- */
+  .steps { display: flex; flex-direction: column; gap: 6px; margin-top: 26px; }
+  .steprow {
+    position: relative; display: flex; align-items: center; gap: 8px; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 6px 10px;
+  }
+  .steprow.e-done { box-shadow: inset 3px 0 0 var(--proceed); }
+  .steprow.e-act { box-shadow: inset 3px 0 0 var(--info); }
+  .steprow.e-idle { box-shadow: inset 3px 0 0 var(--hairline); }
+  .steprow .mark { width: 16px; text-align: center; flex: none; font-family: var(--mono); font-size: 11px; }
+  .mark.done { color: var(--proceed); } .mark.act { color: var(--info); } .mark.pend { color: var(--dim); }
+  .steprow .idx { font-family: var(--mono); font-size: 10px; color: var(--dim); flex: none; }
+  .steprow .aim { font-size: 12.5px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .steprow .rmeta { margin-left: auto; flex: none; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+  .steprow .rmeta .rpt { color: var(--info); }
+
+  /* --- KAYIT bölümleri --- */
+  .sec { margin-top: 28px; }
+  .sec > h2.readout::before { content: '● '; color: var(--hairline); }
+  .sec .stack { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+  /* Belgeler satırı — kayıt kartı (görünür kenar) */
+  .docrow {
+    display: flex; align-items: center; gap: 9px; background: var(--surface);
+    border: 1px solid var(--bord); border-radius: 8px; padding: 7px 11px; cursor: pointer;
+  }
+  .docrow:hover { background: rgba(23, 23, 23, .6); }
+  .docrow .caret, .scard .caret { font-family: var(--mono); font-size: 10px; color: var(--dim); flex: none; }
+  .docrow .t { font-size: 12.5px; font-weight: 600; }
+  .docrow .f { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .docrow .n { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+
+  /* --- OTURUM KARTI — WO-0044 yeni anatomi (görünür kenar + 3px rol kenarı + KİM — ROL satırı) --- */
+  .scard { background: var(--surface); border: 1px solid var(--bord); border-radius: 8px; overflow: hidden; }
+  .scard.open { border-color: var(--bord-on); }
+  .scard.mim { box-shadow: inset 3px 0 0 var(--signal); }
+  .scard.uyg { box-shadow: inset 3px 0 0 var(--info); }
+  .scard.dog { box-shadow: inset 3px 0 0 var(--proceed); }
+  .scard .shead { display: block; width: 100%; text-align: left; background: none; border: 0; cursor: pointer; }
+  .scard .shead:hover { background: rgba(23, 23, 23, .6); }
+  .scard .r1 { display: flex; align-items: center; gap: 10px; padding: 9px 12px 2px 14px; }
+  .rw { font-weight: 600; }
+  .rw.mim { color: var(--signal); } .rw.uyg { color: var(--info); } .rw.dog { color: var(--proceed); }
+  .scard .cmeta { margin-left: auto; display: flex; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+  .scard .aimline { padding: 3px 12px 0 36px; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scard .ozet { padding: 3px 12px 10px 36px; font-size: 12px; line-height: 1.55; color: var(--dim); }
+  .scard .ozet b { color: var(--ink); font-weight: 600; }
+  .scard .arc { border-top: 1px solid var(--hairline); background: var(--bg); padding: 9px 14px 11px; }
+
+  footer.note { border-top: 1px solid var(--hairline); padding-top: 18px; font-size: 12.5px; color: var(--dim); line-height: 1.7; }
+  footer.note b { color: var(--ink); }
+  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lamp-run-v, .dot-run, .rdot, .live-dots::after { animation: none; }
+    .live-dots::after { content: '…'; }
+  }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
+  <header class="plate-head">
+    <h1>WO-0044 · Tur 2 — canlı alet üste, omurga durum dikişi, defter kartı kenarları</h1>
+    <p class="sub">
+      Operatörün 2026-08-25 üç kararı (gerçek base-mobile sürüşünde test edildi): canlı ajan en üstte ·
+      adımlar altta durumu açık söyler · oturum dökümünün sahibi ve kenarı belli olsun.
+      Onaylanmadan tek satır uygulama kodu yazılmaz; düzeltme istenirse bu dosya güncellenir.
+      Token'lar güncel <span class="m">src/index.css</span> değerleri (WO-0040 sonrası).
+    </p>
+    <div class="verdict"><span>ana iddia:</span> canlı olan TEK yüzey bandın altında; omurga durumu söyler, defter kim olduğunu söyler</div>
+    <div class="kararlar">
+      <div><span class="no">1</span><b>Alet yeri</b> — sürüş canlıysa okuma düzeni: band → canlı alet → adımlar → kayıt. Sürülen satır canlı ayrıntı taşımaz. Sürüş yokken bugünkü düzen aynen kalır (bu kare çizilmedi).</div>
+      <div><span class="no">2</span><b>Satır sözcüğü</b> — sürülen satır <b>Aktif</b> der (operatörün kelimesi; kesintide de doğru — canlılık fiili alette). <del>"sırada"</del> → <b>Bekliyor</b>: her satırın metası DURUM sözcüğüyle açılır.</div>
+      <div><span class="no">3</span><b>Kart kenarı</b> — kayıt kartları (oturum + belge satırları) parlak saç taşır: inkdim %35 karışımı (= steprow.owner'ın kenarı; yeni renk girmez). Adım satırları ve alet eski saçta kalır.</div>
+      <div><span class="no">4</span><b>Rol atfı</b> — kartın ilk satırı <b>KİM — ROL</b> readout'u (PLAN — MİMAR · ADIM 1 — UYGULAYICI · İNCELEME 1 — MİMAR); rol sözcüğü kendi renginde + 3px rol kenarı. Tek biçim, üç tür.</div>
+      <div><span class="no">5</span><b>Çip varsayılanı</b> — döküm çipi KAPALI (B karesi: sakin satır). A karesi açık hali gösterir; açınca gövde kuyu dokusunda.</div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--signal)"></i>mimar</span>
+      <span><i style="background:var(--info)"></i>uygulayıcı</span>
+      <span><i style="background:var(--proceed)"></i>doğrulayıcı</span>
+      <span style="color:var(--signal)">parlak kenar = kayıt kartı</span>
+    </div>
+  </header>
+
+  <!-- ═══════════════ 01 · CANLI ADIM SÜRÜŞÜ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> CANLI ADIM SÜRÜŞÜ — ALET BANDA YAPIŞIK <span class="tag">— band → alet → adımlar → kayıt</span></figcaption>
+
+    <!-- başlık bandı (sürüş canlı: kalem + denetim çipi yerinde SOLUK — guarded idiom) -->
+    <div class="band">
+      <div class="spine lamp-run-v"></div>
+      <div class="band-r1">
+        <span class="back">‹</span>
+        <span class="wo">WO-0001</span>
+        <span class="chip">Uygulama</span>
+        <span class="pdot lamp-run-v"></span>
+        <span class="phase">1/2 adım</span>
+        <div class="right"><span>$13,98</span><span>Süre 36dk 13sn</span></div>
+      </div>
+      <div class="band-r2">
+        <h2 title="Faz 6c-3 varlıklar — placeholder JPG'ler, petrol logo/splash, picsum/dribbble sıfır + photos overflow (docket pilot)">Faz 6c-3 varlıklar — placeholder JPG'ler, petrol logo/splash, picsum/dribbble sıfır + photos overf…</h2>
+        <span class="pencil" title="Oturum çalışırken düzen kapalı — Durdur ile bitirince açılır.">✎</span>
+        <span class="chip gated" title="Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış.">Denetim: kapıda</span>
+        <span class="chip perm">İzin: otomatik</span>
+      </div>
+      <div class="hairline-progress"><div></div></div>
+    </div>
+
+    <!-- CANLI ALET — eski konumu sürülen satırdı; artık bandın altında, mimarın canlı plan bölmesinin eski koltuğu -->
+    <section class="inst">
+      <div class="lamp lamp-run-v"></div>
+      <div class="body">
+        <div class="inst-head">
+          <span class="dot-run"></span>
+          <span class="readout">DOĞRULAYICI</span>
+          <span class="verb"><span class="da">— </span><span class="live-dots">Komut çalıştırıyor</span></span>
+          <span class="cost">$0,42 · 1dk 12sn</span>
+          <button class="btn-danger">Durdur</button>
+          <button class="ichip on">▾ Dökümü kapat</button>
+        </div>
+        <div class="log">
+          <p class="sysline">● oturum açıldı — 03:12</p>
+          <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb read">Dosya oku</span><span class="da">—</span><span class="dt">/Users/eneskaradeniz/source/base-mobile/src/screens/PhotosScreen.tsx</span></div><span class="ck">›</span></div>
+          <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb read">Dosya oku</span><span class="da">—</span><span class="dt">/Users/eneskaradeniz/source/base-mobile/docs/assets-list.md</span></div><span class="ck">›</span></div>
+          <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb read">Ara</span><span class="da">—</span><span class="dt">picsum photos dribbble</span></div><span class="ck">›</span></div>
+          <div class="turn v">Şimdi PR #16'yı bağımsız doğruluyorum — önce değişen dosya listesi.</div>
+          <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb exec">Komut çalıştır</span><span class="da">—</span><span class="dt">cd /Users/eneskaradeniz/source/base-mobile &amp;&amp; gh pr view 16 --json files,additions,deletions</span></div><span class="ck">›</span><span class="rdot"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ADIM OMURGASI — sürülen satır canlı paneli ARTIK taşımıyor; durum + kapsam -->
+    <div class="steps">
+      <div class="steprow e-done">
+        <span class="mark done">✓</span><span class="idx">1</span>
+        <span class="aim">Uygulayıcı · varlık zinciri + overflow düzeltimi uygula</span>
+        <span class="rmeta">tamam · ⏱ 32dk 45sn · $13,17 · <span class="rpt">▸ rapor</span></span>
+      </div>
+      <!-- KARAR — sürülen satırın durum sözcüğü: "Aktif" (operatörün kelimesi), "Çalışıyor" DEĞİL.
+           Takas: "Çalışıyor" daha canlı ama WO-0044'ün dersi — durdurulmuş / izin bekleyen bir adımda
+           yalan söylüyor. "Aktif" kesinti anında da doğru kalır; "şu an ne yapıyor" sorusunu yukarıdaki
+           aletin fiili cevaplar (yeşil nokta + "Komut çalıştırıyor···"). Etiket paketine "Aktif" girer
+           (STEP_STATUS_LABELS.active), "sırada" da "Bekliyor"a düzleşir — omurga saf durum dikişi olur. -->
+      <div class="steprow e-act">
+        <span class="mark act">►</span><span class="idx">2</span>
+        <span class="aim">Doğrulayıcı · kapılar + bağımsız doğrulama raporu</span>
+        <span class="rmeta">Aktif · base-mobile</span>
+      </div>
+    </div>
+
+    <!-- KAYIT · Belgeler (Kaynaklar boş → bölüm hiç render olmaz: absent kuralı) -->
+    <div class="sec">
+      <h2 class="readout">Belgeler</h2>
+      <div class="stack">
+        <div class="docrow"><span class="caret">▸</span><span class="t">İş emri</span><span class="f">order.md</span><span class="n">3 bölüm</span></div>
+        <div class="docrow"><span class="caret">▸</span><span class="t">Plan</span><span class="f">plan.md</span><span class="n">4 bölüm</span></div>
+      </div>
+    </div>
+
+    <!-- KAYIT · Oturum dökümü — YENİ kart anatomisi, ikisi de kapalı -->
+    <div class="sec">
+      <h2 class="readout">Oturum dökümü</h2>
+      <div class="stack">
+        <div class="scard mim">
+          <button class="shead">
+            <span class="r1">
+              <span class="caret">▸</span>
+              <span class="readout">PLAN — <span class="rw mim">MİMAR</span></span>
+              <span class="cmeta"><span>00:46 – 00:49</span><span>2dk 33sn</span><span>$0,81</span></span>
+            </span>
+            <span class="ozet"><b>Özet — </b>2 adımlık plan önerdi</span>
+          </button>
+        </div>
+        <div class="scard uyg">
+          <button class="shead">
+            <span class="r1">
+              <span class="caret">▸</span>
+              <span class="readout">ADIM 1 — <span class="rw uyg">UYGULAYICI</span></span>
+              <span class="cmeta"><span>02:34 – 03:06</span><span>32dk 45sn</span><span>$13,17</span></span>
+            </span>
+            <span class="aimline">varlık zinciri + overflow düzeltimi uygula</span>
+            <span class="ozet"><b>Özet — </b>PR #16 açıldı: 151 dosya, +385/−116…</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> sürüş canlıyken tek canlı yüzey var — alet. O bandın altına çıkar (mimarın canlı plan bölmesinin
+      eski koltuğu) ve sürülen satır sıradan bir omurga satırına döner: <b>durum sözcüğü + kapsam</b>, canlı ayrıntı yok.
+      Defter saf tarihtir (koşan sürüşün kartı yok — WO-0044); kartların ilk satırı <span class="m">KİM — ROL</span>
+      olduğu için "bu kimin oturumuydu" bir bakışta okunur, parlak kenar + rol kenarı kartı zeminden ayırır.
+      Bu karede ActionCard yok (sürüş canlı); bekleyen bir izin kartı olsaydı HER ŞEYDEN önce gelirdi.
+      Kaynaklar boş olduğu için bölüm hiç çizilmedi. <b>Sürüş yokken bugünkü düzen aynen kalır</b>
+      (karar yüzeyleri → adımlar → kayıt).
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 02 · CANLI MİMAR DENETİMİ — SAKİN DİZİLİM ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> CANLI MİMAR DENETİMİ — SAKİN DİZİLİM <span class="tag">— çip kapalı (varsayılan); arşiv kartı açık</span></figcaption>
+
+    <div class="band">
+      <div class="spine lamp-run-v"></div>
+      <div class="band-r1">
+        <span class="back">‹</span>
+        <span class="wo">WO-0001</span>
+        <span class="chip">Uygulama</span>
+        <span class="pdot lamp-run-v"></span>
+        <span class="phase">Mimar denetimi · adım 1</span>
+        <div class="right"><span>$13,98</span><span>Süre 29dk 48sn</span></div>
+      </div>
+      <div class="band-r2">
+        <h2 title="Faz 6c-3 varlıklar — placeholder JPG'ler, petrol logo/splash, picsum/dribbble sıfır + photos overflow (docket pilot)">Faz 6c-3 varlıklar — placeholder JPG'ler, petrol logo/splash, picsum/dribbble sıfır + photos overf…</h2>
+        <span class="pencil" title="Oturum çalışırken düzen kapalı — Durdur ile bitirince açılır.">✎</span>
+        <span class="chip gated" title="Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış.">Denetim: kapıda</span>
+        <span class="chip perm">İzin: otomatik</span>
+      </div>
+      <div class="hairline-progress"><div></div></div>
+    </div>
+
+    <!-- CANLI ALET — sakin satır: döküm çipi KAPALI (varsayılan), tek başlık satırı -->
+    <section class="inst">
+      <div class="lamp lamp-run-v"></div>
+      <div class="body">
+        <div class="inst-head">
+          <span class="dot-run"></span>
+          <span class="readout">MİMAR DENETİMİ</span>
+          <span class="verb"><span class="da">— </span><span class="live-dots">Dosya okuyor</span></span>
+          <span class="cost">$0,19 · 54sn</span>
+          <button class="btn-danger">Durdur</button>
+          <button class="ichip">▸ Dökümü aç</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Adım 1'in işareti bu karede ✓ DEĞİL "…" — karar henüz yok (denetim sürüyor);
+         mimar proceed deyince ✓ çizilir (mevcut işaret grameri). -->
+    <div class="steps">
+      <div class="steprow e-done">
+        <span class="mark pend">…</span><span class="idx">1</span>
+        <span class="aim">Uygulayıcı · varlık zinciri + overflow düzeltimi uygula</span>
+        <span class="rmeta">tamam · ⏱ 32dk 45sn · $13,17 · <span class="rpt">▸ rapor</span></span>
+      </div>
+      <div class="steprow e-idle">
+        <span class="mark pend">○</span><span class="idx">2</span>
+        <span class="aim">Doğrulayıcı · kapılar + bağımsız doğrulama raporu</span>
+        <span class="rmeta">Bekliyor · base-mobile</span>
+      </div>
+    </div>
+
+    <!-- Belgeler bölümü 01'dekiyle aynı — tekrar çizilmedi. -->
+    <div class="sec">
+      <h2 class="readout">Oturum dökümü</h2>
+      <div class="stack">
+        <!-- AÇIK arşiv kartı: aç/kapa kartın başlığıdır; gövde arşiv dökümünün başı -->
+        <div class="scard uyg open">
+          <button class="shead">
+            <span class="r1">
+              <span class="caret">▾</span>
+              <span class="readout">ADIM 1 — <span class="rw uyg">UYGULAYICI</span></span>
+              <span class="cmeta"><span>02:34 – 03:06</span><span>32dk 45sn</span><span>$13,17</span></span>
+            </span>
+            <span class="aimline">varlık zinciri + overflow düzeltimi uygula</span>
+            <span class="ozet"><b>Özet — </b>PR #16 açıldı: 151 dosya, +385/−116…</span>
+          </button>
+          <div class="arc">
+            <p class="sysline">● oturum açıldı — 02:34</p>
+            <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb exec">Komut çalıştır</span><span class="da">—</span><span class="dt">cd /Users/eneskaradeniz/source/base-mobile &amp;&amp; ls -R src/assets | head -40</span></div><span class="ck">›</span></div>
+            <div class="trow"><div class="g"><span class="gl">▸</span><span class="lb write">Dosya yaz</span><span class="da">—</span><span class="dt">src/assets/petrol-logo@2x.jpg</span></div><span class="ck">›</span></div>
+            <div class="turn u">PR #16 açıldı: 151 dosya, +385/−116. Picsum/dribbble sıfır, photos overflow düzeltildi.</div>
+          </div>
+        </div>
+        <div class="scard mim">
+          <button class="shead">
+            <span class="r1">
+              <span class="caret">▸</span>
+              <span class="readout">PLAN — <span class="rw mim">MİMAR</span></span>
+              <span class="cmeta"><span>00:46 – 00:49</span><span>2dk 33sn</span><span>$0,81</span></span>
+            </span>
+            <span class="ozet"><b>Özet — </b>2 adımlık plan önerdi</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> denetim de bir sürüstür — aynı koltuk, aynı gramer (<span class="m">MİMAR DENETİMİ — fiil</span>),
+      ama sakin biçim: çip kapalı, tek başlık satırı; döküm bir tık ötede. Adım 1'in işareti bu karede
+      <b>✓ değil "…"</b> — mimarın kararı henüz yok; proceed deyince çizilir (mevcut işaret grameri, sürpriz yok).
+      Altta arşiv kartının <b>açık hali</b>: başlığın tamamı aç/kapa düğmesidir, gövde arşiv dökümünün başı —
+      araç blokları kapalı, rol çubuklu çeviriler, etiket sütunu sabit. Plan kartı yanı sıra kapalı.
+    </p>
+  </figure>
+
+  <footer class="note">
+    <b>Kabul özeti — neyi neden yapıyoruz:</b> tur 1'in canlı paneli sürülen satırın içine gömülüydü; operatör
+    gerçek sürüşte üç şey yaşadı: canlı olanı bulmak için satıra inmek gerekiyordu, adımların durumları okunmuyordu,
+    defterdeki kartlar sahibini ve kenarını söylemiyordu. Bu tasarım canlı aleti bandın altına taşır (sürüş yokken
+    düzen değişmez), omurgayı saf durum dikişi yapar (<del>"sırada"</del> → Bekliyor; sürülen satır Aktif —
+    kesintide de doğru), kayıt kartlarına görünür kenar + <span class="m">KİM — ROL</span> ilk satırını verir.
+    <br /><br />
+    Onayla → kod: StepPane StepList'ten çıkar, detay denetleyicisinde bandın altına taşınır (tek canlı yüzey;
+    StepList'in driven satır içi render'ı ve <span class="m">stepRunningShort</span> kalıbı ölür) · adım satırı
+    metası durum sözcüğüyle açılır (Aktif/Bekliyor — tr/en etiket paketleri) · SessionCards + DocRow parlak kenarı
+    alır (<span class="m">--bord</span>: inkdim %35 karışımı, steprow.owner'ın kenarı) · kart ilk satırı
+    <span class="m">auditName* + ROLE_LABELS</span>'ten <span class="m">KİM — ROL</span> besteler · rol kenarı
+    rlamp renkleriyle · ADR-0012/0013 ek maddeleri.
+  </footer>
+
+</div>
+</body>
+</html>

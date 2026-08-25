@@ -1,23 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SessionRef, StepRole, StepView, WorkOrderId } from '../../../core/types';
+import type { SessionRef, StepRole, StepView } from '../../../core/types';
 import { STEP_MARK, VERDICT_MARK } from '../../data/labels';
 import { useLabels } from '../../data/locale';
 import { cn } from '../../kit';
 import { MarkdownBody } from './MarkdownBody';
 import { RoleChip } from './RoleChip';
-import { StepPane } from '../session/StepPane';
-import type { DriveState } from '../session/DriveControls';
 
-// The step SPINE (WO-0017 → WO-0031f v6): the step list is Akış's body — a bare <ul> of rows (the
-// old outer card + "Plan n/toplam" header died; the Akış tab count carries the number). Anatomy per
-// v6 §01: state mark · mono idx · role · aim, right-aligned meta; a DONE row is a real button
-// (aria-expanded) whose report opens UNDER the row — one report open at a time (the lifted
-// `reportStep`); the ACTIVE row carries its live terminal INLINE (StepPane's row form, pinned — the
-// live thing is never hidden behind a toggle); pending rows stay quiet. Scope text survives only for
-// SCOPED rows (a non-'all' scope is the notable fact; 'hepsi' is the quiet default — v6's meta line).
+// The step SPINE (WO-0017 → WO-0031f v6 → WO-0044 tur 2): a bare <ul> of rows — a pure STATUS
+// list. Anatomy per v6 §01: state mark · mono idx · role · aim, right-aligned meta; a DONE row is
+// a real button (aria-expanded) whose report opens UNDER the row — one report open at a time (the
+// lifted `reportStep`). WO-0044: the driven row no longer carries the live pane (the instrument
+// sits at the TOP, band-adjacent) — its meta is the state word + scope again, and the word is
+// "Aktif", which stays TRUE for an interrupted step (the live "what is it doing" answer lives in
+// the instrument's activity verb above). Scope text survives only for SCOPED rows (a non-'all'
+// scope is the notable fact; 'hepsi' is the quiet default).
 //
-// Sequencing is unchanged (WO-0017): the runnable step is the first non-done one; the auto-drive and
-// the fold live in StepPane, which the driven row renders.
+// Sequencing is unchanged (WO-0017): the runnable step is the first non-done one; the auto-drive
+// and the fold live in StepPane, which the DETAIL CONTROLLER renders above this spine.
 //
 // WO-0031d / v4 §7 — juice on TRANSITIONS only (never mount): a flip to done flashes the row green
 // and the proceed ✓ DRAWS; a flip to blocked flashes red; a done row fills its 2px mini bar. The
@@ -26,28 +25,20 @@ import type { DriveState } from '../session/DriveControls';
 export function StepList({
   steps,
   sessions,
-  workOrderId,
   activeIdx,
   reportStep,
   onToggleReport,
   onGetStepReport,
-  now,
-  drive,
 }: {
   steps: StepView[];
   /** The WO's sessions — the per-step duration/cost summary + the report header's clock. */
   sessions?: SessionRef[];
-  workOrderId: WorkOrderId;
-  /** The driven step (runIdx) — its row renders StepPane inline (the terminal is pinned open). */
+  /** The driven step (runIdx) — its row wears the act edge + the state word; the pane rides above. */
   activeIdx?: number;
   /** The one open report (lifted to the controller: one at a time (the header band reads it too)). */
   reportStep?: StepView;
   onToggleReport: (step: StepView) => void;
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
-  /** The controller's one-second ticker — StepPane's live costline reuses it. */
-  now?: number;
-  /** WO-0039: the active drive's process controls, forwarded to the DRIVEN row's StepPane header. */
-  drive?: DriveState;
 }) {
   const { ROLE_LABELS, STEP_STATUS_LABELS, UI, formatUsd } = useLabels();
   // A step's ⏱/$ sums ITS sessions (the run + the review of that step) — the ledger's summary form.
@@ -110,16 +101,16 @@ export function StepList({
         // no-verdict '…' (review pending) (WO-0020).
         const tone = s.status === 'done' && s.verdict === 'revise' ? 'text-signal' : markTone(s.status);
         const scopeSuffix = s.scope.kind === 'all' ? '' : ` · ${s.scope.ref}`;
-        // v6's meta line: done = the session sum (+ the report toggle when one exists); the driven
-        // row = çalışıyor (the LIVE $ · ⏱ rides the terminal head, not duplicated here); pending quiet.
+        // The meta line opens with the row's STATE word (WO-0044 tur 2: the spine is a status list —
+        // Aktif stays true for an interrupted step; the live "what is it doing" answer lives in the
+        // instrument's activity verb above): done = the session sum (+ the report toggle when one
+        // exists); driven/active = Aktif + scope; pending = Bekliyor + scope.
         const meta =
           s.status === 'done'
             ? `${stepMeta(s.idx) ?? ''}${hasReport ? `${stepMeta(s.idx) ? ' · ' : ''}${open ? UI.repClose : UI.repOpen}` : ''}`
-            : driven
-              ? `${UI.stepRunningShort}${scopeSuffix}`
-              : s.status === 'active'
-                ? `${UI.stepRunningShort}${scopeSuffix}`
-                : `${UI.stepQueued}${scopeSuffix}`;
+            : driven || s.status === 'active'
+              ? `${STEP_STATUS_LABELS.active}${scopeSuffix}`
+              : `${STEP_STATUS_LABELS.pending}${scopeSuffix}`;
 
         const rowLine = (
           <>
@@ -205,10 +196,6 @@ export function StepList({
                 <div className="flex w-full items-center gap-2">{rowLine}</div>
               )}
             </div>
-            {driven ? (
-              // The live thing in front (v6): the driven step's terminal pinned inside its row.
-              <StepPane step={s} workOrderId={workOrderId} sessions={sessions ?? []} now={now} {...(drive ? { drive } : {})} />
-            ) : null}
             {open && hasReport ? (
               <StepReportBody step={s} clock={stepClock(s.idx)} loadReport={() => onGetStepReport(s.idx, s.role)} />
             ) : null}

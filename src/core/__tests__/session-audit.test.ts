@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSessionAudit } from '../derive';
+import { deriveSessionAudit, sessionHeadline } from '../derive';
 import type { SessionRef } from '../types';
 
 // WO-0031c — the session ledger (Denetim): one row per session in the SAME language the cards speak
@@ -125,5 +125,37 @@ describe('deriveSessionAudit — sourceIdx (WO-0031e tur-3)', () => {
     expect(out.rows[0]!.sourceIdx).toBe(1);
     expect(out.rows[1]!.name.kind).toBe('step');
     expect(out.rows[1]!.sourceIdx).toBe(0);
+  });
+});
+
+describe('sessionHeadline — the özet is readable text, never markdown (WO-0044)', () => {
+  // The KİM — ROL card made the özet prominent; the agents' report-style closings leaked raw
+  // "##"/"**"/backticks into it (the operator's screenshot, 2026-08-25). The headline derivation
+  // lives in core now — pure string work, tested here.
+  it('strips the markdown agents close with: headings, bold, code spans, links keep their text', () => {
+    const closing = '## Uygulayıcı Raporu — WO-0001\n**PR: https://github.com/x/base-mobile/pull/16** · dal `feat/6c-3`';
+    expect(sessionHeadline(closing)).toBe(
+      'Uygulayıcı Raporu — WO-0001 PR: https://github.com/x/base-mobile/pull/16 · dal feat/6c-3',
+    );
+  });
+
+  it('a markdown link keeps its label, loses its url', () => {
+    expect(sessionHeadline('PR [açık](https://github.com/x/pull/16) ve hazır.')).toBe('PR açık ve hazır.');
+  });
+
+  it('takes the first sentence and squeezes line breaks into spaces', () => {
+    expect(sessionHeadline('Tamamlandı.\n\nİkinci cümle   burada.')).toBe('Tamamlandı.');
+  });
+
+  it('clamps at 140 chars with an ellipsis (Faz 1 trim, unchanged)', () => {
+    const out = sessionHeadline(`${'a'.repeat(200)}. sonrası`);
+    expect(out).toHaveLength(141);
+    expect(out!.endsWith('…')).toBe(true);
+  });
+
+  it('returns undefined when nothing readable remains — no headline beats a broken one', () => {
+    expect(sessionHeadline('##')).toBeUndefined();
+    expect(sessionHeadline('**`**`**')).toBeUndefined();
+    expect(sessionHeadline('   ')).toBeUndefined();
   });
 });

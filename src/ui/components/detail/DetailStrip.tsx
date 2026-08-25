@@ -215,7 +215,7 @@ export function DetailStrip({
             <span
               data-review-mode={detail.reviewMode}
               title={UI.reviewModeLabel}
-              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
+              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider opacity-45"
             >
               {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
             </span>

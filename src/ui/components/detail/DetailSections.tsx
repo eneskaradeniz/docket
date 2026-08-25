@@ -10,10 +10,10 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { stripUnfilledSections } from '../../../core/order-md';
 import { splitStepsFence } from '../../../core/plan-steps';
-import type { SessionRole, WorkOrderDetailView } from '../../../core/types';
+import type { WorkOrderDetailView } from '../../../core/types';
 import type { Labels } from '../../data/labels';
 import { useLabels } from '../../data/locale';
-import { SessionCards } from './SessionCards';
+import { isLiveSessionRow, SessionCards } from './SessionCards';
 import { SourceLinks } from './SourceLinks';
 import { MarkdownBody } from './MarkdownBody';
 
@@ -45,7 +45,9 @@ function DocRow({ title, file, content }: { title: string; file: string; content
     // 2026-08-23 (operator: "aynı tasarımı kullan"): the doc row is a CARD like the session
     // card — one enclosing border holds the toggle row AND the expansion (the well's top hairline
     // parts them). The old form bordered only the button and left the body hanging frameless.
-    <div ref={rowRef} className="overflow-hidden rounded-md border border-hairline bg-surface">
+    // WO-0044 tur 2: the RECORD family's visible edge (--bord) — the ledger card beside it wears
+    // the same border; flow surfaces keep the plain hairline.
+    <div ref={rowRef} data-open={open ? '1' : undefined} className="rcard overflow-hidden rounded-md bg-surface">
       <button
         type="button"
         className="irow flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
@@ -75,31 +77,14 @@ export function buildRecordSections({
   detail,
   docs,
   UI,
-  liveRow,
   liveSessionId,
-  now,
-  onGoLive,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
   UI: Labels['UI'];
-  /** WO-0039/C: the RUNNING drive's pointer card (meta + "▸ Canlı oturum") — the pane owns the
-   *  live stream; the ledger marks it and jumps there. Card-level facts only (identity-stable,
-   *  never per-line), so streaming never re-renders the record stack. */
-  liveRow?: {
-    role: SessionRole;
-    name: { kind: 'plan' } | { kind: 'step'; idx: number; aim?: string } | { kind: 'review'; idx: number } | { kind: 'unscoped' };
-    startedAt: number;
-    costUsd: number;
-  };
-  /** WO-0039 stabilization (2026-08-23): the live drive's provider session id — the ledger row
-   *  carrying it renders AS the pointer (one session, one card; kills the re-entry dupe of the
-   *  running row card beside the appended pointer). */
+  /** WO-0044 (reviewer round): the live drive's provider session id — the ledger skips the
+   *  persisted 'running' row that matches it (pure history, even on the mid-run re-entry path). */
   liveSessionId?: string;
-  /** The controller's one-second ticker + the pointer's jump handler (the live card's duration
-   *  ticks and its click lands on the live surface). */
-  now?: number;
-  onGoLive?: () => void;
 }): DetailSection[] {
   const sections: DetailSection[] = [];
   if (docs.order || docs.plan) {
@@ -127,15 +112,17 @@ export function buildRecordSections({
   }
   // The ledger rides the stack — the session CARDS (artifact headline + aç/kapa terminal, WO-0038).
   // detail.steps (the full views — verdicts included) replaces the parsed fence: the card headline
-  // reads its artifacts from it. WO-0039/C: a RUNNING drive's pointer card renders even with ZERO
-  // persisted rows (the first plan run must not leave an empty ledger).
-  if (detail.sessions.length > 0 || liveRow) {
+  // reads its artifacts from it. WO-0044: PURE HISTORY — the running drive carries no card (its one
+  // live surface is the TOP instrument); a first plan run renders no ledger at all, and so does a
+  // RESUME leg whose continued provider session is the ledger's only row — the section gates on the
+  // VISIBLE rows, never an empty frame (ADR-0012; the reviewer round's over-filter lesson).
+  if (detail.sessions.some((s) => !isLiveSessionRow(s, liveSessionId))) {
     sections.push({
       id: 'audit',
       title: UI.auditTitle,
       // 2026-08-23 (operator): the count aside is dead — the cards are the count (the PLAN HAZIR
       // ruling, applied to the ledger's own heading).
-      node: <SessionCards sessions={detail.sessions} steps={detail.steps} liveRow={liveRow} liveSessionId={liveSessionId} now={now} onGoLive={onGoLive} />,
+      node: <SessionCards sessions={detail.sessions} steps={detail.steps} liveSessionId={liveSessionId} />,
     });
   }
   return sections;

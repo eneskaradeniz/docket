@@ -126,7 +126,8 @@ export function cardActionText(a: CardAction): string {
 
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   pending: 'Pending',
-  active: 'Working',
+  // WO-0044 tur 2: "Active" — true even for an interrupted step; the live verb lives in the instrument.
+  active: 'Active',
   done: 'Done',
   blocked: 'Blocked',
 };
@@ -498,9 +499,11 @@ export const UI = {
   reportTitle: (idx: number): string => `Report · Step ${idx}`,
   repOpen: '▸ report',
   repClose: '▾ report',
-  stepQueued: 'queued',
-  stepRunningShort: 'running',
-  streamOpened: 'Session opened — waiting for output',
+  // stepQueued died with WO-0044 tur 2: the spine's meta opens with STEP_STATUS_LABELS.pending.
+  // stepRunningShort died with WO-0044: the driven row's meta carries its scope only — the state
+  // word lives in the row's StepPane header (the activity verb), where it stays true when stopped.
+  // streamOpened died with WO-0044 tur 3: StreamLine (the empty-run second line) is dead — the
+  // header's activity line is the honest state on every pane.
   // WO-0037 — the chat transcript surface (mirrors tr's block).
   chatAria: 'Session stream',
   chatJumpLatest: 'Jump to latest',
@@ -554,8 +557,9 @@ export const UI = {
   askRiskyTag: 'risky write',
   askAlwaysAuto: 'Always automatic for this work order',
   reviewModeLabel: 'Review',
-  reviewModeGatesShort: 'At gates',
-  reviewModeEveryShort: 'Every step',
+  // WO-0044: the chip names the cadence itself — "At gates" alone begged "whose gates?".
+  reviewModeGatesShort: 'Review: at gates',
+  reviewModeEveryShort: 'Review: every step',
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',
@@ -591,7 +595,8 @@ export const UI = {
   },
   auditRange: (a: string, b: string) => `${UI.auditClock(a)} – ${UI.auditClock(b)}`,
   auditNamePlan: 'Plan',
-  auditNameStep: (idx: number, aim?: string) => (aim ? `Step ${idx} · ${aim}` : `Step ${idx}`),
+  // WO-0044 tur 2: the card's first line is the WHO — ROLE readout; the step's aim rides its own line.
+  auditNameStep: (idx: number) => `Step ${idx}`,
   auditNameReview: (idx: number) => `Review ${idx}`,
   auditNameUnscoped: 'Unscoped',
   auditNoTranscript: 'No transcript record.',
@@ -614,11 +619,12 @@ export const UI = {
   // PROPOSAL language, like the card's 'N adımlık plan önerdi'.
   planApprovedNote: 'The architect submitted its plan',
   planRejectedNote: "The architect's plan was sent back",
-  liveSessionGo: 'Live session',
+  // liveSessionGo died with WO-0044 (the ledger's live pointer card died; pure history remains).
   toolNoResult: '→ no result',
   orphanResult: 'result — no matching call',
-  reviewModeGatesHint: 'The steps run on their own — the architect returns to you at three gates: plan approval, revise calls, closure. Click: Every step',
-  reviewModeEveryHint: "After every step the architect's verdict reaches you — the next step runs once you approve. Click: At gates",
+  // WO-0044: the CTA names the chip as it reads on screen (the retired words died with the rename).
+  reviewModeGatesHint: 'The steps run on their own — the architect returns to you at three gates: plan approval, revise calls, closure. Click: Review: every step',
+  reviewModeEveryHint: "After every step the architect's verdict reaches you — the next step runs once you approve. Click: Review: at gates",
   roleDutyTip: (role: SessionRole) => `${ROLE_LABELS[role]} — ${ROLE_DUTY_LABELS[role]}`,
   failTitle: 'The session crashed',
   driveStreamCrashed: 'The stream broke — the record is safe.',
@@ -656,7 +662,8 @@ export function phaseLabelText(p: WoPhase): string {
     case 'plan_ready':
       return UI.woPhasePlanReady;
     case 'implementing':
-      return p.total > 0 ? `Implementing · ${p.done}/${p.total} steps` : UI.woPhaseImplementing;
+      // WO-0044: the stage badge beside this line already names the phase — the line carries the count.
+      return p.total > 0 ? `${p.done}/${p.total} steps` : UI.woPhaseImplementing;
     case 'reviewing':
       return `${UI.reviewHeader} · step ${p.stepIdx}`;
     case 'closing':
