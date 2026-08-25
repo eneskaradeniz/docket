@@ -1,8 +1,8 @@
 ---
 id: WO-0044
-title: One live grammar — the ledger is pure history, the driven row is the one live surface
+title: One live grammar — the top instrument, the status spine, the self-declaring ledger
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -89,9 +89,10 @@ drive is live**. Design decree (ui-ux-designer, 2026-08-25): *belge sakin, enstr
 ## Evidence required
 
 - plan_approval: n/a (`mode: direct`, `review: light` — solo; gates operator-covered)
-- operator_checkpoint: the live-run reading experience verified in the app on a real drive
-  (base-mobile WO-0001's step 2 or a fresh drive) — chip open/close, pure-history ledger, absent
-  ActionCard, deduped words
+- operator_checkpoint: the live-run reading experience verified in the app on real drives
+  (base-mobile WO-0001's implementer + architect-review legs) — the tur-1 build drove the tur-2
+  rulings; the tur-2 build ("evet böyle daha iyi") and the tur-3 audit fixes ("düzelt") approved
+  2026-08-25; closure approved same day ("tamam onaylıyorum kapatalım")
 - ci: typecheck (both) / `npm test` (535) / `check:boundaries` / `build` green; `test:ui` green
   (after the round below)
 - review: reviewer agent on the working-tree diff (2026-08-25, pre-PR — same diff). Dispositions:
@@ -122,7 +123,8 @@ drive is live**. Design decree (ui-ux-designer, 2026-08-25): *belge sakin, enstr
   ends). Run 5 GREEN: 0 failing.
 - closure: ROADMAP ticked; ADR-0013 addendum + CLAUDE.md updated; no new tech debt (the stopped-state
   ActionCard/DriveControls duplication this order's plan flagged as TD was fixed in scope:
-  ActionCard never renders the resume intent)
+  ActionCard never renders the resume intent) — merged #50 (`b8f698c`); CI green on the PR
+  (`check` + GitGuardian)
 
 ## Round 2 (2026-08-25, same day — the operator drove a real review session on the tur-1 build)
 
