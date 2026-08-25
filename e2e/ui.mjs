@@ -275,7 +275,7 @@ await spec('fake runner: Plan iste runs, the live pane header owns the one Durdu
   assert.ok(!cardText.includes('$0,00'), `the board claims an unobserved $0,00: ${cardText}`);
 });
 
-await spec('WO-0039 stabilization: the running session is ONE card — re-entry renders the row AS the pointer; the drive runs in the background', async () => {
+await spec('WO-0039 stabilization → WO-0044: re-entry keeps the ledger PURE HISTORY — the resumed live leg carries no card; the drive runs in the background', async () => {
   await openDetail('Yeni iş emri örneği');
   // the label is honest since round 3: "Sürdür" when a persisted architect session exists (this WO
   // carries one from the previous spec's stopped drive), "Plan iste" when none does
@@ -283,22 +283,27 @@ await spec('WO-0039 stabilization: the running session is ONE card — re-entry 
   await page.waitForTimeout(600); // the drive starts; the session row records behind it
   // The operator's repro (2026-08-23): leave and come back — the reload loads the RUNNING row, and
   // the ledger used to render it BESIDE the pointer (two "Plan" cards for one live session).
+  // WO-0044 (pure history): the resumed leg CONTINUES the same provider session, so that row IS
+  // the running session's row — no card, and (it being this WO's only row) NO LEDGER SECTION at
+  // all while the leg runs; the row joins as history when the drive ends. The pointer card and
+  // its "Canlı oturum" line stay dead whatever the timing.
   await backToBoard();
   await openDetail('Yeni iş emri örneği');
   await page.waitForTimeout(500);
-  const audit = page.locator('section#sec-audit');
-  const cardCount = await audit.locator('[data-session-card]').count();
-  assert.equal(cardCount, 1, `the running session rendered ${cardCount} cards (the re-entry dupe)`);
-  assert.equal(await audit.locator('[data-session-live-pointer]').count(), 1, 'the one card is not the live pointer');
-  assert.ok((await audit.getByText('Canlı oturum').count()) >= 1, 'the pointer lost its jump line');
+  assert.equal(await page.locator('section#sec-audit').count(), 0, 'the live resumed leg rendered a ledger (pure history means absent, not framed-empty)');
+  assert.equal(await page.locator('[data-session-live-pointer]').count(), 0, 'the live pointer card survived WO-0044');
+  assert.equal(await page.getByText('Canlı oturum').count(), 0, 'a Canlı oturum jump line survived WO-0044');
   // the background drive survived the navigation — the pane is still live (one Durdur, the pane header's)
   assert.equal(await page.getByRole('button', { name: 'Durdur', exact: true }).count(), 1, 'the drive did not survive the re-entry');
   await stopAllDrives();
   // Round 3 (operator: "devam et butonu gidiyor"): the Sürdür OFFER derives from the app-level
   // fold — it must survive ANOTHER leave-and-come-back, not die with the controller's memory.
+  // WO-0044's other half: the ENDED leg rejoins the ledger — the section is back with its row.
   await backToBoard();
   await openDetail('Yeni iş emri örneği');
   await page.waitForTimeout(400);
+  assert.ok((await page.locator('section#sec-audit').count()) >= 1, 'the ended leg did not rejoin the ledger');
+  assert.ok((await page.locator('section#sec-audit [data-session-card]').count()) >= 1, 'the ended leg has no card');
   assert.ok((await page.getByRole('button', { name: /Sürdür/ }).count()) >= 1, 'the Sürdür offer died on re-entry');
   assert.ok((await page.getByText('Durduruldu. Rapor kısmi kalır.').count()) >= 1, 'the stopped message died on re-entry');
   await page.getByRole('button', { name: /Sürdür/ }).first().click();
@@ -320,17 +325,31 @@ await spec('stopped_asking: ask card + announced Sıra sende + the ask hint ride
   assert.match(title, /^\(\d+\) izin bekliyor$/, `title counter missing: ${title}`);
 });
 
-await spec('DOSYA at 980: ONE scroll — no tabs at any width; the chat lives in the driven row (WO-0038)', async () => {
-  // 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the spine's driven row
+await spec('DOSYA at 980: ONE scroll — no tabs at any width; the live instrument rides above the spine (WO-0038 → WO-0044 tur 2)', async () => {
+  // 'İzin bekliyor' — its step is ACTIVE with a persisted transcript, so the TOP instrument
   // actually holds the compact chat with content.
   await backToBoard(); // defensive: the stopped_asking spec leaves the detail open
   await openDetail('İzin bekliyor');
   assert.equal(await page.locator('[role="tablist"]').count(), 0, 'a tab bar survived at 980');
   assert.equal(await page.locator('[role="tab"]').count(), 0, 'a tab survived at 980');
-  // the driven row holds the compact chat INLINE (pinned — no toggle hides it)
-  assert.equal(await page.locator('[data-step-live="1"]').count(), 1, 'no driven-row hook on the active step');
+  // WO-0044 pins: the implementation phase line carries ONLY the count (the stage badge says the
+  // word), and the driven row's meta opens with its state word — "Aktif", which stays true for an
+  // interrupted step (this fixture IS one: an 'active' step with no live drive).
+  assert.ok((await page.getByText('0/1 adım').count()) >= 1, 'the phase line does not read 0/1 adım');
+  assert.equal(await page.getByText('Uygulama · 0/1 adım').count(), 0, 'the phase line still says the stage word twice');
+  const activeRow = (await page.locator('[data-step-idx="1"]').first().textContent()) ?? '';
+  assert.ok(activeRow.includes('Aktif'), `the driven row lost its state word: ${activeRow}`);
+  // WO-0044 tur 2: the instrument sits ABOVE the spine (band-adjacent), ONE header row (activity
+  // verb + döküm chip); the compact chat sits behind the chip, closed by default.
+  assert.equal(await page.locator('[data-step-live="1"]').count(), 1, 'no live instrument for the active step');
+  const stepPane = page.locator('[data-step-live="1"]');
+  assert.equal(await stepPane.locator('[data-chat]').count(), 0, 'the step chat opened itself (WO-0044: closed by default)');
+  const chip = stepPane.locator('[data-pane-log-toggle]');
+  assert.ok((await chip.count()) >= 1, 'no döküm chip on the step instrument (WO-0044)');
+  await chip.first().click();
+  await page.waitForTimeout(300);
   const chat = page.locator('[data-step-live] [data-chat]');
-  assert.ok((await chat.count()) >= 1, 'no chat column inside the driven step row');
+  assert.ok((await chat.count()) >= 1, 'no chat column behind the instrument\'s döküm chip');
   const chatText = (await chat.first().textContent()) ?? '';
   assert.ok(chatText.includes('E2E: about to write a file.'), 'the persisted transcript did not seed the compact chat');
   // the record rides the SAME scroll (Belgeler + Oturum dökümü sections below the spine)
@@ -345,7 +364,12 @@ await spec('DOSYA at 1240: the same single column — no tabs, no rack (WO-0038)
   await openDetail('İzin bekliyor');
   assert.equal(await page.locator('[role="tablist"]').count(), 0, 'a tab bar survived at 1240');
   assert.equal(await page.locator('main .grid').count(), 0, 'the ≥1080 rack column survived');
-  assert.ok((await page.locator('[data-step-live] [data-chat]').count()) >= 1, 'the driven-row chat is gone at 1240');
+  // WO-0044 tur 2: the chip grammar survives the width; the chat is one click away, same as 980.
+  const chip = page.locator('[data-step-live="1"] [data-pane-log-toggle]');
+  assert.ok((await chip.count()) >= 1, 'no döküm chip on the step instrument at 1240 (WO-0044)');
+  await chip.first().click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.locator('[data-step-live] [data-chat]').count()) >= 1, 'the instrument chat did not open behind the chip at 1240');
   await page.screenshot({ path: join(SHOTS, 'detail-wide@1240.png') });
   await setSize(980, 620);
   await backToBoard();
@@ -381,7 +405,8 @@ await spec('closed WO: green glow, closure card, NO rail, and the session CARDS 
   const cards = page.locator('[data-session-card]');
   const cardCount = await cards.count();
   assert.equal(cardCount, 4, `expected 4 session cards, got ${cardCount}`);
-  assert.ok((await page.getByText('Bağımsız', { exact: true }).count()) >= 1, 'the unscoped session is not named Bağımsız');
+  // WO-0044: the card's head line is the KİM — ROL readout (the old bare-name span is gone).
+  assert.ok((await cards.filter({ hasText: 'Bağımsız — Uygulayıcı' }).count()) >= 1, 'the unscoped session is not named Bağımsız — Uygulayıcı');
   assert.equal(await page.getByText('Adım 0', { exact: false }).count(), 0, 'an "Adım 0" card leaked into the ledger');
   assert.equal(await page.getByText('Toplam', { exact: true }).count(), 0, 'the dead table\'s Toplam row survived');
   for (const cost of ['$1,84', '$2,40', '$2,03']) {
@@ -644,7 +669,7 @@ await spec('create + plan in one step: Oluştur ve plan iste starts the architec
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
   await page.waitForTimeout(350);
   assert.ok((await page.getByText('İzin kuralı — ajan sizden ne zaman izin istesin').count()) >= 1, 'no rule field in create modal');
-  assert.ok((await page.getByRole('button', { name: 'Kapılarda', exact: true }).count()) >= 1, 'review options not renamed');
+  assert.ok((await page.getByRole('button', { name: 'Denetim: kapıda', exact: true }).count()) >= 1, 'review options not renamed (WO-0044: Denetim: kapıda)');
   await page.locator('[role="dialog"] input').first().fill('Tek adımda oluşturulan iş emri');
   await page.getByRole('button', { name: 'Oluştur ve plan iste' }).click();
   await page.waitForTimeout(2000);
@@ -843,6 +868,9 @@ await spec('the empty-run window: the header carries the state, the dead "no ses
   assert.ok(headerText0.includes('Düşünüyor'), `the empty-run header carries no activity: ${headerText0}`);
   // F7's original sin stays dead: "Çalışan oturum yok." must NOT show while the drive runs
   assert.equal(await page.getByText('Çalışan oturum yok.').count(), 0, 'the no-session line flashed during the boot window');
+  // WO-0044 AC 2, second half: a FIRST plan run renders NO ledger at all — the empty group is
+  // absent (ADR-0012), the run's history joins when it ends.
+  assert.equal(await page.locator('section#sec-audit').count(), 0, 'a first plan run rendered a ledger');
   // the first transcript entry does not disturb the honest state
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'assistant_text', text: 'İlk çıktı satırı geldi.' }));
   await page.waitForTimeout(400);
@@ -1170,9 +1198,11 @@ await spec('session cards expand: the archived chat under its header; tool block
   const cardCount = await card.count();
   assert.equal(cardCount, 1, `expected 1 session card, got ${cardCount}`);
   const cardText = (await card.first().textContent()) ?? '';
-  assert.ok(cardText.includes('Adım 1 · a'), `the card is not named for its step: ${cardText}`);
+  // WO-0044 tur 2: the head line is KİM — ROL (the step's aim rides its own line below it), and
+  // the card carries its role EDGE (.rcard-implementer) — the old role lamp chip is gone.
+  assert.ok(cardText.includes('Adım 1 — Uygulayıcı'), `the card is not named for its step: ${cardText}`);
   assert.ok(cardText.includes('Özet — Raf: döküm satırı 1'), 'the artifact headline (özet) is missing');
-  assert.ok((await card.locator('.rlamp').count()) >= 1, 'the card header carries no role lamp');
+  assert.ok(((await card.first().getAttribute('class')) ?? '').includes('rcard-implementer'), 'the card carries no role edge');
   // history sits CLOSED: the archived chat hides behind the ONE toggle (header + özet, a single
   // button — the aç/kapa IS the old SADE/DETAY distinction, now living on the card)
   assert.equal(await card.locator('[data-chat]').count(), 0, 'the archived chat renders before opening');

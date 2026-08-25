@@ -43,6 +43,12 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /* WO-0044 (reviewer round): the RECORD card's visible edge — .steprow.owner's brightened
+       hairline, hoisted to a token so the two literals cannot drift (parity is structural now).
+       Declared with the other tokens; the mix re-resolves per theme face (dark defaults above,
+       the light override below — no new hue enters either). */
+    --bord: color-mix(in srgb, var(--color-inkdim) 35%, var(--color-hairline));
+    --bord-on: color-mix(in srgb, var(--color-inkdim) 45%, var(--color-hairline));
   }
   /* Açık (WO-0040): the pure-white face. Layer order (base beats theme) plus selector specificity
      make this the single source of the light theme; dark is the @theme defaults above. Accents
@@ -407,7 +413,7 @@
   }
   .steprow.owner {
     background: var(--color-raised);
-    border-color: color-mix(in srgb, var(--color-inkdim) 35%, var(--color-hairline));
+    border-color: var(--bord); /* WO-0044: the shared record edge token (the literals cannot drift) */
   }
   .steps.dimmed .steprow:not(.owner):not(.act) {
     background: color-mix(in srgb, var(--color-surface) 65%, var(--color-bg));
@@ -433,15 +439,8 @@
     }
   }
 
-  /* F7 (WO-0031f): the running-empty stream line — mono, quiet, a 5px run dot breathing. */
-  .streamline {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-inkdim);
-  }
+  /* F7's .streamline died with WO-0044 tur 3 (StreamLine is dead — the header's activity line is
+     the empty-run state on every pane). */
 
   /* TD-037 (WO-0031f): the named load lines — one line + a static 5px dot, no skeletons; static by
      construction, so reduced-motion needs no entry here. */
@@ -487,6 +486,26 @@
   }
   .rlamp-verifier {
     background: var(--color-proceed);
+  }
+
+  /* WO-0044 (mockup-approved 2026-08-25) — the RECORD card surfaces: the visible --bord edge
+     (token declared with the design tokens in @layer base; .steprow.owner rides the same token)
+     and the 3px role edge beside the session card's KİM — ROL line. Flow surfaces (step rows,
+     the instrument) keep the plain hairline — record vs flow is an edge distinction. */
+  .rcard {
+    border: 1px solid var(--bord);
+  }
+  .rcard[data-open='1'] {
+    border-color: var(--bord-on);
+  }
+  .rcard-architect {
+    box-shadow: inset 3px 0 0 var(--color-signal);
+  }
+  .rcard-implementer {
+    box-shadow: inset 3px 0 0 var(--color-info);
+  }
+  .rcard-verifier {
+    box-shadow: inset 3px 0 0 var(--color-proceed);
   }
 
   /* ===== WO-0037 — the chat transcript column (xterm retired) =====

@@ -136,7 +136,9 @@ export function cardActionText(a: CardAction): string {
 // Plan adımları (WO-0017). Durum etiketi + işaretçi (mock'taki ✓/►/○/⊘ — işaretçiler marks.ts'te).
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   pending: 'Bekliyor',
-  active: 'Çalışıyor',
+  // WO-0044 tur 2 (operator's word): "Aktif" — unlike "Çalışıyor" it stays TRUE for an interrupted
+  // step; the live "what is it doing" answer lives in the instrument's activity verb.
+  active: 'Aktif',
   done: 'Tamam',
   blocked: 'Engelli',
 };
@@ -571,11 +573,14 @@ export const UI = {
   reportTitle: (idx: number): string => `Rapor · Adım ${idx}`,
   repOpen: '▸ rapor',
   repClose: '▾ rapor',
-  stepQueued: 'sırada',
-  stepRunningShort: 'çalışıyor',
+  // stepQueued ('sırada') died with WO-0044 tur 2: the spine's meta opens with the row's state word
+  // from STEP_STATUS_LABELS (Bekliyor) — one vocabulary, not two queue words.
+  // stepRunningShort died with WO-0044: the driven row's meta carries its scope only — the state
+  // word lives in the row's StepPane header (the activity verb), where it stays true when stopped.
   // F7 — a running session that wrote nothing yet says so (a blank terminal answers nothing); the
   // line leaves with the first transcript entry. The no-session case stays 'Çalışan oturum yok.'.
-  streamOpened: 'Oturum açıldı — çıktı bekleniyor',
+  // streamOpened died with WO-0044 tur 3: StreamLine (the empty-run second line) is dead — the
+  // header's activity line is the honest state on every pane.
   // WO-0037/0038 — the chat transcript (the session surfaces' terminal; xterm retired).
   // One reading column: assistant turns are markdown bubbles, tool calls compact rows, results
   // indented lines. The aria names the log; the jump chip restores the bottom; the head line caps
@@ -654,10 +659,11 @@ export const UI = {
   permRuleQuestion: 'İzin kuralı — ajan sizden ne zaman izin istesin',
   askRiskyTag: 'riskli yazım',
   askAlwaysAuto: 'Bu iş emri için hep otomatik',
-  // WO satır içi düzenleme + inceleme modu rozeti.
+  // WO satır içi düzenleme + inceleme modu rozeti. WO-0044: "Kapılarda" kendi başına jargondu
+  // (neyin kapıları?) — çip denetim cadence'ini ADIYLA söyler; öğreten cümle tooltip'te zaten.
   reviewModeLabel: 'İnceleme',
-  reviewModeGatesShort: 'Kapılarda',
-  reviewModeEveryShort: 'Her adımda',
+  reviewModeGatesShort: 'Denetim: kapıda',
+  reviewModeEveryShort: 'Denetim: her adımda',
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
@@ -696,7 +702,9 @@ export const UI = {
   },
   auditRange: (a: string, b: string) => `${UI.auditClock(a)} – ${UI.auditClock(b)}`,
   auditNamePlan: 'Plan',
-  auditNameStep: (idx: number, aim?: string) => (aim ? `Adım ${idx} · ${aim}` : `Adım ${idx}`),
+  // WO-0044 tur 2: the card's first line is the KİM — ROL readout (ADIM 1 — UYGULAYICI); the step's
+  // aim rides its own line below the head — "kim" and "ne" stopped sharing one string.
+  auditNameStep: (idx: number) => `Adım ${idx}`,
   auditNameReview: (idx: number) => `İnceleme ${idx}`,
   auditNameUnscoped: 'Bağımsız',
   // 2026-08-23 (döküm kaybı): the pre-checkpoint rows' honest line — the card opens, the record
@@ -725,11 +733,13 @@ export const UI = {
   // PROPOSAL language, like the card's 'N adımlık plan önerdi'.
   planApprovedNote: 'Mimar planını sundu',
   planRejectedNote: 'Mimarın planı geri çevrildi',
-  liveSessionGo: 'Canlı oturum',
+  // liveSessionGo ('Canlı oturum') died with WO-0044: the ledger's live pointer card died — the
+  // ledger is pure history; the one live surface is the driven row's instrument (pane-chrome chip).
   toolNoResult: '→ sonuç yok',
   orphanResult: 'sonuç — eşleşen çağrı yok',
-  reviewModeGatesHint: 'Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış. Tıkla: Her adımda',
-  reviewModeEveryHint: 'Her adımın sonunda mimarın rapor kararı sana gelir — onaylayınca sıradaki koşar. Tıkla: Kapılarda',
+  // WO-0044: the CTA names the chip as it reads on screen (the retired words died with the rename).
+  reviewModeGatesHint: 'Adımlar kendi koşar — mimar sana üç kapıda döner: plan onayı, revize kararı, kapanış. Tıkla: Denetim: her adımda',
+  reviewModeEveryHint: 'Her adımın sonunda mimarın rapor kararı sana gelir — onaylayınca sıradaki koşar. Tıkla: Denetim: kapıda',
   // Rol görev tooltip'i — besteci, yeni söz yok: rozetin hover'ı görev satırını açığa çıkarır.
   roleDutyTip: (role: SessionRole) => `${ROLE_LABELS[role]} — ${ROLE_DUTY_LABELS[role]}`,
   failTitle: 'Oturum çöktü',
@@ -774,7 +784,9 @@ export function phaseLabelText(p: WoPhase): string {
     case 'plan_ready':
       return UI.woPhasePlanReady;
     case 'implementing':
-      return p.total > 0 ? `Uygulama · ${p.done}/${p.total} ${UI.stepsUnit}` : UI.woPhaseImplementing;
+      // WO-0044: the stage badge beside this line already says "Uygulama" — the phase line carries
+      // only the count (the word said twice was the operator's first-dogfood complaint).
+      return p.total > 0 ? `${p.done}/${p.total} ${UI.stepsUnit}` : UI.woPhaseImplementing;
     case 'reviewing':
       return `${UI.reviewHeader} · ${UI.stepsUnit} ${p.stepIdx}`;
     case 'closing':

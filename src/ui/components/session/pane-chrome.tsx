@@ -2,8 +2,12 @@
 // WO-0038: the SADE phase line died with the dual view — the header band's lamp spine carries the
 // turn). One home for the lamp semantics (signal=needs you, info=running, proceed=done/ready,
 // error=failed). Cost/duration/status live in the strip; the panes are instruments, not chrome.
-import type { ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
+// WO-0044: also the home of the activity-line machine and the döküm chip — ONE grammar for all
+// three live surfaces (SessionPane · StepPane · ReviewPane); the step/review panes had neither.
+import { useState, useRef, type ReactNode } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import type { LiveSessionState } from '../../../core/runner';
+import type { TranscriptLine } from '../../../core/types';
 import { cn } from '../../kit';
 import { useLabels } from '../../data/locale';
 
@@ -25,17 +29,9 @@ export function lampClass(tone: LampTone, breathe = false): string {
   }
 }
 
-// --- F7 (WO-0031f): the running-empty stream line — a session that started but wrote nothing yet
-//     says so; a blank terminal answers nothing. Leaves with the first transcript entry. ---
-export function StreamLine() {
-  const { UI } = useLabels();
-  return (
-    <p data-stream-line="" className="streamline">
-      <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" />
-      {UI.streamOpened}
-    </p>
-  );
-}
+// --- F7 (WO-0031f) → WO-0044: the StreamLine component is DEAD — the empty-run window's honest
+//     state is the header's activity line ("Düşünüyor···", the operator's 2026-08-23 two-then-one
+//     ruling), reached by SessionPane then, and by StepPane/ReviewPane with the shared grammar. ---
 
 // --- the error row: calm, one line, iconed ---
 export function PaneError({ message }: { message: string }) {
@@ -45,6 +41,74 @@ export function PaneError({ message }: { message: string }) {
       <span className="min-w-0 break-words">{message}</span>
     </p>
   );
+}
+
+// --- the activity-line machine (2026-08-23 canlı panel revizyonu §3, lifted here by WO-0044): the
+//     line is a STATE, never content — running says the newest UNMATCHED tool's progressive verb
+//     (callId-matched) or "Düşünüyor"; the fold's own state words freeze the rest (Seni bekliyor /
+//     Bitti / Durduruldu / Hata). `show` says whether there is anything to say at all: a live or
+//     booting drive, a stopped-asking moment, or an ended-but-recorded fold; a bare idle pane is
+//     just the role name (no noise). ---
+export function usePaneActivity(state: LiveSessionState, running: boolean): { show: boolean; line: string } {
+  const { LIVE_STATUS_LABELS, UI, toolVerb } = useLabels();
+  let line: string;
+  if (state.status === 'plan_ready' && running) {
+    line = UI.planClosing;
+  } else if (running) {
+    const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
+    const pending = [...state.entries]
+      .reverse()
+      .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
+    line = pending ? toolVerb(pending.tool) : UI.actThinking;
+  } else if (state.status === 'stopped_asking') {
+    line = LIVE_STATUS_LABELS.stopped_asking;
+  } else if (state.status === 'done') {
+    line = LIVE_STATUS_LABELS.done;
+  } else if (state.status === 'stopped') {
+    line = LIVE_STATUS_LABELS.stopped; // an intentional Durdur, frozen
+  } else if (state.status === 'error') {
+    line = LIVE_STATUS_LABELS.error;
+  } else {
+    line = UI.actThinking;
+  }
+  return { show: running || state.status !== 'idle' || state.entries.length > 0, line };
+}
+
+// --- the döküm chip: the ONE show/hide of every live surface (the session card's aç/kapa grammar,
+//     in verb form — WO-0039 rev-2). Rendering it is the pane's decision (only when a stream
+//     exists); what it looks like and what it says lives here, once. ---
+export function PaneLogChip({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { UI } = useLabels();
+  return (
+    <button
+      type="button"
+      data-pane-log-toggle=""
+      aria-expanded={open}
+      onClick={onToggle}
+      className={cn(
+        'ichip flex h-6 shrink-0 items-center gap-1 rounded px-2 font-mono text-[10px] uppercase tracking-wider',
+        open ? 'ichip-on' : '',
+      )}
+    >
+      {open ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : <ChevronRight className="h-3 w-3" aria-hidden="true" />}
+      {open ? UI.transcriptClose : UI.transcriptOpen}
+    </button>
+  );
+}
+
+// --- the chip's open state + the scroll contract: opening brings the pane's HEADER row to reading
+//     position (you see what you opened — the same ruling the session cards and doc rows took);
+//     closing never scrolls. Default CLOSED: the pane stays calm, the stream is one click away
+//     (operator, 2026-08-23 — now reaching every surface, WO-0044). ---
+export function usePaneLog() {
+  const [logOpen, setLogOpen] = useState(false);
+  const headRef = useRef<HTMLDivElement>(null);
+  const toggleLog = (): void => {
+    const next = !logOpen;
+    setLogOpen(next);
+    if (next) requestAnimationFrame(() => headRef.current?.scrollIntoView({ block: 'start' }));
+  };
+  return { logOpen, toggleLog, headRef };
 }
 
 // --- the pane shell itself: one card, one instrument ---

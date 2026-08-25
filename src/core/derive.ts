@@ -530,6 +530,27 @@ export interface SessionAuditRow {
   costUsd?: number;
 }
 
+/** WO-0044 (tur 3): the step/free card's özet is the agent's closing sentence as READABLE text.
+ *  The KİM — ROL head line made the özet prominent, and the agents' report-style closings leaked
+ *  raw "##"/"**"/backticks into it — markdown tokens are stripped (links keep their label) before
+ *  the first sentence and the 140-char Faz-1 trim; nothing readable remains → undefined (no
+ *  headline beats a broken one; NEVER invented). Pure string derivation — core owns it so the
+ *  bundle tests it (the ui layer cannot `.replace` by the ADR-0007 proxy). */
+export function sessionHeadline(text: string): string | undefined {
+  const stripped = text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*?/g, '')
+    .replace(/`+/g, '')
+    .trim();
+  if (!stripped) return undefined;
+  // The sentence boundary is a period followed by whitespace — '. ' OR the line-ended '.\n' the old
+  // ui-side split('. ') missed (the tur-3 test caught it: a newline-ended first sentence survived).
+  const clean = (stripped.split(/(?<=\.)\s+/)[0] ?? stripped).replace(/\s+/g, ' ').trim();
+  if (!clean) return undefined;
+  return clean.length > 140 ? `${clean.slice(0, 140).trimEnd()}…` : clean;
+}
+
 export function deriveSessionAudit(
   sessions: ReadonlyArray<Pick<SessionRef, 'role' | 'stepIdx' | 'startedAt' | 'endedAt' | 'cost'>>,
   steps: ReadonlyArray<Pick<StepSpec, 'idx' | 'aim'>> = [],

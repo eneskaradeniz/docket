@@ -16,10 +16,15 @@ export function ActionCard({ detail }: { detail: WorkOrderDetailView }) {
     area = CARD_ACTION_AREA.permission;
     prompt = UI.permissionRequested;
   } else if (running) {
-    // A live session means there is nothing for the operator to click — the old "Oturumu sürdür" here
-    // was a no-op while a drive was already in flight (WO-0027 / Bulgu 6). Absent, with the honest state.
-    area = UI.actionRunning;
-    prompt = primary.kind === 'absent' ? ABSENT_REASON_LABELS[primary.reason] : ACTION_LABELS[primary.intent];
+    // WO-0044 (operator, 2026-08-25): a live session means there is nothing for the operator to
+    // click — the card is ABSENT (the old "Çalışıyor / Oturumu sürdür" read-only pairing was the
+    // label of a button that died in WO-0027/Bulgu 6, reading as a standing offer while running;
+    // the band's lamp + the driven row's instrument already carry the state).
+    return null;
+  } else if (primary.kind === 'available' && primary.intent === 'resume') {
+    // WO-0044: Sürdür lives ONLY in DriveControls ('▶ Sürdür', ⏎'s target) — never here as a
+    // read-only echo. The word leaves the detail screen entirely.
+    return null;
   } else if (primary.kind === 'available') {
     const i = primary.intent;
     area = i === 'approve_plan' ? CARD_ACTION_AREA.plan : i === 'close' ? CARD_ACTION_AREA.closure : CARD_ACTION_AREA.link;
@@ -31,7 +36,7 @@ export function ActionCard({ detail }: { detail: WorkOrderDetailView }) {
 
   return (
     <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
-      <div className={running ? 'lamp lamp-run' : 'lamp lamp-signal-breathe'} />
+      <div className="lamp lamp-signal-breathe" />
       <div className="min-w-0 flex-1 px-3.5 py-2.5">
         <p className="readout text-inkdim">{area}</p>
         <p className="mt-0.5 truncate text-[13.5px] font-medium text-ink">{prompt}</p>
