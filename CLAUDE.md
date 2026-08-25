@@ -100,6 +100,15 @@ rule restated with its reasons in two places is the duplication this repository 
   `src/core/pipeline.ts`; the composition root wires `createPipeline({ runner, store, permission })`. The
   `SessionStore` port is `src/core/session-store.ts`. The host contributes only `cwd` + a permission policy.
 
+## Records & PRs — added 2026-08-26
+- Persisted evidence records (`wo_event.detail`, transcript tool detail, `stop_and_ask` payloads) may name tool
+  targets — paths, commands — that is their job; they never carry environment values, credentials, or the provider
+  key (the key lives only in `app_setting`). A new event kind is checked against this line — scoped from Paperclip's
+  run-log allowlist ("an event never carries a command, an argument, a path, an environment value" — Docket's scope
+  keeps targets, excludes secrets).
+- A PR opened from this repository names the model that authored the work (provider + model id) in a "Model Used"
+  line at the top of the body. A PR without it is incomplete, like a WO without a closure sha.
+
 ## CI — ADR-0011
 - `npm run typecheck` (both `tsconfig.json` and `tsconfig.electron.json`), `npm test`, `npm run build`, and the
   boundary checks above run on every pull request and on every push to `main`. Run the boundary checks locally
