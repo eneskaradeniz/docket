@@ -2,7 +2,7 @@
 id: WO-0045
 title: Operator tempo — steer the running drive + the Akış mode chip
 workspace: docket
-status: draft
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -120,11 +120,15 @@ Out of scope:
 
 - plan_approval: n/a (`mode: direct`, `review: light` — solo; gates operator-covered)
 - probe: the real-SDK steer probe log (AC 1) — the WO-0001 tradition for a new surface reliance
-- operator_checkpoint: a real drive (base-mobile WO-0001 dogfood preferred) steered live; the
-  manuel mode driven through a real step boundary (card → click → next step) — both verified in
-  the app
+- operator_checkpoint: DEFERRED by operator ruling (2026-08-26, "şuan dockette yapabileceğim bir
+  iş yok — devam edelim, sonra test ederim") — the real-drive pass (live steer on a base-mobile
+  dogfood, the manuel boundary card → click, the card-seat ruling: currently the decision stack)
+  runs as the operator's own post-merge test round; the shipped stand-ins: the 4 fake-runner E2E
+  specs + the real-adapter smoke (started → steer_queued → steer_delivered → ONE turn_complete)
 - ci: typecheck (both) / `npm test` / `check:boundaries` / `build` / `test:ui` green
-- closure: ROADMAP ticked; the operator-tempo ADR addendum written; tech-debt updated if any
+- closure: ROADMAP ticked; ADR-0015 written; TD-049/050/051 recorded — merged #51 (`ece1bee`);
+  CI green on the PR (`check` + GitGuardian); reviewer round pre-PR (12 findings — 4 major + 5
+  notes fixed in scope, the rest live in the TD entries)
 
 ## Stop-and-ask gates
 
