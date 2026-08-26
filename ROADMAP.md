@@ -343,7 +343,9 @@ WO-0002 routed all copy through `labels.ts`.
 A read-only projection of the decision store, not a planning surface (ADR-0008). Third consumer of the same
 gate model, after the board and the detail view.
 
-- [ ] Milestone progress from work-order `milestone` front matter
+- [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
+      roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
+      carries over)
 - [ ] Open work orders grouped by whose turn it is
 - [ ] Open tech debt linked to the work orders that opened it
 - [ ] "Ready to start" computed from closed dependencies and unsatisfied gates
@@ -359,6 +361,32 @@ gate model, after the board and the detail view.
 - [x] WO-0046 — canlı dürüstlük (probe-first, `docs/probes/cc-surface/` §C): the live instrument reports CONCRETE PROGRESS, not just motion — a context readout (`bağlam %62 · 124k/200k`, text in the costline's voice — operator ruling) fed fire-and-forget from `getContextUsage()` at tool events / turn boundaries / throttled (≥30s) thinking bursts, never persisted, absent-until-reported; the live costline speaks the card's `formatCost` vocabulary (`$0,41 · 68k→2.1k` — the ride-along `cost` on the context event is the only mid-drive token source, D3 intact); the staleness line (`3 dk'dır yeni çıktı yok`, operator-ruled threshold) replaces the indefinite Düşünüyor when the LIVENESS anchor (`lastLifeAt` — stamped entries + fresh readings + the ask-answer stamp; probe c1: long thinking streams no entries while healthy) ages past 3 min, superseding the tool verb with dots off, never on a stopped/errored/asking fold — informs, never acts; resume-leg cost VERIFIED NOT A BUG with the review round's axis split (usd cumulative-within-process / reset-at-resume — the store's prior+input is correct; usage tokens per-result, summed — TD-052) plus TD-053 found live in the checkpoint and fixed (runIdx's mount-only initializer froze on a detail opened before its plan — approval mounted no instrument until re-entry); ADR-0012 addendum; the staleness/live-cost live observation deferred by operator move-on (WO-0045 precedent, E2E-pinned) — merged #52 (`28c1b9c`)
 - [x] WO-0047 — bütçe kapısı: a workspace month-spend threshold (warn percent + hard cap, Paperclip's shape), pipeline-enforced in the `planApprovedFor` tradition — every drive refused before the runner spawns when the calendar-month spend meets the cap, the refusal a TWO-CHOICE card (raise-and-re-run / keep-the-cap), the warn level an informative mono line on the board card + the band; raising the cap is a permanent `app_setting` write (operator rulings 2026-08-26) — merged #53 (`f7e3b89`)
 - [ ] Recently closed, with closing sha
+
+## M6 — Yol Haritası (roadmap → faz → görev)
+
+The planning layer ABOVE the work order — the pattern antreo-app runs by hand today (9 faz docs +
+"Ana Görev / Görev N" issues + manual cross-repo links) becomes one managed chain: a per-workspace
+`docs/roadmap.md` (one ```fazlar fence, the ```steps tradition), faz→task→iş emri links carried in
+order.md front-matter, statuses DERIVED from linked work orders (never stored — ADR-0016 supersedes
+ADR-0008's no-planning-surface stance for this artifact while keeping its derivation discipline).
+Planning round 2026-08-27: four locked decisions (persistent tasks + 1:N WO links; ONE architect
+draft session for both generation and import; the spine→GUI→AI split; the sibling `Pano | Yol
+Haritası` screen) + the mockup tour (`docs/ui-mockups/wo-0048-yol-haritasi.html`, 7 frames — faz
+strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefilled spawn).
+
+- [ ] **WO-0048** — spine: roadmap.md format + test-first core (`roadmap-md.ts` parse/diagnose/
+      build/edit all-or-nothing; `roadmap.ts` derived views with the spawn-action absent-reasons),
+      the order.md `task:` link (NO DB column — joined at view time), the workspace structure-root
+      setting (`docs_root:<wsId>`, default `docs/`, `.docket/` one setting away; Docket never
+      writes .gitignore), CLI `roadmap show|validate` + `create-work-order --task`; ADR-0016 first.
+      Spec: `docs/work-orders/WO-0048-yol-haritasi-omurga/order.md`.
+- [ ] **WO-0049** — GUI: the sibling Yol Haritası screen (faz cards, task rows, the approved
+      mockup's strip/fill/`sıradaki`/fold), prefilled task→WO spawn (`Oluştur ve plan iste`),
+      the detail band's one `FAZ N · task` chip, structure-root settings field, labels (tr/en), E2E.
+- [ ] **WO-0050** — AI: the WO-less architect draft drive (session migration: nullable
+      `work_order_id` + `workspace_id`, budget accounting widened, `roadmap_draft` pending table,
+      parse-guard), source-doc import as paths-in-prompt, the cwd fix from the connection table,
+      draft UI (RoadmapPane + TASLAK card), CLI `roadmap draft|approve`, E2E FakeRunner scenarios.
 
 ## Later
 
