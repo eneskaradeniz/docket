@@ -87,7 +87,12 @@ export function formatEvent(ev: RunnerEvent, format: DriveFormat): string | unde
     case 'plan_ready': return `📋 plan ready (${ev.planText.length} chars)`;
     case 'context_usage': return `◍ ctx ${ev.percentage}% (${ev.usedTokens}/${ev.maxTokens})`;
     case 'turn_complete': return `✓ done`;
-    case 'error': return `✗ ${ev.message}`;
+    // WO-0047: a budget refusal names its resolution — raising the cap is a settings action;
+    // the CLI deliberately has no force flag (the order's ruling).
+    case 'error':
+      return ev.refusal
+        ? `✗ ${ev.message} — raise the monthly cap in settings to continue (no --force-budget)`
+        : `✗ ${ev.message}`;
     default: return undefined;
   }
 }

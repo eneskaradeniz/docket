@@ -262,6 +262,13 @@ export function formatUsd(usd: number): string {
   return `$${n}`;
 }
 
+// WO-0047: uyarı/limit satırının cümle seçicisi — durum × bilinen-harcama tek çağrıda (kart + bant
+// aynı cümleyi konuşur). 'ok' durumunda satır hiç çizilmez; çağıran koşulu zaten elinde tutar.
+export function budgetLine(status: 'warn' | 'hard_stop', hasUnknown: boolean, monthUsd: number, capUsd: number): string {
+  if (status === 'hard_stop') return hasUnknown ? UI.budgetStopLineKnown(monthUsd, capUsd) : UI.budgetStopLine(monthUsd, capUsd);
+  return hasUnknown ? UI.budgetWarnLineKnown(monthUsd, capUsd) : UI.budgetWarnLine(monthUsd, capUsd);
+}
+
 // Token sayısı kısaltması: 10k+ tam k, 1k+ bir ondalık, altı ham sayı (WO-0022).
 export function formatTokens(n: number): string {
   // WO-0046: a max-context of 1 000 000 rendered "1000k" on the live readout — the M tier exists
@@ -701,6 +708,30 @@ export const UI = {
   // operatör kararı 2026-08-26) + sessizlik satırı (3 dk eşiği — Düşünüyor···'ün dürüst halefi).
   contextReadout: (pct: number, used: number, max: number) => `bağlam %${pct} · ${formatTokens(used)}/${formatTokens(max)}`,
   staleLine: (n: number) => `${n} dk'dır yeni çıktı yok`,
+  // WO-0047 bütçe kapısı: warn/limit satıları (kart + bant — bilinen-harcama niteleyicisiyle,
+  // dolgu çubuğu yok, ADR-0012), ret kartının iki seçeneği, ayarlar bölümü. Para formatUsd ile.
+  budgetWarnLine: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)} — uyarı eşiği aşıldı`,
+  budgetWarnLineKnown: (m: number, cap: number) => `bu ay bilinen harcama ${formatUsd(m)} / ${formatUsd(cap)} — uyarı eşiği aşıldı`,
+  budgetStopLine: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)} — limit doldu, yeni sürüş reddedilir`,
+  budgetStopLineKnown: (m: number, cap: number) => `bu ay bilinen harcama ${formatUsd(m)} / ${formatUsd(cap)} — limit doldu, yeni sürüş reddedilir`,
+  budgetRefusalTitle: 'AYLIK LİMİT DOLDU',
+  budgetRefusalBody: (observed: number, cap: number) => `Bu ay bilinen harcama ${formatUsd(observed)}; limit ${formatUsd(cap)}. Yeni sürüş başlatılamaz.`,
+  budgetRefusalRunningNote: 'Koşan sürüş kesilmez; kapı bir sonraki sürüşe uygulanır.',
+  budgetBasisNote: 'Hesap yalnızca bilinen harcamayı sayar — kesilen bacakların maliyeti kayıtlı değil.',
+  budgetRaiseLabel: 'Yeni limit ($)',
+  budgetRaiseAction: 'Limiti yükselt ve sür',
+  budgetKeepAction: 'Kapı kalsın',
+  budgetErrNumber: 'Geçerli bir tutar gir ($, ör. 20 veya 20,50).',
+  budgetErrRaise: 'Yeni limit bu ayki harcamayı aşmalı.',
+  budgetLabel: 'Aylık bütçe',
+  budgetCapLabel: 'Limit ($)',
+  budgetWarnPercentLabel: 'Uyarı eşiği (%)',
+  budgetSave: 'Kaydet',
+  budgetClear: 'Kaldır',
+  budgetErrCap: 'Sıfırdan büyük bir tutar gir.',
+  budgetErrWarn: '1–100 arası bir oran gir.',
+  budgetMonthReadout: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)}`,
+  budgetMonthReadoutKnown: (m: number, cap: number) => `bu ay bilinen harcama ${formatUsd(m)} / ${formatUsd(cap)}`,
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
@@ -838,6 +869,7 @@ export function phaseLabelText(p: WoPhase): string {
 // hem buraya hem en.ts'e girer (derleyici hatırlatır).
 const tr = {
   UI,
+  budgetLine,
   BUCKET_LABELS,
   ROLE_LABELS,
   ROLE_DUTY_LABELS,

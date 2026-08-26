@@ -13,6 +13,7 @@ import { ChevronLeft, Pencil, Trash2 } from 'lucide-react';
 import type { TurnState, WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import type { WorkspaceBudgetView } from '../../../core/budget';
 import { Badge, Button, Dialog, Field, Input, Textarea, Tooltip, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
@@ -48,6 +49,7 @@ export function DetailStrip({
   duration,
   driveLive,
   pendingSteer = 0,
+  budget,
   onBack,
   onDelete,
   permissionRule,
@@ -64,12 +66,14 @@ export function DetailStrip({
   driveLive: boolean;
   /** Notes queued in the live drive (WO-0045) — the chip's pending count while they wait for a boundary. */
   pendingSteer?: number;
+  /** The workspace's budget view (WO-0047) — the warn/stop line under the title row when past warn. */
+  budget?: WorkspaceBudgetView;
   onBack: () => void;
   onDelete: () => void;
   permissionRule: PermissionRule;
   onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
 }) {
-  const { formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
+  const { budgetLine, formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
   const tone = PHASE_KIND_TONE[phase.kind];
   const turnLabel: Record<TurnState, string> = {
     yours: UI.turnYours,
@@ -274,6 +278,15 @@ export function DetailStrip({
           <span className="hidden min-[520px]:inline min-[820px]:hidden">{PERMISSION_RULE_TINY[permissionRule]}</span>
         </span>
       </div>
+
+      {/* WO-0047: the workspace's budget line — full-width under the title/badges row, the money
+          voice (mono-dim, no fill bar), only when the month spend is past the warn level. It states
+          the workspace's condition, the WO's own; identical on every detail of the workspace. */}
+      {budget && budget.status !== 'ok' ? (
+        <p data-budget-line className="font-mono text-[11px] text-inkdim">
+          {budgetLine(budget.status, budget.hasUnknown, budget.monthUsd, budget.threshold.capUsd)}
+        </p>
+      ) : null}
 
       {editing ? (
         <Dialog

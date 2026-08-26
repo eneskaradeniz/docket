@@ -133,6 +133,8 @@ ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, pat
 // WO-0033: the ledger read + the path move. Full paths never leave the store except through these.
 ipcMain.handle('docket:source:repo-connections', (_e, id: WorkspaceId) => store.repoConnections(id));
 ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: RepoId, newPath: string) => store.updateRepoPath(id, repoId, newPath));
+// WO-0047: the workspace's calendar-month observed spend (the warn line's figure).
+ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
 
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
@@ -225,6 +227,13 @@ ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule)
 // WO-0035: the UI locale — undefined (no explicit choice) survives the structured clone.
 ipcMain.handle('docket:settings:get-locale', () => store.getLocale());
 ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLocale(locale));
+// WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
+ipcMain.handle('docket:settings:get-budget', (_e, workspaceId: WorkspaceId) => store.getBudget(workspaceId));
+ipcMain.handle(
+  'docket:settings:set-budget',
+  (_e, workspaceId: WorkspaceId, threshold: import('../src/core/budget').BudgetThreshold | undefined) =>
+    store.setBudget(workspaceId, threshold),
+);
 ipcMain.handle('docket:settings:check-provider', async () => {
   const key = await store.getProviderKey();
   return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);

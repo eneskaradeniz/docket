@@ -1,4 +1,5 @@
 import type { BoardBucket, WorkOrderCardView } from '../../../core/types';
+import type { WorkspaceBudgetView } from '../../../core/budget';
 import { Badge, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
 
@@ -6,6 +7,8 @@ import { useLabels } from '../../data/locale';
 // when the operator is needed, info pulse while a session runs, steady green when closed — over a calm
 // surface. Row 1: id (mono, via woIdLabel — ADR-0007) + stage; row 2: title; row 3: reason + cost.
 // Keyboard-accessible (outer <button>); the whole card is one target.
+// WO-0047: a LAST row carries the workspace's budget warn/stop line (mono-dim, the money voice) when
+// the month spend is past the warn level — same sentence on every card of the workspace, no fill bar.
 // `quiet` (WO-0031c / B4): the closed drawer's dimmed treatment — NOT opacity (it landed ≈2.9:1 on the
 // reason line, an AA fail) but a flatter surface + dim title, which keeps every line ≥AA.
 const LAMP: Record<BoardBucket, string> = {
@@ -17,14 +20,16 @@ const STAGE_TONE: Record<BoardBucket, 'signal' | 'info' | 'proceed'> = { up: 'si
 
 export function WorkOrderCard({
   card,
+  budget,
   onSelect,
   quiet,
 }: {
   card: WorkOrderCardView;
+  budget?: WorkspaceBudgetView;
   onSelect: () => void;
   quiet?: boolean;
 }) {
-  const { cardActionText, cardReasonText, formatCost, STAGE_LABELS, UI, woIdLabel } = useLabels();
+  const { budgetLine, cardActionText, cardReasonText, formatCost, STAGE_LABELS, UI, woIdLabel } = useLabels();
   return (
     <button
       type="button"
@@ -61,6 +66,11 @@ export function WorkOrderCard({
             </span>
           ) : null}
         </div>
+        {budget && budget.status !== 'ok' ? (
+          <p data-budget-line className="mt-1 truncate font-mono text-[11px] text-inkdim">
+            {budgetLine(budget.status, budget.hasUnknown, budget.monthUsd, budget.threshold.capUsd)}
+          </p>
+        ) : null}
       </div>
     </button>
   );

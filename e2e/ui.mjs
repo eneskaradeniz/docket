@@ -1932,6 +1932,81 @@ await spec('TD-053: plandan önce açılan dosyada onay → adım yeniden giriş
   await backToBoard();
 });
 
+// ===== WO-0047 — bütçe kapısı: the warn line, the refusal (kept), the raise + the re-run =====
+// Order matters: the KEEP spec runs first — the RAISE lifts the whole workspace's cap, and the
+// keep-path needs the gate still closed. The refusal path is the REAL pipeline (the scripted
+// runner replaces only the SDK; budgetBlockFor reads the seeded rows) — no scripted events needed
+// for the refusal itself.
+const switchWs = async (from, to) => {
+  await page.locator('header button', { hasText: from }).first().click();
+  await page.waitForTimeout(300);
+  // the switcher shows the first MAX_WS only — 'uyarı'/'kapı' sit behind "Tümünü gör", which
+  // opens the full-list modal (its rows are plain buttons carrying the label)
+  const seeAll = page.getByRole('button', { name: /Tümünü gör/ });
+  if ((await seeAll.count()) > 0) await seeAll.first().click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: new RegExp(to) }).first().click();
+  await page.waitForTimeout(600);
+};
+
+await spec('WO-0047 uyarı: kart + bant bilinen-harcama satırını taşır; warn asla kapatmaz', async () => {
+  await switchWs('e2e', 'uyarı');
+  const line = await page.locator('[data-wo-id] [data-budget-line]').first().textContent();
+  assert.ok(line && line.includes('$4,20'), `the warn line carries no figure: ${line}`);
+  assert.ok(line && line.includes('bilinen harcama'), `the known-spend basis missing: ${line}`);
+  await openDetail('Uyarı işi');
+  await page.waitForTimeout(900); // the auto-started step 1 — warn NEVER blocks
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'the warn level blocked the drive (it must not)');
+  const band = await page.locator('[data-budget-line]').first().textContent();
+  assert.ok(band && band.includes('$4,20'), `the band warn line missing: ${band}`);
+  await stopAllDrives();
+  await backToBoard();
+});
+
+await spec('WO-0047 kapı A: ret kartı, canlı pencere YOK; Kapı kalsın → kart gitti, ayakta satır kaldı', async () => {
+  await switchWs('uyarı', 'kapı');
+  const stop = await page.locator('[data-wo-id] [data-budget-line]').first().textContent();
+  assert.ok(stop && stop.includes('limit doldu'), `the board stop line missing: ${stop}`);
+  await openDetail('Kapı işi A');
+  await page.waitForTimeout(900); // the auto-start attempt → refused pre-spawn
+  assert.equal(await page.locator('[data-budget-refusal-card]').count(), 1, 'no refusal card');
+  assert.equal(await page.locator('#live-pane').count(), 0, 'a pane rendered for a refused drive (AC2 no-spawn)');
+  assert.equal(await page.locator('[data-steer-input]').count(), 0, 'a drive spawned past the cap');
+  await page.screenshot({ path: join(SHOTS, 'budget-refusal-card@980.png') });
+  await page.getByRole('button', { name: 'Kapı kalsın' }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('[data-budget-refusal-card]').count(), 0, 'the card survived keep');
+  const kept = await page.locator('[data-budget-line]').first().textContent();
+  assert.ok(kept && kept.includes('limit doldu'), 'the standing stop line died with the card');
+  await backToBoard();
+});
+
+await spec('WO-0047 kapı B: yükselt → kalıcı ayar + reddedilen sürüş yeniden koşar + ayarlar okuması yeni limiti söyler', async () => {
+  await openDetail('Kapı işi B');
+  await page.waitForTimeout(900); // refused on entry
+  const card = page.locator('[data-budget-refusal-card]').first();
+  assert.equal(await card.count(), 1, 'no refusal card on B');
+  const prefill = await card.locator('[data-budget-raise-input]').inputValue();
+  assert.equal(prefill, '15.1', `the prefill is not max(observed+10, cap): ${prefill}`);
+  await page.getByRole('button', { name: /Limiti yükselt ve sür/ }).click();
+  await page.waitForTimeout(1200); // setBudget + refreshBudget + restart → the fake runner's started
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'the refused drive did not re-run after the raise');
+  assert.equal(await page.locator('[data-budget-refusal-card]').count(), 0, 'the card survived the raise');
+  await w45Done('# Rapor\n\nkapı sonrası adım tamam.');
+  await page.waitForTimeout(900);
+  await stopAllDrives();
+  // The settings readout names the NEW cap (a permanent write): observed + new limit, and the
+  // warn line is gone — the workspace is back under its (raised) threshold.
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(500);
+  const readout = await page.locator('[data-budget-month-readout]').first().textContent();
+  assert.ok(readout && readout.includes('$15,10'), `the month readout carries no new cap: ${readout}`);
+  await page.screenshot({ path: join(SHOTS, 'budget-settings@980.png') });
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

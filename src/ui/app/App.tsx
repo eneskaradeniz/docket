@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
+import type { WorkspaceBudgetView } from '../../core/budget';
+import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
 import { overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { useLabels } from '../data/locale';
@@ -249,6 +251,37 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     },
     [workOrders, activeDrive],
   );
+
+  // WO-0047: the workspace's budget view — threshold + the month's observed spend + status, read
+  // together (undefined when no threshold: the surfaces show nothing, the gate fails open).
+  // Refreshed at exactly the moments a session row's cost can change (the drive-store hooks below
+  // ride the same triggers as refreshWorkOrders) plus on raise/settings change.
+  const [budget, setBudget] = useState<WorkspaceBudgetView | undefined>(undefined);
+  const refreshBudget = useCallback(() => {
+    if (!workspaceId) {
+      setBudget(undefined);
+      return;
+    }
+    void Promise.all([source.workspaceMonthSpend(workspaceId), settings.getBudget?.(workspaceId)])
+      .then(([spend, threshold]) => {
+        setBudget(threshold ? workspaceBudgetView(spend.usd, spend.hasUnknown, threshold) : undefined);
+      })
+      .catch(() => setBudget(undefined));
+  }, [source, settings, workspaceId]);
+  useEffect(() => {
+    refreshBudget();
+  }, [refreshBudget]);
+  // The refusal card's RAISE action (WO-0047): a PERMANENT settings write (the operator's ruling —
+  // no one-month override); the warn ratio keeps the stored value, defaulting to 80.
+  const handleRaiseBudget = useCallback(
+    async (capUsd: number) => {
+      if (!workspaceId) return;
+      const existing = await settings.getBudget?.(workspaceId);
+      await settings.setBudget?.(workspaceId, { capUsd, warnPercent: existing?.warnPercent ?? DEFAULT_WARN_PERCENT });
+      refreshBudget();
+    },
+    [workspaceId, settings, refreshBudget],
+  );
   const handleGetStepVerdict = useCallback((idx: number) => source.getStepVerdict(selectedId!, idx), [source, selectedId]);
   const handleResetStep = useCallback((idx: number) => source.resetStep(selectedId!, idx), [source, selectedId]);
 
@@ -267,6 +300,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       onDeleteWorkspace={handleDeleteWorkspace}
       wsWoCount={wsWoCount}
       wsDriveLive={wsDriveLive}
+      onBudgetChanged={refreshBudget}
     />
   ) : null;
 
@@ -324,6 +358,8 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
         onGetStepVerdict={handleGetStepVerdict}
         onResetStep={handleResetStep}
+        budget={budget}
+        onRaiseBudget={handleRaiseBudget}
         reloadDetail={reloadDetail}
         onDelete={handleDeleteWorkOrder}
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
@@ -338,6 +374,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       <BoardScreen
         key={workspaceId ?? 'none'}
         cards={cards}
+        budget={budget}
         onSelect={setSelectedId}
         onNewWorkOrder={() => setWoCreateOpen(true)}
       />
@@ -368,6 +405,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     };
     driveStore.onEnd = (key) => {
       refreshWorkOrders();
+      refreshBudget(); // WO-0047: the terminal record lands the drive's cost — the month figure moves
       setDetailNonce((n) => n + 1);
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
@@ -377,12 +415,18 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     // WO-0029 / B13+B14: the board flips to "Çalışıyor" the moment a background drive starts, and to
     // "Seni bekliyor" when an ask surfaces — the card derives both from the recorded rows; the refresh
     // was the missing half.
-    driveStore.onStarted = () => refreshWorkOrders();
+    driveStore.onStarted = () => {
+      refreshWorkOrders();
+      refreshBudget(); // WO-0047: a resumed drive's accumulated cost rides the row from the start
+    };
     // base-mobile trial: the pipeline returns the session row to 'running' when the last ask is
     // answered, but nothing else fires for ask_resolved — refresh here so the rows snapshot agrees
     // with the fold. Without it the board card bounces working → Seni bekliyor → settled when the
     // drive ends and the live overlay lifts off a stale stopped_asking row.
-    driveStore.onAskResolved = () => refreshWorkOrders();
+    driveStore.onAskResolved = () => {
+      refreshWorkOrders();
+      refreshBudget();
+    };
     driveStore.onAsk = (key) => {
       refreshWorkOrders();
       const wo = woOf(key);
@@ -404,12 +448,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     };
     driveStore.onError = (key) => {
       refreshWorkOrders();
+      refreshBudget(); // WO-0047: an erroring drive still records its observed cost
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
         toast.push({ kind: 'error', title: UI.toastErrTitle(woIdLabel(wo)) });
       }
     };
-  }, [driveStore, refreshWorkOrders, UI, woIdLabel]);
+  }, [driveStore, refreshWorkOrders, refreshBudget, UI, woIdLabel]);
 
   // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator. The
   // live fold outranks a stale stopped_asking row — an ask the operator already answered is being

@@ -1,5 +1,6 @@
 import type { StepRole, WorkOrderDetailView } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../core/source';
+import type { WorkspaceBudgetView } from '../../core/budget';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
 // The console FRAME (WO-0031c / v4 → WO-0039 rail-free): the detail fills the viewport below the
@@ -19,6 +20,8 @@ export function DetailScreen({
   onGetStepReport,
   onGetStepVerdict,
   onResetStep,
+  budget,
+  onRaiseBudget,
   reloadDetail,
   onDelete,
   onCloseWorkOrder,
@@ -40,6 +43,10 @@ export function DetailScreen({
   onGetStepReport: (idx: number, role: StepRole) => Promise<string>;
   onGetStepVerdict: (idx: number) => Promise<string>;
   onResetStep: (idx: number) => Promise<void>;
+  /** WO-0047: the workspace's budget view — the band's warn line + the refusal card's context. */
+  budget?: WorkspaceBudgetView;
+  /** WO-0047: the refusal card's RAISE action (a permanent settings write + refresh). */
+  onRaiseBudget: (capUsd: number) => Promise<void>;
   reloadDetail: () => void;
   onCloseWorkOrder: (note: string) => Promise<void>;
   onOverrideVerdict: (idx: number) => Promise<void>;
@@ -66,6 +73,8 @@ export function DetailScreen({
         onGetStepReport={onGetStepReport}
         onGetStepVerdict={onGetStepVerdict}
         onResetStep={onResetStep}
+        budget={budget}
+        onRaiseBudget={onRaiseBudget}
         reloadDetail={reloadDetail}
         onCloseWorkOrder={onCloseWorkOrder}
         onOverrideVerdict={onOverrideVerdict}

@@ -7,6 +7,7 @@ import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } fr
 import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import type { WorkspaceBudgetView } from '../../../core/budget';
 import { useLabels } from '../../data/locale';
 import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
@@ -14,6 +15,7 @@ import { EnterMark } from '../EnterMark';
 import { ActionCard } from './ActionCard';
 import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
+import { BudgetRefusalCard } from './BudgetRefusalCard';
 import { EvidencePanel } from './EvidencePanel';
 import { PlanSection } from './PlanSection';
 import { StepList } from './StepList';
@@ -73,6 +75,8 @@ export function WorkOrderDetail({
   onResetStep,
   onCloseWorkOrder,
   onOverrideVerdict,
+  budget,
+  onRaiseBudget,
   reloadDetail,
   onDelete,
   autoRequestPlan,
@@ -93,6 +97,10 @@ export function WorkOrderDetail({
   onResetStep: (idx: number) => Promise<void>;
   onCloseWorkOrder: (note: string) => Promise<void>;
   onOverrideVerdict: (idx: number) => Promise<void>;
+  /** WO-0047: the workspace's budget view — the band's warn line + the refusal card's context. */
+  budget?: WorkspaceBudgetView;
+  /** WO-0047: the refusal card's RAISE action (a permanent settings write + refresh). */
+  onRaiseBudget: (capUsd: number) => Promise<void>;
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
   autoRequestPlan?: boolean;
@@ -615,9 +623,12 @@ export function WorkOrderDetail({
         primary = () => objectPlan(objectionText.trim());
         primaryKind = 'object';
       }
-    } else if (turn === 'retry') {
+    } else if (turn === 'retry' && !state.lastRefusal) {
       primary = retry; // ⏎ = Yeniden dene (the fail card's button)
       primaryKind = 'retry';
+      // WO-0047: a budget REFUSAL owns the moment instead — the two-choice card renders, the fail
+      // card stands down, and ⏎ holds (the card's own input carries Enter while valid; the ask-
+      // cards-own-the-moment rule in the refusal's register).
     } else if (running && !planAwaitingOperator) {
       // No primary while running — Durdur is deliberately NOT ⏎'s target (v4 rule, unchanged).
       // The exception: a plan-mode drive that already DELIVERED its plan (the SDK awaits an
@@ -828,7 +839,7 @@ export function WorkOrderDetail({
     ) : null;
 
   const failCard =
-    turn === 'retry' ? (
+    turn === 'retry' && !state.lastRefusal ? (
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
         <div className="min-w-0 flex-1 px-3.5 py-3">
@@ -868,10 +879,42 @@ export function WorkOrderDetail({
       </div>
     ) : null;
 
+  // WO-0047 — the budget refusal card: the gate's TWO-CHOICE resolution (raise-and-re-run /
+  // keep-the-cap), rendered when the drive's error carried the refusal facts. A KEEP dismissal is
+  // per-mount and re-arms on a NEW refusal identity (honest: drives still refuse — the standing
+  // stop line on the band/card carries the reason meanwhile). The raise persists the new cap
+  // (permanent) then re-issues the SAME drive input through the store's restart.
+  const [budgetKept, setBudgetKept] = useState(false);
+  const [raiseBusy, setRaiseBusy] = useState(false);
+  useEffect(() => {
+    if (state.lastRefusal) setBudgetKept(false);
+  }, [state.lastRefusal]);
+  const raiseBudget = async (capUsd: number): Promise<void> => {
+    setRaiseBusy(true);
+    try {
+      await onRaiseBudget(capUsd);
+      store.restart(driveKey);
+    } finally {
+      setRaiseBusy(false);
+    }
+  };
+  const refusalCard =
+    state.lastRefusal && !running && !budgetKept ? (
+      <BudgetRefusalCard
+        observedUsd={state.lastRefusal.observedUsd}
+        capUsd={state.lastRefusal.capUsd}
+        hasUnknown={budget?.hasUnknown ?? false}
+        busy={raiseBusy}
+        onRaise={(cap) => void raiseBudget(cap)}
+        onKeep={() => setBudgetKept(true)}
+      />
+    ) : null;
+
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).
   const decision = (
     <div className="flex flex-col gap-3">
       {askCards}
+      {refusalCard}
       {failCard}
 
       {objectionOpen ? (
@@ -1147,7 +1190,12 @@ export function WorkOrderDetail({
   // to the lone Plan iste button (2026-08-23 ruling), not to a tall instrument that repeats the
   // invitation (the pane's own invitation line stands down with it).
   const planPaneLive = running || showAsk || state.entries.length > 0 || showQuestion;
-  const instrument = planStage ? (
+  // WO-0047: a budget REFUSAL owns the moment — the two-choice card in the decision stack is the
+  // surface. No transcript exists to read (the drive was refused pre-spawn), so a pane would only
+  // repeat the error under the card. The pane returns the moment the raise's re-run boots
+  // (`started` clears the refusal) — or on a re-entry's fresh auto-drive, honestly refused again.
+  const refusalOpen = state.lastRefusal !== undefined && !running;
+  const instrument = refusalOpen ? null : planStage ? (
     (effectivePlan && !replanning) || (!planPaneLive && !replanning) ? null : (
       <SessionPane
         mode={detail.mode}
@@ -1230,6 +1278,7 @@ export function WorkOrderDetail({
           duration={durationText}
           driveLive={driveLive}
           pendingSteer={state.pendingNotes.length}
+          budget={budget}
           onBack={onBack}
           onDelete={() => setConfirmDelete(true)}
           permissionRule={permissionRule}

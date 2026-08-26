@@ -1092,3 +1092,113 @@ describe('SQLite store — steer mirror + flow mode (WO-0045)', () => {
     expect(md2).toContain('flow_mode: manual');
   });
 });
+
+describe('WO-0047 — workspace budget: threshold row, month window, gate verdict, delete sweep', () => {
+  const now = new Date();
+  // In-month stamps: fixed UTC noon, day ≤ 28 — never a 31st-in-a-30-day-month bug.
+  const inMonth = (day: number): string =>
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(day, 28), 12)).toISOString();
+  const prevMonth = (): string =>
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 12)).toISOString();
+  const wsInRoot = async (store: ReturnType<typeof createStore>, label: string) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    return { ws, root };
+  };
+  const mkWo = (store: ReturnType<typeof createStore>, wsId: WorkspaceId, title: string) =>
+    store.createWorkOrder({ workspaceId: wsId, title, description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+  // A session row with full control over the window stamp and the cost claim (NULL = no claim).
+  const session = (
+    store: ReturnType<typeof createStore>,
+    woId: Parameters<typeof store.recordSession>[0]['workOrderId'],
+    providerId: string,
+    startedAt: string,
+    usd: number | null,
+  ) =>
+    store.recordSession({
+      providerSessionId: providerId,
+      workOrderId: woId,
+      role: 'implementer',
+      status: 'idle',
+      ...(usd === null ? {} : { cost: { tokensIn: 1, tokensOut: 1, usd } }),
+      startedAt,
+      endedAt: startedAt,
+    });
+
+  it('round-trips the threshold as one atomic JSON pair; undefined clears it', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Budget A');
+    expect(await store.getBudget(ws.id)).toBeUndefined();
+    await store.setBudget(ws.id, { capUsd: 50, warnPercent: 80 });
+    expect(await store.getBudget(ws.id)).toEqual({ capUsd: 50, warnPercent: 80 });
+    await store.setBudget(ws.id, undefined);
+    expect(await store.getBudget(ws.id)).toBeUndefined();
+  });
+
+  it('reads garbage or partial rows as undefined — the gate fails open, never invents a number', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Budget A');
+    for (const bad of ['not json', '{"capUsd":5}', '{"capUsd":"5","warnPercent":80}', '""']) {
+      store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(`budget:${ws.id}`, bad);
+      expect(await store.getBudget(ws.id)).toBeUndefined();
+    }
+  });
+
+  it('sums the current UTC month across the workspace’s WOs — prior month, other workspaces and NULL-cost rows excluded; NULL flagged', async () => {
+    const store = createStore(freshDb());
+    const a = await wsInRoot(store, 'Budget A'); // workspace A
+    const b = await wsInRoot(store, 'Budget B'); // workspace B
+    // Direct rows: WO numbering is per decision-store ROOT, so two roots both mint WO-0001 and
+    // collide on the global work_order PK — the budget read only needs workspace_id + sessions.
+    const woRow = (id: string, wsId: WorkspaceId): void => {
+      store.db
+        .prepare(
+          `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
+           gate_closure_docs_sha, cost_tokens_in, cost_tokens_out, cost_usd, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(id, wsId, `budget test ${id}`, 'direct', 1, null, null, 0, 0, 0, SEED_OBSERVED_AT);
+    };
+    woRow('WO-9001', a.ws.id);
+    woRow('WO-9002', a.ws.id);
+    woRow('WO-9003', b.ws.id);
+    session(store, woid('WO-9001'), 's-a1-in', inMonth(3), 1.2);
+    session(store, woid('WO-9001'), 's-a1-null', inMonth(4), null); // interrupted leg — no claim, no count
+    session(store, woid('WO-9001'), 's-a1-prev', prevMonth(), 9.9); // last month
+    session(store, woid('WO-9002'), 's-a2-in', inMonth(5), 3.0);
+    session(store, woid('WO-9003'), 's-b-in', inMonth(6), 7.7); // other workspace
+    const spendA = await store.workspaceMonthSpend(a.ws.id);
+    expect(spendA.usd).toBeCloseTo(4.2, 10);
+    expect(spendA.hasUnknown).toBe(true); // the s-a1-null row — "bilinen harcama"
+    const spendB = await store.workspaceMonthSpend(b.ws.id);
+    expect(spendB.usd).toBeCloseTo(7.7, 10);
+    expect(spendB.hasUnknown).toBe(false);
+  });
+
+  it('budgetBlockFor: absent when unconfigured or at warn (warn is a line, never a block); payload at/over the cap', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Budget A');
+    const wo = await mkWo(store, ws.id, 'gate');
+    expect(store.budgetBlockFor(wo.id)).toBeUndefined(); // no threshold → fail open
+    await store.setBudget(ws.id, { capUsd: 5, warnPercent: 80 });
+    session(store, wo.id, 's-warn', inMonth(1), 4.2); // warn band — drives still start
+    expect(store.budgetBlockFor(wo.id)).toBeUndefined();
+    session(store, wo.id, 's-stop', inMonth(2), 0.8); // 5.00 total — exactly at the cap
+    const atCap = store.budgetBlockFor(wo.id);
+    expect(atCap?.capUsd).toBe(5);
+    expect(atCap?.observedUsd).toBeCloseTo(5, 10);
+    session(store, wo.id, 's-over', inMonth(3), 0.1); // over
+    const over = store.budgetBlockFor(wo.id);
+    expect(over?.capUsd).toBe(5);
+    expect(over?.observedUsd).toBeCloseTo(5.1, 10);
+  });
+
+  it('deleting a workspace sweeps its threshold row — a recycled id inherits no dead cap', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Budget A');
+    await store.setBudget(ws.id, { capUsd: 5, warnPercent: 80 });
+    await store.deleteWorkspace(ws.id);
+    expect(await store.getBudget(ws.id)).toBeUndefined();
+    const row = store.db.prepare('SELECT COUNT(*) AS n FROM app_setting WHERE key = ?').get(`budget:${ws.id}`) as { n: number };
+    expect(row.n).toBe(0);
+  });
+});

@@ -73,7 +73,12 @@ rule restated with its reasons in two places is the duplication this repository 
   in DriveControls). The Kanıt section is dead — evidence is
   contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is
   ENFORCED in the pipeline (`SessionStore.planApprovedFor`): step/review drives on an unapproved plan
-  are refused with an error event before the runner spawns — never work around it in a host.
+  are refused with an error event before the runner spawns — never work around it in a host. The
+  workspace BUDGET gate is enforced the same way (`SessionStore.budgetBlockFor`, WO-0047): when the
+  calendar-month spend meets the workspace cap, EVERY drive is refused before the runner spawns
+  (a running drive is never touched); the refusal renders as a two-choice card (raise-and-re-run /
+  keep-the-cap) and raising the cap is a permanent settings write that re-runs the refused drive —
+  never a host-side work-around, never a force flag.
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

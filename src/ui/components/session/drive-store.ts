@@ -45,6 +45,9 @@ export function createDriveStore(runner: SessionRunner) {
   const drives = new Map<string, DriveHandle>();
   const sessionIds = new Map<string, string | undefined>(); // per-key provider session id (resume/approve)
   const keyWo = new Map<string, DriveInput['workOrderId']>(); // key → branded WO id (ADR-0003: no ui-side cast)
+  // WO-0047: each key's LAST drive input, captured at start — the budget refusal card's
+  // raise-and-re-run re-issues it verbatim (ONE wiring point, not nine start sites).
+  const keyInput = new Map<string, DriveInput>();
   const listeners = new Set<Listener>();
   let onEnd: ((key: string) => void) | undefined;
   // WO-0029 / B13+B14: fired from the fold loop so the App can refresh the board the moment a drive
@@ -118,6 +121,7 @@ export function createDriveStore(runner: SessionRunner) {
     if (active !== undefined) return active === key; // already running this key → no-op true; another → false
     active = key;
     keyWo.set(key, input.workOrderId);
+    keyInput.set(key, input);
     drives.set(key, { state: seed, running: true, booting: true, startedAt: Date.now() });
     sessionIds.set(key, seed.sessionId);
     notify();
@@ -159,6 +163,18 @@ export function createDriveStore(runner: SessionRunner) {
     runner.decide(requestId, decision);
   const interrupt = (): Promise<void> => runner.interrupt();
   const sessionId = (key: string): string | undefined => sessionIds.get(key);
+  /** WO-0047: re-issue a key's LAST drive input verbatim — the budget refusal's raise-and-re-run.
+   *  Seeds from the key's current fold (a refused drive's fold carries no transcript; the re-run's
+   *  `started` clears the refusal on the way through, the pendingPlan precedent). False while the
+   *  key runs or when no input was captured (the drive predates this store's lifetime). Main
+   *  re-resolves cwd/prompt/rule on arrival — the captured input is the renderer's ask, never an
+   *  assembled prompt, so nothing stale leaks. */
+  function restart(key: string): boolean {
+    const input = keyInput.get(key);
+    const prior = drives.get(key);
+    if (!input || prior?.running) return false;
+    return start(key, input, prior?.state ?? initialSessionState);
+  }
   /** The branded work-order id a key belongs to (WO-0031c) — captured at start, so nothing in the UI
    *  ever constructs a branded id from the key string (ADR-0003). */
   const woId = (key: string): DriveInput['workOrderId'] | undefined => keyWo.get(key);
@@ -217,6 +233,7 @@ export function createDriveStore(runner: SessionRunner) {
     snapshot,
     activeSnapshot,
     start,
+    restart,
     decide,
     interrupt,
     abort,

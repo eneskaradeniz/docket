@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkOrderCardView } from '../../../core/types';
+import type { WorkspaceBudgetView } from '../../../core/budget';
 import { Button } from '../../kit';
 import { useLabels } from '../../data/locale';
 import { ClosedToggle } from './ClosedToggle';
@@ -22,10 +23,12 @@ type Platform = 'mixed' | 'awaiting' | 'alldone';
 const lastPlatformByWs = new Map<string, Platform>();
 export function Board({
   cards,
+  budget,
   onSelect,
   onNewWorkOrder,
 }: {
   cards: WorkOrderCardView[];
+  budget?: WorkspaceBudgetView; // WO-0047: workspace-scope — every card carries the same warn line
   onSelect: (id: WorkOrderCardView['id']) => void;
   /** T2: opens the create modal from the all-done platform line (absent elsewhere). */
   onNewWorkOrder: () => void;
@@ -88,7 +91,7 @@ export function Board({
           </div>
           <ClosedToggle count={closed.length}>
             {closed.map((c) => (
-              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+              <WorkOrderCard key={c.id} card={c} budget={budget} onSelect={() => onSelect(c.id)} quiet />
             ))}
           </ClosedToggle>
         </>
@@ -103,13 +106,13 @@ export function Board({
           </div>
           <div className="mt-4 flex flex-col gap-2">
             {closableUp.map((c) => (
-              <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} />
+              <WorkOrderCard key={c.id} card={c} budget={budget} onSelect={() => onSelect(c.id)} />
             ))}
           </div>
           {closed.length > 0 ? (
             <ClosedToggle count={closed.length}>
               {closed.map((c) => (
-                <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+                <WorkOrderCard key={c.id} card={c} budget={budget} onSelect={() => onSelect(c.id)} quiet />
               ))}
             </ClosedToggle>
           ) : null}
@@ -127,7 +130,7 @@ export function Board({
                 <div className="flex flex-col gap-2">
                   {up.map((c, i) => (
                     <div key={c.id} className="glide" style={glide(i, c.id)}>
-                      <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                      <WorkOrderCard card={c} budget={budget} onSelect={() => onSelect(c.id)} />
                     </div>
                   ))}
                 </div>
@@ -144,7 +147,7 @@ export function Board({
                 <div className="flex flex-col gap-2">
                   {working.map((c, i) => (
                     <div key={c.id} className="glide" style={glide(i, c.id)}>
-                      <WorkOrderCard card={c} onSelect={() => onSelect(c.id)} />
+                      <WorkOrderCard card={c} budget={budget} onSelect={() => onSelect(c.id)} />
                     </div>
                   ))}
                 </div>
@@ -155,7 +158,7 @@ export function Board({
           {closed.length > 0 ? (
             <ClosedToggle count={closed.length}>
               {closed.map((c) => (
-                <WorkOrderCard key={c.id} card={c} onSelect={() => onSelect(c.id)} quiet />
+                <WorkOrderCard key={c.id} card={c} budget={budget} onSelect={() => onSelect(c.id)} quiet />
               ))}
             </ClosedToggle>
           ) : null}
