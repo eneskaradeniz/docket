@@ -30,6 +30,14 @@ export interface CreateWorkspaceInput {
 // every step. Written to order.md front-matter; consumed by the architect runtime (WO-0016).
 export type ReviewMode = 'gates' | 'every-step';
 
+// The per-WORK-ORDER flow tempo (WO-0045, operator tempo). `auto` = today's behavior: sequencing
+// auto-advances (a proceed verdict starts the next step, the review leg starts itself). `manual` =
+// nothing starts itself — a finished step yields a click-to-start card, the review leg likewise; the
+// pipeline refuses any `origin:'auto'` step/review spawn while manual. The mode is read at spawn time:
+// switching never touches the RUNNING drive, it takes effect at the next boundary (operator ruling
+// 2026-08-26). "Akış" is the surface word; internals say flow_mode.
+export type FlowMode = 'auto' | 'manual';
+
 // The per-WORK-ORDER permission rule (WO-0031c / v4 "iş-emrine-izin-kuralı"). Settings holds only the
 // DEFAULT; the rule lives on the work order — chosen at creation, changeable from the ask card, always
 // visible as the strip badge, logged to the timeline. `ask_every` = Her seferinde sor; `risky_excluded`
@@ -43,6 +51,7 @@ export interface CreateWorkOrderInput {
   description: string; // → order.md Objective; the architect session's first prompt
   trackRepos: RepoId[]; // workspace code repos MINUS the decision-store repo
   reviewMode: ReviewMode; // → order.md front-matter (review_mode); not stored in the DB
+  flowMode?: FlowMode; // → order.md front-matter (flow_mode, WO-0045); omit = auto (the today behavior)
   contextFiles: string[]; // local file paths → order.md Context
   permissionRule?: PermissionRule; // → order.md front-matter (permission_rule, WO-0031c); omit = the Settings default
 }
@@ -53,6 +62,7 @@ export interface UpdateWorkOrderInput {
   title?: string;
   description?: string; // → order.md Objective
   reviewMode?: ReviewMode;
+  flowMode?: FlowMode; // the Akış chip toggle — audited as flow_mode_changed
   permissionRule?: PermissionRule;
 }
 
@@ -124,6 +134,11 @@ export interface WorkOrderSource {
     workOrderId: WorkOrderId,
     input: { allowed: boolean; tool: string; target: string },
   ): Promise<void>;
+
+  // Retract a queued steer note from a STOPPED session's mirror (WO-0045) — the drive is gone, so the
+  // Docket row is the only queue; the row is rewritten minus the note and the timeline records it.
+  // False when the note was not pending on that row (already delivered/retracted).
+  retractSteerNote(workOrderId: WorkOrderId, providerSessionId: string, noteId: string): Promise<boolean>;
 
   // The plan's steps (WO-0017): specs parsed from plan.md's ```steps fence at view time, zipped with the
   // observed run state. [] when the plan has no steps fence or isn't approved. Detail-only — the board never

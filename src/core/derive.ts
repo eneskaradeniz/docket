@@ -446,7 +446,27 @@ export function derivePhase(
   }
 }
 
-export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 'gates' | 'every-step' = 'gates'): WorkOrderDetailView {
+/** The next leg a MANUAL-mode work order waits on (WO-0045): the first DONE-without-verdict step's
+ *  review (the denetim leg precedes — a report is not finished until reviewed), else the first
+ *  PENDING step. Undefined = nothing to offer (all reviewed + no pending, or an 'active' step owns
+ *  the flow — its Sürdür lives in DriveControls, never a card). Pure — the UI renders, the pipeline
+ *  enforces (origin gate), this derives. */
+export function nextManuelAction(steps: StepView[]): { kind: 'review'; idx: number } | { kind: 'step'; idx: number } | undefined {
+  // An ACTIVE step owns the flow — interrupted or mid-flight, its Sürdür lives in DriveControls.
+  if (steps.some((s) => s.status === 'active')) return undefined;
+  const reviewable = steps.find((s) => s.status === 'done' && s.verdict === undefined);
+  if (reviewable) return { kind: 'review', idx: reviewable.idx };
+  const pending = steps.find((s) => s.status === 'pending');
+  if (pending) return { kind: 'step', idx: pending.idx };
+  return undefined;
+}
+
+export function toDetailView(
+  wo: WorkOrder,
+  steps: StepView[] = [],
+  reviewMode: 'gates' | 'every-step' = 'gates',
+  flowMode: 'auto' | 'manual' = 'auto',
+): WorkOrderDetailView {
   return {
     id: wo.id,
     title: wo.title,
@@ -465,6 +485,7 @@ export function toDetailView(wo: WorkOrder, steps: StepView[] = [], reviewMode: 
     sessions: wo.sessions,
     steps,
     reviewMode,
+    flowMode,
     gateInputs: wo.gateInputs,
     primaryAction: derivePrimaryAction(wo),
     sources: wo.sources,

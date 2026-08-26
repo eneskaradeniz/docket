@@ -239,3 +239,17 @@ describe('architectReviewPrompt (WO-0020)', () => {
     expect(p).toContain('revise');
   });
 });
+
+describe('flow_mode (WO-0045)', () => {
+  it('extracts the manual flow mode', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\nflow_mode: manual');
+    expect(parseOrderMd(md).flowMode).toBe('manual');
+  });
+  it('defaults to auto when flow_mode is absent', () => {
+    expect(parseOrderMd(sample).flowMode).toBe('auto');
+  });
+  it('garbage falls back to auto (the today behavior)', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\nflow_mode: banana');
+    expect(parseOrderMd(md).flowMode).toBe('auto');
+  });
+});

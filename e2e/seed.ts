@@ -250,6 +250,14 @@ const ws4 = await store.createWorkspace({
 await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 1', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
 await store.createWorkOrder({ workspaceId: ws4.id, title: 'Çöp işi 2', description: 'E2E: deleted with its workspace.', trackRepos: ws4.repos, reviewMode: 'gates', contextFiles: [] });
 
+// 10) WO-0045 operator tempo: a clean two-step APPROVED plan, nothing run — the Akış chip, the steer
+//     composer, and the manuel-card specs' stage. Both steps pending; review_mode gates.
+const wo9 = await mk('Akış turu', 'E2E: two-step approved plan, nothing run — the tempo surface.');
+await store.approvePlan(
+  wo9.id,
+  '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"birinci adım","scope":"all"},{"role":"verifier","aim":"ikinci adım","scope":"all"}]\n```\n',
+);
+
 // WO-0035: pin the suite's locale to tr. The default is system detection and Playwright's Electron
 // runs under en-US — without this row the app would boot EN and every Turkish locator would break.
 // The row is load-bearing for as long as detection is the default (order.md Notes).

@@ -14,6 +14,7 @@
 - [Q6 — Write fencing (TD-001)](#q6--write-fencing-td-001)
 - [Q7 — Interruption and persistence](#q7--interruption-and-persistence)
 - [Q8 — Other providers (survey only)](#q8--other-providers-survey-only)
+- [S — Steering surface (WO-0045, measured 2026-08-26)](#s--steering-surface-wo-0045-measured-2026-08-26)
 - [Summary & recommendation](#summary--recommendation)
 
 > Throwaway measurement, not application code. Every claim about observed output
@@ -372,6 +373,115 @@ permission channel** (Q4's `canUseTool`) is currently Claude-specific; Codex and
 Gemini gate by coarse modes and auto-approve in headless. A provider-neutral port
 should treat fine-grained stop-and-ask as a Claude-adapter capability and fall back
 to coarse modes elsewhere — consistent with ADR-0006's "one adapter first."
+
+---
+
+## S — Steering surface (WO-0045, measured 2026-08-26)
+
+Measured for the operator-tempo order: queueing a note into a RUNNING query via
+streaming-input mode, its delivery boundary, the interrupt receipt, and cancel.
+Harness: `probe-steer.mjs` (sibling of `probe.mjs` — the scenarios need an inline
+`AsyncIterable<SDKUserMessage>` prompt plus control-request calls, which a JSON
+config cannot express). Every claim below cites a `raw/s*.log`.
+
+### What was measured
+
+**Setup common to all s-runs.** `query({ prompt: <AsyncIterable<SDKUserMessage>,
+options: { cwd, permissionMode: 'default', maxTurns: 6, abortController,
+canUseTool: allow } })` — a push-side queue seeds one uuid-stamped user message
+("the seed") and can push more ("notes") later; closing the iterable completes it.
+`system/init` reports `capabilities: ["interrupt_receipt_v1",
+"interrupt_cancel_queued_v1", "msg_lifecycle_v1"]` (`raw/s1-baseline.log`).
+
+**Input mode is selected by the prompt's TYPE — and the iterable must be an
+AsyncIterable, not a bare iterator.** Passing `queue[Symbol.asyncIterator]()`
+(a `{next}`-only iterator) kills the child process at once ("Operation aborted",
+`raw/s1-baseline.log` first run — harness bug, kept as the negative evidence);
+passing the iterable itself works. The seed message consumes normally.
+
+**Closing the input iterable is SAFE at any time.** Closed immediately after the
+seed push (`s1`): the CLI still ran the whole turn and the generator ended cleanly
+after the result (`STREAM_ENDED`, `raw/s1-baseline.log`). Closed only after the
+final result (`s2b`): ended cleanly 0.3s later (`raw/s2b-late-note.log`). Left
+open: the generator stays open after a result until input closes (watchdog close
+in `raw/s2-midturn-note.log`). So the adapter rule is: keep the iterable open
+while notes may still be live; close it at the final result; closing never kills
+in-flight work.
+
+**`command_lifecycle` messages track OUR uuid through the queue** (capability
+`msg_lifecycle_v1`): `state: queued → started → completed` (and `cancelled`),
+one event per state transition, `command_uuid` = the uuid we stamped
+(`raw/s1-baseline.log`, `raw/s2-midturn-note.log`). This is the delivery
+observability channel.
+
+**Delivery (the WO's core assumption — corrected).** A note pushed mid-turn is
+consumed at the next agent-turn boundary — the tool-result slot — exactly once
+(`queued` at push, `started` at the boundary, `raw/s2-midturn-note.log`). A note
+pushed while the query is IDLE (after a result) starts a NEW turn spontaneously
+and produces a SECOND result (`results=2`, `raw/s2b-late-note.log`) — the drive
+extension, on both boundary kinds. TWO notes pushed together coalesce into ONE
+merged turn: both `started` at the same boundary, one assistant call, one result
+(`raw/s3-two-notes.log`). **No note (nor the streaming seed) is ever echoed back
+as a `user` message** (`echoes=0` in every s-log; the only `user` text message
+ever observed is the system-synthesized interrupt notice with a uuid that is not
+ours, `raw/s4-interrupt-receipt.log`). Order.md's "delivery surfaces as the
+transcript's user turn" is therefore DISPROVEN as an SDK observation; the adapter
+detects delivery from `command_lifecycle` (uuid match) and Docket renders the
+operator line from its own fold — the product behavior is unchanged.
+
+**Interrupt receipt (AC1).** With a note queued, `query.interrupt()` resolves
+`{ still_queued: ["<our-uuid>"] }` — exactly the documented shape
+(`raw/s4-interrupt-receipt.log`). BUT the interrupt cancels only the RUNNING
+command (`command_lifecycle: cancelled` + `result` subtype
+`error_during_execution`): **the queued note then runs anyway** (`started` in the
+same tick, `result#2 success`) — the queue survives an interrupt BY DESIGN. On a
+fresh `resume` query the model's history shows the note's effect
+(`RESUME_ASSISTANT`, same log). Docket's Durdur is NOT `interrupt()` — it is
+`abortController.abort()`, which kills the CLI process; a queued note DIES with
+it (never `started`, no result, `raw/s4b-abort-pending.log`) — the measured
+justification for the mirror-is-truth rule (Docket's persisted mirror is the only
+carrier across a stop→resume).
+
+**Cancel / retract (AC5).** `Query.cancelAsyncMessage(uuid)` exists at runtime
+(`typeof function`) though missing from `sdk.d.ts` (`raw/s5-cancel.log`). An
+IMMEDIATE cancel (same tick as the push) returns `false` and the note still runs
+— the message reaches the CLI's own queue before the cancel (`raw/s5-cancel.log`).
+A cancel 2s after the push (mid-turn, pre-drain) returns `true`, emits
+`command_lifecycle: cancelled`, and the note never runs
+(`raw/s5b-cancel-delayed.log`). So retract is genuinely best-effort with a real
+sub-second-to-seconds window; `false` means the note WILL run.
+
+**Cost across results.** A steered drive emits ONE result per command (the note's
+merged command gets its own result — `raw/s2b-late-note.log`, `raw/s5-cancel.log`)
+and assistant-message `usage` is all zeros (every s-log) — the result is the only
+cost source. Whether `total_cost_usd` is cumulative or resets per command is
+ambiguous across runs (s2b fits cumulative; s2 fits per-command); the adapter
+must therefore accumulate deltas between consecutive result figures within a
+drive (add the figure when it is lower than the previous — a reset; add the
+difference when it is higher), which is correct under either model.
+
+**shouldQuery:false (documented, not shipped).** The note is queued, then
+`started`→`completed` immediately with an all-zero-usage result — an explicit
+no-op turn receipt, not a silent append (`raw/s7-shouldquery.log`).
+
+**Resume echo (s6).** A streaming-mode seed on `resume` produces NO user echoes
+and NO replayed user messages (`raw/s6-resume-echo.log`) — echo detection is not
+a viable delivery channel on resumes either; `command_lifecycle` is.
+
+### Verdict for WO-0045
+
+The two gated shapes measured TRUE: `streamInput` queueing (type-selected input,
+uuid-stamped, boundary-consumed exactly once) and the `interrupt()` receipt
+(`still_queued` with our uuid). The corrected facts the adapter is built on:
+delivery via `command_lifecycle` uuid matching (never user echoes); extension is
+real on both boundary kinds and is the delivery mechanism (operator ruling
+2026-08-26 embraced it); Durdur (abort) kills the SDK queue — the Docket mirror
+carries notes across stops; retract is best-effort with a `cancelled` lifecycle
+receipt; cost accumulates across per-command results by delta.
+
+**Measured versions (this section):** `claude` CLI **2.1.231** (drifted from the
+2.1.220 of Q0 — capabilities unchanged), `@anthropic-ai/claude-agent-sdk`
+**0.3.221**, model observed `glm-5.3`. Re-measure on bump (TD-016).
 
 ---
 

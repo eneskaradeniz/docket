@@ -8,6 +8,7 @@ import { createStore } from './index';
 import { OBSERVED_TABLES, SEED_OBSERVED_AT } from './schema';
 import { workOrders } from '../fixtures';
 import { rid, woid } from '../ids';
+import type { RepoId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -1018,5 +1019,76 @@ describe('store — the session CHECK migration (round 4: the live failure this 
     const stopped = store.db.prepare("SELECT status FROM session WHERE provider_session_id = 'legacy-1'").get() as { status: string };
     expect(stopped.status).toBe('stopped');
     expect(store.db.prepare("SELECT name FROM sqlite_master WHERE name = 'session_legacy'").get()).toBeUndefined();
+  });
+});
+
+describe('SQLite store — steer mirror + flow mode (WO-0045)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Test', repos: [{ path: root }] });
+    return { ws, root };
+  };
+  const mkWo = async (store: ReturnType<typeof createStore>, ws: { id: WorkspaceId; repos: RepoId[] }) =>
+    store.createWorkOrder({ workspaceId: ws.id, title: 'Steer', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+
+  it('recordSession pendingNotes: latest-wins overwrite, undefined KEEPS the prior mirror', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await mkWo(store, ws);
+    const base = { workOrderId: wo.id, role: 'implementer' as const };
+    store.recordSession({ ...base, providerSessionId: 's1', status: 'running', pendingNotes: [{ id: 'n1', text: 'bir' }, { id: 'n2', text: 'iki' }] });
+    store.recordSession({ ...base, providerSessionId: 's1', status: 'running', pendingNotes: [{ id: 'n2', text: 'iki' }] });
+    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // delivery shrank it
+    store.recordSession({ ...base, providerSessionId: 's1', status: 'stopped' }); // notes-blind record
+    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // not silently dropped
+    // and the hydrated session row carries it (the Sürdür seed reads this)
+    const hydrated = (await store.getWorkOrder(wo.id))!.sessions.find((s) => s.providerSessionId === 's1');
+    expect(hydrated?.pendingNotes).toEqual([{ id: 'n2', text: 'iki' }]);
+  });
+
+  it('retractSteerNote rewrites the stopped mirror, audits, and refuses an absent note', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await mkWo(store, ws);
+    store.recordSession({ workOrderId: wo.id, role: 'implementer', providerSessionId: 's1', status: 'stopped', pendingNotes: [{ id: 'n1', text: 'bir' }] });
+    expect(await store.retractSteerNote(wo.id, 's1', 'ghost')).toBe(false);
+    expect(await store.retractSteerNote(wo.id, 's1', 'n1')).toBe(true);
+    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([]);
+    const events = await store.getWorkOrderEvents(wo.id);
+    expect(events.some((e) => e.kind === 'steer_retracted')).toBe(true);
+  });
+
+  it('recordAuditEvent writes the steer lifecycle kinds', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store);
+    const wo = await mkWo(store, ws);
+    store.recordAuditEvent(wo.id, 'steer_queued', 'not: bir');
+    const events = await store.getWorkOrderEvents(wo.id);
+    expect(events.some((e) => e.kind === 'steer_queued' && e.detail === 'not: bir')).toBe(true);
+  });
+
+  it('flowModeFor reads order.md — auto default, manual after the chip toggle', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsInRoot(store);
+    const wo = await mkWo(store, ws);
+    expect(store.flowModeFor(wo.id)).toBe('auto'); // no flow_mode key — silence IS auto
+    await store.updateWorkOrder(wo.id, { flowMode: 'manual' });
+    expect(store.flowModeFor(wo.id)).toBe('manual');
+    const md = readFileSync(join(root, 'docs', 'work-orders', 'WO-0001-steer', 'order.md'), 'utf8');
+    expect(md).toContain('flow_mode: manual');
+    const events = await store.getWorkOrderEvents(wo.id);
+    expect(events.some((e) => e.kind === 'flow_mode_changed' && e.detail === 'manual')).toBe(true);
+    expect(events.some((e) => e.kind === 'wo_edited' && e.detail.includes('flow_mode'))).toBe(true);
+  });
+
+  it('creation emits flow_mode only when manual (silence IS auto)', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsInRoot(store);
+    await store.createWorkOrder({ workspaceId: ws.id, title: 'Auto one', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const md1 = readFileSync(join(root, 'docs', 'work-orders', 'WO-0001-auto-one', 'order.md'), 'utf8');
+    expect(md1).not.toContain('flow_mode');
+    await store.createWorkOrder({ workspaceId: ws.id, title: 'Manual one', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', flowMode: 'manual', contextFiles: [] });
+    const md2 = readFileSync(join(root, 'docs', 'work-orders', 'WO-0002-manual-one', 'order.md'), 'utf8');
+    expect(md2).toContain('flow_mode: manual');
   });
 });

@@ -469,3 +469,51 @@ describe('seedLiveState — resume seeding from a persisted session (WO-0026 / F
     expect(s.sessionId).toBe('sess-s');
   });
 });
+
+describe('foldSessionEvent — steer notes (WO-0045)', () => {
+  const queued = (noteId: string, note: string): RunnerEvent => ({ kind: 'steer_queued', noteId, note });
+  it('a queued note grows pendingNotes and adds NO transcript line — the chip count is the only visible change mid-turn (AC2)', () => {
+    const s = foldSessionEvent(initialSessionState, queued('n1', 'şunu atla'));
+    expect(s.pendingNotes).toEqual([{ id: 'n1', text: 'şunu atla' }]);
+    expect(s.entries).toEqual([]);
+  });
+  it('two queued notes accumulate in order', () => {
+    let s = foldSessionEvent(initialSessionState, queued('n1', 'bir'));
+    s = foldSessionEvent(s, queued('n2', 'iki'));
+    expect(s.pendingNotes.map((n) => n.id)).toEqual(['n1', 'n2']);
+  });
+  it('a delivered note appends the OPERATOR line and drops from pending (AC3)', () => {
+    let s = foldSessionEvent(initialSessionState, queued('n1', 'şunu atla'));
+    s = foldSessionEvent(s, { kind: 'steer_delivered', noteId: 'n1', text: 'şunu atla' });
+    expect(s.pendingNotes).toEqual([]);
+    expect(s.entries).toEqual([{ speaker: 'operator', text: 'şunu atla', noteId: 'n1' }]);
+  });
+  it('delivery of an unknown noteId still appends the operator line — the delivery event is authoritative', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'steer_delivered', noteId: 'ghost', text: 'geç not' });
+    expect(s.entries).toEqual([{ speaker: 'operator', text: 'geç not', noteId: 'ghost' }]);
+  });
+  it('a retracted note drops from pending without a transcript line (AC5)', () => {
+    let s = foldSessionEvent(initialSessionState, queued('n1', 'bir'));
+    s = foldSessionEvent(s, queued('n2', 'iki'));
+    s = foldSessionEvent(s, { kind: 'steer_retracted', noteId: 'n1' });
+    expect(s.pendingNotes.map((n) => n.id)).toEqual(['n2']);
+    expect(s.entries).toEqual([]);
+  });
+  it('an interrupted drive KEEPS its pending notes — Durdur persists the queue for Sürdür (AC4)', () => {
+    let s = foldSessionEvent(initialSessionState, queued('n1', 'bir'));
+    s = foldSessionEvent(s, { kind: 'interrupted', at: '2026-08-26T10:00:00Z' });
+    expect(s.status).toBe('stopped');
+    expect(s.pendingNotes.map((n) => n.id)).toEqual(['n1']);
+  });
+  it('seedLiveState re-seeds pending notes from the row (the asks pattern)', () => {
+    const s = seedLiveState({
+      transcript: [],
+      cost: undefined,
+      providerSessionId: 'sess-s',
+      status: 'stopped' as const,
+      pendingNotes: [{ id: 'n1', text: 'bir' }],
+    });
+    expect(s.status).toBe('stopped');
+    expect(s.pendingNotes).toEqual([{ id: 'n1', text: 'bir' }]);
+  });
+});

@@ -5,10 +5,10 @@
 // WO-0044: also the home of the activity-line machine and the döküm chip — ONE grammar for all
 // three live surfaces (SessionPane · StepPane · ReviewPane); the step/review panes had neither.
 import { useState, useRef, type ReactNode } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
 import type { LiveSessionState } from '../../../core/runner';
-import type { TranscriptLine } from '../../../core/types';
-import { cn } from '../../kit';
+import type { SteerNote, TranscriptLine } from '../../../core/types';
+import { Input, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
 
 // --- lamp semantics: one color per state, amber only for "seni bekliyor" ---
@@ -125,5 +125,79 @@ export function PaneShell({ children, tone }: { children: ReactNode; tone: LampT
       <div className={cn('lamp', lampClass(tone))} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col p-3">{children}</div>
     </section>
+  );
+}
+
+// --- WO-0045: the steer composer + pending list — ONE grammar for the three live surfaces, right
+//     under the header row. The composer is a TRANSIENT surface (ADR-0001): present only while the
+//     drive is live (running or stopped_asking — a note queued now applies after the ask resolves);
+//     the pending list stays while notes remain, STOPPED included (AC4: Durdur persists them
+//     visibly). ⏎ sends (the objection-card idiom); sending NEVER interrupts (steer ⊥ stop). ---
+export function PaneSteerBar({
+  live,
+  pendingNotes,
+  onSend,
+  onRetract,
+}: {
+  live: boolean;
+  pendingNotes: SteerNote[];
+  /** Resolves false when the transport refused (boot window, post-final-result drain, a
+   *  capability-less CLI) — the bar KEEPS the draft and states why; input never vanishes silently. */
+  onSend: (note: string) => Promise<boolean> | boolean;
+  onRetract: (noteId: string) => void;
+}) {
+  const { UI } = useLabels();
+  const [draft, setDraft] = useState('');
+  const [refused, setRefused] = useState(false);
+  if (!live && pendingNotes.length === 0) return null;
+  const send = (): void => {
+    const t = draft.trim();
+    if (!t) return;
+    setRefused(false);
+    void Promise.resolve(onSend(t)).then((ok) => {
+      if (ok) setDraft('');
+      else setRefused(true); // the note did NOT queue — keep the operator's words in hand
+    });
+  };
+  return (
+    <div className="mt-2 flex flex-col gap-1.5" data-steer-bar="">
+      {live ? (
+        <Input
+          aria-label={UI.steerPlaceholder}
+          data-steer-input=""
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); if (refused) setRefused(false); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder={UI.steerPlaceholder}
+          className="h-7 font-sans text-[12.5px]"
+        />
+      ) : null}
+      {refused ? <p className="text-xs text-error">{UI.steerRefused}</p> : null}
+      {pendingNotes.length > 0 ? (
+        <ul data-steer-pending={pendingNotes.length} aria-label={UI.steerPendingTitle} className="flex flex-col gap-1">
+          {pendingNotes.map((n) => (
+            // Best-effort by SDK contract (probe s5/s5b): a retract that arrives too late leaves
+            // the row — delivery removes it instead. The row is the honest queue, not a promise.
+            <li key={n.id} className="flex items-center gap-2 rounded border border-hairline px-2 py-1">
+              <span className="min-w-0 flex-1 truncate text-xs text-ink">{n.text}</span>
+              <button
+                type="button"
+                data-steer-retract={n.id}
+                onClick={() => onRetract(n.id)}
+                aria-label={UI.steerRetract}
+                className="ibtn h-5 w-5 shrink-0"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }

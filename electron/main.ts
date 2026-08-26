@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
+import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { unifiedDiffLines } from '../src/core/diff';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
@@ -288,6 +289,24 @@ ipcMain.handle('docket:runner:decide', async (_event, requestId: string, decisio
 
 ipcMain.handle('docket:runner:interrupt', async () => {
   await pipeline.interrupt();
+});
+
+// WO-0045 operator tempo: queue a steering note into the RUNNING drive (boundary-only, never an
+// interrupt). Resolves the minted noteId (the UI's retract handle), or null when no drive is live.
+ipcMain.handle('docket:runner:steer', async (_event, note: string) => {
+  return (await pipeline.steer(note)) ?? null;
+});
+
+// WO-0045: pull a queued note back before delivery. Best-effort (probe raw/s5-cancel.log): false =
+// the note already left the SDK's cancel window and WILL run.
+ipcMain.handle('docket:runner:steer-retract', async (_event, noteId: string) => {
+  return pipeline.retractSteer(noteId);
+});
+
+// WO-0045: retract from a STOPPED drive's mirror — the row is the only queue then (the SDK queue died
+// with the process, probe raw/s4b-abort-pending.log); the store rewrites it and audits.
+ipcMain.handle('docket:source:retract-steer-note', async (_event, workOrderId: string, providerSessionId: string, noteId: string) => {
+  return store.retractSteerNote(woid(workOrderId), providerSessionId, noteId);
 });
 
 // WO-0031c: Zorla kes — the 5s-stuck stop's escape hatch. A generator's injected return runs its

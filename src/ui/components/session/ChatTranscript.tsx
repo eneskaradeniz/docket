@@ -72,6 +72,7 @@ const TOOL_FAMILY: Record<string, string> = {
  *  and a tool_result merges into the call it answers (the pair is one instrument block). */
 type ChatGroup =
   | { kind: 'turn'; texts: string[] }
+  | { kind: 'operator'; text: string } // a DELIVERED steer note (WO-0045) — first-class session content, never a SysRow
   | { kind: 'tool'; tool: string; detail?: string; callId?: string; result?: { summary: string; isError: boolean } }
   | { kind: 'result'; summary: string; isError: boolean; orphan?: boolean }
   | { kind: 'sys'; text: string };
@@ -80,6 +81,7 @@ type ChatGroup =
  *  proximity): turn 10px · tool block 8px · orphan result 2px · sys 8px. First group: none. */
 const GROUP_TOP: Record<ChatGroup['kind'], string> = {
   turn: 'mt-2.5',
+  operator: 'mt-2.5', // the operator line reads as a TURN of its own — the same rhythm as the roles
   tool: 'mt-2',
   result: 'mt-0.5',
   sys: 'mt-2',
@@ -324,6 +326,12 @@ function ChatLog({
           else out.push({ kind: 'turn', texts: [line.text] });
           break;
         }
+        case 'operator':
+          // WO-0045: the note applied at a boundary — the turn grammar with the OPERATOR gutter
+          // word, so the döküm reads iş → OPERATÖR notu → iş. Consecutive notes stay separate
+          // rows (each was its own steering decision).
+          out.push({ kind: 'operator', text: line.text });
+          break;
         case 'tool_use':
           out.push({ kind: 'tool', tool: line.tool, detail: line.detail, callId: line.callId });
           break;
@@ -426,6 +434,22 @@ function ChatLog({
             switch (g.kind) {
               case 'turn':
                 return <ChatTurn key={i} className={top} texts={g.texts} role={role} pulse={pulse} />;
+              case 'operator':
+                return (
+                  <section
+                    key={i}
+                    data-chat-entry="operator"
+                    className={cn(
+                      'relative pl-6 before:absolute before:bottom-0.5 before:left-1.5 before:top-0.5 before:w-[3px] before:rounded-full before:bg-signal before:content-[""]',
+                      top,
+                    )}
+                  >
+                    <p className="mb-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-signal">
+                      {UI.operatorSpeaker}
+                    </p>
+                    <p className="text-[13px] leading-relaxed text-ink">{g.text}</p>
+                  </section>
+                );
               case 'tool':
                 return <ToolPair key={i} className={top} tool={g.tool} detail={g.detail} result={g.result} pulse={pulse} />;
               case 'result':

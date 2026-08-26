@@ -31,6 +31,8 @@ const source: WorkOrderSource = {
   updateWorkOrder: (id: WorkOrderId, patch: UpdateWorkOrderInput) => ipcRenderer.invoke('docket:source:update-work-order', id, patch),
   recordPermissionDecision: (id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) =>
     ipcRenderer.invoke('docket:source:record-permission-decision', id, input),
+  retractSteerNote: (id: WorkOrderId, providerSessionId: string, noteId: string) =>
+    ipcRenderer.invoke('docket:source:retract-steer-note', id, providerSessionId, noteId),
   approvePlan: (id: WorkOrderId, planText: string, opts?: { editedCount?: number }) =>
     ipcRenderer.invoke('docket:source:approve-plan', id, planText, opts),
   savePlanDraft: (id: WorkOrderId, planText: string) =>
@@ -74,6 +76,10 @@ const runner = {
   pendingAsks: (): Promise<PermissionAsk[]> => ipcRenderer.invoke('docket:runner:pending-asks'),
   interrupt: (): Promise<void> => ipcRenderer.invoke('docket:runner:interrupt'),
   abort: (): Promise<void> => ipcRenderer.invoke('docket:runner:abort'),
+  // WO-0045 operator tempo: queue a note into the running drive; resolves the noteId handle (null
+  // when no drive is live / the transport refused), and pulls a queued note back (best-effort).
+  steer: (note: string): Promise<string | null> => ipcRenderer.invoke('docket:runner:steer', note),
+  retractSteer: (noteId: string): Promise<boolean> => ipcRenderer.invoke('docket:runner:steer-retract', noteId),
 };
 
 contextBridge.exposeInMainWorld('docket', {

@@ -213,6 +213,8 @@ export function transcriptLineText(line: TranscriptLine): string {
       return `→ ${line.summary}`;
     case 'system':
       return line.text;
+    case 'operator':
+      return `${UI.operatorSpeaker}: ${line.text}`;
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
@@ -301,6 +303,10 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   wo_edited: 'İş emri düzenlendi',
   rule_changed: 'Kural değişti',
   permission_decision: 'İzin kararı',
+  steer_queued: 'Yönlendirme kuyruğa girdi',
+  steer_delivered: 'Yönlendirme iletildi',
+  steer_retracted: 'Yönlendirme geri çekildi',
+  flow_mode_changed: 'Akış modu değişti',
 };
 
 /** The STRUCTURAL event detail → display (WO-0031c): the store writes machine detail (`edited:3`,
@@ -318,6 +324,13 @@ export function eventDetailText(kind: WoEventKind, detail: string): string {
       const m = /^edited:(\d+)$/.exec(detail);
       return m ? `düzenlenmiş onay · ${m[1]} değişiklik` : detail;
     }
+    case 'flow_mode_changed':
+      // The machine carries the internal value ('manual'/'auto'); the timeline speaks the chip's word.
+      return detail === 'manual' ? 'manuel' : 'otomatik';
+    case 'steer_queued':
+    case 'steer_delivered':
+      // The detail is 'not: <the operator's own words, 48 chars>' — the prefix is machine grammar.
+      return detail.startsWith('not: ') ? detail.slice(5) : detail;
     case 'permission_decision': {
       const sep = detail.indexOf(' · ');
       const head = sep >= 0 ? detail.slice(0, sep) : detail;
@@ -664,6 +677,23 @@ export const UI = {
   reviewModeLabel: 'İnceleme',
   reviewModeGatesShort: 'Denetim: kapıda',
   reviewModeEveryShort: 'Denetim: her adımda',
+  // WO-0045 operatör tempo: Akış çipi (operatörün kendi terimi) + steer besteci/döküm sözcükleri.
+  // "Akış: manuel + İzin: hep sor" eşleşmesi ürün cevabıdır — izin kuralı sözlüğünden kopmaz.
+  flowModeLabel: 'Akış',
+  flowModeAutoShort: 'Akış: otomatik',
+  flowModeManualShort: 'Akış: manuel',
+  flowModeAutoHint: 'Sıralama kendiliğinden ilerler — karar ve adımlar ardarda koşar.',
+  flowModeManualHint: 'Hiçbir oturum kendiliğinden başlamaz — sıradaki adım ve denetim tıkla başlar.',
+  flowPendingBadge: (n: number) => `+${n}`,
+  steerPlaceholder: 'Sürüşe not bırak — bir sonraki sınırda uygulanır',
+  steerSend: 'Gönder',
+  steerPendingTitle: 'Sırada',
+  steerRefused: 'Not kuyruğa girmedi — sürüş henüz hazır değil; birazdan dene.',
+  steerRetract: 'Geri çek',
+  operatorSpeaker: 'Operatör',
+  manuelNextStepCard: (idx: number) => `sıradaki: Adım ${idx}`,
+  manuelReviewCard: (idx: number) => `sıradaki: Denetim ${idx}`,
+  manuelStartCard: 'Başlat',
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',

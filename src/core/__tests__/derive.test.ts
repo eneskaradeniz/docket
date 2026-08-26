@@ -9,6 +9,7 @@ import type {
   PrimaryAction,
   SessionRef,
   StageId,
+  StepView,
   StageStatus,
   TrackId,
   TrackMergeAction,
@@ -27,6 +28,7 @@ import {
   deriveTrackMerge,
   deriveTrackStage,
   deriveWorkOrderCost,
+  nextManuelAction,
   overlayLiveDrive,
   sessionForTrack,
   toCardView,
@@ -776,5 +778,24 @@ describe('deriveBucket + card action — board buckets (WO-0013)', () => {
     expect(c1006.bucket).toBe('working');
     expect(c1006.action).toBeUndefined();
     expect(c1006.role).toBe('implementer');
+  });
+});
+
+describe('nextManuelAction — what the manuel card offers (WO-0045)', () => {
+  const step = (idx: number, status: 'pending' | 'active' | 'done' | 'blocked', verdict?: 'proceed' | 'revise'): StepView =>
+    ({ idx, role: 'implementer', aim: `adım ${idx}`, scope: { kind: 'all' }, status, ...(verdict ? { verdict } : {}) });
+  it('a done-without-verdict step offers its REVIEW first — the denetim leg precedes', () => {
+    expect(nextManuelAction([step(1, 'done'), step(2, 'pending')])).toEqual({ kind: 'review', idx: 1 });
+  });
+  it('all reviewed → the first PENDING step', () => {
+    expect(nextManuelAction([step(1, 'done', 'proceed'), step(2, 'pending'), step(3, 'pending')])).toEqual({ kind: 'step', idx: 2 });
+  });
+  it('an ACTIVE step owns the flow — no card, even with a later pending step (Sürdür lives in DriveControls)', () => {
+    expect(nextManuelAction([step(1, 'done', 'proceed'), step(2, 'active')])).toBeUndefined();
+    expect(nextManuelAction([step(1, 'active'), step(2, 'pending')])).toBeUndefined();
+  });
+  it('nothing left to offer → undefined', () => {
+    expect(nextManuelAction([step(1, 'done', 'revise')])).toBeUndefined();
+    expect(nextManuelAction([])).toBeUndefined();
   });
 });

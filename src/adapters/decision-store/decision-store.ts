@@ -8,7 +8,7 @@
 // Brand-clean: no woid/tid here — those stay in the store, which calls these helpers.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PermissionRule, ReviewMode } from '../../core/source';
+import type { FlowMode, PermissionRule, ReviewMode } from '../../core/source';
 
 const WORK_ORDERS_DIR = ['docs', 'work-orders'];
 
@@ -76,6 +76,7 @@ export interface OrderMdInput {
   description: string; // → Objective (the architect session's first prompt)
   trackRepos: string[]; // repo slug strings (code repos only — never the decision store)
   reviewMode: ReviewMode; // → front-matter review_mode
+  flowMode?: FlowMode; // → front-matter flow_mode (WO-0045); emitted only when 'manual' — silence IS auto
   contextFiles: string[]; // local file paths → Context
   permissionRule?: PermissionRule; // → front-matter permission_rule (WO-0031c); the WO carries its own rule
 }
@@ -100,7 +101,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}tracks:
+${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}tracks:
 ${tracks}
 ---
 

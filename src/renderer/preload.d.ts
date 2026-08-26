@@ -16,6 +16,10 @@ export type RunnerBridge = {
   interrupt: () => Promise<void>;
   /** Zorla kes (WO-0031c): the 5s-stuck stop's escape hatch — aborts the active drive's generator. */
   abort: () => Promise<void>;
+  /** WO-0045: queue a steering note into the RUNNING drive — the noteId handle, or null when refused. */
+  steer: (note: string) => Promise<string | null>;
+  /** WO-0045: pull a queued note back (best-effort — false means it WILL run). */
+  retractSteer: (noteId: string) => Promise<boolean>;
 };
 
 declare global {
