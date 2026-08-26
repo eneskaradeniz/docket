@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneError, PaneShell, PaneLogChip, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -37,7 +37,7 @@ export function ReviewPane({
   /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
   onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
-  const { formatUsd, PROVIDER_ERROR_LABELS, UI } = useLabels();
+  const { PROVIDER_ERROR_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: review drives live in the app-level store like every other drive — the pane is
   // just a window onto them; the store's onEnd refreshes the detail when the review completes.
@@ -67,14 +67,9 @@ export function ReviewPane({
   const running = store.get(driveKey)?.running ?? false;
   const booting = store.get(driveKey)?.booting ?? false;
   const liveStart = store.get(driveKey)?.startedAt;
-  const costline = [
-    state.cost.usd > 0 ? formatUsd(state.cost.usd) : undefined,
-    running && liveStart && now ? UI.formatDuration(Math.max(0, now - liveStart)) : undefined,
-  ]
-    .filter((x): x is string => x !== undefined)
-    .join(' · ');
 
-  const { show: showActivity, line: activityLine } = usePaneActivity(state, running);
+  // WO-0046: `now` also drives the staleness line.
+  const { show: showActivity, line: activityLine, stale } = usePaneActivity(state, running, now);
   const { logOpen, toggleLog, headRef } = usePaneLog();
 
   return (
@@ -86,13 +81,13 @@ export function ReviewPane({
         {showActivity ? (
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] uppercase tracking-[0.08em] text-info">
             <span className="text-inkdim/60">— </span>
-            <span className={running ? 'live-dots' : undefined}>{activityLine}</span>
+            <span className={running && !stale ? 'live-dots' : undefined}>{activityLine}</span>
           </span>
         ) : (
           <span className="min-w-0 flex-1" aria-hidden="true" />
         )}
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
-          {costline ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costline}</span> : null}
+          <PaneCostline state={state} running={running} liveStart={liveStart} now={now} />
           {drive ? <DriveControls drive={drive} /> : null}
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>

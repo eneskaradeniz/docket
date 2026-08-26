@@ -2,7 +2,7 @@
 id: WO-0046
 title: Live honesty — context fill readout, silence line, resume-leg cost check
 workspace: docket
-status: draft
+status: open
 mode: direct
 review: light
 review_mode: gates
@@ -107,3 +107,58 @@ Out of scope:
   constant — mockup first if the operator wants to see options (the `docs/ui-mockups/` precedent).
 - ADR-0012's "informative lines stay" covers the staleness line: it is a reason-carrying line, not
   an explainer paragraph.
+
+## Notes — work log (2026-08-26)
+
+- **Probe (findings §C, `raw/c1.log` + `raw/c2.log`):** c1 — `getContextUsage()` answers in
+  streaming-input mode at every assistant/user/result message: 9 calls, 0 failures, 2.0–2.8 s
+  each, ~38 KB wire; the probe awaited inline and serialized ~2.3 s per read into the stream, so
+  the app's feed is fire-and-forget, never an inline await. c2 — resume-leg cost RESETS (leg 1
+  $0.094824 → the resumed leg's first result $0.056219, same session id, cache carried); s2b
+  reconciled as cumulative-within-process (0.1766→0.2059, the diff is the note command's own
+  spend). The mid-park control call never triggered (the ambient CLI auto-allowed the echo tools
+  — no PARK_START); harmless by construction: no feed trigger fires while an ask parks, and the
+  staleness line is gated to the fold's 'running'.
+- **Operator rulings (2026-08-26, plan aşaması):** gauge vocabulary = TEXT (`bağlam %62 ·
+  124k/200k`, the costline's mono/sönük voice — a bar was considered and declined); staleness
+  threshold = **3 dk** (single constant `STALE_AFTER_MIN`, core).
+- **Liveness amendment (probe-driven):** the staleness anchor is LIVENESS, not entries — fold
+  state `lastLifeAt` is set by stamped entries AND by each context reading. c1 showed long
+  thinking streams `thinking_tokens` bursts for minutes with NO transcript entries; an
+  entries-only anchor would have lied in exactly the window the line exists for. The adapter
+  fires a throttled (≥30 s) context read on thinking bursts — one event kind carries both the
+  gauge refresh and the liveness proof.
+- **Resume-cost outcome: verified NOT a bug.** The plan's cumulative branch (priorCost seeding +
+  a store read port) died at c2 — no seeding, no port, no migration. The accumulation block was
+  extracted to `applyResultCost` (pure, adapter-side — the vendor semantics stay out of core)
+  with the measured comment; pinned by `src/adapters/runner/index.test.ts` (TD-052 records the
+  verification).
+- **Live token parity rides `context_usage.cost`:** a live drive folds exactly ONE terminal
+  turn_complete (WO-0045/D3), so mid-drive spend reaches the live costline only as the ride-along
+  cost of the context event. The costline now speaks `formatCost` (`$0,41 · 68k→2.1k`) on every
+  surface, live and done alike.
+- **Staleness rulings:** the line SUPERSEDES an active tool verb (a verb is a motion claim the
+  silence can no longer verify) with the dots OFF; gated on the fold's 'running' — an ask held
+  shows the asking verb, never an accusation at the operator; planClosing keeps precedence; the
+  empty-run window anchors on `started` (F7's one-line discipline intact).
+- **E2E:** seed entry 11 ('Doluluk turu') + two specs — the readout absent-before/visible/gone +
+  the token form, and the staleness appear/clear/frozen-words cycle (an old `at` stamp moves the
+  anchor back, so the 3-minute threshold is testable without waiting). 582 unit + all UI specs
+  green; typecheck (both), `check:boundaries`, `build` green.
+
+## Notes — operator checkpoint (2026-08-26, WO-0048 dogfood, deleted after)
+
+- **Verified live:** the readout (`bağlam %5 · 54k/1000k` during the Bash leg — appearing,
+  updating, motionless) and the cost accounting: card $1,44 = plan $0,70 + step $0,11 + review
+  $0,63; the step row's $0,74 is step+review legs (the expected derivation). No double-count.
+- **Deferred (WO-0045 precedent):** the staleness line and the post-result live cost form fell in
+  a ~40 s window before the sleep-200 result and were not observed live; both are pinned
+  deterministically by the E2E specs. First real long silence confirms.
+- **Polish from the round:** `formatTokens` gained an M tier — a 1 000 000 max-context rendered
+  "1000k"; now `54k/1M` (tr + en, `formatCost` shares the helper).
+- **TD-053 (found live, fixed here by operator ruling):** approving a plan on a detail opened
+  BEFORE the plan existed did not start the first step — `runIdx`'s mount-only initializer had
+  frozen at `undefined` (no steps yet), so the approval reload mounted no instrument until a
+  re-entry remounted the detail. Fix: a sync effect fills `runIdx` when unset and a step exists
+  (flowMode deliberately not a dependency — WO-0045 pin-2; in manual the manuel card's click is
+  the consent). Red-green pinned by the TD-053 E2E spec (seed 'TD-053 turu').

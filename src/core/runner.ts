@@ -18,9 +18,12 @@ import type { PermissionRule } from './source';
 //     The adapter translates the provider's message stream into these events. ---
 export type RunnerEvent =
   | { kind: 'started'; sessionId: string; at?: string }
-  | { kind: 'assistant_text'; text: string }
-  | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown> }
-  | { kind: 'tool_result'; callId: string; summary: string; isError: boolean }
+  // WO-0046: the content events carry the same ISO receive-stamp as the lifecycle ones — the fold
+  // turns each into the staleness anchor (`lastLifeAt`); an unstamped event (a scripted fake)
+  // honestly leaves the prior anchor alone.
+  | { kind: 'assistant_text'; text: string; at?: string }
+  | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown>; at?: string }
+  | { kind: 'tool_result'; callId: string; summary: string; isError: boolean; at?: string }
   | { kind: 'permission_request'; requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string }
   // The runner emits this when decide() answers a requestId (WO-0027): with PARALLEL asks, nothing else can
   // identify which held ask was answered (tool_result carries callId, not requestId) — the old fold guessed
@@ -45,6 +48,15 @@ export type RunnerEvent =
   | { kind: 'steer_queued'; noteId: string; note: string; at?: string }
   | { kind: 'steer_delivered'; noteId: string; text: string; at?: string }
   | { kind: 'steer_retracted'; noteId: string; at?: string }
+  // WO-0046 live honesty — the context-window reading, sourced from the provider's live usage
+  // report (probe c1: works in streaming mode, ~2-3s latency, no experimental flag). NO transcript
+  // line: the fold stores it as state (the steer_queued precedent) and the pane renders percentage
+  // + used/max tokens beside the costline. `cost` rides along because a live drive folds exactly
+  // ONE terminal turn_complete (WO-0045/D3) — mid-drive token spend reaches the live costline
+  // here, nowhere else. `at` also refreshes the staleness anchor: the adapter fires this at tool
+  // events AND throttled on thinking-token bursts (probe c1 — a long-thinking model produces no
+  // transcript entries for minutes while healthy; a fresh reading proves liveness).
+  | { kind: 'context_usage'; usedTokens: number; maxTokens: number; percentage: number; cost?: CostSummary; at?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -377,6 +389,15 @@ export interface LiveSessionState {
   pendingNotes: SteerNote[];
   pendingPlan?: string;
   cost: CostSummary;
+  /** The latest context-window reading (WO-0046): percentage + used/max tokens, rendered beside
+   *  the costline. Absent until the runner first reports one — never zero, never seeded (a
+   *  restarted renderer re-reads it on the drive's next tool event or thinking burst). */
+  context?: { usedTokens: number; maxTokens: number; percentage: number };
+  /** ISO moment the drive last PROVED itself alive (WO-0046): an entry was appended (the event's
+   *  `at` stamp) or a context reading arrived. The staleness line's anchor — deliberately NOT an
+   *  entry-only concept: probe c1 showed a long-thinking model streams no transcript entries for
+   *  minutes while the drive is healthy, so liveness is what honesty requires. */
+  lastLifeAt?: string;
   lastError?: string;
   /** The vendor-neutral classification of `lastError`, when the adapter could classify it (WO-0025). */
   lastErrorCode?: ProviderErrorCode;
@@ -428,17 +449,31 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         pendingPlan: undefined,
         pendingAsks: [],
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'assistant_text':
-      return { ...state, status: state.status === 'idle' ? 'running' : state.status, entries: [...state.entries, { speaker: 'assistant', text: event.text }] };
+      return {
+        ...state,
+        status: state.status === 'idle' ? 'running' : state.status,
+        entries: [...state.entries, { speaker: 'assistant', text: event.text }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
     case 'tool_use':
       // callId rides the entry (2026-08-23 §5): the transcript pairs a result to ITS call —
       // adjacency pairing broke on parallel calls (orphan headerless result walls).
-      return { ...state, entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId }] };
+      return {
+        ...state,
+        entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
     case 'tool_result':
       // NOTE: a tool_result does NOT clear asks — with parallel asks we cannot know WHICH ask it answers
       // (the result carries callId, the ask carries requestId). Only `ask_resolved` removes an ask.
-      return { ...state, entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId }] };
+      return {
+        ...state,
+        entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
     case 'permission_request':
       if (state.pendingAsks.some((a) => a.requestId === event.requestId)) return state; // dedupe on resume replays
       return {
@@ -465,6 +500,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         cost: event.cost,
         pendingAsks: [],
         entries: [...state.entries, { speaker: 'note', kind: 'session_done', ...(event.at ? { detail: event.at } : {}) }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'interrupted':
       // An intentional stop: terminal and calm. The asks die with the abort (the runner's finally
@@ -480,6 +516,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         pendingAsks: [],
         entries: [...state.entries, { speaker: 'note', kind: 'interrupted', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.cost ? { cost: event.cost } : {}),
+        ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'steer_queued':
       // AC2: a queued note adds NO transcript line — the pending count is the only visible change
@@ -493,10 +530,39 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...state,
         pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId),
         entries: [...state.entries, { speaker: 'operator', text: event.text, noteId: event.noteId }],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'steer_retracted':
       return { ...state, pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId) };
+    case 'context_usage':
+      // No transcript line (the steer_queued precedent) — the reading is pane state. `cost` is the
+      // drive-so-far spend (D3 folds one terminal turn_complete; this is the only mid-drive token
+      // source) and `at` refreshes the staleness anchor: a fresh reading is a liveness proof.
+      return {
+        ...state,
+        context: { usedTokens: event.usedTokens, maxTokens: event.maxTokens, percentage: event.percentage },
+        ...(event.cost ? { cost: event.cost } : {}),
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
     case 'error':
       return { ...state, status: 'error', lastError: event.message, pendingAsks: [], ...(event.code ? { lastErrorCode: event.code } : {}) };
   }
+}
+
+/** The staleness threshold (WO-0046, operator ruling 2026-08-26): a RUNNING drive whose last
+ *  liveness proof is older than this many minutes shows the "N dk'dır yeni çıktı yok" line.
+ *  One constant, no ladder — the solo operator decides what to do; the line informs, never acts
+ *  (no watchdog, no snooze: out of scope by the order). */
+export const STALE_AFTER_MIN = 3;
+
+/** Whole minutes (floor) since the drive last proved itself alive — or undefined when there is
+ *  nothing honest to claim: a fold that is not 'running' (a stopped/errored/asking drive keeps
+ *  its frozen words; the ask surface itself says why it waits) or no liveness proof ever arrived
+ *  (nothing to count from — the boot window until `started`). Pure: the caller owns the clock
+ *  (the pane's one-second ticker), so tests and the renderer share one rule. */
+export function staleMinutes(state: Pick<LiveSessionState, 'status' | 'lastLifeAt'>, nowMs: number): number | undefined {
+  if (state.status !== 'running' || !state.lastLifeAt) return undefined;
+  const then = Date.parse(state.lastLifeAt);
+  if (Number.isNaN(then)) return undefined;
+  return Math.max(0, Math.floor((nowMs - then) / 60000));
 }

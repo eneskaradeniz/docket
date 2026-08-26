@@ -8,6 +8,8 @@ import {
   isUnder,
   seedLiveState,
   shouldSynthesiseTurnComplete,
+  staleMinutes,
+  STALE_AFTER_MIN,
   summarizeToolInput,
   writeScopeFor,
 } from '../runner';
@@ -515,5 +517,67 @@ describe('foldSessionEvent — steer notes (WO-0045)', () => {
     });
     expect(s.status).toBe('stopped');
     expect(s.pendingNotes).toEqual([{ id: 'n1', text: 'bir' }]);
+  });
+});
+
+describe('foldSessionEvent — context readout (WO-0046)', () => {
+  it('a context report sets the reading and adds NO transcript line — the pane state is the only change', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'context_usage', usedTokens: 50438, maxTokens: 1000000, percentage: 5 });
+    expect(s.context).toEqual({ usedTokens: 50438, maxTokens: 1000000, percentage: 5 });
+    expect(s.entries).toEqual([]);
+  });
+  it('a report carrying cost updates state.cost — the ONLY mid-drive token source (D3 folds one terminal turn_complete)', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'context_usage', usedTokens: 1, maxTokens: 2, percentage: 1, cost: { tokensIn: 68, tokensOut: 2, usd: 0.41 } });
+    expect(s.cost).toEqual({ tokensIn: 68, tokensOut: 2, usd: 0.41 });
+  });
+  it('a report without cost leaves state.cost untouched (absent, not zero)', () => {
+    const seeded = { ...initialSessionState, cost: { tokensIn: 10, tokensOut: 1, usd: 0.2 } };
+    const s = foldSessionEvent(seeded, { kind: 'context_usage', usedTokens: 1, maxTokens: 2, percentage: 1 });
+    expect(s.cost).toEqual({ tokensIn: 10, tokensOut: 1, usd: 0.2 });
+  });
+  it('a report stamped `at` refreshes the staleness anchor — a fresh reading is a liveness proof (probe c1: thinking bursts)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-08-26T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 1, maxTokens: 2, percentage: 1, at: '2026-08-26T10:05:00Z' });
+    expect(s.lastLifeAt).toBe('2026-08-26T10:05:00Z');
+  });
+});
+
+describe('foldSessionEvent — liveness anchor (WO-0046)', () => {
+  it('a stamped entry moves lastLifeAt; an unstamped one leaves the prior anchor alone (a scripted fake may omit stamps)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-08-26T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'tool_use', callId: 'c1', tool: 'Read', input: {}, at: '2026-08-26T10:01:00Z' });
+    expect(s.lastLifeAt).toBe('2026-08-26T10:01:00Z');
+    s = foldSessionEvent(s, { kind: 'assistant_text', text: 'stampesiz' });
+    expect(s.lastLifeAt).toBe('2026-08-26T10:01:00Z');
+  });
+  it('terminal events stamp the anchor too (turn_complete / interrupted), but the status gate makes them moot', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-08-26T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end', cost: { tokensIn: 0, tokensOut: 0, usd: 0 }, at: '2026-08-26T10:02:00Z' });
+    expect(s.status).toBe('done');
+    expect(s.lastLifeAt).toBe('2026-08-26T10:02:00Z');
+  });
+});
+
+describe('staleMinutes (WO-0046)', () => {
+  const anchor = '2026-08-26T10:00:00Z';
+  const at = (min: number) => Date.parse(anchor) + min * 60000;
+  it('is undefined unless the fold is running — a stopped drive keeps its frozen words, an asking drive says why it waits', () => {
+    const running = { status: 'running' as const, lastLifeAt: anchor };
+    expect(staleMinutes({ ...running, status: 'stopped' as const }, at(10))).toBeUndefined();
+    expect(staleMinutes({ ...running, status: 'stopped_asking' as const }, at(10))).toBeUndefined();
+    expect(staleMinutes({ ...running, status: 'error' as const }, at(10))).toBeUndefined();
+  });
+  it('is undefined with no liveness proof ever — the boot window has nothing to count from', () => {
+    expect(staleMinutes({ status: 'running', lastLifeAt: undefined }, at(10))).toBeUndefined();
+  });
+  it('counts whole minutes from the last proof and crosses the threshold', () => {
+    const s = { status: 'running' as const, lastLifeAt: anchor };
+    expect(staleMinutes(s, at(0))).toBe(0);
+    expect(staleMinutes(s, at(2.9))).toBe(2);
+    expect(staleMinutes(s, at(STALE_AFTER_MIN))).toBe(STALE_AFTER_MIN);
+    expect(staleMinutes(s, at(10))).toBe(10);
+  });
+  it('an unparseable stamp is undefined, never NaN', () => {
+    expect(staleMinutes({ status: 'running', lastLifeAt: 'not-a-date' }, at(10))).toBeUndefined();
   });
 });

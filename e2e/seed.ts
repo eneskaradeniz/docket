@@ -258,6 +258,20 @@ await store.approvePlan(
   '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"birinci adım","scope":"all"},{"role":"verifier","aim":"ikinci adım","scope":"all"}]\n```\n',
 );
 
+// 11) WO-0046 live honesty: the same clean two-step stage for the context readout and the staleness
+//     line specs — flow stays AUTO so opening the detail self-starts step 1 (the fake drive the
+//     scripted context_usage / old-stamped entries ride).
+const wo10 = await mk('Doluluk turu', 'E2E: two-step approved plan, nothing run — the live-honesty surface.');
+await store.approvePlan(
+  wo10.id,
+  '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"birinci adım","scope":"all"},{"role":"verifier","aim":"ikinci adım","scope":"all"}]\n```\n',
+);
+
+// 12) TD-053 (WO-0046 checkpoint): a WRITTEN-stage WO with no plan — the detail mounts with NO
+//     steps, so runIdx's initializer finds nothing. The spec scripts a plan + approval WITHOUT
+//     leaving the detail: the first step must self-start (the mount-only fill was the bug).
+const wo11 = await mk('TD-053 turu', 'E2E: no plan yet — approve without re-entry.');
+
 // WO-0035: pin the suite's locale to tr. The default is system detection and Playwright's Electron
 // runs under en-US — without this row the app would boot EN and every Turkish locator would break.
 // The row is load-bearing for as long as detection is the default (order.md Notes).

@@ -156,6 +156,36 @@ function costOf(m: AnyMsg): CostSummary {
   };
 }
 
+/** Sum two cost figures (the drive accumulator). */
+export function addCost(a: CostSummary, b: CostSummary): CostSummary {
+  return { usd: a.usd + b.usd, tokensIn: a.tokensIn + b.tokensIn, tokensOut: a.tokensOut + b.tokensOut };
+}
+
+/** WO-0046 (probe findings §C, raw/c2.log + raw/s2b-late-note.log): fold one result's cost
+ *  figures against the drive's running baseline. Measured semantics: figures are CUMULATIVE
+ *  within one SDK query process (a later result reports the process-so-far total) and RESET at
+ *  the resume boundary — so the per-drive baseline starts at zero every leg, the difference is
+ *  the leg's delta, and a resumed leg's first figure is taken whole (never the session total —
+ *  the store's `prior + input` add-rule then lands the true session total, no double-count).
+ *  A figure BELOW the baseline is read as a per-command figure (§S/s2's defensive branch) and
+ *  taken as the delta itself; the baseline ratchets to the max either way. Pinned by
+ *  src/adapters/runner/index.test.ts. */
+export function applyResultCost(baseline: CostSummary, reported: CostSummary): { baseline: CostSummary; delta: CostSummary } {
+  const take = (figure: number, base: number) => (figure >= base ? figure - base : figure);
+  return {
+    baseline: {
+      usd: Math.max(baseline.usd, reported.usd),
+      tokensIn: Math.max(baseline.tokensIn, reported.tokensIn),
+      tokensOut: Math.max(baseline.tokensOut, reported.tokensOut),
+    },
+    delta: {
+      usd: take(reported.usd, baseline.usd),
+      tokensIn: take(reported.tokensIn, baseline.tokensIn),
+      tokensOut: take(reported.tokensOut, baseline.tokensOut),
+    },
+  };
+}
+
 function planTextFromInput(input: Record<string, unknown> | undefined): string {
   if (!input) return '';
   if (typeof input.plan === 'string') return input.plan;
@@ -298,20 +328,24 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           }
           break;
         }
-        case 'assistant':
+        case 'assistant': {
+          // WO-0046: content events carry the receive-stamp — the fold's liveness anchor.
+          const at = new Date().toISOString();
           for (const b of msg.message?.content ?? []) {
-            if (b.type === 'text' && b.text) out.push({ kind: 'assistant_text', text: b.text });
+            if (b.type === 'text' && b.text) out.push({ kind: 'assistant_text', text: b.text, at });
             if (b.type === 'tool_use') {
               if (b.name === 'ExitPlanMode') {
                 planReadyEmitted = true;
                 out.push({ kind: 'plan_ready', planText: planTextFromInput(b.input) });
               } else {
-                out.push({ kind: 'tool_use', callId: b.id ?? '', tool: b.name ?? '', input: b.input ?? {} });
+                out.push({ kind: 'tool_use', callId: b.id ?? '', tool: b.name ?? '', input: b.input ?? {}, at });
               }
             }
           }
           break;
-        case 'user':
+        }
+        case 'user': {
+          const at = new Date().toISOString();
           for (const b of msg.message?.content ?? []) {
             if (b.type === 'tool_result') {
               out.push({
@@ -319,10 +353,12 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
                 callId: b.tool_use_id ?? '',
                 summary: blockSummary(b.content),
                 isError: !!b.is_error,
+                at,
               });
             }
           }
           break;
+        }
         case 'result': {
           // Plan-mode fallback: if the turn ended with no ExitPlanMode tool call
           // (the probe found it can be absent — TD-016), treat the result text as the plan.
@@ -358,23 +394,56 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
     if (input.resume) options.resume = input.resume;
 
-    // WO-0045 cost truth (probe raw/s2b-late-note.log, raw/s5-cancel.log): a result arrives PER
-    // COMMAND — a steered drive sees several. Whether total_cost_usd is cumulative or resets per
-    // command is ambiguous across runs, so accumulate DELTAS (>= prior → difference; < prior → the
-    // figure itself) — correct under either model. Assistant messages carry all-zero usage; the
-    // result is the only cost source (every s-log).
-    let lastResultUsd = 0;
-    let lastResultTokensIn = 0;
-    let lastResultTokensOut = 0;
-    let driveUsd = 0;
-    let driveTokensIn = 0;
-    let driveTokensOut = 0;
+    // WO-0046 cost truth (probe raw/c2.log + raw/s2b-late-note.log, findings §C): result cost
+    // figures are CUMULATIVE within one SDK query process (s2b: 0.1766 → 0.2059; the diff is the
+    // note command's own spend) and RESET at the resume boundary (c2: leg 1 ended 0.0948; the
+    // resumed leg's first result reported 0.0562 — the leg's own spend, NOT the session total).
+    // The per-drive baselines therefore start at zero EVERY leg and the diff is the delta; the
+    // `< baseline → the figure itself` branch stays as the defensive reading of a per-command
+    // figure (§S's s2 ambiguity) — correct under both. Assistant messages carry all-zero usage;
+    // the result is the only cost source (every s-log).
+    let costBaseline: CostSummary = { usd: 0, tokensIn: 0, tokensOut: 0 };
+    let driveCost: CostSummary = { usd: 0, tokensIn: 0, tokensOut: 0 };
     let synthDelivered = false;
+    // WO-0046 context feed. Fire-and-forget ALWAYS (probe c1: an inline await serialized ~2.3s
+    // per read into the stream); one rejection disables the feed for the drive — the pane shows
+    // no readout (absent), never a zero. `cost` rides along because D3 folds exactly one terminal
+    // turn_complete per drive: this is the live costline's only mid-drive token source.
+    let contextFeedLive = true;
+    let lastContextEmitAt = 0;
+    const emitContext = (throttleMs = 0) => {
+      if (!contextFeedLive || !currentQuery) return;
+      const now = Date.now();
+      if (throttleMs && now - lastContextEmitAt < throttleMs) return;
+      lastContextEmitAt = now;
+      currentQuery
+        .getContextUsage()
+        .then((r) => {
+          if (!contextFeedLive) return;
+          queue.push({
+            kind: 'context_usage',
+            usedTokens: r.totalTokens,
+            maxTokens: r.maxTokens,
+            percentage: r.percentage,
+            cost: { ...driveCost },
+            at: new Date().toISOString(),
+          });
+        })
+        .catch(() => {
+          contextFeedLive = false;
+        });
+    };
 
     const q = query({ prompt: inputQueue, options });
     currentQuery = q;
     try {
       for await (const msg of q) {
+        // WO-0046 liveness (probe raw/c1.log): thinking-token bursts stream while the model
+        // produces NO transcript events for potentially minutes — a throttled context read here
+        // both refreshes the gauge and proves the drive alive, so the staleness line never lies
+        // during a long think.
+        if ((msg as AnyMsg).type === 'system' && (msg as AnyMsg).subtype === 'thinking_tokens') emitContext(30_000);
+        let sawToolEvent = false;
         for (const e of translate(msg as unknown as AnyMsg)) {
           // The prompt-channel delivery's receipt (D5): the note never entered the SDK queue, so no
           // lifecycle will fire for it — emit the synthetic delivery right after the session opened.
@@ -385,24 +454,21 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             continue;
           }
           if (e.kind === 'turn_complete') {
-            // Reviewer finding 6: the delta guard covers tokens too — the cumulative-vs-reset
-            // ambiguity is the result message's, not the usd field's alone.
-            const deltaUsd = e.cost.usd >= lastResultUsd ? e.cost.usd - lastResultUsd : e.cost.usd;
-            const deltaIn = e.cost.tokensIn >= lastResultTokensIn ? e.cost.tokensIn - lastResultTokensIn : e.cost.tokensIn;
-            const deltaOut = e.cost.tokensOut >= lastResultTokensOut ? e.cost.tokensOut - lastResultTokensOut : e.cost.tokensOut;
-            lastResultUsd = Math.max(lastResultUsd, e.cost.usd);
-            lastResultTokensIn = Math.max(lastResultTokensIn, e.cost.tokensIn);
-            lastResultTokensOut = Math.max(lastResultTokensOut, e.cost.tokensOut);
-            driveUsd += deltaUsd;
-            driveTokensIn += deltaIn;
-            driveTokensOut += deltaOut;
+            const { baseline, delta } = applyResultCost(costBaseline, e.cost);
+            costBaseline = baseline;
+            driveCost = addCost(driveCost, delta);
+            // The turn boundary is a refresh point for the gauge; on the TERMINAL boundary the
+            // feed flag drops the reading (the drive is over) — this serves the held/intermediate
+            // boundaries of a steered drive (D3) and the per-command boundaries of a long one.
+            emitContext();
             // D3 (operator ruling 2026-08-26): a queued note extends the drive — its command's result
             // is INTERMEDIATE. One drive, one terminal event: hold this turn_complete while notes are
             // still queued/live; the final result (note queue empty) carries the accumulated cost and
             // its own text as the report, then closes the input channel so the generator ends promptly.
             if (noteByUuid.size > 0) continue;
             turnCompleteEmitted = true;
-            queue.push({ ...e, cost: { usd: driveUsd, tokensIn: driveTokensIn, tokensOut: driveTokensOut } });
+            contextFeedLive = false;
+            queue.push({ ...e, cost: { ...driveCost } });
             inputClosed = true;
             inputQueue.close();
             continue;
@@ -412,7 +478,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           // stabilization: Durdur must not render the fail card).
           if (interruptRequested && e.kind === 'error') continue;
           queue.push(e);
+          if (e.kind === 'tool_use' || e.kind === 'tool_result') sawToolEvent = true;
         }
+        // WO-0046 cadence (probe c1): one read per tool-bearing message, never a busy poll.
+        if (sawToolEvent) emitContext();
       }
     } catch (e) {
       const err = e as { name?: string; message?: string };
@@ -428,6 +497,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       currentAbort = undefined;
       currentInput = undefined;
       currentQuery = undefined;
+      contextFeedLive = false; // a read still in flight lands nowhere (push-after-close is a no-op)
       noteByUuid.clear();
       noteUuid.clear();
       inputQueue.close(); // no-op when the final result already closed it; ends the input side on aborts

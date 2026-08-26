@@ -264,6 +264,9 @@ export function formatUsd(usd: number): string {
 
 // Token sayısı kısaltması: 10k+ tam k, 1k+ bir ondalık, altı ham sayı (WO-0022).
 export function formatTokens(n: number): string {
+  // WO-0046: a max-context of 1 000 000 rendered "1000k" on the live readout — the M tier exists
+  // for exactly that ceiling (and stays consistent with formatCost's in→out use of this helper).
+  if (n >= 1000000) return `${+(n / 1000000).toFixed(1)}M`;
   if (n >= 10000) return `${Math.round(n / 1000)}k`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return `${n}`;
@@ -694,6 +697,10 @@ export const UI = {
   manuelNextStepCard: (idx: number) => `sıradaki: Adım ${idx}`,
   manuelReviewCard: (idx: number) => `sıradaki: Denetim ${idx}`,
   manuelStartCard: 'Başlat',
+  // WO-0046 canlı dürüstlük: bağlam doluluk okuması (maliyet satırının dili — metin, animasyonsuz;
+  // operatör kararı 2026-08-26) + sessizlik satırı (3 dk eşiği — Düşünüyor···'ün dürüst halefi).
+  contextReadout: (pct: number, used: number, max: number) => `bağlam %${pct} · ${formatTokens(used)}/${formatTokens(max)}`,
+  staleLine: (n: number) => `${n} dk'dır yeni çıktı yok`,
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',

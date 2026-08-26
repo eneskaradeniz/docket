@@ -520,3 +520,78 @@ measured — per ADR-0006, it is currently Claude-specific.
 
 **Measured versions.** `claude` CLI 2.1.220; `@anthropic-ai/claude-agent-sdk`
 0.3.221. This surface is not a stable contract — re-measure on bump.
+
+---
+
+## C — Context usage + resume cost (WO-0046, measured 2026-08-26)
+
+Measured for the live-honesty order: the live `Query` control request
+`getContextUsage()` (cadence, latency, availability in streaming-input mode) and the
+resume-leg semantics of `result.total_cost_usd` — the ambiguity §S left open
+("s2b fits cumulative; s2 fits per-command"). Harness: `probe-context.mjs`
+(same shape as `probe-steer.mjs`: push-side queue, canUseTool attached,
+timestamped log). Every claim below cites a `raw/c*.log`.
+
+### What was measured
+
+**c1 — cadence (`raw/c1.log`).** A three-tool drive
+(`echo one/two/three`, streaming input) called `q.getContextUsage()` after every
+assistant / user / result message: **9 calls, 0 failures**, latency
+**2.0–2.8 s** each (first call 2.76 s). The probe awaited inline, so the cadence
+serialized ~2.3 s per call into the stream — the app's feed must be
+fire-and-forget, never an inline `await` in the consume loop. Response carries
+`totalTokens` / `maxTokens` / `percentage` (integer) / `model` /
+`isAutoCompactEnabled` / `autoCompactThreshold` / per-category tokens; wire size
+~38 KB (fine for the renderer event channel, never persisted). Example read
+mid-drive: `{"totalTokens":50438,"maxTokens":1000000,"percentage":5,...}`
+(`raw/c1.log` CTX entries). No EXPERIMENTAL warning on this control (unlike
+`usage_EXPERIMENTAL…`, sdk.d.ts:2444).
+
+**c1 — thinking liveness (design input, `raw/c1.log`).** During generation the
+stream carries bursts of `system:thinking_tokens` messages (estimated-token
+deltas) with NO transcript-bearing message between them — a long-thinking model
+can run minutes producing no assistant text. A staleness line keyed only to
+transcript entries would lie in exactly the window it exists for. The adapter
+therefore treats a throttled context read (≥30 s since the last one) on
+`thinking_tokens` as a liveness proof too — one event kind carries both the
+gauge refresh and the staleness anchor.
+
+**c1 — mid-park control call: NOT triggered.** The planned 6 s `canUseTool`
+hold never fired — the ambient CLI auto-allowed the `echo` commands, so
+`canUseTool` was never consulted (no PARK_START in `raw/c1.log`). Left
+unmeasured; harmless by construction: while an ask parks the stream no new
+messages arrive, so no feed trigger fires, and the staleness line is gated to
+`status === 'running'` (never during `stopped_asking`).
+
+**c2 — resume-leg cost semantics (`raw/c2.log`).** Leg 1 (fresh session,
+one Bash turn) ended with `result.total_cost_usd = 0.094824`. Leg 2 resumed the
+SAME `session_id` (`ff9f5662…`, confirmed identical in leg-2 `system:init`;
+cache_read grew 91 008 → 100 608, i.e. the context carried over) and its first
+result reported **`0.056219` — smaller than leg 1's total**. A cumulative figure
+would have been ≥ 0.094 8. **The cost figure RESETS at the resume (process)
+boundary; it is NOT session-cumulative across legs.**
+
+**Within one query: cumulative (s2b reconciled).** §S's ambiguity dissolves with
+the across-leg reset: `raw/s2b-late-note.log` result#1 `0.176580` → result#2
+`0.205902` (diff `0.029322` — plausible for the note's 158-output-token call;
+the raw figure is not). s2/s3 never produced a second result (notes coalesced
+into one turn), which is why they "fit" per-command. Model: **cumulative within
+one SDK query process, reset at resume.**
+
+**Consequences (pinned by the WO-0046 tests):**
+- The adapter's per-drive delta accumulation (`>= prior → difference; < prior →
+  the figure itself`) is correct on BOTH axes under the measured model:
+  within a drive figures are monotone cumulative (diff is right); on a resumed
+  leg the figure starts below the prior leg's last (per-drive locals start at 0,
+  so the figure is taken as the delta — right).
+- The store's `prior + input` add-rule is therefore correct across legs — NO
+  double-count, NO seeding, NO migration. The WO-0046 correctness item closes as
+  a **recorded verification** (test pins the rule; comment at the accumulation
+  site states the measured semantics).
+- `getContextUsage` after a resume reflects the carried context (leg2-init
+  totalTokens 50 333 = leg1-final, Messages 4 253 → 4 275) — the gauge is valid
+  on resumed legs.
+
+**Measured versions.** `@anthropic-ai/claude-agent-sdk` 0.3.221 (package.json
+pin); model glm-5.3[1m] served the drives. Not a stable contract — re-measure on
+bump (TD-016).
