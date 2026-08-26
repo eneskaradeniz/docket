@@ -2,7 +2,7 @@
 id: WO-0047
 title: Budget gate — workspace spend threshold with a human-language reason
 workspace: docket
-status: draft
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -82,13 +82,30 @@ Out of scope:
 
 ## Evidence required
 
-- plan_approval: architect verdict, `plan.md` committed (`mode: plan` — this order touches the
-  pipeline's gate spine and earns a plan round)
-- operator_checkpoint: the warn line, the refusal card, and the raise flow verified in the app with
-  seeded spend
-- ci: typecheck (both) / `npm test` / `check:boundaries` / `build` / `test:ui` green
-- closure: ROADMAP ticked; the budget-gate ADR addendum + CLAUDE.md sibling clause; tech-debt
-  updated if any
+- plan_approval: RESOLVED — the operator approved the session plan 2026-08-27 (both stop-and-ask
+  rulings settled BEFORE design: raise = a PERMANENT settings write, warn = a PERCENT of the cap);
+  `plan.md` committed as `387dc61`
+- operator_checkpoint: DEFERRED by operator ruling 2026-08-27 (the WO-0045/0046 precedent — the
+  E2E suite walks the same flow through the REAL pipeline: the warn line board+band, the refusal
+  card with no spawned pane, keep-the-cap, raise-and-re-run, the settings readout — 4 specs in
+  `e2e/ui.mjs`, seeded `uyarı`/`kapı` workspaces). The live walkthrough stays on the operator's
+  list: `npx tsx e2e/seed.ts` → `DOCKET_DB_PATH=<path> DOCKET_E2E=1 npm start`.
+- ci: green on PR #53 — typecheck (both) / `npm test` 612 / `check:boundaries` / `build` /
+  `npm run test:ui` 36/36
+- closure: ROADMAP ticked (this commit); the budget-gate ADR-0013 addendum + the CLAUDE.md sibling
+  clause + TD-054 shipped in `5485f89`
+
+## Closure
+
+Merged **#53** (`f7e3b89`, 2026-08-27) — plan round `387dc61` + feature `5485f89` (53 files,
++1233/−26). Evidence state: the gate is pipeline-enforced as designed (the pipeline tests pin the
+every-drive contract — plan and resume refused alike, one error event carrying the refusal's
+facts, no runner spawn, no session row); the month-window math and the bilinen-harcama basis are
+unit-pinned (window rollover, ceil thresholds, NULL-cost exclusion + count); the GUI/CLI parity is
+the structured payload (each host composes its own sentence from the same figures — the plan's
+AC2 reading, settled at plan approval). Open follow-up: TD-054 (the plan/flow gates' UNCODED
+refusals still render as the generic crash card — this order's payload is the precedent), plus
+the deferred live walkthrough above.
 
 ## Stop-and-ask gates
 
