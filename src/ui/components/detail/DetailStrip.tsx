@@ -47,6 +47,7 @@ export function DetailStrip({
   turn,
   duration,
   driveLive,
+  pendingSteer = 0,
   onBack,
   onDelete,
   permissionRule,
@@ -61,6 +62,8 @@ export function DetailStrip({
   duration?: string;
   /** A drive is spending right now (running or winding down) — order.md writers are absent (WO-0031d). */
   driveLive: boolean;
+  /** Notes queued in the live drive (WO-0045) — the chip's pending count while they wait for a boundary. */
+  pendingSteer?: number;
   onBack: () => void;
   onDelete: () => void;
   permissionRule: PermissionRule;
@@ -230,6 +233,36 @@ export function DetailStrip({
               className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
             >
               {detail.reviewMode === 'gates' ? UI.reviewModeGatesShort : UI.reviewModeEveryShort}
+            </button>
+          </Tooltip>
+        )}
+        {/* WO-0045 — the Akış chip (the operator's own word). Operator ruling 2026-08-26: locked ONLY
+            on a closed WO — while a drive runs the chip STAYS clickable, because the mode is read at
+            the NEXT spawn (switching never touches the running drive; it takes effect at the next
+            boundary). The pending-steer count rides the chip while notes queue. */}
+        {closed ? (
+          <Tooltip label={detail.flowMode === 'manual' ? UI.flowModeManualHint : UI.flowModeAutoHint}>
+            <span
+              data-flow-mode={detail.flowMode}
+              title={UI.flowModeLabel}
+              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider opacity-45"
+            >
+              {detail.flowMode === 'manual' ? UI.flowModeManualShort : UI.flowModeAutoShort}
+              {pendingSteer > 0 ? <span className="ml-1 text-info">{UI.flowPendingBadge(pendingSteer)}</span> : null}
+            </span>
+          </Tooltip>
+        ) : (
+          <Tooltip label={detail.flowMode === 'manual' ? UI.flowModeManualHint : UI.flowModeAutoHint}>
+            <button
+              type="button"
+              data-flow-mode={detail.flowMode}
+              data-flow-pending={pendingSteer > 0 ? pendingSteer : undefined}
+              title={UI.flowModeLabel}
+              onClick={() => void onUpdateWorkOrder({ flowMode: detail.flowMode === 'manual' ? 'auto' : 'manual' })}
+              className="ichip shrink-0 rounded px-1.5 py-px font-mono text-[10px] uppercase tracking-wider"
+            >
+              {detail.flowMode === 'manual' ? UI.flowModeManualShort : UI.flowModeAutoShort}
+              {pendingSteer > 0 ? <span className="ml-1 text-info">{UI.flowPendingBadge(pendingSteer)}</span> : null}
             </button>
           </Tooltip>
         )}

@@ -23,6 +23,7 @@ export function DetailScreen({
   onDelete,
   onCloseWorkOrder,
   onOverrideVerdict,
+  onRetractSteerNote,
   autoRequestPlan,
 }: {
   detail: WorkOrderDetailView;
@@ -42,6 +43,8 @@ export function DetailScreen({
   reloadDetail: () => void;
   onCloseWorkOrder: (note: string) => Promise<void>;
   onOverrideVerdict: (idx: number) => Promise<void>;
+  /** WO-0045: retract a queued note from a STOPPED drive's mirror (the data-port route). */
+  onRetractSteerNote?: (sessionId: string, noteId: string) => Promise<boolean>;
   onDelete: () => Promise<void>;
   /** WO-0031c "Oluştur ve plan iste": fire the architect plan drive once on arrival. */
   autoRequestPlan?: boolean;
@@ -67,6 +70,7 @@ export function DetailScreen({
         onCloseWorkOrder={onCloseWorkOrder}
         onOverrideVerdict={onOverrideVerdict}
         onDelete={onDelete}
+        onRetractSteerNote={onRetractSteerNote}
       />
     </main>
   );

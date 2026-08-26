@@ -29,11 +29,14 @@ const reviewDrive = (over: Partial<DriveInput> = {}): DriveInput => ({ role: 'ar
 function fakeRunner(script: RunnerEvent[]) {
   const decideCalls: Array<[string, PermissionDecision]> = [];
   const drivenInputs: DriveInput[] = [];
+  const steerCalls: Array<[string, { noteId: string; emit?: boolean } | undefined]> = [];
+  const retractCalls: string[] = [];
   const pending = new Map<string, () => void>();
   const resolved: string[] = []; // WO-0027: ask_resolved is emitted back into the stream, like the real adapter
   const drive = async function* (input: DriveInput): AsyncIterable<RunnerEvent> {
     drivenInputs.push(input);
     const seen = new Set<string>();
+    let noteDelivered = false;
     for (const ev of script) {
       if (ev.kind === 'permission_request') {
         if (seen.has(ev.requestId)) continue; // resume replay dedupe
@@ -42,8 +45,14 @@ function fakeRunner(script: RunnerEvent[]) {
         yield ev;
         await latch;
         yield { kind: 'ask_resolved', requestId: ev.requestId };
-      } else {
-        yield ev;
+        continue;
+      }
+      yield ev;
+      // WO-0045 D5: the real adapter emits the synthetic steer_delivered right after `started` when the
+      // pipeline carried a deliveringNote — mirror it so the resume-carry path is observable.
+      if (ev.kind === 'started' && input.deliveringNote && !noteDelivered) {
+        noteDelivered = true;
+        yield { kind: 'steer_delivered', noteId: input.deliveringNote.id, text: input.deliveringNote.text };
       }
     }
   };
@@ -57,8 +66,17 @@ function fakeRunner(script: RunnerEvent[]) {
     pendingAsks: async () => [],
     async interrupt() {},
     async abort() {},
+    // WO-0045: records the transport calls; the scripted events (steer_queued etc.) drive the fold.
+    async steer(note: string, opts?: { noteId: string; emit?: boolean }) {
+      steerCalls.push([note, opts]);
+      return true;
+    },
+    async retractSteer(noteId: string) {
+      retractCalls.push(noteId);
+      return true;
+    },
   } as SessionRunner;
-  return { runner, decideCalls, drivenInputs };
+  return { runner, decideCalls, drivenInputs, steerCalls, retractCalls };
 }
 
 /** A runner whose drive throws — for the catch-path test. */
@@ -79,8 +97,13 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
 
 interface FakeStoreCalls { method: string; args: unknown[] }
 
-/** Records every call; returns scripted prompts. `planApproved` scripts the approval gate (WO-0038). */
-function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string }, planApproved = true) {
+/** Records every call; returns scripted prompts. `planApproved` scripts the approval gate (WO-0038);
+ *  `opts` scripts the WO-0045 surfaces: flowMode (the tempo gate) + pendingNotes (Sürdür's carry). */
+function fakeStore(
+  prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string },
+  planApproved = true,
+  opts: { flowMode?: 'auto' | 'manual'; pendingNotes?: { id: string; text: string }[] } = {},
+) {
   const calls: FakeStoreCalls[] = [];
   const store = {
     recordSession: (i: unknown) => calls.push({ method: 'recordSession', args: [i] }),
@@ -92,6 +115,9 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     stepPromptFor: () => prompts.step,
     stepReviewPromptFor: () => prompts.review,
     planApprovedFor: () => planApproved,
+    flowModeFor: () => opts.flowMode ?? 'auto',
+    pendingNotesFor: () => opts.pendingNotes ?? [],
+    recordAuditEvent: (id: unknown, kind: unknown, detail: unknown) => calls.push({ method: 'recordAuditEvent', args: [id, kind, detail] }),
   } as unknown as SessionStore;
   return { store, calls };
 }
@@ -539,5 +565,153 @@ describe('createPipeline — the interrupted close (WO-0039 stabilization)', () 
     await collect(p, planDrive());
     const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { cost?: unknown };
     expect(last.cost).toEqual({ tokensIn: 120, tokensOut: 24, usd: 0.02 });
+  });
+});
+
+describe('flow-mode gate — origin auto refused while manual (WO-0045)', () => {
+  it('auto step drive + manual: one error event, the runner never spawns, nothing is recorded', async () => {
+    const fr = fakeRunner([started(), txt('never'), done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, true, { flowMode: 'manual' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive({ origin: 'auto' }));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe('error');
+    expect((events[0] as { message: string }).message).toMatch(/flow mode manual/);
+    expect(fr.drivenInputs).toHaveLength(0);
+    expect(methods(fs.calls)).not.toContain('recordSession');
+  });
+
+  it('auto review drive + manual: refused the same way', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ review: 'review 2' }, true, { flowMode: 'manual' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, reviewDrive({ origin: 'auto' }));
+    expect(events).toHaveLength(1);
+    expect((events[0] as { message: string }).message).toMatch(/flow mode manual/);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('origin ABSENT (the operator click) + manual: runs — manual gates only self-starts', async () => {
+    const fr = fakeRunner([started(), txt('operator started me'), done('report')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, true, { flowMode: 'manual' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events.map((e) => e.kind)).toContain('turn_complete');
+    expect(fr.drivenInputs).toHaveLength(1);
+  });
+
+  it('origin auto + AUTO mode: runs — today behavior unchanged (AC7)', async () => {
+    const fr = fakeRunner([started(), txt('auto advance'), done('report')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, true, { flowMode: 'auto' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive({ origin: 'auto' }));
+    expect(events.map((e) => e.kind)).toContain('turn_complete');
+  });
+
+  it('a PLAN drive is never flow-gated (the plan leg is operator-clicked by nature)', async () => {
+    const fr = fakeRunner([started(), plan('the plan'), done()]);
+    const fs = fakeStore({ architect: 'plan the work' }, true, { flowMode: 'manual' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive({ origin: 'auto' }));
+    expect(fr.drivenInputs).toHaveLength(1);
+    expect(events.map((e) => e.kind)).toContain('plan_ready');
+  });
+});
+
+describe('steer mirror + lifecycle (WO-0045)', () => {
+  const steerQ = (noteId: string, note: string): RunnerEvent => ({ kind: 'steer_queued', noteId, note });
+  const steerD = (noteId: string, text: string): RunnerEvent => ({ kind: 'steer_delivered', noteId, text });
+
+  const recordSessionArgs = (calls: FakeStoreCalls[]) =>
+    calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { status: string; pendingNotes?: { id: string; text: string }[]; transcript?: unknown[] });
+
+  it('queued → row carries the note; delivered → operator line in the transcript row + the note leaves the mirror; both audited', async () => {
+    const fr = fakeRunner([started(), steerQ('n1', 'şunu atla'), steerD('n1', 'şunu atla'), txt('oldu'), done('report')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    // events flow through to the host fold (the UI count + operator line)
+    expect(events.filter((e) => e.kind === 'steer_queued' || e.kind === 'steer_delivered')).toHaveLength(2);
+    const records = recordSessionArgs(fs.calls);
+    const withNote = records.filter((r) => r.pendingNotes?.some((n) => n.id === 'n1'));
+    expect(withNote.length).toBeGreaterThan(0); // the queued checkpoint persisted the mirror
+    const final = records[records.length - 1]!;
+    expect(final.pendingNotes).toEqual([]); // delivery shrank the mirror
+    // the delivered operator line rides the transcript checkpoint
+    const withLine = records.filter((r) => JSON.stringify(r.transcript).includes('"operator"'));
+    expect(withLine.length).toBeGreaterThan(0);
+    const audits = fs.calls.filter((c) => c.method === 'recordAuditEvent').map((c) => c.args[1]);
+    expect(audits).toContain('steer_delivered'); // delivery is event-driven; the queued audit rides pipeline.steer (covered below)
+  });
+
+  it('interrupted carries pendingNotes on the stopped row — Durdur persists the queue for Sürdür (AC4)', async () => {
+    const fr = fakeRunner([started(), steerQ('n1', 'bir'), steerQ('n2', 'iki'), { kind: 'interrupted' }]);
+    const fs = fakeStore({});
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const records = recordSessionArgs(fs.calls);
+    const stopped = records.filter((r) => r.status === 'stopped');
+    expect(stopped[stopped.length - 1]!.pendingNotes?.map((n) => n.id)).toEqual(['n1', 'n2']);
+  });
+
+  it('pipeline.steer: optimistically mirrors, forwards to the runner, and un-mirrors on refusal; retract filters the mirror', async () => {
+    const fr = fakeRunner([started(), perm('r1'), txt('end'), done('report')]);
+    const fs = fakeStore({});
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: askOperatorPolicy() });
+    const collectPromise = collect(p, stepDrive());
+    await new Promise((r) => setTimeout(r, 10)); // let the drive reach the held ask
+    const noteId1 = await p.steer('bir not');
+    expect(noteId1).toBeTruthy();
+    expect(fr.steerCalls.some(([note, o]) => note === 'bir not' && o?.noteId === noteId1 && o?.emit !== false)).toBe(true);
+    await p.steer('ikinci not');
+    expect(await p.retractSteer(noteId1!)).toBe(true);
+    expect(fr.retractCalls).toContain(noteId1);
+    await p.decide('r1', { allow: true });
+    const events = await collectPromise;
+    expect(events[events.length - 1]?.kind).toBe('turn_complete');
+    // the final row carries ONLY the un-retracted note — the retracted one left the mirror
+    const records = recordSessionArgs(fs.calls);
+    const final = records[records.length - 1]!;
+    expect(final.pendingNotes?.map((n) => n.text)).toEqual(['ikinci not']);
+    const audits = fs.calls.filter((c) => c.method === 'recordAuditEvent').map((c) => c.args);
+    expect(audits.some((a) => a[1] === 'steer_queued')).toBe(true);
+    expect(audits.some((a) => a[1] === 'steer_retracted')).toBe(true);
+  });
+
+  it('steer with no live drive resolves undefined and never reaches the runner', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({});
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    expect(await p.steer('erken')).toBeUndefined();
+    await collect(p, stepDrive());
+    expect(await p.steer('geç')).toBeUndefined();
+    expect(fr.steerCalls).toHaveLength(0);
+  });
+
+  it('Sürdür carry: the first note folds into the PROMPT as deliveringNote, the rest re-queue emit:false (no double application)', async () => {
+    const fr = fakeRunner([started(), txt('devam'), done('report')]);
+    const fs = fakeStore(
+      {},
+      true,
+      { pendingNotes: [{ id: 'n1', text: 'birinci not' }, { id: 'n2', text: 'ikinci not' }, { id: 'n3', text: 'üçüncü not' }] },
+    );
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive({ resume: 's9', prompt: '' }));
+    const di = fr.drivenInputs[0]!;
+    expect(di.prompt).toContain('birinci not'); // delivered via the prompt channel — never the SDK queue
+    expect(di.deliveringNote).toEqual({ id: 'n1', text: 'birinci not' });
+    expect(fr.steerCalls.filter(([, o]) => o?.emit === false).map(([note]) => note)).toEqual(['ikinci not', 'üçüncü not']);
+    expect(fr.steerCalls.some(([note]) => note === 'birinci not')).toBe(false); // no double application
+    expect(events.some((e) => e.kind === 'steer_delivered')).toBe(true); // the synthetic receipt surfaced
+  });
+
+  it('a resume with EXPLICIT prompt (the ask answer path) keeps the prompt and re-queues the notes for the boundary after its turn', async () => {
+    const fr = fakeRunner([started(), done('report')]);
+    const fs = fakeStore({}, true, { pendingNotes: [{ id: 'n1', text: 'bekliyor' }] });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive({ resume: 's9', prompt: 'cevabım: evet' }));
+    expect(fr.drivenInputs[0]!.prompt).toBe('cevabım: evet'); // the answer owns the prompt channel
+    expect(fr.drivenInputs[0]!.deliveringNote).toBeUndefined();
+    expect(fr.steerCalls.filter(([, o]) => o?.emit === false).map(([note]) => note)).toEqual(['bekliyor']);
   });
 });

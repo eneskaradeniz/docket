@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS session (
   status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','stopped','none')),
   transcript TEXT NOT NULL,
   stop_and_ask TEXT,
+  pending_notes TEXT,    -- queued steer notes JSON (WO-0045) — LATEST-WINS unlike transcript/cost: the live
+                         -- fold overwrites it (deliveries shrink it); the SDK queue is truth while running,
+                         -- this row is the truth across a stop (mirror-is-truth, probe raw/s4b)
   cost_tokens_in INTEGER,
   cost_tokens_out INTEGER,
   cost_usd REAL,
@@ -113,7 +116,7 @@ CREATE TABLE IF NOT EXISTS connection (
 CREATE TABLE IF NOT EXISTS wo_event (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_order_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision')),
+  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision','steer_queued','steer_delivered','steer_retracted','flow_mode_changed')),
   detail TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL
 );

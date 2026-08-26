@@ -18,13 +18,25 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type {
   CanUseTool,
   Options,
   PermissionMode,
   PermissionResult,
+  Query,
+  SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+
+// WO-0045: the runtime exposes Query.cancelAsyncMessage(uuid) (returns the receipt's `cancelled`
+// boolean, verified live — docs/probes/cc-surface/raw/s5-cancel.log) but sdk.d.ts (0.3.221) does not
+// declare it. Augment rather than cast at the call site; TD-016 re-verifies on every SDK bump.
+declare module '@anthropic-ai/claude-agent-sdk' {
+  interface Query {
+    cancelAsyncMessage(uuid: string): Promise<boolean>;
+  }
+}
 import type { PermissionAsk, ProviderErrorCode } from '../../core/runner';
 import type { ProviderStatus } from '../../core/app-settings';
 import {
@@ -46,7 +58,9 @@ import type { SessionRunner } from '../../core/runner';
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookEditNew']);
 const DECISION_STORE_DIR = 'docs'; // single-repo pilot (docket); multi-repo config is M4.
 
-// --- Async push-queue: lets canUseTool push events into the drive() stream. ---
+// --- Async push-queue: lets canUseTool push events into the drive() stream. Also the STEER INPUT
+//     channel (WO-0045): passed to query() as the AsyncIterable prompt. The iterable SELF must go to
+//     query() — a bare {next} iterator kills the child at once (probe raw/s1-baseline.log, first run). ---
 class AsyncQueue<T> {
   private buf: T[] = [];
   private waiters: Array<(r: IteratorResult<T>) => void> = [];
@@ -66,6 +80,9 @@ class AsyncQueue<T> {
     if (this.closed) return;
     this.closed = true;
     while (this.waiters.length) this.waiters.shift()!({ value: undefined as unknown as T, done: true });
+  }
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return { next: () => this.next() };
   }
 }
 
@@ -91,6 +108,10 @@ type AnyMsg = {
   stop_reason?: string | null;
   result?: string;
   errors?: string[];
+  // WO-0045: command lifecycle (capability msg_lifecycle_v1) — the delivery observability channel.
+  command_uuid?: string;
+  state?: string;
+  capabilities?: string[];
 };
 
 // Shell-command write classification. Delegates the pure policy to core's `classifyCommandLine` (tested
@@ -155,6 +176,15 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
   const askDetails = new Map<string, PermissionAsk>();
   let currentQueue: AsyncQueue<RunnerEvent> | undefined;
   let currentAbort: AbortController | undefined;
+  // WO-0045 steering state (per-drive; cleared in runDrive's finally):
+  let currentInput: AsyncQueue<SDKUserMessage> | undefined; // the query's push-side input channel
+  let currentQuery: Query | undefined; // retained for cancelAsyncMessage (retract)
+  let inputClosed = false; // steer() refuses once the final result closed the channel
+  let lifecycleSupported = false; // msg_lifecycle_v1 on system/init — without it delivery is unobservable
+  // noteId ↔ uuid: the uuid is ours (client-stamped — only uuid-stamped messages appear in receipts
+  // and are individually cancellable, sdk.d.ts:4639/:3509); it never leaves this adapter.
+  const noteByUuid = new Map<string, { noteId: string; text: string }>();
+  const noteUuid = new Map<string, string>();
   // WO-0039 stabilization (2026-08-23): an interrupt's INTENT, set the moment interrupt() fires and
   // read by the drive's catch/finally. An abort can surface as a non-AbortError throw or an
   // error-shaped result message — the interrupt's echo, not a provider failure. Swallowing only
@@ -183,6 +213,23 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     currentQueue = queue;
     currentAbort = abort;
     interruptRequested = false;
+    // WO-0045: the drive runs in STREAMING-INPUT mode — the prompt is a push-side iterable the
+    // steer() entry writes uuid-stamped notes into. Kept OPEN for the drive's life: completing the
+    // iterable ends the input side, and with it the query (probe raw/s1-baseline.log) — the close
+    // happens at the FINAL result (and is safe at any point: it never kills in-flight work).
+    const inputQueue = new AsyncQueue<SDKUserMessage>();
+    currentInput = inputQueue;
+    currentQuery = undefined;
+    inputClosed = false;
+    lifecycleSupported = false;
+    noteByUuid.clear();
+    noteUuid.clear();
+    inputQueue.push({
+      type: 'user',
+      message: { role: 'user', content: input.prompt },
+      parent_tool_use_id: null,
+      uuid: randomUUID(),
+    });
     // 2026-08-23 (same-day correction): the 5s plan-exit grace abort is DEAD — the hang it
     // guarded was the AUTO-APPROVED plan gate (see canUseTool); with the gate denied the SDK
     // ends the turn on its own and the result (cost included) arrives naturally. Aborting was
@@ -233,8 +280,24 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       const out: RunnerEvent[] = [];
       switch (msg.type) {
         case 'system':
-          if (msg.subtype === 'init' && msg.session_id) out.push({ kind: 'started', sessionId: msg.session_id, at: new Date().toISOString() });
+          if (msg.subtype === 'init' && msg.session_id) {
+            lifecycleSupported = (msg.capabilities ?? []).includes('msg_lifecycle_v1');
+            out.push({ kind: 'started', sessionId: msg.session_id, at: new Date().toISOString() });
+          }
           break;
+        case 'command_lifecycle': {
+          // WO-0045 delivery: OUR uuid entering execution (state 'started') is the note's application
+          // moment — notes never echo as user messages (probe raw/s2-midturn-note.log), this is the
+          // only observability. 'completed' adds nothing (delivery fired at started); 'cancelled' is
+          // the retract receipt — the steer_retracted event rides the retractSteer call instead.
+          const note = msg.command_uuid !== undefined ? noteByUuid.get(msg.command_uuid) : undefined;
+          if (note && msg.state === 'started') {
+            noteByUuid.delete(msg.command_uuid!);
+            noteUuid.delete(note.noteId); // reviewer finding 9: a late retract must find nothing
+            out.push({ kind: 'steer_delivered', noteId: note.noteId, text: note.text, at: new Date().toISOString() });
+          }
+          break;
+        }
         case 'assistant':
           for (const b of msg.message?.content ?? []) {
             if (b.type === 'text' && b.text) out.push({ kind: 'assistant_text', text: b.text });
@@ -295,10 +358,55 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
     if (input.resume) options.resume = input.resume;
 
+    // WO-0045 cost truth (probe raw/s2b-late-note.log, raw/s5-cancel.log): a result arrives PER
+    // COMMAND — a steered drive sees several. Whether total_cost_usd is cumulative or resets per
+    // command is ambiguous across runs, so accumulate DELTAS (>= prior → difference; < prior → the
+    // figure itself) — correct under either model. Assistant messages carry all-zero usage; the
+    // result is the only cost source (every s-log).
+    let lastResultUsd = 0;
+    let lastResultTokensIn = 0;
+    let lastResultTokensOut = 0;
+    let driveUsd = 0;
+    let driveTokensIn = 0;
+    let driveTokensOut = 0;
+    let synthDelivered = false;
+
+    const q = query({ prompt: inputQueue, options });
+    currentQuery = q;
     try {
-      for await (const msg of query({ prompt: input.prompt, options })) {
+      for await (const msg of q) {
         for (const e of translate(msg as unknown as AnyMsg)) {
-          if (e.kind === 'turn_complete') turnCompleteEmitted = true;
+          // The prompt-channel delivery's receipt (D5): the note never entered the SDK queue, so no
+          // lifecycle will fire for it — emit the synthetic delivery right after the session opened.
+          if (e.kind === 'started' && input.deliveringNote && !synthDelivered) {
+            synthDelivered = true;
+            queue.push(e);
+            queue.push({ kind: 'steer_delivered', noteId: input.deliveringNote.id, text: input.deliveringNote.text, at: new Date().toISOString() });
+            continue;
+          }
+          if (e.kind === 'turn_complete') {
+            // Reviewer finding 6: the delta guard covers tokens too — the cumulative-vs-reset
+            // ambiguity is the result message's, not the usd field's alone.
+            const deltaUsd = e.cost.usd >= lastResultUsd ? e.cost.usd - lastResultUsd : e.cost.usd;
+            const deltaIn = e.cost.tokensIn >= lastResultTokensIn ? e.cost.tokensIn - lastResultTokensIn : e.cost.tokensIn;
+            const deltaOut = e.cost.tokensOut >= lastResultTokensOut ? e.cost.tokensOut - lastResultTokensOut : e.cost.tokensOut;
+            lastResultUsd = Math.max(lastResultUsd, e.cost.usd);
+            lastResultTokensIn = Math.max(lastResultTokensIn, e.cost.tokensIn);
+            lastResultTokensOut = Math.max(lastResultTokensOut, e.cost.tokensOut);
+            driveUsd += deltaUsd;
+            driveTokensIn += deltaIn;
+            driveTokensOut += deltaOut;
+            // D3 (operator ruling 2026-08-26): a queued note extends the drive — its command's result
+            // is INTERMEDIATE. One drive, one terminal event: hold this turn_complete while notes are
+            // still queued/live; the final result (note queue empty) carries the accumulated cost and
+            // its own text as the report, then closes the input channel so the generator ends promptly.
+            if (noteByUuid.size > 0) continue;
+            turnCompleteEmitted = true;
+            queue.push({ ...e, cost: { usd: driveUsd, tokensIn: driveTokensIn, tokensOut: driveTokensOut } });
+            inputClosed = true;
+            inputQueue.close();
+            continue;
+          }
           // An error-shaped message after an interrupt request is the abort's echo (e.g. an
           // error_during_execution result), not a provider failure — never surface it (WO-0039
           // stabilization: Durdur must not render the fail card).
@@ -318,6 +426,11 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     } finally {
       currentQueue = undefined;
       currentAbort = undefined;
+      currentInput = undefined;
+      currentQuery = undefined;
+      noteByUuid.clear();
+      noteUuid.clear();
+      inputQueue.close(); // no-op when the final result already closed it; ends the input side on aborts
       pending.clear();
       askDetails.clear();
       // If a plan-mode turn emitted plan_ready but the SDK ended the stream without a result (an
@@ -369,6 +482,40 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     async interrupt(): Promise<void> {
       interruptRequested = true;
       currentAbort?.abort();
+    },
+    // WO-0045 — queue a note into the RUNNING drive (boundary-only; never an interrupt). The uuid is
+    // stamped HERE (only uuid-stamped messages are individually cancellable and appear in receipts).
+    // Refused when no drive runs, the input channel closed (final result already emitted), or the CLI
+    // lacks msg_lifecycle_v1 (delivery would be unobservable — steering stays honest-off; TD-016
+    // re-probes on SDK bumps). emit:false = the silent Sürdür re-queue (the fold seeded it already).
+    async steer(note: string, opts?: { noteId: string; emit?: boolean }): Promise<boolean> {
+      if (!currentInput || !currentQuery || inputClosed || !lifecycleSupported) return false;
+      const noteId = opts?.noteId ?? `steer-${Date.now()}`;
+      const uuid = randomUUID();
+      noteByUuid.set(uuid, { noteId, text: note });
+      noteUuid.set(noteId, uuid);
+      currentInput.push({ type: 'user', message: { role: 'user', content: note }, parent_tool_use_id: null, uuid });
+      if (opts?.emit !== false) {
+        currentQueue?.push({ kind: 'steer_queued', noteId, note, at: new Date().toISOString() });
+      }
+      return true;
+    },
+    // WO-0045 — pull a queued note back (best-effort, probe raw/s5-cancel.log + raw/s5b-cancel-delayed.log:
+    // an immediate cancel can race the enqueue and return false; false here means the note WILL run).
+    async retractSteer(noteId: string): Promise<boolean> {
+      const uuid = noteUuid.get(noteId);
+      if (!currentQuery || uuid === undefined) return false;
+      let cancelled = false;
+      try {
+        cancelled = await currentQuery.cancelAsyncMessage(uuid);
+      } catch {
+        return false;
+      }
+      if (!cancelled) return false;
+      noteByUuid.delete(uuid);
+      noteUuid.delete(noteId);
+      currentQueue?.push({ kind: 'steer_retracted', noteId, at: new Date().toISOString() });
+      return true;
     },
     // WO-0031c abort: no harder mechanism exists on the provider surface — the alias is honest
     // (the GUI's REAL force lives main-side: the pipeline generator's injected return).

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { initialSessionState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneError, PaneLogChip, PaneShell, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneError, PaneLogChip, PaneShell, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -27,6 +27,8 @@ export function StepPane({
   sessions,
   now,
   drive,
+  autoStart = true,
+  onRetractStoppedSteer,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
@@ -37,6 +39,12 @@ export function StepPane({
    *  rail's job, riding this pane's header (the controller hands the bundle straight down —
    *  WO-0044 tur 2: no StepList hop, the pane rides the TOP instrument seat). */
   drive?: DriveState;
+  /** WO-0045: may this pane AUTO-drive its pending step? False in `Akış: manuel` — the card in the
+   *  decision stack is the offer, the click is the consent (the pipeline's origin gate is the
+   *  backstop, never the only line). */
+  autoStart?: boolean;
+  /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
+  onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
   const { formatUsd, PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
   const store = useDriveStore();
@@ -61,6 +69,9 @@ export function StepPane({
       scope: step.scopeTrackId,
       stepIndex: step.idx,
       prompt: '',
+      // WO-0045: THIS is the self-starting spawn — stamped so the pipeline's manual-mode gate can
+      // refuse it even if a future host forgets the autoStart check (the planApprovedFor net).
+      origin: 'auto',
       ...(resume ? { resume } : {}),
     };
     // A resume seeds from the CURRENT state so the new stream appends (F14); a fresh drive resets.
@@ -68,9 +79,12 @@ export function StepPane({
   }
 
   // Auto-drive a pending step once when it becomes the active step. An 'active' step (interrupted) does not
-  // auto-drive — the pane header offers "Sürdür" so the operator chooses to resume (WO-0039).
+  // auto-drive — the pane header offers "Sürdür" so the operator chooses to resume (WO-0039). WO-0045: in
+  // `Akış: manuel` nothing starts itself — autoStart=false leaves the step to the decision-stack card.
+  // autoStart is deliberately NOT a dependency: flipping the mode must never fire (or un-fire) a start —
+  // it is read at the boundary this effect happens to run on (operator ruling 2026-08-26, pin 2).
   useEffect(() => {
-    if (step.status === 'pending' && lastDriven.current !== step.idx) {
+    if (autoStart && step.status === 'pending' && lastDriven.current !== step.idx) {
       lastDriven.current = step.idx;
       startDrive();
     }
@@ -121,6 +135,23 @@ export function StepPane({
             {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
           </div>
         </div>
+        <PaneSteerBar
+          live={running}
+          pendingNotes={state.pendingNotes}
+          onSend={(note) => store.steer(driveKey, note)}
+          onRetract={(noteId) => {
+            // The live route while the stream is open (stopped_asking included — the drive holds);
+            // once the drive is gone the stopped row's mirror is the only queue — the data port
+            // rewrites it + audits, and success patches this fold so the row disappears here too.
+            if (running) {
+              void store.retract(driveKey, noteId);
+            } else if (state.sessionId) {
+              void onRetractStoppedSteer?.(state.sessionId, noteId).then((ok) => {
+                if (ok) store.retractNote(driveKey, noteId);
+              });
+            }
+          }}
+        />
         {hasStream && !emptyRun && logOpen ? (
           <div className="mt-3 flex min-h-0 flex-1 flex-col">
             {/* tur 3: the default live variant — the compact cap (224px) was the spine-row form; the

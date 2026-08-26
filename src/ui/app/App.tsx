@@ -88,6 +88,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     };
   }, [source, selectedId, detailNonce]);
 
+  // The detail's order.md, parsed ONCE per load (WO-0045: the flow mode joined review mode + the
+  // effective rule here — three parses per render was one too many).
+  const parsedOrder = useMemo(
+    () => parseOrderMd(detail?.docs.order ?? ''),
+    [detail],
+  );
+
   // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. Created before
   // the cards memo because the board reads its live snapshot (base-mobile trial).
   const driveStore = useMemo(() => createDriveStore(runner), [runner]);
@@ -191,6 +198,15 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     },
     [source, selectedId, reloadDetail],
   );
+  // WO-0045: retract a queued note from a STOPPED drive — the SDK queue died with the process, the
+  // persisted row is the only queue; the store rewrites it + audits (steer_retracted).
+  const handleRetractSteerNote = useCallback(
+    async (sessionId: string, noteId: string): Promise<boolean> => {
+      if (!selectedId) return false;
+      return source.retractSteerNote(selectedId, sessionId, noteId);
+    },
+    [source, selectedId],
+  );
   const handleCloseWorkOrder = useCallback(
     async (note: string) => {
       if (!selectedId) return;
@@ -292,9 +308,9 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       </div>
     ) : detail ? (
       <DetailScreen
-        detail={toDetailView(detail.wo, detail.steps, parseOrderMd(detail.docs.order).reviewMode)}
+        detail={toDetailView(detail.wo, detail.steps, parsedOrder.reviewMode, parsedOrder.flowMode)}
         docs={detail.docs}
-        permissionRule={orderMdCarriesRule(detail.docs.order) ? parseOrderMd(detail.docs.order).permissionRule : defaultRule}
+        permissionRule={orderMdCarriesRule(detail.docs.order) ? parsedOrder.permissionRule : defaultRule}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}
         onSavePlanDraft={handleSavePlanDraft}
@@ -304,6 +320,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         onRecordPermissionDecision={handleRecordPermissionDecision}
         onCloseWorkOrder={handleCloseWorkOrder}
         onOverrideVerdict={handleOverrideVerdict}
+        onRetractSteerNote={handleRetractSteerNote}
         onGetStepReport={(idx, role) => source.getStepReport(selectedId, idx, role)}
         onGetStepVerdict={handleGetStepVerdict}
         onResetStep={handleResetStep}

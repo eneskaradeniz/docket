@@ -71,3 +71,20 @@ describe('applyOrderMdEdits (WO-0031c)', () => {
     expect(applyOrderMdEdits(base, {})).toBe(base);
   });
 });
+
+describe('flow_mode edits (WO-0045)', () => {
+  it('rewrites flow_mode, inserting the key when absent', () => {
+    const out = applyOrderMdEdits(base, { flowMode: 'manual' });
+    expect(parseOrderMd(out).flowMode).toBe('manual');
+    expect(out).toContain('review_mode: gates'); // neighbours intact
+  });
+});
+
+describe('flow_mode back to auto (WO-0045)', () => {
+  it('flipping to auto REMOVES the key — silence IS auto', () => {
+    const manual = applyOrderMdEdits(base, { flowMode: 'manual' });
+    const back = applyOrderMdEdits(manual, { flowMode: 'auto' });
+    expect(back).not.toContain('flow_mode');
+    expect(parseOrderMd(back).flowMode).toBe('auto');
+  });
+});

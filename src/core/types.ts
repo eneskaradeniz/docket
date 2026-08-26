@@ -78,7 +78,16 @@ export type TranscriptLine =
   | { speaker: 'tool_use'; tool: string; detail: string; callId?: string }
   | { speaker: 'tool_result'; summary: string; isError: boolean; callId?: string }
   | { speaker: 'system'; text: string }
+  | { speaker: 'operator'; text: string; noteId?: string } // a DELIVERED steer note (WO-0045) — first-class session content, never a `note` (those are live-only Docket commentary)
   | { speaker: 'note'; kind: TranscriptNoteKind; detail?: string };
+
+/** One operator steering note (WO-0045). Queued into the running drive's mirror, delivered once at
+ * the next agent-turn boundary, persisted on the session row so Durdur→Sürdür carries it (the SDK
+ * queue dies with the CLI process — mirror is truth, probe raw/s4b-abort-pending.log). */
+export interface SteerNote {
+  id: string;
+  text: string;
+}
 
 /** One surfaced permission ask (moved to types.ts in WO-0027 so SessionRef/StopAndAsk and the live fold
  *  share it without a types↔runner cycle; runner.ts re-exports). */
@@ -111,6 +120,9 @@ export type SessionRef = (
   transcript: TranscriptLine[];
   scope?: TrackId;
   providerSessionId?: string;
+  /** Undelivered steer notes riding the row (WO-0045) — LATEST-WINS unlike transcript/cost: deliveries
+   * shrink it; the SDK-side queue is the truth while running, this row is the truth across a stop. */
+  pendingNotes?: SteerNote[];
   cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
   startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)
@@ -183,7 +195,12 @@ export type WoEventKind =
   | 'closed'
   | 'wo_edited'
   | 'rule_changed'
-  | 'permission_decision';
+  | 'permission_decision'
+  // WO-0045 operator tempo: the steer queue's lifecycle + the per-WO flow-mode switch
+  | 'steer_queued'
+  | 'steer_delivered'
+  | 'steer_retracted'
+  | 'flow_mode_changed';
 
 export interface WoEvent {
   kind: WoEventKind;
@@ -346,6 +363,7 @@ export interface WorkOrderDetailView {
   sessions: SessionRef[];
   steps: StepView[]; // the plan's steps (WO-0017); [] when plan.md has no ```steps fence or plan not approved
   reviewMode: 'gates' | 'every-step'; // the WO's review cadence (WO-0020) — gates auto-proceeds; every-step pauses
+  flowMode: 'auto' | 'manual'; // the WO's flow tempo (WO-0045) — auto: sequencing auto-advances; manual: nothing starts itself
   gateInputs: WoGateInputs; // for the closed card's sha display (WO-0029 / B21)
   primaryAction: PrimaryAction;
   sources: SourceLink[];

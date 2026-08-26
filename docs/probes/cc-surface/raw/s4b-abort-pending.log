@@ -1,0 +1,20 @@
+[0.0s] SCENARIO s4b CONFIG {"seed":"Run `sleep 8` once with the Bash tool, then reply with exactly READY.","close":"never","resume":null}
+[0.0s] SEED_PUSH uuid=719a39c9-a7ae-49ed-93f8-d4ee80dbce13
+[0.3s] MSG[system:hook_started] {"type":"system","subtype":"hook_started","hook_id":"95363b62-5919-4962-9b08-3f7a2807c979","hook_name":"SessionStart:startup","hook_event":"SessionStart","uuid":"ea27d1f9-9577-4966-aaa7-4b6626e529c6",
+[0.4s] MSG[system:hook_response] {"type":"system","subtype":"hook_response","hook_id":"95363b62-5919-4962-9b08-3f7a2807c979","hook_name":"SessionStart:startup","hook_event":"SessionStart","output":"=== REMEMBER ===\nHistory in .remem
+[0.5s] MSG[command_lifecycle] command_uuid=719a39c9-a7ae-49ed-93f8-d4ee80dbce13 state=queued
+[2.3s] MSG[command_lifecycle] command_uuid=719a39c9-a7ae-49ed-93f8-d4ee80dbce13 state=started
+[2.3s] MSG[init] session=c1284322-36ad-4970-97dc-815adc46f39d capabilities=["interrupt_receipt_v1","interrupt_cancel_queued_v1","msg_lifecycle_v1"]
+[9.1s] MSG[assistant] model=glm-5.3 usage={"in":0,"out":0}
+[9.1s] NOTE_PUSH 1/1 uuid=be070351-9c5e-41f5-a23f-8dc0793b2a33 shouldQuery=default
+[9.1s] MSG[assistant] {"type":"assistant","message":{"id":"msg_2026082607550958efab2f9f074603","type":"message","role":"assistant","model":"glm-5.3","content":[{"type":"tool_use","id":"call_8413f7530eb745e5a809aed1","name"
+[9.1s] MSG[command_lifecycle] command_uuid=be070351-9c5e-41f5-a23f-8dc0793b2a33 state=queued
+[12.1s] ABORT_CALL
+[12.2s] MSG[system:task_started] {"type":"system","subtype":"task_started","task_id":"bgt4sebek","tool_use_id":"call_8413f7530eb745e5a809aed1","description":"Sleep for 8 seconds","task_type":"local_bash","uuid":"438286c6-2e7c-4898-8b
+[14.1s] ERROR Error: Claude Code process aborted by user
+    at ChildProcess.<anonymous> (file:///Users/eneskaradeniz/source/docket/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs:108:9894)
+    at ChildProcess.emit (node:events:526:24)
+    at abortChildProcess (node:child_process:776:13)
+    at AbortSignal.onAbortListener (node:child_process:846:7)
+    at [nodejs.internal.kHybridDispatch] (node:internal/eve
+[14.1s] SUMMARY scenario=s4b session=c1284322-36ad-4970-97dc-815adc46f39d results=0 notePushes=1 echoes=[]

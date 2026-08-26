@@ -55,5 +55,14 @@ export function createRunnerPort(bridge: RunnerBridge): SessionRunner {
     pendingAsks: () => bridge.pendingAsks(),
     interrupt: () => bridge.interrupt(),
     abort: () => bridge.abort(),
+    // WO-0045: steering travels its own IPC round-trip (it targets the pipeline's live-drive slot,
+    // not this port's event stream); the resulting steer_queued/delivered events arrive via drive().
+    // The noteId is minted MAIN-side (pipeline.steer) — the UI reads it off the steer_queued event,
+    // so the port's boolean return suffices.
+    steer: async (note: string) => {
+      const noteId = await bridge.steer(note);
+      return noteId !== null;
+    },
+    retractSteer: (noteId: string) => bridge.retractSteer(noteId),
   };
 }

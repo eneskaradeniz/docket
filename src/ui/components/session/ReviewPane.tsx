@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneError, PaneShell, PaneLogChip, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneError, PaneShell, PaneLogChip, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -22,6 +22,8 @@ export function ReviewPane({
   workOrderId,
   drive,
   now,
+  autoStart = true,
+  onRetractStoppedSteer,
 }: {
   step: StepView;
   workOrderId: WorkOrderId;
@@ -29,6 +31,11 @@ export function ReviewPane({
   drive?: DriveState;
   /** The controller's one-second ticker — the live costline's elapsed reuses it (pane parity). */
   now?: number;
+  /** WO-0045: may this pane AUTO-start the review leg? False in `Akış: manuel` — the review card
+   *  in the decision stack is the offer. Not a dependency of the effect (a mode flip never fires). */
+  autoStart?: boolean;
+  /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
+  onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
   const { formatUsd, PROVIDER_ERROR_LABELS, UI } = useLabels();
   const store = useDriveStore();
@@ -39,11 +46,12 @@ export function ReviewPane({
   const lastDriven = useRef<number | undefined>(undefined);
 
   function startDrive(): void {
-    store.start(driveKey, { role: 'architect', workOrderId, mode: 'direct', reviewStepIndex: step.idx, prompt: '' }, initialSessionState);
+    // WO-0045: the self-starting review spawn — origin-stamped for the pipeline's manual-mode gate.
+    store.start(driveKey, { role: 'architect', workOrderId, mode: 'direct', reviewStepIndex: step.idx, prompt: '', origin: 'auto' }, initialSessionState);
   }
 
   useEffect(() => {
-    if (lastDriven.current !== step.idx) {
+    if (autoStart && lastDriven.current !== step.idx) {
       lastDriven.current = step.idx;
       startDrive();
     }
@@ -89,6 +97,22 @@ export function ReviewPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
+      <PaneSteerBar
+        live={running}
+        pendingNotes={state.pendingNotes}
+        onSend={(note) => store.steer(driveKey, note)}
+        onRetract={(noteId) => {
+          // Live: the runner route (the SDK's cancel window). Stopped: the row IS the queue — the
+          // data port rewrites it + audits; success patches this fold so the row disappears here too.
+          if (running) {
+            void store.retract(driveKey, noteId);
+          } else if (state.sessionId) {
+            void onRetractStoppedSteer?.(state.sessionId, noteId).then((ok) => {
+              if (ok) store.retractNote(driveKey, noteId);
+            });
+          }
+        }}
+      />
       {!hasStream && !running ? <p className="text-xs text-inkdim">{UI.reviewHint}</p> : null}
 
       {hasStream && !emptyRun && logOpen ? (

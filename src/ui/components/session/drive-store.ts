@@ -188,6 +188,28 @@ export function createDriveStore(runner: SessionRunner) {
   }
   /** WO-0031c: Zorla kes — the 5s-stuck escape hatch (forwards the port's forced stop). */
   const abort = (): Promise<void> => runner.abort();
+  /** WO-0045: queue an operator note into the RUNNING drive. The count arrives via the folded
+   *  steer_queued event (the noteId rides it — the pending list's retract handle). False when no
+   *  drive is live or the transport refused (CLI without msg_lifecycle_v1). */
+  const steer = (key: string, note: string): Promise<boolean> => {
+    if (active !== key) return Promise.resolve(false);
+    return runner.steer?.(note) ?? Promise.resolve(false);
+  };
+  /** WO-0045: pull a queued note back (live drive — best-effort; stopped drive — the mirror route
+   *  through the data port, see retractNote below). */
+  const retract = (key: string, noteId: string): Promise<boolean> => {
+    if (active !== key) return Promise.resolve(false);
+    return runner.retractSteer?.(noteId) ?? Promise.resolve(false);
+  };
+  /** WO-0045: drop a note from a STOPPED drive's fold — pairs the data port's row rewrite (the store
+   *  rewrites the mirror + audits) with the live fold, so the pending list agrees the row is gone.
+   *  The `note()` pattern: a fold patch, not a runner call. */
+  function retractNote(key: string, noteId: string): void {
+    const cur = drives.get(key);
+    if (!cur) return;
+    drives.set(key, { ...cur, state: { ...cur.state, pendingNotes: cur.state.pendingNotes.filter((n) => n.id !== noteId) } });
+    notify();
+  }
 
   return {
     subscribe,
@@ -202,6 +224,9 @@ export function createDriveStore(runner: SessionRunner) {
     forgetWo,
     sessionId,
     woId,
+    steer,
+    retract,
+    retractNote,
     set onEnd(cb: (key: string) => void) {
       onEnd = cb;
     },

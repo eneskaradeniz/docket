@@ -13,7 +13,7 @@
 // RunnerEvent the runner yields is re-yielded to the host so the existing UI fold (foldSessionEvent) is
 // unchanged; the persistence side-effects ride alongside, exactly as main.ts used to do.
 
-import type { CostSummary, SessionRef } from './types';
+import type { CostSummary, SessionRef, SteerNote } from './types';
 import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState } from './runner';
 import type { DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner } from './runner';
 import type { SessionStore } from './session-store';
@@ -118,9 +118,28 @@ export interface Pipeline {
   decide(requestId: string, decision: PermissionDecision): Promise<void>;
   /** Controlled stop of the current run. Forwards to the runner. */
   interrupt(): Promise<void>;
+  /** Queue an operator steering note into the RUNNING drive (WO-0045) — injected once at the next
+   *  agent-turn boundary; NEVER an interrupt. Resolves the minted noteId, or undefined when no drive
+   *  is live / the runner refuses. The note enters the mirror BEFORE the transport call (a Durdur in
+   *  the gap must not lose it) and leaves it if the runner refuses. */
+  steer(note: string): Promise<string | undefined>;
+  /** Pull a queued note back before delivery (WO-0045). Best-effort (probe s5/s5b): false = the note
+   *  already left the SDK's cancel window and WILL run. */
+  retractSteer(noteId: string): Promise<boolean>;
 }
 
 export function createPipeline(deps: PipelineDeps): Pipeline {
+  // WO-0045: the active drive's steer surface — set when a drive passes its gates, cleared in its
+  // finally. `steer`/`retractSteer` below are the only entry points; they no-op (undefined/false) when
+  // nothing runs. The runner's own stream carries the lifecycle events (steer_queued/delivered/retracted).
+  let active: { woId: import('./types').WorkOrderId; add: (n: SteerNote) => void; drop: (noteId: string) => void; checkpoint: () => void } | undefined;
+  let noteSeq = 0;
+  const noteDetail = (text: string): string => `not: ${text.slice(0, 48)}`;
+  // WO-0045 (reviewer finding 5): ids outlive the process — a carried note's id sits in a session
+  // row, and a bare counter would re-mint the SAME id after a restart (duplicate mirror ids: React
+  // keys collide, dropNote drops both, retract targets the wrong uuid). Time + counter + random.
+  const mintNoteId = (): string =>
+    `steer-${Date.now().toString(36)}-${(++noteSeq).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const drive = async function* (input: DriveInput): AsyncGenerator<RunnerEvent> {
     const di = prepareDriveInput(input, deps.store);
     // WO-0031c: the work order's permission rule (resolved main-side) becomes the drive's policy; when the
@@ -138,6 +157,31 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       yield { kind: 'error', message: `drive refused: ${input.workOrderId} plan not approved` };
       return;
     }
+    // WO-0045 flow mode: in 'manual' NO drive starts itself. An `origin:'auto'` spawn (a pane's mount
+    // auto-drive, the verdict effect's next step) is refused here — the same refusal shape as the plan
+    // gate, so any host that forgets the mode check is still refused. An operator click (origin absent)
+    // always passes; the mode is read at SPAWN time, so a chip switch never touches the running drive
+    // (operator ruling 2026-08-26: switching takes effect at the next boundary).
+    if (
+      (stepIdx !== undefined || reviewIdx !== undefined)
+      && input.origin === 'auto'
+      && deps.store.flowModeFor(input.workOrderId) === 'manual'
+    ) {
+      yield { kind: 'error', message: `drive refused: ${input.workOrderId} flow mode manual` };
+      return;
+    }
+    // WO-0045 Sürdür carry (D5): a resume with no prompt of its own delivers the FIRST queued note
+    // through the prompt channel (it never enters the SDK queue — no double application); every other
+    // pending note re-queues into the new drive after `started` — including on a resume that carries
+    // an explicit prompt (the ask answer): the notes then apply at the boundary after that turn,
+    // mirroring the "queued during a pending ask" case. An approve-resume never carries (the operator
+    // just ruled on the plan; stale notes are not theirs to answer).
+    const carry = input.resume && !input.approve ? deps.store.pendingNotesFor(input.workOrderId, input.resume) : [];
+    if (carry[0] && !di.prompt) {
+      di.prompt = `Operator note: ${carry[0].text}`;
+      di.deliveringNote = carry[0];
+    }
+    const requeue = di.deliveringNote ? carry.slice(1) : carry;
     let providerSessionId: string | undefined;
     let assistantText = ''; // fallback body for the report/verdict when the SDK's `result` is absent
     // The same fold the panes run (WO-0026/F6): accumulating the live state here lets every record() call
@@ -152,6 +196,24 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // at the (possibly much later) close. Honest undercount: a tool interrupted mid-run bills until
     // its last logged event — the old overcount (idle wait billed as work) was the worse lie.
     let lastActivityIso: string | undefined;
+    // WO-0045: the steer MIRROR — the drive's pending notes, the row's latest-wins truth. The fold's
+    // own pendingNotes is the UI projection; THIS list is what record() persists (re-queued notes
+    // emit no event, so only the mirror knows them). Initialized to the re-queue carry (the first
+    // note left through the prompt channel and is never mirrored here).
+    let mirrorNotes: SteerNote[] = [...requeue];
+    const dropNote = (noteId: string): void => {
+      mirrorNotes = mirrorNotes.filter((n) => n.id !== noteId);
+    };
+    // Functions only — reassignments of mirrorNotes above stay visible through these closures.
+    const checkpoint = (): void => record('running');
+    active = {
+      woId: input.workOrderId,
+      add: (n: SteerNote) => {
+        mirrorNotes = [...mirrorNotes, n];
+      },
+      drop: dropNote,
+      checkpoint,
+    };
 
     const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
       if (!providerSessionId) return;
@@ -167,6 +229,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         // The unanswered asks ride the stopped_asking row (WO-0027 / Bulgu 9): a remounted pane re-seeds
         // its cards from them while the host's runner still holds the resolvers.
         ...(status === 'stopped_asking' ? { asks: live.pendingAsks } : {}),
+        pendingNotes: mirrorNotes,
         startedAt: startedAtIso,
         endedAt,
       });
@@ -187,6 +250,12 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             record('running');
             if (stepIdx !== undefined) deps.store.recordStep(input.workOrderId, stepIdx, { status: 'active' });
             yield ev;
+            // WO-0045 D5: the re-queue carry enters the SDK queue now — after the session opened, so
+            // the notes queue for a BOUNDARY (pushed with the seed they would merge into the first
+            // turn, probe s2). Silent (emit:false): the UI fold seeded them from the row already.
+            for (const n of requeue) {
+              await deps.runner.steer?.(n.text, { noteId: n.id, emit: false });
+            }
             break;
           case 'permission_request':
             record('stopped_asking'); // asks included (post-fold: contains this one)
@@ -266,6 +335,32 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             record('running');
             yield ev;
             break;
+          case 'steer_queued':
+            // WO-0045: the runner acknowledged the note into its queue. The mirror normally already
+            // holds it (pipeline.steer's optimistic add — a Durdur in the call gap must not lose the
+            // note); the idempotent add covers a runner acknowledging without a prior steer entry.
+            // The audit rode the pipeline.steer call; here the row checkpoint catches up and the host
+            // fold counts it.
+            if (!mirrorNotes.some((n) => n.id === ev.noteId)) {
+              mirrorNotes = [...mirrorNotes, { id: ev.noteId, text: ev.note }];
+            }
+            record('running');
+            yield ev;
+            break;
+          case 'steer_delivered':
+            // The note applied at an agent-turn boundary (command_lifecycle uuid match in the real
+            // adapter; the synthetic receipt after `started` for a prompt-channel delivery). Delivery
+            // is the one steer mutation that is EVENT-driven — the adapter alone observes it.
+            dropNote(ev.noteId);
+            deps.store.recordAuditEvent(input.workOrderId, 'steer_delivered', noteDetail(ev.text));
+            record('running');
+            yield ev;
+            break;
+          case 'steer_retracted':
+            // Mirror + audit at the retractSteer call site; this event updates the host fold's count.
+            record('running');
+            yield ev;
+            break;
           default: // tool_use, a runner-emitted error — forward as-is
             yield ev;
             break;
@@ -286,6 +381,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         terminated = true;
         record('idle', undefined, lastActivityIso ?? startedAtIso);
       }
+      if (active !== undefined) {
+        active = undefined; // the drive is gone — steer/retractSteer no-op until the next spawn
+      }
     }
   };
 
@@ -293,5 +391,29 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     drive,
     decide: (requestId, decision) => deps.runner.decide(requestId, decision),
     interrupt: () => deps.runner.interrupt(),
+    steer: async (note: string) => {
+      const trimmed = note.trim();
+      if (!active || !trimmed) return undefined;
+      const { woId, add, drop, checkpoint } = active;
+      const noteId = mintNoteId();
+      add({ id: noteId, text: trimmed }); // optimistic: a Durdur in the call gap must not lose the note
+      const ok = (await deps.runner.steer?.(trimmed, { noteId, emit: true })) ?? false;
+      if (!ok) {
+        drop(noteId); // no live transport (or it refused) — un-mirror
+        return undefined;
+      }
+      deps.store.recordAuditEvent(woId, 'steer_queued', noteDetail(trimmed));
+      checkpoint(); // a drive parked on an ask records nothing until it resolves — write the note NOW
+      return noteId;
+    },
+    retractSteer: async (noteId: string) => {
+      if (!active) return false;
+      const { woId, drop } = active;
+      const ok = (await deps.runner.retractSteer?.(noteId)) ?? false;
+      if (!ok) return false; // already past the SDK's cancel window — the note WILL run (probe s5/s5b)
+      drop(noteId);
+      deps.store.recordAuditEvent(woId, 'steer_retracted', `not: ${noteId}`);
+      return true;
+    },
   };
 }

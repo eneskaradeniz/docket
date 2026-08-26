@@ -4,11 +4,12 @@
 // testable without I/O, and because ADR-0007's UI rule bans `.replace(` in src/ui/ as a proxy for "no raw
 // identifier rendered as display text" — the renderer never parses document text. The composition root
 // (electron/main.ts) reads order.md from disk and fills the architect session's first prompt from these.
-import type { PermissionRule, ReviewMode } from './source';
+import type { FlowMode, PermissionRule, ReviewMode } from './source';
 import type { StepScope, StepSpec } from './types';
 
 export interface ParsedOrderMd {
   reviewMode: ReviewMode; // front-matter review_mode (default 'gates'); consumed by the architect runtime
+  flowMode: FlowMode; // front-matter flow_mode (default 'auto', WO-0045) — 'manual': nothing starts itself
   objective: string; // the ## Objective section body — the architect session's first prompt
   title: string; // front-matter title
   permissionRule: PermissionRule; // front-matter permission_rule; absent/garbage → 'ask_every' (the safe default — operator ruling: no silent auto-approval)
@@ -47,11 +48,14 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const body = m ? m[2] : md;
   const reviewModeValue = frontValue(front, 'review_mode');
   const reviewMode: ReviewMode = reviewModeValue === 'every-step' ? 'every-step' : 'gates';
+  const flowModeValue = frontValue(front, 'flow_mode');
+  const flowMode: FlowMode = flowModeValue === 'manual' ? 'manual' : 'auto';
   const ruleValue = frontValue(front, 'permission_rule');
   const permissionRule: PermissionRule =
     ruleValue === 'full_auto' || ruleValue === 'risky_excluded' ? ruleValue : 'ask_every';
   return {
     reviewMode,
+    flowMode,
     title: frontValue(front, 'title'),
     objective: sectionBody(body, 'Objective'),
     permissionRule,
@@ -64,6 +68,7 @@ export interface OrderMdEdit {
   title?: string;
   description?: string; // → the ## Objective body (the architect's first prompt material)
   reviewMode?: ReviewMode;
+  flowMode?: FlowMode; // → front-matter flow_mode (WO-0045)
   permissionRule?: PermissionRule;
 }
 
@@ -86,10 +91,18 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
     else lines.push(`${key}: ${value}`);
     return lines.join('\n');
   };
+  // WO-0045: silence IS auto — flipping back to the default REMOVES the key (buildOrderMd emits it
+  // only when manual; the front-matter stays minimal and the default never needs spelling out).
+  const dropKey = (text: string, key: string): string => {
+    const lines = text.split(/\r?\n/).filter((l) => !l.startsWith(`${key}:`));
+    return lines.join('\n');
+  };
 
   let nextFront = front;
   if (patch.title !== undefined) nextFront = setKey(nextFront, 'title', patch.title);
   if (patch.reviewMode !== undefined) nextFront = setKey(nextFront, 'review_mode', patch.reviewMode);
+  if (patch.flowMode === 'manual') nextFront = setKey(nextFront, 'flow_mode', 'manual');
+  else if (patch.flowMode === 'auto') nextFront = dropKey(nextFront, 'flow_mode');
   if (patch.permissionRule !== undefined) nextFront = setKey(nextFront, 'permission_rule', patch.permissionRule);
 
   let nextBody = body;

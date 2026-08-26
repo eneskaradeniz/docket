@@ -145,5 +145,23 @@ Out of scope:
   (persisted, like `stop_and_ask`) is what `Sürdür` reads.
 - Naming: "Akış" stays the surface word (operator's own term); internals say `steer` and
   `flow_mode`.
+- **Probe outcome (2026-08-26, `docs/probes/cc-surface/` §S + `raw/s1..s7`):** the two GATED shapes measured TRUE
+  (`streamInput` queueing; the `interrupt()` receipt `{still_queued:[uuid]}` — CLI 2.1.231 drifted from 2.1.220,
+  capabilities unchanged). One assumption corrected: notes NEVER echo as user messages — delivery is detected from
+  `command_lifecycle` uuid matches (`msg_lifecycle_v1`; steering honest-off without it). Measured additions the
+  build carries: result arrives PER COMMAND (delta-accumulated drive cost), an immediate cancel can race the
+  enqueue (`false` = the note WILL run — the row stays), abort kills the SDK queue (mirror-is-truth, evidenced
+  s4b). No stop-and-ask gate fired.
+- **Operator rulings (2026-08-26):** (1) the Akış chip locks ONLY on a closed WO — clickable while a drive runs,
+  the mode is read at the next spawn; a mode flip never fires a start (the waiting card does not self-trigger on
+  a flip to auto). (2) A boundary-queued note EXTENDS the same drive as its own turn — visibly (the operator line
+  + the extra work in the döküm; intermediate results suppressed into one terminal event).
+- **Operator checkpoint DEFERRED by operator ruling (2026-08-26, "şuan dockette yapabileceğim bir iş yok —
+  devam edelim, sonra test ederim"):** the in-app real-drive pass (live steer on a base-mobile dogfood, the
+  manuel boundary card→click, the card-seat ruling — currently the decision stack's ActionCard seat) runs
+  post-merge as the operator's own test round. The fake-runner E2E (4 specs) + the real-adapter smoke
+  (`started → steer_queued → steer_delivered → one turn_complete`) stand in as the shipped evidence.
+- Explicit-prompt resumes re-queue the notes for the boundary after their turn (a D5 refinement made during
+  implementation — notes never stall behind an ask answer).
 - The `Akış: manuel` + `İzin: hep sor` pairing is the product answer to "onayım olmadan işlem yok" —
   the chip words must not drift from the permission rule's vocabulary.

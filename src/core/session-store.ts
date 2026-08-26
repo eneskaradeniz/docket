@@ -5,7 +5,7 @@
 // core port so the pipeline depends on an interface, not an adapter — and so the drive loop is testable with
 // a fake store, without SQLite or an agent (ADR-0006 line 30). The adapter's `Store implements SessionStore`;
 // the UI's `WorkOrderSource` stays the read/CRUD half.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
 
 export interface RecordSessionInput {
   providerSessionId: string;
@@ -17,6 +17,9 @@ export interface RecordSessionInput {
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session
   transcript?: TranscriptLine[]; // the folded live transcript checkpoint (WO-0026/F6) — rewritten per record
   asks?: PermissionAsk[]; // the unanswered asks at a stopped_asking record (WO-0027/Bulgu 9) — persisted for re-attach
+  pendingNotes?: SteerNote[]; // the queued steer notes (WO-0045) — LATEST-WINS: the live fold overwrites;
+  //                             undefined KEEPS the prior row's notes (a record from a notes-blind path must
+  //                             not silently drop them)
   startedAt?: string; // ISO — preserved across every record of the drive (WO-0027 / İstek 7)
   endedAt?: string; // ISO — set only on the terminal record
 }
@@ -44,4 +47,14 @@ export interface SessionStore {
    *  and review drives while it is closed — the gate is enforced at the pipeline/store layer, not
    *  only derived in the UI (any host — GUI pane or CLI `drive --step` — is refused alike). */
   planApprovedFor(workOrderId: WorkOrderId): boolean;
+  /** The work order's FLOW MODE (WO-0045), read from order.md front-matter at spawn time: in 'manual'
+   *  the pipeline refuses any `origin:'auto'` step/review spawn — no drive starts itself. Absent
+   *  order.md / missing key → 'auto' (today's behavior). */
+  flowModeFor(workOrderId: WorkOrderId): 'auto' | 'manual';
+  /** The queued steer notes persisted on a session row (WO-0045) — what Sürdür delivers. [] when the
+   *  row carries none (the SDK queue died with the stop; this row is the only carrier). */
+  pendingNotesFor(workOrderId: WorkOrderId, providerSessionId: string): SteerNote[];
+  /** Append a steer-lifecycle audit event to the WO timeline (WO-0045). Detail may quote the note —
+   *  the operator's own words — never an environment value (CLAUDE.md 2026-08-26). */
+  recordAuditEvent(workOrderId: WorkOrderId, kind: 'steer_queued' | 'steer_delivered' | 'steer_retracted', detail: string): void;
 }

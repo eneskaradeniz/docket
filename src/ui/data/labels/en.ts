@@ -194,6 +194,8 @@ export function transcriptLineText(line: TranscriptLine): string {
       return `→ ${line.summary}`;
     case 'system':
       return line.text;
+    case 'operator':
+      return `${UI.operatorSpeaker}: ${line.text}`;
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
@@ -274,6 +276,10 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   wo_edited: 'Work order edited',
   rule_changed: 'Rule changed',
   permission_decision: 'Permission decision',
+  steer_queued: 'Steer note queued',
+  steer_delivered: 'Steer note delivered',
+  steer_retracted: 'Steer note retracted',
+  flow_mode_changed: 'Flow mode changed',
 };
 
 /** Mirrors tr's structural detail → display; the machine tokens ('allowed'/'denied') are already
@@ -290,6 +296,11 @@ export function eventDetailText(kind: WoEventKind, detail: string): string {
       const m = /^edited:(\d+)$/.exec(detail);
       return m ? `edited approval · ${m[1]} changes` : detail;
     }
+    case 'flow_mode_changed':
+      return detail; // 'manual'/'auto' are already the en words
+    case 'steer_queued':
+    case 'steer_delivered':
+      return detail.startsWith('not: ') ? detail.slice(5) : detail;
     case 'permission_decision': {
       const sep = detail.indexOf(' · ');
       const head = sep >= 0 ? detail.slice(0, sep) : detail;
@@ -560,6 +571,22 @@ export const UI = {
   // WO-0044: the chip names the cadence itself — "At gates" alone begged "whose gates?".
   reviewModeGatesShort: 'Review: at gates',
   reviewModeEveryShort: 'Review: every step',
+  // WO-0045 operator tempo — "Akış" is the operator's own surface word; en keeps the tempo sense.
+  flowModeLabel: 'Flow',
+  flowModeAutoShort: 'Flow: automatic',
+  flowModeManualShort: 'Flow: manual',
+  flowModeAutoHint: 'Sequencing advances itself — verdicts and steps run back to back.',
+  flowModeManualHint: 'No session starts itself — the next step and review start on click.',
+  flowPendingBadge: (n: number) => `+${n}`,
+  steerPlaceholder: 'Leave a note for the drive — applied at the next boundary',
+  steerSend: 'Send',
+  steerPendingTitle: 'Queued',
+  steerRefused: 'The note did not queue — the drive is not ready yet; try again shortly.',
+  steerRetract: 'Retract',
+  operatorSpeaker: 'Operator',
+  manuelNextStepCard: (idx: number) => `next: step ${idx}`,
+  manuelReviewCard: (idx: number) => `next: review ${idx}`,
+  manuelStartCard: 'Start',
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',

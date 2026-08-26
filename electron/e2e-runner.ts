@@ -15,6 +15,10 @@ export function createE2eRunner(): E2eRunner {
   let push: ((ev: RunnerEvent) => void) | undefined; // the active drive's queue push
   let finish: (() => void) | undefined; // closes the active drive's generator
   const held = new Map<string, { ask: PermissionAsk; release: () => void }>();
+  // WO-0045: the steer queue the fake acknowledges (the pipeline mirrors optimistically; the tests
+  // script DELIVERY by emitting steer_delivered with the noteId the steer_queued event carried).
+  let seq = 0;
+  const queuedNotes = new Set<string>();
 
   return {
     drive(input: DriveInput): AsyncIterable<RunnerEvent> {
@@ -77,6 +81,20 @@ export function createE2eRunner(): E2eRunner {
     async abort(): Promise<void> {
       // Zorla kes: no synthesized turn — the stream just ends (the pipeline's finally records idle).
       finish?.();
+    },
+    // WO-0045: acknowledge a note into the fake's queue — steer_queued streams like the real adapter
+    // (command_lifecycle → steer_queued); delivery is the TEST's scripted steer_delivered emit.
+    async steer(note: string, opts?: { noteId: string; emit?: boolean }): Promise<boolean> {
+      if (!push) return false;
+      const noteId = opts?.noteId ?? `e2e-steer-${++seq}`;
+      queuedNotes.add(noteId);
+      if (opts?.emit !== false) push({ kind: 'steer_queued', noteId, note, at: new Date().toISOString() });
+      return true;
+    },
+    async retractSteer(noteId: string): Promise<boolean> {
+      if (!queuedNotes.delete(noteId)) return false;
+      push?.({ kind: 'steer_retracted', noteId, at: new Date().toISOString() });
+      return true;
     },
     emit(ev: RunnerEvent): void {
       if (ev.kind === 'permission_request') {

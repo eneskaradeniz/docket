@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, TrackId, WorkOrderId, TranscriptLine } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, WorkOrderId, TranscriptLine } from './types';
 import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
@@ -38,6 +38,13 @@ export type RunnerEvent =
   // card). `cost` rides only when the runner could observe it (a scripted fake can; a real abort
   // throws before the result message that carries cost — the honest no-claim, WO-0026/TD-030).
   | { kind: 'interrupted'; cost?: CostSummary; at?: string }
+  // WO-0045 operator tempo — the steer queue's lifecycle. Queued: the note entered the mirror (the ONLY
+  // visible change mid-turn is the pending count — no transcript line). Delivered: the adapter observed
+  // the note applied at an agent-turn boundary (command_lifecycle uuid match — probe s2: notes never echo
+  // as user messages). Retracted: pulled back before delivery (best-effort by SDK contract — probe s5/s5b).
+  | { kind: 'steer_queued'; noteId: string; note: string; at?: string }
+  | { kind: 'steer_delivered'; noteId: string; text: string; at?: string }
+  | { kind: 'steer_retracted'; noteId: string; at?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -88,6 +95,14 @@ export interface DriveInput {
    *  default) by the composition root. Omitted → the pipeline's injected policy governs (tests,
    *  scripted runners). The fence denies out-of-scope writes under every rule; this is cadence, not scope. */
   permissionRule?: PermissionRule;
+  /** WHO started this drive (WO-0045). 'auto' = a host's sequencing effect (the verdict auto-advance, a
+   *  pane's mount auto-drive) — the pipeline refuses these in `manual` flow mode before spawning.
+   *  Absent = the operator (a click, the CLI, a test) — always allowed. */
+  origin?: 'operator' | 'auto';
+  /** A pending steer note being delivered AS the resume prompt (WO-0045 / D5): the pipeline folds the
+   *  first queued note into the prompt and the runner emits the matching `steer_delivered` right after
+   *  `started` — the note never enters the SDK queue, so it cannot double-apply. */
+  deliveringNote?: { id: string; text: string };
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the
@@ -107,6 +122,14 @@ export interface SessionRunner {
    *  Hosts with a harder mechanism use it (the GUI aborts the pipeline generator — its finally still
    *  records the terminal state); hosts without one alias interrupt. */
   abort(): Promise<void>;
+  /** Queue an operator steering note into the RUNNING drive (WO-0045) — injected once at the next
+   *  agent-turn boundary; never an interrupt. Optional: optional-implementers (the CLI's one-shot
+   *  drive) simply never support steering. `emit:false` re-queues silently (Sürdür carry — the fold
+   *  already seeded the note from the row). Resolves false when no drive is live. */
+  steer?(note: string, opts?: { noteId: string; emit?: boolean }): Promise<boolean>;
+  /** Pull back a queued note before delivery (WO-0045). Best-effort by SDK contract (probe s5/s5b):
+   *  false means the note already left the cancel window and WILL run. */
+  retractSteer?(noteId: string): Promise<boolean>;
 }
 
 /** Is this the pure architect PLAN drive — the one drive that proposes a plan and runs in the provider's plan
@@ -348,6 +371,10 @@ export interface LiveSessionState {
    *  batch — the rest became invisible-but-held (WO-0027 / Bulgu 10). Removed only by `ask_resolved`
    *  (the runner emits it when `decide` answers THAT id), by turn end, or by an error. */
   pendingAsks: PermissionAsk[];
+  /** Queued steer notes, in submission order (WO-0045). A queued note adds NO transcript line — the
+   *  pending count is the only mid-turn visible change (AC2). Removed by `steer_delivered` /
+   *  `steer_retracted` for THAT id; SURVIVES `interrupted` (Durdur persists the queue for Sürdür, AC4). */
+  pendingNotes: SteerNote[];
   pendingPlan?: string;
   cost: CostSummary;
   lastError?: string;
@@ -359,6 +386,7 @@ export const initialSessionState: LiveSessionState = {
   status: 'idle',
   entries: [],
   pendingAsks: [],
+  pendingNotes: [],
   cost: { tokensIn: 0, tokensOut: 0, usd: 0 },
 };
 
@@ -370,7 +398,7 @@ export const initialSessionState: LiveSessionState = {
  *  "Durduruldu" turn line then derive after an app RESTART too (the fold's own memory dies with the
  *  renderer; the row does not). Pure; empty input → the initial state. */
 export function seedLiveState(
-  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status'>,
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes'>,
   asks: PermissionAsk[] = [],
 ): LiveSessionState {
   if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0 && session.status === 'none') {
@@ -381,6 +409,7 @@ export function seedLiveState(
     entries: session.transcript,
     ...(session.status === 'stopped' ? { status: 'stopped' as const } : {}),
     ...(asks.length ? { status: 'stopped_asking' as const, pendingAsks: asks } : {}),
+    ...(session.pendingNotes?.length ? { pendingNotes: session.pendingNotes } : {}),
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
   };
@@ -452,6 +481,21 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         entries: [...state.entries, { speaker: 'note', kind: 'interrupted', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.cost ? { cost: event.cost } : {}),
       };
+    case 'steer_queued':
+      // AC2: a queued note adds NO transcript line — the pending count is the only visible change
+      // until the boundary delivers it. Status is untouched: queueing never interrupts or un-blocks.
+      return { ...state, pendingNotes: [...state.pendingNotes, { id: event.noteId, text: event.note }] };
+    case 'steer_delivered':
+      // The note applied at the boundary — the operator line is first-class session content (not a
+      // `note`: those are live-only Docket commentary). Delivery is authoritative even for an id the
+      // fold never saw queued (a re-queue raced a remount).
+      return {
+        ...state,
+        pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId),
+        entries: [...state.entries, { speaker: 'operator', text: event.text, noteId: event.noteId }],
+      };
+    case 'steer_retracted':
+      return { ...state, pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId) };
     case 'error':
       return { ...state, status: 'error', lastError: event.message, pendingAsks: [], ...(event.code ? { lastErrorCode: event.code } : {}) };
   }

@@ -3,7 +3,7 @@ import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
 import type { TurnState } from '../../../core/derive';
-import { derivePhase, deriveSessionAudit, deriveTurnState } from '../../../core/derive';
+import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } from '../../../core/derive';
 import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
@@ -76,6 +76,7 @@ export function WorkOrderDetail({
   reloadDetail,
   onDelete,
   autoRequestPlan,
+  onRetractSteerNote,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -95,6 +96,9 @@ export function WorkOrderDetail({
   reloadDetail: () => void;
   onDelete: () => Promise<void>;
   autoRequestPlan?: boolean;
+  /** WO-0045: retract a queued note from a STOPPED drive — the data-port mirror route (the store
+   *  rewrites the row + audits); the pane patches its fold when this resolves true. */
+  onRetractSteerNote?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
   const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
@@ -112,28 +116,37 @@ export function WorkOrderDetail({
   const [reviewIdx, setReviewIdx] = useState<number | undefined>(undefined);
   const [verdictFor, setVerdictFor] = useState<StepView | undefined>(undefined);
   // Review-trigger (WO-0020): when the driven step becomes 'done' and has no verdict yet, hand it to the
-  // architect for review — instead of auto-advancing straight to the next step.
+  // architect for review — instead of auto-advancing straight to the next step. WO-0045: in `Akış:
+  // manual` nothing starts itself — the review card in the decision stack is the offer. flowMode is
+  // deliberately NOT a dependency: flipping the mode mid-wait must never fire (or un-fire) anything —
+  // it is read fresh at the boundary this effect runs on (operator ruling 2026-08-26, pin 2).
   useEffect(() => {
+    if (detail.flowMode === 'manual') return;
     if (reviewIdx !== undefined || verdictFor || runIdx === undefined) return;
     const cur = detail.steps.find((s) => s.idx === runIdx);
     if (cur?.status === 'done' && !cur.verdict) {
       setReviewIdx(cur.idx);
       setRunIdx(undefined);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.steps, runIdx, reviewIdx, verdictFor]);
   // Verdict-branch (WO-0020): once the reviewed step has a verdict, either auto-advance (gates + proceed) or
   // surface the verdict card (gates + revise, every-step, or unknown → revise). This is review_mode branching.
+  // WO-0045: manual mode never auto-advances — a proceed verdict simply closes the review; the manuel
+  // card derives the next leg from the steps. Same no-flowMode-dep rule as above.
   useEffect(() => {
     if (reviewIdx === undefined || verdictFor) return;
     const cur = detail.steps.find((s) => s.idx === reviewIdx);
     if (cur?.verdict) {
       setReviewIdx(undefined);
+      if (detail.flowMode === 'manual') return;
       if (detail.reviewMode === 'gates' && cur.verdict === 'proceed') {
         setRunIdx(detail.steps.find((s) => s.status === 'pending')?.idx);
       } else {
         setVerdictFor(cur);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.steps, reviewIdx, verdictFor, detail.reviewMode]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -409,6 +422,37 @@ export function WorkOrderDetail({
       state,
     );
   };
+  // WO-0045 (reviewer finding 2): a stopped drive's Sürdür resumes THE STOPPED DRIVE — its own fold
+  // session id + its own input shape. The table lookups in resumeStep/retry cannot tell a step row
+  // from its review row (both persist step_idx), so the old chain resumed the STEP session under a
+  // stopped REVIEW pane (and Sürdür's carry would read the wrong row's mirror). Plan/free drives keep
+  // the old chain — their panes own their resume paths.
+  const resumeStopped = (): void => {
+    if (!state.sessionId) {
+      (stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry)();
+      return;
+    }
+    setStopped(false);
+    if (reviewIdx !== undefined) {
+      store.start(
+        driveKey,
+        { role: 'architect', workOrderId: detail.id, mode: 'direct', reviewStepIndex: reviewIdx, prompt: '', resume: state.sessionId },
+        state,
+      );
+      return;
+    }
+    const step = runIdx !== undefined ? detail.steps.find((st) => st.idx === runIdx) : undefined;
+    if (step) {
+      store.start(
+        driveKey,
+        { role: step.role, workOrderId: detail.id, mode: 'direct', scope: step.scopeTrackId, stepIndex: step.idx, prompt: '', resume: state.sessionId },
+        state,
+      );
+      return;
+    }
+    (planStage || !hasSteps ? requestPlan : retry)();
+  };
+
   // Zorla kes: the 5s-stuck escape hatch — the generator's injected return runs the completion guarantee.
   const forceKill = (): void => {
     void store.abort();
@@ -574,7 +618,7 @@ export function WorkOrderDetail({
         primaryKind = 'approve';
       }
     } else if (stoppedNow) {
-      primary = stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry; // ⏎ = ▶ Sürdür
+      primary = resumeStopped; // ⏎ = ▶ Sürdür — the stopped drive's OWN session (WO-0045 finding 2)
       primaryKind = 'resume';
     } else if (planStage && !effectivePlan && !showQuestion) {
       primary = requestPlan; // ⏎ = Plan iste (the decision row's lone button)
@@ -604,7 +648,7 @@ export function WorkOrderDetail({
           enter: primaryKind === 'resume',
           onStop: stop,
           onForceKill: forceKill,
-          onResume: stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry,
+          onResume: stoppedNow ? resumeStopped : stepResumeId !== undefined ? resumeStep : planStage || !hasSteps ? requestPlan : retry,
         }
       : undefined;
   // WO-0039 revizyon (operator, 2026-08-23): TEK KARAR KONUMU — the plan flow's actions sit in ONE
@@ -722,6 +766,49 @@ export function WorkOrderDetail({
       // clipboard unavailable — the text stays selectable on screen
     }
   };
+  // WO-0045 — the manuel card: what a `Akış: manual` work order waits on (nextManuelAction is pure:
+  //  the review leg precedes an unreviewed report, else the first pending step; an 'active' step
+  //  owns the flow — Sürdür is DriveControls'). The card is the OFFER, the click is the consent; a
+  //  mode flip to auto never fires it (nothing depends on flowMode here — pin 2).
+  const manuelAction = detail.flowMode === 'manual' && !planStage && hasSteps && !running && !stopping
+    ? nextManuelAction(detail.steps)
+    : undefined;
+  const startManuelLeg = (): void => {
+    if (!manuelAction) return;
+    if (manuelAction.kind === 'review') {
+      setReviewIdx(manuelAction.idx);
+      store.start(
+        `${detail.id}:review:${manuelAction.idx}`,
+        { role: 'architect', workOrderId: detail.id, mode: 'direct', reviewStepIndex: manuelAction.idx, prompt: '' },
+        initialSessionState,
+      );
+      return;
+    }
+    const step = detail.steps.find((st) => st.idx === manuelAction.idx);
+    if (!step) return;
+    setRunIdx(step.idx);
+    store.start(
+      `${detail.id}:step:${step.idx}`,
+      { role: step.role, workOrderId: detail.id, mode: 'direct', scope: step.scopeTrackId, stepIndex: step.idx, prompt: '' },
+      initialSessionState,
+    );
+  };
+  const manuelCard =
+    manuelAction && turn !== 'running' ? (
+      <div
+        data-manuel-card={manuelAction.idx}
+        className="flex items-stretch overflow-hidden rounded-md border border-signal/40 bg-surface"
+      >
+        <div className="lamp lamp-signal-breathe" />
+        <div className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-2.5">
+          <p className="readout min-w-0 flex-1 truncate text-signal">
+            {manuelAction.kind === 'review' ? UI.manuelReviewCard(manuelAction.idx) : UI.manuelNextStepCard(manuelAction.idx)}
+          </p>
+          <Button variant="primary" size="sm" className="shrink-0" onClick={startManuelLeg}>{UI.manuelStartCard}</Button>
+        </div>
+      </div>
+    ) : null;
+
   const failCard =
     turn === 'retry' ? (
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
@@ -959,6 +1046,12 @@ export function WorkOrderDetail({
               </div>
             </div>
           </div>
+        ) : manuelCard ? (
+          // WO-0045: in `Akış: manual` the next-leg card IS the decision surface — it outranks the
+          // all-done close card (allStepsDone ignores verdicts; the last review leg still needs the
+          // operator's click before this WO is closeable). The unresolvedRevise decision above keeps
+          // its seat: an open revision outranks any next-leg offer.
+          manuelCard
         ) : allStepsDone ? (
           (() => {
             // WO-0038: the evidence CHECKLIST lives HERE now — the close decision's own card. The
@@ -1045,6 +1138,7 @@ export function WorkOrderDetail({
         sessions={detail.sessions}
         planOnTable={!!docs.plan}
         now={now}
+        {...(onRetractSteerNote ? { onRetractStoppedSteer: onRetractSteerNote } : {})}
         {...(drive ? { drive } : {})}
       />
     )
@@ -1056,6 +1150,7 @@ export function WorkOrderDetail({
       sessions={detail.sessions}
       planOnTable={!!docs.plan}
       now={now}
+      {...(onRetractSteerNote ? { onRetractStoppedSteer: onRetractSteerNote } : {})}
       {...(drive ? { drive } : {})}
     />
   ) : reviewIdx !== undefined ? (
@@ -1063,10 +1158,20 @@ export function WorkOrderDetail({
       step={detail.steps.find((s) => s.idx === reviewIdx)!}
       workOrderId={detail.id}
       now={now}
+      autoStart={detail.flowMode !== 'manual'}
+      {...(onRetractSteerNote ? { onRetractStoppedSteer: onRetractSteerNote } : {})}
       {...(drive ? { drive } : {})}
     />
   ) : activeStep ? (
-    <StepPane step={activeStep} workOrderId={detail.id} sessions={detail.sessions} now={now} {...(drive ? { drive } : {})} />
+    <StepPane
+      step={activeStep}
+      workOrderId={detail.id}
+      sessions={detail.sessions}
+      now={now}
+      autoStart={detail.flowMode !== 'manual'}
+      {...(onRetractSteerNote ? { onRetractStoppedSteer: onRetractSteerNote } : {})}
+      {...(drive ? { drive } : {})}
+    />
   ) : null;
 
   // WO-0038 DOSYA → WO-0044 tur 2 (mockup-approved 2026-08-25): the ONE scroll reads
@@ -1106,6 +1211,7 @@ export function WorkOrderDetail({
           turn={turn}
           duration={durationText}
           driveLive={driveLive}
+          pendingSteer={state.pendingNotes.length}
           onBack={onBack}
           onDelete={() => setConfirmDelete(true)}
           permissionRule={permissionRule}

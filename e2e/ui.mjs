@@ -1730,6 +1730,130 @@ await spec('Tema: Açık/Karanlık pin, Sistem follows the OS live (WO-0040)', a
   await page.waitForTimeout(350);
 });
 
+
+// ===== WO-0045 — operator tempo: the Akış chip, the steer queue, the manuel card =====
+// The scripted fake acknowledges steer() with a steer_queued event; DELIVERY is this driver's
+// scripted steer_delivered emit carrying the noteId the pending row's retract button exposes.
+const w45Emit = (ev) => page.evaluate((e) => window.docket.e2e.emit(e), ev);
+const w45Done = (result) =>
+  w45Emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 100, tokensOut: 30, usd: 0.01 }, result });
+
+await spec('WO-0045 Akış çipi: iki yönlü toggle + order.md + flow_mode_changed audit (temiz WO)', async () => {
+  // 'Plan bekliyor': a PENDING plan (no approved steps → nothing auto-starts on open), never closed
+  // by the suite's closure specs — the calm strip both chips render as buttons on.
+  const card = page.locator('[data-wo-id]', { hasText: 'Plan bekliyor' }).first();
+  const woId = await card.getAttribute('data-wo-id');
+  await openDetail('Plan bekliyor');
+  const chip = page.locator('button[data-flow-mode]').first();
+  assert.equal(await chip.getAttribute('data-flow-mode'), 'auto', 'the chip did not default to otomatik');
+  assert.ok((await chip.textContent())?.includes('Akış: otomatik'), 'chip word missing');
+  assert.ok((await page.locator('button[data-review-mode]').count()) > 0, 'the Denetim chip is not beside it');
+  await chip.click();
+  await page.waitForTimeout(600); // updateWorkOrder + reloadDetail
+  assert.equal(await page.locator('button[data-flow-mode]').first().getAttribute('data-flow-mode'), 'manual', 'the toggle did not reach the view');
+  let docs = await page.evaluate((id) => window.docket.source.getWorkOrderDocs(id), woId);
+  assert.ok(docs.order.includes('flow_mode: manual'), 'order.md did not carry flow_mode');
+  let evs = await page.evaluate((id) => window.docket.source.getWorkOrderEvents(id), woId);
+  assert.ok(evs.some((e) => e.kind === 'flow_mode_changed' && e.detail === 'manual'), 'no flow_mode_changed audit');
+  // and back — leaves the shared WO exactly as the seed had it
+  await page.locator('button[data-flow-mode]').first().click();
+  await page.waitForTimeout(600);
+  docs = await page.evaluate((id) => window.docket.source.getWorkOrderDocs(id), woId);
+  assert.ok(!docs.order.includes('flow_mode'), 'the flip back did not clean the front-matter');
+  evs = await page.evaluate((id) => window.docket.source.getWorkOrderEvents(id), woId);
+  assert.ok(evs.some((e) => e.kind === 'flow_mode_changed' && e.detail === 'auto'), 'no flow_mode_changed(auto) audit');
+  await backToBoard();
+});
+
+await spec('WO-0045 Akış: otomatik açılışta adım kendiliğinden koşar; KOŞARKEN manuele çevrilir; sınırda kart devralır', async () => {
+  await backToBoard(); // spec A's failure path leaves the detail open — reach the board first
+  await openDetail('Akış turu');
+  await page.waitForTimeout(700);
+  // AUTO (the seed default): the first pending step starts itself — today's behavior, untouched (AC7)
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'auto mode did not auto-start step 1');
+  assert.equal(await page.locator('button[data-flow-mode]').first().getAttribute('data-flow-mode'), 'auto');
+  // Ruling 1: the chip is clickable WHILE the drive runs — the mode is read at the next boundary
+  assert.equal(await page.locator('span[data-flow-mode]').count(), 0, 'the Akış chip locked mid-drive (it must not)');
+  await page.locator('button[data-flow-mode]').first().click();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('button[data-flow-mode]').first().getAttribute('data-flow-mode'), 'manual', 'mid-drive toggle failed');
+  // the boundary: step 1 completes — in manual NOTHING follows by itself; the review card appears
+  await w45Done('# Rapor\n\nbirinci adım tamam.');
+  await page.waitForTimeout(900); // onEnd reload + the next derivation
+  await page.waitForTimeout(400);
+  const card2 = page.locator('[data-manuel-card]').first();
+  assert.ok((await card2.textContent())?.includes('Denetim 1'), `the review card did not appear: ${await card2.textContent()}`);
+  assert.equal(await page.locator('[data-steer-input]').count(), 0, 'the review leg started itself');
+  await page.getByRole('button', { name: 'Başlat', exact: true }).click();
+  await page.waitForTimeout(700);
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'the review Başlat did not start');
+  await w45Done('İnceleme tamam.\nVERDICT: proceed');
+  await page.waitForTimeout(900);
+  const card3 = page.locator('[data-manuel-card]').first();
+  assert.ok((await card3.textContent())?.includes('sıradaki: Adım 2'), `a proceed verdict did not yield the next-step card: ${await card3.textContent()}`);
+});
+
+await spec('WO-0045 steer: not gönder → çip sayacı + sırada listesi; teslim → OPERATÖR satırı, sayaç düşer', async () => {
+  await page.getByRole('button', { name: 'Başlat', exact: true }).click();
+  await page.waitForTimeout(700);
+  await page.locator('[data-steer-input]').fill('test notu: ikinci adımı yavaş sür');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  assert.ok((await page.locator('[data-steer-pending="1"]').count()) > 0, 'the pending list did not show the queued note');
+  assert.equal(await page.locator('button[data-flow-mode]').first().getAttribute('data-flow-pending'), '1', 'the chip count badge missing');
+  assert.equal(await page.locator('[data-chat-entry="operator"]').count(), 0, 'the note appeared mid-turn (must be count-only until the boundary)');
+  const noteId = await page.locator('[data-steer-retract]').first().getAttribute('data-steer-retract');
+  assert.ok(noteId, 'the pending row exposes no retract handle');
+  await w45Emit({ kind: 'steer_delivered', noteId, text: 'test notu: ikinci adımı yavaş sür' });
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('[data-steer-pending]').count(), 0, 'the delivered note did not leave the queue');
+  await page.locator('[data-pane-log-toggle]').first().click();
+  await page.waitForTimeout(500);
+  const opLine = page.locator('[data-chat-entry="operator"]').first();
+  assert.ok((await opLine.textContent())?.includes('test notu'), 'the operator line missing from the transcript');
+  await w45Done('# Rapor\n\nikinci adım tamam.');
+  await page.waitForTimeout(900);
+  const card = page.locator('[data-manuel-card]').first();
+  assert.ok((await card.textContent())?.includes('Denetim 2'), 'step 2 done did not yield its review card');
+});
+
+await spec('WO-0045 Durdur bekleyen notla: liste kalır; durmuşta geri çek → satır silinir; Sürdür → not teslim', async () => {
+  await page.getByRole('button', { name: 'Başlat', exact: true }).click();
+  await page.waitForTimeout(700);
+  for (const t of ['birinci düzeltme', 'ikinci düzeltme']) {
+    await page.locator('[data-steer-input]').fill(t);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(350);
+  }
+  assert.ok((await page.locator('[data-steer-pending="2"]').count()) > 0, 'two queued notes did not land');
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(900); // the calm wind-down
+  assert.equal(await page.locator('[data-steer-input]').count(), 0, 'the composer stayed after Durdur');
+  assert.ok((await page.locator('[data-steer-pending="2"]').count()) > 0, 'the queue did not survive the stop (AC4)');
+  // stopped-state retract: the data-port mirror route (the drive is gone)
+  await page.locator('[data-steer-retract]').last().click();
+  await page.waitForTimeout(600);
+  assert.ok((await page.locator('[data-steer-pending="1"]').count()) > 0, 'the stopped retract did not remove the row');
+  // Sürdür: the first queued note rides the PROMPT (deliveringNote → the fake's synthetic receipt).
+  // The pane remounted across the stop → its transcript re-closed: open it, then read the carried line.
+  await page.getByRole('button', { name: /Sürdür/ }).first().click();
+  await page.waitForTimeout(900);
+  const logChip = page.locator('[data-pane-log-toggle]').first();
+  if ((await page.locator('[data-chat-entry="operator"]').count()) === 0) await logChip.click();
+  await page.waitForTimeout(500);
+  const paneText = await page.locator('#live-pane').first().innerText();
+  assert.ok(paneText.includes('birinci düzeltme'), `Sürdür did not deliver the carried note: ${paneText.slice(0, 160)}`);
+  assert.ok((await page.locator('[data-steer-pending="1"]').count()) > 0, 'the re-queued second note is missing');
+  const noteId2 = await page.locator('[data-steer-retract]').first().getAttribute('data-steer-retract');
+  await w45Emit({ kind: 'steer_delivered', noteId: noteId2, text: 'ikinci düzeltme' });
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('[data-steer-pending]').count(), 0, 'the re-queued note did not deliver');
+  await w45Done('İnceleme tamam.\nVERDICT: proceed');
+  await page.waitForTimeout(900);
+  await stopAllDrives();
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

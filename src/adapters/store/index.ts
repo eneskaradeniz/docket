@@ -106,6 +106,7 @@ type SessionRow = {
   status: SessionRef['status'];
   transcript: string;
   stop_and_ask: string | null;
+  pending_notes: string | null;
   started_at: string | null;
   ended_at: string | null;
   cost_tokens_in: number | null;
@@ -154,6 +155,18 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
     const endedAt = r.ended_at ?? undefined;
     // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
     const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
+    // The steer mirror (WO-0045): undelivered notes riding the row. parse-fail → [] (a corrupt blob must
+    // not brick hydration); empty list is dropped so the field stays absent when nothing queues.
+    const pendingNotes = (() => {
+      if (!r.pending_notes) return undefined;
+      try {
+        const parsed = JSON.parse(r.pending_notes) as { id: string; text: string }[];
+        return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SessionRef['pendingNotes']) : undefined;
+      } catch {
+        return undefined;
+      }
+    })();
+    const notesField = pendingNotes ? { pendingNotes } : {};
     switch (r.status) {
       case 'stopped_asking':
         return {
@@ -167,15 +180,16 @@ function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
           startedAt,
           endedAt,
           ...(cost ? { cost } : {}),
+          ...notesField,
         };
       case 'running':
-        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
       case 'stopped':
-        return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
       case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
       case 'none':
-        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}) };
+        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
     }
   });
 }
@@ -276,9 +290,9 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // re-seed was empty, a fresh-reset turn) used to overwrite a fuller checkpoint with []. Like
   // started_at/ended_at, the row may only GROW.
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript FROM session WHERE provider_session_id = ?')
-    .get(input.providerSessionId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null }
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes FROM session WHERE provider_session_id = ? AND work_order_id = ?')
+    .get(input.providerSessionId, input.workOrderId) as
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null }
     | undefined;
   const priorTranscript = (() => {
     if (!prior?.transcript) return undefined;
@@ -311,9 +325,14 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.status === 'stopped_asking'
       ? JSON.stringify({ question: '', gate: 'tool-permission', asks: input.asks ?? [] })
       : null;
+  // WO-0045: the steer mirror is LATEST-WINS (a delivery legitimately shrinks it). Undefined = the
+  // record comes from a notes-blind path — keep the prior row's notes; a silent drop loses notes the
+  // operator still believes are queued (the plan's Risk 5).
+  const pendingNotesJson =
+    input.pendingNotes !== undefined ? JSON.stringify(input.pendingNotes) : (prior?.pending_notes ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     input.workOrderId,
@@ -322,6 +341,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.status,
     JSON.stringify(transcript),
     stopAndAsk,
+    pendingNotesJson,
     acc?.tokensIn ?? null,
     acc?.tokensOut ?? null,
     acc?.usd ?? null,
@@ -346,6 +366,8 @@ function migrate(db: DatabaseSync): void {
   // WO-0027 / İstek 7: session durations (additive; CREATE TABLE covers fresh dbs).
   if (!cols.has('started_at')) db.exec('ALTER TABLE session ADD COLUMN started_at TEXT');
   if (!cols.has('ended_at')) db.exec('ALTER TABLE session ADD COLUMN ended_at TEXT');
+  // WO-0045: the steer-note mirror rides the session row (the stop_and_ask precedent).
+  if (!cols.has('pending_notes')) db.exec('ALTER TABLE session ADD COLUMN pending_notes TEXT');
 
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {
@@ -400,14 +422,24 @@ function migrate(db: DatabaseSync): void {
   // copy (append order is the audit's meaning) → drop.
   const woEventSql =
     (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wo_event'").get() as { sql: string } | undefined)?.sql ?? '';
-  if (woEventSql && (!woEventSql.includes("'wo_edited'") || !woEventSql.includes("'plan_save_refused'"))) {
-    db.exec('ALTER TABLE wo_event RENAME TO wo_event_legacy');
-    db.exec(SCHEMA_SQL);
-    db.exec(
-      'INSERT INTO wo_event (id, work_order_id, kind, detail, at) ' +
-        'SELECT id, work_order_id, kind, detail, at FROM wo_event_legacy ORDER BY id',
-    );
-    db.exec('DROP TABLE wo_event_legacy');
+  if (woEventSql && (!woEventSql.includes("'wo_edited'") || !woEventSql.includes("'plan_save_refused'") || !woEventSql.includes("'steer_queued'"))) {
+    // Reviewer round (WO-0045): transactional, like the session rebuild above — a crash between
+    // COPY and DROP otherwise leaves an empty (fresh-CHECK) wo_event plus an orphaned *_legacy,
+    // silently erasing the audit; the satisfied condition would never re-run.
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec('ALTER TABLE wo_event RENAME TO wo_event_legacy');
+      db.exec(SCHEMA_SQL);
+      db.exec(
+        'INSERT INTO wo_event (id, work_order_id, kind, detail, at) ' +
+          'SELECT id, work_order_id, kind, detail, at FROM wo_event_legacy ORDER BY id',
+      );
+      db.exec('DROP TABLE wo_event_legacy');
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
   }
 }
 
@@ -819,6 +851,51 @@ export function createStore(dbPath: string): Store {
       return Promise.resolve(readWoDocs(dir, id));
     },
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    // WO-0045 — the flow-mode gate's read (order.md front-matter at spawn time; 'auto' for absent
+    // docs/keys — behavior never jumps because the app learned about tempo).
+    flowModeFor: (workOrderId: WorkOrderId): 'auto' | 'manual' => {
+      const dir = woDir(db, workOrderId);
+      if (!dir) return 'auto';
+      const { order } = readWoDocs(dir, workOrderId);
+      return order ? parseOrderMd(order).flowMode : 'auto';
+    },
+    // WO-0045 — Sürdür's delivery source: the notes persisted on the stopped row (the SDK queue died
+    // with the process — mirror is truth, probe raw/s4b-abort-pending.log).
+    pendingNotesFor: (workOrderId: WorkOrderId, providerSessionId: string) => {
+      const r = db
+        .prepare('SELECT pending_notes FROM session WHERE work_order_id = ? AND provider_session_id = ?')
+        .get(workOrderId, providerSessionId) as { pending_notes: string | null } | undefined;
+      if (!r?.pending_notes) return [];
+      try {
+        const parsed = JSON.parse(r.pending_notes) as { id: string; text: string }[];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    },
+    // WO-0045 — the steer lifecycle's timeline entries (pipeline writes them beside the row records).
+    recordAuditEvent: (workOrderId: WorkOrderId, kind: 'steer_queued' | 'steer_delivered' | 'steer_retracted', detail: string) => {
+      appendEvent(db, workOrderId as string, kind, detail);
+    },
+    // WO-0045 — retract from a STOPPED drive's mirror: the row is the only queue (no runner holds the
+    // note). Targeted UPDATE — never the recordSessionRow upsert, which would rewrite the whole row.
+    retractSteerNote: async (workOrderId: WorkOrderId, providerSessionId: string, noteId: string): Promise<boolean> => {
+      const r = db
+        .prepare('SELECT pending_notes FROM session WHERE work_order_id = ? AND provider_session_id = ?')
+        .get(workOrderId, providerSessionId) as { pending_notes: string | null } | undefined;
+      if (!r?.pending_notes) return false;
+      let notes: { id: string; text: string }[] = [];
+      try {
+        notes = JSON.parse(r.pending_notes);
+      } catch {
+        return false;
+      }
+      if (!Array.isArray(notes) || !notes.some((n) => n.id === noteId)) return false;
+      db.prepare('UPDATE session SET pending_notes = ? WHERE work_order_id = ? AND provider_session_id = ?')
+        .run(JSON.stringify(notes.filter((n) => n.id !== noteId)), workOrderId, providerSessionId);
+      appendEvent(db, workOrderId as string, 'steer_retracted', `not: ${noteId}`);
+      return true;
+    },
     // The architect's first prompt, assembled server-side from order.md (WO-0016). The composition root
     // fills DriveInput.prompt with this when role==='architect' and the renderer sent none (mirrors the
     // cwd fill). Returns undefined when there is no order.md yet (caller leaves the prompt untouched).
@@ -878,6 +955,7 @@ export function createStore(dbPath: string): Store {
           trackRepos: input.trackRepos.map((r) => r as string),
           reviewMode: input.reviewMode,
           contextFiles: input.contextFiles,
+          ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
         }),
       );
@@ -964,9 +1042,13 @@ export function createStore(dbPath: string): Store {
         patch.title !== undefined ? 'title' : null,
         patch.description !== undefined ? 'description' : null,
         patch.reviewMode !== undefined ? 'review_mode' : null,
+        patch.flowMode !== undefined ? 'flow_mode' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
+      // WO-0045: the tempo switch is its own auditable fact (the rule_changed pattern), not a mere edit —
+      // the operator reads the mode history in the timeline.
+      if (patch.flowMode !== undefined) appendEvent(db, workOrderId as string, 'flow_mode_changed', patch.flowMode);
     },
     // The operator's answer on an ask card, into the timeline (WO-0031c). The pipeline knows the
     // requestId, not the work order — the UI, which knows both, writes this as it resolves the ask.

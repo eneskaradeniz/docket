@@ -3,7 +3,7 @@ import { initialSessionState, seedLiveState, type DriveInput } from '../../../co
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { Button, Segmented, Textarea } from '../../kit';
-import { PaneError, PaneShell, PaneLogChip, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneError, PaneShell, PaneLogChip, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -26,6 +26,7 @@ export function SessionPane({
   planOnTable,
   drive,
   now,
+  onRetractStoppedSteer,
 }: {
   mode: 'plan' | 'direct';
   stage: StageId;
@@ -39,6 +40,8 @@ export function SessionPane({
   drive?: DriveState;
   /** The controller's one-second ticker — the live costline's elapsed reuses it (StepPane parity). */
   now?: number;
+  /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
+  onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
   const { PROVIDER_ERROR_LABELS, ROLE_LABELS, UI, formatUsd } = useLabels();
   const store: DriveStore = useDriveStore();
@@ -149,6 +152,23 @@ export function SessionPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
+
+      <PaneSteerBar
+        live={running}
+        pendingNotes={state.pendingNotes}
+        onSend={(note) => store.steer(driveKey, note)}
+        onRetract={(noteId) => {
+          // Live: the runner route (the SDK's cancel window). Stopped: the row IS the queue — the
+          // data port rewrites it + audits; success patches this fold so the row disappears here too.
+          if (running) {
+            void store.retract(driveKey, noteId);
+          } else if (state.sessionId) {
+            void onRetractStoppedSteer?.(state.sessionId, noteId).then((ok) => {
+              if (ok) store.retractNote(driveKey, noteId);
+            });
+          }
+        }}
+      />
 
       {/* Role tabs are hidden on a written work order — the only session is the architect plan session. */}
       {isPlanRequestStage ? null : (
