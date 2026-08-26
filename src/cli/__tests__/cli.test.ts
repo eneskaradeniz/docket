@@ -42,6 +42,10 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     stepPromptFor: () => prompts.step,
     stepReviewPromptFor: () => prompts.review,
     planApprovedFor: () => true,
+    // WO-0047: the budget gate reads unconditionally — the fake must carry it (a `typeof`
+    // short-circuit in the pipeline would hide a missing impl until production). No threshold
+    // scripted → undefined → fail open, the CLI tests' default world.
+    budgetBlockFor: () => undefined,
   } as unknown as SessionStore;
   return { store, calls };
 }
@@ -114,6 +118,22 @@ describe('runDrive — event forwarding + summary + wiring', () => {
     await runDrive(input, pipeline, (ev) => seen.push(ev));
     expect(seen.map((e) => e.kind)).toEqual(['started', 'turn_complete']); // no permission_request
     expect(decideCalls[0]?.[0]).toBe('r1');
+  });
+
+  it('a budget cap met refuses the drive: one error event, no session, the formatter names the resolution (WO-0047)', async () => {
+    const { runner } = scriptedRunner([started(), done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const blocked = { ...fs, store: { ...fs.store, budgetBlockFor: () => ({ observedUsd: 12.5, capUsd: 10 }) } as SessionStore };
+    const pipeline = createPipeline({ runner, store: blocked.store, permission: autoAllowPolicy() });
+    const input = await buildDriveInput(WO, { cwd: '/r', step: 1 }, stepSource);
+    const seen: RunnerEvent[] = [];
+    const summary = await runDrive(input, pipeline, (ev) => seen.push(ev));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.kind).toBe('error');
+    expect(summary.error).toMatch(/budget cap met/);
+    expect(formatEvent(seen[0]!, 'stream')).toContain('raise the monthly cap in settings to continue');
+    expect(formatEvent(seen[0]!, 'stream')).toContain('no --force-budget');
+    expect(fs.calls.map((c) => c[0])).not.toContain('recordSession');
   });
 });
 

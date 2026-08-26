@@ -26,6 +26,7 @@ export function AppShell({
   onDeleteWorkspace,
   wsWoCount,
   wsDriveLive,
+  onBudgetChanged,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -41,6 +42,8 @@ export function AppShell({
   wsWoCount: (id: WorkspaceId) => number;
   /** WO-0032: any live drive in the workspace — gates the Sil entry (ADR-0001: absent + reason). */
   wsDriveLive: (id: WorkspaceId) => boolean;
+  /** WO-0047: fired when the budget threshold changes in the settings modal — App refreshes its view. */
+  onBudgetChanged: () => void;
 }) {
   const { UI } = useLabels();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -91,7 +94,15 @@ export function AppShell({
           </Tooltip>
         </div>
       </header>
-      {settingsOpen ? <AppSettingsModal settings={settings} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? (
+        <AppSettingsModal
+          settings={settings}
+          workspaceId={workspaceId}
+          source={source}
+          onBudgetChanged={onBudgetChanged}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
       {(wsModal === 'edit' || wsModal === 'delete') && editingWs ? (
         <WsSettingsModal
           mode="edit"

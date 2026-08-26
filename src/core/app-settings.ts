@@ -6,6 +6,8 @@
 // git-observed fact nor a decision about work — it is machine-local app configuration.
 import type { ProviderErrorCode } from './runner';
 import type { PermissionRule } from './source';
+import type { WorkspaceId } from './types';
+import type { BudgetThreshold } from './budget';
 
 /** Vendor-neutral provider readiness: the happy path names the auth SOURCE (e.g. 'oauth', 'env'); the
  *  failure path carries the classification + the raw message (shown only as a fallback). */
@@ -34,6 +36,14 @@ export interface AppSettings {
    *  never of the project — this row, not workspace.yaml). */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** The workspace's month-spend threshold (WO-0047): cap + warn percent, ONE atomic pair per
+   *  workspace (solo scale — no per-agent or per-project scoping). undefined = none configured:
+   *  the gate fails open and the surfaces show nothing. */
+  getBudget(workspaceId: WorkspaceId): Promise<BudgetThreshold | undefined>;
+  /** Store (or clear, on undefined) the threshold. A PERMANENT write (operator ruling 2026-08-26:
+   *  raising the cap is a settings action that re-runs the refused drive — no one-month override
+   *  machinery). */
+  setBudget(workspaceId: WorkspaceId, threshold: BudgetThreshold | undefined): Promise<void>;
   /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
   checkProvider(): Promise<ProviderStatus>;
 }

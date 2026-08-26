@@ -242,6 +242,13 @@ export function formatUsd(usd: number): string {
   return `$${n}`;
 }
 
+// WO-0047: the warn/cap line's sentence picker — status × known-spend in one call (card + band
+// speak the same sentence). 'ok' never draws the line; the caller holds that condition.
+export function budgetLine(status: 'warn' | 'hard_stop', hasUnknown: boolean, monthUsd: number, capUsd: number): string {
+  if (status === 'hard_stop') return hasUnknown ? UI.budgetStopLineKnown(monthUsd, capUsd) : UI.budgetStopLine(monthUsd, capUsd);
+  return hasUnknown ? UI.budgetWarnLineKnown(monthUsd, capUsd) : UI.budgetWarnLine(monthUsd, capUsd);
+}
+
 export function formatTokens(n: number): string {
   // WO-0046: a max-context of 1 000 000 rendered "1000k" on the live readout — the M tier exists
   // for exactly that ceiling (and stays consistent with formatCost's in→out use of this helper).
@@ -594,6 +601,30 @@ export const UI = {
   // and the staleness line (3-minute threshold, the honest heir of the indefinite wait).
   contextReadout: (pct: number, used: number, max: number) => `ctx ${pct}% · ${formatTokens(used)}/${formatTokens(max)}`,
   staleLine: (n: number) => `no new output for ${n} min`,
+  // WO-0047 budget gate: warn/cap lines (card + band — known-spend qualifier, no fill bar),
+  // the refusal card's two choices, the settings section. Money via formatUsd.
+  budgetWarnLine: (m: number, cap: number) => `this month ${formatUsd(m)} / ${formatUsd(cap)} — past the warn level`,
+  budgetWarnLineKnown: (m: number, cap: number) => `this month known spend ${formatUsd(m)} / ${formatUsd(cap)} — past the warn level`,
+  budgetStopLine: (m: number, cap: number) => `this month ${formatUsd(m)} / ${formatUsd(cap)} — cap reached, new drives refused`,
+  budgetStopLineKnown: (m: number, cap: number) => `this month known spend ${formatUsd(m)} / ${formatUsd(cap)} — cap reached, new drives refused`,
+  budgetRefusalTitle: 'MONTHLY CAP REACHED',
+  budgetRefusalBody: (observed: number, cap: number) => `Known spend this month is ${formatUsd(observed)}; the cap is ${formatUsd(cap)}. No new drive can start.`,
+  budgetRefusalRunningNote: 'A running drive is not interrupted; the gate applies to the next drive.',
+  budgetBasisNote: 'The figure counts known spend only — interrupted legs carry no recorded cost.',
+  budgetRaiseLabel: 'New cap ($)',
+  budgetRaiseAction: 'Raise the cap and run',
+  budgetKeepAction: 'Keep the cap',
+  budgetErrNumber: 'Enter a valid amount ($, e.g. 20 or 20.50).',
+  budgetErrRaise: 'The new cap must exceed this month’s spend.',
+  budgetLabel: 'Monthly budget',
+  budgetCapLabel: 'Cap ($)',
+  budgetWarnPercentLabel: 'Warn level (%)',
+  budgetSave: 'Save',
+  budgetClear: 'Remove',
+  budgetErrCap: 'Enter an amount greater than zero.',
+  budgetErrWarn: 'Enter a ratio between 1 and 100.',
+  budgetMonthReadout: (m: number, cap: number) => `this month ${formatUsd(m)} / ${formatUsd(cap)}`,
+  budgetMonthReadoutKnown: (m: number, cap: number) => `this month known spend ${formatUsd(m)} / ${formatUsd(cap)}`,
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',
@@ -709,6 +740,7 @@ export function phaseLabelText(p: WoPhase): string {
 
 const en: Labels = {
   UI,
+  budgetLine,
   BUCKET_LABELS,
   ROLE_LABELS,
   ROLE_DUTY_LABELS,

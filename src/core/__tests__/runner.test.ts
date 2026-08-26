@@ -241,6 +241,24 @@ describe('foldSessionEvent — live session state', () => {
     expect(s.lastError).toBe('boom');
   });
 
+  it('a budget refusal error folds its facts beside the message (WO-0047)', () => {
+    const s = ev({ kind: 'error', message: 'drive refused: WO-0001 budget cap met', refusal: { observedUsd: 12.5, capUsd: 10 } });
+    expect(s.status).toBe('error');
+    expect(s.lastRefusal).toEqual({ observedUsd: 12.5, capUsd: 10 });
+  });
+
+  it('started clears a prior refusal — the raise-and-re-run supersedes it (WO-0047)', () => {
+    const refused = ev({ kind: 'error', message: 'drive refused', refusal: { observedUsd: 1, capUsd: 1 } });
+    const s = foldSessionEvent(refused, { kind: 'started', sessionId: 's1' });
+    expect(s.lastRefusal).toBeUndefined();
+    expect(s.status).toBe('running');
+  });
+
+  it('an uncoded, unrefused error leaves lastRefusal absent (the generic fail card path)', () => {
+    const s = ev({ kind: 'error', message: 'boom' });
+    expect(s.lastRefusal).toBeUndefined();
+  });
+
   it('a multi-event session folds in order', () => {
     let s = initialSessionState;
     s = foldSessionEvent(s, { kind: 'started', sessionId: 's' });

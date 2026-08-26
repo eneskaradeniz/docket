@@ -98,11 +98,16 @@ function throwingRunner(message: string): { runner: SessionRunner; drivenInputs:
 interface FakeStoreCalls { method: string; args: unknown[] }
 
 /** Records every call; returns scripted prompts. `planApproved` scripts the approval gate (WO-0038);
- *  `opts` scripts the WO-0045 surfaces: flowMode (the tempo gate) + pendingNotes (Sürdür's carry). */
+ *  `opts` scripts the WO-0045 surfaces (flowMode the tempo gate, pendingNotes Sürdür's carry) and the
+ *  WO-0047 budget gate (budgetBlock — a payload refuses every drive; undefined passes). */
 function fakeStore(
   prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string },
   planApproved = true,
-  opts: { flowMode?: 'auto' | 'manual'; pendingNotes?: { id: string; text: string }[] } = {},
+  opts: {
+    flowMode?: 'auto' | 'manual';
+    pendingNotes?: { id: string; text: string }[];
+    budgetBlock?: { observedUsd: number; capUsd: number };
+  } = {},
 ) {
   const calls: FakeStoreCalls[] = [];
   const store = {
@@ -116,6 +121,7 @@ function fakeStore(
     stepReviewPromptFor: () => prompts.review,
     planApprovedFor: () => planApproved,
     flowModeFor: () => opts.flowMode ?? 'auto',
+    budgetBlockFor: () => opts.budgetBlock,
     pendingNotesFor: () => opts.pendingNotes ?? [],
     recordAuditEvent: (id: unknown, kind: unknown, detail: unknown) => calls.push({ method: 'recordAuditEvent', args: [id, kind, detail] }),
   } as unknown as SessionStore;
@@ -151,6 +157,66 @@ describe('prepareDriveInput — prompt selection', () => {
   it('a resume/approve drive preserves the provided prompt (never clobbered)', () => {
     const { store } = fakeStore({ architect: 'PLAN (wrong)' });
     expect(prepareDriveInput(planDrive({ resume: 'sess-1', prompt: 'continue' }), store).prompt).toBe('continue');
+  });
+});
+
+// ===== the workspace budget gate (WO-0047) =====
+// The FIRST gate and the only one that sees EVERY drive — plan, step, review, resume alike: each
+// spawns a runner that bills. The refusal is the plan gate's shape plus its FACTS (observed, cap)
+// so GUI and CLI compose the same sentence; unconfigured (undefined) fails open.
+
+describe('budget gate — every drive refused when the month spend meets the cap', () => {
+  const block = { observedUsd: 12.5, capUsd: 10 };
+
+  it('step drive: one error event carrying the refusal facts, the runner never spawns, nothing recorded', async () => {
+    const fr = fakeRunner([started(), txt('should never run'), done()]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, true, { budgetBlock: block });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe('error');
+    const ev = events[0] as { message: string; refusal?: { observedUsd: number; capUsd: number } };
+    expect(ev.refusal).toEqual(block);
+    expect(ev.message).toMatch(/budget cap met/);
+    expect(ev.message).toContain('12.50');
+    expect(ev.message).toContain('10.00');
+    expect(fr.drivenInputs).toHaveLength(0);
+    expect(methods(fs.calls)).not.toContain('recordSession');
+    expect(methods(fs.calls)).not.toContain('recordStep');
+  });
+
+  it('a PLAN drive is refused alike (the every-drive contract — the plan/flow gates scope to step/review)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { budgetBlock: block });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(events.map((e) => e.kind)).toEqual(['error']);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('a RESUME drive is refused alike (a resume spawns a runner that bills)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { budgetBlock: block });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive({ resume: 'sess-1', prompt: 'continue' }));
+    expect(events.map((e) => e.kind)).toEqual(['error']);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('the budget gate outranks the plan gate (a blocked WO never reaches the plan refusal)', async () => {
+    const fs = fakeStore({ step: { prompt: 'do step 1' } }, false, { budgetBlock: block });
+    const p = createPipeline({ runner: fakeRunner([]).runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect((events[0] as { message: string }).message).toMatch(/budget cap met/); // not "plan not approved"
+  });
+
+  it('unconfigured (undefined) fails open — the drive runs untouched', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(fr.drivenInputs).toHaveLength(1);
+    expect(events.map((e) => e.kind)).toContain('started');
   });
 });
 

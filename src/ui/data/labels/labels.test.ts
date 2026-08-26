@@ -36,4 +36,13 @@ describe('locale bundles (WO-0035)', () => {
     expect(tr.formatDateTime('2026-08-15T17:15:00Z')).toContain('Ağu');
     expect(en.formatDateTime('2026-08-15T17:15:00Z')).toContain('Aug');
   });
+
+  it('the budget warn line carries the locale’s money voice + the known-spend basis (WO-0047)', () => {
+    // The honesty qualifier rides the Known variants only; both figures in, both rendered.
+    expect(tr.UI.budgetWarnLineKnown(4.2, 5)).toContain('$4,20');
+    expect(tr.UI.budgetWarnLineKnown(4.2, 5)).toContain('bilinen harcama');
+    expect(tr.UI.budgetWarnLine(4.2, 5)).not.toContain('bilinen harcama');
+    expect(en.UI.budgetWarnLineKnown(4.2, 5)).toContain('$4.20');
+    expect(en.UI.budgetWarnLineKnown(4.2, 5)).toContain('known spend');
+  });
 });

@@ -91,6 +91,12 @@ export interface WorkOrderSource {
   // store, so reading them in the UI goes through this port. Fixture-seeded repos have no
   // connection row and do not appear here.
   repoConnections(id: WorkspaceId): Promise<RepoConnectionView[]>;
+  // The workspace's calendar-month observed spend (WO-0047): the SUM of session cost_usd over
+  // every work order of the workspace, windowed on the current UTC month. NULL-cost sessions
+  // (interrupted legs — the honest no-claim rule) never count toward the sum; `hasUnknown`
+  // flags that the figure is the KNOWN spend so the surfaces can state the basis
+  // ("bilinen harcama") instead of silently undercounting.
+  workspaceMonthSpend(id: WorkspaceId): Promise<{ usd: number; hasUnknown: boolean }>;
   // Move a repo's local path (WO-0033): rewrites connection.local_path ONLY — the RepoId, the
   // definition row and the remote stay. Throws (changing nothing) when the new path's basename
   // differs from the RepoId — identity is the basename; a different name is a different repo.

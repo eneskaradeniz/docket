@@ -23,6 +23,8 @@ import type { RecordSessionInput, SessionStore } from '../../core/session-store'
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
+import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
+import type { BudgetRefusal } from '../../core/runner';
 import { rid, tid, wid, woid } from '../ids';
 import { workspaces } from '../fixtures';
 import type {
@@ -68,6 +70,10 @@ export interface AppSettingsData {
    *  detects the system language; only a deliberate pick reaches this row. */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** The workspace's month-spend threshold (WO-0047) — the AppSettings port's scoped half; the
+   *  shape + semantics live on the port (src/core/app-settings.ts). */
+  getBudget(workspaceId: WorkspaceId): Promise<BudgetThreshold | undefined>;
+  setBudget(workspaceId: WorkspaceId, threshold: BudgetThreshold | undefined): Promise<void>;
   /** Resolve the EFFECTIVE rule for a drive (WO-0031c): the work order's own order.md rule when it
    *  carries one, else the Settings default (a pre-c2 work order has no key — its behavior follows the
    *  operator's default, with the legacy ask/auto values mapped). */
@@ -511,7 +517,8 @@ function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: 
 // orders (rows + the Docket-authored decision-store dirs), then the definition + connection rows.
 // Repo code and git history are never touched; the dir resolves STRICTLY from connection rows (a
 // workspace without a matching connection deletes DB rows only, never a folder under cwd). Global
-// app_setting rows are untouched.
+// app_setting rows are untouched — except the workspace's OWN budget threshold (WO-0047): a
+// recycled workspace id must not inherit a dead cap.
 function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   const live = db
     .prepare(
@@ -522,6 +529,7 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   const dir = connectedDecisionStorePath(db, id); // before the connection rows go
   const woIds = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(id) as { id: string }[];
   for (const x of woIds) deleteWorkOrderRows(db, woid(x.id), dir);
+  db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
@@ -644,6 +652,62 @@ function settingPermissionRule(db: DatabaseSync): PermissionRule {
 function settingLocale(db: DatabaseSync): Locale | undefined {
   const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('locale') as { value: string } | undefined)?.value;
   return value === 'tr' || value === 'en' ? value : undefined;
+}
+
+// The workspace's budget threshold (WO-0047): ONE JSON row `budget:<wsId>` — the atomic
+// {capUsd, warnPercent} pair. Garbage or a partial row reads undefined (the settingLocale
+// pattern): a corrupt threshold opens the gate rather than inventing a number. Both fields are
+// required because writers persist them as one pair.
+function settingBudget(db: DatabaseSync, wsId: WorkspaceId): BudgetThreshold | undefined {
+  const value = (
+    db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`budget:${wsId}`) as { value: string } | undefined
+  )?.value;
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as { capUsd?: unknown; warnPercent?: unknown };
+    if (typeof parsed.capUsd !== 'number' || !Number.isFinite(parsed.capUsd)) return undefined;
+    if (typeof parsed.warnPercent !== 'number' || !Number.isFinite(parsed.warnPercent)) return undefined;
+    return { capUsd: parsed.capUsd, warnPercent: parsed.warnPercent };
+  } catch {
+    return undefined;
+  }
+}
+
+// The workspace's current-month observed spend (WO-0047): SUM over the session rows of every work
+// order in the workspace, windowed on started_at (ISO strings compare lexicographically — the
+// range is core's UTC calendar month). NULL cost_usd rows never count toward the sum; the
+// companion count flags them so the surfaces can state the known-spend basis instead of silently
+// undercounting toward the cap. All three budget reads (gate, source, settings readout) go
+// through this one row.
+function monthSpendRow(db: DatabaseSync, wsId: WorkspaceId): { usd: number; hasUnknown: boolean } {
+  const { startIso, endIso } = monthWindow(new Date());
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(cost_usd), 0) AS usd,
+              COALESCE(SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END), 0) AS unknownCount
+       FROM session
+       WHERE work_order_id IN (SELECT id FROM work_order WHERE workspace_id = ?)
+         AND started_at >= ? AND started_at < ?`,
+    )
+    .get(wsId, startIso, endIso) as { usd: number; unknownCount: number };
+  return { usd: row.usd, hasUnknown: row.unknownCount > 0 };
+}
+
+// The BUDGET gate's verdict for a drive (WO-0047): the workspace is resolved through the work
+// order (DriveInput carries no workspace id — the store-side join is the only honest keying), the
+// threshold read, the month sum compared. A payload ONLY at hard_stop: warn is a line, never a
+// block. A missing work order passes here — the plan gate ahead of it already fails closed, and
+// this gate must not invent a workspace for an id that has none.
+function budgetBlockForWo(db: DatabaseSync, woId: WorkOrderId): BudgetRefusal | undefined {
+  const ws = (
+    db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(woId) as { ws: string } | undefined
+  )?.ws;
+  if (!ws) return undefined;
+  const wsId = wid(ws);
+  const threshold = settingBudget(db, wsId);
+  if (!threshold || !(threshold.capUsd > 0)) return undefined;
+  const { usd } = monthSpendRow(db, wsId);
+  return budgetStatus(usd, threshold) === 'hard_stop' ? { observedUsd: usd, capUsd: threshold.capUsd } : undefined;
 }
 
 // The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
@@ -930,6 +994,9 @@ export function createStore(dbPath: string): Store {
     removeRepoConnection: (id: WorkspaceId, path: string) =>
       Promise.resolve(removeRepoConnectionRow(db, id, path)),
     repoConnections: (id: WorkspaceId) => Promise.resolve(repoConnectionsRow(db, id)),
+    // The workspace's calendar-month observed spend (WO-0047) — the board/band warn line's and
+    // the settings readout's figure, from the same row the gate reads.
+    workspaceMonthSpend: (id: WorkspaceId) => Promise.resolve(monthSpendRow(db, id)),
     updateRepoPath: async (id: WorkspaceId, repoId: RepoId, newPath: string) => {
       updateRepoPathRow(db, id, repoId, newPath);
     },
@@ -1141,6 +1208,15 @@ export function createStore(dbPath: string): Store {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('locale', locale);
       return Promise.resolve();
     },
+    // The workspace's month-spend threshold (WO-0047): one atomic JSON pair per workspace; a
+    // permanent write (raise-and-re-run is a settings action, operator ruling 2026-08-26).
+    getBudget: (workspaceId: WorkspaceId) => Promise.resolve(settingBudget(db, workspaceId)),
+    setBudget: (workspaceId: WorkspaceId, threshold: BudgetThreshold | undefined) => {
+      const key = `budget:${workspaceId}`;
+      if (threshold === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run(key);
+      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(key, JSON.stringify(threshold));
+      return Promise.resolve();
+    },
     getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),
     woRepoPaths: (workOrderId: WorkOrderId) => woRepoPaths(db, workOrderId),
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
@@ -1162,6 +1238,9 @@ export function createStore(dbPath: string): Store {
     // A missing work order reads as closed (never approved) — fail closed.
     planApprovedFor: (workOrderId: WorkOrderId) =>
       (db.prepare('SELECT gate_plan_approved AS g FROM work_order WHERE id = ?').get(workOrderId) as { g: number } | undefined)?.g === 1,
+    // The BUDGET gate (WO-0047) — the pipeline's FIRST gate, ahead of the plan gate: month spend
+    // at the workspace cap refuses every drive before the runner spawns. Warn never blocks.
+    budgetBlockFor: (workOrderId: WorkOrderId) => budgetBlockForWo(db, workOrderId),
     // A step verdict body, read at view time (WO-0020). '' when the verdict is absent.
     getStepVerdict: (id: WorkOrderId, idx: number) => {
       const dir = woDir(db, id);

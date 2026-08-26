@@ -148,6 +148,21 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     const policy = di.permissionRule !== undefined ? policyForRule(di.permissionRule) : deps.permission;
     const stepIdx = input.stepIndex; // a step drive (WO-0017) when set
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
+    // WO-0047: the workspace BUDGET gate — the FIRST gate, and the only one that sees EVERY drive
+    // (plan, step, review, resume alike: each spawns a runner that bills; the plan/flow gates below
+    // scope to step/review). Read at SPAWN time only — a drive already running when the cap is
+    // crossed is never touched (the order's stance: the refusal applies to the NEXT drive). The
+    // refusal carries its facts so every host composes the same sentence; raising the cap is a
+    // settings action — no force flag exists anywhere.
+    const budgetBlock = deps.store.budgetBlockFor(input.workOrderId);
+    if (budgetBlock) {
+      yield {
+        kind: 'error',
+        message: `drive refused: ${input.workOrderId} budget cap met (${budgetBlock.observedUsd.toFixed(2)} of ${budgetBlock.capUsd.toFixed(2)} USD this month)`,
+        refusal: budgetBlock,
+      };
+      return;
+    }
     // WO-0038 incident (2026-08-22): the approval gate is ENFORCED here — not only derived in the
     // UI. An unapproved plan's steps may exist as SPEC (plan.md's fence parses into 'pending' rows
     // before approval — getWorkOrderSteps is deliberately optimistic), so any host that reaches the

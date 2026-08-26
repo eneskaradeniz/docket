@@ -60,7 +60,17 @@ export type RunnerEvent =
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
-  | { kind: 'error'; message: string; code?: ProviderErrorCode };
+  // WO-0047: a GATE refusal carries its facts — the month's observed spend and the cap it met. A
+  // payload, not a code: the budget card needs both figures to compose its sentence, and
+  // ProviderErrorCode stays a closed vendor-failure enum. Core's English message already carries
+  // the numbers; the GUI composes the localized sentence from these fields.
+  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal };
+
+/** The budget gate's refusal facts (WO-0047): what the month has cost and the cap it met. */
+export interface BudgetRefusal {
+  observedUsd: number;
+  capUsd: number;
+}
 
 /**
  * Why a provider session could not run, vendor-neutrally. The runner adapter maps the provider's own error
@@ -401,6 +411,10 @@ export interface LiveSessionState {
   lastError?: string;
   /** The vendor-neutral classification of `lastError`, when the adapter could classify it (WO-0025). */
   lastErrorCode?: ProviderErrorCode;
+  /** The budget gate's refusal facts when the error IS one (WO-0047) — the discriminator the
+   *  detail view branches on: the two-choice BudgetRefusalCard instead of the generic fail card.
+   *  Cleared by `started` (a raise-and-re-run supersedes the refusal, the pendingPlan precedent). */
+  lastRefusal?: BudgetRefusal;
 }
 
 export const initialSessionState: LiveSessionState = {
@@ -448,6 +462,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         sessionId: event.sessionId,
         pendingPlan: undefined,
         pendingAsks: [],
+        lastRefusal: undefined,
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
@@ -549,7 +564,15 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'error':
-      return { ...state, status: 'error', lastError: event.message, pendingAsks: [], ...(event.code ? { lastErrorCode: event.code } : {}) };
+      // WO-0047: a gate refusal folds its facts beside the message — the card branches on them.
+      return {
+        ...state,
+        status: 'error',
+        lastError: event.message,
+        pendingAsks: [],
+        ...(event.code ? { lastErrorCode: event.code } : {}),
+        ...(event.refusal ? { lastRefusal: event.refusal } : {}),
+      };
   }
 }
 

@@ -132,3 +132,17 @@ the operator drove a real review session on the tur-1 build and re-ruled the lay
   rows) wears the visible `--bord` edge — the same brightened hairline `.steprow.owner` uses; flow
   surfaces (step rows, the instrument) keep the plain hairline. "Whose session is this" reads at a
   glance; nothing floats frameless.
+
+**Addendum (2026-08-27, WO-0047 — the budget gate joins the spine):** the workspace BUDGET gate is
+pipeline-enforced exactly like the plan gate (`SessionStore.budgetBlockFor`, read at spawn time
+ONLY): when the calendar-month spend of the drive's workspace meets its configured cap, EVERY
+drive — plan, step, review, resume — is refused with an error event (carrying the refusal's facts:
+observed + cap) before the runner spawns; a drive already running when the cap is crossed is never
+touched (the refusal applies to the next drive; the surfaces say so). The refusal's surface is the
+TWO-CHOICE card in the decision stack (raise-and-re-run / keep-the-cap — Paperclip's shape; no
+third path, no force flag anywhere), and while it owns the moment NO instrument renders — there is
+no transcript to read. The warn level (a percent of the cap) is an informative mono line on the
+board card and the header band (ADR-0012's voice: text, never a fill bar; the known-spend basis
+"bilinen harcama" stated when any in-window session row carries no recorded cost). Raising the cap
+is a PERMANENT `app_setting` write that re-runs the refused drive (operator rulings 2026-08-26) —
+never a host-side work-around.

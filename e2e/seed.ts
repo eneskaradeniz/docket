@@ -272,6 +272,101 @@ await store.approvePlan(
 //     leaving the detail: the first step must self-start (the mount-only fill was the bug).
 const wo11 = await mk('TD-053 turu', 'E2E: no plan yet — approve without re-entry.');
 
+// 13) WO-0047 budget gate: two threshold-bearing workspaces — 'uyarı' ($4.20 of a $5 cap at warn
+//     80% + a NULL-cost in-month row → the known-spend qualifier on every line) and 'kapı' ($5.10
+//     of the same cap → hard stop; WO-B carries only a NULL-cost row so observed stays exactly
+//     5.10 and the raise prefill is max(5.10+10, 5) = 15.1). Same shared decision store (TD-035
+//     numbering). Dates are COMPUTED from the seed moment — the window is the CURRENT UTC month,
+//     fixed stamps would age out at a month boundary (day ≤ 28 guards the 31st-in-a-30-day trap).
+//     Steps stay pending (no recordStep): opening the detail auto-starts step 1 — allowed under
+//     warn, REFUSED at the cap; the sessions' idle rows are only the spend the gate reads.
+const ONE_STEP_PLAN = '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n';
+const monthDay = (day: number): string => {
+  const n = new Date();
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), Math.min(day, 28), 12)).toISOString();
+};
+const wsWarn = await store.createWorkspace({
+  label: 'uyarı',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+await store.setBudget(wsWarn.id, { capUsd: 5, warnPercent: 80 });
+const woWarn = await store.createWorkOrder({
+  workspaceId: wsWarn.id,
+  title: 'Uyarı işi',
+  description: 'E2E: warn-level spend — the line, never the gate.',
+  trackRepos: wsWarn.repos,
+  reviewMode: 'gates',
+  contextFiles: [],
+});
+await store.approvePlan(woWarn.id, ONE_STEP_PLAN);
+store.recordSession({
+  providerSessionId: 'e2e-budget-warn-run',
+  workOrderId: woWarn.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 9_000, tokensOut: 2_000, usd: 4.2 },
+  startedAt: monthDay(3),
+  endedAt: monthDay(3),
+});
+store.recordSession({
+  providerSessionId: 'e2e-budget-warn-null',
+  workOrderId: woWarn.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  startedAt: monthDay(4),
+  endedAt: monthDay(4),
+});
+const wsStop = await store.createWorkspace({
+  label: 'kapı',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+await store.setBudget(wsStop.id, { capUsd: 5, warnPercent: 80 });
+const woStopA = await store.createWorkOrder({
+  workspaceId: wsStop.id,
+  title: 'Kapı işi A',
+  description: 'E2E: over the cap — the refusal card, kept.',
+  trackRepos: wsStop.repos,
+  reviewMode: 'gates',
+  contextFiles: [],
+});
+await store.approvePlan(woStopA.id, ONE_STEP_PLAN);
+store.recordSession({
+  providerSessionId: 'e2e-budget-stop-a',
+  workOrderId: woStopA.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 9_000, tokensOut: 2_000, usd: 5.1 },
+  startedAt: monthDay(5),
+  endedAt: monthDay(5),
+});
+const woStopB = await store.createWorkOrder({
+  workspaceId: wsStop.id,
+  title: 'Kapı işi B',
+  description: 'E2E: over the cap — the raise and the re-run.',
+  trackRepos: wsStop.repos,
+  reviewMode: 'gates',
+  contextFiles: [],
+});
+await store.approvePlan(woStopB.id, ONE_STEP_PLAN);
+store.recordSession({
+  providerSessionId: 'e2e-budget-stop-b',
+  workOrderId: woStopB.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  startedAt: monthDay(6),
+  endedAt: monthDay(6),
+});
+
 // WO-0035: pin the suite's locale to tr. The default is system detection and Playwright's Electron
 // runs under en-US — without this row the app would boot EN and every Turkish locator would break.
 // The row is load-bearing for as long as detection is the default (order.md Notes).

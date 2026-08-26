@@ -6,6 +6,7 @@
 // a fake store, without SQLite or an agent (ADR-0006 line 30). The adapter's `Store implements SessionStore`;
 // the UI's `WorkOrderSource` stays the read/CRUD half.
 import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
+import type { BudgetRefusal } from './runner';
 
 export interface RecordSessionInput {
   providerSessionId: string;
@@ -51,6 +52,13 @@ export interface SessionStore {
    *  the pipeline refuses any `origin:'auto'` step/review spawn — no drive starts itself. Absent
    *  order.md / missing key → 'auto' (today's behavior). */
   flowModeFor(workOrderId: WorkOrderId): 'auto' | 'manual';
+  /** The workspace BUDGET gate (WO-0047), read at spawn time only: when the calendar-month spend
+   *  of the drive's workspace meets its configured cap, returns the refusal's facts (observed
+   *  spend + cap) and the pipeline refuses EVERY drive — plan, step, review, resume — before the
+   *  runner spawns. undefined = no block (no threshold configured, or below the cap). Called
+   *  UNCONDITIONALLY: fakes must implement it — a `typeof` guard would hide a missing impl behind
+   *  a contract that only fails in production. */
+  budgetBlockFor(workOrderId: WorkOrderId): BudgetRefusal | undefined;
   /** The queued steer notes persisted on a session row (WO-0045) — what Sürdür delivers. [] when the
    *  row carries none (the SDK queue died with the stop; this row is the only carrier). */
   pendingNotesFor(workOrderId: WorkOrderId, providerSessionId: string): SteerNote[];
