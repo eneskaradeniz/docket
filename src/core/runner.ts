@@ -28,7 +28,7 @@ export type RunnerEvent =
   // The runner emits this when decide() answers a requestId (WO-0027): with PARALLEL asks, nothing else can
   // identify which held ask was answered (tool_result carries callId, not requestId) — the old fold guessed
   // "any event clears the ask" and made sibling cards vanish while still held (Bulgu 10).
-  | { kind: 'ask_resolved'; requestId: string }
+  | { kind: 'ask_resolved'; requestId: string; at?: string }
   | { kind: 'plan_ready'; planText: string }
   // 2026-08-24 (operator: "hangi saniye… onun dışında olmuş gibi duruyor"): the lifecycle events
   // carry an ISO receive-time stamp — the fold turns each into a CLOCKED transcript note, so the
@@ -483,10 +483,14 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       };
     case 'ask_resolved':
       // The runner emits this when decide() answers THAT requestId — the only honest removal signal.
+      // WO-0046 (review f1): the stamp refreshes the liveness anchor — the drive was parked on the
+      // OPERATOR, and an anchor left at the pre-ask entry would flash the staleness line the instant
+      // the answer resumes the fold, blaming the drive for the operator's own wait.
       return {
         ...state,
         pendingAsks: state.pendingAsks.filter((a) => a.requestId !== event.requestId),
         status: state.pendingAsks.length > 1 ? 'stopped_asking' : state.status === 'stopped_asking' ? 'running' : state.status,
+        ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'plan_ready':
       return { ...state, status: 'plan_ready', pendingPlan: event.planText };

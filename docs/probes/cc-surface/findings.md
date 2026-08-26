@@ -571,19 +571,25 @@ result reported **`0.056219` — smaller than leg 1's total**. A cumulative figu
 would have been ≥ 0.094 8. **The cost figure RESETS at the resume (process)
 boundary; it is NOT session-cumulative across legs.**
 
-**Within one query: cumulative (s2b reconciled).** §S's ambiguity dissolves with
-the across-leg reset: `raw/s2b-late-note.log` result#1 `0.176580` → result#2
-`0.205902` (diff `0.029322` — plausible for the note's 158-output-token call;
-the raw figure is not). s2/s3 never produced a second result (notes coalesced
-into one turn), which is why they "fit" per-command. Model: **cumulative within
-one SDK query process, reset at resume.**
+**Within one query: usd cumulative (s2b reconciled); usage tokens PER-RESULT.**
+§S's ambiguity dissolves with the across-leg reset: `raw/s2b-late-note.log`
+result#1 `0.176580` → result#2 `0.205902` (diff `0.029322` — plausible for the
+note's call; the raw figure is not). s2/s3 never produced a second result (notes
+coalesced into one turn), which is why they "fit" per-command. Model for **usd**:
+cumulative within one SDK query process, reset at resume. The TOKEN axis is
+different (WO-0046 review round): s2b's result#2 usage is `44/158` after
+result#1's `27802/50` — a cache-hit call's own uncached figures, never a process
+total. **usage tokens are per-result and sum plainly; only usd carries the
+cumulative/reset behavior.**
 
 **Consequences (pinned by the WO-0046 tests):**
-- The adapter's per-drive delta accumulation (`>= prior → difference; < prior →
-  the figure itself`) is correct on BOTH axes under the measured model:
-  within a drive figures are monotone cumulative (diff is right); on a resumed
-  leg the figure starts below the prior leg's last (per-drive locals start at 0,
-  so the figure is taken as the delta — right).
+- The adapter's per-drive accumulation is correct under the measured model WITH
+  THE AXIS SPLIT (review round): usd keeps the `>= prior → difference; < prior →
+  the figure itself` guard (within a drive the figures are monotone cumulative;
+  on a resumed leg per-drive locals start at 0, so the leg's first figure is
+  taken whole — right); usage tokens are per-result and SUM with no guard (the
+  first cut's shared max-guard under-counted cache-busting turns — s2b result#2
+  44/158 would have "delta'd" to 0/108).
 - The store's `prior + input` add-rule is therefore correct across legs — NO
   double-count, NO seeding, NO migration. The WO-0046 correctness item closes as
   a **recorded verification** (test pins the rule; comment at the accumulation

@@ -161,28 +161,23 @@ export function addCost(a: CostSummary, b: CostSummary): CostSummary {
   return { usd: a.usd + b.usd, tokensIn: a.tokensIn + b.tokensIn, tokensOut: a.tokensOut + b.tokensOut };
 }
 
-/** WO-0046 (probe findings §C, raw/c2.log + raw/s2b-late-note.log): fold one result's cost
- *  figures against the drive's running baseline. Measured semantics: figures are CUMULATIVE
- *  within one SDK query process (a later result reports the process-so-far total) and RESET at
- *  the resume boundary — so the per-drive baseline starts at zero every leg, the difference is
- *  the leg's delta, and a resumed leg's first figure is taken whole (never the session total —
- *  the store's `prior + input` add-rule then lands the true session total, no double-count).
- *  A figure BELOW the baseline is read as a per-command figure (§S/s2's defensive branch) and
- *  taken as the delta itself; the baseline ratchets to the max either way. Pinned by
- *  src/adapters/runner/index.test.ts. */
-export function applyResultCost(baseline: CostSummary, reported: CostSummary): { baseline: CostSummary; delta: CostSummary } {
-  const take = (figure: number, base: number) => (figure >= base ? figure - base : figure);
+/** WO-0046 (probe findings §C, raw/c2.log + raw/s2b-late-note.log; review f2): fold one result's
+ *  cost figures against the drive's running usd baseline. The two axes carry DIFFERENT measured
+ *  semantics. usd is CUMULATIVE within one SDK query process (s2b: 0.1766 → 0.2059; the diff is
+ *  the note command's own spend) and RESETS at the resume boundary (c2: leg 1 ended 0.0948; the
+ *  resumed leg's first result reported 0.0562 — the leg's own spend, NOT the session total), so
+ *  the per-drive baseline starts at zero every leg, the difference is the leg's delta, and the
+ *  store's `prior + input` add-rule lands the true session total (no double-count). A usd figure
+ *  BELOW the baseline is read as a per-command figure (§S/s2's defensive branch) and taken whole;
+ *  the baseline ratchets to the max either way. usage TOKENS are PER-RESULT, never cumulative
+ *  (s2b: result#1 27802/50, result#2 44/158 — result#2's input is a cache-hit call's uncached
+ *  part, not a process total), so they sum plainly with no guard. Pinned by
+ *  src/adapters/runner/index.test.ts against the raw numbers. */
+export function applyResultCost(baselineUsd: number, reported: CostSummary): { baselineUsd: number; delta: CostSummary } {
+  const usd = reported.usd >= baselineUsd ? reported.usd - baselineUsd : reported.usd;
   return {
-    baseline: {
-      usd: Math.max(baseline.usd, reported.usd),
-      tokensIn: Math.max(baseline.tokensIn, reported.tokensIn),
-      tokensOut: Math.max(baseline.tokensOut, reported.tokensOut),
-    },
-    delta: {
-      usd: take(reported.usd, baseline.usd),
-      tokensIn: take(reported.tokensIn, baseline.tokensIn),
-      tokensOut: take(reported.tokensOut, baseline.tokensOut),
-    },
+    baselineUsd: Math.max(baselineUsd, reported.usd),
+    delta: { usd, tokensIn: reported.tokensIn, tokensOut: reported.tokensOut },
   };
 }
 
@@ -394,15 +389,13 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
     if (input.resume) options.resume = input.resume;
 
-    // WO-0046 cost truth (probe raw/c2.log + raw/s2b-late-note.log, findings §C): result cost
-    // figures are CUMULATIVE within one SDK query process (s2b: 0.1766 → 0.2059; the diff is the
-    // note command's own spend) and RESET at the resume boundary (c2: leg 1 ended 0.0948; the
-    // resumed leg's first result reported 0.0562 — the leg's own spend, NOT the session total).
-    // The per-drive baselines therefore start at zero EVERY leg and the diff is the delta; the
-    // `< baseline → the figure itself` branch stays as the defensive reading of a per-command
-    // figure (§S's s2 ambiguity) — correct under both. Assistant messages carry all-zero usage;
-    // the result is the only cost source (every s-log).
-    let costBaseline: CostSummary = { usd: 0, tokensIn: 0, tokensOut: 0 };
+    // WO-0046 cost truth (probe raw/c2.log + raw/s2b-late-note.log, findings §C; review f2):
+    // usd is cumulative within one query process and RESETS at resume (per-drive baseline from
+    // zero every leg → the diff is the leg's delta; `< baseline → the figure itself` is the
+    // per-command defense). usage tokens are PER-RESULT and sum plainly — the shared guard the
+    // first cut applied to tokens under-counted cache-busting turns (s2b result#2 44/158).
+    // Assistant messages carry all-zero usage; the result is the only cost source (every s-log).
+    let costBaselineUsd = 0;
     let driveCost: CostSummary = { usd: 0, tokensIn: 0, tokensOut: 0 };
     let synthDelivered = false;
     // WO-0046 context feed. Fire-and-forget ALWAYS (probe c1: an inline await serialized ~2.3s
@@ -454,8 +447,8 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             continue;
           }
           if (e.kind === 'turn_complete') {
-            const { baseline, delta } = applyResultCost(costBaseline, e.cost);
-            costBaseline = baseline;
+            const { baselineUsd, delta } = applyResultCost(costBaselineUsd, e.cost);
+            costBaselineUsd = baselineUsd;
             driveCost = addCost(driveCost, delta);
             // The turn boundary is a refresh point for the gauge; on the TERMINAL boundary the
             // feed flag drops the reading (the drive is over) — this serves the held/intermediate
@@ -544,7 +537,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       );
       // WO-0027 / Bulgu 10: with PARALLEL asks nothing else identifies which held ask was answered —
       // emit the explicit resolution so folds/UI remove exactly this one.
-      currentQueue?.push({ kind: 'ask_resolved', requestId });
+      currentQueue?.push({ kind: 'ask_resolved', requestId, at: new Date().toISOString() });
     },
     async pendingAsks(): Promise<PermissionAsk[]> {
       return [...askDetails.values()];

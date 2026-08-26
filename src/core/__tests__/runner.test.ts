@@ -550,6 +550,14 @@ describe('foldSessionEvent — liveness anchor (WO-0046)', () => {
     s = foldSessionEvent(s, { kind: 'assistant_text', text: 'stampesiz' });
     expect(s.lastLifeAt).toBe('2026-08-26T10:01:00Z');
   });
+  it('a stamped ask_resolved refreshes the anchor — answering a held ask must not flash the staleness line (WO-0046 review f1)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-08-26T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r1', tool: 'Bash', input: {} });
+    expect(s.status).toBe('stopped_asking');
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r1', at: '2026-08-26T10:09:00Z' });
+    expect(s.status).toBe('running');
+    expect(s.lastLifeAt).toBe('2026-08-26T10:09:00Z'); // the wait was the OPERATOR's, not the drive's
+  });
   it('terminal events stamp the anchor too (turn_complete / interrupted), but the status gate makes them moot', () => {
     let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-08-26T10:00:00Z' });
     s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end', cost: { tokensIn: 0, tokensOut: 0, usd: 0 }, at: '2026-08-26T10:02:00Z' });

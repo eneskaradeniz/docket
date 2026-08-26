@@ -162,3 +162,23 @@ Out of scope:
   re-entry remounted the detail. Fix: a sync effect fills `runIdx` when unset and a step exists
   (flowMode deliberately not a dependency — WO-0045 pin-2; in manual the manuel card's click is
   the consent). Red-green pinned by the TD-053 E2E spec (seed 'TD-053 turu').
+
+## Notes — review round (review:light, 2026-08-26)
+
+Reviewer verdict "needs fixes" → 3 findings, all fixed before merge:
+- **f1 (should-fix, fixed):** a held ask answered after ≥3 min would flash the staleness line the
+  instant the fold resumed — `ask_resolved` carried no stamp, so the anchor still sat at the
+  pre-ask entry. The event now carries `at` (adapter's decide + the E2E fake) and the fold
+  refreshes `lastLifeAt`: the wait was the operator's, never the drive's. Fold test added.
+- **f2 (should-fix, fixed):** the raw s2b log disproved the "cumulative" claim for the TOKEN axis
+  (result#2 usage 44/158 after result#1's 27802/50 — per-result figures, a cache-hit call's own
+  numbers). `applyResultCost` now splits the axes: usd keeps the cumulative/reset guard; tokens
+  sum plainly. The first cut's shared max-guard under-counted cache-busting turns. findings §C,
+  TD-052 and the code comment state the axis-split truth.
+- **f3 (should-fix, fixed):** the pin test substituted hypothetical token figures and asserted
+  only usd — it pinned the wrong rule. Re-pinned against the raw numbers (27802/50 then 44/158;
+  token deltas asserted).
+- Notes accepted as-is: the unthrottled tool-event read (the order's stated cadence; the 30s
+  throttle guards thinking bursts), the one-rejection-kills-the-feed policy (0/9 failures
+  measured), the deliberate boot-window absence of `context`/`lastLifeAt` after a renderer
+  restart, and the standing AI-attribution convention.
