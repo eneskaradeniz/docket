@@ -2,7 +2,7 @@
 id: WO-0046
 title: Live honesty — context fill readout, silence line, resume-leg cost check
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -182,3 +182,24 @@ Reviewer verdict "needs fixes" → 3 findings, all fixed before merge:
   throttle guards thinking bursts), the one-rejection-kills-the-feed policy (0/9 failures
   measured), the deliberate boot-window absence of `context`/`lastLifeAt` after a renderer
   restart, and the standing AI-attribution convention.
+
+## Closure
+
+Merged **#52** (`28c1b9c`, 2026-08-26) — feature `2b2d1d3` + review round `d9583b2`; CI green on
+both (check + GitGuardian). Evidence state:
+
+- **probe:** findings §C with raw numbers (`raw/c1.log`, `raw/c2.log`) — cadence (9/0 fails,
+  2.0–2.8 s, fire-and-forget mandate) and the resume-cost semantics with the review round's axis
+  split (usd cumulative-within-process / reset-at-resume; usage tokens per-result).
+- **operator_checkpoint:** WO-0048 dogfood (deleted after) — the readout verified live
+  (`bağlam %5 · 54k/1000k`), the cost accounting verified on real legs ($1,44 = 0,70+0,11+0,63;
+  no double-count). DEFERRED by operator move-on (WO-0045 precedent): the staleness line and the
+  post-result live cost form were not observed live (a ~40 s window) — both pinned
+  deterministically by the E2E specs; the first real long silence confirms.
+- **ci:** typecheck (both) / `npm test` (582) / `check:boundaries` / `build` / `test:ui` (all
+  specs incl. the three WO-0046 + the TD-053 pin) green locally and on the PR.
+- **review:light:** 3 should-fix findings fixed pre-merge (the ask-answer anchor stamp, the cost
+  axis split, the raw-number re-pin); 4 notes accepted as-is.
+- **tech-debt:** TD-052 (recorded verification, axis-split) + TD-053 (found live in the
+  checkpoint, root-caused and FIXED here — `runIdx` sync effect + red-green E2E pin) closed;
+  TD-016 cited for the SDK re-probe obligation.
