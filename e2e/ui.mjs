@@ -1854,6 +1854,84 @@ await spec('WO-0045 Durdur bekleyen notla: liste kalır; durmuşta geri çek →
   await backToBoard();
 });
 
+// ===== WO-0046 — canlı dürüstlük: the context readout, the live token parity, the staleness line =====
+// The readout/staleness ride the SAME event path the real adapter feeds: the fake's emit → the
+// pipeline fold → the pane. An old `at` stamp on a scripted entry moves the liveness anchor back,
+// so the staleness line is testable without waiting out the 3-minute threshold.
+await spec('WO-0046 bağlam okuması: rapor yoksa yok; gelince % + token; sürüş bitince kalkar; canlı maliyet in→out taşır', async () => {
+  await openDetail('Doluluk turu');
+  await page.waitForTimeout(900); // the auto-started step 1 drive + its `started`
+  assert.equal(await page.locator('[data-context-readout]').count(), 0, 'a readout rendered before the first report (absent, not zero)');
+  await w45Emit({
+    kind: 'context_usage',
+    usedTokens: 124000,
+    maxTokens: 200000,
+    percentage: 62,
+    cost: { tokensIn: 68000, tokensOut: 2100, usd: 0.41 },
+    at: new Date().toISOString(),
+  });
+  await page.waitForTimeout(500);
+  const readout = (await page.locator('[data-context-readout]').first().textContent()) ?? '';
+  assert.ok(readout.includes('%62'), `percentage missing from the readout: ${readout}`);
+  assert.ok(readout.includes('124k/200k'), `used/max tokens missing from the readout: ${readout}`);
+  // AC2 — the live costline speaks the card's formatCost vocabulary (token parity), sourced from
+  // the context event's ride-along cost (the only mid-drive token source; D3). NOTE: formatTokens
+  // writes a DOT decimal ("2.1k"), and the activity line renders CSS-uppercased — assert the
+  // rendered shapes, not the label-bundle strings.
+  const headText = await page.locator('#live-pane').first().innerText();
+  assert.ok(headText.includes('$0,41 · 68k→2.1k'), `the live costline lacks the in→out token form: ${headText.slice(0, 200)}`);
+  await w45Done('# Rapor\n\nbirinci adım tamam.');
+  await page.waitForTimeout(1200); // onEnd reload + the auto-started step 2 (flow stays auto)
+  assert.equal(await page.locator('[data-context-readout]').count(), 0, 'the readout survived the drive end');
+});
+
+await spec('WO-0046 sessizlik: eski damgalı girdi → satır çıkar; taze girdi → temizlenir; Durdur → donmuş kelime, satır asla', async () => {
+  await page.waitForTimeout(600); // settle on the auto-started step 2 drive from the prior spec
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'step 2 did not auto-start — the staleness specs need a live drive');
+  const pane = page.locator('#live-pane').first();
+  await w45Emit({ kind: 'tool_use', callId: 'w46s1', tool: 'Read', input: { file_path: '/x' }, at: new Date(Date.now() - 10 * 60_000).toISOString() });
+  await page.waitForTimeout(1600); // the one-second ticker re-evaluates the line
+  const staleText = await pane.innerText();
+  assert.ok(staleText.includes("DK'DIR YENİ ÇIKTI YOK"), `the staleness line missing: ${staleText.slice(0, 200)}`);
+  await w45Emit({ kind: 'tool_result', callId: 'w46s1', summary: 'ok', isError: false, at: new Date().toISOString() });
+  await page.waitForTimeout(1600);
+  const clearedText = await pane.innerText();
+  assert.ok(!clearedText.includes('ÇIKTI YOK'), 'the line did not clear on the next entry');
+  assert.ok(clearedText.includes('DÜŞÜNÜYOR'), `the activity fallback did not return after the clear: ${clearedText.slice(0, 200)}`);
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(900); // the calm wind-down
+  const stoppedText = await pane.innerText();
+  assert.ok(!stoppedText.includes('ÇIKTI YOK'), 'the staleness line survived Durdur (frozen words only)');
+  assert.ok(stoppedText.includes('DURDURULDU'), 'the frozen state word missing after Durdur');
+  await stopAllDrives();
+  await backToBoard();
+});
+
+// ===== TD-053 (WO-0046 checkpoint): approval must start the first step WITHOUT a re-entry =====
+// The operator's live repro (2026-08-26): a WO opened before its plan existed left runIdx
+// undefined forever (the initializer ran against empty steps); approving while staying on the
+// detail rendered NO instrument and the step sat unstarted until a re-entry remounted it.
+await spec('TD-053: plandan önce açılan dosyada onay → adım yeniden giriş olmadan kendiliğinden başlar', async () => {
+  await openDetail('TD-053 turu'); // written stage: the detail mounts with NO steps
+  await page.getByRole('button', { name: 'Plan iste' }).click();
+  await page.waitForTimeout(700); // the fake plan drive opens
+  await w45Emit({
+    kind: 'plan_ready',
+    planText: '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"tek adım","scope":"all"}]\n```\n',
+  });
+  // The plan session must CLOSE for the proposal to become the saved pending plan (the pipeline's
+  // plan_ready capture + the onEnd reload) — the approval surface is the SAVED plan's band.
+  await w45Done('Plan önerildi.');
+  await page.waitForTimeout(900);
+  await page.getByRole('button', { name: /Onayla/ }).click();
+  await page.waitForTimeout(1000); // approvePlan + reloadDetail + the runIdx fill + StepPane mount + auto-drive
+  assert.ok((await page.locator('[data-steer-input]').count()) > 0, 'the approved first step did not self-start without a re-entry (TD-053)');
+  await w45Done('# Rapor\n\ntek adım tamam.');
+  await page.waitForTimeout(900);
+  await stopAllDrives();
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

@@ -65,7 +65,7 @@ export function createE2eRunner(): E2eRunner {
       if (!h) return; // answering an unknown ask is a no-op (the resolvers live in the real host only)
       held.delete(requestId);
       h.release();
-      push?.({ kind: 'ask_resolved', requestId });
+      push?.({ kind: 'ask_resolved', requestId, at: new Date().toISOString() });
     },
     async pendingAsks(): Promise<PermissionAsk[]> {
       return [...held.values()].map((h) => h.ask);

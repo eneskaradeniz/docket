@@ -148,6 +148,24 @@ export function WorkOrderDetail({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.steps, reviewIdx, verdictFor, detail.reviewMode]);
+  // TD-053 (operator repro 2026-08-26, WO-0046 checkpoint): a WO opened BEFORE its plan existed
+  // mounted with no steps, so runIdx's initializer found nothing — and being an initializer, it
+  // never ran again. Approving while staying on the detail then rendered NO instrument (activeStep
+  // derives from runIdx) and the first step sat unstarted ("Seni bekliyor") until a re-entry
+  // remounted the detail. Fill runIdx when it is unset and a step exists. flowMode is deliberately
+  // NOT a dependency (the WO-0045 pin-2 rule: a mode flip never fires a start) — it is read at the
+  // boundary this effect runs on; in manual the manuel card's Başlat is what sets runIdx (the click
+  // is the consent), and the review handoff parks runIdx undefined on purpose (reviewIdx precedes).
+  useEffect(() => {
+    if (detail.flowMode === 'manual') return;
+    if (runIdx !== undefined || reviewIdx !== undefined || verdictFor) return;
+    const next =
+      detail.steps.find((s) => s.status === 'active')?.idx ??
+      detail.steps.find((s) => s.status === 'done' && !s.verdict)?.idx ??
+      detail.steps.find((s) => s.status === 'pending')?.idx;
+    if (next !== undefined) setRunIdx(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.steps, runIdx, reviewIdx, verdictFor]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // TD-038.4 / WO-0031f: a failed delete used to close nothing and say nothing (try/finally, no

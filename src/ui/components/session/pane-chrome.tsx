@@ -6,7 +6,7 @@
 // three live surfaces (SessionPane · StepPane · ReviewPane); the step/review panes had neither.
 import { useState, useRef, type ReactNode } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
-import type { LiveSessionState } from '../../../core/runner';
+import { staleMinutes, STALE_AFTER_MIN, type LiveSessionState } from '../../../core/runner';
 import type { SteerNote, TranscriptLine } from '../../../core/types';
 import { Input, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
@@ -48,12 +48,25 @@ export function PaneError({ message }: { message: string }) {
 //     (callId-matched) or "Düşünüyor"; the fold's own state words freeze the rest (Seni bekliyor /
 //     Bitti / Durduruldu / Hata). `show` says whether there is anything to say at all: a live or
 //     booting drive, a stopped-asking moment, or an ended-but-recorded fold; a bare idle pane is
-//     just the role name (no noise). ---
-export function usePaneActivity(state: LiveSessionState, running: boolean): { show: boolean; line: string } {
+//     just the role name (no noise).
+//     WO-0046: the staleness line — after STALE_AFTER_MIN with no liveness proof (an entry or a
+//     fresh context reading; probe c1 showed long thinking streams NO entries while healthy), the
+//     line carries the REASON, superseding both the Düşünüyor fallback and an active tool verb (a
+//     verb is a motion claim the silence can no longer verify). `stale` tells the pane to drop the
+//     live-dots — the reason line is not motion. Gated on the FOLD's 'running', never the handle's:
+//     an ask held parks the fold at stopped_asking and the asking verb names why it waits — a
+//     staleness accusation there would blame the operator. The plan-closing moment (plan_ready +
+//     running) keeps precedence: it is the wind-down, not a wait. ---
+export function usePaneActivity(state: LiveSessionState, running: boolean, now?: number): { show: boolean; line: string; stale: boolean } {
   const { LIVE_STATUS_LABELS, UI, toolVerb } = useLabels();
+  const staleMins = running && state.status === 'running' && now !== undefined ? staleMinutes(state, now) : undefined;
   let line: string;
+  let stale = false;
   if (state.status === 'plan_ready' && running) {
     line = UI.planClosing;
+  } else if (staleMins !== undefined && staleMins >= STALE_AFTER_MIN) {
+    stale = true;
+    line = UI.staleLine(staleMins);
   } else if (running) {
     const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
     const pending = [...state.entries]
@@ -71,7 +84,40 @@ export function usePaneActivity(state: LiveSessionState, running: boolean): { sh
   } else {
     line = UI.actThinking;
   }
-  return { show: running || state.status !== 'idle' || state.entries.length > 0, line };
+  return { show: running || state.status !== 'idle' || state.entries.length > 0, line, stale };
+}
+
+// --- WO-0046: the shared costline. Cost in the card's own vocabulary (`formatCost`: $ · in→out —
+//     the live token parity the order asks), the live elapsed, and the context readout beside
+//     them (operator ruling 2026-08-26: text, the costline's mono/sönük language, no motion).
+//     The readout renders only while the stream is open and only once the drive REPORTED one —
+//     absent, never zero. One component for the three surfaces (the per-pane string builds were
+//     verbatim copies). ---
+export function PaneCostline({ state, running, liveStart, now }: {
+  state: LiveSessionState;
+  running: boolean;
+  liveStart?: number;
+  now?: number;
+}) {
+  const { formatCost, UI } = useLabels();
+  const costPart = [
+    state.cost.usd > 0 ? formatCost(state.cost) : undefined,
+    running && liveStart && now ? UI.formatDuration(Math.max(0, now - liveStart)) : undefined,
+  ]
+    .filter((x): x is string => x !== undefined)
+    .join(' · ');
+  const contextPart =
+    state.context && running ? UI.contextReadout(state.context.percentage, state.context.usedTokens, state.context.maxTokens) : undefined;
+  return (
+    <>
+      {contextPart ? (
+        <span data-context-readout={contextPart} className="shrink-0 font-mono text-[10.5px] text-inkdim">
+          {contextPart}
+        </span>
+      ) : null}
+      {costPart ? <span className="shrink-0 font-mono text-[10.5px] text-inkdim">{costPart}</span> : null}
+    </>
+  );
 }
 
 // --- the döküm chip: the ONE show/hide of every live surface (the session card's aç/kapa grammar,

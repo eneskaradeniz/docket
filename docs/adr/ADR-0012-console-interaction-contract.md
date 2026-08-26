@@ -167,3 +167,25 @@ space is contract: never on Kapat (deliberate friction on the irreversible), nev
 pending, never on Durdur (stop is an aimed click, not a keystroke). The bottom action bar itself is
 dissolved — see ADR-0013's same-day addendum; the empty-aim line moved with the decision band under
 the plan rows (the rail no longer names the row; the band does).
+
+---
+
+**Addendum (2026-08-26, WO-0046 — live honesty):** the live instrument's header gains two
+informative readings, both inside the existing one-line grammar. The CONTEXT READOUT renders
+beside the costline as TEXT (`bağlam %62 · 124k/200k`) in the costline's own mono/sönük voice —
+operator ruling 2026-08-26 (a fill bar was considered and declined: no new visual vocabulary); it
+is absent until the runner first reports one (never zero), refreshes only at tool events / turn
+boundaries / a throttled thinking-burst read (probe c1), never animates (the
+cost-counter-never-animates rule covers it), and is gone when the drive ends. The live costline
+itself now speaks the card's `formatCost` vocabulary (`$0,41 · 68k→2.1k` — token parity), sourced
+from the context event's ride-along cost — the only mid-drive token source, since WO-0045's D3
+folds exactly one terminal turn_complete per drive. The STALENESS LINE is the honest heir of the
+indefinite "Düşünüyor···": after 3 minutes (one constant, `STALE_AFTER_MIN` — operator ruling
+2026-08-26) with no liveness proof (a stamped entry or a fresh context reading; probe c1 showed
+a long-thinking model streams NO entries while healthy), the activity line carries the reason
+("3 dk'dır yeni çıktı yok") and SUPERSEDES both the Düşünüyor fallback and an active tool verb —
+a verb is a motion claim the silence can no longer verify — with the dots OFF (a reason line is
+not motion). It is gated on the fold's 'running', never the handle's (an ask held parks the fold
+at stopped_asking and the asking verb names why it waits — a staleness accusation there would
+blame the operator); the plan-closing moment keeps precedence; a stopped/errored drive keeps its
+frozen words. It informs, never acts — no watchdog, no snooze (out of scope by the order).

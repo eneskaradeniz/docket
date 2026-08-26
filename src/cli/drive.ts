@@ -85,6 +85,7 @@ export function formatEvent(ev: RunnerEvent, format: DriveFormat): string | unde
     case 'tool_result': return `  ← ${ev.summary}`;
     case 'permission_request': return `⛔ ask ${ev.tool}`;
     case 'plan_ready': return `📋 plan ready (${ev.planText.length} chars)`;
+    case 'context_usage': return `◍ ctx ${ev.percentage}% (${ev.usedTokens}/${ev.maxTokens})`;
     case 'turn_complete': return `✓ done`;
     case 'error': return `✗ ${ev.message}`;
     default: return undefined;

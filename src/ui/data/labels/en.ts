@@ -243,6 +243,9 @@ export function formatUsd(usd: number): string {
 }
 
 export function formatTokens(n: number): string {
+  // WO-0046: a max-context of 1 000 000 rendered "1000k" on the live readout — the M tier exists
+  // for exactly that ceiling (and stays consistent with formatCost's in→out use of this helper).
+  if (n >= 1000000) return `${+(n / 1000000).toFixed(1)}M`;
   if (n >= 10000) return `${Math.round(n / 1000)}k`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return `${n}`;
@@ -587,6 +590,10 @@ export const UI = {
   manuelNextStepCard: (idx: number) => `next: step ${idx}`,
   manuelReviewCard: (idx: number) => `next: review ${idx}`,
   manuelStartCard: 'Start',
+  // WO-0046 live honesty: the context readout (the costline's own language — text, no motion)
+  // and the staleness line (3-minute threshold, the honest heir of the indefinite wait).
+  contextReadout: (pct: number, used: number, max: number) => `ctx ${pct}% · ${formatTokens(used)}/${formatTokens(max)}`,
+  staleLine: (n: number) => `no new output for ${n} min`,
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',
