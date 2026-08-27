@@ -5,6 +5,7 @@ import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/sou
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
 import { toast } from './ToastHost';
+import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 
 const base = (p: string): string => {
   let s = p;
@@ -24,6 +25,7 @@ export function WoCreateModal({
   workspace,
   source,
   defaultRule,
+  prefill,
   onClose,
   onCreated,
 }: {
@@ -31,20 +33,30 @@ export function WoCreateModal({
   source: WorkOrderSource;
   /** The Settings default — the preselected rule (WO-0031c; the WO carries its own from here on). */
   defaultRule: PermissionRule;
+  /** WO-0049 (mockup kare 06): the roadmap task's spawn seed — the uneditable context line + the
+   *  seeded fields + `task:` into order.md. Undefined = the plain board flow, untouched. */
+  prefill?: WoSpawnPrefill;
   onClose: () => void;
   /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
   onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
 }) {
-  const { PERMISSION_RULE_LABELS, UI } = useLabels();
+  const { PERMISSION_RULE_LABELS, UI, fazLabel } = useLabels();
   // PRODUCT.md §Decisions 6: the decision store is a workspace setting, not a track. For a multi-repo
   // workspace the dedicated decision-store repo is excluded; a single-repo workspace keeps its repo
   // (it serves both roles). Tracks are code repos only.
   const trackOptions: RepoId[] =
     workspace.repos.length > 1 ? workspace.repos.filter((r) => r !== workspace.decisionStore) : workspace.repos;
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(trackOptions);
+  // WO-0049: the spawn seeds title/description/tracks — SEEDS, not locks; everything stays editable
+  // ("gerisi bugünkü akışın aynısı"). The repo compare is a plain string compare against branded ids
+  // — no identity constructor runs in ui (ADR-0003); an unresolvable seed leaves all tracks on, the
+  // plain default.
+  const seededTracks = prefill?.repo !== undefined && trackOptions.some((r) => (r as string) === prefill.repo)
+    ? trackOptions.filter((r) => (r as string) === prefill.repo)
+    : trackOptions;
+  const [title, setTitle] = useState(prefill?.title ?? '');
+  const [description, setDescription] = useState(prefill?.note ?? '');
+  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(prefill !== undefined ? seededTracks : trackOptions);
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
@@ -84,6 +96,8 @@ export function WoCreateModal({
         reviewMode,
         contextFiles,
         permissionRule,
+        // WO-0049: the task→WO link — the task identity, written regardless of the track selection.
+        ...(prefill !== undefined ? { taskRef: prefill.taskId } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -112,6 +126,18 @@ export function WoCreateModal({
       }
     >
       <div className="flex flex-col gap-4">
+        {prefill !== undefined ? (
+          // Kare 06: the ONE uneditable line — where this WO comes from. Display-only (not focusable);
+          // the seeded fields below it stay fully editable.
+          <div
+            data-task-context
+            className="flex items-center gap-2 rounded-md border border-hairline bg-bg px-2.5 py-1.5"
+          >
+            <span className="font-mono text-[10.5px] tracking-wide text-signal">
+              {UI.roadmapSpawnContext(fazLabel(prefill.fazId), prefill.ordinal, prefill.title, prefill.repo)}
+            </span>
+          </div>
+        ) : null}
         <Field label={UI.woTitleLabel} error={titleErr}>
           <Input
             ref={titleRef}

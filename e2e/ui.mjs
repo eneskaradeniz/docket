@@ -2007,6 +2007,155 @@ await spec('WO-0047 kapı B: yükselt → kalıcı ayar + reddedilen sürüş ye
   await backToBoard();
 });
 
+// ===== WO-0049 — yol haritası: dolu yüzey, şerit, spawn, ekle diyalogları, yapı kökü, geçersiz =====
+// The 'yol' workspace shares the seeded store: every OTHER workspace's roadmap surface reads
+// invalid (front_matter_mismatch — the file names ITS workspace), which spec 6 pins. Order
+// matters: the surface facts (spec 1) run before the mutating specs (3: a spawned WO flips f1-t2;
+// 4: a new task + faz; 5: the root round-trip). The group leaves the app on 'e2e' + Pano.
+const roadmapLine = seedOut.trim().split('\n').find((l) => l.startsWith('ROADMAP='));
+if (!roadmapLine) throw new Error('seed failed: no ROADMAP= line');
+const ROADMAP_IDS = JSON.parse(roadmapLine.slice('ROADMAP='.length));
+const openRoadmap = async () => {
+  await page.getByRole('button', { name: 'Yol Haritası' }).first().click();
+  await page.waitForTimeout(600); // the read-once-per-entry refresh
+};
+
+await spec('WO-0049 dolu yüzey: başlık metası, şerit, katlanmış geçmiş, sıradaki, WO çipi, bloke satırı', async () => {
+  await switchWs('kapı', 'yol'); // WO-0047's last spec leaves the app on 'kapı'
+  await openRoadmap();
+  const screen = await page.locator('[data-roadmap-screen]').innerText();
+  assert.ok(screen.includes('2/5 faz tamam · 2 açık iş emri · $7,32'), `head meta wrong: ${screen.slice(0, 200)}`);
+  assert.equal(await page.locator('button[data-faz-seg]').count(), 5, 'the strip does not carry 5 segments');
+  const fold = await page.locator('[data-donefold]').innerText();
+  assert.ok(fold.includes('2 tamamlanan faz'), `fold label: ${fold}`);
+  assert.ok(fold.includes('f0 · f3'), `fold ids: ${fold}`);
+  assert.ok(fold.includes('3 WO · $5,20'), `fold meta: ${fold}`);
+  assert.equal(await page.locator('div[data-faz-id="f0"]').count(), 0, 'a done faz rendered outside the collapsed fold');
+  await page.locator('[data-donefold]').click();
+  await page.waitForTimeout(300);
+  assert.ok((await page.locator('div[data-faz-id="f0"]').count()) === 1, 'the fold did not expand to its cards');
+  const siradaki = await page.locator('[data-task-row][data-task-id="f1-t2"]').textContent();
+  assert.ok(siradaki.includes('sıradaki'), `the marker is not on the first spawnable row: ${siradaki}`);
+  const chip = await page.locator('[data-task-row][data-task-id="f1-t3"] [data-task-wo]').innerText();
+  assert.equal(chip, ROADMAP_IDS.foto, `the open chip: ${chip}`);
+  assert.ok(screen.includes('E2E bloke notu'), 'the Bloke line does not carry the seeded notes verbatim');
+  assert.equal(await page.locator('div[data-faz-id="f2"] [data-task-spawn]').count(), 0, 'a blocked row carries spawn');
+  await page.screenshot({ path: join(SHOTS, 'roadmap-full@980.png') });
+});
+
+await spec('WO-0049 şerit: segment tıkla → faza kaydır', async () => {
+  await page.locator('button[data-faz-seg][data-faz-id="f4"]').click();
+  await page.waitForTimeout(800); // the smooth scroll
+  // The short seed world cannot bring the LAST card to the viewport top (nothing scrolls past the
+  // document's end) — the honest pin: the window MOVED and the whole card is in view.
+  const scrollY = await page.evaluate(() => window.scrollY);
+  assert.ok(scrollY > 100, `the strip did not scroll: scrollY=${scrollY}`);
+  const box = await page.locator('div[data-faz-id="f4"]').boundingBox();
+  assert.ok(box, 'no FAZ 4 card');
+  assert.ok(box.y >= 0 && box.y + box.height <= 620, `FAZ 4 not fully in view: y=${box.y} h=${box.height}`);
+});
+
+await spec("WO-0049 spawn: ön-dolu oluştur → detay çipi → ESC Yol Haritası'ya döner, satır çipi dolar", async () => {
+  await page.locator('[data-task-row][data-task-id="f1-t2"] [data-task-spawn]').click();
+  await page.waitForTimeout(400);
+  const ctx = await page.locator('[data-task-context]').innerText();
+  assert.equal(ctx, 'FAZ 1 · GÖREV 2 · Doğrulama akışı · hedef: api', `context line: ${ctx}`);
+  const titleVal = await page.locator('[role="dialog"] input').first().inputValue();
+  assert.equal(titleVal, 'Doğrulama akışı', `the title is not seeded: ${titleVal}`);
+  assert.equal(await page.locator('[role="dialog"] button', { hasText: 'api' }).first().getAttribute('aria-pressed'), 'true', 'the task repo is not pre-checked');
+  assert.equal(await page.locator('[role="dialog"] button', { hasText: 'mobile' }).first().getAttribute('aria-pressed'), 'false', 'the other repo is pre-checked');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(900); // create (task: lands in order.md) + navigate to the detail
+  const chip = await page.locator('[data-detail-task-chip]').innerText();
+  assert.equal(chip, 'FAZ 1 · Doğrulama akışı', `detail chip: ${chip}`);
+  await page.screenshot({ path: join(SHOTS, 'roadmap-detail-chip@980.png') });
+  const bandText = await page.locator('[data-detail-task-chip]').locator('xpath=..').innerText();
+  const m = /WO-\d+/.exec(bandText);
+  assert.ok(m, 'no WO id beside the chip');
+  const createdId = m[0];
+  await backToBoard(); // ESC — the detail opened OVER the roadmap; back must land there
+  assert.equal(await page.locator('[data-roadmap-screen]').count(), 1, 'ESC did not return to Yol Haritası');
+  const rowChip = await page.locator('[data-task-row][data-task-id="f1-t2"] [data-task-wo]').innerText();
+  assert.equal(rowChip, createdId, 'the spawned row did not flip to the WO chip');
+  await page.screenshot({ path: join(SHOTS, 'roadmap-spawn@980.png') });
+  // the orphan WO (kare 07 degrade): Pano → its detail carries the qualifier, never a raw id
+  await page.getByRole('button', { name: 'Pano' }).click();
+  await page.waitForTimeout(400);
+  await openDetail('Yol yetim');
+  const degrade = await page.getByText('(görev yol haritasında yok)').count();
+  assert.equal(degrade, 1, 'no degrade qualifier on the orphan detail');
+  await backToBoard();
+  await openRoadmap();
+});
+
+await spec('WO-0049 ekle diyalogları: görev (boş başlık + depo reddi, sonra geçerli), faz ekle', async () => {
+  await page.locator('button[data-task-add][data-faz-id="f4"]').click();
+  await page.waitForTimeout(350);
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(250);
+  const titleErrs = await page.locator('[role="dialog"] [role="alert"]').allInnerTexts();
+  assert.ok(titleErrs.some((t) => t.includes('Başlık gerekli')), `no under-field error: ${titleErrs.join('|')}`);
+  await page.locator('[role="dialog"] input').first().fill('Push öncesi kontrol');
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(250);
+  const repoErrs = await page.locator('[role="dialog"] [role="alert"]').allInnerTexts();
+  assert.ok(repoErrs.some((t) => t.includes('Bir depo seç')), `the repo error missing: ${repoErrs.join('|')}`);
+  await page.locator('[role="dialog"] button', { hasText: 'mobile' }).first().click();
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(800); // re-read + applyFazlarEdits + parse-guarded save + refresh
+  assert.equal(await page.locator('[data-task-row][data-task-id="f4-t2"]').count(), 1, 'the new task row did not land');
+  await page.locator('[data-faz-add]').click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Raporlama');
+  await page.locator('[role="dialog"] button', { hasText: 'FAZ 1' }).first().click(); // the dependency chip
+  await page.getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('div[data-faz-id="f5"]').count(), 1, 'no FAZ 5 card');
+  assert.equal(await page.locator('button[data-faz-seg]').count(), 6, 'the strip did not gain the 6th segment');
+});
+
+await spec('WO-0049 yapı kökü: .docket → yok yüzeyi; docs → geri (dosyalar taşınmaz)', async () => {
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(500);
+  const input = page.locator('[data-docs-root-section] input');
+  assert.equal(await input.inputValue(), 'docs', 'the effective root does not read docs');
+  await input.fill('../x');
+  await page.locator('[data-docs-root-section] button', { hasText: 'Kaydet' }).click();
+  await page.waitForTimeout(300);
+  const errs = await page.locator('[data-docs-root-section] [role="alert"]').allInnerTexts();
+  assert.ok(errs.some((t) => t.includes('Güvenli göreli yol')), `no invalid-path error: ${errs.join('|')}`);
+  await input.fill('.docket');
+  await page.locator('[data-docs-root-section] button', { hasText: 'Kaydet' }).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(600); // onDocsRootChanged → the surface follows the root
+  const screen = await page.locator('[data-roadmap-screen]').innerText();
+  assert.ok(screen.includes('yol haritası henüz yok'), `not the invitation: ${screen.slice(0, 140)}`);
+  assert.ok(screen.includes('.docket/roadmap.md'), `the file line does not name the new root: ${screen.slice(0, 180)}`);
+  await page.screenshot({ path: join(SHOTS, 'roadmap-root-absent@980.png') });
+  // back to docs: the full surface returns unchanged — the files never moved, only the pointer did
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(500);
+  await page.locator('[data-docs-root-section] input').fill('docs');
+  await page.locator('[data-docs-root-section] button', { hasText: 'Kaydet' }).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(600);
+  const back = await page.locator('[data-roadmap-screen]').innerText();
+  assert.ok(back.includes('2/6 faz tamam · 3 açık iş emri · $7,32'), `the surface did not return: ${back.slice(0, 180)}`);
+});
+
+await spec('WO-0049 geçersiz dosya: adlı sebep satırı, sessiz boş yok', async () => {
+  await switchWs('yol', 'e2e'); // the shared store's roadmap.md names 'yol' — front_matter_mismatch
+  await openRoadmap();
+  const screen = await page.locator('[data-roadmap-screen]').innerText();
+  assert.ok(screen.includes('Yol haritası okunamadı'), `not the invalid surface: ${screen.slice(0, 140)}`);
+  assert.ok(screen.includes('workspace uyuşmuyor'), `no named reason: ${screen.slice(0, 220)}`);
+  assert.equal(await page.locator('div[data-faz-id]').count(), 0, 'faz cards rendered on an invalid doc');
+  await page.screenshot({ path: join(SHOTS, 'roadmap-invalid@980.png') });
+  await page.getByRole('button', { name: 'Pano' }).click(); // leave the suite on Pano
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

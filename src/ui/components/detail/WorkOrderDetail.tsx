@@ -81,6 +81,7 @@ export function WorkOrderDetail({
   onDelete,
   autoRequestPlan,
   onRetractSteerNote,
+  taskChip,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -107,6 +108,8 @@ export function WorkOrderDetail({
   /** WO-0045: retract a queued note from a STOPPED drive — the data-port mirror route (the store
    *  rewrites the row + audits); the pane patches its fold when this resolves true. */
   onRetractSteerNote?: (sessionId: string, noteId: string) => Promise<boolean>;
+  /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight to the strip. */
+  taskChip?: { fazId: string; taskTitle: string } | 'missing';
 }) {
   const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
@@ -1283,6 +1286,7 @@ export function WorkOrderDetail({
           onDelete={() => setConfirmDelete(true)}
           permissionRule={permissionRule}
           onUpdateWorkOrder={onUpdateWorkOrder}
+          taskChip={taskChip}
         />
       </div>
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">

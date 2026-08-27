@@ -7,6 +7,7 @@
 // as `taskRef` on each order fact (the store parses it out of order.md front-matter at view time);
 // there is no DB column and this module never asks for one.
 import { parseRoadmapMd, roadmapDiagnostics, type FazSpec, type RoadmapDiagnostic } from './roadmap-md';
+import type { WorkOrderId } from './types';
 
 export type TaskStatus = 'planli' | 'kosuyor' | 'tamam';
 export type FazStatus = 'planli' | 'kosuyor' | 'bekliyor' | 'tamam';
@@ -48,7 +49,7 @@ export function spawnActionOf(input: { task: TaskStatus; faz: FazStatus; repo: s
 
 /** One work order's roadmap-relevant facts, joined by the store at view time (closed ⇔ closure sha). */
 export interface RoadmapOrderFact {
-  id: string;
+  id: WorkOrderId; // branded through the view (WO-0049) — the UI's chips open details with these
   closed: boolean;
   costUsd: number; // Σ session cost observed for this WO (NULL sessions contribute 0)
   costUnknown?: boolean; // true when any session row carries NULL cost — the honest undercount flag
@@ -70,7 +71,7 @@ export interface TaskView {
   status: TaskStatus;
   closedWoCount: number;
   closedCostUsd: number;
-  openWoIds: string[];
+  openWoIds: WorkOrderId[]; // the row's clickable chips — one click from the roadmap to the detail
   spawn: { available: true } | { available: false; reason?: SpawnAbsentReason };
 }
 
@@ -194,4 +195,31 @@ export function deriveRoadmapView(input: DeriveRoadmapInput): RoadmapView {
 // Cent-round the money sums so 3.10+4.20+1.00+2.60+1.50 === 12.40 in the view too, not 12.399999….
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Where a linked task lives — the detail chip's `FAZ N · task` text (WO-0049). */
+export interface RoadmapTaskLocation {
+  fazId: string;
+  fazTitle: string;
+  taskId: string;
+  taskTitle: string;
+  taskOrdinal: number; // 1-based position within its faz — the spawn dialog's "GÖREV K"
+}
+
+/**
+ * A taskRef (order.md `task:`) against a READY view → its location. An orphan ref (the task left
+ * roadmap.md) → undefined — the detail chip degrades to its qualifier; raw ids never render. A
+ * linear scan on one detail mount — no index cached (TD-055's view-time stance).
+ */
+export function roadmapTaskOf(
+  view: Extract<RoadmapView, { kind: 'ready' }>,
+  taskRef: string,
+): RoadmapTaskLocation | undefined {
+  for (const faz of view.fazlar) {
+    const idx = faz.tasks.findIndex((t) => t.id === taskRef);
+    if (idx >= 0) {
+      return { fazId: faz.id, fazTitle: faz.title, taskId: taskRef, taskTitle: faz.tasks[idx]!.title, taskOrdinal: idx + 1 };
+    }
+  }
+  return undefined;
 }

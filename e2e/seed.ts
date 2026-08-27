@@ -372,4 +372,105 @@ store.recordSession({
 // The row is load-bearing for as long as detection is the default (order.md Notes).
 await store.setLocale('tr');
 
+// 14) WO-0049 roadmap GUI: a 'yol' workspace — the same SHARED decision store (TD-035 numbering)
+//     + api/mobile code-repo dirs (the decision store 'repo' stays the store; tasks target code
+//     repos only). A 5-faz roadmap.md: f0 done (2 closed WOs, $4.20) · f1 running (t1 closed $0.50,
+//     t2 = sıradaki, t3 carries the OPEN WO chip at $1.62) · f2 blocked by f1 with notes (the Bloke
+//     line, verbatim) · f3 done (1 closed WO $1.00 — the second done faz, so the fold runs) ·
+//     f4 planlı. One ORPHAN open WO (task: f9-t9) pins the head's orphan-count + the detail chip's
+//     degrade. Pinned facts: head `2/5 faz tamam · 2 açık iş emri · $7,32`; fold
+//     `2 tamamlanan faz · f0 · f3 · 3 WO · $5,20`. The created ids are PRINTED (ROADMAP=) —
+//     numbering is store-global and drifts as this seed evolves; specs never hard-code numbers.
+mkdirSync(join(root, 'api'));
+mkdirSync(join(root, 'mobile'));
+const wsYol = await store.createWorkspace({
+  label: 'yol',
+  repos: [{ path: repo, remote: 'e2e-remote' }, { path: join(root, 'api') }, { path: join(root, 'mobile') }],
+  decisionStorePath: repo,
+});
+const mkYol = (title: string, taskRef: string) =>
+  store.createWorkOrder({
+    workspaceId: wsYol.id,
+    title,
+    description: 'E2E: yol haritası bağlantılı iş emri.',
+    trackRepos: wsYol.repos,
+    reviewMode: 'gates',
+    contextFiles: [],
+    taskRef,
+  });
+const closeYol = async (wo: Awaited<ReturnType<typeof mkYol>>, usd: number) => {
+  await store.approvePlan(wo.id, ONE_STEP_PLAN);
+  store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+  store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+  store.recordSession({
+    providerSessionId: `e2e-yol-${wo.id}`,
+    workOrderId: wo.id,
+    role: 'implementer',
+    status: 'idle',
+    stepIdx: 1,
+    transcript: [],
+    cost: { tokensIn: 9_000, tokensOut: 2_000, usd },
+    startedAt: monthDay(7),
+    endedAt: monthDay(7),
+  });
+  await store.closeWorkOrder(wo.id, 'e2e yol closed');
+};
+await closeYol(await mkYol('Yol temel 1', 'f0-t1'), 3.1);
+await closeYol(await mkYol('Yol temel 2', 'f0-t2'), 1.1);
+await closeYol(await mkYol('Yol profil', 'f1-t1'), 0.5);
+await closeYol(await mkYol('Yol altyapı', 'f3-t1'), 1.0);
+const woFoto = await mkYol('Yol fotoğraf', 'f1-t3'); // OPEN — the running task's chip
+store.recordSession({
+  providerSessionId: `e2e-yol-${woFoto.id}`,
+  workOrderId: woFoto.id,
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 9_000, tokensOut: 2_000, usd: 1.62 },
+  startedAt: monthDay(8),
+  endedAt: monthDay(8),
+});
+const woYetim = await mkYol('Yol yetim', 'f9-t9'); // OPEN — the orphan ref: head-counted, chip-degraded
+const { buildRoadmapMd } = await import('../src/core/roadmap-md.ts');
+await store.saveRoadmap(
+  wsYol.id,
+  buildRoadmapMd({
+    workspaceSlug: wsYol.id as string, // the derivation compares the front-matter against the workspace ID
+    title: 'Yol Haritası',
+    prose: 'E2E: fazlar, görevler ve bağımlılıklar.',
+    fazlar: [
+      {
+        id: 'f0', title: 'Temel', aim: 'Kaide', blockedBy: [],
+        tasks: [
+          { id: 'f0-t1', title: 'Temel görev 1', repo: 'api' },
+          { id: 'f0-t2', title: 'Temel görev 2', repo: 'api' },
+        ],
+      },
+      {
+        id: 'f1', title: 'Profil', aim: 'Profil yüzeyi', blockedBy: [],
+        tasks: [
+          { id: 'f1-t1', title: 'Profil oluşturma', repo: 'api' },
+          { id: 'f1-t2', title: 'Doğrulama akışı', repo: 'api' }, // sıradaki — the first spawnable
+          { id: 'f1-t3', title: 'Fotoğraf yükleme', repo: 'mobile' }, // kosuyor — the open WO chip
+        ],
+      },
+      {
+        id: 'f2', title: 'Değerlendirme', blockedBy: ['f1'],
+        notes: 'E2E bloke notu — Faz 1 bitmeden başlanmaz',
+        tasks: [{ id: 'f2-t1', title: 'Puanlama', repo: 'api' }],
+      },
+      {
+        id: 'f3', title: 'Altyapı', blockedBy: [],
+        tasks: [{ id: 'f3-t1', title: 'Depo düzeni', repo: 'api' }],
+      },
+      {
+        id: 'f4', title: 'Bildirimler', aim: 'Push ve e-posta', blockedBy: [],
+        tasks: [{ id: 'f4-t1', title: 'Push kanalı', repo: 'mobile' }],
+      },
+    ],
+  }),
+);
+console.log(`ROADMAP=${JSON.stringify({ foto: String(woFoto.id), yetim: String(woYetim.id) })}`);
+
 console.log(`DB=${join(root, 'e2e.db')}`);

@@ -8,10 +8,15 @@ import {
   deriveRoadmapView,
   fazStatusOf,
   type RoadmapOrderFact,
+  roadmapTaskOf,
   spawnActionOf,
   taskStatusOf,
 } from '../roadmap';
 import { ANTREO_REPOS, ANTREO_WORKSPACE, antreoFazlar, antreoOrderFacts, antreoRoadmapMd } from './antreo-roadmap';
+import type { WorkOrderId } from '../types';
+
+// Tests may build identities (the boundary carve-out) — the inline edge-case orders below brand here.
+const wo = (id: string): WorkOrderId => id as WorkOrderId;
 
 const antreoInput = (): { roadmapMd: string; workspaceSlug: string; knownRepos: string[]; orders: RoadmapOrderFact[] } => ({
   roadmapMd: antreoRoadmapMd,
@@ -154,11 +159,11 @@ describe('deriveRoadmapView — the union: absent / invalid / ready', () => {
 describe('deriveRoadmapView — the named edge cases (each a test, per the order)', () => {
   it('orphan: a task: ref pointing at no task is invisible in fazlar but counted in the head', () => {
     const orders: RoadmapOrderFact[] = [...antreoOrderFacts.map((o) => ({ ...o }))];
-    orders[9] = { id: 'WO-0009', closed: false, costUsd: 0, taskRef: 'f9-t9' }; // 3 unlinked → 1 orphan + 2 unlinked
+    orders[9] = { id: wo('WO-0009'), closed: false, costUsd: 0, taskRef: 'f9-t9' }; // 3 unlinked → 1 orphan + 2 unlinked
     const v = deriveRoadmapView({ ...antreoInput(), orders });
     if (v.kind !== 'ready') throw new Error('expected ready');
     const everyTask = v.fazlar.flatMap((f) => f.tasks);
-    expect(everyTask.some((t) => t.openWoIds.includes('WO-0009'))).toBe(false);
+    expect(everyTask.some((t) => t.openWoIds.includes(wo('WO-0009')))).toBe(false);
     expect(v.head.openWoCount).toBe(4); // still counted
   });
 
@@ -201,7 +206,7 @@ describe('deriveRoadmapView — the named edge cases (each a test, per the order
     expect(v.head.costUnknown).toBe(false);
     const withUnknown = deriveRoadmapView({
       ...antreoInput(),
-      orders: [...antreoOrderFacts, { id: 'WO-0013', closed: true, costUsd: 0, costUnknown: true, taskRef: 'f0-t1' }],
+      orders: [...antreoOrderFacts, { id: wo('WO-0013'), closed: true, costUsd: 0, costUnknown: true, taskRef: 'f0-t1' }],
     });
     if (withUnknown.kind !== 'ready') throw new Error('expected ready');
     expect(withUnknown.head.costUnknown).toBe(true);
@@ -222,5 +227,31 @@ describe('deriveRoadmapView — the named edge cases (each a test, per the order
     const v2 = deriveRoadmapView({ ...antreoInput(), roadmapMd: blockedWorld, orders: [] });
     if (v2.kind !== 'ready') throw new Error('expected ready');
     expect(v2.siradaki).toBeUndefined();
+  });
+});
+
+describe('roadmapTaskOf — the detail chip\'s wo→task reverse lookup (WO-0049)', () => {
+  it('resolves a linked ref to its faz + title + 1-based ordinal (f1-t3 = fotoğraf, 3rd of f1)', () => {
+    const v = deriveRoadmapView(antreoInput());
+    if (v.kind !== 'ready') throw new Error('expected ready');
+    expect(roadmapTaskOf(v, 'f1-t3')).toEqual({
+      fazId: 'f1',
+      fazTitle: 'Antrenör Profili',
+      taskId: 'f1-t3',
+      taskTitle: 'Fotoğraf yükleme',
+      taskOrdinal: 3,
+    });
+  });
+
+  it('an orphan ref (the task left roadmap.md) → undefined — the chip degrades, never lies', () => {
+    const v = deriveRoadmapView(antreoInput());
+    if (v.kind !== 'ready') throw new Error('expected ready');
+    expect(roadmapTaskOf(v, 'f9-t9')).toBeUndefined();
+  });
+
+  it('the first task of a faz carries ordinal 1 (the spawn dialog\'s "GÖREV K" voice)', () => {
+    const v = deriveRoadmapView(antreoInput());
+    if (v.kind !== 'ready') throw new Error('expected ready');
+    expect(roadmapTaskOf(v, 'f0-t1')).toMatchObject({ taskOrdinal: 1, taskTitle: 'Rol ayrımı ve kayıt akışı' });
   });
 });

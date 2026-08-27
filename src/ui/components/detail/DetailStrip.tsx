@@ -54,6 +54,7 @@ export function DetailStrip({
   onDelete,
   permissionRule,
   onUpdateWorkOrder,
+  taskChip,
 }: {
   detail: WorkOrderDetailView;
   /** The parsed order.md Objective — the description editor's starting text (WO-0031c). */
@@ -72,8 +73,13 @@ export function DetailStrip({
   onDelete: () => void;
   permissionRule: PermissionRule;
   onUpdateWorkOrder: (patch: UpdateWorkOrderInput) => Promise<void>;
+  /** WO-0049 (mockup kare 07): the linked task — resolved renders the ONE `FAZ N · task` chip beside
+   *  the WO id (signal, non-interactive — navigation lives on the roadmap's row chip); 'missing' (an
+   *  orphan `task:`, or a roadmap that cannot be read) renders the degrade qualifier; undefined (no
+   *  `task:` at all) renders nothing. Raw task ids never reach this surface. */
+  taskChip?: { fazId: string; taskTitle: string } | 'missing';
 }) {
-  const { budgetLine, formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
+  const { budgetLine, fazLabel, formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
   const tone = PHASE_KIND_TONE[phase.kind];
   const turnLabel: Record<TurnState, string> = {
     yours: UI.turnYours,
@@ -153,6 +159,19 @@ export function DetailStrip({
           </button>
         </Tooltip>
         <span className="shrink-0 font-mono text-[12px] text-inkdim">{woIdLabel(detail.id)}</span>
+        {taskChip !== undefined ? (
+          taskChip === 'missing' ? (
+            <span className="shrink-0 font-mono text-[10px] text-inkdim">{UI.roadmapTaskMissing}</span>
+          ) : (
+            <span
+              data-detail-task-chip
+              title={UI.roadmapTaskChip(fazLabel(taskChip.fazId), taskChip.taskTitle)}
+              className="shrink-0 rounded border border-signal/50 bg-signal/10 px-1.5 py-px font-mono text-[10px] tracking-wide text-signal"
+            >
+              {UI.roadmapTaskChip(fazLabel(taskChip.fazId), taskChip.taskTitle)}
+            </span>
+          )
+        ) : null}
         <Badge>{STAGE_LABELS[detail.stage]}</Badge>
         <span className="flex min-w-0 items-center gap-1.5">
           <span

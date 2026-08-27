@@ -1,18 +1,23 @@
-// InviteHero (WO-0031d / ADR-0012 r2) — the empty surface as an invitation: ONE short line, ONE
+// InviteHero (WO-0031d / ADR-0012 r2) — the empty surface as an invitation: ONE short line, ≤1
 // action, nothing else. No buckets, no dashed boxes, no explaining paragraph — the first empty
 // state (no workspace) and the second (no work orders yet) share it with their OWN line + CTA: the
 // line must name what the button creates (WO-0032 operator finding — the zero-WO line sat over the
-// create-workspace button on an empty DB).
+// create-workspace button on an empty DB). WO-0049: `cta` became optional and an `info` line joined
+// it — the roadmap's absent surface has ZERO actions (the ✦ draft drive is WO-0050's; a dead button
+// is not an invitation), so it passes the line + where the file would live, and nothing else.
 import { Button } from '../kit';
 
-export function InviteHero({ line, cta, onCta }: { line: string; cta: string; onCta: () => void }) {
+export function InviteHero({ line, info, cta, onCta }: { line: string; info?: string; cta?: string; onCta?: () => void }) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6">
       <span className="h-2 w-2 rounded-full bg-signal" aria-hidden="true" />
       <p className="text-[15px] font-semibold text-ink">{line}</p>
-      <Button variant="primary" size="sm" onClick={onCta}>
-        {cta}
-      </Button>
+      {info !== undefined ? <p className="font-mono text-[11px] text-inkdim">{info}</p> : null}
+      {cta !== undefined && onCta !== undefined ? (
+        <Button variant="primary" size="sm" onClick={onCta}>
+          {cta}
+        </Button>
+      ) : null}
     </div>
   );
 }
