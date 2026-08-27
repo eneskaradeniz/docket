@@ -14,16 +14,19 @@
 // store.test.ts (WO-0043 took it out of the production module). M3 replaces the seed with live
 // git/forge observation.
 import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
 import type { Locale } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, writeOrderMd, writeOrderMdById, writePlanMdById, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
+import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
+import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
 import type { BudgetRefusal } from '../../core/runner';
 import { rid, tid, wid, woid } from '../ids';
 import { workspaces } from '../fixtures';
@@ -74,6 +77,10 @@ export interface AppSettingsData {
    *  shape + semantics live on the port (src/core/app-settings.ts). */
   getBudget(workspaceId: WorkspaceId): Promise<BudgetThreshold | undefined>;
   setBudget(workspaceId: WorkspaceId, threshold: BudgetThreshold | undefined): Promise<void>;
+  /** The workspace's structure root (WO-0048) — the AppSettings port's scoped half; the shape +
+   *  semantics live on the port (src/core/app-settings.ts). */
+  getDocsRoot(workspaceId: WorkspaceId): Promise<string>;
+  setDocsRoot(workspaceId: WorkspaceId, root: string | undefined): Promise<void>;
   /** Resolve the EFFECTIVE rule for a drive (WO-0031c): the work order's own order.md rule when it
    *  carries one, else the Settings default (a pre-c2 work order has no key — its behavior follows the
    *  operator's default, with the legacy ask/auto values mapped). */
@@ -517,8 +524,8 @@ function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: 
 // orders (rows + the Docket-authored decision-store dirs), then the definition + connection rows.
 // Repo code and git history are never touched; the dir resolves STRICTLY from connection rows (a
 // workspace without a matching connection deletes DB rows only, never a folder under cwd). Global
-// app_setting rows are untouched — except the workspace's OWN budget threshold (WO-0047): a
-// recycled workspace id must not inherit a dead cap.
+// app_setting rows are untouched — except the workspace's OWN budget threshold (WO-0047) and
+// structure root (WO-0048): a recycled workspace id must not inherit a dead cap or a foreign root.
 function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   const live = db
     .prepare(
@@ -526,10 +533,11 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
     )
     .get(id) as { n: number };
   if (live.n > 0) throw new Error(`deleteWorkspace: ${live.n} running session(s) in ${id}`);
-  const dir = connectedDecisionStorePath(db, id); // before the connection rows go
+  const dir = connectedStructureRoot(db, id); // before the connection rows go
   const woIds = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(id) as { id: string }[];
   for (const x of woIds) deleteWorkOrderRows(db, woid(x.id), dir);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
+  db.prepare('DELETE FROM app_setting WHERE key = ?').run(`docs_root:${id}`);
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
@@ -580,11 +588,12 @@ function updateRepoPathRow(db: DatabaseSync, id: WorkspaceId, repoId: RepoId, ne
 }
 
 // --- Work-order creation (WO-0015) ---
-// The workspace's decision-store path resolved STRICTLY from its connection rows (WO-0032): the same
-// slug match resolveDecisionStorePath applies, but undefined when no connection matches. DELETES
-// resolve through this only — a deletion must never operate on the process.cwd() fallback (fixture
-// workspaces resolve there, and under vitest cwd IS the operator's real repo).
-function connectedDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string | undefined {
+// The workspace's STRUCTURE ROOT resolved STRICTLY from its connection rows (WO-0032 + WO-0048):
+// the connected decision-store path plus the workspace's docs_root setting. Undefined when no
+// connection matches. DELETES resolve through this only — a deletion must never operate on the
+// process.cwd() fallback (fixture workspaces resolve there, and under vitest cwd IS the operator's
+// real repo).
+function connectedStructureRoot(db: DatabaseSync, workspaceId: WorkspaceId): string | undefined {
   const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(workspaceId) as
     | { decision_store: string }
     | undefined;
@@ -593,17 +602,20 @@ function connectedDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId):
     local_path: string;
   }[];
   for (const r of rows) {
-    if (repoBase(r.local_path) === dsSlug) return r.local_path;
+    if (repoBase(r.local_path) === dsSlug) return join(r.local_path, settingDocsRoot(db, workspaceId));
   }
   return undefined;
 }
 
-// Resolve the decision store's local working-tree path for a workspace. Workspace.decisionStore is a
-// RepoId slug; the real path lives in the owned connection table. Fixture workspaces have no
-// connection row, so fall back to process.cwd() (Docket manages itself from its own working tree).
-// The path never crosses to the renderer (ADR-0001). M3 reads workspace.yaml + connection instead.
-function resolveDecisionStorePath(db: DatabaseSync, workspaceId: WorkspaceId): string {
-  return connectedDecisionStorePath(db, workspaceId) ?? process.cwd();
+// The workspace's STRUCTURE ROOT (WO-0048, ADR-0016): the decision store's local working-tree path
+// plus the workspace's docs_root setting (default docs/, .docket/ one setting away). Every document
+// path — work-orders/, roadmap.md — resolves through this, so one setting moves every read/write at
+// once; switching never moves files (ADR-0016). Workspace.decisionStore is a RepoId slug; the real
+// path lives in the owned connection table. Fixture workspaces have no connection row, so fall back
+// to process.cwd() + the root (Docket manages itself from its own working tree). The path never
+// crosses to the renderer (ADR-0001). M3 reads workspace.yaml + connection instead.
+function structureRoot(db: DatabaseSync, workspaceId: WorkspaceId): string {
+  return connectedStructureRoot(db, workspaceId) ?? join(process.cwd(), settingDocsRoot(db, workspaceId));
 }
 
 /** The work order's repo root paths: its tracks' connected local paths (decision store included). The
@@ -633,7 +645,7 @@ function woRepoPaths(db: DatabaseSync, workOrderId: WorkOrderId): string[] {
 // when the WO or its workspace is gone. The path never crosses to the renderer (ADR-0001).
 function woDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
   const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
-  return wo ? resolveDecisionStorePath(db, wid(wo.workspace_id)) : undefined;
+  return wo ? structureRoot(db, wid(wo.workspace_id)) : undefined;
 }
 
 // The Settings DEFAULT permission rule (WO-0031c): the new `permission_rule` key, falling back to the
@@ -652,6 +664,18 @@ function settingPermissionRule(db: DatabaseSync): PermissionRule {
 function settingLocale(db: DatabaseSync): Locale | undefined {
   const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('locale') as { value: string } | undefined)?.value;
   return value === 'tr' || value === 'en' ? value : undefined;
+}
+
+// The workspace's structure root setting (WO-0048, ADR-0016): a RAW string row `docs_root:<wsId>`
+// (no JSON — one value). The read FAILS OPEN (the settingBudget posture): an absent or invalid row
+// reads as the `docs` default — a corrupt row must not hide the workspace's documents. The WRITE
+// (setDocsRoot, below) refuses loudly on an invalid value: a read may degrade, an operator act may not.
+function settingDocsRoot(db: DatabaseSync, wsId: WorkspaceId): string {
+  const value = (
+    db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`docs_root:${wsId}`) as { value: string } | undefined
+  )?.value;
+  if (value === undefined) return DEFAULT_DOCS_ROOT;
+  return normalizeDocsRoot(value) ?? DEFAULT_DOCS_ROOT;
 }
 
 // The workspace's budget threshold (WO-0047): ONE JSON row `budget:<wsId>` — the atomic
@@ -809,7 +833,7 @@ function deleteWorkOrderRows(db: DatabaseSync, id: WorkOrderId, dir: string | un
 // a folder under the cwd fallback.
 function woConnectedDir(db: DatabaseSync, id: WorkOrderId): string | undefined {
   const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
-  return wo ? connectedDecisionStorePath(db, wid(wo.workspace_id)) : undefined;
+  return wo ? connectedStructureRoot(db, wid(wo.workspace_id)) : undefined;
 }
 
 // Cascade-delete a work order (WO-0020): children-first DB deletes, then the work_order row, then remove the
@@ -911,8 +935,64 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) return Promise.resolve({ order: '', plan: '' });
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       return Promise.resolve(readWoDocs(dir, id));
+    },
+    // The roadmap layer (WO-0048, ADR-0016). The view is DERIVED per read: roadmap.md from the
+    // working tree, per-WO facts from ONE query (closed ⇔ closure sha — deriveStage's own rule;
+    // cost summed from session rows — work_order.cost_* is inert, TD-023), and the task link by
+    // re-parsing each order.md's `task:` key AT VIEW TIME — no DB column (ADR-0010 rule 1; the
+    // N-file scan is TD-055). '' file → absent; parse error or any error diagnostic → invalid
+    // carrying the named reasons — never a silent empty (the order's stop-and-ask gate).
+    getRoadmap: (id: WorkspaceId): Promise<RoadmapView> => {
+      const root = structureRoot(db, id);
+      const md = readRoadmapMd(root);
+      if (md === '') return Promise.resolve({ kind: 'absent' });
+      const knownRepos = (
+        db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ?').all(id) as { repo_id: string }[]
+      ).map((r) => r.repo_id);
+      const rows = db
+        .prepare(
+          `SELECT w.id AS id, w.gate_closure_docs_sha AS closedSha,
+                  (SELECT COALESCE(SUM(s.cost_usd), 0) FROM session s WHERE s.work_order_id = w.id) AS usd,
+                  (SELECT COUNT(*) FROM session s WHERE s.work_order_id = w.id AND s.cost_usd IS NULL) AS unknownCount
+           FROM work_order w WHERE w.workspace_id = ?`,
+        )
+        .all(id) as Array<{ id: string; closedSha: string | null; usd: number; unknownCount: number }>;
+      const taskRefs = scanTaskRefs(root);
+      return Promise.resolve(
+        deriveRoadmapView({
+          roadmapMd: md,
+          workspaceSlug: id as string,
+          knownRepos,
+          orders: rows.map((r) => ({
+            id: r.id,
+            closed: r.closedSha != null,
+            costUsd: r.usd,
+            ...(r.unknownCount > 0 ? { costUnknown: true } : {}),
+            ...(taskRefs.get(r.id) !== undefined ? { taskRef: taskRefs.get(r.id)! } : {}),
+          })),
+        }),
+      );
+    },
+    getRoadmapMd: (id: WorkspaceId) => Promise.resolve(readRoadmapMd(structureRoot(db, id))),
+    // Write roadmap.md under the structure root (creating the root). The guard is the point: a
+    // document that fails to parse is refused BEFORE any byte is written — Docket's write path
+    // never destroys the machine fence, prose-only saves included — and what is written must
+    // re-read byte-identical. No commit: the operator commits (ADR-0010).
+    saveRoadmap: async (id: WorkspaceId, md: string): Promise<void> => {
+      const parsed = parseRoadmapMd(md);
+      if (parsed.parseError) {
+        const e = parsed.parseError;
+        const why =
+          e.reason === 'bad_json' ? `bad JSON (${e.message})`
+          : e.reason === 'bad_element' ? `malformed element [${e.index}] — ${e.problem}`
+          : 'no fazlar fence';
+        throw new Error(`saveRoadmap: refusing to write a document that cannot be re-read — ${why}`);
+      }
+      const root = structureRoot(db, id);
+      writeRoadmapMd(root, md);
+      if (readRoadmapMd(root) !== md) throw new Error('saveRoadmap: written roadmap.md does not re-read byte-identical');
     },
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
     // WO-0045 — the flow-mode gate's read (order.md front-matter at spawn time; 'auto' for absent
@@ -968,7 +1048,7 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) return undefined;
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) return undefined;
       const parsed = parseOrderMd(order);
@@ -1004,7 +1084,7 @@ export function createStore(dbPath: string): Store {
     // author order.md into the working tree (no commit) → insert the observed row + tracks. The async
     // wrapper turns fs/DB errors into a rejected promise the UI can surface (modal stays open).
     createWorkOrder: async (input: CreateWorkOrderInput) => {
-      const dir = resolveDecisionStorePath(db, input.workspaceId);
+      const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
       const slug = slugify(input.title);
       const ws = db.prepare('SELECT id FROM workspace WHERE id = ?').get(input.workspaceId) as
@@ -1024,6 +1104,7 @@ export function createStore(dbPath: string): Store {
           contextFiles: input.contextFiles,
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
+          ...(input.taskRef ? { taskRef: input.taskRef } : {}),
         }),
       );
       const created = createWorkOrderRow(db, { ...input, id });
@@ -1037,7 +1118,7 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) throw new Error(`approvePlan: work order ${workOrderId} not found`);
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
       appendEvent(db, workOrderId as string, 'plan_approved', opts?.editedCount !== undefined ? `edited:${opts.editedCount}` : '');
@@ -1052,7 +1133,7 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) throw new Error(`savePlanDraft: work order ${workOrderId} not found`);
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       const current = readWoDocs(dir, workOrderId).plan;
       if (current) {
         db.prepare('INSERT OR IGNORE INTO plan_original (work_order_id, plan_text, at) VALUES (?,?,?)').run(
@@ -1082,7 +1163,7 @@ export function createStore(dbPath: string): Store {
         | { plan_text: string }
         | undefined;
       if (!row) throw new Error(`restoreOriginalPlan: no original plan for ${workOrderId}`);
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, row.plan_text);
       appendEvent(db, workOrderId as string, 'plan_saved', 'restored-original');
     },
@@ -1099,7 +1180,7 @@ export function createStore(dbPath: string): Store {
       // "Kapalı iş emri değişmez" reason; the store is the second layer. deleteWorkOrder stays open —
       // archive cleanup is legitimate.
       if (wo.gate_closure_docs_sha != null) throw new Error(`updateWorkOrder: ${workOrderId} is closed`);
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);
       const next = applyOrderMdEdits(order, patch);
@@ -1110,6 +1191,7 @@ export function createStore(dbPath: string): Store {
         patch.description !== undefined ? 'description' : null,
         patch.reviewMode !== undefined ? 'review_mode' : null,
         patch.flowMode !== undefined ? 'flow_mode' : null,
+        patch.taskRef !== undefined ? 'task' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
@@ -1143,7 +1225,7 @@ export function createStore(dbPath: string): Store {
         steps: stepRows.map((r) => ({ status: r.status as 'pending' | 'active' | 'done' | 'blocked', verdict: (r.verdict ?? undefined) as 'proceed' | 'revise' | undefined })),
       });
       if (!check.ok) throw new Error(`closeWorkOrder: preconditions unmet (${check.reason})`);
-      const dir = resolveDecisionStorePath(db, wid(wo.workspace_id));
+      const dir = structureRoot(db, wid(wo.workspace_id));
       // The closure sha = the decision-store HEAD at close time ("closed at this commit" — an attestation of
       // WHERE the work stands, not yet the M3 docs-commit gate).
       let sha = '';
@@ -1216,6 +1298,18 @@ export function createStore(dbPath: string): Store {
       if (threshold === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run(key);
       else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(key, JSON.stringify(threshold));
       return Promise.resolve();
+    },
+    getDocsRoot: (workspaceId: WorkspaceId) => Promise.resolve(settingDocsRoot(db, workspaceId)),
+    setDocsRoot: async (workspaceId: WorkspaceId, root: string | undefined): Promise<void> => {
+      const key = `docs_root:${workspaceId}`;
+      if (root === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run(key);
+      else {
+        const normalized = normalizeDocsRoot(root);
+        if (normalized === undefined) {
+          throw new Error(`setDocsRoot: '${root}' is not a safe relative root — no '..', no absolutes, no empty`);
+        }
+        db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(key, normalized);
+      }
     },
     getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),
     woRepoPaths: (workOrderId: WorkOrderId) => woRepoPaths(db, workOrderId),

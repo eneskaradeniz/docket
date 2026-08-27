@@ -253,3 +253,17 @@ describe('flow_mode (WO-0045)', () => {
     expect(parseOrderMd(md).flowMode).toBe('auto');
   });
 });
+
+describe('task (WO-0048 — the roadmap link lives only in order.md front-matter)', () => {
+  it('reads the task ref from front-matter', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\ntask: f1-t3');
+    expect(parseOrderMd(md).taskRef).toBe('f1-t3');
+  });
+  it('absent task → undefined (görevsiz iş emri remains possible)', () => {
+    expect(parseOrderMd(sample).taskRef).toBeUndefined();
+  });
+  it('no validation here — a dangling ref is the roadmap diagnostics’ job at join time', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\ntask: f9-t9');
+    expect(parseOrderMd(md).taskRef).toBe('f9-t9');
+  });
+});

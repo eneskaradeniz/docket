@@ -13,6 +13,7 @@ export interface ParsedOrderMd {
   objective: string; // the ## Objective section body — the architect session's first prompt
   title: string; // front-matter title
   permissionRule: PermissionRule; // front-matter permission_rule; absent/garbage → 'ask_every' (the safe default — operator ruling: no silent auto-approval)
+  taskRef?: string; // front-matter task — the roadmap link (WO-0048, ADR-0016). No validation here: the roadmap's diagnostics own ref validity at join time.
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -53,12 +54,14 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const ruleValue = frontValue(front, 'permission_rule');
   const permissionRule: PermissionRule =
     ruleValue === 'full_auto' || ruleValue === 'risky_excluded' ? ruleValue : 'ask_every';
+  const taskValue = frontValue(front, 'task');
   return {
     reviewMode,
     flowMode,
     title: frontValue(front, 'title'),
     objective: sectionBody(body, 'Objective'),
     permissionRule,
+    taskRef: taskValue !== '' ? taskValue : undefined,
   };
 }
 
@@ -70,6 +73,7 @@ export interface OrderMdEdit {
   reviewMode?: ReviewMode;
   flowMode?: FlowMode; // → front-matter flow_mode (WO-0045)
   permissionRule?: PermissionRule;
+  taskRef?: string | null; // → front-matter task (WO-0048): a string sets the roadmap link, null DROPS it (silence = unlinked), undefined = untouched
 }
 
 /**
@@ -104,6 +108,9 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   if (patch.flowMode === 'manual') nextFront = setKey(nextFront, 'flow_mode', 'manual');
   else if (patch.flowMode === 'auto') nextFront = dropKey(nextFront, 'flow_mode');
   if (patch.permissionRule !== undefined) nextFront = setKey(nextFront, 'permission_rule', patch.permissionRule);
+  // WO-0048: the roadmap link rides the same set/drop idiom as flow_mode — a string sets, null drops.
+  if (typeof patch.taskRef === 'string') nextFront = setKey(nextFront, 'task', patch.taskRef);
+  else if (patch.taskRef === null) nextFront = dropKey(nextFront, 'task');
 
   let nextBody = body;
   if (patch.description !== undefined) {

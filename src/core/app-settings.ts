@@ -44,6 +44,15 @@ export interface AppSettings {
    *  raising the cap is a settings action that re-runs the refused drive — no one-month override
    *  machinery). */
   setBudget(workspaceId: WorkspaceId, threshold: BudgetThreshold | undefined): Promise<void>;
+  /** The workspace's structure root (WO-0048, ADR-0016): where roadmap.md and work-orders/ live
+   *  inside the decision store. Returns the EFFECTIVE root — the `docs/` default when unset or
+   *  corrupt (the budget row's fail-open read) — so callers never repeat the default. Switching
+   *  never moves files and never writes .gitignore; both stay the operator's acts. */
+  getDocsRoot(workspaceId: WorkspaceId): Promise<string>;
+  /** Set (or clear, on undefined) the structure root. THROWS on an invalid root (an operator-
+   *  initiated write refuses loudly, unlike the fail-open read). `.docket` is the named
+   *  alternative for keeping the documents out of the tree. */
+  setDocsRoot(workspaceId: WorkspaceId, root: string | undefined): Promise<void>;
   /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
   checkProvider(): Promise<ProviderStatus>;
 }
