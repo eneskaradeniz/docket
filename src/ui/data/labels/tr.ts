@@ -816,6 +816,7 @@ export const UI = {
   roadmapDraftFazMeta: (n: number, repos: string) => (repos ? `${n} görev · ${repos}` : `${n} görev`),
   roadmapDraftWhy: 'İş emirlerinden önce dosya onayınla canlanır — durumlar burada görünmez.',
   roadmapDraftInvalidLine: 'Taslak okunamadı — Onayla yok; İtiraz et ile mimara dön.',
+  roadmapDraftSuperseded: 'Yeni öneri okunamadı — önceki geçerli taslak duruyor.',
   roadmapDraftApprove: 'Onayla',
   roadmapDraftApproveFailed: (why: string) => `Onaylanamadı — ${why}`,
   // İtiraz bestecisi: tek satır not — mimar aynı oturuma senin notunla döner (resume).

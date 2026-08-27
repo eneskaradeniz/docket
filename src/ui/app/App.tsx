@@ -475,6 +475,10 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // notification (click → focus + go).
   const selectedIdRef = useRef<WorkOrderId | null>(null);
   selectedIdRef.current = selectedId;
+  // WO-0050 (review f6): the draft ask toast is BACKGROUND-gated like the WO one — no toast when
+  // the operator is already looking at the roadmap surface with nothing open over it.
+  const surfaceRef = useRef<Surface>(surface);
+  surfaceRef.current = surface;
   useEffect(() => {
     // key → branded WO id lives in the store (captured at start — no ui-side cast, ADR-0003)
     const woOf = (key: string): WorkOrderId | undefined => driveStore.woId(key);
@@ -532,8 +536,9 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         }
       }
       // WO-0050 (D13): the draft drive's ask reaches the operator wherever they are — the toast
-      // lands on the roadmap surface (there is no WO card to flip).
-      if (wo === undefined && driveStore.wsId(key) !== undefined) {
+      // lands on the roadmap surface (there is no WO card to flip). Background-gated (review f6):
+      // already on the roadmap with nothing open → the card is in view, no toast.
+      if (wo === undefined && driveStore.wsId(key) !== undefined && !(surfaceRef.current === 'roadmap' && selectedIdRef.current === null)) {
         const title = UI.roadmapDraftAskToast;
         const goDraft = (): void => {
           setSelectedId(null);

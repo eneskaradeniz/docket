@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FileText, X } from 'lucide-react';
 import type { WorkspaceId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
+import { toast } from '../../chrome/ToastHost';
 import { Button, Textarea } from '../../kit';
 import { initialSessionState } from '../../../core/runner';
 import { useDriveStore } from '../session/drive-store';
@@ -36,10 +37,16 @@ export function RoadmapDraftDialog({
   const noteInvalid = touched && !note.trim() ? UI.roadmapDraftNoteErr : null;
 
   const pickDocs = (): void => {
-    void window.docket.pickFiles().then((paths) => {
-      if (!paths) return;
-      setDocPaths((prior) => [...prior, ...paths.filter((p) => !prior.includes(p))]);
-    });
+    // The WoCreateModal precedent: a refused IPC call toasts, never an unhandled rejection.
+    void window.docket
+      .pickFiles()
+      .then((paths) => {
+        if (!paths) return;
+        setDocPaths((prior) => [...prior, ...paths.filter((p) => !prior.includes(p))]);
+      })
+      .catch(() => {
+        toast.push({ kind: 'error', title: UI.saveFailed });
+      });
   };
 
   const start = (): void => {

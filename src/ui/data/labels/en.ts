@@ -693,6 +693,7 @@ export const UI = {
   roadmapDraftFazMeta: (n: number, repos: string) => (repos ? `${n} tasks · ${repos}` : `${n} tasks`),
   roadmapDraftWhy: 'It comes alive with the file approval, before the work orders — statuses never show here.',
   roadmapDraftInvalidLine: 'The draft does not parse — no Approve; return to the architect with Object.',
+  roadmapDraftSuperseded: 'The new proposal could not be read — the previous valid draft stands.',
   roadmapDraftApprove: 'Approve',
   roadmapDraftApproveFailed: (why: string) => `Not approved — ${why}`,
   roadmapDraftObjectPlaceholder: 'Your note — the architect returns to the same session with it',

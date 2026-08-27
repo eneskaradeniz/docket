@@ -27,6 +27,7 @@ export function RoadmapDraftCard({
   workspace,
   docsRoot,
   source,
+  superseded,
   onApproved,
   onSaved,
 }: {
@@ -35,6 +36,9 @@ export function RoadmapDraftCard({
   /** The effective structure root — the summary's "where it will live" tail. */
   docsRoot: string;
   source: WorkOrderSource;
+  /** The drive's LAST proposal could not be read while the pending row is valid — the supersede
+   *  guard kept the prior draft (the honest line; the screen computes it from the live fold). */
+  superseded?: boolean;
   /** Onayla landed: the screen refreshes to the ready face. */
   onApproved: () => void;
   /** Düzenle's Bitti wrote the row: the screen re-reads the draft. */
@@ -71,23 +75,30 @@ export function RoadmapDraftCard({
   };
 
   // İtiraz et: the objection rides a RESUME of the same provider session (the row's handle). The
-  // pane seeds from the draft session row — the stream appends to what already happened.
+  // pane seeds from the draft session row — the stream appends to what already happened. The
+  // start's refusal (the one-drive-at-a-time rule) KEEPS the composer + the note — a refusal the
+  // operator cannot see is a lost note (the ✦ dialog's rule, plan R2).
+  const [objectBusy, setObjectBusy] = useState(false);
   const object = (): void => {
-    if (!draft.providerSessionId) return;
+    if (!draft.providerSessionId || !objectText.trim()) return;
     const seed = draft.session !== undefined ? seedLiveState(draft.session) : initialSessionState;
-    store.start(
+    const ok = store.start(
       driveKey,
       {
         role: 'architect',
         workspaceId: wsId,
         mode: 'plan',
-        prompt: objectText.trim() || UI.roadmapDraftObjectPlaceholder,
+        prompt: objectText.trim(),
         goalNote: '',
         docPaths: [],
         resume: draft.providerSessionId,
       },
       seed,
     );
+    if (!ok) {
+      setObjectBusy(true);
+      return;
+    }
     setObjectOpen(false);
     setObjectText('');
   };
@@ -200,7 +211,7 @@ export function RoadmapDraftCard({
                     {f.tasks.map((t, j) => (
                       <div key={t.id} className="flex flex-wrap items-center gap-1.5">
                         <Input
-                          aria-label={t.id}
+                          aria-label={t.title || UI.roadmapDraftTaskPlaceholder}
                           placeholder={UI.roadmapDraftTaskPlaceholder}
                           value={t.title}
                           onChange={(e) => patchTask(i, j, { title: e.target.value })}
@@ -266,9 +277,13 @@ export function RoadmapDraftCard({
                 {(() => {
                   const e = parsed.parseError!;
                   if (e.reason === 'bad_element') return ROADMAP_DIAGNOSTIC_LABELS.bad_element(`[${e.index}] ${e.problem}`);
+                  if (e.reason === 'bad_json') return ROADMAP_DIAGNOSTIC_LABELS.bad_json(e.message);
                   return ROADMAP_DIAGNOSTIC_LABELS[e.reason]('');
                 })()}
               </p>
+            ) : null}
+            {superseded && !invalid ? (
+              <p className="mt-1.5 text-[11.5px] text-inkdim" data-draft-superseded>{UI.roadmapDraftSuperseded}</p>
             ) : null}
             <p className="mt-2 text-[11.5px] text-inkdim">{UI.roadmapDraftWhy}</p>
           </>
@@ -283,15 +298,20 @@ export function RoadmapDraftCard({
               onChange={(e) => setObjectText(e.target.value)}
               className="font-sans text-[13px]"
             />
+            {objectBusy ? (
+              <p role="alert" className="self-end text-[11.5px] text-error">{UI.roadmapDraftBusy}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setObjectOpen(false); setObjectText(''); }}>{UI.cancel}</Button>
-              <Button variant="primary" size="sm" data-draft-object onClick={object}>{UI.objectSend}</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setObjectOpen(false); setObjectText(''); setObjectBusy(false); }}>{UI.cancel}</Button>
+              {/* The kit lock while empty — the WorkOrderDetail objection precedent: an empty note
+                  never sends (the placeholder is display copy, not a note — review f2). */}
+              <Button variant="primary" size="sm" data-draft-object locked={!objectText.trim()} onClick={object}>{UI.objectSend}</Button>
             </div>
           </div>
         ) : null}
         {!editOpen ? (
           <div className="mt-2.5 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setObjectOpen((v) => !v)}>{UI.object}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setObjectOpen((v) => !v); setObjectBusy(false); }}>{UI.object}</Button>
             {!invalid ? (
               <>
                 <Button variant="ghost" size="sm" data-draft-edit onClick={openEditor}>{UI.editPlan}</Button>

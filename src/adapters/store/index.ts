@@ -927,6 +927,10 @@ function decisionStoreRepoPath(db: DatabaseSync, wsId: WorkspaceId): string | un
 // decision-store repo's path (the architect fence then lands at <repo>/docs = the structure root
 // at the default docs_root — TD-056 names the non-default residue). process.cwd() only when
 // nothing matches — fixture and unconnected workspaces keep today's behavior byte-for-byte.
+// Accepted residue (review f9): a scoped drive whose track repo has NO connection row falls to
+// the decision-store repo rather than cwd — strictly safer than the old blanket process.cwd()
+// (the write fence stays inside a workspace-owned repo), and the case is unreachable while the
+// GUI only scopes drives to tracks of connected workspaces.
 function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
   if (isDraftDrive(input)) return decisionStoreRepoPath(db, input.workspaceId) ?? process.cwd();
   const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;

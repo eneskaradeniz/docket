@@ -13,6 +13,7 @@
 // drive lives in the app-level store and the head meta says `taslak sürüyor` while it runs.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { initialSessionState, seedLiveState } from '../../core/runner';
+import { draftSummaryOf } from '../../core/roadmap-draft';
 import type { WorkOrderId, Workspace } from '../../core/types';
 import type { RoadmapView } from '../../core/roadmap';
 import type { RoadmapDraft, WorkOrderSource } from '../../core/source';
@@ -123,12 +124,14 @@ export function RoadmapScreen({
     ) : null;
 
   // D13 — the derived question card (the SessionPane derivation, lifted to this surface): a plan
-  // turn that ended without a proposal but with assistant text is the architect asking.
+  // turn that ended without a proposal but with assistant text is the architect asking. The
+  // start's refusal keeps the answer text (the one-drive rule made visible — review f1).
+  const [replyBusy, setReplyBusy] = useState(false);
   const lastAssistant = [...draftState.entries].reverse().find((e) => e.speaker === 'assistant');
   const showQuestion = draftState.status === 'done' && !draftState.pendingPlan && !!lastAssistant;
   const reply = (answer: string): void => {
     if (!draftState.sessionId) return;
-    driveStore.start(
+    const ok = driveStore.start(
       draftKey,
       {
         role: 'architect',
@@ -141,6 +144,11 @@ export function RoadmapScreen({
       },
       draftState,
     );
+    if (!ok) {
+      setReplyBusy(true);
+      return;
+    }
+    setReplyBusy(false);
     setReplyText('');
   };
 
@@ -194,11 +202,12 @@ export function RoadmapScreen({
             <div className="flex flex-col gap-2">
               <Textarea
                 value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
+                onChange={(e) => { setReplyText(e.target.value); setReplyBusy(false); }}
                 rows={2}
                 placeholder={UI.replyPlaceholder}
                 className="font-sans text-[13px]"
               />
+              {replyBusy ? <p role="alert" className="self-end text-[11.5px] text-error">{UI.roadmapDraftBusy}</p> : null}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => reply('Bilmiyorum, kendin karar ver.')}>{UI.skipReply}</Button>
                 <Button variant="primary" size="sm" onClick={() => reply(replyText.trim() || 'Devam et.')}>{UI.reply}</Button>
@@ -213,6 +222,9 @@ export function RoadmapScreen({
           workspace={workspace}
           docsRoot={docsRoot}
           source={source}
+          superseded={
+            draftState.pendingPlan !== undefined && 'parseError' in draftSummaryOf(draftState.pendingPlan)
+          }
           onApproved={onRefresh}
           onSaved={onRefresh}
         />
