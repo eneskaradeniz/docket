@@ -784,6 +784,54 @@ export const UI = {
   docsRootLabel: 'Yapı kökü',
   docsRootWarn: 'Dosyalar taşınmaz; iş emri numaralandırması yeni kökte baştan sayılır.',
   docsRootErr: 'Güvenli göreli yol gir (ör. docs ya da .docket).',
+  // ===== WO-0050 — ✦ taslak sürüşü (mockup kare 03/04/05) =====
+  // Tek mekanizma (ADR-0016 karar 2): üretim de içe aktarma da aynı mimar taslak oturumu; ayrımı
+  // yalnız kaynak belge listesi yapar — prompt'a YOL yazılır, içeriği ajan okur. Kart dilinde
+  // ham markdown yok: parse önizleme + üç eylem. Eylem sözcükleri (İtiraz et/Düzenle/Onayla ⏎)
+  // plan döngüsünün anahtarlarını izler ama kart başlıkları özgün.
+  roadmapDraftAction: '✦ Üret / İçe aktar',
+  // Kare 04 — diyalog: hedef notu zorunlu (hata alanın altında; geçerlilik submit'i kiltlemez),
+  // belge yolları diyalogla ölür (kalıcı değil — mockup hükmü).
+  roadmapDraftDialogTitle: 'Yol haritası taslağı',
+  roadmapDraftNoteLabel: 'Hedef notu',
+  roadmapDraftNotePlaceholder: 'Örn: mevcut faz dokümanlarından yol haritasını çıkar; bağımlılıkları koru…',
+  roadmapDraftNoteErr: 'Hedef notu gerekli — taslak bundan üretilir.',
+  roadmapDraftDocsLabel: 'Kaynak belgeler',
+  roadmapDraftDocsOptional: '(isteğe bağlı — içe aktarma)',
+  roadmapDraftDocPick: '+ Belge seç',
+  roadmapDraftDocRemoveAria: (name: string) => `Belgeyi çıkar: ${name}`,
+  roadmapDraftDocMore: (n: number) => `+${n} belge`,
+  roadmapDraftStart: 'Taslağı başlat',
+  roadmapDraftBusy: 'Bir sürüş zaten koşuyor — bitince dene.',
+  // Kare 05 — canlı alet: pane-chrome grameri aynen, WO'suz kim satırı; baş meta taslak sürerken
+  // sayıların yerine geçer (yüzeyden ayrılmak dürüst kalır: pane unmount, sürüş mağazada yaşar).
+  roadmapDraftIdentity: 'MİMAR — TASLAK',
+  roadmapDraftRunning: 'taslak sürüyor',
+  roadmapDraftSourceLine: (n: number) => (n > 0 ? `kaynak: ${n} belge` : 'kaynak: hedef notu'),
+  // Kare 05 — TASLAK karar kartı (plan onay kartının kardeşi). Bloke kuyruğu faz satırında
+  // roadmapBlokeFallback'in sesiyle konuşur (yeniden kullanım).
+  roadmapDraftCardHead: 'Taslak hazır — gözden geçir',
+  roadmapDraftCardSummary: (faz: number, task: number, chain: number, root: string) =>
+    `${faz} faz · ${task} görev${chain > 0 ? ` · ${chain} bağımlılık zinciri` : ''} — onaylanınca ${root}/roadmap.md olarak karar deposuna yazılır; commit operatörün.`,
+  roadmapDraftFazMeta: (n: number, repos: string) => (repos ? `${n} görev · ${repos}` : `${n} görev`),
+  roadmapDraftWhy: 'İş emirlerinden önce dosya onayınla canlanır — durumlar burada görünmez.',
+  roadmapDraftInvalidLine: 'Taslak okunamadı — Onayla yok; İtiraz et ile mimara dön.',
+  roadmapDraftSuperseded: 'Yeni öneri okunamadı — önceki geçerli taslak duruyor.',
+  roadmapDraftApprove: 'Onayla',
+  roadmapDraftApproveFailed: (why: string) => `Onaylanamadı — ${why}`,
+  // İtiraz bestecisi: tek satır not — mimar aynı oturuma senin notunla döner (resume).
+  roadmapDraftObjectPlaceholder: 'Notun — mimar aynı oturuma senin notunla döner',
+  // Düzenle (yapılandırılmış sahne, operatör kararı 2026-08-27): başlık girişleri + blockedBy
+  // çipleri + görev satırları; applyFazlarEdits çit dışı her baytı korur. Ekle eylemleri ve
+  // İtiraz/Vazgeç/Bitti sözcükleri WO-0049/plan döngüsünün anahtarlarından.
+  roadmapDraftEditFazTitle: 'Faz başlığı',
+  roadmapDraftTaskPlaceholder: 'Görev başlığı…',
+  roadmapDraftEditEmptyTitle: 'Bir fazın başlığı boş — doldurunca Bitti işler.',
+  roadmapDraftEditRefused: (why: string) => `Kaydedilmedi — ${why}`,
+  roadmapDraftFazRemoveAria: (title: string) => `Fazı sil: ${title}`,
+  roadmapDraftTaskRemoveAria: (title: string) => `Görevi sil: ${title}`,
+  // Arka plan erişimi (D13): taslak askılarındaki toast.
+  roadmapDraftAskToast: 'MİMAR — TASLAK seni bekliyor',
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',

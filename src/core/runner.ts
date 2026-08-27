@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, WorkOrderId, TranscriptLine } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
 import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
@@ -85,17 +85,24 @@ export type ProviderErrorCode =
 // The operator's answer to a surfaced `permission_request` (the stop-and-ask).
 export type PermissionDecision = { allow: true } | { allow: false; reason: string };
 
-export interface DriveInput {
+// WO-0050 / D1: the drive input is a DISCRIMINATED union — a drive belongs to exactly one
+// owner, a work order or a workspace. The `workOrderId?: never` / `workspaceId?: never`
+// cross-guard makes both-set and neither-set object literals compile errors (the invalid
+// state is unrepresentable); `isDraftDrive` is the single narrowing point (the isPlanDrive
+// precedent). Every pre-WO-0050 construction site already matches WoDriveInput — only READS
+// of the union change.
+export interface WoDriveInput {
   role: SessionRole;
   /** The work order this session belongs to — main uses it to persist the association. */
   workOrderId: WorkOrderId;
+  workspaceId?: never;
   /** The track an implementer session is scoped to, if any (ADR-0002). Nullable: track selection is a future UI refinement. */
   scope?: TrackId;
   /**
    * Working repo (ADR-0002); the provider session runs here and resume must originate here.
    * Optional: the renderer cannot know filesystem paths, so it omits this and the composition
-   * root fills it (the pilot uses the docket repo; per-track paths come via the connection
-   * table in M3/M4, ADR-0003).
+   * root fills it — per-track paths resolve via the connection table (WO-0050's `driveCwd`,
+   * retiring the M3/M4 note).
    */
   cwd?: string;
   /** Work-order mode — the adapter maps role + mode → provider permission mode (plan/approve/default). */
@@ -125,6 +132,40 @@ export interface DriveInput {
    *  first queued note into the prompt and the runner emits the matching `steer_delivered` right after
    *  `started` — the note never enters the SDK queue, so it cannot double-apply. */
   deliveringNote?: { id: string; text: string };
+}
+
+/** The WO-less roadmap draft drive (WO-0050 / ADR-0016): ONE mechanism — generation from the
+ *  goal note and import from the source-doc list are the same workspace-scoped architect plan
+ *  session. Always `role: 'architect'` + `mode: 'plan'` → `isPlanDrive` is true unchanged (the
+ *  provider plan-mode + ExitPlanMode-DENY contract applies verbatim; zero runner-adapter
+ *  change). `goalNote`/`docPaths` are the operator's dialog input; the prompt is assembled
+ *  server-side from them (paths, never contents). */
+export interface DraftDriveInput {
+  role: 'architect';
+  workspaceId: WorkspaceId;
+  workOrderId?: never;
+  cwd?: string;
+  mode: 'plan';
+  prompt: string;
+  goalNote: string;
+  docPaths: string[];
+  resume?: string;
+  scope?: never;
+  approve?: never;
+  stepIndex?: never;
+  reviewStepIndex?: never;
+  permissionRule?: PermissionRule;
+  origin?: 'operator' | 'auto';
+  deliveringNote?: { id: string; text: string };
+}
+
+export type DriveInput = WoDriveInput | DraftDriveInput;
+
+/** WO-0050 / D1: narrow the drive union to its draft arm. The `workspaceId` presence is the
+ *  discriminant — `WoDriveInput.workspaceId` is `never | undefined`, so a defined value can
+ *  only be the draft. Pure, like `isPlanDrive`. */
+export function isDraftDrive(input: DriveInput): input is DraftDriveInput {
+  return input.workspaceId !== undefined;
 }
 
 // --- The port. Async throughout: the provider stream is an async generator and the

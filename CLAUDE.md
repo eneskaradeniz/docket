@@ -70,7 +70,9 @@ rule restated with its reasons in two places is the duplication this repository 
   carries no card there (ADR-0013's 2026-08-25 addendum); the ONE live surface is the TOP
   instrument (band-adjacent), which speaks the shared live grammar (`pane-chrome`: activity verb
   line + "Dökümü aç/kapat" chip, the transcript behind the chip — StepPane/ReviewPane/SessionPane
-  alike).
+  alike). The roadmap screen carries the console's SECOND live surface — `RoadmapPane`, the same
+  pane grammar, identity `MİMAR — TASLAK`; a workspace-scoped draft never overlays a board card,
+  and the head meta says `taslak sürüyor` while it runs (ADR-0013's 2026-08-27 addendum).
   The ActionCard is absent while a drive runs and never renders the resume intent (Sürdür lives only
   in DriveControls). The Kanıt section is dead — evidence is
   contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is
@@ -100,6 +102,12 @@ rule restated with its reasons in two places is the duplication this repository 
 - The structure-root switch (`docs_root:<wsId>`, default `docs/`) never moves files and never writes
   a .gitignore line — both stay the operator's acts; Docket only warns (numbering restarts at
   WO-0001 under the new root).
+- The ✦ draft (WO-0050) is ONE mechanism — generation and import are the same workspace-scoped
+  architect plan drive (`DraftDriveInput`, the `DriveInput` union's second arm); the prompt carries
+  document PATHS, never contents (no source-format parser); the proposal is a `roadmap_draft` row
+  (the `plan_original` document-text carve-out), approval is the parse-guarded `saveRoadmap` write
+  and the commit is the operator's; the draft session is budget-gated like every drive
+  (`budgetBlockForDraft`; draft spend counts in the month pool, never in the roadmap head).
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

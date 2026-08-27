@@ -30,7 +30,7 @@ function scriptedRunner(events: RunnerEvent[]): { runner: ReturnType<typeof crea
   return { runner: fr.runner, decideCalls: fr.decideCalls };
 }
 
-function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string }) {
+function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string; draft?: string }) {
   const calls: Array<[string, ...unknown[]]> = [];
   const store = {
     recordSession: (i: unknown) => calls.push(['recordSession', i]),
@@ -44,8 +44,16 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     planApprovedFor: () => true,
     // WO-0047: the budget gate reads unconditionally — the fake must carry it (a `typeof`
     // short-circuit in the pipeline would hide a missing impl until production). No threshold
-    // scripted → undefined → fail open, the CLI tests' default world.
+    // scripted → undefined → fail open, the CLI tests' default world. WO-0050: BOTH arms — the
+    // draft reads its own (D3/D4).
     budgetBlockFor: () => undefined,
+    budgetBlockForDraft: () => undefined,
+    roadmapDraftPromptFor: () => prompts.draft,
+    saveRoadmapDraft: (wsId: unknown, md: unknown, o: unknown) => calls.push(['saveRoadmapDraft', wsId, md, o]),
+    clearRoadmapDraft: (wsId: unknown) => calls.push(['clearRoadmapDraft', wsId]),
+    pendingNotesFor: () => [],
+    flowModeFor: () => 'auto' as const,
+    recordAuditEvent: () => undefined,
   } as unknown as SessionStore;
   return { store, calls };
 }
@@ -74,6 +82,28 @@ describe('buildDriveInput — drive kind → DriveInput shape', () => {
   it('free-form prompt is preserved', async () => {
     const di = await buildDriveInput(WO, { cwd: '/r', prompt: 'just do it' }, stepSource);
     expect(di).toMatchObject({ role: 'implementer', mode: 'direct', prompt: 'just do it' });
+  });
+});
+
+describe('runDrive — the WO-0050 draft round-trip (roadmap draft → pending row)', () => {
+  const draftInput = {
+    role: 'architect',
+    workspaceId: 'ws-t' as never,
+    mode: 'plan',
+    prompt: '',
+    goalNote: 'hedef notu',
+    docPaths: ['/tmp/docs/faz-a.md'],
+    cwd: process.cwd(),
+  } as never;
+  it('plan_ready lands in the workspace draft row with the session id; the WO side-effect never fires', async () => {
+    const { runner } = scriptedRunner([started('draft-cli-1'), plan('# taslak md'), done()]);
+    const { store, calls } = fakeStore({ draft: 'taslak promptu' });
+    const pipeline = createPipeline({ runner, store, permission: autoAllowPolicy() });
+    const summary = await runDrive(draftInput, pipeline, () => {});
+    expect(summary.planText).toBe('# taslak md');
+    expect(calls.find((c) => c[0] === 'saveRoadmapDraft')).toEqual(['saveRoadmapDraft', 'ws-t', '# taslak md', { providerSessionId: 'draft-cli-1' }]);
+    expect(calls.find((c) => c[0] === 'savePendingPlan')).toBeUndefined();
+    expect(calls.find((c) => c[0] === 'clearRoadmapDraft')).toEqual(['clearRoadmapDraft', 'ws-t']); // fresh draft supersedes
   });
 });
 

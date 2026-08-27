@@ -2156,6 +2156,165 @@ await spec('WO-0049 geçersiz dosya: adlı sebep satırı, sessiz boş yok', asy
   await page.getByRole('button', { name: 'Pano' }).click(); // leave the suite on Pano
 });
 
+// ===== WO-0050 — ✦ taslak sürüşü: boş yüzey, üretim, parse-koruma, itiraz + düzenle, bütçe, kalıcılık =====
+// The 'taslak' world is CLEAN (no roadmap.md — the generate flow starts from the absent face); the
+// 'taslak-kirli' world carries a seeded INVALID draft row (no fence) + its draft session row; the
+// 'taslak-kapı' world sits at its cap with its own store. The draft md is byte-built here (the
+// seed's buildRoadmapMd twin) — never hand-typed JSON inside a fence the parser must re-read.
+const taslakLine = seedOut.trim().split('\n').find((l) => l.startsWith('TASLAK='));
+if (!taslakLine) throw new Error('seed failed: no TASLAK= line');
+const DRAFT_MD = (slug, title, fazTitle) =>
+  `---\nworkspace: ${slug}\ntitle: ${title}\n---\n\n# ${title}\n\n\`\`\`fazlar\n[\n  {\n    "id": "f0",\n    "title": "${fazTitle}",\n    "aim": "E2E amacı",\n    "blockedBy": [],\n    "tasks": [\n      { "id": "f0-t1", "title": "Taslak görev 1", "repo": "repo-taslak" }\n    ]\n  }\n]\n\`\`\`\n`;
+const openDraftDialog = async () => {
+  await page.getByRole('button', { name: '✦ Üret / İçe aktar' }).first().click();
+  await page.waitForTimeout(350);
+};
+const startDraft = async (note) => {
+  await openDraftDialog();
+  await page.locator('#roadmap-draft-note').fill(note);
+  await page.getByRole('button', { name: /Taslağı başlat/ }).click();
+  await page.waitForTimeout(500); // start → main → the pipeline → the e2e runner's started
+};
+const draftEmit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
+const w50Done = () =>
+  draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1200, tokensOut: 300, usd: 0.12 } });
+
+await spec('WO-0050 geçersiz taslak: kart iner, adlı tanı satırı, Onayla/Düzenle yok, İtiraz kalır', async () => {
+  await switchWs('e2e', 'taslak-kirli');
+  await openRoadmap();
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.count(), 1, 'the seeded draft row raised no card');
+  const text = await card.innerText();
+  assert.ok(text.includes('Taslak okunamadı'), `not the invalid line: ${text.slice(0, 160)}`);
+  assert.ok(text.includes('fazlar bloğu yok'), `no named diagnostic: ${text.slice(0, 220)}`);
+  assert.equal(await card.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla rendered on an invalid draft');
+  assert.equal(await card.getByRole('button', { name: 'Düzenle', exact: true }).count(), 0, 'Düzenle rendered on a fence-less draft');
+  assert.ok((await card.getByRole('button', { name: 'İtiraz et' }).count()) === 1, 'İtiraz et died');
+  await page.screenshot({ path: join(SHOTS, 'draft-invalid@980.png') });
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
+await spec('WO-0050 mutlu üretim: boş yüzey ✦ → sürüş → kart iner → Onayla dosyayı yazar, yüzey dolanır', async () => {
+  await switchWs('taslak-kirli', 'taslak');
+  await openRoadmap();
+  const screen = await page.locator('[data-roadmap-screen]').innerText();
+  assert.ok(screen.includes('yol haritası henüz yok'), `not the absent face: ${screen.slice(0, 160)}`);
+  await startDraft('E2E: iki görevli tek fazlı taslak üret.');
+  // the live half: the pane in the shared grammar, the WO-less identity, the source readout
+  const pane = page.locator('[data-roadmap-pane]');
+  assert.equal(await pane.count(), 1, 'no draft pane');
+  const head = await pane.innerText();
+  assert.ok(head.includes('MİMAR — TASLAK'), `identity line: ${head.slice(0, 120)}`);
+  await draftEmit({ kind: 'tool_use', callId: 'w50-1', tool: 'Read', input: { file_path: '/tmp/kaynak.md' } });
+  await draftEmit({ kind: 'tool_result', callId: 'w50-1', summary: 'okundu', isError: false });
+  await page.waitForTimeout(300);
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak', 'Taslak Başlığı', 'İlk faz') });
+  await page.waitForTimeout(700); // onPlanReady → the row read → the card descends
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.count(), 1, 'no card after plan_ready');
+  const cardText = await card.innerText();
+  assert.ok(cardText.includes('1 faz · 1 görev'), `summary figures: ${cardText.slice(0, 200)}`);
+  assert.ok(cardText.includes('İlk faz'), `the faz row does not carry the title: ${cardText.slice(0, 300)}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-live-card@980.png') });
+  await w50Done();
+  await page.waitForTimeout(400);
+  await card.getByRole('button', { name: 'Onayla', exact: true }).click();
+  await page.waitForTimeout(800); // approve → the file write → refreshRoadmap → the ready face
+  assert.equal(await page.locator('[data-roadmap-draft-card]').count(), 0, 'the card survived its own approval');
+  assert.equal(await page.locator('div[data-faz-id="f0"]').count(), 1, 'the surface did not flip to the ready face');
+  const meta = await page.locator('[data-roadmap-head-meta]').innerText();
+  assert.ok(meta.includes('0/1 faz tamam'), `head meta after approval: ${meta}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-approved@980.png') });
+});
+
+await spec('WO-0050 itiraz: kart + İtiraz et → resume notunla döner, yeni öneri satırı günceller', async () => {
+  // the ready face's footer ✦ (kare 01's right cluster) starts the round
+  await startDraft('E2E: ikinci taslak — itiraz turu.');
+  const meta = await page.locator('[data-roadmap-head-meta]').innerText();
+  assert.ok(meta.includes('taslak sürüyor'), `the running meta did not replace the counts: ${meta}`);
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak', 'Taslak Başlığı', 'Revize öncesi') });
+  await page.waitForTimeout(700);
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.ok((await card.innerText()).includes('Revize öncesi'), 'the card did not descend with the round-2 proposal');
+  await card.getByRole('button', { name: 'İtiraz et' }).click();
+  await page.waitForTimeout(250);
+  await card.locator('textarea').fill('bağımlılıkları koru');
+  await card.getByRole('button', { name: 'Gönder', exact: true }).click();
+  await page.waitForTimeout(600); // the resume re-drives the SAME provider session
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak', 'Taslak Başlığı', 'İtiraz sonrası') });
+  await page.waitForTimeout(700);
+  assert.ok((await card.innerText()).includes('İtiraz sonrası'), 'the objection round did not rewrite the row');
+  await w50Done();
+  await page.waitForTimeout(400);
+});
+
+await spec('WO-0050 düzenle: yapılandırılmış sahne → başlık düzelir, Bitti satırı yazar', async () => {
+  const card = page.locator('[data-roadmap-draft-card]');
+  await card.getByRole('button', { name: 'Düzenle', exact: true }).click();
+  await page.waitForTimeout(300);
+  const edit = page.locator('[data-draft-edit]');
+  assert.equal(await edit.count(), 1, 'no edit stage');
+  await edit.locator('input').first().fill('Düzenlenmiş faz');
+  await page.screenshot({ path: join(SHOTS, 'draft-edit@980.png') });
+  await page.getByRole('button', { name: 'Bitti', exact: true }).click();
+  await page.waitForTimeout(700); // updateRoadmapDraft → onSaved → the row re-reads
+  const text = await page.locator('[data-roadmap-draft-card]').innerText();
+  assert.ok(text.includes('Düzenlenmiş faz'), `the edited title did not land: ${text.slice(0, 240)}`);
+});
+
+await spec('WO-0050 kalıcılık: reload → kart satırdan döner, pane yok (sürüş renderer ile ölür)', async () => {
+  await page.reload();
+  await page.waitForTimeout(900);
+  await switchWs('e2e', 'taslak'); // the reload resets the renderer state — first workspace first
+  await openRoadmap();
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.count(), 1, 'the pending row did not re-raise the card after reload');
+  assert.ok((await card.innerText()).includes('Düzenlenmiş faz'), 'the row lost the edited md');
+  assert.equal(await page.locator('[data-roadmap-pane]').count(), 0, 'a pane resurrected without a live fold');
+  await page.screenshot({ path: join(SHOTS, 'draft-after-reload@980.png') });
+});
+
+await spec('WO-0050 bütçe: taslak kapıyı görür → ret kartı, pane yok; yükselt → taslak yeniden koşar', async () => {
+  await switchWs('taslak', 'taslak-kapi');
+  await openRoadmap();
+  await startDraft('E2E: kapıdaki taslak.');
+  await page.waitForTimeout(600); // refused pre-spawn — no runner, no events to emit
+  assert.equal(await page.locator('[data-budget-refusal-card]').count(), 1, 'no refusal card for the draft');
+  assert.equal(await page.locator('[data-roadmap-pane]').count(), 0, 'a pane rendered for a refused draft');
+  await page.screenshot({ path: join(SHOTS, 'draft-budget-refusal@980.png') });
+  await page.getByRole('button', { name: /Limiti yükselt ve sür/ }).click();
+  await page.waitForTimeout(900); // setBudget + restart → the draft re-runs (MİMAR — TASLAK returns)
+  assert.equal(await page.locator('[data-roadmap-pane]').count(), 1, 'the draft did not re-run after the raise');
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak-kapi', 'Kapı Taslağı', 'Kapı fazı') });
+  await page.waitForTimeout(700);
+  await w50Done();
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('[data-roadmap-draft-card]').count(), 1, 'the raised draft produced no proposal');
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
+await spec('WO-0050 CLI: roadmap draft --docs --fake → bekleyen satır; approve yazar; show hazır', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'docket-cli-'));
+  const repoC = join(root, 'repo');
+  mkdirSync(join(repoC, 'docs'), { recursive: true });
+  const db = join(root, 'c.db');
+  const cli = (args) => execFileSync('npx', ['tsx', 'src/cli/index.ts', ...args, '--db', db], { cwd: ROOT, encoding: 'utf8' });
+  cli(['create-workspace', '--label', 'Demo', '--repo', repoC]);
+  const script = join(root, 's.json');
+  writeFileSync(script, JSON.stringify([
+    { kind: 'started', sessionId: 'cli-draft-1' },
+    { kind: 'plan_ready', planText: DRAFT_MD('demo', 'CLI Taslağı', 'CLI fazı') },
+    { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 5, usd: 0.02 } },
+  ]));
+  const out = cli(['roadmap', 'draft', '--workspace', 'demo', '--note', 'cli içe aktarma', '--docs', '/tmp/a.md,/tmp/b.md', '--fake', script]);
+  assert.ok(out.includes('draft pending'), `no pending line: ${out}`);
+  assert.ok(out.includes('1 faz'), `no figures: ${out}`);
+  assert.ok(cli(['roadmap', 'show', '--workspace', 'demo']).includes('nothing planned yet'), 'the row wrote the file before approval');
+  const approveOut = cli(['roadmap', 'approve', '--workspace', 'demo']);
+  assert.ok(approveOut.includes('draft approved'), `approve refused: ${approveOut}`);
+  assert.ok(cli(['roadmap', 'show', '--workspace', 'demo']).includes('CLI fazı'), 'the approved file did not render');
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

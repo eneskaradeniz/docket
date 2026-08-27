@@ -17,7 +17,7 @@
 //   cost/stage too), not just the open detail.
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { DriveInput, LiveSessionState, PermissionDecision, TranscriptLine } from '../../../core/runner';
-import { foldSessionEvent, initialSessionState } from '../../../core/runner';
+import { foldSessionEvent, initialSessionState, isDraftDrive } from '../../../core/runner';
 import type { SessionRunner } from '../../../core/runner';
 
 export interface DriveHandle {
@@ -45,6 +45,10 @@ export function createDriveStore(runner: SessionRunner) {
   const drives = new Map<string, DriveHandle>();
   const sessionIds = new Map<string, string | undefined>(); // per-key provider session id (resume/approve)
   const keyWo = new Map<string, DriveInput['workOrderId']>(); // key → branded WO id (ADR-0003: no ui-side cast)
+  // WO-0050 / D9: the WO-less draft drives key by WORKSPACE — the same capture discipline, one map
+  // per arm. activeSnapshot stays WO-only by truth (a draft's key never enters keyWo), which IS
+  // the locked ruling: the draft never overlays a board card.
+  const keyWs = new Map<string, NonNullable<DriveInput['workspaceId']>>();
   // WO-0047: each key's LAST drive input, captured at start — the budget refusal card's
   // raise-and-re-run re-issues it verbatim (ONE wiring point, not nine start sites).
   const keyInput = new Map<string, DriveInput>();
@@ -54,6 +58,9 @@ export function createDriveStore(runner: SessionRunner) {
   // starts (the card flips to "Çalışıyor") or an ask surfaces in the background ("Seni bekliyor").
   let onStarted: ((key: string) => void) | undefined;
   let onAsk: ((key: string) => void) | undefined;
+  // WO-0050: a plan_ready landed mid-drive (before the turn ends) — the App refreshes the roadmap
+  // draft row so the TASLAK card descends the moment the proposal arrives, not a beat later at onEnd.
+  let onPlanReady: ((key: string) => void) | undefined;
   // base-mobile trial (2026-08-22): the pipeline returns the session row to 'running' when the last
   // ask is answered, but no other callback fires for ask_resolved — the App refreshes here so the
   // rows snapshot agrees with the fold. Without it the board card bounces working → Seni bekliyor →
@@ -120,7 +127,9 @@ export function createDriveStore(runner: SessionRunner) {
   function start(key: string, input: DriveInput, seed: LiveSessionState = initialSessionState): boolean {
     if (active !== undefined) return active === key; // already running this key → no-op true; another → false
     active = key;
-    keyWo.set(key, input.workOrderId);
+    // WO-0050: the owner capture is arm-aware — a draft keys keyWs (and never keyWs+keyWo both).
+    if (isDraftDrive(input)) keyWs.set(key, input.workspaceId);
+    else keyWo.set(key, input.workOrderId);
     keyInput.set(key, input);
     drives.set(key, { state: seed, running: true, booting: true, startedAt: Date.now() });
     sessionIds.set(key, seed.sessionId);
@@ -134,6 +143,7 @@ export function createDriveStore(runner: SessionRunner) {
           }
           if (ev.kind === 'permission_request') onAsk?.(key);
           if (ev.kind === 'ask_resolved') onAskResolved?.(key);
+          if (ev.kind === 'plan_ready') onPlanReady?.(key);
           if (ev.kind === 'error') onError?.(key);
           // booting clears on the FIRST folded event (any kind) — the spawn window is over.
           const cur = drives.get(key) ?? { state: initialSessionState, running: true, booting: false, startedAt: Date.now() };
@@ -178,6 +188,12 @@ export function createDriveStore(runner: SessionRunner) {
   /** The branded work-order id a key belongs to (WO-0031c) — captured at start, so nothing in the UI
    *  ever constructs a branded id from the key string (ADR-0003). */
   const woId = (key: string): DriveInput['workOrderId'] | undefined => keyWo.get(key);
+  /** WO-0050: the branded WORKSPACE id a draft key belongs to — the same capture discipline.
+   *  undefined for every WO key, so a host can arm the draft branches on it alone. */
+  const wsId = (key: string): DriveInput['workspaceId'] | undefined => keyWs.get(key);
+  /** WO-0050: the key's last drive input (already exposed to restart; the draft pane's resume +
+   *  source-count read it — no second capture site). */
+  const inputOf = (key: string): DriveInput | undefined => keyInput.get(key);
   /** Drop every fold this store holds for a work order — the DELETE flow's second half. Without it
    *  a deleted WO's live fold (transcript, pending question, 'done' status) outlives the row AND
    *  leaks into the next WO that recycles its number (the decision store's nextWorkOrderNumber
@@ -241,6 +257,8 @@ export function createDriveStore(runner: SessionRunner) {
     forgetWo,
     sessionId,
     woId,
+    wsId,
+    inputOf,
     steer,
     retract,
     retractNote,
@@ -252,6 +270,9 @@ export function createDriveStore(runner: SessionRunner) {
     },
     set onAsk(cb: (key: string) => void) {
       onAsk = cb;
+    },
+    set onPlanReady(cb: (key: string) => void) {
+      onPlanReady = cb;
     },
     set onAskResolved(cb: (key: string) => void) {
       onAskResolved = cb;

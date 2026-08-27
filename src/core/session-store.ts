@@ -5,12 +5,17 @@
 // core port so the pipeline depends on an interface, not an adapter — and so the drive loop is testable with
 // a fake store, without SQLite or an agent (ADR-0006 line 30). The adapter's `Store implements SessionStore`;
 // the UI's `WorkOrderSource` stays the read/CRUD half.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId, WorkspaceId } from './types';
 import type { BudgetRefusal } from './runner';
+
+// WO-0050 / D3: a session's OWNER — every session belongs to exactly one. A work-order session
+// (the pre-WO-0050 universe) or a workspace-scoped session (the roadmap draft drive). The pipeline
+// computes this once per drive from `isDraftDrive`; the store keys its rows by it.
+export type SessionOwner = { kind: 'wo'; workOrderId: WorkOrderId } | { kind: 'draft'; workspaceId: WorkspaceId };
 
 export interface RecordSessionInput {
   providerSessionId: string;
-  workOrderId: WorkOrderId;
+  owner: SessionOwner;
   role: SessionRole;
   scope?: TrackId;
   status: SessionRef['status'];
@@ -28,7 +33,7 @@ export interface RecordSessionInput {
 /** Server-side persistence + prompt assembly the drive loop needs. The composition root injects the
  *  adapter's `Store`; the pipeline never imports the adapter. */
 export interface SessionStore {
-  /** Persist (upsert) a live session row keyed by provider session id — drive side-effect (WO-0010). */
+  /** Persist (upsert) a live session row keyed by provider session id + owner — drive side-effect (WO-0010). */
   recordSession(input: RecordSessionInput): void;
   /** Upsert a step's run outcome — status + report pointer (WO-0017). */
   recordStep(workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void;
@@ -46,23 +51,48 @@ export interface SessionStore {
   stepReviewPromptFor(workOrderId: WorkOrderId, idx: number): string | undefined;
   /** The work order's PLAN-APPROVAL gate. WO-0038 incident (2026-08-22): the pipeline REFUSES step
    *  and review drives while it is closed — the gate is enforced at the pipeline/store layer, not
-   *  only derived in the UI (any host — GUI pane or CLI `drive --step` — is refused alike). */
+   *  only derived in the UI (any host — GUI pane or CLI `drive --step` — is refused alike).
+   *  WO-0050: a draft drive never carries step/review indexes, so this gate is never asked of one. */
   planApprovedFor(workOrderId: WorkOrderId): boolean;
   /** The work order's FLOW MODE (WO-0045), read from order.md front-matter at spawn time: in 'manual'
    *  the pipeline refuses any `origin:'auto'` step/review spawn — no drive starts itself. Absent
-   *  order.md / missing key → 'auto' (today's behavior). */
+   *  order.md / missing key → 'auto' (today's behavior). A draft is never `origin:'auto'`. */
   flowModeFor(workOrderId: WorkOrderId): 'auto' | 'manual';
   /** The workspace BUDGET gate (WO-0047), read at spawn time only: when the calendar-month spend
    *  of the drive's workspace meets its configured cap, returns the refusal's facts (observed
    *  spend + cap) and the pipeline refuses EVERY drive — plan, step, review, resume — before the
    *  runner spawns. undefined = no block (no threshold configured, or below the cap). Called
    *  UNCONDITIONALLY: fakes must implement it — a `typeof` guard would hide a missing impl behind
-   *  a contract that only fails in production. */
+   *  a contract that only fails in production.
+   *  WO-0050 / D4: TWO explicit methods, not one unified parameter — the two keys resolve
+   *  differently store-side (a join through the work order vs the workspace directly), and branded
+   *  ids are compile-time only, so a `WorkOrderId | WorkspaceId` parameter is indistinguishable at
+   *  runtime. Both carry the same "called unconditionally" clause; both fakes implement both. */
   budgetBlockFor(workOrderId: WorkOrderId): BudgetRefusal | undefined;
+  /** The SAME gate, keyed directly by workspace — the WO-less draft drive's read (WO-0050). The
+   *  draft session's own spend counts (the widened month sum includes workspace-keyed rows), so a
+   *  draft can never bypass the cap the way a missing-WO row once silently did. */
+  budgetBlockForDraft(workspaceId: WorkspaceId): BudgetRefusal | undefined;
   /** The queued steer notes persisted on a session row (WO-0045) — what Sürdür delivers. [] when the
-   *  row carries none (the SDK queue died with the stop; this row is the only carrier). */
-  pendingNotesFor(workOrderId: WorkOrderId, providerSessionId: string): SteerNote[];
+   *  row carries none (the SDK queue died with the stop; this row is the only carrier). WO-0050: the
+   *  owner union keys the row (an İtiraz resume re-queues carry notes like any resume). */
+  pendingNotesFor(owner: SessionOwner, providerSessionId: string): SteerNote[];
   /** Append a steer-lifecycle audit event to the WO timeline (WO-0045). Detail may quote the note —
-   *  the operator's own words — never an environment value (CLAUDE.md 2026-08-26). */
+   *  the operator's own words — never an environment value (CLAUDE.md 2026-08-26). WO-only by design
+   *  (D15): a draft has no wo_event home and needs none — the roadmap file + git is the record. */
   recordAuditEvent(workOrderId: WorkOrderId, kind: 'steer_queued' | 'steer_delivered' | 'steer_retracted', detail: string): void;
+  /** The roadmap DRAFT drive's first prompt (WO-0050 / D5), assembled from the workspace's facts:
+   *  the slug, the known repo slugs, the roadmap file's path — core's `roadmapDraftPrompt` builds
+   *  the text (paths-not-contents; ONE mechanism). undefined when the workspace does not resolve
+   *  (the pipeline refuses the drive pre-spawn — no empty-prompt provider run). */
+  roadmapDraftPromptFor(workspaceId: WorkspaceId, goalNote: string, docPaths: string[]): string | undefined;
+  /** The draft drive's `plan_ready` side-effect (WO-0050 / D6): upsert the workspace's ONE pending
+   *  `roadmap_draft` row (md + the provider session id İtiraz resumes). Supersede guard inside: a
+   *  row whose md PARSES is never overwritten by one that does not — the refusal keeps the prior
+   *  valid proposal ("bozuk taslak geçerliyi ezmesin" at the row, the parse-guard at approval). */
+  saveRoadmapDraft(workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string }): void;
+  /** A FRESH (non-resume) draft clears the pending row once its gates pass (operator ruling
+   *  2026-08-27: supersede — re-opening ✦ already decided the old proposal is dead). An İtiraz
+   *  resume never clears; only this call and `approveRoadmapDraft` do. */
+  clearRoadmapDraft(workspaceId: WorkspaceId): void;
 }

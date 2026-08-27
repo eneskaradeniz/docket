@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createStore } from './index';
-import { OBSERVED_TABLES, SEED_OBSERVED_AT } from './schema';
+import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { workOrders } from '../fixtures';
 import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
+import { buildRoadmapMd } from '../../core/roadmap-md';
 import { rid, woid } from '../ids';
-import type { RepoId, WorkspaceId } from '../../core/types';
+import type { RepoId, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -68,9 +69,9 @@ function seedFixtureWorkOrders(db: DatabaseSync): void {
   for (const wo of workOrders) {
     for (const s of wo.sessions) {
       db.prepare(
-        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO session (workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, cost_tokens_in, cost_tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(
-        wo.id, s.role, s.scope ?? null, s.status, JSON.stringify(s.transcript),
+        wo.workspace, wo.id, s.role, s.scope ?? null, s.status, JSON.stringify(s.transcript),
         s.status === 'stopped_asking' ? JSON.stringify(s.stopAndAsk) : null,
         s.cost?.tokensIn ?? null, s.cost?.tokensOut ?? null, s.cost?.usd ?? null,
       );
@@ -129,9 +130,9 @@ describe('SQLite store — reseed loses no decision, only time (ADR-0010)', () =
     // An owned decision: an extra session recorded for WO-1001 (a verifier session).
     store.db
       .prepare(
-        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO session (workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES ((SELECT workspace_id FROM work_order WHERE id = ?), ?, ?, ?, ?, ?, ?)',
       )
-      .run('WO-1001', 'verifier', null, 'idle', JSON.stringify([]), null);
+      .run('WO-1001', 'WO-1001', 'verifier', null, 'idle', JSON.stringify([]), null);
     expect((store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n).toBe(ownedBefore + 1);
 
     store.reseedObserved(); // drops + rebuilds every observed table (workspaces only); owned untouched
@@ -180,9 +181,9 @@ describe('SQLite store — observed | owned split (ADR-0010)', () => {
     // An owned decision: an extra session for WO-1001.
     store0.db
       .prepare(
-        'INSERT INTO session (work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO session (workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask) VALUES ((SELECT workspace_id FROM work_order WHERE id = ?), ?, ?, ?, ?, ?, ?)',
       )
-      .run('WO-1001', 'verifier', null, 'idle', JSON.stringify([]), null);
+      .run('WO-1001', 'WO-1001', 'verifier', null, 'idle', JSON.stringify([]), null);
     const ownedBefore = (store0.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n;
     for (const t of OBSERVED_TABLES) store0.db.exec(`DELETE FROM ${t}`);
 
@@ -198,9 +199,9 @@ describe('SQLite store — live session persistence (WO-0010)', () => {
   it('recordSession upserts by provider id (no duplicate) and hydrates providerSessionId/status', async () => {
     const store = fixtureStore();
     const id = woid('WO-1001');
-    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'running' });
-    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'stopped_asking' });
-    store.recordSession({ providerSessionId: 'sess-A', workOrderId: id, role: 'implementer', status: 'idle', cost: { tokensIn: 5, tokensOut: 6, usd: 0.2 } });
+    store.recordSession({ providerSessionId: 'sess-A', owner: { kind: 'wo', workOrderId: id }, role: 'implementer', status: 'running' });
+    store.recordSession({ providerSessionId: 'sess-A', owner: { kind: 'wo', workOrderId: id }, role: 'implementer', status: 'stopped_asking' });
+    store.recordSession({ providerSessionId: 'sess-A', owner: { kind: 'wo', workOrderId: id }, role: 'implementer', status: 'idle', cost: { tokensIn: 5, tokensOut: 6, usd: 0.2 } });
 
     const wo = await store.getWorkOrder(id);
     const live = wo!.sessions.find((s) => s.providerSessionId === 'sess-A');
@@ -214,7 +215,7 @@ describe('SQLite store — live session persistence (WO-0010)', () => {
   it('a persisted session survives a reopen (resume-by-id is reachable)', async () => {
     const p = freshDb();
     seedFixtureWorkOrders(createStore(p).db); // WO-1001 must exist for the session to hydrate against
-    createStore(p).recordSession({ providerSessionId: 'sess-B', workOrderId: woid('WO-1001'), role: 'implementer', status: 'idle', cost: { tokensIn: 9, tokensOut: 9, usd: 0.9 } });
+    createStore(p).recordSession({ providerSessionId: 'sess-B', owner: { kind: 'wo', workOrderId: woid('WO-1001') }, role: 'implementer', status: 'idle', cost: { tokensIn: 9, tokensOut: 9, usd: 0.9 } });
     const wo = await createStore(p).getWorkOrder(woid('WO-1001'));
     expect(wo!.sessions.some((s) => s.providerSessionId === 'sess-B' && s.status === 'idle')).toBe(true);
   });
@@ -241,7 +242,7 @@ describe('SQLite store — per-WO cost derived from session rows (WO-0011)', () 
   it('hydrates a recorded session cost onto the SessionRef', async () => {
     const store = fixtureStore();
     store.recordSession({
-      providerSessionId: 'sess-cost', workOrderId: woid('WO-1001'), role: 'architect', status: 'idle',
+      providerSessionId: 'sess-cost', owner: { kind: 'wo', workOrderId: woid('WO-1001') }, role: 'architect', status: 'idle',
       cost: { tokensIn: 7, tokensOut: 8, usd: 0.42 },
     });
     const wo = await store.getWorkOrder(woid('WO-1001'));
@@ -257,7 +258,7 @@ describe('SQLite store — per-WO cost derived from session rows (WO-0011)', () 
     const inert = store.db.prepare('SELECT cost_usd AS v FROM work_order WHERE id = ?').get(id) as { v: number };
     expect(inert.v).toBe(0);
     store.recordSession({
-      providerSessionId: 'sess-agg', workOrderId: id, role: 'verifier', status: 'idle',
+      providerSessionId: 'sess-agg', owner: { kind: 'wo', workOrderId: id }, role: 'verifier', status: 'idle',
       cost: { tokensIn: 3, tokensOut: 4, usd: 0.1 },
     });
     const wo = await store.getWorkOrder(id);
@@ -559,7 +560,7 @@ describe('WO-0026 — transcript persistence + startup sweep', () => {
     const { ws } = await wsInRoot2(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Transcript', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
     store.recordSession({
-      providerSessionId: 'sess-t1', workOrderId: wo.id, role: 'implementer', status: 'idle',
+      providerSessionId: 'sess-t1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle',
       cost: { tokensIn: 5, tokensOut: 1, usd: 0.1 }, stepIdx: 1,
       transcript: [
         { speaker: 'assistant', text: 'yapiliyor' },
@@ -579,7 +580,7 @@ describe('WO-0026 — transcript persistence + startup sweep', () => {
     const store = createStore(db);
     const { ws } = await wsInRoot2(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Sweep', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    store.recordSession({ providerSessionId: 'sess-r1', workOrderId: wo.id, role: 'architect', status: 'running' });
+    store.recordSession({ providerSessionId: 'sess-r1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'running' });
     expect((await store.getWorkOrder(wo.id))!.sessions[0]!.status).toBe('running');
     const reopened = createStore(db); // the process-kill emulation: a fresh open sweeps
     expect((await reopened.getWorkOrder(wo.id))!.sessions[0]!.status).toBe('idle');
@@ -597,7 +598,7 @@ describe('WO-0027 — askı kalıcılığı + süreler', () => {
     const { ws } = await wsInRoot3(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Asks', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
     store.recordSession({
-      providerSessionId: 'sess-a1', workOrderId: wo.id, role: 'implementer', status: 'stopped_asking', stepIdx: 1,
+      providerSessionId: 'sess-a1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'stopped_asking', stepIdx: 1,
       asks: [
         { requestId: 'r1', tool: 'Write', input: { file_path: '/a' } },
         { requestId: 'r2', tool: 'Edit', input: { file_path: '/b' } },
@@ -612,8 +613,8 @@ describe('WO-0027 — askı kalıcılığı + süreler', () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot3(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Durations', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    store.recordSession({ providerSessionId: 'sess-d1', workOrderId: wo.id, role: 'architect', status: 'running', startedAt: '2026-08-15T10:00:00.000Z' });
-    store.recordSession({ providerSessionId: 'sess-d1', workOrderId: wo.id, role: 'architect', status: 'idle', startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:04:12.000Z' });
+    store.recordSession({ providerSessionId: 'sess-d1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'running', startedAt: '2026-08-15T10:00:00.000Z' });
+    store.recordSession({ providerSessionId: 'sess-d1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'idle', startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:04:12.000Z' });
     const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
     expect(s.startedAt).toBe('2026-08-15T10:00:00.000Z');
     expect(s.endedAt).toBe('2026-08-15T10:04:12.000Z');
@@ -630,8 +631,8 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     const store = createStore(freshDb());
     const { ws } = await wsInRoot4(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Accum', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    store.recordSession({ providerSessionId: 'sess-x', workOrderId: wo.id, role: 'architect', status: 'idle', cost: { tokensIn: 1000, tokensOut: 200, usd: 0.10 }, startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:02:00.000Z' });
-    store.recordSession({ providerSessionId: 'sess-x', workOrderId: wo.id, role: 'architect', status: 'idle', cost: { tokensIn: 3000, tokensOut: 600, usd: 0.20 }, startedAt: '2026-08-15T11:00:00.000Z', endedAt: '2026-08-15T11:01:00.000Z' });
+    store.recordSession({ providerSessionId: 'sess-x', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'idle', cost: { tokensIn: 1000, tokensOut: 200, usd: 0.10 }, startedAt: '2026-08-15T10:00:00.000Z', endedAt: '2026-08-15T10:02:00.000Z' });
+    store.recordSession({ providerSessionId: 'sess-x', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'idle', cost: { tokensIn: 3000, tokensOut: 600, usd: 0.20 }, startedAt: '2026-08-15T11:00:00.000Z', endedAt: '2026-08-15T11:01:00.000Z' });
     const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
     expect(s.cost!.tokensIn).toBe(4000);
     expect(s.cost!.tokensOut).toBe(800);
@@ -849,7 +850,7 @@ describe('SQLite store — workspace deletion (WO-0032)', () => {
       const wo = await store.createWorkOrder({ workspaceId: ws.id, title, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
       await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
       store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
-      store.recordSession({ providerSessionId: `casc-${wo.id}`, workOrderId: wo.id, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.1 } });
+      store.recordSession({ providerSessionId: `casc-${wo.id}`, owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.1 } });
       woIds.push(wo.id as string);
     }
     expect((store.db.prepare('SELECT COUNT(*) AS n FROM work_order WHERE workspace_id = ?').get(ws.id) as { n: number }).n).toBe(2);
@@ -886,7 +887,7 @@ describe('SQLite store — workspace deletion (WO-0032)', () => {
     const root = freshRoot();
     const ws = await store.createWorkspace({ label: 'Guard', repos: [{ path: root }] });
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Live', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    store.recordSession({ providerSessionId: 'live-1', workOrderId: wo.id, role: 'architect', status: 'running' });
+    store.recordSession({ providerSessionId: 'live-1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'running' });
 
     await expect(store.deleteWorkspace(ws.id)).rejects.toThrow(/running/);
 
@@ -897,7 +898,7 @@ describe('SQLite store — workspace deletion (WO-0032)', () => {
     expect(existsSync(join(root, 'docs', 'work-orders', 'WO-0001-live'))).toBe(true);
 
     // once the drive ends, the same delete goes through
-    store.recordSession({ providerSessionId: 'live-1', workOrderId: wo.id, role: 'architect', status: 'idle' });
+    store.recordSession({ providerSessionId: 'live-1', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'idle' });
     await store.deleteWorkspace(ws.id);
     expect((await store.getWorkspaces()).some((w) => w.id === ws.id)).toBe(false);
   });
@@ -971,12 +972,12 @@ describe('store — the session row rules (transcript merge + upsert scope)', ()
   it('the LONGER transcript wins — a late short record cannot wipe a fuller checkpoint (döküm kaybı)', async () => {
     const store = createStore(freshDb());
     const wo = await woUnder(store);
-    store.recordSession({ providerSessionId: 's-merge', workOrderId: wo.id, role: 'implementer', status: 'idle', transcript: [
+    store.recordSession({ providerSessionId: 's-merge', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', transcript: [
       { speaker: 'note', kind: 'session_started' },
       { speaker: 'assistant', text: 'çalıştı' },
       { speaker: 'tool_use', tool: 'Bash', detail: 'ls', callId: 'c1' },
     ], startedAt: '2026-08-24T01:00:00Z', endedAt: '2026-08-24T01:01:00Z' });
-    store.recordSession({ providerSessionId: 's-merge', workOrderId: wo.id, role: 'implementer', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
+    store.recordSession({ providerSessionId: 's-merge', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
     const hydrated = await store.getWorkOrder(wo.id);
     expect(hydrated?.sessions[0]?.transcript).toHaveLength(3);
     expect(hydrated?.sessions[0]?.status).toBe('stopped'); // the status still follows the LAST record
@@ -988,8 +989,8 @@ describe('store — the session row rules (transcript merge + upsert scope)', ()
     const ws = await store.createWorkspace({ label: 'scope', repos: [{ path: root }] });
     const woA = await store.createWorkOrder({ workspaceId: ws.id, title: 'WO A', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
     const woB = await store.createWorkOrder({ workspaceId: ws.id, title: 'WO B', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    store.recordSession({ providerSessionId: 'shared-id', workOrderId: woA.id, role: 'architect', status: 'idle', transcript: [] });
-    store.recordSession({ providerSessionId: 'shared-id', workOrderId: woB.id, role: 'architect', status: 'stopped', transcript: [] });
+    store.recordSession({ providerSessionId: 'shared-id', owner: { kind: 'wo', workOrderId: woA.id }, role: 'architect', status: 'idle', transcript: [] });
+    store.recordSession({ providerSessionId: 'shared-id', owner: { kind: 'wo', workOrderId: woB.id }, role: 'architect', status: 'stopped', transcript: [] });
     const [a, b] = await Promise.all([store.getWorkOrder(woA.id), store.getWorkOrder(woB.id)]);
     expect(a?.sessions.some((s) => s.providerSessionId === 'shared-id' && s.status === 'idle')).toBe(true);
     expect(b?.sessions.some((s) => s.providerSessionId === 'shared-id' && s.status === 'stopped')).toBe(true);
@@ -1016,7 +1017,7 @@ describe('store — the session CHECK migration (round 4: the live failure this 
     expect(kept).toEqual([{ provider_session_id: 'legacy-1', status: 'idle' }]);
     // the pre-fix behavior: this INSERT threw (CHECK rejected 'stopped') and the pipeline's catch
     // surfaced it as a fail card for an intentional Durdur
-    store.recordSession({ providerSessionId: 'legacy-1', workOrderId: woid('WO-LEGACY'), role: 'architect', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
+    store.recordSession({ providerSessionId: 'legacy-1', owner: { kind: 'wo', workOrderId: woid('WO-LEGACY') }, role: 'architect', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
     const stopped = store.db.prepare("SELECT status FROM session WHERE provider_session_id = 'legacy-1'").get() as { status: string };
     expect(stopped.status).toBe('stopped');
     expect(store.db.prepare("SELECT name FROM sqlite_master WHERE name = 'session_legacy'").get()).toBeUndefined();
@@ -1036,12 +1037,12 @@ describe('SQLite store — steer mirror + flow mode (WO-0045)', () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot(store);
     const wo = await mkWo(store, ws);
-    const base = { workOrderId: wo.id, role: 'implementer' as const };
+    const base = { owner: { kind: 'wo' as const, workOrderId: wo.id }, role: 'implementer' as const };
     store.recordSession({ ...base, providerSessionId: 's1', status: 'running', pendingNotes: [{ id: 'n1', text: 'bir' }, { id: 'n2', text: 'iki' }] });
     store.recordSession({ ...base, providerSessionId: 's1', status: 'running', pendingNotes: [{ id: 'n2', text: 'iki' }] });
-    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // delivery shrank it
+    expect(store.pendingNotesFor({ kind: 'wo', workOrderId: wo.id }, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // delivery shrank it
     store.recordSession({ ...base, providerSessionId: 's1', status: 'stopped' }); // notes-blind record
-    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // not silently dropped
+    expect(store.pendingNotesFor({ kind: 'wo', workOrderId: wo.id }, 's1')).toEqual([{ id: 'n2', text: 'iki' }]); // not silently dropped
     // and the hydrated session row carries it (the Sürdür seed reads this)
     const hydrated = (await store.getWorkOrder(wo.id))!.sessions.find((s) => s.providerSessionId === 's1');
     expect(hydrated?.pendingNotes).toEqual([{ id: 'n2', text: 'iki' }]);
@@ -1051,10 +1052,10 @@ describe('SQLite store — steer mirror + flow mode (WO-0045)', () => {
     const store = createStore(freshDb());
     const { ws } = await wsInRoot(store);
     const wo = await mkWo(store, ws);
-    store.recordSession({ workOrderId: wo.id, role: 'implementer', providerSessionId: 's1', status: 'stopped', pendingNotes: [{ id: 'n1', text: 'bir' }] });
+    store.recordSession({ owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', providerSessionId: 's1', status: 'stopped', pendingNotes: [{ id: 'n1', text: 'bir' }] });
     expect(await store.retractSteerNote(wo.id, 's1', 'ghost')).toBe(false);
     expect(await store.retractSteerNote(wo.id, 's1', 'n1')).toBe(true);
-    expect(store.pendingNotesFor(wo.id, 's1')).toEqual([]);
+    expect(store.pendingNotesFor({ kind: 'wo', workOrderId: wo.id }, 's1')).toEqual([]);
     const events = await store.getWorkOrderEvents(wo.id);
     expect(events.some((e) => e.kind === 'steer_retracted')).toBe(true);
   });
@@ -1111,14 +1112,14 @@ describe('WO-0047 — workspace budget: threshold row, month window, gate verdic
   // A session row with full control over the window stamp and the cost claim (NULL = no claim).
   const session = (
     store: ReturnType<typeof createStore>,
-    woId: Parameters<typeof store.recordSession>[0]['workOrderId'],
+    woId: WorkOrderId,
     providerId: string,
     startedAt: string,
     usd: number | null,
   ) =>
     store.recordSession({
       providerSessionId: providerId,
-      workOrderId: woId,
+      owner: { kind: 'wo', workOrderId: woId },
       role: 'implementer',
       status: 'idle',
       ...(usd === null ? {} : { cost: { tokensIn: 1, tokensOut: 1, usd } }),
@@ -1243,7 +1244,7 @@ describe('WO-0048 — roadmap spine: roadmap.md, the view-time task join, the st
     let sess = 0;
     for (const [wo, usd] of Object.entries(costs)) {
       if (usd > 0) {
-        store.recordSession({ providerSessionId: `s${sess++}`, workOrderId: woid(wo), role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd } });
+        store.recordSession({ providerSessionId: `s${sess++}`, owner: { kind: 'wo', workOrderId: woid(wo) }, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd } });
       }
     }
     db.close();
@@ -1363,5 +1364,224 @@ describe('WO-0048 — roadmap spine: roadmap.md, the view-time task join, the st
     db.close();
     expect(cols).toEqual(['id', 'workspace_id', 'title', 'mode', 'gate_plan_approved', 'gate_verifier_resolvable', 'gate_closure_docs_sha', 'cost_tokens_in', 'cost_tokens_out', 'cost_usd', 'observed_at']);
     expect(cols).not.toContain('task_ref');
+  });
+});
+
+describe('WO-0050 — the owner migration: workspace_id backfill, nullable work_order_id', () => {
+  // The WO-0049-vintage shape: every CHECK and column EXCEPT the owner pair. The rebuild's
+  // copy is SESSION_REBUILD_COPY — pinned here end to end.
+  const LEGACY_SESSION_DDL =
+    'CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_session_id TEXT, work_order_id TEXT NOT NULL, ' +
+    "role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')), scope_track_id TEXT, " +
+    "status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','stopped','none')), transcript TEXT NOT NULL, stop_and_ask TEXT, " +
+    'pending_notes TEXT, cost_tokens_in INTEGER, cost_tokens_out INTEGER, cost_usd REAL, started_at TEXT, ended_at TEXT, step_idx INTEGER)';
+
+  it('rebuilds with workspace_id backfilled through the WO join; an orphan row keeps itself with the join-to-nothing key', () => {
+    const p = freshDb();
+    const raw = new DatabaseSync(p);
+    raw.exec(SCHEMA_SQL);
+    raw.exec('DROP TABLE session');
+    raw.exec(LEGACY_SESSION_DDL);
+    raw.prepare(
+      `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
+       gate_closure_docs_sha, cost_tokens_in, cost_tokens_out, cost_usd, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run('WO-3001', 'ws-backfill', 'Backfill', 'direct', 1, null, null, 0, 0, 0, SEED_OBSERVED_AT);
+    raw.prepare("INSERT INTO session (provider_session_id, work_order_id, role, status, transcript, started_at, ended_at, cost_usd) VALUES (?,?,?,?,?,?,?,?)")
+      .run('own-1', 'WO-3001', 'architect', 'idle', '[]', '2026-08-27T10:00:00Z', '2026-08-27T10:01:00Z', 1.5);
+    // An ORPHAN — its WO row is gone. The migration fixtures proved this vintage exists; the
+    // backfill must keep the row (never brick startup), keying it to nothing ('' joins to no
+    // workspace, hydrates into no ledger).
+    raw.prepare("INSERT INTO session (provider_session_id, work_order_id, role, status, transcript) VALUES (?,?,?,?,?)")
+      .run('orphan-1', 'WO-GONE', 'implementer', 'idle', '[]');
+    raw.close();
+
+    const store = createStore(p);
+    const owned = store.db.prepare('SELECT provider_session_id, workspace_id, work_order_id FROM session ORDER BY id').all() as
+      Array<{ provider_session_id: string; workspace_id: string; work_order_id: string }>;
+    expect(owned).toEqual([
+      { provider_session_id: 'own-1', workspace_id: 'ws-backfill', work_order_id: 'WO-3001' },
+      { provider_session_id: 'orphan-1', workspace_id: '', work_order_id: 'WO-GONE' },
+    ]);
+    expect(store.db.prepare("SELECT name FROM sqlite_master WHERE name = 'session_legacy'").get()).toBeUndefined();
+    // The widened table now accepts a WO-LESS row — the draft drive's shape.
+    store.recordSession({
+      providerSessionId: 'draft-1',
+      owner: { kind: 'draft', workspaceId: 'ws-backfill' as WorkspaceId },
+      role: 'architect',
+      status: 'idle',
+      cost: { tokensIn: 10, tokensOut: 10, usd: 0.3 },
+      startedAt: '2026-08-27T11:00:00Z',
+    });
+    const draft = store.db.prepare("SELECT workspace_id, work_order_id FROM session WHERE provider_session_id = 'draft-1'").get() as
+      { workspace_id: string; work_order_id: string | null };
+    expect(draft).toEqual({ workspace_id: 'ws-backfill', work_order_id: null });
+  });
+});
+
+describe('WO-0050 — the draft session row: budget visibility, ledger invisibility, upsert scope', () => {
+  const now = new Date();
+  const inMonth = (day: number): string =>
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(day, 28), 12)).toISOString();
+  const wsInRoot = async (store: ReturnType<typeof createStore>, label: string) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    return { ws, root };
+  };
+
+  it('counts in the month sum and the draft budget gate while no WO row moves', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Draft Budget');
+    await store.setBudget(ws.id, { capUsd: 4, warnPercent: 80 });
+    store.recordSession({
+      providerSessionId: 'draft-spend',
+      owner: { kind: 'draft', workspaceId: ws.id },
+      role: 'architect',
+      status: 'idle',
+      cost: { tokensIn: 1, tokensOut: 1, usd: 5 },
+      startedAt: inMonth(10),
+    });
+    expect((await store.workspaceMonthSpend(ws.id)).usd).toBeCloseTo(5, 10);
+    expect(store.budgetBlockForDraft(ws.id)).toEqual({ observedUsd: 5, capUsd: 4 });
+    // The pre-widening hole, pinned shut at the arithmetic layer: no WO exists for this spend.
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM work_order').get() as { n: number }).toEqual({ n: 0 });
+  });
+
+  it('never hydrates into any WO ledger — the draft is structurally invisible there', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsInRoot(store, 'Draft Ledger');
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Bir iş', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+    expect(root).toBeDefined();
+    store.recordSession({ providerSessionId: 'wo-sess', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle' });
+    store.recordSession({ providerSessionId: 'draft-sess', owner: { kind: 'draft', workspaceId: ws.id }, role: 'architect', status: 'idle' });
+    const hydrated = await store.getWorkOrder(wo.id);
+    expect(hydrated!.sessions.map((s) => s.providerSessionId)).toEqual(['wo-sess']);
+  });
+
+  it('the NULL-safe upsert key: one provider id on a WO and a draft are two rows, never one stealing the other', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Draft Key');
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'İş', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'shared', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', transcript: [{ speaker: 'assistant', text: 'wo' }] });
+    store.recordSession({ providerSessionId: 'shared', owner: { kind: 'draft', workspaceId: ws.id }, role: 'architect', status: 'idle', transcript: [{ speaker: 'assistant', text: 'draft' }] });
+    const rows = store.db.prepare("SELECT workspace_id, work_order_id, transcript FROM session WHERE provider_session_id = 'shared'").all() as
+      Array<{ workspace_id: string; work_order_id: string | null; transcript: string }>;
+    expect(rows).toHaveLength(2);
+  });
+
+  it('a running draft blocks workspace deletion; the cascade removes the draft rows', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsInRoot(store, 'Draft Delete');
+    store.recordSession({ providerSessionId: 'draft-live', owner: { kind: 'draft', workspaceId: ws.id }, role: 'architect', status: 'running' });
+    await assert.rejects(() => store.deleteWorkspace(ws.id), /running session/);
+    store.recordSession({ providerSessionId: 'draft-live', owner: { kind: 'draft', workspaceId: ws.id }, role: 'architect', status: 'idle' });
+    store.saveRoadmapDraft(ws.id, '# boş', undefined);
+    await store.deleteWorkspace(ws.id);
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM roadmap_draft').get() as { n: number }).toEqual({ n: 0 });
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).toEqual({ n: 0 });
+  });
+});
+
+describe('WO-0050 — the roadmap_draft row lifecycle (write → read → guard → approve)', () => {
+  const wsInRoot = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    return store.createWorkspace({ label: 'Taslak WS', repos: [{ path: root }] });
+  };
+  const fazlar = [{ id: 'f0', title: 'Kullanıcı Yönetimi', blockedBy: [], tasks: [{ id: 'f0-t1', title: 'Kayıt akışı' }, { id: 'f0-t2', title: 'Giriş akışı' }] }];
+  const validMd = (slug: string): string => buildRoadmapMd({ workspaceSlug: slug, title: 'Yol Haritası', fazlar });
+
+  it('plan_ready write → the card read (md + provider id + session seed); the İtiraz handle survives', async () => {
+    const store = createStore(freshDb());
+    const ws = await wsInRoot(store);
+    store.recordSession({ providerSessionId: 'draft-9', owner: { kind: 'draft', workspaceId: ws.id }, role: 'architect', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.4 }, transcript: [{ speaker: 'assistant', text: 'taslak hazır' }] });
+    store.saveRoadmapDraft(ws.id, validMd(ws.id as string), { providerSessionId: 'draft-9' });
+    const draft = await store.getRoadmapDraft(ws.id);
+    expect(draft).not.toBeNull();
+    expect(draft!.providerSessionId).toBe('draft-9');
+    expect(draft!.session?.providerSessionId).toBe('draft-9');
+    expect(draft!.session?.cost?.usd).toBeCloseTo(0.4, 10);
+    expect(draft!.md).toContain('```fazlar');
+  });
+
+  it('the supersede guard: a valid row is never overwritten by an unparseable proposal', async () => {
+    const store = createStore(freshDb());
+    const ws = await wsInRoot(store);
+    store.saveRoadmapDraft(ws.id, validMd(ws.id as string), { providerSessionId: 'd1' });
+    store.saveRoadmapDraft(ws.id, 'no fence at all', { providerSessionId: 'd2' });
+    expect((await store.getRoadmapDraft(ws.id))!.md).toContain('```fazlar'); // the valid one kept
+    // valid → valid still supersedes (the objection round's revised proposal)
+    const revised = buildRoadmapMd({ workspaceSlug: ws.id as string, title: 'Yol Haritası 2', fazlar });
+    store.saveRoadmapDraft(ws.id, revised, { providerSessionId: 'd2' });
+    expect((await store.getRoadmapDraft(ws.id))!.md).toContain('Yol Haritası 2');
+  });
+
+  it('Onayla is atomic: parse-guard → byte-identical write → row gone', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Onayla WS', repos: [{ path: root }] });
+    const md = validMd(ws.id as string);
+    store.saveRoadmapDraft(ws.id, md, { providerSessionId: 'd3' });
+    await store.approveRoadmapDraft(ws.id);
+    expect(await store.getRoadmapDraft(ws.id)).toBeNull(); // the row died with the decision
+    expect((await store.getRoadmap(ws.id)).kind).toBe('ready'); // the file is the truth now
+    expect(readFileSync(join(root, 'docs', 'roadmap.md'), 'utf8')).toBe(md); // byte-identical
+  });
+
+  it('approve refuses an unparseable row naming the reason, writing nothing', async () => {
+    const store = createStore(freshDb());
+    const ws = await wsInRoot(store);
+    // invalid → invalid rows DO land (stored, not rejected — the card renders the honest line;
+    // the guard lives HERE, at the approval boundary)
+    store.db.prepare('INSERT INTO roadmap_draft (workspace_id, md, provider_session_id, created_at, updated_at) VALUES (?,?,?,?,?)').run(ws.id, 'çit yok', null, '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z');
+    await assert.rejects(() => store.approveRoadmapDraft(ws.id), /no fazlar fence/);
+    expect(await store.getRoadmapDraft(ws.id)).not.toBeNull(); // the row stays — the operator still decides
+    expect((await store.getRoadmapMd(ws.id))).toBe(''); // nothing written
+  });
+
+  it('Düzenle: updateRoadmapDraft refuses an unparseable edit loudly; a valid edit lands', async () => {
+    const store = createStore(freshDb());
+    const ws = await wsInRoot(store);
+    store.saveRoadmapDraft(ws.id, validMd(ws.id as string), { providerSessionId: 'd4' });
+    await assert.rejects(() => store.updateRoadmapDraft(ws.id, 'bozuk'), /no fazlar fence/);
+    const edited = buildRoadmapMd({ workspaceSlug: ws.id as string, title: 'Düzenlendi', fazlar });
+    await store.updateRoadmapDraft(ws.id, edited);
+    expect((await store.getRoadmapDraft(ws.id))!.md).toContain('Düzenlendi');
+  });
+
+  it('roadmapDraftPromptFor composes from the workspace facts; undefined for a missing workspace', async () => {
+    const store = createStore(freshDb());
+    const ws = await wsInRoot(store);
+    const p = store.roadmapDraftPromptFor(ws.id, 'iki fazlı taslak', ['/tmp/a.md', '/tmp/b.md']);
+    expect(p).toContain('iki fazlı taslak');
+    expect(p).toContain('- /tmp/a.md');
+    expect(p).toContain(ws.id as string);
+    expect(store.roadmapDraftPromptFor('ghost-ws' as WorkspaceId, 'x', [])).toBeUndefined();
+  });
+});
+
+describe('WO-0050 — driveCwd (the connection-table fix)', () => {
+  it('scoped WO drive → the track repo path; draft and unscoped WO → the decision-store repo; no match → process.cwd()', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const docsSlug = rootDocs.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Cwd WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'İş', description: 'x', trackRepos: [rid(apiSlug)], reviewMode: 'gates', contextFiles: [] });
+    const hydrated = await store.getWorkOrder(wo.id);
+    const track = hydrated!.tracks[0]!;
+    // scoped drive (a step drive): the track repo's connected path
+    expect(store.driveCwd({ role: 'implementer', workOrderId: wo.id, scope: track.id, mode: 'direct', prompt: '' })).toBe(rootApi);
+    // unscoped WO drive (architect plan/free/verifier): the decision-store repo
+    expect(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(rootDocs);
+    expect(store.driveCwd({ role: 'verifier', workOrderId: wo.id, mode: 'direct', prompt: '' })).toBe(rootDocs);
+    // the draft: the decision-store repo (docsSlug pins the match — basename, not substring)
+    expect(store.driveCwd({ role: 'architect', workspaceId: ws.id, mode: 'plan', prompt: '', goalNote: 'n', docPaths: [] })).toBe(rootDocs);
+    expect(docsSlug.length).toBeGreaterThan(0);
+    // nothing matches (a WO that does not exist): today's behavior, byte-for-byte
+    expect(store.driveCwd({ role: 'architect', workOrderId: woid('WO-NONE'), mode: 'plan', prompt: '' })).toBe(process.cwd());
   });
 });

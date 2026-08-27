@@ -62,7 +62,13 @@ CREATE TABLE IF NOT EXISTS track_depends_on (
 CREATE TABLE IF NOT EXISTS session (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider_session_id TEXT,
-  work_order_id TEXT NOT NULL,
+  -- WO-0050: every session belongs to exactly one OWNER — a work order or (the roadmap draft
+  -- drive) a workspace. workspace_id is backfilled through the WO join on migration (sessions
+  -- cascade-delete before their work order, so the subselect resolves for every legacy row);
+  -- work_order_id goes NULL for a draft session. Draft rows are invisible to every WO hydrate
+  -- (WHERE work_order_id = ?) and COUNT in the workspace month-spend sum (WHERE workspace_id = ?).
+  workspace_id TEXT NOT NULL,
+  work_order_id TEXT,
   role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')),
   scope_track_id TEXT,
   status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','stopped','none')),
@@ -123,6 +129,18 @@ CREATE TABLE IF NOT EXISTS wo_event (
 CREATE TABLE IF NOT EXISTS app_setting (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+-- The workspace's PENDING roadmap draft (WO-0050, ADR-0016): the ✦ architect session's proposal,
+-- held until the operator decides (Onayla writes roadmap.md and deletes the row; İtiraz resumes
+-- the session named by provider_session_id; a fresh draft supersedes). ONE row per workspace.
+-- Document text in the DB under the plan_original carve-out: a PENDING proposal, never the live
+-- document — roadmap.md stays the truth, written only by the parse-guarded save at approval.
+CREATE TABLE IF NOT EXISTS roadmap_draft (
+  workspace_id TEXT PRIMARY KEY,
+  md TEXT NOT NULL,
+  provider_session_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 `;
 

@@ -19,7 +19,8 @@ import { autoAllowPolicy, createPipeline } from '../core/pipeline';
 import type { SessionRole } from '../core/types';
 import { buildDriveInput, formatEvent, runDrive, type DriveFormat, type DriveOptions } from './drive';
 import { parseCreateWorkOrderArgs, parseCreateWorkspaceArgs, resolveTracks } from './create';
-import { formatRoadmapShow, formatRoadmapValidate, resolveTaskRef } from './roadmap';
+import { formatRoadmapDraftLine, formatRoadmapShow, formatRoadmapValidate, resolveTaskRef } from './roadmap';
+import type { DraftDriveInput } from '../core/runner';
 import { roadmapDiagnostics } from '../core/roadmap-md';
 import { createFakeRunner } from './fake-runner';
 
@@ -244,10 +245,15 @@ async function createWorkOrderCommand(argv: string[], store: ReturnType<typeof c
 // WO-0048 — `roadmap show|validate --workspace W`: the spine, verifiable without GUI. show is a
 // VIEW (exit 0 for absent/invalid — it prints the surface); validate is the gate (exit 1 on any
 // error diagnostic, the doctorCommand posture). An absent roadmap validates clean: the invitation
-// state is legitimate, not broken.
+// state is legitimate, not broken. WO-0050 adds the DRAFT pair: `draft` drives the WO-less
+// architect session (ONE mechanism — --docs is the only import/generate distinction, paths into
+// the prompt, never contents), `approve` is Onayla (the parse-guarded write; commit stays the
+// operator's).
 async function roadmapCommand(sub: string | undefined, opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  if (sub === 'draft') return await roadmapDraftCommand(opts, store);
+  if (sub === 'approve') return await roadmapApproveCommand(opts, store);
   if (sub !== 'show' && sub !== 'validate') {
-    process.stderr.write('usage: roadmap <show|validate> --workspace <id-or-label>\n');
+    process.stderr.write('usage: roadmap <show|validate|draft|approve> --workspace <id-or-label>\n');
     return 2;
   }
   const arg = typeof opts.workspace === 'string' ? opts.workspace : undefined;
@@ -271,6 +277,100 @@ async function roadmapCommand(sub: string | undefined, opts: Record<string, stri
   const out = formatRoadmapValidate(diags);
   process.stdout.write(out.text + '\n');
   return out.exitCode;
+}
+
+// The workspace arg every roadmap subcommand shares: id (slug) first, label as the friendly spelling.
+async function resolveWorkspaceArg(arg: string | undefined, store: ReturnType<typeof createStore>): Promise<{ ws: Awaited<ReturnType<typeof store.getWorkspaces>>[number] } | { error: number }> {
+  if (!arg) {
+    process.stderr.write('✗ missing required --workspace <id-or-label>\n');
+    return { error: 2 };
+  }
+  const workspaces = await store.getWorkspaces();
+  const ws = workspaces.find((w) => w.id === arg) ?? workspaces.find((w) => w.label === arg);
+  if (!ws) {
+    const known = workspaces.map((w) => `${w.id} (${w.label})`).join(', ') || 'none yet — run create-workspace first';
+    process.stderr.write(`✗ no workspace "${arg}" — known: ${known}\n`);
+    return { error: 1 };
+  }
+  return { ws };
+}
+
+// WO-0050 — `roadmap draft --workspace W --note TXT [--docs a,b,c] [--fake SCRIPT]`: drive the
+// WO-less architect plan session headlessly. Prompt assembly, the budget gate, and the plan_ready →
+// roadmap_draft write all happen INSIDE the pipeline (the same store-side path as the GUI — one
+// mechanism, one implementation); this command only collects the operator's input and streams.
+async function roadmapDraftCommand(opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  const resolved = await resolveWorkspaceArg(typeof opts.workspace === 'string' ? opts.workspace : undefined, store);
+  if ('error' in resolved) return resolved.error;
+  const ws = resolved.ws;
+  const note = typeof opts.note === 'string' ? opts.note.trim() : '';
+  if (!note) {
+    process.stderr.write('usage: roadmap draft --workspace <id-or-label> --note <TXT> [--docs <a,b,c>] [--fake SCRIPT] [--format stream|jsonl|quiet]\n');
+    return 2;
+  }
+  const docPaths = typeof opts.docs === 'string' && opts.docs.trim() ? opts.docs.split(',').map((d) => d.trim()).filter(Boolean) : [];
+  const format: DriveFormat = opts.format === 'jsonl' || opts.format === 'quiet' ? opts.format : 'stream';
+  const usingFake = typeof opts.fake === 'string';
+  if (!usingFake) {
+    const quick = quickProviderCheck();
+    if (quick === 'unknown') {
+      process.stderr.write('✗ provider auth not found (no key set, no provider login) — set a key via `npm run cli -- doctor` or the GUI settings, or log in to the provider CLI.\n');
+      return 2;
+    }
+  }
+  const runner = usingFake
+    ? createFakeRunner(opts.fake as string).runner
+    : createRunner((await store.getProviderKey()) !== undefined ? { env: providerEnvForKey((await store.getProviderKey())!) } : {});
+  const pipeline = createPipeline({ runner, store, permission: autoAllowPolicy() });
+  const input: DraftDriveInput = {
+    role: 'architect',
+    workspaceId: ws.id,
+    mode: 'plan',
+    prompt: '',
+    goalNote: note,
+    docPaths,
+    cwd: typeof opts.cwd === 'string' ? opts.cwd : process.cwd(),
+  };
+  const summary = await runDrive(input, pipeline, (ev) => {
+    const line = formatEvent(ev, format);
+    if (line !== undefined) process.stdout.write(line + '\n');
+  });
+  if (summary.error) {
+    process.stderr.write(`✗ ${summary.error}\n`);
+    return 1;
+  }
+  if (format !== 'quiet') {
+    const draft = await store.getRoadmapDraft(ws.id);
+    process.stdout.write(
+      draft
+        ? `draft pending — ${formatRoadmapDraftLine(draft.md)}\nrun: roadmap approve --workspace ${ws.id}\n`
+        : 'draft session ended without a proposal — no pending row was written\n',
+    );
+  }
+  return 0;
+}
+
+// WO-0050 — `roadmap approve --workspace W`: Onayla from the terminal. The parse-guard lives in the
+// store (approveRoadmapDraft is the atomic decision: refuse-and-name, or write + re-read +
+// clear). The commit stays the operator's.
+async function roadmapApproveCommand(opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  const resolved = await resolveWorkspaceArg(typeof opts.workspace === 'string' ? opts.workspace : undefined, store);
+  if ('error' in resolved) return resolved.error;
+  const ws = resolved.ws;
+  const draft = await store.getRoadmapDraft(ws.id);
+  if (!draft) {
+    process.stderr.write(`no pending draft for ${ws.id} — run 'roadmap draft --workspace ${ws.id} --note ...' first\n`);
+    return 1;
+  }
+  try {
+    await store.approveRoadmapDraft(ws.id);
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+  const md = await store.getRoadmapMd(ws.id);
+  process.stdout.write(`draft approved — ${formatRoadmapDraftLine(md)} — written to roadmap.md\nthe git commit is yours.\n`);
+  return 0;
 }
 
 // WO-0048 — `docs-root --workspace W [--root DIR] [--clear]`: the structure-root switch, no GUI
@@ -373,6 +473,10 @@ const HELP_TEXT =
   '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
   '  remove-workspace <id-or-label> [--yes]   delete a workspace + its WOs (refuses without --yes)\n' +
   '  roadmap <show|validate> --workspace W    the derived faz/task view / hand-edit diagnostics\n' +
+  '  roadmap draft --workspace W --note TXT [--docs a,b,c] [--fake SCRIPT]\n' +
+  '          the WO-less architect draft session (--docs = import, else generate; paths into the\n' +
+  '          prompt, never contents — the proposal lands as the pending draft row)\n' +
+  '  roadmap approve --workspace W            Onayla: the parse-guarded roadmap.md write (commit is yours)\n' +
   '  docs-root --workspace W [--root DIR|--clear]\n' +
   '          the structure root (default docs/; .docket one setting away — files never move)\n' +
   '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +

@@ -4,12 +4,22 @@
 //
 // Async (WO-0009): the store is a real data source, so reads return Promises and the UI
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
-import type { RepoId, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
+import type { RepoId, SessionRef, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 import type { RoadmapView } from './roadmap';
 
 export interface RepoConnectionInput {
   path: string;
   remote?: string;
+}
+
+/** The workspace's pending roadmap draft (WO-0050) — what the TASLAK card renders. */
+export interface RoadmapDraft {
+  md: string;
+  /** The ✦ session's provider id — İtiraz et resumes exactly this session. */
+  providerSessionId?: string;
+  updatedAt: string;
+  /** The draft drive's session row (transcript/cost/status), the resume seed. */
+  session?: SessionRef;
 }
 
 /** One connected repo for the ledger (WO-0033): the RepoId (the path's basename — the identity
@@ -117,6 +127,23 @@ export interface WorkOrderSource {
   // when the incoming text fails to parse: the write path never destroys the machine fence, and a
   // written doc must re-read byte-identical. The COMMIT stays the operator's act (ADR-0010).
   saveRoadmap(id: WorkspaceId, md: string): Promise<void>;
+
+  // The pending roadmap DRAFT (WO-0050, ADR-0016): the ✦ architect session's proposal, held until
+  // the operator decides. Document text in the DB under the `plan_original` carve-out — a PENDING
+  // proposal, never the live document (roadmap.md stays the truth; written only at approval, by
+  // the parse-guarded save; the commit stays the operator's). One row per workspace. null = no
+  // pending draft. `session` carries the draft drive's own session row (the İtiraz resume's seed —
+  // the pane appends to what already happened instead of opening blank).
+  getRoadmapDraft(id: WorkspaceId): Promise<RoadmapDraft | null>;
+  // The Düzenle write (WO-0050, operator ruling 2026-08-27: the structured editor's Bitti): the
+  // operator's edited fazlar serialized back over the draft. Refuses — changing nothing — when the
+  // edited md fails to parse (an operator act may not degrade; a read may).
+  updateRoadmapDraft(id: WorkspaceId, md: string): Promise<void>;
+  // Onayla ⏎ (WO-0050): the atomic decision — parse-guard (refuse, write nothing, on a draft that
+  // cannot re-read: "bozuk taslak geçerliyi ezmesin") + write roadmap.md under the structure root +
+  // byte-identical re-read + DELETE the pending row, in one call (no half state). The git commit
+  // stays the operator's.
+  approveRoadmapDraft(id: WorkspaceId): Promise<void>;
 
   // Work-order creation (WO-0015). The store brands the id, authors order.md into the decision-store
   // working tree (Docket does NOT commit — operator commits; ADR-0009 M2 addendum), and inserts a thin

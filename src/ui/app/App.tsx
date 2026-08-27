@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
-import type { PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
+import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
@@ -303,15 +303,20 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // WO-0049: the roadmap view + the effective root, read together. The absent case is one stat
   // (TD-055's join only runs when a roadmap.md exists); refreshes ride the same moments budget
   // does (the drive hooks below) + surface entry + detail open + every save/root switch.
+  // WO-0050: the workspace's pending ✦ draft row rides the same read — the TASLAK card's source
+  // (it descends at plan_ready via the store's onPlanReady hook, not a beat later at onEnd).
+  const [roadmapDraft, setRoadmapDraft] = useState<RoadmapDraft | null>(null);
   const refreshRoadmap = useCallback(() => {
     if (!workspaceId) {
       setRoadmap(undefined);
+      setRoadmapDraft(null);
       return;
     }
-    void Promise.all([source.getRoadmap(workspaceId), settings.getDocsRoot(workspaceId)])
-      .then(([view, root]) => {
+    void Promise.all([source.getRoadmap(workspaceId), settings.getDocsRoot(workspaceId), source.getRoadmapDraft(workspaceId)])
+      .then(([view, root, draft]) => {
         setRoadmap(view);
         setDocsRoot(root);
+        setRoadmapDraft(draft);
       })
       .catch(() => setRoadmap(undefined));
   }, [source, settings, workspaceId]);
@@ -439,9 +444,12 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         workspace={currentWorkspace}
         docsRoot={docsRoot}
         source={source}
+        draft={roadmapDraft}
         onSpawn={(p) => setSpawnTask(p)}
         onOpenWo={setSelectedId}
         onRefresh={refreshRoadmap}
+        onRaiseBudget={handleRaiseBudget}
+        budgetHasUnknown={budget?.hasUnknown ?? false}
       />
     ) : null;
   } else {
@@ -467,6 +475,10 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // notification (click → focus + go).
   const selectedIdRef = useRef<WorkOrderId | null>(null);
   selectedIdRef.current = selectedId;
+  // WO-0050 (review f6): the draft ask toast is BACKGROUND-gated like the WO one — no toast when
+  // the operator is already looking at the roadmap surface with nothing open over it.
+  const surfaceRef = useRef<Surface>(surface);
+  surfaceRef.current = surface;
   useEffect(() => {
     // key → branded WO id lives in the store (captured at start — no ui-side cast, ADR-0003)
     const woOf = (key: string): WorkOrderId | undefined => driveStore.woId(key);
@@ -523,6 +535,33 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
           // notification surface unavailable — the toast + title already carry the news
         }
       }
+      // WO-0050 (D13): the draft drive's ask reaches the operator wherever they are — the toast
+      // lands on the roadmap surface (there is no WO card to flip). Background-gated (review f6):
+      // already on the roadmap with nothing open → the card is in view, no toast.
+      if (wo === undefined && driveStore.wsId(key) !== undefined && !(surfaceRef.current === 'roadmap' && selectedIdRef.current === null)) {
+        const title = UI.roadmapDraftAskToast;
+        const goDraft = (): void => {
+          setSelectedId(null);
+          setSurface('roadmap');
+        };
+        toast.push({ kind: 'news', title, body: UI.toastAskBody, onActivate: goDraft });
+        try {
+          if (typeof Notification !== 'undefined') {
+            const n = new Notification(title, { body: UI.toastAskBody });
+            n.onclick = () => {
+              window.focus();
+              goDraft();
+            };
+          }
+        } catch {
+          // notification surface unavailable — the toast + title already carry the news
+        }
+      }
+    };
+    // WO-0050: the TASLAK card descends the MOMENT the proposal lands (plan_ready is mid-drive —
+    // the architect session keeps running its stop notice after it); the row read is the card's.
+    driveStore.onPlanReady = () => {
+      refreshRoadmap();
     };
     driveStore.onError = (key) => {
       refreshWorkOrders();
@@ -538,11 +577,17 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator. The
   // live fold outranks a stale stopped_asking row — an ask the operator already answered is being
   // worked, not waited on (base-mobile trial; the row refresh follows via onAskResolved).
+  // WO-0050 (D13): the draft drive's held asks count too (the current workspace's key — a draft
+  // only ever runs for the workspace it was started from).
+  const draftAsks = useSyncExternalStore(
+    driveStore.subscribe,
+    () => driveStore.get(`${workspaceId ?? ''}:draft`)?.state.pendingAsks.length ?? 0,
+  );
   useEffect(() => {
     const staleActive = activeDrive !== undefined && activeDrive.status !== 'stopped_asking' ? activeDrive.woId : undefined;
-    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking') && w.id !== staleActive).length;
+    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking') && w.id !== staleActive).length + draftAsks;
     document.title = waiting > 0 ? UI.titlePending(waiting) : UI.productName;
-  }, [workOrders, activeDrive, UI]);
+  }, [workOrders, activeDrive, draftAsks, UI]);
 
   return (
     <DriveStoreContext.Provider value={driveStore}>
