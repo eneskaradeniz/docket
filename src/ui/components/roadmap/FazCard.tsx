@@ -73,7 +73,7 @@ export function FazCard({
           </span>
         </div>
         {faz.aim !== undefined ? <p className="text-[12px] text-inkdim">{faz.aim}</p> : null}
-        <div className="hairline-progress" title={`${doneTasks}/${faz.tasks.length} görev`}>
+        <div className="hairline-progress" title={UI.roadmapTaskFill(doneTasks, faz.tasks.length)}>
           <div style={{ width: faz.tasks.length > 0 ? `${Math.round((doneTasks / faz.tasks.length) * 100)}%` : '0%' }} />
         </div>
         {faz.status === 'bekliyor' ? (

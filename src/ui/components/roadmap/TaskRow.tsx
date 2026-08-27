@@ -85,7 +85,7 @@ export function TaskRow({
           <button
             type="button"
             data-task-spawn
-            className="font-mono text-[11px] uppercase tracking-wider text-info hover:underline"
+            className="alink text-[11px] uppercase tracking-wider"
             onClick={() =>
               onSpawn({
                 fazId: faz.id,

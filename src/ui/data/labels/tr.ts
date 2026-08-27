@@ -761,6 +761,7 @@ export const UI = {
   roadmapStripLine: 'faz sırası · tıkla kaydır',
   roadmapDoneFold: (n: number) => `${n} tamamlanan faz`,
   roadmapDoneFoldMeta: (wo: number, usd: number) => `${wo} WO · ${formatUsd(usd)}`,
+  roadmapTaskFill: (done: number, total: number) => `${done}/${total} görev`,
   // Görev satırı kuyrukları — kanıt satırları, durum sözcüğü değil (glif taşır durumu).
   roadmapTaskSpawn: 'İş emri aç',
   roadmapTaskClosedTail: (n: number) => `${n} WO kapandı`,
@@ -931,6 +932,12 @@ export function fazLabel(id: string): string {
   return m !== null ? `FAZ ${m[1]!}` : `FAZ ${id.toUpperCase()}`;
 }
 
+// WO-0049 — the fold's `f0 · f3` run: the roadmap's ids ride the woIdLabel pattern (ADR-0007's
+// 2026-08-27 addendum — operator-authored references rendered as identities through the seam).
+export function fazIdLabel(id: string): string {
+  return id;
+}
+
 // WO-0049 — tanı adlı eller: invalid yüzeyin sebep satırları (roadmapDiagnostics'ın 11 kodu).
 // Detail tanıdan gelir (kimlik/öğe no); ham kod asla görüntülenmez.
 export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
@@ -991,6 +998,7 @@ const tr = {
   formatDateTime,
   phaseLabelText,
   fazLabel,
+  fazIdLabel,
 };
 export type Labels = typeof tr;
 export default tr;

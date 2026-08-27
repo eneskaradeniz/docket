@@ -2063,7 +2063,7 @@ await spec("WO-0049 spawn: ön-dolu oluştur → detay çipi → ESC Yol Haritas
   const titleVal = await page.locator('[role="dialog"] input').first().inputValue();
   assert.equal(titleVal, 'Doğrulama akışı', `the title is not seeded: ${titleVal}`);
   assert.equal(await page.locator('[role="dialog"] button', { hasText: 'api' }).first().getAttribute('aria-pressed'), 'true', 'the task repo is not pre-checked');
-  assert.equal(await page.locator('[role="dialog"] button', { hasText: 'mobile' }).first().getAttribute('aria-pressed'), 'false', 'the other repo is pre-checked');
+  assert.equal(await page.locator('[role="dialog"] button', { hasText: 'mobile' }).first().getAttribute('aria-pressed'), 'false', 'the other repo is not left off');
   await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
   await page.waitForTimeout(900); // create (task: lands in order.md) + navigate to the detail
   const chip = await page.locator('[data-detail-task-chip]').innerText();

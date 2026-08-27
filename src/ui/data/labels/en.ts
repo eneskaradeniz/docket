@@ -650,6 +650,7 @@ export const UI = {
   roadmapStripLine: 'phase order · click to scroll',
   roadmapDoneFold: (n: number) => `${n} phases done`,
   roadmapDoneFoldMeta: (wo: number, usd: number) => `${wo} WO${wo === 1 ? '' : 's'} · ${formatUsd(usd)}`,
+  roadmapTaskFill: (done: number, total: number) => `${done}/${total} tasks`,
   roadmapTaskSpawn: 'Open work order',
   roadmapTaskClosedTail: (n: number) => `${n} WO${n === 1 ? '' : 's'} closed`,
   roadmapTaskOpenMulti: (n: number) => `${n} open WO${n === 1 ? '' : 's'}`,
@@ -795,6 +796,11 @@ export function fazLabel(id: string): string {
   return m !== null ? `PHASE ${m[1]!}` : `PHASE ${id.toUpperCase()}`;
 }
 
+// WO-0049 — the fold's `f0 · f3` run rides the woIdLabel pattern (ADR-0007's 2026-08-27 addendum).
+export function fazIdLabel(id: string): string {
+  return id;
+}
+
 // WO-0049 — the invalid surface's named reasons (roadmapDiagnostics' 11 codes).
 export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
   no_fence: () => 'no fazlar fence',
@@ -851,5 +857,6 @@ const en: Labels = {
   formatDateTime,
   phaseLabelText,
   fazLabel,
+  fazIdLabel,
 };
 export default en;

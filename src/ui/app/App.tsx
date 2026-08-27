@@ -114,12 +114,14 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   );
 
   // WO-0049 (kare 07): the detail band's task chip. A `task:` ref resolves against the ready view;
-  // an orphan ref (or an unreadable roadmap) degrades to the qualifier — never a lie, never a raw
-  // id; an unlinked WO carries no chip at all.
+  // an orphan ref (or a read roadmap that is absent/invalid) degrades to the qualifier — never a
+  // lie, never a raw id; an unlinked WO carries no chip, and an UNREAD roadmap (in flight/failed)
+  // renders nothing either — "not in the roadmap" is a claim only a finished read can make.
   const detailTaskChip = useMemo<{ fazId: string; taskTitle: string } | 'missing' | undefined>(() => {
     const ref = parsedOrder.taskRef;
     if (ref === undefined) return undefined;
-    if (roadmap?.kind !== 'ready') return 'missing';
+    if (roadmap === undefined) return undefined;
+    if (roadmap.kind !== 'ready') return 'missing';
     const loc = roadmapTaskOf(roadmap, ref);
     return loc !== undefined ? { fazId: loc.fazId, taskTitle: loc.taskTitle } : 'missing';
   }, [parsedOrder, roadmap]);
