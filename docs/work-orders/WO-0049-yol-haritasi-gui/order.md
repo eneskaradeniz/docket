@@ -2,7 +2,7 @@
 id: WO-0049
 title: Roadmap GUI — the sibling Yol Haritası screen, prefilled spawn, the detail chip, the structure-root field
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -117,14 +117,35 @@ Out of scope:
 ## Evidence required
 
 - plan_approval: n/a — `mode: direct`, `review: light` (the operator settled scope at order
-  time: Ekle-only editing, no plan round; the mockup is the approved design)
-- operator_checkpoint: PENDING — the surface walked in the app on the e2e-seeded world AND on
-  a real workspace without a roadmap (the absent surface); the add-dialogs, the spawn, and the
-  root switch exercised; screenshots to `docs/ui-shots/`
-- ci: PENDING — typecheck (both) / `npm test` / `check:boundaries` / `build` / `npm run
-  test:ui` green on the PR
-- closure: PENDING — ROADMAP M6 WO-0049 ticked; PRAGMA diff EMPTY still pinned (no schema
-  change)
+  time: Ekle-only editing, no plan round; the mockup is the approved design; the order itself
+  approved + committed as `571f597` before implementation)
+- operator_checkpoint: RESOLVED 2026-08-27 — the surface walked in the app on the e2e-seeded
+  `yol` world (strip scroll, fold, sıradaki, the WO chip → detail → back, the prefilled spawn,
+  both add dialogs, the `.docket` root round-trip, the invalid surface on the shared store) AND
+  the absent surface on a real roadmap-less workspace; 5 shots in `docs/ui-shots/roadmap-*.png`.
+  The operator approved the commit on this evidence; the reviewer round landed after it
+  (`c818685`).
+- ci: RESOLVED — green on PR #55 and locally: typecheck (both) / `npm test` 705 /
+  `check:boundaries` clean / `build` / `npm run test:ui` 62/62 (56 + 6)
+- closure: RESOLVED — ROADMAP M6 WO-0049 ticked (this commit); PRAGMA diff EMPTY unchanged
+  (no schema change anywhere in the WO)
+
+## Closure
+
+Merged **#55** (`759f432`, 2026-08-27) — order `571f597` + feature `430fb4d` + review `c818685`
+(55 files, +1532/−48 across the three). Evidence state: the screen reproduces the approved
+mockup's frames 01/02/03/06/07 on the seeded `yol` world (head `2/5 faz tamam · 2 açık iş
+emri · $7,32`, fold `2 tamamlanan faz · f0 · f3 · 3 WO · $5,20` — both E2E-pinned); Ekle-only
+edits re-read the document at save and ride the parse guard (a refused write moves no byte,
+the draft survives); the spawn writes `task:` into order.md and the row flips to the WO chip;
+the detail chip degrades on the orphan and renders nothing while the read is in flight; the
+root switch follows the surface end to end without moving a file. The reviewer round cost three
+small fixes and one rule: the spawn action rides `.alink`, tooltips/fold run through the
+bundles, and ADR-0007's 2026-08-27 addendum carries the faz/task ids into the WO-NNNN carve-out
+(`fazIdLabel`). One core-typing decision survived review: `TaskView.openWoIds` is branded
+`WorkOrderId[]` — the identity flows through the type system, the single re-brand lives in the
+store adapter. Open follow-up: WO-0050 (the ✦ footer slot + the AI draft drive, the TASLAK
+card, the WO-less session migration).
 
 ## Stop-and-ask gates
 

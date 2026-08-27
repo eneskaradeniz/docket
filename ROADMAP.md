@@ -385,9 +385,15 @@ strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefille
       show|validate` + `docs-root` + `create-work-order --task`; 5 IPC channels ready for WO-0049.
       700 tests / typecheck both / boundaries / build / E2E 56 green. **TD-055 opened.**
       Spec: `docs/work-orders/WO-0048-yol-haritasi-omurga/order.md`.
-- [ ] **WO-0049** — GUI: the sibling Yol Haritası screen (faz cards, task rows, the approved
-      mockup's strip/fill/`sıradaki`/fold), prefilled task→WO spawn (`Oluştur ve plan iste`),
-      the detail band's one `FAZ N · task` chip, structure-root settings field, labels (tr/en), E2E.
+- [x] **WO-0049** — GUI. Done (merged #55, `759f432`): the sibling `Pano | Yol Haritası` screen
+      (strip/fill/`sıradaki`/donefold/Bloke line/open-WO chip → detail → back), Ekle-only editing
+      (`+ Faz ekle`/`+ görev ekle` — re-read at save, parse-guarded write), the prefilled spawn
+      writing `task:`, the detail chip with the orphan degrade (core `roadmapTaskOf`;
+      `openWoIds` branded — no identity casts in ui), the settings `Yapı kökü` section, labels
+      tr/en (33 keys + `FAZ_STATUS_LABELS` + `fazLabel` + the 11 diagnostics), E2E 56→62
+      (the `yol` world; ids printed, never hard-coded). ADR-0007 addendum: faz/task ids join the
+      WO-NNNN carve-out (`fazIdLabel`). 705 tests / typecheck both / boundaries / build green.
+      Spec: `docs/work-orders/WO-0049-yol-haritasi-gui/order.md`.
 - [ ] **WO-0050** — AI: the WO-less architect draft drive (session migration: nullable
       `work_order_id` + `workspace_id`, budget accounting widened, `roadmap_draft` pending table,
       parse-guard), source-doc import as paths-in-prompt, the cwd fix from the connection table,
