@@ -27,6 +27,9 @@ const source: WorkOrderSource = {
   repoConnections: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:repo-connections', id),
   // The workspace's calendar-month observed spend (WO-0047) — the warn line's figure.
   workspaceMonthSpend: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-month-spend', id),
+  getRoadmap: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap', id),
+  getRoadmapMd: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap-md', id),
+  saveRoadmap: (id: WorkspaceId, md: string) => ipcRenderer.invoke('docket:source:save-roadmap', id, md),
   updateRepoPath: (id: WorkspaceId, repoId: RepoId, newPath: string) =>
     ipcRenderer.invoke('docket:source:update-repo-path', id, repoId, newPath),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
@@ -63,6 +66,9 @@ const settings: AppSettings = {
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
   setLocale: (locale: Locale): Promise<void> => ipcRenderer.invoke('docket:settings:set-locale', locale),
   // The workspace's month-spend threshold (WO-0047): undefined clears it (raise = permanent write).
+  getDocsRoot: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-docs-root', workspaceId),
+  setDocsRoot: (workspaceId: WorkspaceId, root: string | undefined) =>
+    ipcRenderer.invoke('docket:settings:set-docs-root', workspaceId, root),
   getBudget: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-budget', workspaceId),
   setBudget: (workspaceId: WorkspaceId, threshold: import('../src/core/budget').BudgetThreshold | undefined) =>
     ipcRenderer.invoke('docket:settings:set-budget', workspaceId, threshold),

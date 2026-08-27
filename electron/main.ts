@@ -135,6 +135,11 @@ ipcMain.handle('docket:source:repo-connections', (_e, id: WorkspaceId) => store.
 ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: RepoId, newPath: string) => store.updateRepoPath(id, repoId, newPath));
 // WO-0047: the workspace's calendar-month observed spend (the warn line's figure).
 ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
+// WO-0048 — the roadmap layer's spine channels (the screen itself is WO-0049's; these exist so it
+// wires UI-only). getRoadmap derives the whole view store-side; saveRoadmap's parse guard throws.
+ipcMain.handle('docket:source:get-roadmap', (_e, id: WorkspaceId) => store.getRoadmap(id));
+ipcMain.handle('docket:source:get-roadmap-md', (_e, id: WorkspaceId) => store.getRoadmapMd(id));
+ipcMain.handle('docket:source:save-roadmap', (_e, id: WorkspaceId, md: string) => store.saveRoadmap(id, md));
 
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
@@ -228,6 +233,8 @@ ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule)
 ipcMain.handle('docket:settings:get-locale', () => store.getLocale());
 ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLocale(locale));
 // WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
+ipcMain.handle('docket:settings:get-docs-root', (_e, workspaceId: WorkspaceId) => store.getDocsRoot(workspaceId));
+ipcMain.handle('docket:settings:set-docs-root', (_e, workspaceId: WorkspaceId, root: string | undefined) => store.setDocsRoot(workspaceId, root));
 ipcMain.handle('docket:settings:get-budget', (_e, workspaceId: WorkspaceId) => store.getBudget(workspaceId));
 ipcMain.handle(
   'docket:settings:set-budget',

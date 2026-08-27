@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readWoDocs, writeOrderMd, writePlanMdById } from './decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readWoDocs, writeOrderMd, writePlanMdById, writeRoadmapMd } from './decision-store';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -23,13 +23,13 @@ describe('nextWorkOrderNumber — continues the real sequence (WO-0015)', () => 
 
   it('starts at WO-0001 when the dir exists but holds no WO-NNNN folders', () => {
     const r = root();
-    mkdirSync(join(r, 'docs', 'work-orders'), { recursive: true });
+    mkdirSync(join(r, 'work-orders'), { recursive: true });
     expect(nextWorkOrderNumber(r)).toBe('WO-0001');
   });
 
   it('returns max+1, zero-padded, ignoring gaps (max wins, not count)', () => {
     const r = root();
-    const woDir = join(r, 'docs', 'work-orders');
+    const woDir = join(r, 'work-orders');
     mkdirSync(woDir, { recursive: true });
     mkdirSync(join(woDir, 'WO-0002-foo'), { recursive: true });
     mkdirSync(join(woDir, 'WO-0014-bar'), { recursive: true });
@@ -40,7 +40,7 @@ describe('nextWorkOrderNumber — continues the real sequence (WO-0015)', () => 
 
   it('treats a stray file (not a dir) as no match', () => {
     const r = root();
-    const woDir = join(r, 'docs', 'work-orders');
+    const woDir = join(r, 'work-orders');
     mkdirSync(woDir, { recursive: true });
     writeFileSync(join(woDir, 'WO-0099-ignored'), 'x');
     expect(nextWorkOrderNumber(r)).toBe('WO-0001');
@@ -98,7 +98,7 @@ describe('writeOrderMd — writes into the working tree, no git', () => {
     const r = root();
     const path = writeOrderMd(r, 'WO-0015', 'avatar-upload-crash', '# body');
     expect(existsSync(path)).toBe(true);
-    expect(path).toBe(join(r, 'docs', 'work-orders', 'WO-0015-avatar-upload-crash', 'order.md'));
+    expect(path).toBe(join(r, 'work-orders', 'WO-0015-avatar-upload-crash', 'order.md'));
   });
 
   it('is idempotent-ish: writing twice overwrites without error', () => {
@@ -110,7 +110,7 @@ describe('writeOrderMd — writes into the working tree, no git', () => {
 
   it('creates nested dirs that did not exist', () => {
     const r = root();
-    // docs/work-orders absent entirely
+    // work-orders absent entirely
     const path = writeOrderMd(r, 'WO-0001', 'first', '# body');
     expect(existsSync(path)).toBe(true);
   });
@@ -121,12 +121,12 @@ describe('findWorkOrderDir — locate a WO dir by id prefix (WO-0016)', () => {
     const r = root();
     writeOrderMd(r, 'WO-0016', 'avatar-crash', '# body');
     const dir = findWorkOrderDir(r, 'WO-0016');
-    expect(dir).toBe(join(r, 'docs', 'work-orders', 'WO-0016-avatar-crash'));
+    expect(dir).toBe(join(r, 'work-orders', 'WO-0016-avatar-crash'));
   });
 
   it('ignores a stray file whose name starts with the id', () => {
     const r = root();
-    const woDir = join(r, 'docs', 'work-orders');
+    const woDir = join(r, 'work-orders');
     mkdirSync(woDir, { recursive: true });
     writeFileSync(join(woDir, 'WO-0016-notes.txt'), 'x');
     expect(findWorkOrderDir(r, 'WO-0016')).toBeUndefined();
@@ -163,6 +163,39 @@ describe('writePlanMdById — write plan.md into the discovered WO dir', () => {
     const path = writePlanMdById(r, 'WO-0016', '# the plan');
     expect(existsSync(path)).toBe(true);
     expect(readFileSync(path, 'utf8')).toBe('# the plan');
-    expect(path).toBe(join(r, 'docs', 'work-orders', 'WO-0016-avatar-crash', 'plan.md'));
+    expect(path).toBe(join(r, 'work-orders', 'WO-0016-avatar-crash', 'plan.md'));
+  });
+});
+
+describe('buildOrderMd — taskRef (WO-0048: the roadmap link lives only in order.md)', () => {
+  const base = { id: 'WO-0016', title: 'Avatar crash', workspaceSlug: 'docket', description: 'Fix.', trackRepos: ['app'], reviewMode: 'gates' as const, contextFiles: [] };
+
+  it('emits task: after permission_rule, before tracks', () => {
+    const md = buildOrderMd({ ...base, permissionRule: 'full_auto', taskRef: 'f1-t3' });
+    expect(md).toContain('permission_rule: full_auto\ntask: f1-t3\ntracks:');
+  });
+
+  it('omits the key entirely when unlinked (minimal front-matter)', () => {
+    const md = buildOrderMd(base);
+    expect(md).not.toContain('task:');
+  });
+});
+
+describe('roadmap.md file helpers (WO-0048, ADR-0016)', () => {
+  it('readRoadmapMd: "" when the file is absent', () => {
+    expect(readRoadmapMd(root())).toBe('');
+  });
+
+  it('writeRoadmapMd creates the structure root and round-trips the bytes', () => {
+    const r = join(root(), '.docket'); // a fresh alternative root — the dir does not exist yet
+    const path = writeRoadmapMd(r, '# Yol haritası');
+    expect(path).toBe(join(r, 'roadmap.md'));
+    expect(readRoadmapMd(r)).toBe('# Yol haritası');
+  });
+
+  it('nextWorkOrderNumber scans the structure root it is given (a custom root is a fresh sequence)', () => {
+    const r = root();
+    mkdirSync(join(r, 'work-orders', 'WO-0042-old'), { recursive: true });
+    expect(nextWorkOrderNumber(r)).toBe('WO-0043');
   });
 });

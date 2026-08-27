@@ -1,12 +1,13 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { strict as assert } from 'node:assert';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createStore } from './index';
 import { OBSERVED_TABLES, SEED_OBSERVED_AT } from './schema';
 import { workOrders } from '../fixtures';
+import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { rid, woid } from '../ids';
 import type { RepoId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
@@ -1200,5 +1201,167 @@ describe('WO-0047 — workspace budget: threshold row, month window, gate verdic
     expect(await store.getBudget(ws.id)).toBeUndefined();
     const row = store.db.prepare('SELECT COUNT(*) AS n FROM app_setting WHERE key = ?').get(`budget:${ws.id}`) as { n: number };
     expect(row.n).toBe(0);
+  });
+});
+
+describe('WO-0048 — roadmap spine: roadmap.md, the view-time task join, the structure root', () => {
+  // The antreo world on a REAL decision store: three repos (docs = the decision store), the
+  // canonical roadmap.md (the mockup frame-01 fixture), and work orders whose closed flags come
+  // from the closure-sha column (deriveStage's own rule) and whose task links live ONLY in their
+  // order.md files — the join re-reads them at view time (ADR-0010 rule 1; TD-055).
+  const antreoWorld = async (): Promise<{
+    store: ReturnType<typeof createStore>;
+    dbFile: string;
+    root: string;
+    ws: { id: WorkspaceId };
+    woIds: string[]; // WO-0001..WO-0009 + WO-0012 in fixture order
+  }> => {
+    const root = freshRoot();
+    for (const r of ['docs', 'api', 'mobile']) mkdirSync(join(root, r), { recursive: true });
+    const dbFile = freshDb();
+    const store = createStore(dbFile);
+    const ws = await store.createWorkspace({
+      label: 'Antreo App',
+      repos: [{ path: join(root, 'docs') }, { path: join(root, 'api') }, { path: join(root, 'mobile') }],
+      decisionStorePath: join(root, 'docs'),
+    });
+    // Ten real WOs: create twelve, delete the two spares (WO-0010/0011) — the sequence must reach 0012.
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const wo = await store.createWorkOrder({
+        workspaceId: ws.id, title: `Görev ${i + 1}`, description: 'x',
+        trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [],
+      });
+      ids.push(wo.id as string);
+    }
+    await store.deleteWorkOrder(woid('WO-0010'));
+    await store.deleteWorkOrder(woid('WO-0011'));
+    const woIds = [0, 1, 2, 3, 4, 5, 8, 6, 7, 11].map((i) => ids[i]!); // WO-0001..0006, WO-0009, WO-0007, WO-0008, WO-0012
+    // Costs (observed session rows) + closure flags (direct rows — the WO-0047 idiom).
+    const db = new DatabaseSync(dbFile);
+    const costs: Record<string, number> = { 'WO-0001': 3.1, 'WO-0002': 4.2, 'WO-0003': 1.0, 'WO-0004': 2.6, 'WO-0005': 1.5, 'WO-0006': 0, 'WO-0012': 1.62 };
+    let sess = 0;
+    for (const [wo, usd] of Object.entries(costs)) {
+      if (usd > 0) {
+        store.recordSession({ providerSessionId: `s${sess++}`, workOrderId: woid(wo), role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd } });
+      }
+    }
+    db.close();
+    // Task links FIRST — only in order.md, through the edit port (a closed WO is immutable, so the
+    // links go in before the closures below; that is the production order too).
+    const links: Record<string, string> = {
+      'WO-0001': 'f0-t1', 'WO-0002': 'f0-t1', 'WO-0003': 'f0-t1',
+      'WO-0004': 'f0-t2', 'WO-0005': 'f0-t2', 'WO-0006': 'f1-t1', 'WO-0012': 'f1-t3',
+    };
+    for (const [wo, ref] of Object.entries(links)) await store.updateWorkOrder(woid(wo), { taskRef: ref });
+    // Then the closures (direct rows — the WO-0047 idiom).
+    const db2 = new DatabaseSync(dbFile);
+    for (const wo of ['WO-0001', 'WO-0002', 'WO-0003', 'WO-0004', 'WO-0005', 'WO-0006']) {
+      db2.prepare('UPDATE work_order SET gate_closure_docs_sha = ? WHERE id = ?').run('sha-closed', wo);
+    }
+    db2.close();
+    await store.saveRoadmap(ws.id, antreoRoadmapMd);
+    return { store, dbFile, root, ws, woIds };
+  };
+
+  it('absent roadmap → {kind:"absent"}; saveRoadmap round-trips byte-identical', async () => {
+    const root = freshRoot();
+    const store = createStore(freshDb());
+    const ws = await store.createWorkspace({ label: 'Antreo App', repos: [{ path: root }], decisionStorePath: root });
+    expect(await store.getRoadmap(ws.id)).toEqual({ kind: 'absent' });
+    await store.saveRoadmap(ws.id, antreoRoadmapMd);
+    expect(await store.getRoadmapMd(ws.id)).toBe(antreoRoadmapMd);
+  });
+
+  it('getRoadmap reproduces every pinned mockup fact through REAL files + DB rows', async () => {
+    const { store, ws } = await antreoWorld();
+    const v = await store.getRoadmap(ws.id);
+    expect(v.kind).toBe('ready');
+    if (v.kind !== 'ready') throw new Error('expected ready');
+    expect(v.head).toMatchObject({ doneFazCount: 1, totalFazCount: 4, openWoCount: 4 });
+    expect(v.head.totalCostUsd).toBeCloseTo(14.02, 10);
+    expect(v.fazlar[0]).toMatchObject({ id: 'f0', status: 'tamam', closedWoCount: 5 });
+    expect(v.fazlar[0]!.closedCostUsd).toBeCloseTo(12.4, 10);
+    expect(v.fazlar[1]).toMatchObject({ id: 'f1', status: 'kosuyor', openWoCount: 1 });
+    expect(v.fazlar[1]!.tasks[2]).toMatchObject({ id: 'f1-t3', status: 'kosuyor', openWoIds: ['WO-0012'] });
+    expect(v.fazlar[2]).toMatchObject({ id: 'f2', status: 'bekliyor', blockedBy: ['f4'] });
+    expect(v.siradaki).toEqual({ fazId: 'f1', taskId: 'f1-t2' });
+  });
+
+  it('saveRoadmap refuses a document it cannot re-read — bad JSON AND a missing fence — writing nothing', async () => {
+    const { store, ws } = await antreoWorld();
+    const before = await store.getRoadmapMd(ws.id);
+    await assert.rejects(() => store.saveRoadmap(ws.id, '---\nworkspace: antreo-app\n---\n\n```fazlar\n[oops\n```\n'), /bad JSON/);
+    await assert.rejects(() => store.saveRoadmap(ws.id, '---\nworkspace: antreo-app\n---\n\nProse only, no fence.'), /no fazlar fence/);
+    expect(await store.getRoadmapMd(ws.id)).toBe(before); // untouched
+  });
+
+  it('createWorkOrder({taskRef}) writes task: into order.md and getRoadmap joins it into the task row', async () => {
+    const { store, ws } = await antreoWorld();
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Doğrulama akışı uçtan uca', description: 'x',
+      trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [], taskRef: 'f1-t2',
+    });
+    const docs = await store.getWorkOrderDocs(wo.id); // the file on disk, through the port
+    expect(docs.order).toContain('task: f1-t2');
+    const v = await store.getRoadmap(ws.id);
+    if (v.kind !== 'ready') throw new Error('expected ready');
+    expect(v.fazlar[1]!.tasks[1]!.openWoIds).toContain(wo.id as string);
+  });
+
+  it('a taskRef edit on a CLOSED work order throws (immutable archive, WO-0031f K1)', async () => {
+    const { store } = await antreoWorld();
+    await assert.rejects(() => store.updateWorkOrder(woid('WO-0001'), { taskRef: 'f1-t2' }), /is closed/);
+  });
+
+  it('the structure root: default docs/; .docket moves EVERY read/write; invalid roots refuse; corrupt rows fail open', async () => {
+    const { store, dbFile, ws, root } = await antreoWorld();
+    expect(await store.getDocsRoot(ws.id)).toBe('docs');
+    await store.setDocsRoot(ws.id, '.docket');
+    expect(await store.getDocsRoot(ws.id)).toBe('.docket');
+    // The roadmap read now looks under .docket/ — the file is still under docs/ → absent until the
+    // operator moves it (Docket never moves files — ADR-0016).
+    expect(await store.getRoadmap(ws.id)).toEqual({ kind: 'absent' });
+    await store.saveRoadmap(ws.id, antreoRoadmapMd);
+    expect(existsSync(join(root, 'docs', '.docket', 'roadmap.md'))).toBe(true);
+    // R3, pinned: creating under the EMPTY new root mints WO-0001 again and collides on the global
+    // PK (TD-035's shape) — honest but abrupt; the CLI warns at the switch. The fix is the operator's
+    // act: move the folders. Simulate it (fs in the test = the operator's hands) and create works.
+    await assert.rejects(
+      () => store.createWorkOrder({ workspaceId: ws.id, title: 'Yeni kökte', description: '', trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [] }),
+      /UNIQUE constraint failed: work_order.id/,
+    );
+    // The failed create left an orphan WO-0001-* dir under the new root (the known TD-035 shape) —
+    // the operator's move starts by clearing it.
+    rmSync(join(root, 'docs', '.docket', 'work-orders'), { recursive: true, force: true });
+    renameSync(join(root, 'docs', 'docs', 'work-orders'), join(root, 'docs', '.docket', 'work-orders'));
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Yeni kokte', description: '', trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [] });
+    expect(existsSync(join(root, 'docs', '.docket', 'work-orders', `${wo.id as string}-yeni-kokte`, 'order.md'))).toBe(true);
+    await assert.rejects(() => store.setDocsRoot(ws.id, '../x'), /not a safe relative root/);
+    // A corrupt row must not hide the workspace's documents — the read fails open to docs/.
+    const db = new DatabaseSync(dbFile);
+    db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('docs_root:antreo-app', '../../etc')").run();
+    db.close();
+    const reopened = createStore(dbFile);
+    expect(await reopened.getDocsRoot(ws.id)).toBe('docs');
+    expect((await reopened.getRoadmap(ws.id)).kind).toBe('ready'); // the docs/ copy is back
+  });
+
+  it('deleteWorkspace sweeps the docs_root row beside the budget row', async () => {
+    const root = freshRoot();
+    const store = createStore(freshDb());
+    const ws = await store.createWorkspace({ label: 'Sweep Me', repos: [{ path: root }], decisionStorePath: root });
+    await store.setDocsRoot(ws.id, '.docket');
+    await store.deleteWorkspace(ws.id);
+    expect(await store.getDocsRoot(ws.id)).toBe('docs'); // row gone — no inheritance for a recycled id
+  });
+
+  it('PRAGMA diff: EMPTY — no schema change, no task_ref column (AC3)', async () => {
+    const { dbFile } = await antreoWorld();
+    const db = new DatabaseSync(dbFile);
+    const cols = (db.prepare('PRAGMA table_info(work_order)').all() as { name: string }[]).map((c) => c.name);
+    db.close();
+    expect(cols).toEqual(['id', 'workspace_id', 'title', 'mode', 'gate_plan_approved', 'gate_verifier_resolvable', 'gate_closure_docs_sha', 'cost_tokens_in', 'cost_tokens_out', 'cost_usd', 'observed_at']);
+    expect(cols).not.toContain('task_ref');
   });
 });

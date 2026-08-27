@@ -79,3 +79,14 @@ document stays the narrative; the work orders carry the structure.
 - **Model-generated next-task suggestions in the dashboard.** Suggestions without evidence, in an evidence-gated
   tool. If the proposal is worth acting on it is worth being a work order.
 - **Parsing `ROADMAP.md` for progress.** Makes a human document answer to a UI.
+
+---
+
+**Addendum (2026-08-27, WO-0048 — the roadmap layer):** the "Roadmap progress without machine-readable
+roadmaps" section above is superseded FOR THE WORKSPACE ROADMAP ARTIFACT by ADR-0016 — a per-workspace
+`roadmap.md` with one machine fence (the ```steps tradition), tasks linked from order.md front-matter,
+and every status derived. The `milestone:` front-matter mechanism is retired for new work (the
+repository's own root `ROADMAP.md` stays human prose — it is a closure gate, not a workspace planning
+artifact). Both disciplines of this ADR stand unchanged and carry into ADR-0016 unchanged: status is
+computed, never set by hand or dragged, and a model proposes work only as a reviewed, committed
+document.

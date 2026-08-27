@@ -19,6 +19,8 @@ import { autoAllowPolicy, createPipeline } from '../core/pipeline';
 import type { SessionRole } from '../core/types';
 import { buildDriveInput, formatEvent, runDrive, type DriveFormat, type DriveOptions } from './drive';
 import { parseCreateWorkOrderArgs, parseCreateWorkspaceArgs, resolveTracks } from './create';
+import { formatRoadmapShow, formatRoadmapValidate, resolveTaskRef } from './roadmap';
+import { roadmapDiagnostics } from '../core/roadmap-md';
 import { createFakeRunner } from './fake-runner';
 
 // --- tiny argv parser (no commander/yargs — a test harness, small surface) ---
@@ -210,6 +212,17 @@ async function createWorkOrderCommand(argv: string[], store: ReturnType<typeof c
     process.stderr.write(`✗ ${tracks.error}\n`);
     return 1;
   }
+  // WO-0048: --task must name a task of the workspace's roadmap — refused (never silently dropped)
+  // when unknown, listing the valid ids; an absent/unparsable roadmap fails closed.
+  let taskRef: string | undefined;
+  if (draft.task !== undefined) {
+    const res = resolveTaskRef(await store.getRoadmapMd(ws.id), draft.task);
+    if (!res.ok) {
+      process.stderr.write(`✗ ${res.error}\n`);
+      return 1;
+    }
+    taskRef = draft.task;
+  }
   try {
     const wo = await store.createWorkOrder({
       workspaceId: ws.id,
@@ -218,8 +231,82 @@ async function createWorkOrderCommand(argv: string[], store: ReturnType<typeof c
       trackRepos: tracks.tracks.map((t) => rid(t)),
       reviewMode: draft.reviewMode,
       contextFiles: draft.contextFiles,
+      ...(taskRef !== undefined ? { taskRef } : {}),
     });
-    process.stdout.write(`created ${wo.id} "${wo.title}" — workspace ${ws.id}; tracks: ${tracks.tracks.join(', ')}; review: ${draft.reviewMode}\n`);
+    process.stdout.write(`created ${wo.id} "${wo.title}" — workspace ${ws.id}; tracks: ${tracks.tracks.join(', ')}; review: ${draft.reviewMode}${taskRef ? `; task: ${taskRef}` : ''}\n`);
+    return 0;
+  } catch (e) {
+    process.stderr.write(`✗ ${String(e)}\n`);
+    return 1;
+  }
+}
+
+// WO-0048 — `roadmap show|validate --workspace W`: the spine, verifiable without GUI. show is a
+// VIEW (exit 0 for absent/invalid — it prints the surface); validate is the gate (exit 1 on any
+// error diagnostic, the doctorCommand posture). An absent roadmap validates clean: the invitation
+// state is legitimate, not broken.
+async function roadmapCommand(sub: string | undefined, opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  if (sub !== 'show' && sub !== 'validate') {
+    process.stderr.write('usage: roadmap <show|validate> --workspace <id-or-label>\n');
+    return 2;
+  }
+  const arg = typeof opts.workspace === 'string' ? opts.workspace : undefined;
+  if (!arg) {
+    process.stderr.write('✗ missing required --workspace <id-or-label>\n');
+    return 2;
+  }
+  const workspaces = await store.getWorkspaces();
+  const ws = workspaces.find((w) => w.id === arg) ?? workspaces.find((w) => w.label === arg);
+  if (!ws) {
+    const known = workspaces.map((w) => `${w.id} (${w.label})`).join(', ') || 'none yet — run create-workspace first';
+    process.stderr.write(`✗ no workspace "${arg}" — known: ${known}\n`);
+    return 1;
+  }
+  if (sub === 'show') {
+    process.stdout.write(formatRoadmapShow(await store.getRoadmap(ws.id)) + '\n');
+    return 0;
+  }
+  const md = await store.getRoadmapMd(ws.id);
+  const diags = md === '' ? ('absent' as const) : roadmapDiagnostics(md, { workspaceSlug: ws.id, knownRepos: ws.repos.map((r) => r as string) });
+  const out = formatRoadmapValidate(diags);
+  process.stdout.write(out.text + '\n');
+  return out.exitCode;
+}
+
+// WO-0048 — `docs-root --workspace W [--root DIR] [--clear]`: the structure-root switch, no GUI
+// needed. Docket NEVER moves files and NEVER writes .gitignore (ADR-0016) — the command says so at
+// every change, because the failure mode (an empty new root) silently restarts WO numbering.
+async function docsRootCommand(opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
+  const arg = typeof opts.workspace === 'string' ? opts.workspace : undefined;
+  if (!arg) {
+    process.stderr.write('usage: docs-root --workspace <id-or-label> [--root <dir>] [--clear]\n');
+    return 2;
+  }
+  if (opts.root !== undefined && opts.clear === true) {
+    process.stderr.write('✗ pass either --root <dir> or --clear, not both\n');
+    return 2;
+  }
+  const workspaces = await store.getWorkspaces();
+  const ws = workspaces.find((w) => w.id === arg) ?? workspaces.find((w) => w.label === arg);
+  if (!ws) {
+    const known = workspaces.map((w) => `${w.id} (${w.label})`).join(', ') || 'none yet — run create-workspace first';
+    process.stderr.write(`✗ no workspace "${arg}" — known: ${known}\n`);
+    return 1;
+  }
+  try {
+    if (opts.clear === true) {
+      await store.setDocsRoot(ws.id, undefined);
+      process.stdout.write(`structure root: docs (cleared — the default)\n`);
+      return 0;
+    }
+    if (typeof opts.root === 'string') {
+      await store.setDocsRoot(ws.id, opts.root);
+      process.stdout.write(
+        `structure root: ${await store.getDocsRoot(ws.id)} — documents DO NOT move; WO numbering restarts at WO-0001 under the new root until you move the folders yourself. Docket never moves files, never writes .gitignore.\n`,
+      );
+      return 0;
+    }
+    process.stdout.write(`structure root: ${await store.getDocsRoot(ws.id)}\n`);
     return 0;
   } catch (e) {
     process.stderr.write(`✗ ${String(e)}\n`);
@@ -276,14 +363,18 @@ const HELP_TEXT =
   '  create-workspace --label L --repo PATH [--repo PATH]... [--decision-store PATH]\n' +
   '          create a workspace (a fresh --db works: the file is created + migrated)\n' +
   '  create-work-order --workspace W --title T [--description D] [--track SLUG]...\n' +
-  '          [--review-mode gates|every-step]\n' +
+  '          [--review-mode gates|every-step] [--task <roadmap-task-id>]\n' +
   '          author a work order into the workspace decision store (W = id or label;\n' +
-  '          tracks default to all code repos — the decision store excluded)\n' +
+  '          tracks default to all code repos — the decision store excluded; --task links\n' +
+  '          it to a roadmap task — refused when the id is not on the roadmap)\n' +
   '  drive <woId> [--plan | --step N | --review N | --prompt TXT] [--cwd PATH] [--fake SCRIPT]\n' +
   '          [--policy auto|ask] [--format stream|jsonl|quiet] [--approve-plan auto] [--resume SID]\n' +
   '  approve-plan <woId>                      approve the pending plan\n' +
   '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
   '  remove-workspace <id-or-label> [--yes]   delete a workspace + its WOs (refuses without --yes)\n' +
+  '  roadmap <show|validate> --workspace W    the derived faz/task view / hand-edit diagnostics\n' +
+  '  docs-root --workspace W [--root DIR|--clear]\n' +
+  '          the structure root (default docs/; .docket one setting away — files never move)\n' +
   '  doctor [--verify]                        db + provider readiness (full handshake with --verify)\n' +
   '  ls                                       list work orders\n' +
   '  show <woId>                              show a work order + its steps\n' +
@@ -330,6 +421,8 @@ export async function main(argv: string[]): Promise<number> {
     case 'approve-plan': return await approvePlanCommand(positional[1], store!);
     case 'close': return await closeCommand(positional[1], opts, store!);
     case 'remove-workspace': return await removeWorkspaceCommand(positional[1], opts, store!);
+    case 'roadmap': return await roadmapCommand(positional[1], opts, store!);
+    case 'docs-root': return await docsRootCommand(opts, store!);
     case 'doctor': return await doctorCommand(opts, dbPath, store);
     case 'ls': return await lsCommand(store!);
     case 'show': return await showCommand(positional[1], store!);

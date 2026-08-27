@@ -217,3 +217,21 @@ describe('repoSlugOf — the store-side repoBase, mirrored', () => {
     expect(repoSlugOf('/')).toBe('repo');
   });
 });
+
+describe('parseCreateWorkOrderArgs — --task (WO-0048)', () => {
+  it('parses --task into the draft', () => {
+    const r = parseCreateWorkOrderArgs(['create-work-order', '--workspace', 'w', '--title', 'T', '--task', 'f1-t2']);
+    expect(r).toMatchObject({ ok: true, input: { task: 'f1-t2' } });
+  });
+
+  it('absent --task leaves the draft unlinked', () => {
+    const r = parseCreateWorkOrderArgs(['create-work-order', '--workspace', 'w', '--title', 'T']);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.input.task).toBeUndefined();
+  });
+
+  it('a valueless --task is a usage error', () => {
+    const r = parseCreateWorkOrderArgs(['create-work-order', '--workspace', 'w', '--title', 'T', '--track']);
+    expect(r.ok).toBe(false);
+  });
+});

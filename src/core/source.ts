@@ -5,6 +5,7 @@
 // Async (WO-0009): the store is a real data source, so reads return Promises and the UI
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
 import type { RepoId, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
+import type { RoadmapView } from './roadmap';
 
 export interface RepoConnectionInput {
   path: string;
@@ -54,6 +55,7 @@ export interface CreateWorkOrderInput {
   flowMode?: FlowMode; // → order.md front-matter (flow_mode, WO-0045); omit = auto (the today behavior)
   contextFiles: string[]; // local file paths → order.md Context
   permissionRule?: PermissionRule; // → order.md front-matter (permission_rule, WO-0031c); omit = the Settings default
+  taskRef?: string; // → order.md front-matter task (WO-0048, ADR-0016): the roadmap link — document text, never a DB column
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
@@ -64,6 +66,7 @@ export interface UpdateWorkOrderInput {
   reviewMode?: ReviewMode;
   flowMode?: FlowMode; // the Akış chip toggle — audited as flow_mode_changed
   permissionRule?: PermissionRule;
+  taskRef?: string | null; // → order.md front-matter task (WO-0048): string sets the link, null drops it
 }
 
 export interface WorkOrderSource {
@@ -101,6 +104,19 @@ export interface WorkOrderSource {
   // definition row and the remote stay. Throws (changing nothing) when the new path's basename
   // differs from the RepoId — identity is the basename; a different name is a different repo.
   updateRepoPath(id: WorkspaceId, repoId: RepoId, newPath: string): Promise<void>;
+
+  // The roadmap layer (WO-0048, ADR-0016). getRoadmap reads <structure root>/roadmap.md, joins the
+  // workspace's work orders by re-parsing each order.md's `task:` key at view time (no DB column —
+  // ADR-0010 rule 1; the N-file join is TD-055), and derives the whole view: statuses, counts,
+  // sıradaki. '' file → {kind:'absent'}; parse error or any error diagnostic → {kind:'invalid'}
+  // carrying the named reasons — never a silent empty (the stop-and-ask gate).
+  getRoadmap(id: WorkspaceId): Promise<RoadmapView>;
+  // The raw roadmap.md text ('' when the file does not exist) — the editor's (WO-0049) material.
+  getRoadmapMd(id: WorkspaceId): Promise<string>;
+  // Write roadmap.md under the structure root (creating the root). Refuses — writing nothing —
+  // when the incoming text fails to parse: the write path never destroys the machine fence, and a
+  // written doc must re-read byte-identical. The COMMIT stays the operator's act (ADR-0010).
+  saveRoadmap(id: WorkspaceId, md: string): Promise<void>;
 
   // Work-order creation (WO-0015). The store brands the id, authors order.md into the decision-store
   // working tree (Docket does NOT commit — operator commits; ADR-0009 M2 addendum), and inserts a thin

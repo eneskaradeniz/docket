@@ -80,6 +80,25 @@ rule restated with its reasons in two places is the duplication this repository 
   keep-the-cap) and raising the cap is a permanent settings write that re-runs the refused drive —
   never a host-side work-around, never a force flag.
 
+## Roadmap layer — ADR-0016
+- The planning layer ABOVE the work order (roadmap → faz → task → work order). One `roadmap.md` per
+  workspace at the structure root (default `docs/`, the `docs_root:<wsId>` app_setting); fazlar and
+  tasks live in ONE ```fazlar fence (`FazSpec`/`TaskSpec`, ids `^[a-z0-9][a-z0-9-]*$` unique
+  roadmap-wide, keys English, values verbatim operator language); the fence parses all-or-nothing with
+  named diagnostics (`src/core/roadmap-md.ts`).
+- The task→WO link lives ONLY in order.md front-matter (`task:`) — never a DB column, never a
+  backlink in roadmap.md; `getRoadmap` joins by re-reading the workspace's order.md files at view
+  time (ADR-0010 rule 1; the cost is TD-055). Storing a faz/task status anywhere, or adding a
+  `work_order.task_ref` column, contradicts ADR-0016 — stop and ask (WO-0048's gates).
+- Faz/task status is DERIVED (`src/core/roadmap.ts`): task from its linked WOs (none → planli, any
+  open → kosuyor, all closed → tamam), faz from its tasks + blockers (kosuyor outranks bekliyor;
+  zero-task → planli). The spawn action (`İş emri aç`) exists only on a planli task with a resolved
+  repo in an unblocked faz; otherwise it is ABSENT with reason `kosuyor|bloke|repo_yok` (ADR-0001).
+  An orphan `task:` is invisible on the roadmap; a `blockedBy` cycle renders both bekliyor + warning.
+- The structure-root switch (`docs_root:<wsId>`, default `docs/`) never moves files and never writes
+  a .gitignore line — both stay the operator's acts; Docket only warns (numbering restarts at
+  WO-0001 under the new root).
+
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears
   anywhere in `src/` except the provider adapter (`src/adapters/`), the one place a provider SDK is named
@@ -101,6 +120,9 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Where things live — ADR-0003, ADR-0001
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
+- Workspace roadmap (the faz/task planning layer, ADR-0016): `<structure root>/roadmap.md` (default
+  `docs/roadmap.md`, per-workspace `docs_root:<wsId>`); work orders link to its tasks via the
+  order.md `task:` front-matter key.
 - Session-drive orchestration (prompt assembly + persistence + permission handling) is host-agnostic in
   `src/core/pipeline.ts`; the composition root wires `createPipeline({ runner, store, permission })`. The
   `SessionStore` port is `src/core/session-store.ts`. The host contributes only `cwd` + a permission policy.

@@ -88,3 +88,41 @@ describe('flow_mode back to auto (WO-0045)', () => {
     expect(parseOrderMd(back).flowMode).toBe('auto');
   });
 });
+
+describe('applyOrderMdEdits — taskRef (WO-0048, the roadmap link)', () => {
+  it('sets the task key, inserting it when absent, neighbours intact', () => {
+    const out = applyOrderMdEdits(base, { taskRef: 'f1-t3' });
+    expect(parseOrderMd(out).taskRef).toBe('f1-t3');
+    expect(out).toContain('review_mode: gates');
+    expect(out).toContain('## Objective'); // the body is untouched
+  });
+
+  it('rewrites an existing task key in place', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'task: f0-t1'].join('\n'), 'Body.');
+    const out = applyOrderMdEdits(linked, { taskRef: 'f1-t3' });
+    expect(parseOrderMd(out).taskRef).toBe('f1-t3');
+    expect(out).not.toContain('f0-t1');
+  });
+
+  it('null DROPS the key — silence is unlinked (the flow_mode idiom)', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'task: f0-t1'].join('\n'), 'Body.');
+    const out = applyOrderMdEdits(linked, { taskRef: null });
+    expect(parseOrderMd(out).taskRef).toBeUndefined();
+    expect(out).not.toContain('task:');
+  });
+
+  it('an untouched task key survives any other patch byte-for-byte', () => {
+    const linked = doc(
+      ['id: WO-0005', 'title: Old title', 'task: f1-t3'].join('\n'),
+      ['# WO-0005', '', '## Objective', '', 'Old.', '', '## Closure', '', 'Merged.'].join('\n'),
+    );
+    const out = applyOrderMdEdits(linked, { title: 'New title' });
+    expect(out).toContain('task: f1-t3');
+    expect(out).toContain('## Closure\n\nMerged.');
+  });
+
+  it('undefined = untouched: a patch without taskRef never touches the key', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'task: f1-t3'].join('\n'), 'Body.');
+    expect(applyOrderMdEdits(linked, {})).toBe(linked);
+  });
+});

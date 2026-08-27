@@ -22,6 +22,7 @@ export interface CreateWorkOrderDraft {
   tracks: string[]; // requested repo slugs, deduped, argv order; [] = all code tracks (resolveTracks)
   reviewMode: ReviewMode; // 'gates' default
   contextFiles: string[]; // no CLI flag yet (the GUI picks files) — always [], kept for the store input
+  task?: string; // --task <ref> (WO-0048): the roadmap task link — resolved against roadmap.md by index.ts
 }
 
 /** The last path segment of a repo path — the slug the store brands as a RepoId (its `repoBase`). */
@@ -126,13 +127,14 @@ export function parseCreateWorkspaceArgs(argv: string[]): Parsed<CreateWorkspace
 export function parseCreateWorkOrderArgs(argv: string[]): Parsed<CreateWorkOrderDraft> {
   const { flags, stray } = tokenize(argv, 'create-work-order');
   const err =
-    flagError(flags, ['workspace', 'title', 'description', 'track', 'review-mode']) ??
+    flagError(flags, ['workspace', 'title', 'description', 'track', 'review-mode', 'task']) ??
     (stray.length ? `unexpected argument "${stray[0]}" (this command takes flags only)` : undefined);
   if (err) return { ok: false, error: err };
   const workspace = lastOf(flags, 'workspace');
   const title = lastOf(flags, 'title');
   const description = lastOf(flags, 'description');
   const reviewModeRaw = lastOf(flags, 'review-mode');
+  const task = lastOf(flags, 'task');
   if (workspace === undefined || !workspace.trim()) return { ok: false, error: 'missing required --workspace <id-or-label>' };
   if (title === undefined || !title.trim()) return { ok: false, error: 'missing required --title <text>' };
   if (reviewModeRaw !== undefined && reviewModeRaw !== 'gates' && reviewModeRaw !== 'every-step') {
@@ -152,6 +154,7 @@ export function parseCreateWorkOrderArgs(argv: string[]): Parsed<CreateWorkOrder
       tracks,
       reviewMode: reviewModeRaw ?? 'gates',
       contextFiles: [],
+      ...(task !== undefined && task.trim() ? { task: task.trim() } : {}),
     },
   };
 }
