@@ -394,10 +394,24 @@ strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefille
       (the `yol` world; ids printed, never hard-coded). ADR-0007 addendum: faz/task ids join the
       WO-NNNN carve-out (`fazIdLabel`). 705 tests / typecheck both / boundaries / build green.
       Spec: `docs/work-orders/WO-0049-yol-haritasi-gui/order.md`.
-- [ ] **WO-0050** — AI: the WO-less architect draft drive (session migration: nullable
+- [x] **WO-0050** — AI: the WO-less architect draft drive (session migration: nullable
       `work_order_id` + `workspace_id`, budget accounting widened, `roadmap_draft` pending table,
       parse-guard), source-doc import as paths-in-prompt, the cwd fix from the connection table,
       draft UI (RoadmapPane + TASLAK card), CLI `roadmap draft|approve`, E2E FakeRunner scenarios.
+      Delivered as `DriveInput = WoDriveInput | DraftDriveInput` (isDraftDrive the narrowing point;
+      isPlanDrive true unchanged — zero runner-adapter change) + `roadmap-draft.ts` (paths-not-
+      contents prompt, `draftSummaryOf`); the transactional session rebuild backfills
+      `workspace_id` through the WO join; the month sum keys on the workspace so a draft can never
+      bypass the cap (`budgetBlockForDraft`); plan_ready → the pending `roadmap_draft` row (fresh
+      drafts supersede, İtiraz resumes, Onayla = the parse-guarded atomic write — commit the
+      operator's); the cwd fix (`driveCwd` from the connection table, every GUI drive); the
+      roadmap screen's live half (RoadmapPane `MİMAR — TASLAK`, the ✦ dialog, the TASLAK card with
+      the structured Düzenle, ask/question cards, the refusal card); CLI `roadmap draft|approve`;
+      E2E 62→69 (the `taslak`/`taslak-kirli`/`taslak-kapi` worlds). ADR-0013 (the second live
+      surface) + ADR-0016 (the draft mechanics) addenda, CLAUDE.md lines, TD-056/057. Operator
+      rulings 2026-08-27: structured Düzenle, supersede, draft spend out of the head. 743 tests /
+      typecheck both / boundaries / build / 69 E2E green. Spec:
+      `docs/work-orders/WO-0050-yol-haritasi-taslak/order.md`.
 
 ## Later
 

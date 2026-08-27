@@ -2,7 +2,7 @@
 id: WO-0050
 title: Roadmap AI — the WO-less architect draft drive, paths-in-prompt import, RoadmapPane, the TASLAK card
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -163,7 +163,33 @@ Out of scope:
   The GUI eyeball of frames 03/04/05 + the cwd-change announcement approved on the same evidence.
 - ci: green on the PR (typecheck both / `npm test` 743 / `check:boundaries` / `build` /
   `test:ui` 69 specs).
-- closure: ROADMAP M6 WO-0050 ticked with the merge sha; TD-056/TD-057 opened.
+- closure: RESOLVED — merged #56 (`1811f0d`, 2026-08-28); ROADMAP M6 ticked with the sha;
+  TD-056/TD-057 opened in `a071333`'s successors (`596ef0d`).
+
+## Closure
+
+Merged **#56** (`1811f0d`, 2026-08-28) — plan round `a071333` + feature `596ef0d` (63 files,
++2618/−241) + the reviewer round `a66aac6` (1 major + 6 minor findings, all fixed: the
+objection's refused start keeps its note — plan R2's own rule; the empty objection never sends;
+the supersede guard's keep-prior renders its honest line; the bad_json diagnostic carries its
+message; pickFiles refusals toast; the draft ask toast is background-gated). Evidence state: the
+drive input is the `WoDriveInput | DraftDriveInput` union with `isPlanDrive` true unchanged (the
+ExitPlanMode-DENY / plan_ready contract rides verbatim — pinned in runner + pipeline tests); the
+session rebuild backfills `workspace_id` through the WO join on every vintage (the legacy-db
+fixture pins rows surviving, the orphan `''` key, and WO-less writes landing); the budget gate's
+draft arm is pipeline-enforced pre-spawn with the month sum keyed on the workspace (the bypass
+pinned shut); `plan_ready` routes to the pending `roadmap_draft` row (supersede/resume/refusal
+semantics test-pinned; Onayla atomic — parse-guard + byte-identical re-read + row DELETE); the
+cwd fix resolves every GUI drive from the connection table with the disconnected-track residue
+documented; the roadmap screen carries the second live surface in the shared pane grammar with
+the ✦ dialog (paths die with the dialog), the TASLAK card (structured Düzenle over
+`applyFazlarEdits`; İtiraz = the same-session resume), ask/question cards, and the refusal card —
+E2E 69 specs green across the `taslak`/`taslak-kirli`/`taslak-kapi` worlds incl. reload
+persistence and the CLI import round-trip. Open follow-up: TD-056 (the fence root vs
+`docs_root`), TD-057 (the draft transcript after the drive ends). Accepted deviation (review f7):
+a fence-less draft offers no Düzenle — the structured editor cannot repair a document with no
+fence; İtiraz is the path. **The roadmap trilogy is complete** (WO-0048 spine → WO-0049 GUI →
+WO-0050 AI).
 
 ## Stop-and-ask gates
 
