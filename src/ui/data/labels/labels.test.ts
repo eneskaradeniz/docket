@@ -45,4 +45,18 @@ describe('locale bundles (WO-0035)', () => {
     expect(en.UI.budgetWarnLineKnown(4.2, 5)).toContain('$4.20');
     expect(en.UI.budgetWarnLineKnown(4.2, 5)).toContain('known spend');
   });
+
+  it('the roadmap head meta carries the money voice + the known qualifier (WO-0049)', () => {
+    expect(tr.UI.roadmapHeadMeta(1, 4, 2, 14.02)).toBe('1/4 faz tamam · 2 açık iş emri · $14,02');
+    expect(tr.UI.roadmapHeadMetaKnown(1, 4, 2, 14.02)).toContain('bilinen $14,02');
+    expect(en.UI.roadmapHeadMeta(1, 4, 2, 14.02)).toContain('$14.02');
+    expect(en.UI.roadmapHeadMetaKnown(1, 4, 2, 14.02)).toContain('known $14.02');
+  });
+
+  it('fazLabel renders the id’s own number verbatim, never an ordinal (WO-0049)', () => {
+    expect(tr.fazLabel('f0')).toBe('FAZ 0');
+    expect(tr.fazLabel('f4')).toBe('FAZ 4');
+    expect(tr.fazLabel('onboarding')).toBe('FAZ ONBOARDING');
+    expect(en.fazLabel('f4')).toBe('PHASE 4');
+  });
 });

@@ -49,6 +49,13 @@ number stays in the "Never translated" column — it is domain data, only the re
 WO-0006 (TD-014); the `.replace(` proxy check (c6) never caught `{id}` anyway, so enforcement stays on the
 "components carry no display copy" rule rather than a new grep.
 
+**Addendum (2026-08-27, WO-0049): the roadmap's faz/task ids join the carve-out.** A faz id (`f0`) or task
+id (`f0-t3`) from roadmap.md's ```fazlar fence is the same KIND of thing as `WO-0006` — the operator-authored
+reference the operator reads and cites (order.md's `task:` key names it verbatim), not an opaque internal id.
+It renders through the same seam: `fazIdLabel` for the raw marker (the done-fold's `f0 · f3` run — the
+approved mockup frame 02) and `fazLabel` for the word form (`FAZ 4`). Everything else stays as it was: a raw
+id never reaches JSX as display copy, and the label functions are the only route.
+
 ## Decision — theming
 
 Light / dark / system, with system as the default. Implemented with semantic tokens (surface, text, border,

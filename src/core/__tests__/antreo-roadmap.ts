@@ -4,9 +4,14 @@
 // file (no .test suffix — vitest does not collect it).
 import type { FazSpec } from '../roadmap-md';
 import { buildRoadmapMd } from '../roadmap-md';
+import type { WorkOrderId } from '../types';
 
 export const ANTREO_WORKSPACE = 'antreo-app';
 export const ANTREO_REPOS = ['api', 'mobile', 'docs'];
+
+/** Tests may build identities (the boundary check's own carve-out) — the fixture's WO ids are the
+ *  store's branded ids, so the view's openWoIds typecheck through to the UI's chips. */
+const wo = (id: string): WorkOrderId => id as WorkOrderId;
 
 /** Mockup frame-01 EXACTLY: f0 done, f1 running (WO-0012 on fotoğraf), f2 blocked by f4. */
 export const antreoFazlar: FazSpec[] = [
@@ -67,7 +72,7 @@ export const antreoRoadmapMd: string = buildRoadmapMd({
 });
 
 export interface AntreoOrderFact {
-  id: string;
+  id: WorkOrderId;
   closed: boolean;
   costUsd: number;
   taskRef?: string;
@@ -80,14 +85,14 @@ export interface AntreoOrderFact {
  * (the görevsiz iş emri possibility) — head: `1/4 faz tamam · 4 açık iş emri · $14,02`.
  */
 export const antreoOrderFacts: AntreoOrderFact[] = [
-  { id: 'WO-0001', closed: true, costUsd: 3.1, taskRef: 'f0-t1' },
-  { id: 'WO-0002', closed: true, costUsd: 4.2, taskRef: 'f0-t1' },
-  { id: 'WO-0003', closed: true, costUsd: 1.0, taskRef: 'f0-t1' },
-  { id: 'WO-0004', closed: true, costUsd: 2.6, taskRef: 'f0-t2' },
-  { id: 'WO-0005', closed: true, costUsd: 1.5, taskRef: 'f0-t2' },
-  { id: 'WO-0006', closed: true, costUsd: 0.0, taskRef: 'f1-t1' },
-  { id: 'WO-0012', closed: false, costUsd: 1.62, taskRef: 'f1-t3' },
-  { id: 'WO-0007', closed: false, costUsd: 0 },
-  { id: 'WO-0008', closed: false, costUsd: 0 },
-  { id: 'WO-0009', closed: false, costUsd: 0 },
+  { id: wo('WO-0001'), closed: true, costUsd: 3.1, taskRef: 'f0-t1' },
+  { id: wo('WO-0002'), closed: true, costUsd: 4.2, taskRef: 'f0-t1' },
+  { id: wo('WO-0003'), closed: true, costUsd: 1.0, taskRef: 'f0-t1' },
+  { id: wo('WO-0004'), closed: true, costUsd: 2.6, taskRef: 'f0-t2' },
+  { id: wo('WO-0005'), closed: true, costUsd: 1.5, taskRef: 'f0-t2' },
+  { id: wo('WO-0006'), closed: true, costUsd: 0.0, taskRef: 'f1-t1' },
+  { id: wo('WO-0012'), closed: false, costUsd: 1.62, taskRef: 'f1-t3' },
+  { id: wo('WO-0007'), closed: false, costUsd: 0 },
+  { id: wo('WO-0008'), closed: false, costUsd: 0 },
+  { id: wo('WO-0009'), closed: false, costUsd: 0 },
 ];

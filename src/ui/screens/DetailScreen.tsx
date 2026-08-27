@@ -28,6 +28,7 @@ export function DetailScreen({
   onOverrideVerdict,
   onRetractSteerNote,
   autoRequestPlan,
+  taskChip,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -55,6 +56,8 @@ export function DetailScreen({
   onDelete: () => Promise<void>;
   /** WO-0031c "Oluştur ve plan iste": fire the architect plan drive once on arrival. */
   autoRequestPlan?: boolean;
+  /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight through. */
+  taskChip?: { fazId: string; taskTitle: string } | 'missing';
 }) {
   return (
     <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1160px] flex-col overflow-hidden px-5 pb-3.5 pt-2.5">
@@ -80,6 +83,7 @@ export function DetailScreen({
         onOverrideVerdict={onOverrideVerdict}
         onDelete={onDelete}
         onRetractSteerNote={onRetractSteerNote}
+        taskChip={taskChip}
       />
     </main>
   );

@@ -6,14 +6,18 @@ import type { WorkspaceBudgetView } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
 import { overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
+import { roadmapTaskOf, type RoadmapView } from '../../core/roadmap';
+import { DEFAULT_DOCS_ROOT } from '../../core/roadmap-md';
 import { useLabels } from '../data/locale';
-import { AppShell } from '../chrome/AppShell';
+import { AppShell, type Surface } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
+import { RoadmapScreen } from '../screens/RoadmapScreen';
 import { InviteHero } from '../components/InviteHero';
+import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 import { createDriveStore, DriveStoreContext, useActiveDrive } from '../components/session/drive-store';
 import { ToastHost, toast } from '../chrome/ToastHost';
 
@@ -38,6 +42,18 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   const [detailError, setDetailError] = useState(false); // B3: a failed detail load must not render as loading (WO-0026)
   const [woCreateOpen, setWoCreateOpen] = useState(false);
   const [wsCreateOpen, setWsCreateOpen] = useState(false);
+  // WO-0049: the sibling surface (ADR-0016 karar 4). Detail renders OVER either surface — clearing
+  // selectedId reveals the last one, so the roadmap → WO chip → detail → back round-trip needs no
+  // second state.
+  const [surface, setSurface] = useState<Surface>('board');
+  // WO-0049: the roadmap view (undefined = loading) + the effective structure root. Read once per
+  // mount/entry (WO-0048 R2) + at the moments the facts move (drive ends, a WO's task link changes,
+  // a save, a root switch) — never on a timer.
+  const [roadmap, setRoadmap] = useState<RoadmapView | undefined>(undefined);
+  const [docsRoot, setDocsRoot] = useState<string>(DEFAULT_DOCS_ROOT);
+  // WO-0049: the roadmap's `▸ İş emri aç` opens the create modal PRE-FILLED (kare 06); undefined =
+  // the plain board flow.
+  const [spawnTask, setSpawnTask] = useState<WoSpawnPrefill | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +112,19 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     () => parseOrderMd(detail?.docs.order ?? ''),
     [detail],
   );
+
+  // WO-0049 (kare 07): the detail band's task chip. A `task:` ref resolves against the ready view;
+  // an orphan ref (or a read roadmap that is absent/invalid) degrades to the qualifier — never a
+  // lie, never a raw id; an unlinked WO carries no chip, and an UNREAD roadmap (in flight/failed)
+  // renders nothing either — "not in the roadmap" is a claim only a finished read can make.
+  const detailTaskChip = useMemo<{ fazId: string; taskTitle: string } | 'missing' | undefined>(() => {
+    const ref = parsedOrder.taskRef;
+    if (ref === undefined) return undefined;
+    if (roadmap === undefined) return undefined;
+    if (roadmap.kind !== 'ready') return 'missing';
+    const loc = roadmapTaskOf(roadmap, ref);
+    return loc !== undefined ? { fazId: loc.fazId, taskTitle: loc.taskTitle } : 'missing';
+  }, [parsedOrder, roadmap]);
 
   // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. Created before
   // the cards memo because the board reads its live snapshot (base-mobile trial).
@@ -271,6 +300,32 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   useEffect(() => {
     refreshBudget();
   }, [refreshBudget]);
+  // WO-0049: the roadmap view + the effective root, read together. The absent case is one stat
+  // (TD-055's join only runs when a roadmap.md exists); refreshes ride the same moments budget
+  // does (the drive hooks below) + surface entry + detail open + every save/root switch.
+  const refreshRoadmap = useCallback(() => {
+    if (!workspaceId) {
+      setRoadmap(undefined);
+      return;
+    }
+    void Promise.all([source.getRoadmap(workspaceId), settings.getDocsRoot(workspaceId)])
+      .then(([view, root]) => {
+        setRoadmap(view);
+        setDocsRoot(root);
+      })
+      .catch(() => setRoadmap(undefined));
+  }, [source, settings, workspaceId]);
+  useEffect(() => {
+    refreshRoadmap();
+  }, [refreshRoadmap]);
+  // The screen's own read-once-per-entry (WO-0048 R2) + the detail chip's freshness: every detail
+  // open re-reads (a hand-edit between visits must not show a stale task title).
+  useEffect(() => {
+    if (surface === 'roadmap') refreshRoadmap();
+  }, [surface, refreshRoadmap]);
+  useEffect(() => {
+    if (selectedId !== null) refreshRoadmap();
+  }, [selectedId, refreshRoadmap]);
   // The refusal card's RAISE action (WO-0047): a PERMANENT settings write (the operator's ruling —
   // no one-month override); the warn ratio keeps the stored value, defaulting to 80.
   const handleRaiseBudget = useCallback(
@@ -301,8 +356,14 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       wsWoCount={wsWoCount}
       wsDriveLive={wsDriveLive}
       onBudgetChanged={refreshBudget}
+      onDocsRootChanged={refreshRoadmap}
+      surface={surface}
+      onSurfaceChange={setSurface}
     />
   ) : null;
+
+  // The active workspace — needed by the main chain below (the roadmap screen takes it as a prop).
+  const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
 
   let main;
   if (load === 'loading') {
@@ -363,10 +424,26 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         reloadDetail={reloadDetail}
         onDelete={handleDeleteWorkOrder}
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
+        taskChip={detailTaskChip}
       />
     ) : (
       <p className="loadline px-4 py-8">{UI.loadSteps}</p>
     );
+  } else if (surface === 'roadmap') {
+    // WO-0049: the sibling surface, keyed by workspace like the board (a fresh surface on swap).
+    // currentWorkspace is non-null here — the branch sits under workspaces.length > 0.
+    main = currentWorkspace ? (
+      <RoadmapScreen
+        key={workspaceId ?? 'none'}
+        view={roadmap}
+        workspace={currentWorkspace}
+        docsRoot={docsRoot}
+        source={source}
+        onSpawn={(p) => setSpawnTask(p)}
+        onOpenWo={setSelectedId}
+        onRefresh={refreshRoadmap}
+      />
+    ) : null;
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
     // transition of the old one — the all-done pulse must not fire across the swap.
@@ -380,8 +457,6 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       />
     );
   }
-
-  const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
 
   // WO-0028 / Bulgu 12: the app-level drive store (created above the cards memo). When ANY drive ends
   // (wherever the operator is), the board aggregates refresh and the open detail (if any) reloads, so
@@ -406,6 +481,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     driveStore.onEnd = (key) => {
       refreshWorkOrders();
       refreshBudget(); // WO-0047: the terminal record lands the drive's cost — the month figure moves
+      refreshRoadmap(); // WO-0049: a closed/opened WO flips its task's derived status
       setDetailNonce((n) => n + 1);
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
@@ -418,6 +494,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     driveStore.onStarted = () => {
       refreshWorkOrders();
       refreshBudget(); // WO-0047: a resumed drive's accumulated cost rides the row from the start
+      refreshRoadmap();
     };
     // base-mobile trial: the pipeline returns the session row to 'running' when the last ask is
     // answered, but nothing else fires for ask_resolved — refresh here so the rows snapshot agrees
@@ -426,6 +503,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     driveStore.onAskResolved = () => {
       refreshWorkOrders();
       refreshBudget();
+      refreshRoadmap();
     };
     driveStore.onAsk = (key) => {
       refreshWorkOrders();
@@ -449,12 +527,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     driveStore.onError = (key) => {
       refreshWorkOrders();
       refreshBudget(); // WO-0047: an erroring drive still records its observed cost
+      refreshRoadmap();
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
         toast.push({ kind: 'error', title: UI.toastErrTitle(woIdLabel(wo)) });
       }
     };
-  }, [driveStore, refreshWorkOrders, refreshBudget, UI, woIdLabel]);
+  }, [driveStore, refreshWorkOrders, refreshBudget, refreshRoadmap, UI, woIdLabel]);
 
   // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator. The
   // live fold outranks a stale stopped_asking row — an ask the operator already answered is being
@@ -470,15 +549,21 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       {chrome}
       {main}
       <ToastHost />
-      {woCreateOpen && currentWorkspace ? (
+      {(woCreateOpen || spawnTask !== undefined) && currentWorkspace ? (
         <WoCreateModal
           workspace={currentWorkspace}
           source={source}
           defaultRule={defaultRule}
-          onClose={() => setWoCreateOpen(false)}
+          prefill={spawnTask}
+          onClose={() => {
+            setWoCreateOpen(false);
+            setSpawnTask(undefined);
+          }}
           onCreated={(wo, withPlan) => {
             setWoCreateOpen(false);
+            setSpawnTask(undefined);
             refreshWorkOrders();
+            refreshRoadmap(); // WO-0049: the spawned WO flips its task's row (kosuyor + the chip)
             setSelectedId(wo.id); // navigate to the new work order's detail
             if (withPlan) setAutoPlanFor(wo.id); // "Oluştur ve plan iste": the architect starts on arrival
           }}

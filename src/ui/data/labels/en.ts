@@ -25,6 +25,8 @@ import type { LiveSessionStatus } from '../../../core/runner';
 import type { PermissionRule } from '../../../core/source';
 import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
+import type { FazStatus } from '../../../core/roadmap';
+import type { RoadmapDiagnosticCode } from '../../../core/roadmap-md';
 import type { Labels } from './tr';
 
 export const BUCKET_LABELS: Record<BoardBucket, string> = {
@@ -625,6 +627,48 @@ export const UI = {
   budgetErrWarn: 'Enter a ratio between 1 and 100.',
   budgetMonthReadout: (m: number, cap: number) => `this month ${formatUsd(m)} / ${formatUsd(cap)}`,
   budgetMonthReadoutKnown: (m: number, cap: number) => `this month known spend ${formatUsd(m)} / ${formatUsd(cap)}`,
+  // ===== WO-0049 — the roadmap surface (mockup frames 01/02/03/06/07; 04/05 are WO-0050's) =====
+  surfaceBoard: 'Board',
+  surfaceRoadmap: 'Roadmap',
+  roadmapReading: 'Reading the roadmap…',
+  roadmapInviteLine: 'This workspace has no roadmap yet.',
+  roadmapInviteFile: (root: string) => `File: ${root}/roadmap.md — create it by hand if you want.`,
+  roadmapInvalidLine: 'The roadmap could not be read — fix the file by hand:',
+  roadmapHeadMeta: (done: number, total: number, open: number, usd: number) =>
+    `${done}/${total} phases done · ${open} open work orders · ${formatUsd(usd)}`,
+  roadmapHeadMetaKnown: (done: number, total: number, open: number, usd: number) =>
+    `${done}/${total} phases done · ${open} open work orders · known ${formatUsd(usd)}`,
+  roadmapFazMeta: (done: number, total: number, closedWo: number, closedUsd: number, openWo: number) => {
+    let s = `${done}/${total} tasks`;
+    if (closedWo > 0) s += ` · ${closedWo} WO${closedWo === 1 ? '' : 's'} closed`;
+    if (closedUsd > 0) s += ` · ${formatUsd(closedUsd)}`;
+    if (openWo > 0) s += ` · ${openWo} open work order${openWo === 1 ? '' : 's'}`;
+    return s;
+  },
+  roadmapBlokeWord: 'Blocked',
+  roadmapBlokeFallback: (blockers: string) => `${blockers} must finish first`,
+  roadmapStripLine: 'phase order · click to scroll',
+  roadmapDoneFold: (n: number) => `${n} phases done`,
+  roadmapDoneFoldMeta: (wo: number, usd: number) => `${wo} WO${wo === 1 ? '' : 's'} · ${formatUsd(usd)}`,
+  roadmapTaskFill: (done: number, total: number) => `${done}/${total} tasks`,
+  roadmapTaskSpawn: 'Open work order',
+  roadmapTaskClosedTail: (n: number) => `${n} WO${n === 1 ? '' : 's'} closed`,
+  roadmapTaskOpenMulti: (n: number) => `${n} open WO${n === 1 ? '' : 's'}`,
+  roadmapNextTag: 'next',
+  roadmapFazAdd: '+ Add phase',
+  roadmapFazAddTitle: 'Add phase',
+  roadmapFazAimLabel: 'Aim (optional)',
+  roadmapFazDependsLabel: 'Dependencies',
+  roadmapTaskAdd: '+ add task',
+  roadmapTaskAddTitle: 'Add task',
+  roadmapErrRepo: 'Pick a repo.',
+  roadmapSpawnContext: (faz: string, ord: number, title: string, repo?: string) =>
+    repo !== undefined ? `${faz} · TASK ${ord} · ${title} · target: ${repo}` : `${faz} · TASK ${ord} · ${title}`,
+  roadmapTaskChip: (faz: string, task: string) => `${faz} · ${task}`,
+  roadmapTaskMissing: '(task not in the roadmap)',
+  docsRootLabel: 'Structure root',
+  docsRootWarn: 'Files never move; work-order numbering restarts under the new root.',
+  docsRootErr: 'Enter a safe relative path (e.g. docs or .docket).',
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',
@@ -738,6 +782,40 @@ export function phaseLabelText(p: WoPhase): string {
   }
 }
 
+// WO-0049 — the faz status vocabulary (one vocabulary; task statuses are the subset).
+export const FAZ_STATUS_LABELS: Record<FazStatus, string> = {
+  planli: 'Planned',
+  kosuyor: 'Running',
+  bekliyor: 'Waiting',
+  tamam: 'Done',
+};
+
+// WO-0049 — the faz identity's display form: `f4` → `PHASE 4` (the id's own number, verbatim).
+export function fazLabel(id: string): string {
+  const m = /^f(\d+)$/.exec(id);
+  return m !== null ? `PHASE ${m[1]!}` : `PHASE ${id.toUpperCase()}`;
+}
+
+// WO-0049 — the fold's `f0 · f3` run rides the woIdLabel pattern (ADR-0007's 2026-08-27 addendum).
+export function fazIdLabel(id: string): string {
+  return id;
+}
+
+// WO-0049 — the invalid surface's named reasons (roadmapDiagnostics' 11 codes).
+export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
+  no_fence: () => 'no fazlar fence',
+  bad_json: (detail) => `broken JSON — ${detail}`,
+  bad_element: (detail) => `malformed element — ${detail}`,
+  duplicate_id: (detail) => `duplicate id: ${detail}`,
+  bad_id_shape: (detail) => `invalid id shape: ${detail}`,
+  empty_title: (detail) => `empty title: ${detail}`,
+  unknown_blocked_by: (detail) => `unknown dependency: ${detail}`,
+  self_blocked_by: (detail) => `blocks itself: ${detail}`,
+  cyclic_blocked_by: (detail) => `cyclic dependency: ${detail}`,
+  front_matter_mismatch: (detail) => `workspace mismatch: ${detail}`,
+  unknown_repo: (detail) => `unknown repo: ${detail}`,
+};
+
 const en: Labels = {
   UI,
   budgetLine,
@@ -760,6 +838,8 @@ const en: Labels = {
   PERMISSION_RULE_LABELS,
   PERMISSION_RULE_SHORT,
   PERMISSION_RULE_TINY,
+  FAZ_STATUS_LABELS,
+  ROADMAP_DIAGNOSTIC_LABELS,
   cardReasonText,
   cardActionText,
   toolLabel,
@@ -776,5 +856,7 @@ const en: Labels = {
   eventDetailText,
   formatDateTime,
   phaseLabelText,
+  fazLabel,
+  fazIdLabel,
 };
 export default en;

@@ -21,7 +21,9 @@ rule restated with its reasons in two places is the duplication this repository 
   `String()`/`.toString()`, concatenation, and `.replaceAll(`. A legitimate `.replace(` in `ui/` is an
   architect decision, not a thing to work around.
 - The work-order number (`WO-NNNN`) is the one identifier permitted as display — rendered through the
-  locale bundles (`woIdLabel`), never raw `{id}`. The carve-out lives in ADR-0007.
+  locale bundles (`woIdLabel`), never raw `{id}`. The roadmap's faz/task ids (`f0`, `f0-t3`) joined the same
+  carve-out (ADR-0007's 2026-08-27 addendum): operator-authored references through `fazIdLabel`/`fazLabel`,
+  never raw interpolation.
 
 ## Absent, not disabled — ADR-0001
 - An action whose evidence is unmet is absent, with a line stating why — never a disabled control. CI: no

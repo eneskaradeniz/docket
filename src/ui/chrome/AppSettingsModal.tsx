@@ -13,6 +13,7 @@ import type { PermissionRule, WorkOrderSource } from '../../core/source';
 import type { WorkspaceId } from '../../core/types';
 import type { BudgetThreshold } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, parseAmount } from '../../core/budget';
+import { normalizeDocsRoot } from '../../core/roadmap-md';
 import { useLabels, useLocale } from '../data/locale';
 import { useTheme } from '../data/theme';
 import { VERSION } from '../data/version';
@@ -23,6 +24,7 @@ export function AppSettingsModal({
   workspaceId,
   source,
   onBudgetChanged,
+  onDocsRootChanged,
   onClose,
 }: {
   settings: AppSettings;
@@ -30,6 +32,8 @@ export function AppSettingsModal({
   workspaceId: WorkspaceId | null;
   source: WorkOrderSource;
   onBudgetChanged: () => void;
+  /** WO-0049: fired when the structure root changes — App re-reads the roadmap (its only consumer). */
+  onDocsRootChanged: () => void;
   onClose: () => void;
 }) {
   const { UI, PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS } = useLabels();
@@ -108,6 +112,37 @@ export function AppSettingsModal({
       onBudgetChanged();
     } finally {
       setBudgetBusy(false);
+    }
+  };
+
+  // WO-0049 — the structure-root section (docs_root:<wsId>): one atomic draft, the same posture as
+  // budget. The read returns the EFFECTIVE root ('docs' when unset), so there is no Kaldır — writing
+  // `docs` IS the reset (the port cannot tell stored-default from unset, by design). Validation is
+  // the pure core's own normalizeDocsRoot (the parseAmount precedent); the store re-refuses loudly.
+  const [rootText, setRootText] = useState('');
+  const [rootTouched, setRootTouched] = useState(false);
+  const [rootBusy, setRootBusy] = useState(false);
+  useEffect(() => {
+    if (!workspaceId) return;
+    void settings.getDocsRoot(workspaceId).then((r) => {
+      setRootText(r);
+      setRootTouched(false);
+    });
+  }, [workspaceId, settings]);
+  const rootErr = !rootTouched || rootBusy ? null : normalizeDocsRoot(rootText) === undefined ? UI.docsRootErr : null;
+  const saveDocsRoot = async (): Promise<void> => {
+    if (!workspaceId || rootBusy) return;
+    setRootTouched(true);
+    const normalized = normalizeDocsRoot(rootText);
+    if (normalized === undefined) return;
+    setRootBusy(true);
+    try {
+      await settings.setDocsRoot(workspaceId, normalized);
+      setRootText(normalized);
+      setRootTouched(false);
+      onDocsRootChanged();
+    } finally {
+      setRootBusy(false);
     }
   };
 
@@ -225,6 +260,34 @@ export function AppSettingsModal({
                     : UI.budgetMonthReadout(monthSpend.usd, budgetStored.capUsd)}
                 </span>
               ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {workspaceId ? (
+          // WO-0049 — the structure root: where this workspace's roadmap.md + work orders live.
+          // The warn line is informative and STAYS (ADR-0012): switching is a permanent-feeling act
+          // the operator must make with open eyes (files never move — Docket only changes its mind
+          // about where to look; ADR-0016 rule 3).
+          <section data-docs-root-section="">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
+              {UI.docsRootLabel}
+            </span>
+            <Input
+              value={rootText}
+              aria-label={UI.docsRootLabel}
+              aria-invalid={rootErr !== null}
+              className="font-mono"
+              onChange={(e) => { setRootText(e.target.value); setRootTouched(true); }}
+            />
+            {rootErr !== null ? (
+              <p role="alert" className="mt-1.5 text-[11.5px] text-error">{rootErr}</p>
+            ) : null}
+            <div className="mt-2 flex items-center gap-2">
+              <Button variant="primary" size="sm" busy={rootBusy} locked={rootBusy} onClick={() => void saveDocsRoot()}>
+                {UI.woEditSave}
+              </Button>
+              <span className="ml-auto text-right text-[11px] text-inkdim">{UI.docsRootWarn}</span>
             </div>
           </section>
         ) : null}

@@ -8,12 +8,15 @@ import type { Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
 import type { AppSettings } from '../../core/app-settings';
 import { useLabels } from '../data/locale';
-import { Button, Tooltip } from '../kit';
+import { Button, Segmented, Tooltip } from '../kit';
 import { AppSettingsModal } from './AppSettingsModal';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { WsDeleteDialog } from './WsDeleteDialog';
 import { WsSettingsModal } from './WsSettingsModal';
 import { WsListModal } from './WsListModal';
+
+/** WO-0049: the two sibling surfaces — the board and the roadmap (ADR-0016 karar 4). */
+export type Surface = 'board' | 'roadmap';
 
 export function AppShell({
   workspaces,
@@ -27,6 +30,9 @@ export function AppShell({
   wsWoCount,
   wsDriveLive,
   onBudgetChanged,
+  onDocsRootChanged,
+  surface,
+  onSurfaceChange,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -44,6 +50,11 @@ export function AppShell({
   wsDriveLive: (id: WorkspaceId) => boolean;
   /** WO-0047: fired when the budget threshold changes in the settings modal — App refreshes its view. */
   onBudgetChanged: () => void;
+  /** WO-0049: fired when the structure root changes — App re-reads the roadmap. */
+  onDocsRootChanged: () => void;
+  /** WO-0049: the active sibling surface — the switch sits beside `+ Yeni iş emri`. */
+  surface: Surface;
+  onSurfaceChange: (s: Surface) => void;
 }) {
   const { UI } = useLabels();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -77,10 +88,21 @@ export function AppShell({
         ) : null}
         <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {workspaceId !== null ? (
-            <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              {UI.newWorkOrder}
-            </Button>
+            <>
+              <Segmented
+                size="sm"
+                value={surface}
+                onValueChange={onSurfaceChange}
+                options={[
+                  { value: 'board', label: UI.surfaceBoard },
+                  { value: 'roadmap', label: UI.surfaceRoadmap },
+                ]}
+              />
+              <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                {UI.newWorkOrder}
+              </Button>
+            </>
           ) : null}
           <Tooltip label={UI.settings}>
             <button
@@ -100,6 +122,7 @@ export function AppShell({
           workspaceId={workspaceId}
           source={source}
           onBudgetChanged={onBudgetChanged}
+          onDocsRootChanged={onDocsRootChanged}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}

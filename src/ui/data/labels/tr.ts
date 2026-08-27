@@ -25,6 +25,8 @@ import type { LiveSessionStatus } from '../../../core/runner';
 import type { PermissionRule } from '../../../core/source';
 import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
+import type { FazStatus } from '../../../core/roadmap';
+import type { RoadmapDiagnosticCode } from '../../../core/roadmap-md';
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 // Yeni iki kovalı tahta (WO-0013).
@@ -732,6 +734,56 @@ export const UI = {
   budgetErrWarn: '1–100 arası bir oran gir.',
   budgetMonthReadout: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)}`,
   budgetMonthReadoutKnown: (m: number, cap: number) => `bu ay bilinen harcama ${formatUsd(m)} / ${formatUsd(cap)}`,
+  // ===== WO-0049 — yol haritası yüzeyi (mockup kare 01/02/03/06/07; 04/05 WO-0050'nin) =====
+  // Appbar geçişi (kardeş ekran — pano ve detay dokunulmaz) + üç yüzey hâlinin satırları.
+  // Davet yüzeyi eylemsizdir: ✦ Üret/İçe aktar WO-0050'nin; bilgi satırı dosyanın yerini söyler.
+  surfaceBoard: 'Pano',
+  surfaceRoadmap: 'Yol Haritası',
+  roadmapReading: 'Yol haritası okunuyor…',
+  roadmapInviteLine: 'Bu çalışma alanının yol haritası henüz yok.',
+  roadmapInviteFile: (root: string) => `Dosya: ${root}/roadmap.md — istersen elle oluştur.`,
+  roadmapInvalidLine: 'Yol haritası okunamadı — dosyayı elle düzelt:',
+  // Baş üstü + faz kartı metaları — para formatUsd ile; bilinen-harcama niteleyicisi bütçenin dili.
+  roadmapHeadMeta: (done: number, total: number, open: number, usd: number) =>
+    `${done}/${total} faz tamam · ${open} açık iş emri · ${formatUsd(usd)}`,
+  roadmapHeadMetaKnown: (done: number, total: number, open: number, usd: number) =>
+    `${done}/${total} faz tamam · ${open} açık iş emri · bilinen ${formatUsd(usd)}`,
+  roadmapFazMeta: (done: number, total: number, closedWo: number, closedUsd: number, openWo: number) => {
+    let s = `${done}/${total} görev`;
+    if (closedWo > 0) s += ` · ${closedWo} WO kapandı`;
+    if (closedUsd > 0) s += ` · ${formatUsd(closedUsd)}`;
+    if (openWo > 0) s += ` · ${openWo} açık iş emri`;
+    return s;
+  },
+  // Bloke satırı (kare 01): dosyanın notes'u varsa birebir; yoksa bağımlılıklardan türetilir.
+  roadmapBlokeWord: 'Bloke',
+  roadmapBlokeFallback: (blockers: string) => `${blockers} tamamlanmadan başlanmaz`,
+  roadmapStripLine: 'faz sırası · tıkla kaydır',
+  roadmapDoneFold: (n: number) => `${n} tamamlanan faz`,
+  roadmapDoneFoldMeta: (wo: number, usd: number) => `${wo} WO · ${formatUsd(usd)}`,
+  roadmapTaskFill: (done: number, total: number) => `${done}/${total} görev`,
+  // Görev satırı kuyrukları — kanıt satırları, durum sözcüğü değil (glif taşır durumu).
+  roadmapTaskSpawn: 'İş emri aç',
+  roadmapTaskClosedTail: (n: number) => `${n} WO kapandı`,
+  roadmapTaskOpenMulti: (n: number) => `${n} açık WO`,
+  roadmapNextTag: 'sıradaki',
+  // Ekle diyalogları (Ekle-only: düzenleme/silme yok — dosya karar deposu, elle düzenlenir).
+  roadmapFazAdd: '+ Faz ekle',
+  roadmapFazAddTitle: 'Faz ekle',
+  roadmapFazAimLabel: 'Amaç (isteğe bağlı)',
+  roadmapFazDependsLabel: 'Bağımlılıklar',
+  roadmapTaskAdd: '+ görev ekle',
+  roadmapTaskAddTitle: 'Görev ekle',
+  roadmapErrRepo: 'Bir depo seç.',
+  // Spawn ön-dolgu bağlam satırı (kare 06, düzenlenemez) + detail çipi (kare 07) + bozulma satırı.
+  roadmapSpawnContext: (faz: string, ord: number, title: string, repo?: string) =>
+    repo !== undefined ? `${faz} · GÖREV ${ord} · ${title} · hedef: ${repo}` : `${faz} · GÖREV ${ord} · ${title}`,
+  roadmapTaskChip: (faz: string, task: string) => `${faz} · ${task}`,
+  roadmapTaskMissing: '(görev yol haritasında yok)',
+  // Ayarlar: yapı kökü (docs_root:<wsId>) — taşınmaz uyarısı bilgi satırı olarak kalır.
+  docsRootLabel: 'Yapı kökü',
+  docsRootWarn: 'Dosyalar taşınmaz; iş emri numaralandırması yeni kökte baştan sayılır.',
+  docsRootErr: 'Güvenli göreli yol gir (ör. docs ya da .docket).',
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',
@@ -864,6 +916,44 @@ export function phaseLabelText(p: WoPhase): string {
   }
 }
 
+// WO-0049 — faz durum sözlüğü: TEK söz dağarcığı (görev durumları alt kümedir; StepStatus'un
+// 'Bekliyor'undaki gibi ikinci bir kuyruk sözcüğü açılmaz). Durum türetilir, hiçbir yere yazılmaz.
+export const FAZ_STATUS_LABELS: Record<FazStatus, string> = {
+  planli: 'Planlı',
+  kosuyor: 'Koşuyor',
+  bekliyor: 'Bekliyor',
+  tamam: 'Tamam',
+};
+
+// WO-0049 — faz kimliğinin görüntü hali (mono işaretçi): `f4` → `FAZ 4` (kimlikteki sayı aynen,
+// sıra numarası değil); `^f\d+$` dışı kimlikler (elle yazılmış) büyük harfe çıkar.
+export function fazLabel(id: string): string {
+  const m = /^f(\d+)$/.exec(id);
+  return m !== null ? `FAZ ${m[1]!}` : `FAZ ${id.toUpperCase()}`;
+}
+
+// WO-0049 — the fold's `f0 · f3` run: the roadmap's ids ride the woIdLabel pattern (ADR-0007's
+// 2026-08-27 addendum — operator-authored references rendered as identities through the seam).
+export function fazIdLabel(id: string): string {
+  return id;
+}
+
+// WO-0049 — tanı adlı eller: invalid yüzeyin sebep satırları (roadmapDiagnostics'ın 11 kodu).
+// Detail tanıdan gelir (kimlik/öğe no); ham kod asla görüntülenmez.
+export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
+  no_fence: () => 'fazlar bloğu yok',
+  bad_json: (detail) => `JSON bozuk — ${detail}`,
+  bad_element: (detail) => `bozuk öğe — ${detail}`,
+  duplicate_id: (detail) => `yinelenen kimlik: ${detail}`,
+  bad_id_shape: (detail) => `geçersiz kimlik biçimi: ${detail}`,
+  empty_title: (detail) => `boş başlık: ${detail}`,
+  unknown_blocked_by: (detail) => `bilinmeyen bağımlılık: ${detail}`,
+  self_blocked_by: (detail) => `kendi kendini blokluyor: ${detail}`,
+  cyclic_blocked_by: (detail) => `döngüsel bağımlılık: ${detail}`,
+  front_matter_mismatch: (detail) => `workspace uyuşmuyor: ${detail}`,
+  unknown_repo: (detail) => `bilinmeyen depo: ${detail}`,
+};
+
 // Türkçe demet (WO-0035): bu modülün tüm görüntü üyeleri tek objede. Labels TÜRÜ bu demetten türer;
 // en.ts onu sağlamak zorunda — eksik anahtar derleme hatası. Yeni bir görüntü üyesi eklendiğinde
 // hem buraya hem en.ts'e girer (derleyici hatırlatır).
@@ -889,6 +979,8 @@ const tr = {
   PERMISSION_RULE_LABELS,
   PERMISSION_RULE_SHORT,
   PERMISSION_RULE_TINY,
+  FAZ_STATUS_LABELS,
+  ROADMAP_DIAGNOSTIC_LABELS,
   cardReasonText,
   cardActionText,
   toolLabel,
@@ -905,6 +997,8 @@ const tr = {
   eventDetailText,
   formatDateTime,
   phaseLabelText,
+  fazLabel,
+  fazIdLabel,
 };
 export type Labels = typeof tr;
 export default tr;

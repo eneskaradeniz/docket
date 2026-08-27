@@ -266,6 +266,68 @@
     color: var(--color-ink);
   }
 
+  /* ===== WO-0049 — the roadmap surface (mockup kare 01/02) =====
+     The faz strip (minimap): one segment per faz in its status color — tamam green, kosuyor blue
+     (breathing, the ambient-lamp exception — a standing state signal, not an entrance), bekliyor
+     semi-transparent amber, planli hairline. The fold speaks the closedtoggle voice minus the
+     border (the mockup keeps its words lowercase — it is a list, not a section header). */
+  .fazstrip {
+    display: flex;
+    gap: 3px;
+  }
+  .fseg {
+    flex: 1 1 0%;
+    height: 6px;
+    border: 0;
+    border-radius: 2px;
+    padding: 0;
+    cursor: pointer;
+    transition: filter 0.12s ease;
+  }
+  .fseg:hover {
+    filter: brightness(1.3);
+  }
+  .fseg-tamam {
+    background: var(--color-proceed);
+  }
+  .fseg-kosuyor {
+    background: var(--color-info);
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  .fseg-bekliyor {
+    background: color-mix(in srgb, var(--color-signal) 45%, transparent);
+  }
+  .fseg-planli {
+    background: var(--color-hairline);
+  }
+  .bloke {
+    background: color-mix(in srgb, var(--color-signal) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-signal) 30%, transparent);
+    border-radius: 6px;
+  }
+  .donefold {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--color-inkdim);
+    border: 0;
+    padding: 8px 12px;
+    border-radius: 7px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .donefold:hover {
+    background: color-mix(in srgb, var(--color-raised) 60%, transparent);
+    color: var(--color-ink);
+  }
+  .donefold .n {
+    color: var(--color-ink);
+  }
+
   .alink {
     color: var(--color-info);
     font-family: var(--font-mono);
@@ -724,6 +786,7 @@
 @media (prefers-reduced-motion: reduce) {
   .lamp-signal-breathe,
   .lamp-run,
+  .fseg-kosuyor,
   .dot-run,
   .rise,
   .flash,

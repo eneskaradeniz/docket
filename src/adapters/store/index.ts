@@ -966,7 +966,7 @@ export function createStore(dbPath: string): Store {
           workspaceSlug: id as string,
           knownRepos,
           orders: rows.map((r) => ({
-            id: r.id,
+            id: r.id as WorkOrderId, // the adapter is the one place a row id re-brands (ADR-0003)
             closed: r.closedSha != null,
             costUsd: r.usd,
             ...(r.unknownCount > 0 ? { costUnknown: true } : {}),
