@@ -2,7 +2,7 @@
 id: WO-0048
 title: Roadmap spine — roadmap.md format, derived faz/task views, the task link, the structure root
 workspace: docket
-status: draft
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -124,10 +124,32 @@ Out of scope:
 
 ## Evidence required
 
-- plan_approval: PENDING — the architect plan round runs at the WO session open (mode: plan).
-- operator_checkpoint: a CLI walkthrough (`roadmap show/validate` on a hand-broken antreo-shaped
-  file, `create-work-order --task`, the `docs_root` switch) — the spine is verifiable without GUI.
-- ci: green on the WO PR (typecheck both / test / boundaries / build / E2E).
+- plan_approval: RESOLVED — the operator approved the session plan 2026-08-27; `plan.md` committed
+  as `41e1da3` (with ADR-0016, the ADR-0008 addendum, the CLAUDE.md section, TD-055 — the order's
+  "ADR-0016 first" rule)
+- operator_checkpoint: RESOLVED 2026-08-27 — the CLI walkthrough on a scratch store (zero tokens):
+  show absent → validate ok → the derived antreo view (f2/f4 bekliyor with their blockers,
+  sıradaki) → a hand-broken duplicate id → validate exit 1 naming `unknown_blocked_by` +
+  `duplicate_id` + `self_blocked_by` → `--task f1-t2` written + joined (`f1-t2 kosuyor ▸ WO-0001`)
+  → `--task f9-t9` refused listing ids → the `.docket` switch + operator move + clear. The
+  operator approved the commit on this evidence.
+- ci: green on PR #54 — typecheck (both) / `npm test` 700 / `check:boundaries` / `build` /
+  `npm run test:ui` all specs green (56, unchanged — no UI in this WO)
+- closure: ROADMAP M6 ticked (this commit); TD-055 opened in `41e1da3`
+
+## Closure
+
+Merged **#54** (`30cf26c`, 2026-08-27) — plan round `41e1da3` + feature `fe2ec00` (38 files,
++2003/−66). Evidence state: the fence contract is test-pinned all-or-nothing (33 roadmap-md tests:
+parse degradation, 11 diagnostic codes, byte-preservation outside the fence, canonical-body
+idempotence); the derivation reproduces the mockup's frame-01 facts through REAL files + DB rows
+(22 roadmap tests + the store describe — f0 tamam 5 WO $12.40, the WO-0012 chip, the f2→f4→f1
+chain, head $14.02, siradaki); the task link lives only in order.md (`task:` round-trip pinned,
+PRAGMA diff EMPTY pinned — no column); the structure root moves every read/write at once and
+refuses invalid writes while corrupt rows fail open to `docs/`; saveRoadmap never destroys the
+machine fence. Open follow-up: TD-055 (the view-time N-file join — free at solo scale), plus the
+GUI (WO-0049 — mockup is the acceptance basis, ports + 5 IPC channels already merged) and the AI
+draft drive (WO-0050).
 
 ## Stop-and-ask gates
 

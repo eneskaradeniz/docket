@@ -374,11 +374,16 @@ draft session for both generation and import; the spine→GUI→AI split; the si
 Haritası` screen) + the mockup tour (`docs/ui-mockups/wo-0048-yol-haritasi.html`, 7 frames — faz
 strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefilled spawn).
 
-- [ ] **WO-0048** — spine: roadmap.md format + test-first core (`roadmap-md.ts` parse/diagnose/
-      build/edit all-or-nothing; `roadmap.ts` derived views with the spawn-action absent-reasons),
-      the order.md `task:` link (NO DB column — joined at view time), the workspace structure-root
-      setting (`docs_root:<wsId>`, default `docs/`, `.docket/` one setting away; Docket never
-      writes .gitignore), CLI `roadmap show|validate` + `create-work-order --task`; ADR-0016 first.
+- [x] **WO-0048** — spine. Done (merged #54, `30cf26c`): the ```fazlar fence contract
+      (`roadmap-md.ts`, 33 tests — all-or-nothing parse with named reasons, 11 diagnostic codes,
+      fence-only surgical edits, canonical serialization) + the derivation (`roadmap.ts` — task/faz
+      statuses, spawn absent-reasons, `RoadmapView` absent|invalid|ready, sıradaki = first
+      spawnable; the mockup frame-01 facts pinned through real files + DB rows); the `task:` link
+      ONLY in order.md (round-trip pinned, PRAGMA diff EMPTY — no column, view-time join = TD-055);
+      the `docs_root:<wsId>` structure root (one resolver, fail-open read / refusing write, files
+      never move, .gitignore never written); `saveRoadmap` parse-guarded; CLI `roadmap
+      show|validate` + `docs-root` + `create-work-order --task`; 5 IPC channels ready for WO-0049.
+      700 tests / typecheck both / boundaries / build / E2E 56 green. **TD-055 opened.**
       Spec: `docs/work-orders/WO-0048-yol-haritasi-omurga/order.md`.
 - [ ] **WO-0049** — GUI: the sibling Yol Haritası screen (faz cards, task rows, the approved
       mockup's strip/fill/`sıradaki`/fold), prefilled task→WO spawn (`Oluştur ve plan iste`),
