@@ -126,3 +126,28 @@ table gains a stage/status/task column from this layer.
   (WO-0050, the locked decision 2).
 - **`.docket/` as the default root.** Defaults are opinions the operator pays for; `docs/` rides the
   convention the repository already has, and the switch is one setting.
+
+## Addendum (2026-08-27, WO-0050 — the draft drive, as built)
+
+- **ONE mechanism, unchanged.** Generation and import are the same workspace-scoped architect
+  plan drive (`DraftDriveInput` — the `DriveInput` union's second arm, `isDraftDrive` the single
+  narrowing point); the source-doc LIST is the only distinction, and the prompt carries document
+  PATHS, never contents — no source-format parser exists or ever will (the rejected alternative
+  above stands; a content reader in the prompt would be that parser by other means).
+- **The draft session is WO-less.** `session.workspace_id` NOT NULL (backfilled through the WO
+  join on migration; an orphan legacy row keys `''` — joins to nothing, hydrates nowhere) and
+  `work_order_id` nullable. The workspace budget gate sees the draft like every drive
+  (`budgetBlockForDraft` + the month sum keyed directly on `workspace_id`) — the WO-less row can
+  never bypass the cap the way a missing-WO row once silently could.
+- **The proposal is a pending `roadmap_draft` row** — document text in the DB under the
+  `plan_original` carve-out: a PENDING proposal, never the live document. roadmap.md is written
+  only at approval, by the parse-guarded save (a draft that cannot re-read is refused, writing
+  nothing — "bozuk taslak geçerliyi ezmesin"); the git commit stays the operator's. A FRESH draft
+  supersedes the pending row (operator ruling 2026-08-27); an objection (`İtiraz et`) resumes the
+  same provider session; the supersede guard never overwrites a valid row with an invalid one.
+- **Draft spend counts in the workspace month pool but NOT in the roadmap head** (operator ruling
+  2026-08-27): the head is the WO layer's observed spend; the draft's costline is its pane.
+- **The cwd fix rides along:** every GUI drive's working directory resolves from the connection
+  table (`driveCwd` — a scoped WO drive in its track repo, a draft/unscoped drive in the
+  decision-store repo, `process.cwd()` only when nothing matches), retiring the `process.cwd()`
+  fill and the M3/M4 note that awaited it.

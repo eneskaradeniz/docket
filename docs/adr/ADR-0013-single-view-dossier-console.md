@@ -146,3 +146,18 @@ board card and the header band (ADR-0012's voice: text, never a fill bar; the kn
 "bilinen harcama" stated when any in-window session row carries no recorded cost). Raising the cap
 is a PERMANENT `app_setting` write that re-runs the refused drive (operator rulings 2026-08-26) —
 never a host-side work-around.
+
+**Addendum (2026-08-27, WO-0050 — the roadmap screen carries the console's SECOND live surface):**
+`RoadmapPane` — the ✦ architect draft session, workspace-scoped (WO-less) — speaks the shared
+pane-chrome grammar verbatim (activity verb line + costline + DriveControls + the döküm chip);
+its header readout is the draft identity `MİMAR — TASLAK`, never a role word. A draft never
+overlays a board card (the drive store's active snapshot stays WO-keyed — ADR-0016's locked
+ruling 3). The roadmap head meta states `taslak sürüyor` while the draft runs — the honest
+minimum when the operator leaves the surface: the pane unmounts, the drive survives in the
+app-level store (the WO-0028 precedent), and a background draft ask toasts and switches to the
+roadmap surface. Permission asks and the architect's text question surface as cards on the
+roadmap screen itself, and the pane stands down while the budget refusal card owns the moment
+(the instrument-selector rule, applied to the second surface). The TASLAK decision card — the
+plan approval card's sibling: parsed per-faz preview, Onayla (the parse-guarded write; the
+commit stays the operator's) / Düzenle (the structured editor over the fence) / İtiraz et (a
+resume of the same provider session with the operator's note).

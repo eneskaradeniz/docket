@@ -44,7 +44,7 @@ store.recordStep(wo3.id, 1, { status: 'done', reportPath: 'reports/step-01-imple
 store.recordStepVerdict(wo3.id, 1, 'proceed', 'ok');
 store.recordSession({
   providerSessionId: 'e2e-wo3-run',
-  workOrderId: wo3.id,
+  owner: { kind: 'wo', workOrderId: wo3.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -55,7 +55,7 @@ store.recordSession({
 });
 store.recordSession({
   providerSessionId: 'e2e-wo3-review',
-  workOrderId: wo3.id,
+  owner: { kind: 'wo', workOrderId: wo3.id },
   role: 'architect',
   status: 'idle',
   stepIdx: 1,
@@ -72,7 +72,7 @@ store.recordStep(wo4.id, 1, { status: 'done', reportPath: 'reports/step-01-imple
 store.recordStepVerdict(wo4.id, 1, 'proceed', 'ok');
 store.recordSession({
   providerSessionId: 'e2e-wo4-plan',
-  workOrderId: wo4.id,
+  owner: { kind: 'wo', workOrderId: wo4.id },
   role: 'architect',
   status: 'idle',
   transcript: [],
@@ -84,7 +84,7 @@ store.recordSession({
 // No cost → the closed-WO total-cost assert ($6,27) is unchanged.
 store.recordSession({
   providerSessionId: 'e2e-wo4-free',
-  workOrderId: wo4.id,
+  owner: { kind: 'wo', workOrderId: wo4.id },
   role: 'implementer',
   status: 'idle',
   transcript: [],
@@ -93,7 +93,7 @@ store.recordSession({
 });
 store.recordSession({
   providerSessionId: 'e2e-wo4-run',
-  workOrderId: wo4.id,
+  owner: { kind: 'wo', workOrderId: wo4.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -104,7 +104,7 @@ store.recordSession({
 });
 store.recordSession({
   providerSessionId: 'e2e-wo4-verify',
-  workOrderId: wo4.id,
+  owner: { kind: 'wo', workOrderId: wo4.id },
   role: 'verifier',
   status: 'idle',
   stepIdx: 1,
@@ -123,7 +123,7 @@ await store.approvePlan(wo5.id, '# E2E plan\n\n```steps\n[{"role":"implementer",
 store.recordStep(wo5.id, 1, { status: 'active' });
 store.recordSession({
   providerSessionId: 'e2e-ask-session',
-  workOrderId: wo5.id,
+  owner: { kind: 'wo', workOrderId: wo5.id },
   role: 'implementer',
   status: 'stopped_asking',
   stepIdx: 1,
@@ -185,7 +185,7 @@ store.recordStep(wo7.id, 1, { status: 'done', reportPath: 'reports/step-01-imple
 store.recordStepVerdict(wo7.id, 1, 'proceed', 'ok');
 store.recordSession({
   providerSessionId: 'e2e-wo7-run',
-  workOrderId: wo7.id,
+  owner: { kind: 'wo', workOrderId: wo7.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -218,7 +218,7 @@ for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
 }
 store.recordSession({
   providerSessionId: 'e2e-wo8-run1',
-  workOrderId: wo8.id,
+  owner: { kind: 'wo', workOrderId: wo8.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -229,7 +229,7 @@ store.recordSession({
 });
 store.recordSession({
   providerSessionId: 'e2e-wo8-run6',
-  workOrderId: wo8.id,
+  owner: { kind: 'wo', workOrderId: wo8.id },
   role: 'verifier',
   status: 'idle',
   stepIdx: 6,
@@ -302,7 +302,7 @@ const woWarn = await store.createWorkOrder({
 await store.approvePlan(woWarn.id, ONE_STEP_PLAN);
 store.recordSession({
   providerSessionId: 'e2e-budget-warn-run',
-  workOrderId: woWarn.id,
+  owner: { kind: 'wo', workOrderId: woWarn.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -313,7 +313,7 @@ store.recordSession({
 });
 store.recordSession({
   providerSessionId: 'e2e-budget-warn-null',
-  workOrderId: woWarn.id,
+  owner: { kind: 'wo', workOrderId: woWarn.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -338,7 +338,7 @@ const woStopA = await store.createWorkOrder({
 await store.approvePlan(woStopA.id, ONE_STEP_PLAN);
 store.recordSession({
   providerSessionId: 'e2e-budget-stop-a',
-  workOrderId: woStopA.id,
+  owner: { kind: 'wo', workOrderId: woStopA.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -358,7 +358,7 @@ const woStopB = await store.createWorkOrder({
 await store.approvePlan(woStopB.id, ONE_STEP_PLAN);
 store.recordSession({
   providerSessionId: 'e2e-budget-stop-b',
-  workOrderId: woStopB.id,
+  owner: { kind: 'wo', workOrderId: woStopB.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -404,7 +404,7 @@ const closeYol = async (wo: Awaited<ReturnType<typeof mkYol>>, usd: number) => {
   store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
   store.recordSession({
     providerSessionId: `e2e-yol-${wo.id}`,
-    workOrderId: wo.id,
+    owner: { kind: 'wo', workOrderId: wo.id },
     role: 'implementer',
     status: 'idle',
     stepIdx: 1,
@@ -422,7 +422,7 @@ await closeYol(await mkYol('Yol altyapı', 'f3-t1'), 1.0);
 const woFoto = await mkYol('Yol fotoğraf', 'f1-t3'); // OPEN — the running task's chip
 store.recordSession({
   providerSessionId: `e2e-yol-${woFoto.id}`,
-  workOrderId: woFoto.id,
+  owner: { kind: 'wo', workOrderId: woFoto.id },
   role: 'implementer',
   status: 'idle',
   stepIdx: 1,
@@ -472,5 +472,53 @@ await store.saveRoadmap(
   }),
 );
 console.log(`ROADMAP=${JSON.stringify({ foto: String(woFoto.id), yetim: String(woYetim.id) })}`);
+
+// 15) WO-0050 the draft worlds. 'taslak': a clean workspace, NO roadmap.md (the absent face + the
+//     ✦ gate — spec 1's happy generate flow starts from scratch; the file never pre-exists).
+//     'taslak-kirli': a seeded INVALID draft row (no fence) + its draft session row — the card's
+//     parse-guard face (Onayla absent, İtiraz remains) without running a drive.
+mkdirSync(join(root, 'repo-taslak'), { recursive: true });
+mkdirSync(join(root, 'repo-kirli'), { recursive: true });
+const wsTaslak = await store.createWorkspace({
+  label: 'taslak',
+  repos: [{ path: join(root, 'repo-taslak'), remote: 'e2e-taslak' }],
+  decisionStorePath: join(root, 'repo-taslak'),
+});
+const wsKirli = await store.createWorkspace({
+  label: 'taslak-kirli',
+  repos: [{ path: join(root, 'repo-kirli'), remote: 'e2e-kirli' }],
+  decisionStorePath: join(root, 'repo-kirli'),
+});
+store.recordSession({
+  providerSessionId: 'e2e-kirli-architect',
+  owner: { kind: 'draft', workspaceId: wsKirli.id },
+  role: 'architect',
+  status: 'idle',
+  transcript: [{ speaker: 'assistant', text: 'çit koymayı unuttum' }],
+  cost: { tokensIn: 500, tokensOut: 120, usd: 0.04 },
+  startedAt: monthDay(9),
+  endedAt: monthDay(9),
+});
+store.saveRoadmapDraft(wsKirli.id, '---\nworkspace: nope\ntitle: Kirli\n---\n\n# Kirli\n\nProse var, çit yok.\n', { providerSessionId: 'e2e-kirli-architect' });
+// 'taslak-kapi': the draft's OWN budget gate world — at its cap before any ✦ click (ascii label:
+// slugify strips the Turkish ı, so the label IS the slug the draft md's front-matter must name).
+mkdirSync(join(root, 'repo-kapi'), { recursive: true });
+const wsTaslakKapi = await store.createWorkspace({
+  label: 'taslak-kapi',
+  repos: [{ path: join(root, 'repo-kapi'), remote: 'e2e-kapi' }],
+  decisionStorePath: join(root, 'repo-kapi'),
+});
+await store.setBudget(wsTaslakKapi.id, { capUsd: 5, warnPercent: 80 });
+store.recordSession({
+  providerSessionId: 'e2e-kapi-architect',
+  owner: { kind: 'draft', workspaceId: wsTaslakKapi.id },
+  role: 'architect',
+  status: 'idle',
+  transcript: [],
+  cost: { tokensIn: 900, tokensOut: 200, usd: 5.1 },
+  startedAt: monthDay(10),
+  endedAt: monthDay(10),
+});
+console.log(`TASLAK=${JSON.stringify({ taslak: String(wsTaslak.id), kirli: String(wsKirli.id) })}`);
 
 console.log(`DB=${join(root, 'e2e.db')}`);

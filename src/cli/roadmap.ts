@@ -5,6 +5,7 @@
 // (they come from the document, not from this file).
 import type { RoadmapView } from '../core/roadmap';
 import { parseRoadmapMd, type RoadmapDiagnostic } from '../core/roadmap-md';
+import { draftSummaryOf } from '../core/roadmap-draft';
 
 const money = (n: number): string => `$${n.toFixed(2)}`;
 
@@ -56,6 +57,24 @@ export function formatRoadmapValidate(diags: RoadmapDiagnostic[] | 'absent'): { 
   if (diags.length === 0) return { text: 'ok — no diagnostics', exitCode: 0 };
   const text = diags.map((d) => `${d.severity}: ${d.code}${d.detail ? ` — ${d.detail}` : ''}`).join('\n');
   return { text, exitCode: diags.some((d) => d.severity === 'error') ? 1 : 0 };
+}
+
+/**
+ * `roadmap draft`'s closing line + `roadmap approve`'s success line (WO-0050): the pending proposal's
+ * figures in the show voice. An unparseable proposal names its reason — never invented figures (the
+ * same honesty the card renders).
+ */
+export function formatRoadmapDraftLine(md: string): string {
+  const s = draftSummaryOf(md);
+  if ('parseError' in s) {
+    const why =
+      s.parseError.reason === 'bad_json' ? `bad JSON (${s.parseError.message})`
+      : s.parseError.reason === 'bad_element' ? `malformed element [${s.parseError.index}] — ${s.parseError.problem}`
+      : 'no fazlar fence';
+    return `draft does not re-read — ${why}`;
+  }
+  const chain = s.chainCount > 0 ? ` · ${s.chainCount} dependency chain(s)` : '';
+  return `${s.fazCount} faz · ${s.taskCount} task(s)${chain}`;
 }
 
 /**

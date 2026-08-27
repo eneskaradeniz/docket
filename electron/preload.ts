@@ -30,6 +30,9 @@ const source: WorkOrderSource = {
   getRoadmap: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap', id),
   getRoadmapMd: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap-md', id),
   saveRoadmap: (id: WorkspaceId, md: string) => ipcRenderer.invoke('docket:source:save-roadmap', id, md),
+  getRoadmapDraft: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap-draft', id),
+  updateRoadmapDraft: (id: WorkspaceId, md: string) => ipcRenderer.invoke('docket:source:update-roadmap-draft', id, md),
+  approveRoadmapDraft: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:approve-roadmap-draft', id),
   updateRepoPath: (id: WorkspaceId, repoId: RepoId, newPath: string) =>
     ipcRenderer.invoke('docket:source:update-repo-path', id, repoId, newPath),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { askOperatorPolicy, autoAllowPolicy, createPipeline, prepareDriveInput } from '../pipeline';
 import { PLAN_EXIT_WITHOUT_RESULT } from '../runner';
 import type { SessionStore } from '../session-store';
-import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../runner';
-import type { CostSummary, WorkOrderId } from '../types';
+import type { DraftDriveInput, DriveInput, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from '../runner';
+import type { CostSummary, WorkOrderId, WorkspaceId } from '../types';
 
 // WO-0023 — the drive loop, tested with a FakeRunner + FakeStore (the codebase's first port fakes). No SDK,
 // no SQLite, no agent. This is the testability the loop never had while it lived inline in electron/main.ts.
@@ -19,10 +19,14 @@ const done = (result?: string): RunnerEvent => ({ kind: 'turn_complete', stopRea
 const perm = (requestId = 'r1'): RunnerEvent => ({ kind: 'permission_request', requestId, tool: 'Write', input: {} });
 const err = (message: string): RunnerEvent => ({ kind: 'error', message });
 
-// --- drive-input shapes (the three origins: plan / step / review) ---
-const planDrive = (over: Partial<DriveInput> = {}): DriveInput => ({ role: 'architect', workOrderId: WO, mode: 'plan', prompt: '', ...over });
-const stepDrive = (over: Partial<DriveInput> = {}): DriveInput => ({ role: 'implementer', workOrderId: WO, mode: 'direct', prompt: '', stepIndex: 1, ...over });
-const reviewDrive = (over: Partial<DriveInput> = {}): DriveInput => ({ role: 'architect', workOrderId: WO, mode: 'direct', prompt: '', reviewStepIndex: 2, ...over });
+// --- drive-input shapes (the three origins: plan / step / review). WO-0050/D1: the input is a
+// union now — the helpers stay WoDriveInput-typed (the draft arm gets its own builder in S4). ---
+const planDrive = (over: Partial<WoDriveInput> = {}): DriveInput => ({ role: 'architect', workOrderId: WO, mode: 'plan', prompt: '', ...over });
+const stepDrive = (over: Partial<WoDriveInput> = {}): DriveInput => ({ role: 'implementer', workOrderId: WO, mode: 'direct', prompt: '', stepIndex: 1, ...over });
+const reviewDrive = (over: Partial<WoDriveInput> = {}): DriveInput => ({ role: 'architect', workOrderId: WO, mode: 'direct', prompt: '', reviewStepIndex: 2, ...over });
+const WS = 'ws-t' as WorkspaceId;
+const draftDrive = (over: Partial<DraftDriveInput> = {}): DriveInput =>
+  ({ role: 'architect', workspaceId: WS, mode: 'plan', prompt: '', goalNote: 'hedef notu', docPaths: [], ...over });
 
 /** A scripted runner. On a `permission_request` it creates the decide-latch in the Promise executor BEFORE the
  *  yield (mirroring the real adapter's `pending.set` before `queue.push`), so a prompt decide resolves it. */
@@ -99,7 +103,9 @@ interface FakeStoreCalls { method: string; args: unknown[] }
 
 /** Records every call; returns scripted prompts. `planApproved` scripts the approval gate (WO-0038);
  *  `opts` scripts the WO-0045 surfaces (flowMode the tempo gate, pendingNotes Sürdür's carry) and the
- *  WO-0047 budget gate (budgetBlock — a payload refuses every drive; undefined passes). */
+ *  WO-0047 budget gate (budgetBlock — a payload refuses every drive; undefined passes). WO-0050: the
+ *  DRAFT surfaces ride the same opts (draftPrompt the assembly, draftBudgetBlock the draft-arm gate) —
+ *  every fake implements BOTH budget reads (the port's unconditional clause, D3/D4). */
 function fakeStore(
   prompts: { architect?: string; step?: { prompt: string; scope?: string }; review?: string },
   planApproved = true,
@@ -107,6 +113,8 @@ function fakeStore(
     flowMode?: 'auto' | 'manual';
     pendingNotes?: { id: string; text: string }[];
     budgetBlock?: { observedUsd: number; capUsd: number };
+    draftPrompt?: string;
+    draftBudgetBlock?: { observedUsd: number; capUsd: number };
   } = {},
 ) {
   const calls: FakeStoreCalls[] = [];
@@ -122,6 +130,13 @@ function fakeStore(
     planApprovedFor: () => planApproved,
     flowModeFor: () => opts.flowMode ?? 'auto',
     budgetBlockFor: () => opts.budgetBlock,
+    budgetBlockForDraft: () => opts.draftBudgetBlock,
+    roadmapDraftPromptFor: (wsId: unknown, goalNote: unknown, docPaths: unknown) => {
+      calls.push({ method: 'roadmapDraftPromptFor', args: [wsId, goalNote, docPaths] });
+      return opts.draftPrompt;
+    },
+    saveRoadmapDraft: (wsId: unknown, md: unknown, o: unknown) => calls.push({ method: 'saveRoadmapDraft', args: [wsId, md, o] }),
+    clearRoadmapDraft: (wsId: unknown) => calls.push({ method: 'clearRoadmapDraft', args: [wsId] }),
     pendingNotesFor: () => opts.pendingNotes ?? [],
     recordAuditEvent: (id: unknown, kind: unknown, detail: unknown) => calls.push({ method: 'recordAuditEvent', args: [id, kind, detail] }),
   } as unknown as SessionStore;
@@ -217,6 +232,90 @@ describe('budget gate — every drive refused when the month spend meets the cap
     const events = await collect(p, planDrive());
     expect(fr.drivenInputs).toHaveLength(1);
     expect(events.map((e) => e.kind)).toContain('started');
+  });
+});
+
+// ===== the WO-LESS draft drive (WO-0050 — D4/D5/D6/D15) =====
+// ONE mechanism: the ✦ dialog's goalNote + docPaths assemble through the SAME server-side port,
+// the draft-arm budget gate sees the drive, plan_ready lands in the pending roadmap_draft row,
+// and steer stays WO-only (İtiraz is the draft's note path).
+
+describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)', () => {
+  it('prepareDriveInput: the DRAFT arm routes to roadmapDraftPromptFor (never architectPromptFor)', () => {
+    const { store, calls } = fakeStore({ architect: 'PLAN (wrong)' }, true, { draftPrompt: 'taslak promptu' });
+    const out = prepareDriveInput(draftDrive(), store);
+    expect(out.prompt).toBe('taslak promptu');
+    expect(methods(calls)).toContain('roadmapDraftPromptFor');
+    expect(methods(calls)).not.toContain('architectPromptFor');
+  });
+
+  it('a draft at the cap is refused by the DRAFT-arm gate — roadmap draft names the subject, no runner spawns', async () => {
+    const block = { observedUsd: 12.5, capUsd: 10 };
+    const fr = fakeRunner([started(), txt('never'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak', draftBudgetBlock: block });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, draftDrive());
+    expect(events).toHaveLength(1);
+    const ev = events[0] as { kind: string; message: string; refusal?: unknown };
+    expect(ev.kind).toBe('error');
+    expect(ev.message).toContain('roadmap draft');
+    expect(ev.message).toMatch(/budget cap met/);
+    expect(ev.refusal).toEqual(block);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('a draft whose prompt did not assemble is refused pre-spawn — no empty-prompt provider run', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: undefined });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, draftDrive());
+    expect(events.map((e) => e.kind)).toEqual(['error']);
+    expect((events[0] as { message: string }).message).toMatch(/no prompt assembled/);
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('a FRESH draft supersedes the pending row before the runner spawns; a resume never clears', async () => {
+    const fr = fakeRunner([started(), plan('# taslak'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    const clearIdx = fs.calls.findIndex((c) => c.method === 'clearRoadmapDraft');
+    const spawnIdx = fs.calls.findIndex((c) => c.method === 'recordSession');
+    expect(clearIdx).toBeGreaterThanOrEqual(0);
+    expect(clearIdx).toBeLessThan(spawnIdx); // gates passed, THEN the row cleared, THEN the runner ran
+
+    const fs2 = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p2 = createPipeline({ runner: fr.runner, store: fs2.store, permission: autoAllowPolicy() });
+    await collect(p2, draftDrive({ resume: 'draft-sess-1', prompt: 'itiraz: bağımlılıkları koru' }));
+    expect(methods(fs2.calls)).not.toContain('clearRoadmapDraft');
+  });
+
+  it('plan_ready writes the workspace draft row with the provider session id (İtiraz resume handle)', async () => {
+    const fr = fakeRunner([started('draft-sess-9'), plan('# yeni taslak'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    const call = findCall(fs.calls, 'saveRoadmapDraft');
+    expect(call?.args).toEqual([WS, '# yeni taslak', { providerSessionId: 'draft-sess-9' }]);
+    expect(methods(fs.calls)).not.toContain('savePendingPlan'); // the WO side-effect never fires
+  });
+
+  it('the session records under the DRAFT owner — workspace-keyed, work_order_id NULL by shape', async () => {
+    const fr = fakeRunner([started('draft-sess-10'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    const rec = findCall(fs.calls, 'recordSession');
+    expect((rec?.args[0] as { owner: unknown }).owner).toEqual({ kind: 'draft', workspaceId: WS });
+  });
+
+  it('steer refuses a live draft — the note path is İtiraz (D15)', async () => {
+    const fr = fakeRunner([started('draft-sess-11'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    expect(await p.steer('ara not')).toBeUndefined();
+    expect(fs.calls.find((c) => c.method === 'steer_queued')).toBeUndefined();
   });
 });
 

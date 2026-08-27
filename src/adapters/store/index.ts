@@ -19,15 +19,17 @@ import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
 import type { Locale } from '../../core/app-settings';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
-import type { RecordSessionInput, SessionStore } from '../../core/session-store';
+import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
+import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
-import type { BudgetRefusal } from '../../core/runner';
+import type { BudgetRefusal, DriveInput } from '../../core/runner';
+import { isDraftDrive } from '../../core/runner';
+import { roadmapDraftPrompt } from '../../core/roadmap-draft';
 import { rid, tid, wid, woid } from '../ids';
 import { workspaces } from '../fixtures';
 import type {
@@ -58,6 +60,12 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   /** The work order's REPO ROOT PATHS (its tracks' connected local paths, decision store included) —
    *  the jail the diff-peek read stays inside (WO-0031c: the root is the WO's repos, never cwd). */
   woRepoPaths(workOrderId: WorkOrderId): string[];
+  /** The drive's WORKING DIRECTORY, resolved from the connection table (WO-0050 / D8 — the cwd fix):
+   *  a scoped WO drive runs in its track repo's connected `local_path`; a draft or unscoped WO drive
+   *  in the decision-store repo's path; `process.cwd()` only when no connection matches (fixture and
+   *  unconnected workspaces keep today's behavior byte-for-byte). cwd is a host concern — this lives
+   *  on the concrete store, not a core port; the composition root calls it while wiring DriveInput. */
+  driveCwd(input: DriveInput): string;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -113,7 +121,8 @@ type TrackRow = {
 type SessionRow = {
   id: number;
   provider_session_id: string | null;
-  work_order_id: string;
+  workspace_id: string;
+  work_order_id: string | null;
   role: SessionRef['role'];
   scope_track_id: string | null;
   status: SessionRef['status'];
@@ -157,54 +166,59 @@ function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): 
   });
 }
 
+// One session row → SessionRef. WO-0050: extracted so the WO hydrate AND the draft session read
+// (the İtiraz seed) share one hydration; WO rows are still read per-WO (`WHERE work_order_id = ?`)
+// — draft rows are structurally invisible to every WO ledger.
+function hydrateSessionRow(r: SessionRow): SessionRef {
+  const transcript = JSON.parse(r.transcript) as SessionRef['transcript'];
+  const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
+  const providerSessionId = r.provider_session_id ?? undefined;
+  const stepIdx = r.step_idx ?? undefined;
+  const startedAt = r.started_at ?? undefined;
+  const endedAt = r.ended_at ?? undefined;
+  // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
+  const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
+  // The steer mirror (WO-0045): undelivered notes riding the row. parse-fail → [] (a corrupt blob must
+  // not brick hydration); empty list is dropped so the field stays absent when nothing queues.
+  const pendingNotes = (() => {
+    if (!r.pending_notes) return undefined;
+    try {
+      const parsed = JSON.parse(r.pending_notes) as { id: string; text: string }[];
+      return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SessionRef['pendingNotes']) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const notesField = pendingNotes ? { pendingNotes } : {};
+  switch (r.status) {
+    case 'stopped_asking':
+      return {
+        role: r.role,
+        status: 'stopped_asking',
+        transcript,
+        stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}') as SessionRef extends never ? never : import('../../core/types').StopAndAsk,
+        scope,
+        providerSessionId,
+        stepIdx,
+        startedAt,
+        endedAt,
+        ...(cost ? { cost } : {}),
+        ...notesField,
+      };
+    case 'running':
+      return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+    case 'stopped':
+      return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+    case 'idle':
+      return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+    case 'none':
+      return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+  }
+}
+
 function hydrateSessions(db: DatabaseSync, woId: string): SessionRef[] {
   const rows = db.prepare('SELECT * FROM session WHERE work_order_id = ? ORDER BY id').all(woId) as SessionRow[];
-  return rows.map((r): SessionRef => {
-    const transcript = JSON.parse(r.transcript) as SessionRef['transcript'];
-    const scope = r.scope_track_id ? tid(r.scope_track_id) : undefined;
-    const providerSessionId = r.provider_session_id ?? undefined;
-    const stepIdx = r.step_idx ?? undefined;
-    const startedAt = r.started_at ?? undefined;
-    const endedAt = r.ended_at ?? undefined;
-    // Per-session cost is observed — WO-0010 wrote it on turn_complete; undefined until then.
-    const cost = r.cost_usd == null ? undefined : { tokensIn: r.cost_tokens_in ?? 0, tokensOut: r.cost_tokens_out ?? 0, usd: r.cost_usd };
-    // The steer mirror (WO-0045): undelivered notes riding the row. parse-fail → [] (a corrupt blob must
-    // not brick hydration); empty list is dropped so the field stays absent when nothing queues.
-    const pendingNotes = (() => {
-      if (!r.pending_notes) return undefined;
-      try {
-        const parsed = JSON.parse(r.pending_notes) as { id: string; text: string }[];
-        return Array.isArray(parsed) && parsed.length > 0 ? (parsed as SessionRef['pendingNotes']) : undefined;
-      } catch {
-        return undefined;
-      }
-    })();
-    const notesField = pendingNotes ? { pendingNotes } : {};
-    switch (r.status) {
-      case 'stopped_asking':
-        return {
-          role: r.role,
-          status: 'stopped_asking',
-          transcript,
-          stopAndAsk: JSON.parse(r.stop_and_ask ?? '{}') as SessionRef extends never ? never : import('../../core/types').StopAndAsk,
-          scope,
-          providerSessionId,
-          stepIdx,
-          startedAt,
-          endedAt,
-          ...(cost ? { cost } : {}),
-          ...notesField,
-        };
-      case 'running':
-        return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
-      case 'stopped':
-        return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
-      case 'idle':
-        return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
-      case 'none':
-        return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
-    }
-  });
+  return rows.map(hydrateSessionRow);
 }
 
 function hydrateSources(db: DatabaseSync, woId: string): SourceLink[] {
@@ -294,6 +308,15 @@ function appendEvent(db: DatabaseSync, woId: string, kind: WoEventKind, detail =
   db.prepare('INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?,?,?,?)').run(woId, kind, detail, new Date().toISOString());
 }
 
+// WO-0050 / D3: the row's owner pair, resolved store-side. A WO owner resolves its workspace
+// through the work_order row (the source of truth — DriveInput carries no workspace id for WO
+// drives); a draft owner IS the workspace, with work_order_id NULL.
+function ownerPair(db: DatabaseSync, owner: SessionOwner): { wsId: string; woId: string | null } {
+  if (owner.kind === 'draft') return { wsId: owner.workspaceId, woId: null };
+  const ws = (db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(owner.workOrderId) as { ws: string } | undefined)?.ws;
+  return { wsId: ws ?? '', woId: owner.workOrderId };
+}
+
 function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WO-0029 / B17: a RESUMED session is the same row — accumulate the cost across its turns and keep the
   // EARLIEST start (the old DELETE+INSERT kept only the last turn's cost, so a resumed plan session's
@@ -302,9 +325,15 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // upsert is DELETE+INSERT, so a late record carrying a SHORTER fold (a post-restart stop whose
   // re-seed was empty, a fresh-reset turn) used to overwrite a fuller checkpoint with []. Like
   // started_at/ended_at, the row may only GROW.
+  const { wsId, woId } = ownerPair(db, input.owner);
+  // Reviewer round (2026-08-24), kept through the WO-0050 owner widening: the upsert is scoped to
+  // THIS owner — a provider id is only ever unique within its session's owner as far as the schema
+  // can promise (the e2e fake's once-shared per-role ids proved the hole by moving a row between
+  // WOs); a foreign row survives instead of being stolen. `IS ?` is SQLite's NULL-safe equality —
+  // a draft row's NULL work_order_id must match its own row (and only it).
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes FROM session WHERE provider_session_id = ? AND work_order_id = ?')
-    .get(input.providerSessionId, input.workOrderId) as
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+    .get(input.providerSessionId, wsId, woId) as
     | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null }
     | undefined;
   const priorTranscript = (() => {
@@ -322,7 +351,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // ever unique within its session's work order as far as the schema can promise (the e2e fake's
   // once-shared per-role ids proved the hole by moving a row between WOs); a foreign row survives
   // instead of being stolen.
-  db.prepare('DELETE FROM session WHERE provider_session_id = ? AND work_order_id = ?').run(input.providerSessionId, input.workOrderId);
+  db.prepare('DELETE FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?').run(input.providerSessionId, wsId, woId);
   const acc = (() => {
     if (!input.cost) return prior?.cost_usd == null ? undefined : { tokensIn: prior.cost_tokens_in ?? 0, tokensOut: prior.cost_tokens_out ?? 0, usd: prior.cost_usd };
     if (prior?.cost_usd == null) return input.cost;
@@ -344,11 +373,12 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   const pendingNotesJson =
     input.pendingNotes !== undefined ? JSON.stringify(input.pendingNotes) : (prior?.pending_notes ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
-    input.workOrderId,
+    wsId,
+    woId,
     input.role,
     input.scope ?? null,
     input.status,
@@ -369,6 +399,18 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
 // Also rebuilds the observed half if it predates the derive-at-hydrate model (a stored `track.stage`
 // column — the M2 dev schema drifted before TD-008 finalised; CREATE TABLE IF NOT EXISTS does not migrate
 // an existing table). Observed is discardable (ADR-0010), so drop + recreate + re-seed.
+
+// The session table's rebuild COPY (WO-0050): one statement, shared by every session rebuild —
+// whichever clause triggers ('stopped' pre-WO-0039, the owner pair pre-WO-0050), the recreated
+// table is the full SCHEMA_SQL, so the copy must fill EVERY column including the backfilled
+// workspace_id (through the WO join; `''` for an orphan row — joins to nothing, hydrates nowhere).
+const SESSION_REBUILD_COPY =
+  'INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
+  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx) ' +
+  'SELECT provider_session_id, ' +
+  "COALESCE((SELECT w.workspace_id FROM work_order w WHERE w.id = session_legacy.work_order_id), ''), work_order_id, " +
+  'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx FROM session_legacy';
+
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('provider_session_id')) db.exec('ALTER TABLE session ADD COLUMN provider_session_id TEXT');
@@ -408,6 +450,8 @@ function migrate(db: DatabaseSync): void {
   // round: the rebuild is TRANSACTIONAL — a crash mid-sequence would otherwise leave the recreated
   // empty table (whose fresh SQL already carries 'stopped', failing the rebuild condition) plus an
   // orphaned *_legacy, silently losing every session row.
+  // WO-0050: the copy is the shared SESSION_REBUILD_COPY below — every recreate backfills
+  // `workspace_id` (SCHEMA_SQL carries it NOT NULL, whichever clause triggers the rebuild).
   const sessionSql =
     (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='session'").get() as { sql: string } | undefined)?.sql ?? '';
   if (sessionSql && !sessionSql.includes("'stopped'")) {
@@ -415,12 +459,29 @@ function migrate(db: DatabaseSync): void {
     try {
       db.exec('ALTER TABLE session RENAME TO session_legacy');
       db.exec(SCHEMA_SQL);
-      db.exec(
-        'INSERT INTO session (provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-          'cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx) ' +
-          'SELECT provider_session_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-          'cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx FROM session_legacy',
-      );
+      db.exec(SESSION_REBUILD_COPY);
+      db.exec('DROP TABLE session_legacy');
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+
+  // WO-0050 / D2: the session gains its OWNER pair — `workspace_id TEXT NOT NULL` (backfilled
+  // through the WO join) and `work_order_id` going NULLable (the roadmap draft drive). For dbs
+  // that already carry 'stopped' but predate the owner pair — the same transactional rebuild with
+  // the same copy. An ORPHAN legacy row (its work_order row gone — the migration fixtures prove
+  // the vintage exists) backfills `''`: a workspace that joins to nothing, keeps the row, and
+  // never hydrates anywhere — honest, total, never a startup brick.
+  const sessionOwnerSql =
+    (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='session'").get() as { sql: string } | undefined)?.sql ?? '';
+  if (sessionOwnerSql && !sessionOwnerSql.includes('workspace_id')) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec('ALTER TABLE session RENAME TO session_legacy');
+      db.exec(SCHEMA_SQL);
+      db.exec(SESSION_REBUILD_COPY);
       db.exec('DROP TABLE session_legacy');
       db.exec('COMMIT');
     } catch (e) {
@@ -527,15 +588,19 @@ function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: 
 // app_setting rows are untouched — except the workspace's OWN budget threshold (WO-0047) and
 // structure root (WO-0048): a recycled workspace id must not inherit a dead cap or a foreign root.
 function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
+  // WO-0050: the live guard also sees the workspace's WO-LESS rows (a running draft blocks the
+  // delete like any live drive).
   const live = db
     .prepare(
-      "SELECT COUNT(*) AS n FROM session WHERE status = 'running' AND work_order_id IN (SELECT id FROM work_order WHERE workspace_id = ?)",
+      "SELECT COUNT(*) AS n FROM session WHERE status = 'running' AND (work_order_id IN (SELECT id FROM work_order WHERE workspace_id = ?) OR (workspace_id = ? AND work_order_id IS NULL))",
     )
-    .get(id) as { n: number };
+    .get(id, id) as { n: number };
   if (live.n > 0) throw new Error(`deleteWorkspace: ${live.n} running session(s) in ${id}`);
   const dir = connectedStructureRoot(db, id); // before the connection rows go
   const woIds = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(id) as { id: string }[];
   for (const x of woIds) deleteWorkOrderRows(db, woid(x.id), dir);
+  db.prepare('DELETE FROM session WHERE workspace_id = ? AND work_order_id IS NULL').run(id);
+  db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`docs_root:${id}`);
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
@@ -697,12 +762,14 @@ function settingBudget(db: DatabaseSync, wsId: WorkspaceId): BudgetThreshold | u
   }
 }
 
-// The workspace's current-month observed spend (WO-0047): SUM over the session rows of every work
-// order in the workspace, windowed on started_at (ISO strings compare lexicographically — the
-// range is core's UTC calendar month). NULL cost_usd rows never count toward the sum; the
-// companion count flags them so the surfaces can state the known-spend basis instead of silently
-// undercounting toward the cap. All three budget reads (gate, source, settings readout) go
-// through this one row.
+// The workspace's current-month observed spend (WO-0047): SUM over the workspace's session rows,
+// windowed on started_at (ISO strings compare lexicographically — the range is core's UTC
+// calendar month). WO-0050 / D4: keyed on `workspace_id` DIRECTLY, not through the WO join — a
+// draft session's row (work_order_id NULL) counts like every other; before the widening such a
+// row was invisible to the sum, which is exactly the bypass the draft must never have. NULL
+// cost_usd rows never count toward the sum; the companion count flags them so the surfaces can
+// state the known-spend basis instead of silently undercounting toward the cap. All three budget
+// reads (gate, source, settings readout) go through this one row.
 function monthSpendRow(db: DatabaseSync, wsId: WorkspaceId): { usd: number; hasUnknown: boolean } {
   const { startIso, endIso } = monthWindow(new Date());
   const row = db
@@ -710,7 +777,7 @@ function monthSpendRow(db: DatabaseSync, wsId: WorkspaceId): { usd: number; hasU
       `SELECT COALESCE(SUM(cost_usd), 0) AS usd,
               COALESCE(SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END), 0) AS unknownCount
        FROM session
-       WHERE work_order_id IN (SELECT id FROM work_order WHERE workspace_id = ?)
+       WHERE workspace_id = ?
          AND started_at >= ? AND started_at < ?`,
     )
     .get(wsId, startIso, endIso) as { usd: number; unknownCount: number };
@@ -732,6 +799,151 @@ function budgetBlockForWo(db: DatabaseSync, woId: WorkOrderId): BudgetRefusal | 
   if (!threshold || !(threshold.capUsd > 0)) return undefined;
   const { usd } = monthSpendRow(db, wsId);
   return budgetStatus(usd, threshold) === 'hard_stop' ? { observedUsd: usd, capUsd: threshold.capUsd } : undefined;
+}
+
+// WO-0050 / D4: the SAME gate keyed directly by workspace — the WO-less draft drive's read. The
+// draft's own spend already rides the widened monthSpendRow, so a draft at the cap is refused
+// exactly like a WO drive, pre-spawn.
+function budgetBlockForDraftRow(db: DatabaseSync, wsId: WorkspaceId): BudgetRefusal | undefined {
+  const threshold = settingBudget(db, wsId);
+  if (!threshold || !(threshold.capUsd > 0)) return undefined;
+  const { usd } = monthSpendRow(db, wsId);
+  return budgetStatus(usd, threshold) === 'hard_stop' ? { observedUsd: usd, capUsd: threshold.capUsd } : undefined;
+}
+
+// ===== The pending roadmap draft (WO-0050, ADR-0016) =====
+//
+// ONE row per workspace: the ✦ architect session's proposal, held until the operator decides.
+// Document text in the DB under the plan_original carve-out (a PENDING proposal, never the live
+// document). Written at plan_ready; cleared by approve and by a fresh draft's supersede.
+
+// The named reason a roadmap document cannot be re-read — the one parse-guard voice for every
+// draft write (saveRoadmap's own message stays verbatim; this is the draft paths' shared helper).
+function roadmapParseWhy(md: string): string | undefined {
+  const e = parseRoadmapMd(md).parseError;
+  if (!e) return undefined;
+  return e.reason === 'bad_json' ? `bad JSON (${e.message})`
+    : e.reason === 'bad_element' ? `malformed element [${e.index}] — ${e.problem}`
+    : 'no fazlar fence';
+}
+
+type DraftRow = { workspace_id: string; md: string; provider_session_id: string | null; created_at: string; updated_at: string };
+
+function saveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string, opts?: { providerSessionId?: string }): void {
+  const prior = db.prepare('SELECT md, provider_session_id FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as
+    | { md: string; provider_session_id: string | null }
+    | undefined;
+  // Supersede guard (D6): a row whose md PARSES is never overwritten by one that does not. The
+  // refusal KEEPS the prior valid proposal — a refusal, not a crash: the drive itself succeeded,
+  // and the card still has the good md to approve or object to.
+  if (prior && !roadmapParseWhy(prior.md) && roadmapParseWhy(md)) return;
+  const now = new Date().toISOString();
+  const providerSessionId = opts?.providerSessionId ?? prior?.provider_session_id ?? null;
+  if (prior) {
+    db.prepare('UPDATE roadmap_draft SET md = ?, provider_session_id = ?, updated_at = ? WHERE workspace_id = ?').run(md, providerSessionId, now, wsId);
+  } else {
+    db.prepare('INSERT INTO roadmap_draft (workspace_id, md, provider_session_id, created_at, updated_at) VALUES (?,?,?,?,?)').run(wsId, md, providerSessionId, now, now);
+  }
+}
+
+// The Düzenle write (the structured editor's Bitti): an OPERATOR act — refuse loudly on a
+// document that cannot be re-read (a read may degrade; an operator act may not), and on a
+// missing row (the editor opens only from the card, which opens only from a row).
+function updateRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string): void {
+  const prior = db.prepare('SELECT 1 AS x FROM roadmap_draft WHERE workspace_id = ?').get(wsId);
+  if (!prior) throw new Error('updateRoadmapDraft: no pending draft');
+  const why = roadmapParseWhy(md);
+  if (why) throw new Error(`updateRoadmapDraft: refusing to write a draft that cannot be re-read — ${why}`);
+  db.prepare('UPDATE roadmap_draft SET md = ?, updated_at = ? WHERE workspace_id = ?').run(md, new Date().toISOString(), wsId);
+}
+
+// Onayla ⏎ — the atomic decision: parse-guard (write nothing on a draft that cannot re-read),
+// write roadmap.md under the structure root, byte-identical re-read, DELETE the row. One call —
+// no half state (a saved file with a lingering card).
+async function approveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId): Promise<void> {
+  const row = db.prepare('SELECT md FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as { md: string } | undefined;
+  if (!row) throw new Error('approveRoadmapDraft: no pending draft');
+  const why = roadmapParseWhy(row.md);
+  if (why) throw new Error(`approveRoadmapDraft: refusing to write a document that cannot be re-read — ${why}`);
+  const root = structureRoot(db, wsId);
+  writeRoadmapMd(root, row.md);
+  if (readRoadmapMd(root) !== row.md) throw new Error('approveRoadmapDraft: written roadmap.md does not re-read byte-identical');
+  db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(wsId);
+}
+
+// The workspace's draft drive session row (latest), hydrated — the İtiraz resume's seed.
+function draftSessionRow(db: DatabaseSync, wsId: WorkspaceId): SessionRef | undefined {
+  const r = db
+    .prepare('SELECT * FROM session WHERE workspace_id = ? AND work_order_id IS NULL ORDER BY id DESC LIMIT 1')
+    .get(wsId) as SessionRow | undefined;
+  return r ? hydrateSessionRow(r) : undefined;
+}
+
+function getRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId): RoadmapDraft | null {
+  const row = db.prepare('SELECT * FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as DraftRow | undefined;
+  if (!row) return null;
+  const session = draftSessionRow(db, wsId);
+  return {
+    md: row.md,
+    ...(row.provider_session_id ? { providerSessionId: row.provider_session_id } : {}),
+    updatedAt: row.updated_at,
+    ...(session ? { session } : {}),
+  };
+}
+
+// The draft drive's first prompt (D5): the workspace's facts (slug, known repos, the roadmap
+// file's path) feed core's roadmapDraftPrompt — the ONE mechanism, paths never contents.
+// undefined when the workspace does not resolve (the pipeline refuses pre-spawn).
+function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote: string, docPaths: string[]): string | undefined {
+  const ws = db.prepare('SELECT 1 AS x FROM workspace WHERE id = ?').get(wsId);
+  if (!ws) return undefined;
+  const knownRepos = (
+    db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ?').all(wsId) as { repo_id: string }[]
+  ).map((r) => r.repo_id);
+  return roadmapDraftPrompt({
+    goalNote,
+    docPaths,
+    workspaceSlug: wsId as string,
+    knownRepos,
+    roadmapMdPath: join(structureRoot(db, wsId), 'roadmap.md'),
+  });
+}
+
+// ===== The cwd fix from the connection table (WO-0050 / D8) =====
+
+// The decision-store repo's connected local path — connectedStructureRoot minus the docs suffix.
+function decisionStoreRepoPath(db: DatabaseSync, wsId: WorkspaceId): string | undefined {
+  const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(wsId) as { decision_store: string } | undefined;
+  const dsSlug = ws?.decision_store ?? '';
+  const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(wsId) as { local_path: string }[];
+  for (const r of rows) {
+    if (repoBase(r.local_path) === dsSlug) return r.local_path;
+  }
+  return undefined;
+}
+
+// Every GUI drive's working directory, resolved from the owned connection table (D8): a scoped
+// WO drive runs in its track repo's connected path; a draft or unscoped WO drive in the
+// decision-store repo's path (the architect fence then lands at <repo>/docs = the structure root
+// at the default docs_root — TD-056 names the non-default residue). process.cwd() only when
+// nothing matches — fixture and unconnected workspaces keep today's behavior byte-for-byte.
+function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
+  if (isDraftDrive(input)) return decisionStoreRepoPath(db, input.workspaceId) ?? process.cwd();
+  const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;
+  if (!wo) return process.cwd();
+  const wsId = wid(wo.ws);
+  if (input.scope !== undefined) {
+    const t = db
+      .prepare('SELECT repo FROM track WHERE id = ? AND work_order_id = ?')
+      .get(input.scope, input.workOrderId) as { repo: string } | undefined;
+    if (t) {
+      const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(wsId) as { local_path: string }[];
+      for (const r of rows) {
+        if (repoBase(r.local_path) === t.repo || r.local_path.endsWith(t.repo)) return r.local_path;
+      }
+    }
+  }
+  return decisionStoreRepoPath(db, wsId) ?? process.cwd();
 }
 
 // The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
@@ -994,7 +1206,28 @@ export function createStore(dbPath: string): Store {
       writeRoadmapMd(root, md);
       if (readRoadmapMd(root) !== md) throw new Error('saveRoadmap: written roadmap.md does not re-read byte-identical');
     },
+    // The pending roadmap draft trio (WO-0050): the card's read, the Düzenle write, Onayla's
+    // atomic decision (parse-guard + write + byte-identical re-read + row DELETE).
+    getRoadmapDraft: (id: WorkspaceId) => Promise.resolve(getRoadmapDraftRow(db, id)),
+    updateRoadmapDraft: async (id: WorkspaceId, md: string): Promise<void> => {
+      updateRoadmapDraftRow(db, id, md);
+    },
+    approveRoadmapDraft: (id: WorkspaceId) => approveRoadmapDraftRow(db, id),
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    // WO-0050 — the draft drive's gate + prompt + pending row (D3–D6). The budget method is the
+    // draft arm of the unconditional gate; the prompt row feeds core's ONE-mechanism builder;
+    // the draft row is plan_ready's landing.
+    budgetBlockForDraft: (workspaceId: WorkspaceId) => budgetBlockForDraftRow(db, workspaceId),
+    roadmapDraftPromptFor: (workspaceId: WorkspaceId, goalNote: string, docPaths: string[]) =>
+      roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths),
+    saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string }) =>
+      saveRoadmapDraftRow(db, workspaceId, md, opts),
+    clearRoadmapDraft: (workspaceId: WorkspaceId) => {
+      db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(workspaceId);
+    },
+    // WO-0050 / D8 — the cwd fix: the composition root fills DriveInput.cwd from the connection
+    // table through this one call (process.cwd() only when nothing matches).
+    driveCwd: (input: DriveInput) => driveCwdRow(db, input),
     // WO-0045 — the flow-mode gate's read (order.md front-matter at spawn time; 'auto' for absent
     // docs/keys — behavior never jumps because the app learned about tempo).
     flowModeFor: (workOrderId: WorkOrderId): 'auto' | 'manual' => {
@@ -1004,11 +1237,13 @@ export function createStore(dbPath: string): Store {
       return order ? parseOrderMd(order).flowMode : 'auto';
     },
     // WO-0045 — Sürdür's delivery source: the notes persisted on the stopped row (the SDK queue died
-    // with the process — mirror is truth, probe raw/s4b-abort-pending.log).
-    pendingNotesFor: (workOrderId: WorkOrderId, providerSessionId: string) => {
+    // with the process — mirror is truth, probe raw/s4b-abort-pending.log). WO-0050: keyed by the
+    // owner pair (an İtiraz resume re-queues carry notes like any resume).
+    pendingNotesFor: (owner: SessionOwner, providerSessionId: string) => {
+      const { wsId, woId } = ownerPair(db, owner);
       const r = db
-        .prepare('SELECT pending_notes FROM session WHERE work_order_id = ? AND provider_session_id = ?')
-        .get(workOrderId, providerSessionId) as { pending_notes: string | null } | undefined;
+        .prepare('SELECT pending_notes FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+        .get(providerSessionId, wsId, woId) as { pending_notes: string | null } | undefined;
       if (!r?.pending_notes) return [];
       try {
         const parsed = JSON.parse(r.pending_notes) as { id: string; text: string }[];

@@ -2,7 +2,7 @@
 id: WO-0050
 title: Roadmap AI — the WO-less architect draft drive, paths-in-prompt import, RoadmapPane, the TASLAK card
 workspace: docket
-status: draft
+status: open
 mode: plan
 review: light
 review_mode: gates
@@ -152,12 +152,17 @@ Out of scope:
 
 ## Evidence required
 
-- plan_approval: PENDING — this order + `plan.md` are the session plan (the design agent's
-  16 rulings); the operator's approval gates the docs commit.
-- operator_checkpoint: the zero-token CLI walkthrough on a scratch db (draft → show absent →
-  approve → show ready; the refusal path) + the GUI eyeball of frames 03/04/05 with the cwd
-  change announced.
-- ci: green on the PR (typecheck both / `npm test` / `check:boundaries` / `build` / `test:ui`).
+- plan_approval: RESOLVED — the operator approved the session plan 2026-08-27 (three open rulings
+  settled before the docs commit: structured Düzenle, supersede, draft spend out of the head);
+  `plan.md` committed as `a071333`.
+- operator_checkpoint: RESOLVED 2026-08-28 — the zero-token CLI walkthrough on a scratch db:
+  draft (`--note --docs --fake`) → `draft pending — 2 faz · 2 görev · 1 bağımlılık zinciri` → show
+  absent (approval is the write) → approve (`written to roadmap.md … the git commit is yours`) →
+  show ready (f1 bekliyor `bloke: f0`, sıradaki f0-t1) → the refusal path (a fence-less draft
+  stays pending naming `no fazlar fence`; approve exits 1; the valid file untouched, validate ok).
+  The GUI eyeball of frames 03/04/05 + the cwd-change announcement approved on the same evidence.
+- ci: green on the PR (typecheck both / `npm test` 743 / `check:boundaries` / `build` /
+  `test:ui` 69 specs).
 - closure: ROADMAP M6 WO-0050 ticked with the merge sha; TD-056/TD-057 opened.
 
 ## Stop-and-ask gates

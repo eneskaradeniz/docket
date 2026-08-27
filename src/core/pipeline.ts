@@ -14,9 +14,9 @@
 // unchanged; the persistence side-effects ride alongside, exactly as main.ts used to do.
 
 import type { CostSummary, SessionRef, SteerNote } from './types';
-import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState } from './runner';
-import type { DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner } from './runner';
-import type { SessionStore } from './session-store';
+import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
+import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from './runner';
+import type { SessionOwner, SessionStore } from './session-store';
 import { parseVerdict } from './verdict';
 import { isRiskyPermission } from './risky';
 import type { PermissionRule } from './source';
@@ -24,14 +24,20 @@ import type { PermissionRule } from './source';
 /**
  * Fill the first prompt + track scope server-side, from the decision store. The renderer never parses
  * document text (ADR-0007). Order matters (WO-0023 / P1-1 fix): a drive that carries a `resume` id or a
- * non-empty `prompt` (approve / object / reply / step-resume) is left untouched; otherwise REVIEW before STEP
- * before the pure architect PLAN — the old code matched `role==='architect'` first and clobbered review/step
- * drives with the plan prompt. Pure-ish: reads via the injected store port, no side effects.
+ * non-empty `prompt` (approve / object / reply / step-resume) is left untouched; otherwise the DRAFT arm
+ * first (WO-0050 — a draft would otherwise fall into `architectPromptFor` with no WO), then REVIEW before
+ * STEP before the pure architect PLAN — the old code matched `role==='architect'` first and clobbered
+ * review/step drives with the plan prompt. Pure-ish: reads via the injected store port, no side effects.
  */
 export function prepareDriveInput(input: DriveInput, store: SessionStore): DriveInput {
   if (input.resume || input.prompt) return { ...input };
   const out: DriveInput = { ...input };
-  if (input.reviewStepIndex !== undefined) {
+  if (isDraftDrive(input)) {
+    // WO-0050 / D5: ONE mechanism — the store contributes the workspace facts, core's
+    // roadmapDraftPrompt builds the text (paths, never contents).
+    const p = store.roadmapDraftPromptFor(input.workspaceId, input.goalNote, input.docPaths);
+    if (p) out.prompt = p;
+  } else if (input.reviewStepIndex !== undefined) {
     const p = store.stepReviewPromptFor(input.workOrderId, input.reviewStepIndex);
     if (p) out.prompt = p;
   } else if (input.stepIndex !== undefined) {
@@ -148,28 +154,49 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     const policy = di.permissionRule !== undefined ? policyForRule(di.permissionRule) : deps.permission;
     const stepIdx = input.stepIndex; // a step drive (WO-0017) when set
     const reviewIdx = input.reviewStepIndex; // an architect REVIEW drive (WO-0020) when set
+    // WO-0050: the two arms of the drive union, narrowed once — mutually exclusive by the same
+    // guard. The WO side-effects below gate on `woInput`; the draft's land on `draftInput`.
+    const draftInput: DraftDriveInput | undefined = isDraftDrive(input) ? input : undefined;
+    const woInput: WoDriveInput | undefined = isDraftDrive(input) ? undefined : input;
+    const owner: SessionOwner = isDraftDrive(input)
+      ? { kind: 'draft', workspaceId: input.workspaceId }
+      : { kind: 'wo', workOrderId: input.workOrderId };
     // WO-0047: the workspace BUDGET gate — the FIRST gate, and the only one that sees EVERY drive
-    // (plan, step, review, resume alike: each spawns a runner that bills; the plan/flow gates below
-    // scope to step/review). Read at SPAWN time only — a drive already running when the cap is
+    // (plan, step, review, resume, draft alike: each spawns a runner that bills; the plan/flow gates
+    // below scope to step/review). Read at SPAWN time only — a drive already running when the cap is
     // crossed is never touched (the order's stance: the refusal applies to the NEXT drive). The
     // refusal carries its facts so every host composes the same sentence; raising the cap is a
-    // settings action — no force flag exists anywhere.
-    const budgetBlock = deps.store.budgetBlockFor(input.workOrderId);
+    // settings action — no force flag exists anywhere. WO-0050 / D4: the draft reads the SAME gate
+    // keyed directly by its workspace — the widened month sum includes its own spend.
+    const budgetBlock = isDraftDrive(input)
+      ? deps.store.budgetBlockForDraft(input.workspaceId)
+      : deps.store.budgetBlockFor(input.workOrderId);
     if (budgetBlock) {
+      const subject = isDraftDrive(input) ? 'roadmap draft' : input.workOrderId;
       yield {
         kind: 'error',
-        message: `drive refused: ${input.workOrderId} budget cap met (${budgetBlock.observedUsd.toFixed(2)} of ${budgetBlock.capUsd.toFixed(2)} USD this month)`,
+        message: `drive refused: ${subject} budget cap met (${budgetBlock.observedUsd.toFixed(2)} of ${budgetBlock.capUsd.toFixed(2)} USD this month)`,
         refusal: budgetBlock,
       };
       return;
     }
+    // WO-0050 / D5: a draft whose prompt did not assemble (the workspace did not resolve) is
+    // refused BEFORE the runner spawns — no empty-prompt provider run. The plan-gate refusal shape.
+    if (draftInput && !di.prompt) {
+      yield { kind: 'error', message: 'draft refused: no prompt assembled (workspace not found)' };
+      return;
+    }
+    // WO-0050 / D6: a FRESH draft supersedes — the pending row clears once its gates passed, before
+    // the runner spawns (operator ruling 2026-08-27: re-opening ✦ already decided the old proposal
+    // is dead). An İtiraz resume (the objection rides `resume`) never clears.
+    if (draftInput && !draftInput.resume) deps.store.clearRoadmapDraft(draftInput.workspaceId);
     // WO-0038 incident (2026-08-22): the approval gate is ENFORCED here — not only derived in the
     // UI. An unapproved plan's steps may exist as SPEC (plan.md's fence parses into 'pending' rows
     // before approval — getWorkOrderSteps is deliberately optimistic), so any host that reaches the
     // pipeline (a GUI pane's auto-drive, the CLI's `drive --step`) is refused with an error event
     // BEFORE the runner spawns: no session row, no phantom step_started. Plan/free drives pass.
-    if ((stepIdx !== undefined || reviewIdx !== undefined) && !deps.store.planApprovedFor(input.workOrderId)) {
-      yield { kind: 'error', message: `drive refused: ${input.workOrderId} plan not approved` };
+    if (woInput && (stepIdx !== undefined || reviewIdx !== undefined) && !deps.store.planApprovedFor(woInput.workOrderId)) {
+      yield { kind: 'error', message: `drive refused: ${woInput.workOrderId} plan not approved` };
       return;
     }
     // WO-0045 flow mode: in 'manual' NO drive starts itself. An `origin:'auto'` spawn (a pane's mount
@@ -178,11 +205,12 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // always passes; the mode is read at SPAWN time, so a chip switch never touches the running drive
     // (operator ruling 2026-08-26: switching takes effect at the next boundary).
     if (
-      (stepIdx !== undefined || reviewIdx !== undefined)
+      woInput
+      && (stepIdx !== undefined || reviewIdx !== undefined)
       && input.origin === 'auto'
-      && deps.store.flowModeFor(input.workOrderId) === 'manual'
+      && deps.store.flowModeFor(woInput.workOrderId) === 'manual'
     ) {
-      yield { kind: 'error', message: `drive refused: ${input.workOrderId} flow mode manual` };
+      yield { kind: 'error', message: `drive refused: ${woInput.workOrderId} flow mode manual` };
       return;
     }
     // WO-0045 Sürdür carry (D5): a resume with no prompt of its own delivers the FIRST queued note
@@ -190,8 +218,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // pending note re-queues into the new drive after `started` — including on a resume that carries
     // an explicit prompt (the ask answer): the notes then apply at the boundary after that turn,
     // mirroring the "queued during a pending ask" case. An approve-resume never carries (the operator
-    // just ruled on the plan; stale notes are not theirs to answer).
-    const carry = input.resume && !input.approve ? deps.store.pendingNotesFor(input.workOrderId, input.resume) : [];
+    // just ruled on the plan; stale notes are not theirs to answer). WO-0050: owner-keyed — a draft's
+    // row carries no notes (steer is WO-only, D15), so its carry is [] by truth.
+    const carry = input.resume && !input.approve ? deps.store.pendingNotesFor(owner, input.resume) : [];
     if (carry[0] && !di.prompt) {
       di.prompt = `Operator note: ${carry[0].text}`;
       di.deliveringNote = carry[0];
@@ -221,20 +250,24 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     };
     // Functions only — reassignments of mirrorNotes above stay visible through these closures.
     const checkpoint = (): void => record('running');
-    active = {
-      woId: input.workOrderId,
-      add: (n: SteerNote) => {
-        mirrorNotes = [...mirrorNotes, n];
-      },
-      drop: dropNote,
-      checkpoint,
-    };
+    // D15: the steer surface is WO-only — a draft never mounts it (steer/retractSteer no-op for
+    // the drive's lifetime; İtiraz is the draft's note path).
+    if (woInput) {
+      active = {
+        woId: woInput.workOrderId,
+        add: (n: SteerNote) => {
+          mirrorNotes = [...mirrorNotes, n];
+        },
+        drop: dropNote,
+        checkpoint,
+      };
+    }
 
     const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
       if (!providerSessionId) return;
       deps.store.recordSession({
         providerSessionId,
-        workOrderId: input.workOrderId,
+        owner,
         role: input.role,
         scope: input.scope,
         status,
@@ -263,7 +296,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             providerSessionId = ev.sessionId;
             startedAtIso = new Date().toISOString();
             record('running');
-            if (stepIdx !== undefined) deps.store.recordStep(input.workOrderId, stepIdx, { status: 'active' });
+            if (woInput && stepIdx !== undefined) deps.store.recordStep(woInput.workOrderId, stepIdx, { status: 'active' });
             yield ev;
             // WO-0045 D5: the re-queue carry enters the SDK queue now — after the session opened, so
             // the notes queue for a BOUNDARY (pushed with the seed they would merge into the first
@@ -292,7 +325,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
           case 'plan_ready':
             // Persist the proposed plan as PENDING so it survives restart (WO-0020, closes TD-025). Plan
             // APPROVAL is a separate host action (WorkOrderSource.approvePlan), not part of the drive loop.
-            deps.store.savePendingPlan(input.workOrderId, ev.planText);
+            // WO-0050 / D6: a draft's `plan_ready` is the PROPOSAL — it lands in the workspace's pending
+            // roadmap_draft row (md + this provider session id, İtiraz's resume handle) instead.
+            if (draftInput) deps.store.saveRoadmapDraft(draftInput.workspaceId, ev.planText, { providerSessionId });
+            else if (woInput) deps.store.savePendingPlan(woInput.workOrderId, ev.planText);
             yield ev;
             break;
           case 'ask_resolved':
@@ -324,21 +360,21 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
               const carryable = synthExit && (ev.cost.usd > 0 || ev.cost.tokensIn > 0 || ev.cost.tokensOut > 0);
               record('idle', synthExit && !carryable ? undefined : ev.cost, lastActivityIso ?? new Date().toISOString());
             }
-            if (stepIdx !== undefined) {
+            if (woInput && stepIdx !== undefined) {
               const body = ev.result ?? assistantText;
               const reportBody = body.trim()
                 ? body
                 : `# Step ${stepIdx} (${input.role})\n\n_(no summary captured — the turn ended without assistant text)_`;
-              deps.store.recordStepReport(input.workOrderId, stepIdx, input.role, reportBody);
+              deps.store.recordStepReport(woInput.workOrderId, stepIdx, input.role, reportBody);
             }
-            if (reviewIdx !== undefined) {
+            if (woInput && reviewIdx !== undefined) {
               const text = ev.result ?? assistantText;
               const v = parseVerdict(text);
               const outcome: 'proceed' | 'revise' = v.outcome === 'proceed' ? 'proceed' : 'revise';
               const body = v.outcome === 'unknown'
                 ? `${text}\n\n_(the architect did not give a clear VERDICT — surfaced for the operator)_`
                 : text;
-              deps.store.recordStepVerdict(input.workOrderId, reviewIdx, outcome, body);
+              deps.store.recordStepVerdict(woInput.workOrderId, reviewIdx, outcome, body);
             }
             yield ev;
             break;
@@ -366,8 +402,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             // The note applied at an agent-turn boundary (command_lifecycle uuid match in the real
             // adapter; the synthetic receipt after `started` for a prompt-channel delivery). Delivery
             // is the one steer mutation that is EVENT-driven — the adapter alone observes it.
+            // WO-0050 / D15: WO-only by truth (a draft never queues a note); the guard keeps the
+            // audit home honest even for a scripted fake that emits one anyway.
             dropNote(ev.noteId);
-            deps.store.recordAuditEvent(input.workOrderId, 'steer_delivered', noteDetail(ev.text));
+            if (woInput) deps.store.recordAuditEvent(woInput.workOrderId, 'steer_delivered', noteDetail(ev.text));
             record('running');
             yield ev;
             break;

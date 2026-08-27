@@ -59,4 +59,22 @@ describe('locale bundles (WO-0035)', () => {
     expect(tr.fazLabel('onboarding')).toBe('FAZ ONBOARDING');
     expect(en.fazLabel('f4')).toBe('PHASE 4');
   });
+
+  it('the ✦ draft block pins the mockup words — one mechanism, the card voice (WO-0050)', () => {
+    expect(tr.UI.roadmapDraftAction).toBe('✦ Üret / İçe aktar');
+    expect(tr.UI.roadmapDraftStart).toBe('Taslağı başlat');
+    expect(tr.UI.roadmapDraftIdentity).toBe('MİMAR — TASLAK');
+    expect(tr.UI.roadmapDraftRunning).toBe('taslak sürüyor');
+    expect(tr.UI.roadmapDraftSourceLine(9)).toBe('kaynak: 9 belge');
+    expect(tr.UI.roadmapDraftSourceLine(0)).toBe('kaynak: hedef notu');
+    expect(tr.UI.roadmapDraftCardSummary(4, 11, 1, 'docs')).toBe(
+      '4 faz · 11 görev · 1 bağımlılık zinciri — onaylanınca docs/roadmap.md olarak karar deposuna yazılır; commit operatörün.',
+    );
+    expect(tr.UI.roadmapDraftCardSummary(2, 5, 0, 'docs')).not.toContain('bağımlılık');
+    expect(tr.UI.roadmapDraftFazMeta(4, 'api')).toBe('4 görev · api');
+    expect(tr.UI.roadmapDraftFazMeta(3, '')).toBe('3 görev');
+    expect(tr.UI.roadmapDraftDocsOptional).toContain('isteğe bağlı');
+    expect(en.UI.roadmapDraftAction).toBe('✦ Generate / Import');
+    expect(en.UI.roadmapDraftIdentity).toBe('ARCHITECT — DRAFT');
+  });
 });

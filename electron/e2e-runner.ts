@@ -4,6 +4,7 @@
 // IPC path the real SDK uses (the composition root swaps only the runner, exactly like the CLI's
 // --fake). Permission asks behave like the provider: the event streams AND a latch is held until
 // decide() answers, which then emits ask_resolved.
+import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent, SessionRunner } from '../src/core/runner';
 
 export interface E2eRunner extends SessionRunner {
@@ -39,7 +40,10 @@ export function createE2eRunner(): E2eRunner {
         // `e2e-<role>` id let a later drive on ANOTHER work order inherit (and, via the
         // longer-transcript-wins merge, keep) a foreign transcript. Re-drives on the SAME work
         // order still share the id — the resume-like single accumulating row.
-        yield { kind: 'started', sessionId: `e2e-${String(input.workOrderId).toLowerCase()}-${input.role}`, at: new Date().toISOString() };
+        // WO-0050: a draft has no work order — its id keys the WORKSPACE (the upsert's owner pair),
+        // same uniqueness rule, same accumulating row for the İtiraz resume.
+        const ownerKey = isDraftDrive(input) ? String(input.workspaceId).toLowerCase() : String(input.workOrderId).toLowerCase();
+        yield { kind: 'started', sessionId: `e2e-${ownerKey}-${input.role}`, at: new Date().toISOString() };
         let read = 0; // (renamed from the obvious word — the vendor-name grep matches it)
         for (;;) {
           if (read < queue.length) {

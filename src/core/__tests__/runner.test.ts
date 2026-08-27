@@ -4,6 +4,7 @@ import {
   fenceDecision,
   foldSessionEvent,
   initialSessionState,
+  isDraftDrive,
   isPlanDrive,
   isUnder,
   seedLiveState,
@@ -13,8 +14,8 @@ import {
   summarizeToolInput,
   writeScopeFor,
 } from '../runner';
-import type { DriveInput, RunnerEvent, WriteAttempt } from '../runner';
-import type { WorkOrderId } from '../types';
+import type { DraftDriveInput, DriveInput, RunnerEvent, WoDriveInput, WriteAttempt } from '../runner';
+import type { WorkOrderId, WorkspaceId } from '../types';
 
 const ROOTS = { repoRoot: '/repo', decisionStore: '/repo/docs' };
 const architect = writeScopeFor('architect', ROOTS);
@@ -42,7 +43,7 @@ describe('writeScopeFor — ADR-0002 role → write scope', () => {
 });
 
 describe('isPlanDrive — only the pure architect plan drive (WO-0023 / P1-1)', () => {
-  const di = (over: Partial<DriveInput>): DriveInput =>
+  const di = (over: Partial<WoDriveInput>): DriveInput =>
     ({ role: 'architect', workOrderId: 'WO-T' as WorkOrderId, mode: 'plan', prompt: '', ...over });
   it('pure architect plan drive → true', () => {
     expect(isPlanDrive(di({}))).toBe(true);
@@ -59,6 +60,26 @@ describe('isPlanDrive — only the pure architect plan drive (WO-0023 / P1-1)', 
   it('implementer / verifier → false', () => {
     expect(isPlanDrive(di({ role: 'implementer' }))).toBe(false);
     expect(isPlanDrive(di({ role: 'verifier' }))).toBe(false);
+  });
+});
+
+describe('isDraftDrive — the WO-less roadmap draft (WO-0050 / D1)', () => {
+  const draft = (over: Partial<DraftDriveInput>): DraftDriveInput =>
+    ({ role: 'architect', workspaceId: 'ws-t' as WorkspaceId, mode: 'plan', prompt: '', goalNote: 'note', docPaths: [], ...over });
+  const wo = (over: Partial<WoDriveInput>): DriveInput =>
+    ({ role: 'implementer', workOrderId: 'WO-T' as WorkOrderId, mode: 'direct', prompt: '', ...over });
+  it('a workspace-keyed drive narrows to the draft arm', () => {
+    expect(isDraftDrive(draft({}))).toBe(true);
+  });
+  it('a WO-keyed drive narrows to the WO arm', () => {
+    expect(isDraftDrive(wo({}))).toBe(false);
+  });
+  it('the draft IS a plan drive — the provider plan-mode + ExitPlanMode contract applies unchanged', () => {
+    expect(isPlanDrive(draft({}))).toBe(true);
+  });
+  it('an objection resume stays a draft and stays a plan drive', () => {
+    expect(isDraftDrive(draft({ prompt: 'not: bağımlılıkları unutmuşsun', resume: 'sess-1' }))).toBe(true);
+    expect(isPlanDrive(draft({ prompt: 'not: bağımlılıkları unutmuşsun', resume: 'sess-1' }))).toBe(true);
   });
 });
 

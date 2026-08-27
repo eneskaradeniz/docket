@@ -12,6 +12,7 @@ import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { unifiedDiffLines } from '../src/core/diff';
+import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { Locale } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
@@ -140,6 +141,12 @@ ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => s
 ipcMain.handle('docket:source:get-roadmap', (_e, id: WorkspaceId) => store.getRoadmap(id));
 ipcMain.handle('docket:source:get-roadmap-md', (_e, id: WorkspaceId) => store.getRoadmapMd(id));
 ipcMain.handle('docket:source:save-roadmap', (_e, id: WorkspaceId, md: string) => store.saveRoadmap(id, md));
+// WO-0050 — the pending draft trio: the TASLAK card's read, the Düzenle write, Onayla's atomic
+// decision (parse-guard + write + byte-identical re-read + row DELETE). Thin forwarders, like
+// their siblings above.
+ipcMain.handle('docket:source:get-roadmap-draft', (_e, id: WorkspaceId) => store.getRoadmapDraft(id));
+ipcMain.handle('docket:source:update-roadmap-draft', (_e, id: WorkspaceId, md: string) => store.updateRoadmapDraft(id, md));
+ipcMain.handle('docket:source:approve-roadmap-draft', (_e, id: WorkspaceId) => store.approveRoadmapDraft(id));
 
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
@@ -282,9 +289,16 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // every event here for IPC. This handler is a thin forwarder; it owns no logic.
   // WO-0031c: the work order's permission rule applies unless the drive explicitly carries one (the
   // CLI's --policy). The rule resolves from the WO's order.md front-matter, falling back to the Settings
-  // default. The fence (scope) is identical under every rule — this is cadence only.
-  const permissionRule = input.permissionRule ?? (await store.getPermissionRuleFor(input.workOrderId));
-  const driveInput: DriveInput = { ...input, cwd: process.cwd(), permissionRule };
+  // default. WO-0050: a draft has no order.md — it reads the Settings default directly (D7). The
+  // fence (scope) is identical under every rule — this is cadence only.
+  const permissionRule =
+    input.permissionRule
+    ?? (isDraftDrive(input) ? await store.getPermissionRule() : await store.getPermissionRuleFor(input.workOrderId));
+  // WO-0050 / D8 — the cwd fix: the drive's working directory resolves from the connection table
+  // (a scoped WO drive runs in its track repo; a draft or unscoped WO drive in the decision-store
+  // repo; process.cwd() only when nothing matches). An explicit cwd (the CLI's --cwd, a resume
+  // re-issue) always wins.
+  const driveInput: DriveInput = { ...input, cwd: input.cwd ?? store.driveCwd(input), permissionRule };
   const iterator = pipeline.drive(driveInput);
   activeDrive = iterator;
   try {
