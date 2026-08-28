@@ -215,7 +215,10 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
     if (!r.final_model_usage) return undefined;
     try {
       const parsed = JSON.parse(r.final_model_usage) as TurnUsage;
-      return parsed && typeof parsed === 'object' ? parsed : undefined;
+      // A TurnUsage is an OBJECT with optional fields — a JSON array is also `typeof 'object'`,
+      // so the guard must reject it explicitly (review minor): an array blob hydrates ABSENT,
+      // never `finalUsage: []` (the pending_notes fail-open: corrupt stays absent, no crash).
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
     } catch {
       return undefined;
     }

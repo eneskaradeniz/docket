@@ -1808,6 +1808,17 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     expect(s.ctx).toEqual({ usedTokens: 100608, maxTokens: 200000 });
   });
 
+  it('a final_model_usage blob that is a JSON ARRAY hydrates ABSENT — not finalUsage: [] (review minor, fail-open)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage blob');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    store.recordSession({ providerSessionId: 'sess-blob', owner, role: 'architect', status: 'idle', finalUsage: usageFull });
+    // corrupt the blob into the shape the guard must reject: a JSON array is an OBJECT to typeof
+    store.db.prepare("UPDATE session SET final_model_usage = '[]' WHERE provider_session_id = ?").run('sess-blob');
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('finalUsage' in s).toBe(false); // absent — a corrupt blob must not brick hydration nor leak a non-TurnUsage
+  });
+
   it('a session with no usage facts hydrates honestly absent (no ctx, no finalUsage)', async () => {
     const store = createStore(freshDb());
     const { wo } = await wsIn(store, 'Usage none');
