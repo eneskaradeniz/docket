@@ -28,12 +28,13 @@ budget gate (WO-0047) stays separate; resume mechanics are untouched; the usage 
 
 ## Context
 
-- **Acceptance basis: mockup frames 01–03** (`docs/ui-mockups/limit-ekrani.html`, the WO-0051
-  flow — the tour and the operator's approval PRECEDE implementation; evidence
-  `operator_checkpoint` round 1 records the approved rev + commit). Frame 01: the limit card in
-  its two states (the stop — reset line, NO button; the open moment — «Sürdür» + ⏎). Frame 02:
-  the live warning line on the pane header. Frame 03: the restart re-derivation (the card
-  re-seeded from the row's checkpoint). The tour's S5 table row — "rate-limit windows / 429
+- **Acceptance basis: mockup frames 01–04** (`docs/ui-mockups/limit-ekrani.html`, rev 1,
+  approved 2026-08-29, commit `cf28681` — the WO-0051 flow; the tour preceded implementation).
+  Frame 01: the limit card in its two states (the stop — reset line, NO button; the open moment —
+  «Sürdür» + ⏎). Frame 02: the live warning line on the pane header. Frame 03: the restart
+  re-derivation (the card re-seeded from the row's checkpoint). Frame 04: old→new (today's
+  raw-English 429 fail card — the stamp-less degradation tier). The tour's S5 table row —
+  "rate-limit windows / 429
   counters | `usage_EXPERIMENTAL` session controls | never called | **limit screen (queue item
   3)**" — is this WO's grounding; quote it in `plan.md` (WO-0052's note, inherited).
 - **Code anchors (verified against the tree):** the push message `rate_limit_event` carries
@@ -67,7 +68,7 @@ budget gate (WO-0047) stays separate; resume mechanics are untouched; the usage 
   the SDK method name appears only in Adapter-layer bullets and docs' factual references. The
   stamp is normalized at the boundary: the push channel's epoch `resetsAt` becomes an ISO string
   IN THE ADAPTER — that conversion is this WO's reason to exist.
-- **Proposed rulings (locked, with dates, at `operator_checkpoint` round 1).** (1) The card
+- **Mockup rulings (locked with the operator 2026-08-29, rev 1 `cf28681`).** (1) The card
   speaks PROVIDER windows — no $ figures, no cap copy; the budget card owns those, and the two
   cards never compete (a budget refusal is pre-spawn, a limit stop is post-flight; the refusal
   still outranks in the stack — the fresher intent, the fail card's existing `!lastRefusal`
@@ -177,9 +178,9 @@ Out of scope:
 
 ## Evidence required
 
-- operator_checkpoint: TWO rounds (the WO-0051 flow). Round 1 = the mockup tour (frames 01–03)
-  — approval locks the rulings above with dates. Round 2 = the realized app re-presented
-  against the approved frames.
+- operator_checkpoint: TWO rounds (the WO-0051 flow). Round 1 RESOLVED 2026-08-29 — the mockup
+  tour (frames 01–04, rev 1 `cf28681`) approved; the rulings above are locked. Round 2 = the
+  realized app re-presented against the approved frames.
 - plan_approval: architect verdict, `plan.md` committed (mode: plan — the open design slots:
   the card/warn-line copy values and the pull-feed cadence details are decided there).
 - pr_open: PR URL, head sha.
