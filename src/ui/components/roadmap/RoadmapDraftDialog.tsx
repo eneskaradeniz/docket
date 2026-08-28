@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { WorkspaceId } from '../../../core/types';
-import { draftDocGroups, draftStorePaths } from '../../../core/roadmap-draft';
+import { draftDocGroupKeyOf, draftDocGroups, draftStorePaths, mergePickedPaths } from '../../../core/roadmap-draft';
 import { useLabels } from '../../data/locale';
 import { toast } from '../../chrome/ToastHost';
 import { Button, Textarea, cn } from '../../kit';
@@ -41,9 +41,12 @@ const LOC_CAP = 26; // the picked row's location meta — front-truncated, the t
 
 const basenameOf = (p: string): string => p.split('/').pop() || p;
 /** The picked row's location meta is the PARENT DIR (the name already leads the row — showing
- *  it twice would be the redundancy rev 3 killed), front-truncated: `…/source/base-mobile`. */
+ *  it twice would be the redundancy rev 3 killed), front-truncated: `…/source/base-mobile`.
+ *  A path with no separator has no location worth showing ('' — the span omits). */
 const locationOf = (p: string, max = LOC_CAP): string => {
-  const parent = p.slice(0, p.lastIndexOf('/'));
+  const i = p.lastIndexOf('/');
+  const parent = i === -1 ? '' : p.slice(0, i);
+  if (parent === '') return '';
   return parent.length <= max ? parent : `…${parent.slice(-(max - 1))}`;
 };
 
@@ -67,6 +70,8 @@ export function RoadmapDraftDialog({
   /** The EK BELGELER channel: picked paths (any path — outside the structure root/repo included). */
   const [picked, setPicked] = useState<string[]>([]);
   const [freeExplore, setFreeExplore] = useState(false);
+  /** A start clicked while the scan was still loading — fired when the scan settles (f7). */
+  const [pendingStart, setPendingStart] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busyError, setBusyError] = useState<string | undefined>(undefined);
   const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -96,11 +101,15 @@ export function RoadmapDraftDialog({
   const noteInvalid = touched && !note.trim() ? UI.roadmapDraftNoteErr : null;
 
   const groups = scan.status === 'ready' ? draftDocGroups(scan.files) : { groups: [], grouped: false };
-  const groupKeyOf = (file: string): string => (file.includes('/') ? file.slice(0, file.indexOf('/')) : '');
+  // The exclusion set keys on core's own group rule (review f4: one expression, not two).
   const includedFiles =
-    scan.status === 'ready' ? scan.files.filter((f) => !excluded.has(groups.grouped ? groupKeyOf(f) : f)) : [];
-  // The prompt's path UNION: store (repo-relative, resolvable from the drive cwd) + picked.
-  const docPaths = [...(scan.status === 'ready' ? draftStorePaths(scan.docsRoot, includedFiles) : []), ...picked];
+    scan.status === 'ready'
+      ? scan.files.filter((f) => !excluded.has(groups.grouped ? draftDocGroupKeyOf(f) : f))
+      : [];
+  // The prompt's path UNION, deduplicated across channels (review f3): a picked path that
+  // already IS a store path enters once and does not count as an addition.
+  const storePaths = scan.status === 'ready' ? draftStorePaths(scan.docsRoot, includedFiles) : [];
+  const docPaths = mergePickedPaths(storePaths, picked);
 
   const toggleExcluded = (key: string): void => {
     setExcluded((prior) => {
@@ -130,6 +139,13 @@ export function RoadmapDraftDialog({
       noteRef.current?.focus();
       return;
     }
+    // The default posture is deterministic by contract (karar 3) — a click inside the scan's
+    // in-flight window is HELD, not answered with an empty store (review f7); the dispatch
+    // fires the moment the scan lands (or the floor renders).
+    if (scan.status === 'loading') {
+      setPendingStart(true);
+      return;
+    }
     const ok = store.start(
       `${workspaceId}:draft`,
       {
@@ -139,7 +155,7 @@ export function RoadmapDraftDialog({
         prompt: '',
         goalNote: note.trim(),
         docPaths,
-        docSource: { store: includedFiles.length, external: picked.length },
+        docSource: { store: includedFiles.length, external: docPaths.length - storePaths.length },
         freeExplore,
       },
       initialSessionState,
@@ -150,6 +166,13 @@ export function RoadmapDraftDialog({
     }
     onClose();
   };
+
+  useEffect(() => {
+    // A held start fires once, on the scan's settlement (success closes the dialog).
+    if (!pendingStart || scan.status === 'loading') return;
+    setPendingStart(false);
+    start();
+  }, [pendingStart, scan]);
 
   const visibleFlat = groups.grouped ? [] : includedFiles.slice(0, FLAT_ROWS_CAP);
   const flatMore = includedFiles.length - visibleFlat.length;

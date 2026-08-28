@@ -329,14 +329,16 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             // APPROVAL is a separate host action (WorkOrderSource.approvePlan), not part of the drive loop.
             // WO-0050 / D6: a draft's `plan_ready` is the PROPOSAL — it lands in the workspace's pending
             // roadmap_draft row (md + this provider session id, İtiraz's resume handle) instead.
-            // WO-0051 / D2: the composition's COUNTS ride the same write, IFF the dialog carried any —
-            // an İtiraz resume's summary-less write omits the key and the store keeps the prior figures.
+            // WO-0051 / D2: the composition's COUNTS ride the same write, IFF the input carried
+            // them (the dialog always does; the CLI and an İtiraz resume do not — a resume's
+            // summary-less write keeps the prior figures, and a counts-less drive writes none
+            // rather than fabricating zeros for paths it may still have carried — review f2).
             if (draftInput) {
               const opts: { providerSessionId?: string; sourceSummary?: DraftSourceSummary } = { providerSessionId };
-              if (draftInput.docSource !== undefined || draftInput.freeExplore === true) {
+              if (draftInput.docSource !== undefined) {
                 opts.sourceSummary = {
-                  store: draftInput.docSource?.store ?? 0,
-                  external: draftInput.docSource?.external ?? 0,
+                  store: draftInput.docSource.store,
+                  external: draftInput.docSource.external,
                   freeExplore: draftInput.freeExplore === true,
                 };
               }

@@ -260,14 +260,16 @@ ipcMain.handle('docket:pick-folder', async () => {
 });
 
 // --- File picker (WO-0015): context-file attachments, native dialog, main-only ---
-// WO-0051 / D7: the native dialog is undrivable in E2E — under DOCKET_E2E a STAGED list (set
+// WO-0051 / D7: the native dialog is undrivable in E2E — under DOCKET_E2E a STAGED answer (set
 // through the gated e2e channel) stands in, return-and-clear, exactly one pick per stage. The
-// composition root is the seam's only home; production never sees it.
-let stagedPickFiles: string[] | null = null;
+// stage is TRI-STATE (review f5): undefined = unstaged (the real dialog runs), a string[] = a
+// staged pick, null = a STAGED CANCEL — staging null must not fall through to a real dialog and
+// hang a headless run. The composition root is the seam's only home; production never sees it.
+let stagedPickFiles: string[] | null | undefined = undefined;
 ipcMain.handle('docket:pick-files', async () => {
-  if (process.env.DOCKET_E2E && stagedPickFiles !== null) {
+  if (process.env.DOCKET_E2E && stagedPickFiles !== undefined) {
     const staged = stagedPickFiles;
-    stagedPickFiles = null;
+    stagedPickFiles = undefined;
     return staged;
   }
   const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
@@ -312,14 +314,16 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // repo; process.cwd() only when nothing matches). An explicit cwd (the CLI's --cwd, a resume
   // re-issue) always wins.
   // WO-0051 / D9 (TD-056): an architect drive's write fence lands on the workspace's structure
-  // root (docs_root-aligned) instead of the cwd-relative default — filled here every arrival, so
-  // a resume re-issue can never carry a stale root.
-  const decisionStoreRoot =
-    input.role === 'architect' && input.decisionStoreRoot === undefined ? store.decisionStoreRootFor(input) : undefined;
+  // root (docs_root-aligned) instead of the cwd-relative default. The fill OVERWRITES
+  // unconditionally (review f1): a renderer-supplied decisionStoreRoot is never honored — the
+  // write fence is not renderer-controllable; undefined (workspace unresolvable) keeps the
+  // adapter's cwd-relative default. Non-architect drives carry no root at all (their scopes
+  // never read it — writeScopeFor gives implementers the repo and verifiers read-only).
+  const decisionStoreRoot = input.role === 'architect' ? store.decisionStoreRootFor(input) : undefined;
   const driveInput: DriveInput = {
     ...input,
     cwd: input.cwd ?? store.driveCwd(input),
-    ...(decisionStoreRoot !== undefined ? { decisionStoreRoot } : {}),
+    decisionStoreRoot,
     permissionRule,
   };
   const iterator = pipeline.drive(driveInput);

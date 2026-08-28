@@ -300,10 +300,11 @@ describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)
     expect(methods(fs.calls)).not.toContain('savePendingPlan'); // the WO side-effect never fires
   });
 
-  // WO-0051 / D1+D2: the composition rides the SAME write — counts + the flag, IFF the dialog
-  // carried any. A plain drive (the CLI, a pre-WO-0051 capture) writes opts verbatim as before;
-  // an İtiraz resume's summary-less write omits the key (the store keeps the prior figures).
-  it('plan_ready persists sourceSummary iff the draft carries docSource/freeExplore (WO-0051)', async () => {
+  // WO-0051 / D1+D2: the composition rides the SAME write — counts + the flag, IFF the input
+  // carried the counts (the dialog always does). A counts-less drive (the CLI, an İtiraz
+  // resume) writes NO summary rather than fabricating zeros for paths it may still have
+  // carried — review f2 — and the store's keep-prior holds the original figures.
+  it('plan_ready persists sourceSummary iff the draft carries docSource (WO-0051)', async () => {
     const fr = fakeRunner([started('draft-sess-12'), plan('# kompozisyon'), done()]);
     const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
@@ -322,6 +323,13 @@ describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)
       external: 0,
       freeExplore: false,
     });
+
+    // --explore WITHOUT counts (the CLI's arm): the flag threads to the prompt, but no summary
+    // is fabricated — the row keeps whatever it had (honest omission, review f2).
+    const fs3 = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p3 = createPipeline({ runner: fr.runner, store: fs3.store, permission: autoAllowPolicy() });
+    await collect(p3, draftDrive({ docPaths: ['/tmp/a.md'], freeExplore: true }));
+    expect(findCall(fs3.calls, 'saveRoadmapDraft')?.args[2]).toEqual({ providerSessionId: 'draft-sess-12' });
   });
 
   it('prepareDriveInput threads freeExplore to roadmapDraftPromptFor — undefined when off (WO-0051)', () => {

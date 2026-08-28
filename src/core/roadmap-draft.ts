@@ -183,6 +183,14 @@ export interface DraftDocGroup {
   files: string[];
 }
 
+/** The first-directory-segment group key of a scan file (`''` = the structure root itself).
+ *  Exported because the dialog's EXCLUSION set keys on the same rule (review f4: two copies of
+ *  a string expression drift silently) — `draftDocGroups` and the dialog share this one word. */
+export function draftDocGroupKeyOf(file: string): string {
+  const slash = file.indexOf('/');
+  return slash === -1 ? '' : file.slice(0, slash);
+}
+
 /** Group a store scan (structure-root-RELATIVE posix paths) at the FIRST directory segment —
  *  the mockup's noise unit: docket scale drops 70 work orders with one touch (frame 02).
  *  `grouped: true` → the dialog renders group rows (any non-root segment exists); a pure-root
@@ -191,8 +199,7 @@ export interface DraftDocGroup {
 export function draftDocGroups(files: string[]): { groups: DraftDocGroup[]; grouped: boolean } {
   const byKey = new Map<string, string[]>();
   for (const f of files) {
-    const slash = f.indexOf('/');
-    const key = slash === -1 ? '' : f.slice(0, slash);
+    const key = draftDocGroupKeyOf(f);
     const list = byKey.get(key);
     if (list) list.push(f);
     else byKey.set(key, [f]);
@@ -201,6 +208,16 @@ export function draftDocGroups(files: string[]): { groups: DraftDocGroup[]; grou
     .map(([key, list]) => ({ key, files: [...list].sort() }))
     .sort((a, b) => (a.key === '' ? -1 : b.key === '' ? 1 : a.key.localeCompare(b.key)));
   return { groups, grouped: groups.some((g) => g.key !== '') };
+}
+
+/** The prompt's path UNION, deduplicated across channels (review f3): a picked path that
+ *  already IS a store path (`…/repo/docs/adr/x.md` vs the store's `docs/adr/x.md`) enters the
+ *  list once and does not count as an addition — the picker's default dir is the repo, so the
+ *  overlap is the ordinary case, not the exception. Suffix match (`/<storePath>`): an absolute
+ *  pick of a store file resolves to the same file the architect would read either way. */
+export function mergePickedPaths(storePaths: string[], picked: string[]): string[] {
+  const extra = picked.filter((p) => !storePaths.some((sp) => p === sp || p.endsWith(`/${sp}`)));
+  return [...storePaths, ...extra];
 }
 
 /** Join the structure root with scan-relative files into the PROMPT's repo-relative paths

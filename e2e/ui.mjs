@@ -2454,6 +2454,24 @@ await spec('WO-0051 döküm çipi eski satırda dürüst düşer: kirli kart aç
   await page.getByRole('button', { name: 'Pano' }).click();
 });
 
+await spec('WO-0051 düz kök (review f6): dosya satırları kaplı + tümü-dahil kuyruğu', async () => {
+  await switchWs('taslak-kirli', 'taslak-duz');
+  await openRoadmap();
+  await openDraftDialog();
+  const line = await page.locator('[data-draft-storeline]').innerText();
+  assert.ok(line.includes('docs/ · 10 belge — tümü dahil'), `flat store line: ${line}`);
+  await page.locator('[data-draft-storeline]').click(); // expand
+  await page.waitForTimeout(250);
+  const fileRows = page.locator('[data-draft-docpick] [data-draft-file]');
+  assert.equal(await fileRows.count(), 8, `the flat cap: ${await fileRows.count()}`);
+  assert.equal(await page.locator('[data-draft-group]').count(), 0, 'group rows on a flat root');
+  const pick = await page.locator('[data-draft-docpick]').innerText();
+  assert.ok(pick.includes('+2 belge — tümü dahil'), `the moreline tail: ${pick.slice(-80)}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-duz-flat@980.png') });
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
 await spec('WO-0051 CLI: roadmap draft --explore --fake → bekleyen satır (keşif bayrağı akar)', async () => {
   const root = mkdtempSync(join(tmpdir(), 'docket-cli-'));
   const repoX = join(root, 'repo');

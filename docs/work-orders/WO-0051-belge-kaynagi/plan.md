@@ -79,7 +79,8 @@ docs-close. `src/core/` is test-first (ADR-0006); React is verified by running i
   if shipped. Gate: BOTH typechecks + `npm test` + `check:boundaries`.
 - **S4 (dialog + labels):** `RoadmapDraftDialog` rebuilt (D4); `RoadmapPane` source line
   widens (legacy `roadmapDraftSourceLine` stays the fallback); labels tr/en + pins (~18
-  keys; `roadmapDraftDocsOptional` copy change; reuse `transcriptOpen/Close`, `auditClock`,
+  keys; `roadmapDraftDocsOptional` was DELETED in the rev-3 round — the policy tail became
+  the store line's own state; reuse `transcriptOpen/Close`, `auditClock`,
   `formatUsd`, `formatDuration`, `auditNoTranscript`). Gate: typecheck + `npm test` +
   `npm run build` + `check:boundaries` + manual run.
 - **S5 (TD-057):** the card chip + sibling log surface (D6). Gate: S4's ladder + a

@@ -543,4 +543,17 @@ const wsDepo = await store.createWorkspace({
 });
 console.log(`TASLAK_DEPO=${JSON.stringify({ depo: String(wsDepo.id), external: join(repoDepo, 'ROADMAP-DIS.md') })}`);
 
+// 17) WO-0051 review f6 — the FLAT world: a pure-root scan (no subdirectories) exercises the
+//     dialog's file-row branch and the capped-rows moreline, which the grouped world never
+//     touches. Ten root files: 8 visible rows + the '+2 belge — tümü dahil' tail.
+const repoDuz = join(root, 'repo-taslak-duz');
+mkdirSync(join(repoDuz, 'docs'), { recursive: true });
+for (let i = 0; i < 10; i++) writeFileSync(join(repoDuz, 'docs', `faz-${i}-duz.md`), `# Faz ${i}\nDüz kök belgesi.\n`, 'utf8');
+const wsDuz = await store.createWorkspace({
+  label: 'taslak-duz',
+  repos: [{ path: repoDuz, remote: 'e2e-duz' }],
+  decisionStorePath: repoDuz,
+});
+console.log(`TASLAK_DUZ=${JSON.stringify({ duz: String(wsDuz.id) })}`);
+
 console.log(`DB=${join(root, 'e2e.db')}`);

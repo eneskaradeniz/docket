@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftDocGroups, draftStorePaths, draftSummaryOf, roadmapDraftPrompt } from '../roadmap-draft';
+import { draftDocGroupKeyOf, draftDocGroups, draftStorePaths, draftSummaryOf, mergePickedPaths, roadmapDraftPrompt } from '../roadmap-draft';
 import { buildRoadmapMd, parseRoadmapMd, type FazSpec } from '../roadmap-md';
 
 const INPUT = {
@@ -161,6 +161,32 @@ describe('draftStorePaths — the prompt-path join (WO-0051 / D3)', () => {
 
   it('never produces a double slash, whatever trailing slashes the setting carries', () => {
     expect(draftStorePaths('docs//', ['x.md'])).toEqual(['docs/x.md']);
+  });
+});
+
+describe('draftDocGroupKeyOf — the ONE group-key rule, shared by core and the dialog (review f4)', () => {
+  it("'' for root files, the first segment otherwise — draftDocGroups' own key", () => {
+    expect(draftDocGroupKeyOf('faz-0.md')).toBe('');
+    expect(draftDocGroupKeyOf('adr/x.md')).toBe('adr');
+    expect(draftDocGroupKeyOf('work-orders/WO-0001/order.md')).toBe('work-orders');
+  });
+});
+
+describe('mergePickedPaths — the UNION deduplicated across channels (review f3)', () => {
+  it('a picked path that already IS a store path (suffix match) enters once and does not count', () => {
+    expect(
+      mergePickedPaths(['docs/adr/ADR-0001.md', 'docs/faz-0.md'], [
+        '/Users/op/docket/docs/adr/ADR-0001.md', // the repo-rooted pick of a scanned file
+        '/Users/op/source/base-mobile/CLAUDE.md', // genuinely outside the store
+      ]),
+    ).toEqual(['docs/adr/ADR-0001.md', 'docs/faz-0.md', '/Users/op/source/base-mobile/CLAUDE.md']);
+  });
+
+  it('identical strings and non-overlapping picks pass through verbatim', () => {
+    expect(mergePickedPaths([], ['a.md', 'b.md'])).toEqual(['a.md', 'b.md']);
+    expect(mergePickedPaths(['x.md'], ['x.md'])).toEqual(['x.md']);
+    // prefix without a separator boundary is NOT the same file (docs2/x.md ≠ docs/x.md suffix)
+    expect(mergePickedPaths(['docs/x.md'], ['/r/mydocs/x.md'])).toEqual(['docs/x.md', '/r/mydocs/x.md']);
   });
 });
 
