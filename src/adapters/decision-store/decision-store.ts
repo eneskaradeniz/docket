@@ -299,3 +299,36 @@ export function scanTaskRefs(structureRoot: string): Map<string, string> {
   }
   return out;
 }
+
+// The ✦ dialog's DEPO channel (WO-0051, ADR-0016): a recursive `.md` walk under the structure
+// root, PATHS ONLY — directory entries, never file contents (a content reader would be the
+// source-format parser ADR-0016 rejects, by other means). Returns structure-root-RELATIVE
+// POSIX paths, sorted — the dialog prefixes them with the docs root for the prompt's
+// repo-relative list and groups them with core's `draftDocGroups`. Dot-dirs and symlinked
+// dirs are skipped (`.git`, junk mounts); a missing root fails open to [] (the dialog's
+// zero-doc floor — the external channel stays usable). The workspace's own roadmap.md IS in
+// the list: a re-draft is a revision, and the prior document is a primary source.
+export function scanDecisionDocs(structureRoot: string): string[] {
+  const out: string[] = [];
+  const walk = (rel: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(join(structureRoot, rel), { withFileTypes: true });
+    } catch {
+      return; // absent dir — fail open, nothing to add
+    }
+    for (const e of entries) {
+      const childRel = rel === '' ? e.name : `${rel}/${e.name}`;
+      // Dirent types never follow symlinks (a linked dir is isSymbolicLink, not isDirectory),
+      // so dot-dirs are the only explicit skip; links drop out by type.
+      if (e.isDirectory()) {
+        if (e.name.startsWith('.')) continue;
+        walk(childRel);
+      } else if (e.isFile() && e.name.endsWith('.md')) {
+        out.push(childRel);
+      }
+    }
+  };
+  walk('');
+  return out.sort();
+}

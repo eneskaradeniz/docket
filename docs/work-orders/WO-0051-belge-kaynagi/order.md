@@ -57,6 +57,13 @@ fence root aligned with `docs_root:<wsId>`) rides along if it fits the scan stag
   resolution: the pending `roadmap_draft` row gains a nullable `source_summary` of COUNTS and
   the explore flag — never a path — written at `plan_ready`, kept across an İtiraz resume,
   deleted with the row at approval. Counts are the composition's memory; paths die on schedule.
+- **Presentation round (operator, 2026-08-28, mockup rev 3 `789d01d`):** the built rev-2
+  presentation was tested and rejected on USABILITY grounds — «dışarıdan» written three times,
+  picked rows buried under a badge + absolute path, inverted hierarchy, a boxed countline with
+  a duplicated number. Rev 3 redraws ONLY the presentation (the rev-2 contract stands): the
+  channel renamed `ek belgeler` (said once, in the head — never on a row), the store line
+  borderless with one number, picked rows speaking by NAME with a front-truncated dim
+  location, both chips one shape, the consequence line unboxed.
 - **The workspace's own `roadmap.md` is included by default** (a re-draft is a revision — the
   prior document is a primary source; the prompt already names the destination). The operator
   who disagrees excludes the root group.
@@ -112,22 +119,24 @@ Out of scope:
 
 ## Acceptance criteria
 
-1. **Frame 01 — default posture:** opening ✦ scans the structure root (`docs_root:<wsId>`,
-   default `docs/`); the dialog shows the collapsed countline (`N belge bulundu · M dahil ·
-   yapı kökü docs/`, with the directory count when grouped); with nothing touched,
-   `Taslağı başlat` dispatches ALL scanned docs + the goal note — zero selection work,
-   deterministic, no exploration sentence.
-2. **Group exclude:** an expanded multi-directory scan renders group rows (root files = the
-   `kök` group); `dışla` drops a whole group and its count, `↩ geri al` restores it; an
+1. **Frame 01 — default posture (rev 3 presentation):** opening ✦ scans the structure root
+   (`docs_root:<wsId>`, default `docs/`); the dialog shows the BORDERLESS store line
+   (`docs/ · 9 belge — tümü dahil` — one number; `20 / 90 belge` when exceptions exist);
+   with nothing touched, `Taslağı başlat` dispatches ALL scanned docs + the goal note — zero
+   selection work, deterministic, no exploration sentence.
+2. **Group exclude:** an expanded multi-directory scan renders group rows (the root group is
+   `docs/` itself); `dışla` drops a whole group and its count, `↩ geri al` restores it; an
    entirely flat scan renders file rows (capped) + the `+N belge — tümü dahil` line.
-3. **Frame 02 — external + exploration:** `+ Belge ekle` adds any path (structure-root and
-   repo outside included) under the `dışarıdan · N` subhead with its tag; the `Serbest keşif`
-   chip is OFF by default; ON shows exactly ONE consequence line and adds exactly ONE
-   exploration sentence to the prompt. The prompt carries the union as ONE list — no channel
-   labels, never contents (test-pinned).
-4. **Zero-doc floor:** an empty or failed scan renders `belge bulunamadı`; the external
-   channel stays usable; a zero-selection start takes the GENERATE branch (a live button,
-   never locked — ADR-0001).
+3. **Frame 02 — picked + exploration (rev 3 presentation):** `+ Belge ekle` adds any path
+   (structure-root and repo outside included) under the `ek belgeler · N` head — the channel
+   word exactly ONCE, never on a row; a picked row speaks by NAME (13px sans) with a
+   front-truncated dim location, full path in the tooltip. The `Serbest keşif` chip is OFF by
+   default; ON shows exactly ONE unboxed consequence line and adds exactly ONE exploration
+   sentence to the prompt. The prompt carries the union as ONE list — no channel labels, never
+   contents (test-pinned).
+4. **Zero-doc floor:** an empty or failed scan renders `docs/ içinde belge yok — taslak hedef
+   notundan üretilir.`; the picker channel stays usable; a zero-selection start takes the
+   GENERATE branch (a live button, never locked — ADR-0001).
 5. **Frame 03 — TD-057:** after the drive ends the TASLAK card head carries the
    `Dökümü aç/kapat` chip (default closed; only when a session row exists); opening reveals
    the identity line (`MİMAR — TASLAK · clock · kaynak: N belge + M dışarıdan(· keşif) · $ ·

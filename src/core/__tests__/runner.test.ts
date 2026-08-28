@@ -128,6 +128,16 @@ describe('fenceDecision — the write fence (TD-001)', () => {
     expect(fenceDecision(implementer, { isWrite: true })).toBe('ask');
     expect(fenceDecision(architect, bashWrite('some opaque command'))).toBe('ask');
   });
+
+  it('a docs_root-OVERRIDDEN decision-store root fences exactly the workspace structure root (WO-0051 / D9, TD-056)', () => {
+    // The cwd at the decision-store repo root with a `.docket` structure root: the OLD fence
+    // would allow `<repo>/docs/**` (a wider window than the root); the aligned root fences
+    // `.docket` only. Reads stay free under every alignment.
+    const aligned = writeScopeFor('architect', { repoRoot: '/repo', decisionStore: '/repo/.docket' });
+    expect(fenceDecision(aligned, write('/repo/.docket/roadmap.md'))).toBe('ask');
+    expect(fenceDecision(aligned, write('/repo/docs/order.md'))).toBe('deny');
+    expect(fenceDecision(aligned, read())).toBe('allow');
+  });
 });
 
 describe('summarizeToolInput', () => {

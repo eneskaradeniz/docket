@@ -105,6 +105,11 @@ export interface WoDriveInput {
    * retiring the M3/M4 note).
    */
   cwd?: string;
+  /** WO-0051 / D9 (TD-056): the workspace's ABSOLUTE structure root, main-filled for architect
+   *  drives — aligns the write fence's decision-store root with `docs_root:<wsId>` instead of
+   *  the cwd-relative default. The renderer never carries a path; undefined → the adapter's
+   *  `resolve(cwd, 'docs')` fallback stands. */
+  decisionStoreRoot?: string;
   /** Work-order mode — the adapter maps role + mode → provider permission mode (plan/approve/default). */
   mode: 'plan' | 'direct';
   prompt: string;
@@ -139,7 +144,11 @@ export interface WoDriveInput {
  *  session. Always `role: 'architect'` + `mode: 'plan'` → `isPlanDrive` is true unchanged (the
  *  provider plan-mode + ExitPlanMode-DENY contract applies verbatim; zero runner-adapter
  *  change). `goalNote`/`docPaths` are the operator's dialog input; the prompt is assembled
- *  server-side from them (paths, never contents). */
+ *  server-side from them (paths, never contents).
+ *
+ *  WO-0051 — the source set is the operator's free composition of CHANNELS: `docPaths` stays
+ *  the flat union (store-scan included ∪ external picked) because the prompt wants ONE list;
+ *  the composition itself rides as COUNTS (`docSource`) and ONE opt-in flag (`freeExplore`). */
 export interface DraftDriveInput {
   role: 'architect';
   workspaceId: WorkspaceId;
@@ -148,7 +157,19 @@ export interface DraftDriveInput {
   mode: 'plan';
   prompt: string;
   goalNote: string;
+  /** The path UNION — store-scan included + external picked, one prompt list (mockup karar 4). */
   docPaths: string[];
+  /** WO-0051 / D3: the operator opted the architect into exploring the repo itself (token
+   *  cost); the prompt gains exactly ONE exploration sentence iff true. Default off — the
+   *  ordinary flow stays deterministic and cheap. */
+  freeExplore?: boolean;
+  /** WO-0051 / D2: the dialog-computed channel COUNTS (store included / external picked) —
+   *  display + persistence only, never the prompt. Counts are the composition's memory; a
+   *  PATH never persists (mockup karar 5: paths die with the dialog). */
+  docSource?: { store: number; external: number };
+  /** WO-0051 / D9 (TD-056): the workspace's ABSOLUTE structure root, main-filled — the write
+   *  fence lands exactly on the workspace's docs_root. Never renderer-supplied. */
+  decisionStoreRoot?: string;
   resume?: string;
   scope?: never;
   approve?: never;

@@ -48,7 +48,10 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
     // draft reads its own (D3/D4).
     budgetBlockFor: () => undefined,
     budgetBlockForDraft: () => undefined,
-    roadmapDraftPromptFor: () => prompts.draft,
+    roadmapDraftPromptFor: (wsId: unknown, note: unknown, docs: unknown, explore?: unknown) => {
+      calls.push(['roadmapDraftPromptFor', wsId, note, docs, explore]);
+      return prompts.draft;
+    },
     saveRoadmapDraft: (wsId: unknown, md: unknown, o: unknown) => calls.push(['saveRoadmapDraft', wsId, md, o]),
     clearRoadmapDraft: (wsId: unknown) => calls.push(['clearRoadmapDraft', wsId]),
     pendingNotesFor: () => [],
@@ -104,6 +107,22 @@ describe('runDrive — the WO-0050 draft round-trip (roadmap draft → pending r
     expect(calls.find((c) => c[0] === 'saveRoadmapDraft')).toEqual(['saveRoadmapDraft', 'ws-t', '# taslak md', { providerSessionId: 'draft-cli-1' }]);
     expect(calls.find((c) => c[0] === 'savePendingPlan')).toBeUndefined();
     expect(calls.find((c) => c[0] === 'clearRoadmapDraft')).toEqual(['clearRoadmapDraft', 'ws-t']); // fresh draft supersedes
+  });
+
+  // WO-0051: the composition rides the CLI's draft path exactly as the GUI's — the keşif flag
+  // threads to the prompt call (the recorded 4th arg), the counts land in the row write.
+  it('WO-0051: --explore threads freeExplore to the prompt; docSource counts land in the row write', async () => {
+    const { runner } = scriptedRunner([started('draft-cli-2'), plan('# kompoze'), done()]);
+    const { store, calls } = fakeStore({ draft: 'taslak promptu' });
+    const pipeline = createPipeline({ runner, store, permission: autoAllowPolicy() });
+    await runDrive({ ...(draftInput as object), freeExplore: true, docSource: { store: 3, external: 0 } } as never, pipeline, () => {});
+    expect(calls.find((c) => c[0] === 'roadmapDraftPromptFor')).toEqual([
+      'roadmapDraftPromptFor', 'ws-t', 'hedef notu', ['/tmp/docs/faz-a.md'], true,
+    ]);
+    expect(calls.find((c) => c[0] === 'saveRoadmapDraft')).toEqual([
+      'saveRoadmapDraft', 'ws-t', '# kompoze',
+      { providerSessionId: 'draft-cli-2', sourceSummary: { store: 3, external: 0, freeExplore: true } },
+    ]);
   });
 });
 

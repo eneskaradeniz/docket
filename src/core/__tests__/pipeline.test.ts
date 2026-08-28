@@ -131,8 +131,8 @@ function fakeStore(
     flowModeFor: () => opts.flowMode ?? 'auto',
     budgetBlockFor: () => opts.budgetBlock,
     budgetBlockForDraft: () => opts.draftBudgetBlock,
-    roadmapDraftPromptFor: (wsId: unknown, goalNote: unknown, docPaths: unknown) => {
-      calls.push({ method: 'roadmapDraftPromptFor', args: [wsId, goalNote, docPaths] });
+    roadmapDraftPromptFor: (wsId: unknown, goalNote: unknown, docPaths: unknown, freeExplore?: unknown) => {
+      calls.push({ method: 'roadmapDraftPromptFor', args: [wsId, goalNote, docPaths, freeExplore] });
       return opts.draftPrompt;
     },
     saveRoadmapDraft: (wsId: unknown, md: unknown, o: unknown) => calls.push({ method: 'saveRoadmapDraft', args: [wsId, md, o] }),
@@ -298,6 +298,40 @@ describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)
     const call = findCall(fs.calls, 'saveRoadmapDraft');
     expect(call?.args).toEqual([WS, '# yeni taslak', { providerSessionId: 'draft-sess-9' }]);
     expect(methods(fs.calls)).not.toContain('savePendingPlan'); // the WO side-effect never fires
+  });
+
+  // WO-0051 / D1+D2: the composition rides the SAME write — counts + the flag, IFF the dialog
+  // carried any. A plain drive (the CLI, a pre-WO-0051 capture) writes opts verbatim as before;
+  // an İtiraz resume's summary-less write omits the key (the store keeps the prior figures).
+  it('plan_ready persists sourceSummary iff the draft carries docSource/freeExplore (WO-0051)', async () => {
+    const fr = fakeRunner([started('draft-sess-12'), plan('# kompozisyon'), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive({ docSource: { store: 11, external: 1 }, freeExplore: true }));
+    const call = findCall(fs.calls, 'saveRoadmapDraft');
+    expect(call?.args[2]).toEqual({
+      providerSessionId: 'draft-sess-12',
+      sourceSummary: { store: 11, external: 1, freeExplore: true },
+    });
+
+    const fs2 = fakeStore({}, true, { draftPrompt: 'taslak' });
+    const p2 = createPipeline({ runner: fr.runner, store: fs2.store, permission: autoAllowPolicy() });
+    await collect(p2, draftDrive({ docSource: { store: 0, external: 0 } })); // zero-doc floor: counts, no flag
+    expect((findCall(fs2.calls, 'saveRoadmapDraft')?.args[2] as { sourceSummary: unknown }).sourceSummary).toEqual({
+      store: 0,
+      external: 0,
+      freeExplore: false,
+    });
+  });
+
+  it('prepareDriveInput threads freeExplore to roadmapDraftPromptFor — undefined when off (WO-0051)', () => {
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
+    prepareDriveInput(draftDrive({ freeExplore: true }), fs.store);
+    expect(findCall(fs.calls, 'roadmapDraftPromptFor')?.args[3]).toBe(true);
+
+    const fs2 = fakeStore({}, true, { draftPrompt: 'taslak' });
+    prepareDriveInput(draftDrive(), fs2.store);
+    expect(findCall(fs2.calls, 'roadmapDraftPromptFor')?.args[3]).toBeUndefined();
   });
 
   it('the session records under the DRAFT owner — workspace-keyed, work_order_id NULL by shape', async () => {

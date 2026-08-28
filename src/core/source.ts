@@ -6,6 +6,7 @@
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
 import type { RepoId, SessionRef, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 import type { RoadmapView } from './roadmap';
+import type { DraftSourceSummary } from './roadmap-draft';
 
 export interface RepoConnectionInput {
   path: string;
@@ -17,6 +18,10 @@ export interface RoadmapDraft {
   md: string;
   /** The ✦ session's provider id — İtiraz et resumes exactly this session. */
   providerSessionId?: string;
+  /** WO-0051 / D2: the source composition's memory — COUNTS + the explore flag, never a path.
+   *  Absent on pre-WO-0051 rows and an İtiraz resume's first write; the card's kaynak line
+   *  omits honestly. Dies with the row at approval. */
+  sourceSummary?: DraftSourceSummary;
   updatedAt: string;
   /** The draft drive's session row (transcript/cost/status), the resume seed. */
   session?: SessionRef;

@@ -73,8 +73,32 @@ describe('locale bundles (WO-0035)', () => {
     expect(tr.UI.roadmapDraftCardSummary(2, 5, 0, 'docs')).not.toContain('bağımlılık');
     expect(tr.UI.roadmapDraftFazMeta(4, 'api')).toBe('4 görev · api');
     expect(tr.UI.roadmapDraftFazMeta(3, '')).toBe('3 görev');
-    expect(tr.UI.roadmapDraftDocsOptional).toContain('isteğe bağlı');
     expect(en.UI.roadmapDraftAction).toBe('✦ Generate / Import');
     expect(en.UI.roadmapDraftIdentity).toBe('ARCHITECT — DRAFT');
+  });
+
+  it('the ✦ source-channel block pins the rev-3 words — one block, one row language, names first (WO-0051)', () => {
+    // The store line — borderless, one number; the exception doubles it (rev 3 karar 2).
+    expect(tr.UI.roadmapDraftStoreLine('docs', 9, 9)).toBe('docs/ · 9 belge — tümü dahil');
+    expect(tr.UI.roadmapDraftStoreLine('docs', 90, 20)).toBe('docs/ · 20 / 90 belge');
+    expect(tr.UI.roadmapDraftScanning('docs')).toBe('docs/ taranıyor…');
+    expect(tr.UI.roadmapDraftNoDocs('docs')).toBe('docs/ içinde belge yok — taslak hedef notundan üretilir.');
+    expect(tr.UI.roadmapDraftGroupLabel('docs', '')).toBe('docs/');
+    expect(tr.UI.roadmapDraftGroupLabel('docs', 'adr')).toBe('docs/adr/');
+    expect(tr.UI.roadmapDraftGroupCount(16)).toBe('16 belge');
+    expect(tr.UI.roadmapDraftExclude).toBe('dışla');
+    expect(tr.UI.roadmapDraftInclude).toBe('↩ geri al');
+    expect(tr.UI.roadmapDraftMoreAll(8)).toBe('+8 belge — tümü dahil');
+    // The picked channel — the word ONCE, in the head; no per-row tag exists (rev 3 karar 1).
+    expect(tr.UI.roadmapDraftPickedSubhead(2)).toBe('ek belgeler · 2');
+    expect(tr.UI.roadmapDraftDocPick).toBe('+ Belge ekle');
+    expect(tr.UI.roadmapDraftExploreChip).toBe('Serbest keşif');
+    expect(tr.UI.roadmapDraftExploreInfo).toContain('token harcar');
+    // the composition kaynak line — the pane's live readout and the card's döküm identity line
+    expect(tr.UI.roadmapDraftSourceCompose(11, 1, false)).toBe('kaynak: 11 belge · 1 ek');
+    expect(tr.UI.roadmapDraftSourceCompose(5, 0, true)).toBe('kaynak: 5 belge · keşif');
+    expect(tr.UI.roadmapDraftSourceCompose(0, 0, false)).toBe('kaynak: hedef notu');
+    expect(en.UI.roadmapDraftExploreChip).toBe('Free exploration');
+    expect(en.UI.roadmapDraftSourceCompose(11, 1, false)).toBe('source: 11 document(s) · 1 added');
   });
 });

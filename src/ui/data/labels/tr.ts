@@ -797,8 +797,7 @@ export const UI = {
   roadmapDraftNotePlaceholder: 'Örn: mevcut faz dokümanlarından yol haritasını çıkar; bağımlılıkları koru…',
   roadmapDraftNoteErr: 'Hedef notu gerekli — taslak bundan üretilir.',
   roadmapDraftDocsLabel: 'Kaynak belgeler',
-  roadmapDraftDocsOptional: '(isteğe bağlı — içe aktarma)',
-  roadmapDraftDocPick: '+ Belge seç',
+  roadmapDraftDocPick: '+ Belge ekle',
   roadmapDraftDocRemoveAria: (name: string) => `Belgeyi çıkar: ${name}`,
   roadmapDraftDocMore: (n: number) => `+${n} belge`,
   roadmapDraftStart: 'Taslağı başlat',
@@ -832,6 +831,34 @@ export const UI = {
   roadmapDraftTaskRemoveAria: (title: string) => `Görevi sil: ${title}`,
   // Arka plan erişimi (D13): taslak askılarındaki toast.
   roadmapDraftAskToast: 'MİMAR — TASLAK seni bekliyor',
+  // ===== WO-0051 — ✦ belge kaynağı: kanal kompozisyonu (sözleşme rev 2 · SUNUM rev 3) =====
+  // Kaynak kümesi kanalların birleşimi: depo taraması (varsayılan TÜMÜ dahil, istisna grup
+  // düzeyinde dışlanır) ∪ elle eklenen belgeler ∪ serbest keşif (opt-in, default kapalı) + hedef
+  // notu. Rev 3 (operatör turu 2026-08-28): tek blok · tek satır dili · ad önce — kanal kelimesi
+  // ekranda en fazla bir kez; depo satırı kutusuz tek sayı; eklenen satır ADıyla konuşur.
+  // Depo satırı — kutusuz irow; tek sayı (tümü dahil), istisnada çift.
+  roadmapDraftStoreLine: (docsRoot: string, found: number, included: number) =>
+    included === found ? `${docsRoot}/ · ${found} belge — tümü dahil` : `${docsRoot}/ · ${included} / ${found} belge`,
+  roadmapDraftScanning: (docsRoot: string) => `${docsRoot}/ taranıyor…`,
+  roadmapDraftNoDocs: (docsRoot: string) => `${docsRoot}/ içinde belge yok — taslak hedef notundan üretilir.`,
+  // Grup satırları: ilk dizin düzeyi; gürültü tek dokunuşla düşer. Kök grubu da yalnız yol.
+  roadmapDraftGroupLabel: (docsRoot: string, key: string) => (key === '' ? `${docsRoot}/` : `${docsRoot}/${key}/`),
+  roadmapDraftGroupCount: (n: number) => `${n} belge`,
+  roadmapDraftExclude: 'dışla',
+  roadmapDraftExcludeAria: (name: string) => `Dışla: ${name}`,
+  roadmapDraftInclude: '↩ geri al',
+  roadmapDraftIncludeAria: (name: string) => `Geri al: ${name}`,
+  roadmapDraftMoreAll: (n: number) => `+${n} belge — tümü dahil`,
+  // Elle eklenen belgeler: kelime yalnız başlıkta bir kez; satırda etiket YOK (rev 3 karar 1).
+  roadmapDraftPickedSubhead: (n: number) => `ek belgeler · ${n}`,
+  // Serbest keşif çipi (opt-in): tek sonuç satırı bedeli söyler (token disiplini, kuyruk madde 2).
+  roadmapDraftExploreChip: 'Serbest keşif',
+  roadmapDraftExploreInfo: 'Mimar repoyu kendisi de gezer — token harcar; seçili belgeler yine kesin gider.',
+  // Kaynak satırının kompozisyon hâli — canlı alette ve kartın döküm kimlik satırında aynı ses.
+  roadmapDraftSourceCompose: (store: number, external: number, explore: boolean) =>
+    store === 0 && external === 0
+      ? 'kaynak: hedef notu'
+      : `kaynak: ${store} belge${external > 0 ? ` · ${external} ek` : ''}${explore ? ' · keşif' : ''}`,
   woEditAria: 'İş emrini düzenle',
   woEditTitle: 'İş emrini düzenle',
   woEditSave: 'Kaydet',

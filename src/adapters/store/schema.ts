@@ -139,6 +139,10 @@ CREATE TABLE IF NOT EXISTS roadmap_draft (
   workspace_id TEXT PRIMARY KEY,
   md TEXT NOT NULL,
   provider_session_id TEXT,
+  -- WO-0051 / D2: the source composition's memory — COUNTS + the explore flag (JSON), never a
+  -- path (mockup karar 5). Nullable: pre-WO-0051 rows and an İtiraz resume's summary-less write
+  -- keep NULL/prior; the card's kaynak line omits honestly. Dies with the row at approval.
+  source_summary TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

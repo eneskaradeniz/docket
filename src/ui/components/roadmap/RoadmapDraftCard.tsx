@@ -21,6 +21,8 @@ import { Button, Input, Textarea, cn } from '../../kit';
 import { EnterMark } from '../EnterMark';
 import { seedLiveState, initialSessionState } from '../../../core/runner';
 import { useDriveStore } from '../session/drive-store';
+import { PaneLogChip, usePaneLog } from '../session/pane-chrome';
+import { ChatTranscript } from '../session/ChatTranscript';
 
 export function RoadmapDraftCard({
   draft,
@@ -44,13 +46,20 @@ export function RoadmapDraftCard({
   /** Düzenle's Bitti wrote the row: the screen re-reads the draft. */
   onSaved: () => void;
 }) {
-  const { ROADMAP_DIAGNOSTIC_LABELS, UI, fazLabel } = useLabels();
+  const { ROADMAP_DIAGNOSTIC_LABELS, UI, fazLabel, formatUsd } = useLabels();
   const store = useDriveStore();
   const [busy, setBusy] = useState(false);
   const [objectOpen, setObjectOpen] = useState(false);
   const [objectText, setObjectText] = useState('');
   const wsId: WorkspaceId = workspace.id;
   const driveKey = `${wsId}:draft`;
+
+  // TD-057 (WO-0051): the drive is over, the pane is gone — the card's Dökümü aç/kapat is the
+  // ONE window into the ✦ session (default closed; the same pane-chrome grammar + scroll
+  // contract — opening brings the card's head to reading position). Only when a session row
+  // exists; a draft with no session has nothing to open.
+  const { logOpen, toggleLog, headRef } = usePaneLog();
+  const session = draft.session;
 
   // --- the Düzenle stage ---
   const [editOpen, setEditOpen] = useState(false);
@@ -170,14 +179,20 @@ export function RoadmapDraftCard({
   );
 
   return (
+    <>
     <div
       data-roadmap-draft-card
       className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-surface shadow-sm"
     >
       <div className="lamp lamp-signal" />
       <div className="min-w-0 w-full px-3.5 py-3">
-        <div className="flex items-baseline justify-between gap-3">
+        <div ref={headRef} className="flex items-baseline justify-between gap-3">
           <p className="readout text-signal">{UI.roadmapDraftCardHead}</p>
+          {session !== undefined ? (
+            <span className="ml-auto self-center">
+              <PaneLogChip open={logOpen} onToggle={toggleLog} />
+            </span>
+          ) : null}
         </div>
         {editOpen ? (
           <div className="mt-2 flex flex-col gap-2" data-draft-edit>
@@ -325,5 +340,32 @@ export function RoadmapDraftCard({
         ) : null}
       </div>
     </div>
+    {/* The chip's back (TD-057): the draft session's döküm — a SIBLING surface, not a child of
+        the overflow-hidden card (the transcript scrolls its own block). The identity line speaks
+        the pane's voice: kim + clock + the composition's counts (sourceSummary — the counts'
+        one honest echo; absent on pre-WO-0051 rows, the part omits) + $ + duration. After Onayla
+        the card is gone and roadmap.md + git is the record (ADR-0010) — the window dies with it. */}
+    {session !== undefined && logOpen ? (
+      <div data-draft-log className="mt-2 overflow-hidden rounded-md border border-hairline bg-surface shadow-sm">
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 border-b border-hairline px-3.5 py-2 font-mono text-[10.5px] text-inkdim">
+          <span aria-hidden="true">●</span>
+          <span className="text-ink">{UI.roadmapDraftIdentity}</span>
+          {session.startedAt ? <span>{UI.auditClock(session.startedAt)}</span> : null}
+          {draft.sourceSummary ? (
+            <span>{UI.roadmapDraftSourceCompose(draft.sourceSummary.store, draft.sourceSummary.external, draft.sourceSummary.freeExplore)}</span>
+          ) : null}
+          {session.cost?.usd !== undefined ? <span>{formatUsd(session.cost.usd)}</span> : null}
+          {session.startedAt && session.endedAt ? (
+            <span>{UI.formatDuration(new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime())}</span>
+          ) : null}
+        </p>
+        {session.transcript.length > 0 ? (
+          <ChatTranscript entries={session.transcript} role="architect" variant="archived" resetKey={session.providerSessionId ?? ''} />
+        ) : (
+          <p className="px-3.5 py-2 text-[12px] text-inkdim">{UI.auditNoTranscript}</p>
+        )}
+      </div>
+    ) : null}
+    </>
   );
 }

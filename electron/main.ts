@@ -260,10 +260,23 @@ ipcMain.handle('docket:pick-folder', async () => {
 });
 
 // --- File picker (WO-0015): context-file attachments, native dialog, main-only ---
+// WO-0051 / D7: the native dialog is undrivable in E2E — under DOCKET_E2E a STAGED list (set
+// through the gated e2e channel) stands in, return-and-clear, exactly one pick per stage. The
+// composition root is the seam's only home; production never sees it.
+let stagedPickFiles: string[] | null = null;
 ipcMain.handle('docket:pick-files', async () => {
+  if (process.env.DOCKET_E2E && stagedPickFiles !== null) {
+    const staged = stagedPickFiles;
+    stagedPickFiles = null;
+    return staged;
+  }
   const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
   return result.canceled || !result.filePaths.length ? null : result.filePaths;
 });
+
+// --- The ✦ dialog's DEPO channel (WO-0051 / D3): the structure-root .md scan, called at dialog
+//   open. Paths stay structure-root-RELATIVE — the absolute root never crosses (ADR-0001). ---
+ipcMain.handle('docket:list-decision-docs', (_e, workspaceId: WorkspaceId) => store.decisionDocs(workspaceId));
 
 // --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by
 //   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
@@ -298,7 +311,17 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // (a scoped WO drive runs in its track repo; a draft or unscoped WO drive in the decision-store
   // repo; process.cwd() only when nothing matches). An explicit cwd (the CLI's --cwd, a resume
   // re-issue) always wins.
-  const driveInput: DriveInput = { ...input, cwd: input.cwd ?? store.driveCwd(input), permissionRule };
+  // WO-0051 / D9 (TD-056): an architect drive's write fence lands on the workspace's structure
+  // root (docs_root-aligned) instead of the cwd-relative default — filled here every arrival, so
+  // a resume re-issue can never carry a stale root.
+  const decisionStoreRoot =
+    input.role === 'architect' && input.decisionStoreRoot === undefined ? store.decisionStoreRootFor(input) : undefined;
+  const driveInput: DriveInput = {
+    ...input,
+    cwd: input.cwd ?? store.driveCwd(input),
+    ...(decisionStoreRoot !== undefined ? { decisionStoreRoot } : {}),
+    permissionRule,
+  };
   const iterator = pipeline.drive(driveInput);
   activeDrive = iterator;
   try {
@@ -354,9 +377,13 @@ ipcMain.handle('docket:runner:abort', async () => {
 ipcMain.handle('docket:runner:pending-asks', () => runner.pendingAsks());
 
 // E2E-only scripting channel (WO-0031c): push a scripted RunnerEvent into the active fake drive.
+// WO-0051 / D7: stage the next pick-files answer (null = a cancelled dialog).
 if (process.env.DOCKET_E2E) {
   ipcMain.handle('docket:e2e:emit', (_e, ev: RunnerEvent) => {
     (runner as E2eRunner).emit(ev);
+  });
+  ipcMain.handle('docket:e2e:pick-files', (_e, paths: string[] | null) => {
+    stagedPickFiles = paths;
   });
 }
 
