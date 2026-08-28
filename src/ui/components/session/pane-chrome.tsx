@@ -120,6 +120,32 @@ export function PaneCostline({ state, running, liveStart, now }: {
   );
 }
 
+// --- WO-0053: the limit warn line. The provider's OWN warning signal (`allowed_warning`, the
+//     fold's `limitWindows.status === 'warning'`) — never a locally invented threshold (karar 3);
+//     no signal or an unavailable windows surface renders NOTHING. The costline's voice (mono,
+//     dim, the utilization figure in signal) with a leading triangle — text, never a fill bar
+//     (ADR-0012). `blocked` never renders here: the drive dies and the LimitCard takes over. ---
+export function PaneWarnline({ state }: { state: LiveSessionState }) {
+  const { UI } = useLabels();
+  if (state.limitWindows?.status !== 'warning') return null;
+  const windows = state.limitWindows.windows;
+  // The line speaks the FULLEST window the provider warned over (a pull merge may hold several;
+  // the highest utilization is the honest subject of the warning).
+  const subject =
+    windows.slice().sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0] ?? windows[0];
+  if (!subject) return null;
+  return (
+    <p data-limit-warn="" className="flex items-center gap-1.5 font-mono text-[10.5px] text-inkdim">
+      <AlertTriangle className="h-3 w-3 shrink-0 text-signal" aria-hidden="true" />
+      {UI.limitWarnLine(
+        UI.limitWindowLabel(subject.window),
+        subject.utilization,
+        subject.resetAt !== null ? UI.limitClock(subject.resetAt) : null,
+      )}
+    </p>
+  );
+}
+
 // --- the döküm chip: the ONE show/hide of every live surface (the session card's aç/kapa grammar,
 //     in verb form — WO-0039 rev-2). Rendering it is the pane's decision (only when a stream
 //     exists); what it looks like and what it says lives here, once. ---

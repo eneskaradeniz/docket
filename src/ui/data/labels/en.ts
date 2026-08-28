@@ -628,6 +628,23 @@ export const UI = {
   budgetErrWarn: 'Enter a ratio between 1 and 100.',
   budgetMonthReadout: (m: number, cap: number) => `this month ${formatUsd(m)} / ${formatUsd(cap)}`,
   budgetMonthReadoutKnown: (m: number, cap: number) => `this month known spend ${formatUsd(m)} / ${formatUsd(cap)}`,
+  // ===== WO-0053 — the limit screen (mockup rev 1 `cf28681`; rulings locked on tour) =====
+  limitClock: (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const p = (n: number): string => String(n).padStart(2, '0');
+    const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (d.toDateString() === new Date().toDateString()) return hm;
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return `${DAYS[d.getDay()]} ${hm}`;
+  },
+  limitCardTitle: 'USAGE LIMIT REACHED',
+  limitCardBody: (window: string, time: string) => `${window} is full — resets ${time}.`,
+  limitResumeNote: 'Resume continues from where it stopped; the context is re-read.',
+  limitWaitReason: (time: string) => `resume opens at ${time}`,
+  limitWarnLine: (window: string, pct: number | null, time: string | null) =>
+    `${window}${pct !== null ? ` ${pct}%` : ''}${time !== null ? ` — resets at ${time}` : ' — near the limit'}`,
+  limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5-hour window' : kind === 'seven_day' ? '7-day window' : 'window'),
   // ===== WO-0049 — the roadmap surface (mockup frames 01/02/03/06/07; 04/05 are WO-0050's) =====
   surfaceBoard: 'Board',
   surfaceRoadmap: 'Roadmap',

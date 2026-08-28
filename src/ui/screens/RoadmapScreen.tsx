@@ -12,7 +12,7 @@
 // derived question card → the TASLAK decision card. The pane unmounts with the surface; the
 // drive lives in the app-level store and the head meta says `taslak sürüyor` while it runs.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { initialSessionState, seedLiveState } from '../../core/runner';
+import { initialSessionState, limitCrossing, seedLiveState } from '../../core/runner';
 import { draftSummaryOf } from '../../core/roadmap-draft';
 import type { WorkOrderId, Workspace } from '../../core/types';
 import type { RoadmapView } from '../../core/roadmap';
@@ -32,6 +32,7 @@ import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 import { useDrive, useDriveStore } from '../components/session/drive-store';
 import { StopAndAskCard } from '../components/session/StopAndAskCard';
 import { BudgetRefusalCard } from '../components/detail/BudgetRefusalCard';
+import { LimitCard } from '../components/detail/LimitCard';
 
 export function RoadmapScreen({
   view,
@@ -95,12 +96,16 @@ export function RoadmapScreen({
   const draftState = useDrive(driveStore, draftKey, seedFn);
   const draftRunning = driveStore.get(draftKey)?.running ?? false;
   // The ONE ticker (the live costline's elapsed) — the WorkOrderDetail precedent, pane-local.
+  // WO-0053: it also runs while the draft's limit card waits on a future stamp (the crossing
+  // re-render — the WorkOrderDetail finding-2 rule, mirrored here).
   const [now, setNow] = useState(Date.now());
+  const draftLimitWaiting =
+    draftState.lastLimit !== undefined && !draftRunning && limitCrossing(draftState.lastLimit.resetAt, now) === 'wait';
   useEffect(() => {
-    if (!draftRunning) return;
+    if (!draftRunning && !draftLimitWaiting) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [draftRunning]);
+  }, [draftRunning, draftLimitWaiting]);
 
   // D13 — permission asks on THIS surface: the plan-context voice (an architect ask reads as
   // intent, not alarm); no diffPeek (WO-keyed) and no onAlwaysAuto (no order.md to persist into).
@@ -181,18 +186,43 @@ export function RoadmapScreen({
       />
     ) : null;
 
+  // WO-0053 — the draft seat's limit card (the second of the refusal card's two seats). The
+  // Sürdür is the `reply()` twin: `driveStore.start` with the draft input + `resume` and an EMPTY
+  // prompt (no new message — the provider replays and continues), NOT `restart` (which re-issues
+  // the original input as a FRESH session — the wrong leg for a stopped live drive).
+  const resumeDraft = (): void => {
+    if (!draftState.sessionId) return;
+    driveStore.start(
+      draftKey,
+      { role: 'architect', workspaceId: workspace.id, mode: 'plan', prompt: '', goalNote: '', docPaths: [], resume: draftState.sessionId },
+      draftState,
+    );
+  };
+  const limitCard =
+    draftState.lastLimit !== undefined && !draftRunning && refusalCard === null ? (
+      <LimitCard
+        resetAt={draftState.lastLimit.resetAt}
+        windowKind={draftState.lastLimit.window}
+        now={now}
+        onResume={resumeDraft}
+      />
+    ) : null;
+
   // The live half mounts when THIS renderer has a fold for the draft (a running or ended drive
   // this session); a restart with no fold shows only the CARD (D12 — the drive died with the app).
   // The pane stands down while the refusal card owns the moment (the WorkOrderDetail instrument
   // selector's rule: budget-refusal open → no instrument).
-  const paneExists = driveStore.get(draftKey) !== undefined && draftState.lastRefusal === undefined;
+  const paneExists = driveStore.get(draftKey) !== undefined && draftState.lastRefusal === undefined && draftState.lastLimit === undefined;
   // The CARD renders from the ROW alone (a restart's pending proposal has no fold — D12), so it
   // gates liveHalf by itself; the pane/ask/question/refusal members gate it on their own.
-  const liveHalf = paneExists || askCards !== null || showQuestion || refusalCard !== null || draft !== null ? (
+  // WO-0053: the limit card joins the refusal's both rules — it suppresses the pane (karar 5) and
+  // gates liveHalf on its own.
+  const liveHalf = paneExists || askCards !== null || showQuestion || refusalCard !== null || limitCard !== null || draft !== null ? (
     <div className="flex flex-col gap-2">
       {paneExists ? <RoadmapPane workspaceId={workspace.id} seed={seedFn()} now={now} /> : null}
       {askCards}
       {refusalCard}
+      {limitCard}
       {showQuestion && lastAssistant ? (
         <div className="flex items-stretch overflow-hidden rounded-md border border-hairline bg-raised/40">
           <div className="lamp lamp-signal" />

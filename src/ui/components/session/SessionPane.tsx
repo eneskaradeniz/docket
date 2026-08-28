@@ -3,7 +3,7 @@ import { initialSessionState, seedLiveState, type DriveInput } from '../../../co
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { Button, Segmented, Textarea } from '../../kit';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -147,6 +147,7 @@ export function SessionPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
+      <PaneWarnline state={state} />
 
       <PaneSteerBar
         live={running}

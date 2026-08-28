@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
-import { initialSessionState, seedLiveState, summarizeToolInput } from '../../../core/runner';
+import { initialSessionState, limitCrossing, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
 import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } from '../../../core/derive';
@@ -16,6 +16,7 @@ import { ActionCard } from './ActionCard';
 import { buildRecordSections, RecordStack } from './DetailSections';
 import { DetailStrip } from './DetailStrip';
 import { BudgetRefusalCard } from './BudgetRefusalCard';
+import { LimitCard } from './LimitCard';
 import { EvidencePanel } from './EvidencePanel';
 import { PlanSection } from './PlanSection';
 import { StepList } from './StepList';
@@ -344,12 +345,17 @@ export function WorkOrderDetail({
   }, [stopping, running]);
 
   // ONE ticker for the whole console (Faz B had three, one per pane): the strip's live duration.
+  // WO-0053 (architect finding 2): it also runs while the limit card WAITS on a future stamp — the
+  // card renders exactly where nothing else re-rendered (the drive is dead, the instrument is
+  // suppressed), so the absent→present crossing rides THIS tick; once crossed, it stands down.
   const [now, setNow] = useState(Date.now());
+  const limitWaiting =
+    state.lastLimit !== undefined && !running && limitCrossing(state.lastLimit.resetAt, now) === 'wait';
   useEffect(() => {
-    if (!running) return;
+    if (!running && !limitWaiting) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [running]);
+  }, [running, limitWaiting]);
   const liveStart = store.get(driveKey)?.startedAt;
   const persistedMs = detail.sessions.reduce((acc, s) => {
     if (!s.startedAt || !s.endedAt) return acc;
@@ -626,7 +632,13 @@ export function WorkOrderDetail({
         primary = () => objectPlan(objectionText.trim());
         primaryKind = 'object';
       }
-    } else if (turn === 'retry' && !state.lastRefusal) {
+    } else if (turn === 'retry' && state.lastLimit !== undefined && state.lastRefusal === undefined && limitCrossing(state.lastLimit.resetAt, now) === 'ready') {
+      // WO-0053: the limit card's «Sürdür» owns ⏎ — the same retry channel (the row-resume leg),
+      // gated by the button's own condition (the badge never outlives the button, ADR-0012). A
+      // pending refusal outranks (the fresher intent — the raise card's input carries Enter).
+      primary = retry;
+      primaryKind = 'retry';
+    } else if (turn === 'retry' && !state.lastRefusal && state.lastLimit === undefined) {
       primary = retry; // ⏎ = Yeniden dene (the fail card's button)
       primaryKind = 'retry';
       // WO-0047: a budget REFUSAL owns the moment instead — the two-choice card renders, the fail
@@ -842,7 +854,7 @@ export function WorkOrderDetail({
     ) : null;
 
   const failCard =
-    turn === 'retry' && !state.lastRefusal ? (
+    turn === 'retry' && !state.lastRefusal && state.lastLimit === undefined ? (
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
         <div className="min-w-0 flex-1 px-3.5 py-3">
@@ -913,11 +925,30 @@ export function WorkOrderDetail({
       />
     ) : null;
 
+  // WO-0053 — the limit stop's ONE-ACTION card: the fold's `lastLimit` is the discriminator (the
+  // `lastRefusal` pattern). It renders only when the refusal card does NOT (a budget refusal is
+  // the fresher intent in the both-set case — a post-limit Sürdür that met the cap resolves the
+  // cap first; the limit state survives the fold and its card returns). The button rides the FAIL
+  // CARD's retry channel: `drive-store.restart` is rejected for this (it re-issues the ORIGINAL
+  // input — a fresh session, wrong for a stopped live leg); retry finds the persisted row's
+  // providerSessionId and re-drives with `resume:`, the Sürdür mechanism verbatim.
+  const limitCard =
+    state.lastLimit !== undefined && !running && refusalCard === null ? (
+      <LimitCard
+        resetAt={state.lastLimit.resetAt}
+        windowKind={state.lastLimit.window}
+        now={now}
+        onResume={retry}
+      />
+    ) : null;
+  const limitOpen = limitCard !== null;
+
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).
   const decision = (
     <div className="flex flex-col gap-3">
       {askCards}
       {refusalCard}
+      {limitCard}
       {failCard}
 
       {objectionOpen ? (
@@ -1198,7 +1229,10 @@ export function WorkOrderDetail({
   // repeat the error under the card. The pane returns the moment the raise's re-run boots
   // (`started` clears the refusal) — or on a re-entry's fresh auto-drive, honestly refused again.
   const refusalOpen = state.lastRefusal !== undefined && !running;
-  const instrument = refusalOpen ? null : planStage ? (
+  // WO-0053: the limit card owns the moment the same way (karar 5) — but unlike a refusal there IS
+  // a transcript to read; it lives one click away in the Oturum card's döküm (the card grammar's
+  // own rule — no forked read-only instrument beneath the card).
+  const instrument = refusalOpen || limitOpen ? null : planStage ? (
     (effectivePlan && !replanning) || (!planPaneLive && !replanning) ? null : (
       <SessionPane
         mode={detail.mode}
