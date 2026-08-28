@@ -343,6 +343,68 @@ describe('foldSessionEvent — live session state', () => {
   });
 });
 
+// ===== WO-0052 — the usage fold (lastUsage) =====
+// The rich usage detail rides `turn_complete` and the per-result `turn_usage` event; the fold
+// stores it as state (the `context?` precedent). Absent means NOT-REPORTED — never an empty
+// object, never zeros. `turn_usage` must NEVER touch `cost`: the pane costline belongs to the
+// accumulated terminal event (and the context_usage ride-along), and a per-turn cost touch
+// would double-count both.
+describe('foldSessionEvent — the WO-0052 usage fold (lastUsage)', () => {
+  const ev = (e: RunnerEvent) => foldSessionEvent(initialSessionState, e);
+  const usage = {
+    cacheRead: 91008,
+    cacheCreation: 2048,
+    numTurns: 7,
+    durationMs: 41_200,
+    durationApiMs: 38_500,
+    modelUsage: [{ model: 'm-1', tokensIn: 300, tokensOut: 90, usd: 0.05 }],
+  };
+
+  it('a usage-bearing turn_complete folds it verbatim into lastUsage', () => {
+    const s = ev({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 300, tokensOut: 90, usd: 0.05 }, usage });
+    expect(s.lastUsage).toEqual(usage);
+  });
+
+  it('a usage-less turn_complete leaves lastUsage untouched — never an empty object, never zeros', () => {
+    const s = ev({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
+    expect(s.lastUsage).toBeUndefined();
+    expect('lastUsage' in s).toBe(false);
+  });
+
+  it('turn_usage folds lastUsage + the liveness anchor and leaves cost byte-identical', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's1', at: '2026-08-28T10:00:00.000Z' });
+    const costBefore = s.cost;
+    s = foldSessionEvent(s, { kind: 'turn_usage', delta: { tokensIn: 27802, tokensOut: 50, usd: 0.17658 }, usage, at: '2026-08-28T10:00:30.000Z' });
+    expect(s.lastUsage).toEqual(usage);
+    expect(s.lastLifeAt).toBe('2026-08-28T10:00:30.000Z');
+    expect(s.cost).toBe(costBefore); // same reference — the fold never rewrites cost here
+    expect(s.cost).toEqual({ tokensIn: 0, tokensOut: 0, usd: 0 });
+    expect(s.status).toBe('running'); // a usage observation is not a terminal event
+    expect(s.entries).toHaveLength(1); // no transcript line (the steer_queued precedent)
+  });
+
+  it('turn_usage without rich fields sets nothing — absent stays absent', () => {
+    const s = ev({ kind: 'turn_usage', delta: { tokensIn: 44, tokensOut: 158, usd: 0.02 }, at: '2026-08-28T10:00:31.000Z' });
+    expect('lastUsage' in s).toBe(false);
+    expect(s.lastLifeAt).toBe('2026-08-28T10:00:31.000Z');
+  });
+
+  it('a later usage-bearing turn_complete supersedes the prior reading (latest-wins)', () => {
+    const usage2 = { cacheRead: 100608, numTurns: 3, modelUsage: [{ model: 'm-2', tokensIn: 213, tokensOut: 194, usd: 0.056219 }] };
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's1' });
+    s = foldSessionEvent(s, { kind: 'turn_usage', delta: { tokensIn: 1, tokensOut: 1, usd: 0.01 }, usage });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 2, tokensOut: 2, usd: 0.02 }, usage: usage2 });
+    expect(s.lastUsage).toEqual(usage2);
+  });
+
+  it('interrupted and error never surface usage', () => {
+    const stopped = ev({ kind: 'interrupted' });
+    expect('lastUsage' in stopped).toBe(false);
+    const errored = ev({ kind: 'error', message: 'boom' });
+    expect('lastUsage' in errored).toBe(false);
+  });
+});
+
 // ===== Command classification (WO-0019 / TD-026) =====
 
 describe('classifyCommandLine — quote-aware redirect', () => {

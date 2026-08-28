@@ -82,7 +82,38 @@ CREATE TABLE IF NOT EXISTS session (
   cost_usd REAL,
   started_at TEXT,          -- ISO drive start (WO-0027 / İstek 7)
   ended_at TEXT,            -- ISO terminal end; NULL while live
-  step_idx INTEGER -- the plan step this session runs (WO-0017); NULL for the architect plan session + free-form runs
+  step_idx INTEGER,         -- the plan step this session runs (WO-0017); NULL for the architect plan session + free-form runs
+  -- WO-0052 usage checkpoints, BOTH latest-wins and NULL = honestly absent (pre-WO-0052 rows and
+  -- drives that never observed a reading/usage — never backfilled, never zeroed):
+  ctx_used_tokens INTEGER,  -- the LATEST context-window reading (written at each record)
+  ctx_max_tokens INTEGER,   -- the window the latest reading reports against
+  final_model_usage TEXT    -- the last observed rich usage detail (JSON TurnUsage; legs overwrite)
+);
+-- WO-0052: ONE row per OBSERVED provider result (a turn_complete, including the HELD intermediates
+-- of a steered drive). OWNED half (not in OBSERVED_TABLES): provider-observed but NOT re-derivable —
+-- a reseed never drops it. Append-only (never updated, never deleted by the session upsert); a
+-- resume leg appends to the SAME session, its deltas being that leg's own spend under the per-leg
+-- applyResultCost baseline (no double-count). usd_delta is the per-turn delta — NOT the cumulative
+-- figure session.cost_usd carries. cache_*/num_turns/duration_*/model/model_usage are
+-- NULL when the result did not report them (honest absent); model is set only for a single-model
+-- result, the verbatim multi-model split lives in model_usage (JSON). Metrics only (CLAUDE.md
+-- Records rule): token counts, durations, model-id strings as data.
+CREATE TABLE IF NOT EXISTS session_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id TEXT NOT NULL,
+  work_order_id TEXT,             -- NULL for a draft session (the owner pair) — invisible to every WO read
+  provider_session_id TEXT NOT NULL,
+  at TEXT NOT NULL,               -- the result's ISO receive stamp
+  tokens_in INTEGER NOT NULL,
+  tokens_out INTEGER NOT NULL,
+  usd_delta REAL NOT NULL,
+  cache_read INTEGER,
+  cache_creation INTEGER,
+  num_turns INTEGER,              -- leg-cumulative-so-far; persisted verbatim, never summed by Docket
+  duration_ms INTEGER,            -- leg-cumulative-so-far; never summed (wall time lives on the session row)
+  duration_api_ms INTEGER,
+  model TEXT,                     -- the single-model shortcut; NULL for 0-or-multi-model results
+  model_usage TEXT                -- the verbatim per-model split (JSON ModelUsageLine[])
 );
 -- A plan step's RUN OUTCOME (WO-0017). Observed + discardable: the specs (role/aim/scope) are parsed from
 -- plan.md at view time (ADR-0010 rules 1 & 2 — no document text / no derived data stored), so this table

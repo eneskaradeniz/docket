@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildDriveInput, formatEvent, runDrive } from '../drive';
 import { createFakeRunner } from '../fake-runner';
+import { showCommand } from '../index';
+import { createStore } from '../../adapters/store';
 import { autoAllowPolicy, createPipeline } from '../../core/pipeline';
 import type { SessionStore } from '../../core/session-store';
 import type { WorkOrderSource } from '../../core/source';
@@ -34,6 +36,9 @@ function fakeStore(prompts: { architect?: string; step?: { prompt: string; scope
   const calls: Array<[string, ...unknown[]]> = [];
   const store = {
     recordSession: (i: unknown) => calls.push(['recordSession', i]),
+    // WO-0052: the per-turn usage append — the `as unknown as SessionStore` cast below would NOT
+    // catch a missing method at compile time; the usage-scripted tests do, at runtime.
+    recordTurnUsage: (owner: unknown, sid: unknown, row: unknown) => calls.push(['recordTurnUsage', owner, sid, row]),
     recordStep: (id: unknown, idx: unknown, patch: unknown) => calls.push(['recordStep', id, idx, patch]),
     recordStepReport: (id: unknown, idx: unknown, role: unknown, body: unknown) => calls.push(['recordStepReport', id, idx, role, body]),
     recordStepVerdict: (id: unknown, idx: unknown, verdict: unknown, body: unknown) => calls.push(['recordStepVerdict', id, idx, verdict, body]),
@@ -206,3 +211,72 @@ describe('formatEvent — output formatter', () => {
 // core's can-close.test.ts; `remove-workspace` (WO-0032) likewise thins into store.deleteWorkspace —
 // cascade + running guard covered by store.test.ts's workspace-deletion describe; `doctor` wraps
 // quickProviderCheck/checkProvider (adapter-side).
+
+// ===== WO-0052 — `show` prints the per-session usage floor =====
+// A REAL store on a temp DB, a scripted fake drive through the real pipeline, then `show`:
+// present fields print, absent fields print NOTHING (never zeros). This is showCommand's first
+// test — today it prints no sessions at all.
+describe('show — the per-session usage section (WO-0052)', () => {
+  const mkStore = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-show-'));
+    return createStore(join(dir, 'show.db'));
+  };
+  const stdout = async (fn: () => Promise<number>): Promise<string> => {
+    const chunks: string[] = [];
+    const orig = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await fn();
+    } finally {
+      process.stdout.write = orig;
+    }
+    return chunks.join('');
+  };
+  const driveWith = async (store: ReturnType<typeof createStore>, woId: WorkOrderId, script: RunnerEvent[]): Promise<void> => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-drive-'));
+    writeFileSync(join(dir, 'script.json'), JSON.stringify(script));
+    const fr = createFakeRunner(join(dir, 'script.json'));
+    const pipeline = createPipeline({ runner: fr.runner, store, permission: autoAllowPolicy() });
+    await runDrive({ role: 'implementer', workOrderId: woId, mode: 'direct', prompt: 'p' } as never, pipeline, () => {});
+  };
+
+  it('prints the ctx line, the final-usage line and the per-turn tail when present (AC5)', async () => {
+    const store = mkStore();
+    const root = join(tmpdir(), `cli-show-root-${Date.now()}`);
+    mkdirSync(root, { recursive: true });
+    const ws = await store.createWorkspace({ label: 'Show', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Usage', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await driveWith(store, wo.id, [
+      { kind: 'started', sessionId: 'sess-show' },
+      { kind: 'context_usage', usedTokens: 46000, maxTokens: 200000, percentage: 23 },
+      { kind: 'turn_usage', delta: { tokensIn: 27802, tokensOut: 50, usd: 0.17658 }, usage: { cacheRead: 91008, numTurns: 7, durationMs: 41200, modelUsage: [{ model: 'm-1', tokensIn: 300, tokensOut: 90, usd: 0.05 }] }, at: '2026-08-28T10:00:00.000Z' },
+      { kind: 'turn_usage', delta: { tokensIn: 44, tokensOut: 158, usd: 0.029322 }, at: '2026-08-28T10:00:10.000Z' },
+      { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 27846, tokensOut: 208, usd: 0.205902 }, result: 'done' },
+    ]);
+    const out = await stdout(() => showCommand(wo.id, store));
+    expect(out).toContain('ctx 46000/200000');
+    expect(out).toContain('last usage: turns 7 · 41200ms · cache r 91008 · m-1');
+    expect(out).toContain('in 27802 out 50 · $0.17658 · cache r 91008 · m-1'); // the first per-turn row
+    expect(out).toContain('in 44 out 158 · $0.029322'); // the second row, absent fields omitted
+    expect(out).toContain('$0.205902'); // the session aggregate
+  });
+
+  it('omits the usage lines entirely when absent — never zeros (AC5, absent direction)', async () => {
+    const store = mkStore();
+    const root = join(tmpdir(), `cli-show-root-${Date.now()}`);
+    mkdirSync(root, { recursive: true });
+    const ws = await store.createWorkspace({ label: 'Show bare', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Bare', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.recordSession({ providerSessionId: 'sess-bare', owner: { kind: 'wo', workOrderId: wo.id }, role: 'verifier', status: 'stopped', cost: { tokensIn: 5, tokensOut: 5, usd: 0.05 } });
+    const out = await stdout(() => showCommand(wo.id, store));
+    expect(out).toContain('sess-bare'); // the session section exists
+    expect(out).toContain('$0.05'); // observed cost prints
+    expect(out).not.toContain('ctx ');
+    expect(out).not.toContain('last usage');
+    expect(out).not.toContain('in 0 out 0');
+    expect(out).not.toMatch(/turn .*\$0\.00/);
+  });
+});

@@ -13,7 +13,7 @@
 // RunnerEvent the runner yields is re-yielded to the host so the existing UI fold (foldSessionEvent) is
 // unchanged; the persistence side-effects ride alongside, exactly as main.ts used to do.
 
-import type { CostSummary, SessionRef, SteerNote } from './types';
+import type { CostSummary, SessionRef, SteerNote, TurnUsage } from './types';
 import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
 import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from './runner';
 import type { SessionOwner, SessionStore } from './session-store';
@@ -265,6 +265,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       };
     }
 
+    // WO-0052: the last observed rich usage detail — updated at every turn_usage, checkpointed on
+    // every record (defined OVERWRITES, undefined KEEPS the prior row's values — the pendingNotes
+    // rule; a leg that observed nothing leaves the prior leg's figures standing).
+    let lastUsage: TurnUsage | undefined;
     const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
       if (!providerSessionId) return;
       deps.store.recordSession({
@@ -282,6 +286,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         pendingNotes: mirrorNotes,
         startedAt: startedAtIso,
         endedAt,
+        // WO-0052: the LATEST context reading + the last observed usage checkpoint with every record —
+        // the honest-absent rule holds: no reading observed → undefined → the store keeps the prior.
+        ...(live.context ? { ctx: { usedTokens: live.context.usedTokens, maxTokens: live.context.maxTokens } } : {}),
+        ...(lastUsage ? { finalUsage: lastUsage } : {}),
       });
     };
 
@@ -361,6 +369,21 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             // the architect-review-of-a-partial-report path a turn_complete would trigger.
             terminated = true;
             record('stopped', ev.cost, lastActivityIso ?? startedAtIso);
+            yield ev;
+            break;
+          case 'turn_usage':
+            // WO-0052: the per-turn usage row — ONE append per OBSERVED result, held intermediates
+            // included (the adapter emits them before its hold). `delta` is that result's own spend
+            // under the per-leg baseline; a resume leg appends to the SAME session with no
+            // double-count. lastUsage feeds the session row's final checkpoint.
+            if (providerSessionId) {
+              lastUsage = ev.usage ?? lastUsage;
+              deps.store.recordTurnUsage(owner, providerSessionId, {
+                at: ev.at ?? new Date().toISOString(),
+                delta: ev.delta,
+                ...(ev.usage ? { usage: ev.usage } : {}),
+              });
+            }
             yield ev;
             break;
           case 'turn_complete':

@@ -52,7 +52,7 @@ import {
   type ScopeRoots,
   type WriteAttempt,
 } from '../../core/runner';
-import type { CostSummary } from '../../core/types';
+import type { CostSummary, TurnUsage } from '../../core/types';
 import type { SessionRunner } from '../../core/runner';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookEditNew']);
@@ -104,7 +104,20 @@ type AnyMsg = {
   session_id?: string;
   message?: { content: AnyBlock[] };
   total_cost_usd?: number;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    // WO-0052: the cache split the result already carries (structural view — optional, because we
+    // read only what we name; an unreported field stays undefined, never zero).
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  // WO-0052: the rich usage figures the SDK result reports (sdk.d.ts:4291-4344 result shape; the
+  // ModelUsage record at :1265-1282). Structural-optional so an SDK bump breaks the PINS first.
+  modelUsage?: Record<string, { inputTokens?: number; outputTokens?: number; costUSD?: number }>;
+  num_turns?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
   stop_reason?: string | null;
   result?: string;
   errors?: string[];
@@ -153,6 +166,45 @@ function costOf(m: AnyMsg): CostSummary {
     usd: m.total_cost_usd ?? 0,
     tokensIn: m.usage?.input_tokens ?? 0,
     tokensOut: m.usage?.output_tokens ?? 0,
+  };
+}
+
+/** WO-0052: the result message's OPTIONAL rich usage detail, read from the structural `AnyMsg`
+ *  view and mapped onto the vendor-neutral `TurnUsage`. Undefined when the message reports NONE
+ *  of the fields — absent stays absent, never an empty object, never zeros (the costOf baseline
+ *  discipline's honest cousin; costOf itself is unchanged, its input just widened). Model ids
+ *  pass through as DATA (ADR-0006 bans vendor names in CODE, not metric strings). */
+export function usageOf(m: AnyMsg): TurnUsage | undefined {
+  const cacheRead = m.usage?.cache_read_input_tokens;
+  const cacheCreation = m.usage?.cache_creation_input_tokens;
+  const numTurns = m.num_turns;
+  const durationMs = m.duration_ms;
+  const durationApiMs = m.duration_api_ms;
+  const modelUsage = m.modelUsage
+    ? Object.entries(m.modelUsage).map(([model, u]) => ({
+        model,
+        tokensIn: u.inputTokens ?? 0, // an entry PRESENT means the provider reported it; the SDK's ModelUsage fields are required
+        tokensOut: u.outputTokens ?? 0,
+        usd: u.costUSD ?? 0,
+      }))
+    : [];
+  if (
+    cacheRead === undefined
+    && cacheCreation === undefined
+    && numTurns === undefined
+    && durationMs === undefined
+    && durationApiMs === undefined
+    && modelUsage.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheCreation !== undefined ? { cacheCreation } : {}),
+    ...(numTurns !== undefined ? { numTurns } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(durationApiMs !== undefined ? { durationApiMs } : {}),
+    ...(modelUsage.length > 0 ? { modelUsage } : {}),
   };
 }
 
@@ -369,10 +421,12 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           }
           // `result` is the SDK's canonical turn answer (WO-0017) — the composition root captures it as the
           // step report at turn_complete. Omitted when absent (the fold ignores it either way).
+          // WO-0052: the result's own rich usage rides along (optional, honest-absent).
+          const usage = usageOf(msg);
           out.push(
             msg.result
-              ? { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), result: msg.result, at: new Date().toISOString() }
-              : { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), at: new Date().toISOString() },
+              ? { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), usage, result: msg.result, at: new Date().toISOString() }
+              : { kind: 'turn_complete', stopReason: msg.stop_reason ?? 'unknown', cost: costOf(msg), usage, at: new Date().toISOString() },
           );
           break;
         }
@@ -453,6 +507,13 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             const { baselineUsd, delta } = applyResultCost(costBaselineUsd, e.cost);
             costBaselineUsd = baselineUsd;
             driveCost = addCost(driveCost, delta);
+            // WO-0052: the per-turn usage row escapes HERE — BEFORE the hold check. Every observed
+            // result appends exactly one usage row, INCLUDING the held intermediates of a steered
+            // drive (whose turn_complete is swallowed below); `delta` is this result's own spend
+            // under the per-leg baseline, `usage` its own optional rich detail. The synthetic
+            // plan-exit and the interrupt close never reach this line (no result message → nothing
+            // observed → no row).
+            queue.push({ kind: 'turn_usage', delta: { ...delta }, usage: e.usage, at: e.at });
             // The turn boundary is a refresh point for the gauge; on the TERMINAL boundary the
             // feed flag drops the reading (the drive is over) — this serves the held/intermediate
             // boundaries of a steered drive (D3) and the per-command boundaries of a long one.
