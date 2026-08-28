@@ -35,6 +35,7 @@ import { workspaces } from '../fixtures';
 import type {
   Ci,
   CiCheck,
+  CostSummary,
   RepoId,
   SessionRef,
   WoEvent,
@@ -48,6 +49,8 @@ import type {
   WorkOrderId,
   Workspace,
   WorkspaceId,
+  ModelUsageLine,
+  TurnUsage,
 } from '../../core/types';
 
 // RecordSessionInput + the eight drive-loop methods (record*/savePendingPlan/*PromptFor) live on the core
@@ -57,6 +60,10 @@ import type {
 export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
+  /** The per-turn usage rows of ONE work order, insertion-ordered (WO-0052). CONCRETE-ONLY — the
+   *  CLI `show` tail's read; the UI read port is the usage-screen WO's decision. Draft rows
+   *  (work_order_id NULL) never appear here. */
+  usageRowsFor(workOrderId: WorkOrderId): SessionUsageRow[];
   /** The work order's REPO ROOT PATHS (its tracks' connected local paths, decision store included) —
    *  the jail the diff-peek read stays inside (WO-0031c: the root is the WO's repos, never cwd). */
   woRepoPaths(workOrderId: WorkOrderId): string[];
@@ -143,6 +150,9 @@ type SessionRow = {
   cost_tokens_out: number | null;
   cost_usd: number | null;
   step_idx: number | null;
+  ctx_used_tokens: number | null; // WO-0052
+  ctx_max_tokens: number | null; // WO-0052
+  final_model_usage: string | null; // WO-0052
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
@@ -198,6 +208,22 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
     }
   })();
   const notesField = pendingNotes ? { pendingNotes } : {};
+  // The WO-0052 usage checkpoints: NULL = honestly absent (pre-WO-0052 rows, or a drive that never
+  // observed a reading/usage) — never zeros. The final usage blob parses fail-open (the
+  // pending_notes precedent: a corrupt blob must not brick hydration).
+  const finalUsage = (() => {
+    if (!r.final_model_usage) return undefined;
+    try {
+      const parsed = JSON.parse(r.final_model_usage) as TurnUsage;
+      return parsed && typeof parsed === 'object' ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const usageField = {
+    ...(r.ctx_used_tokens == null || r.ctx_max_tokens == null ? {} : { ctx: { usedTokens: r.ctx_used_tokens, maxTokens: r.ctx_max_tokens } }),
+    ...(finalUsage ? { finalUsage } : {}),
+  };
   switch (r.status) {
     case 'stopped_asking':
       return {
@@ -212,15 +238,16 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
         endedAt,
         ...(cost ? { cost } : {}),
         ...notesField,
+        ...usageField,
       };
     case 'running':
-      return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+      return { role: r.role, status: 'running', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField, ...usageField };
     case 'stopped':
-      return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+      return { role: r.role, status: 'stopped', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField, ...usageField };
     case 'idle':
-      return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+      return { role: r.role, status: 'idle', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField, ...usageField };
     case 'none':
-      return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField };
+      return { role: r.role, status: 'none', transcript, scope, providerSessionId, stepIdx, startedAt, endedAt, ...(cost ? { cost } : {}), ...notesField, ...usageField };
   }
 }
 
@@ -340,9 +367,9 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WOs); a foreign row survives instead of being stolen. `IS ?` is SQLite's NULL-safe equality —
   // a draft row's NULL work_order_id must match its own row (and only it).
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
     .get(input.providerSessionId, wsId, woId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null }
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null }
     | undefined;
   const priorTranscript = (() => {
     if (!prior?.transcript) return undefined;
@@ -380,9 +407,18 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // operator still believes are queued (the plan's Risk 5).
   const pendingNotesJson =
     input.pendingNotes !== undefined ? JSON.stringify(input.pendingNotes) : (prior?.pending_notes ?? null);
+  // WO-0052: the usage checkpoints are latest-wins with the SAME undefined-keeps-prior rule — a
+  // record from a path whose fold holds no reading must not erase the latest known one. The two
+  // ctx columns move as ONE pair (a reading is used/max together).
+  const ctxPair =
+    input.ctx !== undefined
+      ? { used: input.ctx.usedTokens, max: input.ctx.maxTokens }
+      : { used: prior?.ctx_used_tokens ?? null, max: prior?.ctx_max_tokens ?? null };
+  const finalUsageJson =
+    input.finalUsage !== undefined ? JSON.stringify(input.finalUsage) : (prior?.final_model_usage ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     wsId,
@@ -399,7 +435,101 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     (prior?.started_at && input.startedAt && prior.started_at < input.startedAt ? prior.started_at : input.startedAt) ?? prior?.started_at ?? null,
     (prior?.ended_at && input.endedAt && prior.ended_at > input.endedAt ? prior.ended_at : input.endedAt) ?? prior?.ended_at ?? null,
     input.stepIdx ?? null,
+    ctxPair.used,
+    ctxPair.max,
+    finalUsageJson,
   );
+}
+
+// WO-0052: append ONE per-turn usage row. Append-only (the appendEvent discipline): the session
+// upsert's DELETE+INSERT never touches these rows; a resume leg appends to the SAME session — its
+// delta is that leg's own spend under the per-leg applyResultCost baseline, so the session total
+// lands right with no double-count. The rich fields persist verbatim; absent = NULL, never 0.
+// `model` is the single-model shortcut (NULL for 0-or-multi-model results — the verbatim split
+// lives in model_usage JSON).
+function recordTurnUsageRow(db: DatabaseSync, owner: SessionOwner, providerSessionId: string, row: { at: string; delta: CostSummary; usage?: TurnUsage }): void {
+  const { wsId, woId } = ownerPair(db, owner);
+  const u = row.usage;
+  const models = u?.modelUsage;
+  db.prepare(
+    `INSERT INTO session_usage (workspace_id, work_order_id, provider_session_id, at, tokens_in, tokens_out, usd_delta,
+       cache_read, cache_creation, num_turns, duration_ms, duration_api_ms, model, model_usage)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    wsId,
+    woId,
+    providerSessionId,
+    row.at,
+    row.delta.tokensIn,
+    row.delta.tokensOut,
+    row.delta.usd,
+    u?.cacheRead ?? null,
+    u?.cacheCreation ?? null,
+    u?.numTurns ?? null,
+    u?.durationMs ?? null,
+    u?.durationApiMs ?? null,
+    models?.length === 1 ? (models[0]!.model) : null,
+    models?.length ? JSON.stringify(models) : null,
+  );
+}
+
+// WO-0052: the per-turn usage rows of ONE work order, in insertion order — the CLI `show` tail and
+// the usage screen's coarse curve. Draft rows (work_order_id NULL) are structurally invisible here,
+// like every WO-scoped session read. NULL rich fields hydrate absent, never zeros.
+type SessionUsageRow = {
+  providerSessionId: string;
+  at: string;
+  tokensIn: number;
+  tokensOut: number;
+  usd: number;
+  cacheRead?: number;
+  cacheCreation?: number;
+  numTurns?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  model?: string;
+  modelUsage?: ModelUsageLine[];
+};
+
+function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] {
+  const rows = db
+    .prepare('SELECT * FROM session_usage WHERE work_order_id = ? ORDER BY id')
+    .all(woId) as Array<{
+    provider_session_id: string;
+    at: string;
+    tokens_in: number;
+    tokens_out: number;
+    usd_delta: number;
+    cache_read: number | null;
+    cache_creation: number | null;
+    num_turns: number | null;
+    duration_ms: number | null;
+    duration_api_ms: number | null;
+    model: string | null;
+    model_usage: string | null;
+  }>;
+  return rows.map((r) => ({
+    providerSessionId: r.provider_session_id,
+    at: r.at,
+    tokensIn: r.tokens_in,
+    tokensOut: r.tokens_out,
+    usd: r.usd_delta,
+    ...(r.cache_read == null ? {} : { cacheRead: r.cache_read }),
+    ...(r.cache_creation == null ? {} : { cacheCreation: r.cache_creation }),
+    ...(r.num_turns == null ? {} : { numTurns: r.num_turns }),
+    ...(r.duration_ms == null ? {} : { durationMs: r.duration_ms }),
+    ...(r.duration_api_ms == null ? {} : { durationApiMs: r.duration_api_ms }),
+    ...(r.model == null ? {} : { model: r.model }),
+    ...(() => {
+      if (!r.model_usage) return {};
+      try {
+        const parsed = JSON.parse(r.model_usage) as ModelUsageLine[];
+        return Array.isArray(parsed) && parsed.length > 0 ? { modelUsage: parsed } : {};
+      } catch {
+        return {}; // a corrupt blob must not brick the read (the pending_notes precedent)
+      }
+    })(),
+  }));
 }
 
 // Additive migration for DBs created before WO-0010. No UNIQUE constraint is added —
@@ -414,10 +544,13 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
 // workspace_id (through the WO join; `''` for an orphan row — joins to nothing, hydrates nowhere).
 const SESSION_REBUILD_COPY =
   'INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx) ' +
+  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage) ' +
   'SELECT provider_session_id, ' +
   "COALESCE((SELECT w.workspace_id FROM work_order w WHERE w.id = session_legacy.work_order_id), ''), work_order_id, " +
-  'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx FROM session_legacy';
+  'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ' +
+  // WO-0052: the usage columns ride every rebuild — the ALTERs above ran first, so session_legacy
+  // always carries them (NULL for a pre-WO-0052 row: honestly absent through the copy).
+  'ctx_used_tokens, ctx_max_tokens, final_model_usage FROM session_legacy';
 
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
@@ -431,6 +564,12 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has('ended_at')) db.exec('ALTER TABLE session ADD COLUMN ended_at TEXT');
   // WO-0045: the steer-note mirror rides the session row (the stop_and_ask precedent).
   if (!cols.has('pending_notes')) db.exec('ALTER TABLE session ADD COLUMN pending_notes TEXT');
+  // WO-0052: the usage checkpoints ride the session row (the pending_notes precedent). All nullable
+  // — NULL is the honest pre-WO-0052 vintage, never backfilled. The session_usage TABLE itself needs
+  // no ALTER: SCHEMA_SQL's CREATE TABLE IF NOT EXISTS ran before migrate() on every open.
+  if (!cols.has('ctx_used_tokens')) db.exec('ALTER TABLE session ADD COLUMN ctx_used_tokens INTEGER');
+  if (!cols.has('ctx_max_tokens')) db.exec('ALTER TABLE session ADD COLUMN ctx_max_tokens INTEGER');
+  if (!cols.has('final_model_usage')) db.exec('ALTER TABLE session ADD COLUMN final_model_usage TEXT');
 
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {
@@ -1269,6 +1408,9 @@ export function createStore(dbPath: string): Store {
     },
     approveRoadmapDraft: (id: WorkspaceId) => approveRoadmapDraftRow(db, id),
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
+    recordTurnUsage: (owner: SessionOwner, providerSessionId: string, row: { at: string; delta: CostSummary; usage?: TurnUsage }) =>
+      recordTurnUsageRow(db, owner, providerSessionId, row),
+    usageRowsFor: (workOrderId: WorkOrderId) => usageRowsForWo(db, workOrderId),
     // WO-0050 — the draft drive's gate + prompt + pending row (D3–D6). The budget method is the
     // draft arm of the unconditional gate; the prompt row feeds core's ONE-mechanism builder;
     // the draft row is plan_ready's landing. WO-0051: freeExplore rides the prompt, the

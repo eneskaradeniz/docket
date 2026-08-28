@@ -124,6 +124,11 @@ export type SessionRef = (
    * shrink it; the SDK-side queue is the truth while running, this row is the truth across a stop. */
   pendingNotes?: SteerNote[];
   cost?: CostSummary; // observed per-session cost (WO-0011); undefined until turn_complete / on fixture-less rows
+  // WO-0052 usage checkpoints — absent = honestly not observed (pre-WO-0052 rows, or a drive with
+  // no reading / no reported usage), never zeros. `ctx` is the LATEST reading; `finalUsage` the
+  // last observed rich detail (latest-wins across legs).
+  ctx?: { usedTokens: number; maxTokens: number };
+  finalUsage?: TurnUsage;
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
   startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)
   endedAt?: string; // ISO — when it terminally ended (turn complete / abort / error); absent while live
@@ -259,6 +264,34 @@ export interface CostSummary {
   tokensIn: number;
   tokensOut: number;
   usd: number;
+}
+
+// ===== WO-0052 — the usage-instrumentation vocabulary =====
+// What the provider ALREADY reports and Docket previously dropped (the token tour,
+// docs/research/2026-08-28-token-usage-tour.md). Every field is optional: ABSENT means
+// not-reported, never a fabricated 0 (the `context?` discipline). `numTurns` /
+// `durationMs` / `durationApiMs` are LEG-CUMULATIVE-so-far figures on intermediate
+// results — they persist verbatim and Docket never sums them (the session's wall time
+// lives in started_at/ended_at); only `usd` deltas and per-result token counts accumulate.
+// Model ids are DATA carried verbatim from the provider adapter (ADR-0006 bans vendor
+// names in CODE, not metric strings in rows).
+
+/** One entry of a result's per-model usage split (WO-0052). */
+export interface ModelUsageLine {
+  model: string;
+  tokensIn: number;
+  tokensOut: number;
+  usd: number;
+}
+
+/** The optional rich usage detail of ONE observed provider result (WO-0052). */
+export interface TurnUsage {
+  cacheRead?: number; // cache_read_input_tokens
+  cacheCreation?: number; // cache_creation_input_tokens
+  numTurns?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  modelUsage?: ModelUsageLine[];
 }
 
 // ===== RAW STATE (the adapter provides this — fixtures now; SQLite/git in M3) =====

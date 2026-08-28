@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, TurnUsage, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
 import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
@@ -34,7 +34,16 @@ export type RunnerEvent =
   // carry an ISO receive-time stamp — the fold turns each into a CLOCKED transcript note, so the
   // döküm reads as a timeline in BOTH the live pane and the archived card (the fold is pure; the
   // stamp comes from the adapter's receive moment, "hangi saniye" resolution).
-  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; result?: string; at?: string }
+  | { kind: 'turn_complete'; stopReason: string; cost: CostSummary; usage?: TurnUsage; result?: string; at?: string }
+  // WO-0052: ONE event per OBSERVED provider result — including the HELD intermediates of a steered
+  // drive (the adapter emits it BEFORE its hold check). `delta` is the per-result difference under
+  // the `applyResultCost` baseline (usd on `turn_complete` is ACCUMULATED; here it is the turn's own
+  // spend — hence the different name), `usage` the optional rich detail. Never emitted for the
+  // synthetic plan-exit or an interrupt close: an abort precedes the result message, nothing was
+  // observed, no row (the honest no-claim, WO-0026/TD-030). The fold stores it as state, appends NO
+  // transcript line (the steer_queued precedent) and NEVER touches `cost` (the pane costline is the
+  // accumulated terminal event's — a per-turn cost write would double-count it).
+  | { kind: 'turn_usage'; delta: CostSummary; usage?: TurnUsage; at?: string }
   // WO-0039 stabilization (2026-08-23, "Durdur must never say Oturum çöktü"): the runner emits this
   // when an INTENTIONAL interrupt closed the stream without a turn_complete. It is a terminal,
   // calm close — the fold lands in 'stopped' (Durduruldu + ▶ Sürdür), never 'error' (the fail
@@ -465,6 +474,11 @@ export interface LiveSessionState {
    *  the costline. Absent until the runner first reports one — never zero, never seeded (a
    *  restarted renderer re-reads it on the drive's next tool event or thinking burst). */
   context?: { usedTokens: number; maxTokens: number; percentage: number };
+  /** The latest observed rich usage detail (WO-0052): the cache split, per-model usage, turns,
+   *  durations — folded from `turn_usage` and the usage-bearing `turn_complete` (latest-wins).
+   *  Absent until the runner first reports one — never zero, never an empty object (the
+   *  `context` precedent). */
+  lastUsage?: TurnUsage;
   /** ISO moment the drive last PROVED itself alive (WO-0046): an entry was appended (the event's
    *  `at` stamp) or a context reading arrived. The staleness line's anchor — deliberately NOT an
    *  entry-only concept: probe c1 showed a long-thinking model streams no transcript entries for
@@ -574,13 +588,25 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
     case 'turn_complete':
       // The turn's OWN closing line rides the transcript (2026-08-24: a completed session showed
       // only its work — reads, commands — with no lifecycle at all; the stop had a line, the end
-      // did not). Clock via the event's `at` stamp.
+      // did not). Clock via the event's `at` stamp. A usage-bearing result folds its detail
+      // latest-wins (WO-0052); a usage-less one leaves the prior reading alone.
       return {
         ...state,
         status: 'done',
         cost: event.cost,
         pendingAsks: [],
         entries: [...state.entries, { speaker: 'note', kind: 'session_done', ...(event.at ? { detail: event.at } : {}) }],
+        ...(event.usage ? { lastUsage: event.usage } : {}),
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
+    case 'turn_usage':
+      // WO-0052: a per-result usage observation — state only. No transcript line (the
+      // steer_queued precedent), no status change, and NEVER a cost touch: the pane costline
+      // belongs to the accumulated terminal `turn_complete` (and the context_usage ride-along);
+      // writing the per-turn delta here would double-count both.
+      return {
+        ...state,
+        ...(event.usage ? { lastUsage: event.usage } : {}),
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'interrupted':

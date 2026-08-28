@@ -120,6 +120,10 @@ function fakeStore(
   const calls: FakeStoreCalls[] = [];
   const store = {
     recordSession: (i: unknown) => calls.push({ method: 'recordSession', args: [i] }),
+    // WO-0052: the per-turn usage append — a fake left behind is caught at RUNTIME by the
+    // turn_usage-scripted tests below (TypeError), not by this file's `as unknown as SessionStore`
+    // cast (which suppresses compile-time checking of the port's shape).
+    recordTurnUsage: (owner: unknown, sid: unknown, row: unknown) => calls.push({ method: 'recordTurnUsage', args: [owner, sid, row] }),
     recordStep: (id: unknown, idx: unknown, patch: unknown) => calls.push({ method: 'recordStep', args: [id, idx, patch] }),
     recordStepReport: (id: unknown, idx: unknown, role: unknown, body: unknown) => calls.push({ method: 'recordStepReport', args: [id, idx, role, body] }),
     recordStepVerdict: (id: unknown, idx: unknown, verdict: unknown, body: unknown) => calls.push({ method: 'recordStepVerdict', args: [id, idx, verdict, body] }),
@@ -920,5 +924,112 @@ describe('steer mirror + lifecycle (WO-0045)', () => {
     expect(fr.drivenInputs[0]!.prompt).toBe('cevabım: evet'); // the answer owns the prompt channel
     expect(fr.drivenInputs[0]!.deliveringNote).toBeUndefined();
     expect(fr.steerCalls.filter(([, o]) => o?.emit === false).map(([note]) => note)).toEqual(['bekliyor']);
+  });
+});
+
+// ===== WO-0052 — the usage recording floor =====
+// Every observed turn_usage appends ONE usage row (the held intermediates arrive here as plain
+// events — a scripted runner emits them verbatim); the latest context reading and the last
+// observed usage checkpoint onto the session row at each record(); interrupted drives stay
+// honest (cost absent, ctx still checkpoints, NO usage rows — nothing was observed).
+describe('createPipeline — the usage recording floor (WO-0052)', () => {
+  const usage = {
+    cacheRead: 91008,
+    numTurns: 7,
+    durationMs: 41200,
+    modelUsage: [{ model: 'm-1', tokensIn: 300, tokensOut: 90, usd: 0.05 }],
+  };
+  const usageRows = (calls: FakeStoreCalls[]) => calls.filter((c) => c.method === 'recordTurnUsage').map((c) => c.args[2] as Record<string, unknown>);
+  const sessionRows = (calls: FakeStoreCalls[]) =>
+    calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { status: string; cost?: CostSummary; ctx?: unknown; finalUsage?: unknown });
+
+  it('every turn_usage appends exactly one usage row, in order, verbatim (AC2)', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'turn_usage', delta: { tokensIn: 27802, tokensOut: 50, usd: 0.17658 }, usage, at: '2026-08-28T10:00:00.000Z' },
+      { kind: 'turn_usage', delta: { tokensIn: 44, tokensOut: 158, usd: 0.029322 }, at: '2026-08-28T10:00:10.000Z' }, // a held intermediate's row
+      done('report'),
+    ]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const rows = usageRows(fs.calls);
+    expect(rows).toHaveLength(2);
+    expect(fs.calls.filter((c) => c.method === 'recordTurnUsage').map((c) => c.args[1])).toEqual(['s1', 's1']); // the provider session id
+    expect(rows[0]).toEqual({ at: '2026-08-28T10:00:00.000Z', delta: { tokensIn: 27802, tokensOut: 50, usd: 0.17658 }, usage });
+    expect(rows[1]).toEqual({ at: '2026-08-28T10:00:10.000Z', delta: { tokensIn: 44, tokensOut: 158, usd: 0.029322 }, usage: undefined });
+    // the terminal record still carries the ACCUMULATED cost — the floor adds rows, it never
+    // changes the session aggregate's meaning
+    const last = sessionRows(fs.calls).at(-1)!;
+    expect(last.cost).toEqual({ tokensIn: 0, tokensOut: 0, usd: 0 });
+  });
+
+  it('a context_usage reading checkpoints onto the NEXT record and every later one (AC3)', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'context_usage', usedTokens: 46000, maxTokens: 200000, percentage: 23 },
+      { kind: 'tool_result', callId: 'c1', summary: 'ok', isError: false },
+      done(),
+    ]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const rows = sessionRows(fs.calls);
+    expect('ctx' in rows[0]!).toBe(false); // the started record: no reading yet
+    for (const r of rows.slice(1)) expect(r.ctx).toEqual({ usedTokens: 46000, maxTokens: 200000 });
+  });
+
+  it('a drive with NO context_usage leaves ctx ABSENT on every record — never zeros (AC3, absent direction)', async () => {
+    const fr = fakeRunner([started(), txt('hello'), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    for (const r of sessionRows(fs.calls)) {
+      expect('ctx' in r).toBe(false);
+      expect('finalUsage' in r).toBe(false);
+    }
+  });
+
+  it('the last observed usage lands as finalUsage (latest-wins across legs is the store keep-prior rule)', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'turn_usage', delta: { tokensIn: 1, tokensOut: 1, usd: 0.001 }, usage, at: '2026-08-28T10:00:00.000Z' },
+      done('report'),
+    ]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const last = sessionRows(fs.calls).at(-1)!;
+    expect(last.finalUsage).toEqual(usage);
+  });
+
+  it('interrupted: cost stays honest-absent, the observed ctx still checkpoints, NO usage rows (AC3)', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'context_usage', usedTokens: 51000, maxTokens: 200000, percentage: 25 },
+      { kind: 'interrupted' },
+    ]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    expect(usageRows(fs.calls)).toEqual([]); // an abort precedes the result — nothing observed
+    const last = sessionRows(fs.calls).at(-1)!;
+    expect(last.status).toBe('stopped');
+    expect(last.cost).toBeUndefined();
+    expect(last.ctx).toEqual({ usedTokens: 51000, maxTokens: 200000 });
+  });
+
+  it('a draft drive records its usage rows under the DRAFT owner', async () => {
+    const fr = fakeRunner([
+      started('draft-s1'),
+      { kind: 'turn_usage', delta: { tokensIn: 9, tokensOut: 9, usd: 0.009 }, usage, at: '2026-08-28T10:00:00.000Z' },
+      plan('# taslak'),
+      done(),
+    ]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak promptu' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    const owner = fs.calls.find((c) => c.method === 'recordTurnUsage')!.args[0];
+    expect(owner).toEqual({ kind: 'draft', workspaceId: WS });
   });
 });

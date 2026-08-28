@@ -443,7 +443,7 @@ async function lsCommand(store: ReturnType<typeof createStore>): Promise<number>
   return 0;
 }
 
-async function showCommand(woIdArg: string | undefined, store: ReturnType<typeof createStore>): Promise<number> {
+export async function showCommand(woIdArg: string | undefined, store: ReturnType<typeof createStore>): Promise<number> {
   if (!woIdArg) {
     process.stderr.write('usage: show <woId>\n');
     return 2;
@@ -460,7 +460,47 @@ async function showCommand(woIdArg: string | undefined, store: ReturnType<typeof
     const v = s.verdict ? ` · ${s.verdict}` : '';
     process.stdout.write(`  step ${s.idx}  ${s.role}  ${s.status}${v}\n`);
   }
+  // WO-0052: the usage floor. Per session: the ctx line and the last-usage line ONLY when the row
+  // observed them, plus a per-turn tail (one line per session_usage row) — an ABSENT field prints
+  // NOTHING, never a zero. This section is the operator's verification instrument for the floor;
+  // the usage/limit screens (queues 3-4) render it properly later.
+  if (wo.sessions.length > 0) {
+    process.stdout.write('\n');
+    const usageRows = store.usageRowsFor(woId);
+    for (const s of wo.sessions) {
+      const head = [
+        `session ${s.providerSessionId ?? '(unkeyed)'}`,
+        s.role,
+        s.status,
+        ...(s.cost ? [`in ${s.cost.tokensIn} out ${s.cost.tokensOut} · $${s.cost.usd}`] : []),
+      ].join(' · ');
+      process.stdout.write(`  ${head}\n`);
+      if (s.ctx) process.stdout.write(`    ctx ${s.ctx.usedTokens}/${s.ctx.maxTokens}\n`);
+      if (s.finalUsage) process.stdout.write(`    ${finalUsageLine(s.finalUsage)}\n`);
+      for (const r of usageRows.filter((x) => x.providerSessionId === s.providerSessionId)) {
+        const parts = [`turn ${r.at}`, `in ${r.tokensIn} out ${r.tokensOut}`, `$${r.usd}`];
+        if (r.cacheRead !== undefined) parts.push(`cache r ${r.cacheRead}`);
+        if (r.cacheCreation !== undefined) parts.push(`cache c ${r.cacheCreation}`);
+        if (r.model) parts.push(r.model);
+        else if ((r.modelUsage?.length ?? 0) > 1) parts.push(`${r.modelUsage!.length} models`);
+        process.stdout.write(`    ${parts.join(' · ')}\n`);
+      }
+    }
+  }
   return 0;
+}
+
+/** WO-0052: the session row's LAST observed usage, one compact line — every absent field omitted. */
+function finalUsageLine(u: { cacheRead?: number; cacheCreation?: number; numTurns?: number; durationMs?: number; durationApiMs?: number; modelUsage?: Array<{ model: string; tokensIn: number; tokensOut: number; usd: number }> }): string {
+  const parts: string[] = [];
+  if (u.numTurns !== undefined) parts.push(`turns ${u.numTurns}`);
+  if (u.durationMs !== undefined) parts.push(`${u.durationMs}ms`);
+  if (u.durationApiMs !== undefined) parts.push(`api ${u.durationApiMs}ms`);
+  if (u.cacheRead !== undefined) parts.push(`cache r ${u.cacheRead}`);
+  if (u.cacheCreation !== undefined) parts.push(`cache c ${u.cacheCreation}`);
+  if (u.modelUsage?.length === 1) parts.push(u.modelUsage[0]!.model);
+  else if ((u.modelUsage?.length ?? 0) > 1) parts.push(`${u.modelUsage!.length} models`);
+  return `last usage: ${parts.join(' · ')}`;
 }
 
 const HELP_TEXT =

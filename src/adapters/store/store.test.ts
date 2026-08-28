@@ -10,7 +10,7 @@ import { workOrders } from '../fixtures';
 import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
 import { rid, woid } from '../ids';
-import type { RepoId, WorkOrderId, WorkspaceId } from '../../core/types';
+import type { RepoId, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -1670,5 +1670,209 @@ describe('WO-0050 — driveCwd (the connection-table fix)', () => {
     expect(docsSlug.length).toBeGreaterThan(0);
     // nothing matches (a WO that does not exist): today's behavior, byte-for-byte
     expect(store.driveCwd({ role: 'architect', workOrderId: woid('WO-NONE'), mode: 'plan', prompt: '' })).toBe(process.cwd());
+  });
+});
+
+// ===== WO-0052 — the usage instrumentation floor (session_usage + the ctx/final checkpoints) =====
+// The floor's contract: every OBSERVED provider result appends ONE per-turn row (held intermediates
+// included); the latest context reading and the final usage checkpoint onto the session row;
+// ABSENT means NULL, never a fabricated 0. The aggregate cost columns' `prior + input` semantics
+// are NOT this WO's — the WO-0029 pin above must stay green untouched.
+describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () => {
+  const wsIn = async (store: ReturnType<typeof createStore>, label: string) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: label, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    return { ws, wo };
+  };
+  const usageFull: TurnUsage = {
+    cacheRead: 91008,
+    cacheCreation: 2048,
+    numTurns: 7,
+    durationMs: 41200,
+    durationApiMs: 38500,
+    modelUsage: [{ model: 'm-1', tokensIn: 300, tokensOut: 90, usd: 0.05 }],
+  };
+
+  it('a usage-bearing result persists verbatim at the per-turn row (AC1, present direction)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage full');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    store.recordTurnUsage(owner, 'sess-u1', { at: '2026-08-28T10:00:00.000Z', delta: { tokensIn: 27802, tokensOut: 50, usd: 0.17658 }, usage: usageFull });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      providerSessionId: 'sess-u1',
+      at: '2026-08-28T10:00:00.000Z',
+      tokensIn: 27802,
+      tokensOut: 50,
+      usd: 0.17658,
+      cacheRead: 91008,
+      cacheCreation: 2048,
+      numTurns: 7,
+      durationMs: 41200,
+      durationApiMs: 38500,
+      model: 'm-1', // single-model shortcut
+    });
+    expect(rows[0]!.modelUsage).toEqual(usageFull.modelUsage); // the verbatim split
+  });
+
+  it('a usage-less result persists ABSENT — NULL cache/turns/durations/model, never zeros (AC1, absent direction)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage bare');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    store.recordTurnUsage(owner, 'sess-u2', { at: '2026-08-28T10:01:00.000Z', delta: { tokensIn: 44, tokensOut: 158, usd: 0.029322 } });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ tokensIn: 44, tokensOut: 158, usd: 0.029322 });
+    expect(rows[0]!.cacheRead).toBeUndefined();
+    expect(rows[0]!.cacheCreation).toBeUndefined();
+    expect(rows[0]!.numTurns).toBeUndefined();
+    expect(rows[0]!.durationMs).toBeUndefined();
+    expect(rows[0]!.durationApiMs).toBeUndefined();
+    expect(rows[0]!.model).toBeUndefined();
+    expect(rows[0]!.modelUsage).toBeUndefined();
+  });
+
+  it('every observed turn appends exactly one row; the session upsert never touches them (AC2)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage append');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    store.recordTurnUsage(owner, 'sess-u3', { at: '2026-08-28T10:00:00.000Z', delta: { tokensIn: 10, tokensOut: 2, usd: 0.01 }, usage: { cacheRead: 100 } });
+    store.recordTurnUsage(owner, 'sess-u3', { at: '2026-08-28T10:01:00.000Z', delta: { tokensIn: 20, tokensOut: 4, usd: 0.02 } }); // a held intermediate
+    // the session upsert (DELETE+INSERT of the session row) must not delete usage rows
+    store.recordSession({ providerSessionId: 'sess-u3', owner, role: 'implementer', status: 'idle', cost: { tokensIn: 30, tokensOut: 6, usd: 0.03 } });
+    store.recordSession({ providerSessionId: 'sess-u3', owner, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.001 } });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows).toHaveLength(2); // append-only through the upsert
+    expect(rows.map((r) => r.at)).toEqual(['2026-08-28T10:00:00.000Z', '2026-08-28T10:01:00.000Z']); // insertion order
+    // and the AGGREGATE accumulation stays exactly today's: prior + input, floats summed
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.cost!.tokensIn).toBe(31);
+    expect(s.cost!.tokensOut).toBe(7);
+    expect(s.cost!.usd).toBeCloseTo(0.031, 10);
+  });
+
+  it('resume legs append to the SAME session with no double-count — each delta is that leg own spend (AC2, c2 semantics)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage legs');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    // leg 1 (raw/c2: ended 0.094824) — two turns
+    store.recordTurnUsage(owner, 'sess-leg', { at: '2026-08-28T11:00:00.000Z', delta: { tokensIn: 9599, tokensOut: 53, usd: 0.094824 } });
+    // leg 2 (resumed: reported 0.056219 — SMALLER than leg 1's total, taken WHOLE)
+    store.recordTurnUsage(owner, 'sess-leg', { at: '2026-08-28T11:05:00.000Z', delta: { tokensIn: 213, tokensOut: 194, usd: 0.056219 } });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows).toHaveLength(2);
+    expect(rows.reduce((a, r) => a + r.usd, 0)).toBeCloseTo(0.151043, 6); // the true session total, no double-count
+    expect(rows.reduce((a, r) => a + r.tokensIn, 0)).toBe(9599 + 213);
+  });
+
+  it('a multi-model result NULLs the model shortcut and keeps the verbatim JSON split', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage multi');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    const split: TurnUsage = { modelUsage: [
+      { model: 'm-a', tokensIn: 100, tokensOut: 10, usd: 0.01 },
+      { model: 'm-b', tokensIn: 200, tokensOut: 20, usd: 0.02 },
+    ] };
+    store.recordTurnUsage(owner, 'sess-multi', { at: '2026-08-28T10:02:00.000Z', delta: { tokensIn: 300, tokensOut: 30, usd: 0.03 }, usage: split });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows[0]!.model).toBeUndefined(); // 0-or-≥2 models → the shortcut is honestly NULL
+    expect(rows[0]!.modelUsage).toEqual(split.modelUsage);
+  });
+
+  it('ctx/finalUsage checkpoint onto the session row: defined overwrites (latest-wins), undefined keeps prior (AC3)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage ctx');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    const base = { providerSessionId: 'sess-ctx', owner, role: 'architect' as const };
+    store.recordSession({ ...base, status: 'running' });
+    let s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('ctx' in s).toBe(false); // no reading yet — absent, never zeros
+    expect('finalUsage' in s).toBe(false);
+
+    store.recordSession({ ...base, status: 'running', ctx: { usedTokens: 46000, maxTokens: 200000 }, finalUsage: usageFull });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.ctx).toEqual({ usedTokens: 46000, maxTokens: 200000 });
+    expect(s.finalUsage).toEqual(usageFull);
+
+    // a later record from a notes-blind/context-blind path keeps the latest KNOWN reading
+    store.recordSession({ ...base, status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.ctx).toEqual({ usedTokens: 46000, maxTokens: 200000 });
+    expect(s.finalUsage).toEqual(usageFull);
+
+    // a NEWER reading overwrites (latest-wins)
+    store.recordSession({ ...base, status: 'idle', ctx: { usedTokens: 100608, maxTokens: 200000 } });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.ctx).toEqual({ usedTokens: 100608, maxTokens: 200000 });
+  });
+
+  it('a session with no usage facts hydrates honestly absent (no ctx, no finalUsage)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage none');
+    store.recordSession({ providerSessionId: 'sess-none', owner: { kind: 'wo', workOrderId: wo.id }, role: 'verifier', status: 'stopped', cost: { tokensIn: 5, tokensOut: 5, usd: 0.05 } });
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('ctx' in s).toBe(false);
+    expect('finalUsage' in s).toBe(false);
+    expect(store.usageRowsFor(wo.id)).toEqual([]); // an interrupted drive appends nothing
+  });
+
+  it('draft-owner rows persist (workspace-keyed) and stay invisible to usageRowsFor(workOrderId) — write-only until queue 4', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Usage draft', repos: [{ path: root }] });
+    const owner = { kind: 'draft', workspaceId: ws.id } as const;
+    store.recordTurnUsage(owner, 'sess-draft', { at: '2026-08-28T10:03:00.000Z', delta: { tokensIn: 7, tokensOut: 7, usd: 0.007 }, usage: { cacheRead: 5 } });
+    const raw = store.db.prepare('SELECT COUNT(*) AS n FROM session_usage WHERE provider_session_id = ?').get('sess-draft') as { n: number };
+    expect(raw.n).toBe(1); // the row persisted under the draft owner
+    const anyWo = await store.createWorkOrder({ workspaceId: ws.id, title: 'D', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect(store.usageRowsFor(anyWo.id)).toEqual([]); // draft rows never hydrate through a WO read
+  });
+
+  it('usageRowsFor scopes to ONE work order, insertion-ordered', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Usage scope');
+    const wo2 = await store.createWorkOrder({ workspaceId: ws.id, title: 'Other', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const o1 = { kind: 'wo', workOrderId: wo.id } as const;
+    const o2 = { kind: 'wo', workOrderId: wo2.id } as const;
+    store.recordTurnUsage(o1, 's1', { at: '2026-08-28T10:00:00.000Z', delta: { tokensIn: 1, tokensOut: 1, usd: 0.001 } });
+    store.recordTurnUsage(o2, 's2', { at: '2026-08-28T10:00:01.000Z', delta: { tokensIn: 2, tokensOut: 2, usd: 0.002 } });
+    store.recordTurnUsage(o1, 's1', { at: '2026-08-28T10:00:02.000Z', delta: { tokensIn: 3, tokensOut: 3, usd: 0.003 } });
+    const rows = store.usageRowsFor(wo.id);
+    expect(rows.map((r) => r.usd)).toEqual([0.001, 0.003]); // only THIS WO, in row order
+    expect(store.usageRowsFor(wo2.id).map((r) => r.usd)).toEqual([0.002]);
+  });
+
+  it('migrates a pre-WO-0052 DB: the new columns + table exist, old rows stay honestly NULL/empty', () => {
+    const p = freshDb();
+    // Hand-build the pre-WO-0052 vintage: a session table with the owner pair + 'stopped' (so no
+    // earlier rebuild clause claims it) but without the usage columns; no session_usage table.
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      `CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_session_id TEXT, workspace_id TEXT NOT NULL,
+       work_order_id TEXT, role TEXT NOT NULL, scope_track_id TEXT, status TEXT NOT NULL, transcript TEXT NOT NULL,
+       stop_and_ask TEXT, pending_notes TEXT, cost_tokens_in INTEGER, cost_tokens_out INTEGER, cost_usd REAL,
+       started_at TEXT, ended_at TEXT, step_idx INTEGER)`,
+    );
+    raw
+      .prepare("INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, status, transcript) VALUES (?,?,?,?,?,'[]')")
+      .run('old-1', 'ws-x', null, 'architect', 'idle');
+    raw.close();
+
+    const store = createStore(p); // SCHEMA_SQL no-ops the legacy session, then migrate
+    const cols = (store.db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['ctx_used_tokens', 'ctx_max_tokens', 'final_model_usage']));
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM session_usage').get() as { n: number }).n).toBe(0);
+    const old = store.db.prepare('SELECT ctx_used_tokens, ctx_max_tokens, final_model_usage FROM session WHERE provider_session_id = ?').get('old-1') as {
+      ctx_used_tokens: number | null;
+      ctx_max_tokens: number | null;
+      final_model_usage: string | null;
+    };
+    expect(old.ctx_used_tokens).toBeNull(); // pre-WO-0052 rows: honestly absent, never backfilled
+    expect(old.ctx_max_tokens).toBeNull();
+    expect(old.final_model_usage).toBeNull();
+    // the row still hydrates (through the extended SESSION_REBUILD_COPY when the vintage triggers it)
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM session').get()).toMatchObject({ n: 1 });
   });
 });

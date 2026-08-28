@@ -5,7 +5,7 @@
 // core port so the pipeline depends on an interface, not an adapter — and so the drive loop is testable with
 // a fake store, without SQLite or an agent (ADR-0006 line 30). The adapter's `Store implements SessionStore`;
 // the UI's `WorkOrderSource` stays the read/CRUD half.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId, WorkspaceId } from './types';
+import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from './types';
 import type { BudgetRefusal } from './runner';
 import type { DraftSourceSummary } from './roadmap-draft';
 
@@ -29,6 +29,11 @@ export interface RecordSessionInput {
   //                             not silently drop them)
   startedAt?: string; // ISO — preserved across every record of the drive (WO-0027 / İstek 7)
   endedAt?: string; // ISO — set only on the terminal record
+  // WO-0052 usage checkpoints, BOTH undefined-KNOWS-NOTHING: undefined KEEPS the prior row's
+  // values (the `pendingNotes` keep-prior rule above — a record from a path whose fold holds no
+  // reading must not erase the latest known one), defined OVERWRITES (latest-wins).
+  ctx?: { usedTokens: number; maxTokens: number }; // the LATEST context-window reading, checkpointed at each record
+  finalUsage?: TurnUsage; // the last observed rich usage detail (the session row's final figure)
 }
 
 /** Server-side persistence + prompt assembly the drive loop needs. The composition root injects the
@@ -36,6 +41,13 @@ export interface RecordSessionInput {
 export interface SessionStore {
   /** Persist (upsert) a live session row keyed by provider session id + owner — drive side-effect (WO-0010). */
   recordSession(input: RecordSessionInput): void;
+  /** Append ONE per-turn usage row (WO-0052) — one INSERT per OBSERVED provider result, including
+   *  the held intermediates of a steered drive. Append-only (the `appendEvent` discipline): rows
+   *  are never updated, never deleted by the session upsert, and a resume leg appends to the SAME
+   *  session (its deltas are that leg's own spend under the per-leg `applyResultCost` baseline —
+   *  no double-count). `usage` carries the result's optional rich detail; absent fields stay
+   *  absent, never zeros. */
+  recordTurnUsage(owner: SessionOwner, providerSessionId: string, row: { at: string; delta: CostSummary; usage?: TurnUsage }): void;
   /** Upsert a step's run outcome — status + report pointer (WO-0017). */
   recordStep(workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }): void;
   /** Write a step's report to the decision store + mark the step done (WO-0017). Drive side-effect at turn_complete. */
