@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Limit Ekranı — Mockup Turu (rev 1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞERLERİYLE birebir (ev kuralı:
+     mockup = bilgi sözleşmesi, piksel tasarımı değil). Kart bütçe kartının (BudgetRefusalCard)
+     kardeşi; uyarı satırı costline'ın (PaneCostline) sesi. */
+  :root {
+    --bg: #000000; --surface: #0a0a0a; --raised: #171717; --hairline: #262626;
+    --ink: #f2f2f2; --dim: #8f8f8f;
+    --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
+    --bord: color-mix(in srgb, var(--dim) 35%, var(--hairline));
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; letter-spacing: 0.01em;
+    padding: 40px 20px 80px;
+  }
+  .plate { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 46px; }
+
+  /* --- tabaka kromu (uygulamada YOK — sadece bu öneri sayfası) --- */
+  .plate-head h1 { font-size: 17px; font-weight: 700; }
+  .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  .verdict {
+    margin-top: 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px dashed var(--hairline); border-radius: 8px; padding: 8px 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em;
+  }
+  .verdict b { color: var(--signal); font-weight: 600; }
+  .kararlar { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .kararlar div { font-size: 12.5px; line-height: 1.6; color: var(--dim); }
+  .kararlar b { color: var(--ink); font-weight: 600; }
+  .kararlar .no { font-family: var(--mono); font-size: 10.5px; color: var(--signal); margin-right: 7px; }
+  .kararlar .m { font-family: var(--mono); font-size: 11px; }
+
+  figure { display: flex; flex-direction: column; gap: 10px; }
+  .figcap { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); flex-wrap: wrap; }
+  .figcap .no { color: var(--signal); font-weight: 600; }
+  .figcap .tag { color: var(--info); }
+  .why { border-left: 2px solid var(--signal); padding: 2px 0 2px 10px; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .why b { color: var(--ink); font-weight: 600; }
+  .condlab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--signal); }
+
+  /* --- ortak parçalar (uygulamanın sınıflarından çeviri) --- */
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .lamp { width: 3px; align-self: stretch; flex: none; border-radius: 0 2px 2px 0; }
+  .lamp-signal-breathe { background: var(--signal); animation: breathe 2.2s ease-in-out infinite; }
+  .lamp-run { background: var(--info); animation: breathe 3.2s ease-in-out infinite; }
+  .lamp-error { background: var(--error); }
+  .lamp-done { background: var(--proceed); }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+  /* --- KART (LimitCard — BudgetRefusalCard'ın tek eylemli kardeşi) --- */
+  .stage { border: 1px dashed var(--hairline); border-radius: 10px; padding: 26px 22px; display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .stage .col { display: flex; flex-direction: column; gap: 8px; min-width: 300px; flex: 1; }
+  .stagelab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+  .card {
+    display: flex; align-items: stretch; overflow: hidden; max-width: 640px;
+    border: 1px solid rgba(245, 181, 68, .4); border-radius: 6px; background: var(--surface);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  }
+  .card .body { min-width: 0; width: 100%; padding: 12px 14px; }
+  .card .t { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--signal); display: flex; align-items: center; gap: 6px; }
+  .card .t svg { flex: none; }
+  .card .b { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--ink); }
+  .card .note { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--dim); }
+  .card .acts { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+  .reason { font-size: 12px; color: var(--dim); }
+  .entermark { font-family: var(--mono); font-size: 10px; color: var(--dim); border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 14px;
+    border-radius: 7px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); }
+
+  /* --- PANEL BAŞLIĞI (kare 02 — PaneShell kesiti) --- */
+  .pane { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.35); max-width: 760px; }
+  .pane .inner { min-width: 0; width: 100%; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .pane .hrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pane .role { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .pane .role .live { display: inline-block; width: 5px; height: 5px; border-radius: 9999px; background: var(--proceed); margin-right: 7px; animation: breathe 2.2s ease-in-out infinite; vertical-align: 1px; }
+  .pane .act { font-size: 13px; color: var(--ink); }
+  .pane .meta { margin-left: auto; display: flex; gap: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+  .warnline { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .warnline svg { color: var(--signal); flex: none; }
+  .warnline .pct { color: var(--signal); }
+  .ibtn-chip {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px;
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    border: 1px solid var(--hairline); color: var(--dim); background: transparent; cursor: pointer; white-space: nowrap;
+  }
+  .ibtn-chip:hover { color: var(--ink); }
+  .stopbtn { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--hairline); color: var(--dim); font-family: var(--sans); font-size: 11.5px; font-weight: 500; cursor: pointer; }
+  .stopbtn:hover { color: var(--ink); border-color: var(--bord); }
+
+  /* --- DOSYA KESİTİ (kare 03 — yeniden başlatma) --- */
+  .dossier { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 12px; max-width: 760px; background: rgba(255,255,255,.012); }
+  .spine { display: flex; flex-direction: column; gap: 3px; }
+  .spinerow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--dim); }
+  .spinerow .st { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+  .spinerow.done .st { color: var(--proceed); }
+  .spinerow.active { color: var(--ink); }
+  .spinerow.active .st { color: var(--signal); }
+  .sescard { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--bord); border-radius: 6px; background: var(--surface); }
+  .sescard .edge { width: 3px; flex: none; background: var(--info); }
+  .sescard .c { width: 100%; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; }
+  .seshead { display: flex; align-items: baseline; gap: 8px; }
+  .seshead .who { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .seshead .role { font-size: 12.5px; font-weight: 700; color: var(--info); }
+  .seshead .meta { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .sesaim { font-size: 12.5px; color: var(--ink); }
+  .sesfoot { display: flex; align-items: center; margin-top: 2px; }
+
+  /* eski→yeni karşılaştırması (kare 04) */
+  .cmp { display: flex; flex-direction: column; gap: 10px; border: 1px dashed var(--hairline); border-radius: 10px; padding: 16px; max-width: 760px; }
+  .cmp .oldrow { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); max-width: 640px; }
+  .cmp .oldbody { width: 100%; padding: 10px 12px; }
+  .cmp .oldlab { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+  .cmp .rawmsg { margin-top: 5px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
+
+  footer.note { border-top: 1px solid var(--hairline); padding-top: 18px; font-size: 12.5px; color: var(--dim); line-height: 1.7; }
+  footer.note b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
+  <header class="plate-head">
+    <h1>Limit Ekranı — Mockup Turu <span style="color:var(--dim);font-weight:400">· rev 1 — WO-0053 (order.md fc34905)</span></h1>
+    <p class="sub">
+      Bugün bir kullanım-limiti duruşu çökmekten <b style="color:var(--ink)">ayırt edilemez</b>: sağlayıcının
+      rate-limit akış mesajı adapter'da atılır, 429 sınıflaması yoktur — sürüş ham İngilizce mesajlı hata
+      kartına düşer (kare 04, eski). Bu tur limit duruşunu birinci sınıf bir DURUŞ yapar: kart saat konuşur,
+      düğme saat gelince belirir, tek tuş kaldığı yerden sürdürür. Kareler uygulamanın gerçek diliyle çizildi:
+      kart <b style="color:var(--ink)">bütçe kartının kardeşi</b> (lamp-signal-breathe · readout başlık · sağ
+      hizalı eylem), uyarı satırı <b style="color:var(--ink)">costline'ın sesi</b> (mono · sönük · doluluk çubuğu yok).
+    </p>
+    <div class="verdict"><span>ana iddia:</span> kart SAAT konuşur — tek eylem; düğme yoksa nedeni saat, saat varsa kendisi Sürdür</div>
+    <div class="kararlar">
+      <div><span class="no">1</span><b>Tek eylem kuralı.</b> Kartın eylem satırı ya <b>bir düğme</b> (<span class="m">Sürdür ⏎</span>) ya <b>bir neden satırı</b> (<span class="m">sürdür 14:32'de açılır</span>) — ghost düğme yok, üçüncü yol yok. Bütçe kartının iki seçeneği bu kartta teke iner: karar verilecek şey yoktur, saat beklenir ya da geçilmiştir.</div>
+      <div><span class="no">2</span><b>Düğme saat geçene kadar YOK</b> (ADR-0001: absent + neden satırı). Neden satırı = saatın kendisi; panelin 1 sn'lik <span class="m">now</span> tik'i geçişi yapar — kart yeniden kurulmadan düğme belirir.</div>
+      <div><span class="no">3</span><b>Kart sağlayıcı penceresini konuşur</b> — <span class="m">$</span> yok, «limit/cap» kelimesi yok (o bütçe kartının sözü, WO-0047). Sağlayıcının kendi uyarı sinyali (<span class="m">allowed_warning</span>) yoksa uyarı satırı hiç çizilmez; yerel eşik uydurulmaz.</div>
+      <div><span class="no">4</span><b>Pencere adı etiket paketinden:</b> <span class="m">five_hour → «5 saatlik pencere»</span>, <span class="m">seven_day → «7 günlük pencere»</span>; tanınmayan pencere → «pencere». Ham kimlik ekrana gelmez (ADR-0007, <span class="m">woIdLabel</span> düzeni — kimlik veri olarak akar, gösterim etiketten).</div>
+      <div><span class="no">5</span><b>Kart anını yutar:</b> kart dururken canlı enstrüman çizilmez (red kartısı kuralı); döküm Oturum kartının çipinde bir tık ötede — kare 03.</div>
+      <div><span class="no">6</span><b>Damga kalıcıdır:</b> <span class="m">limit_reset_at</span> session satırını taşır; uygulama yeniden açılsa kart geri gelir (kare 03). Temiz bacak damgayı siler — bayat saat yalandır.</div>
+    </div>
+    <div class="legend chip" style="align-self:flex-start;font-family:var(--mono);font-size:10.5px;color:var(--dim)">kart · kare 01 iki an (dur + açıl) · 02 canlı uyarı satırı · 03 yeniden başlatma · 04 eski→yeni</div>
+  </header>
+
+  <!-- ═══════════════ 01 · KARTIN İKİ ANI — DURUŞ ve AÇILIŞ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> KARTIN İKİ ANI <span class="tag">— aynı kart, saat tek fark</span></figcaption>
+
+    <p class="condlab">durum · adım 2 (uygula) sürüşü 429 ile öldü · push reddi damgası 14:32 · sol: saat 13:47 · sağ: saat 14:33</p>
+
+    <div class="stage">
+      <div class="col">
+        <span class="stagelab">an A — dur (saat 13:47)</span>
+        <div class="card">
+          <div class="lamp lamp-signal-breathe"></div>
+          <div class="body">
+            <p class="t">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+              KULLANIM LİMİTİ DOLDU
+            </p>
+            <p class="b">5 saatlik pencere doldu — sıfırlanma 14:32.</p>
+            <p class="note">Sürdür kaldığı yerden devam eder; bağlam yeniden okunur.</p>
+            <div class="acts">
+              <span class="reason">sürdür 14:32'de açılır</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <span class="stagelab">an B — açılış (saat 14:33)</span>
+        <div class="card">
+          <div class="lamp lamp-signal-breathe"></div>
+          <div class="body">
+            <p class="t">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+              KULLANIM LİMİTİ DOLDU
+            </p>
+            <p class="b">5 saatlik pencere doldu — sıfırlanma 14:32.</p>
+            <p class="note">Sürdür kaldığı yerden devam eder; bağlam yeniden okunur.</p>
+            <div class="acts">
+              <button class="btn primary">Sürdür <span class="entermark">⏎</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> dur anında (A) düğme yok — davetkâr ama sonu kesin yenilgi olurdu; neden satırı tek
+      gerçeği söyler: <span class="m" style="font-family:var(--mono);font-size:11px">sürdür 14:32'de açılır</span>.
+      Saat geçince (B) aynı kartın eylem satırı tek birincil düğmeye döner; ⏎ düğmenin. Basınca sürüş
+      <b>kalıcı session satırının</b> <span class="m" style="font-family:var(--mono);font-size:11px">providerSessionId</span>'sinden
+      aynı bacakla sürer (fail kartının retry kanalı — mekanizma değişmez, WO-0053 order.md). Gövde tek cümle:
+      hangi pencere, saat kaçta. Alt satır sonuç bilgisidir: Sürdür bağlamı yeniden okur (token turu S4) —
+      sessiz sürpriz yok.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 02 · CANLI UYARI SATIRI — PANEL BAŞLIĞI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> CANLI UYARI SATIRI <span class="tag">— costline'ın sesi; sağlayıcının kendi sinyali</span></figcaption>
+
+    <p class="condlab">durum · adım 2 sürüşü koşuyor · sağlayıcı allowed_warning bildirdi (5 saatlik %86 · 14:32)</p>
+
+    <div class="pane">
+      <div class="lamp lamp-run"></div>
+      <div class="inner">
+        <div class="hrow">
+          <span class="role"><span class="live"></span>UYGULAYICI · ADIM 2</span>
+          <span class="act">Dosya yazıyor</span>
+          <span class="meta">
+            <span>bağlam %62 · 124k/200k</span>
+            <span>$0.42 · 12:36</span>
+          </span>
+          <span style="margin-left:auto;display:flex;gap:8px">
+            <span class="stopbtn">Durdur</span>
+            <span class="ibtn-chip">Dökümü aç</span>
+          </span>
+        </div>
+        <p class="warnline">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          5 saatlik pencere <span class="pct">%86</span> — 14:32'de sıfırlanır
+        </p>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> uyarı bir <b>durum satırıdır</b>, süs değil — başlık sırasının altında, costline ile aynı
+      mono/sönük dilde (doluluk çubuğu yok, ADR-0012). Yalnızca sağlayıcının kendi
+      <span class="m" style="font-family:var(--mono);font-size:11px">allowed_warning</span> sinyalinde çizilir;
+      doluluk yüzde sinyal rengindedir, satırın gerisi sönük. Sinyal yoksa satır <b>hiç yoktur</b> — Docket
+      kendi eşiğini uydurmaz (WO-0046 dürüst-yok soyu). Sağlayıcı pencere yüzeyini bilmiyorsa
+      (API-anahtar oturumu) da hiç yoktur: sıfır değil, yok.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 03 · YENİDEN BAŞLATMA — DAMGA KAYITTAN GELİR ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> YENİDEN BAŞLATMA <span class="tag">— DOSYA kesiti: kart geri döner, adım aktif kalır</span></figcaption>
+
+    <p class="condlab">durum · uygulama 15:02'de yeniden açıldı · damga session satırından (limit_reset_at) · saat geçti → düğme ayakta</p>
+
+    <div class="dossier">
+      <div class="spine">
+        <div class="spinerow done"><span class="st">tamam</span><span>1 · Plan</span></div>
+        <div class="spinerow active"><span class="st">aktif</span><span>2 · Varyasyon A'yı uygula</span></div>
+        <div class="spinerow"><span class="st">bekliyor</span><span>3 · Bağımsız doğrulama</span></div>
+      </div>
+
+      <div class="card">
+        <div class="lamp lamp-signal-breathe"></div>
+        <div class="body">
+          <p class="t">KULLANIM LİMİTİ DOLDU</p>
+          <p class="b">5 saatlik pencere doldu — sıfırlanma 14:32.</p>
+          <p class="note">Sürdür kaldığı yerden devam eder; bağlam yeniden okunur.</p>
+          <div class="acts">
+            <button class="btn primary">Sürdür <span class="entermark">⏎</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sescard">
+        <div class="edge"></div>
+        <div class="c">
+          <div class="seshead">
+            <span class="who">AJAN · ADIM 2</span>
+            <span class="role">UYGULAYICI</span>
+            <span class="meta">13:41 → 13:47 · $0.42</span>
+          </div>
+          <p class="sesaim">Sürüş limit dolgusuyla durdu; kayıt korundu.</p>
+          <div class="sesfoot">
+            <span class="ibtn-chip">Dökümü aç</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> beş saatlik pencere uygulamadan uzun yaşar — damga <b>session satırında</b> taşınır
+      (<span class="m" style="font-family:var(--mono);font-size:11px">limit_reset_at</span>), yeniden açılışta
+      kart kendini <b>satırdan türetir</b>: saat geçtiyse düğme ayakta, geçmediyse neden satırı. Adım
+      <span class="m" style="font-family:var(--mono);font-size:11px">aktif</span> kalır (bugünden böyle —
+      hata yolu adımı düşürmez). Kart anını yutar: canlı enstrüman çizilmez; döküm <b>Oturum kartının
+      çipinde</b> bir tık ötede (karar 5). Temiz bir sonraki bacak damgayı siler — kart geri gelmez.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 04 · ESKİ → YENİ — BUGÜN NEDEN YETMEZ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">04</span> ESKİ → YENİ <span class="tag">— 429 bugün çökmüyle aynı kartta</span></figcaption>
+
+    <div class="cmp">
+      <div class="oldrow">
+        <div class="lamp lamp-error"></div>
+        <div class="oldbody">
+          <p class="readout" style="color:var(--error)">HATA</p>
+          <p class="rawmsg">API Error (429): rate_limit_error — <del>sınıflama yok, saat yok, kimlik yok</del></p>
+          <div class="acts" style="margin-top:8px;display:flex;justify-content:flex-end">
+            <span class="btn" style="background:transparent;color:var(--dim);border-color:var(--hairline)">Yeniden dene</span>
+          </div>
+        </div>
+      </div>
+      <p class="why" style="border:0;padding-left:0;margin-top:2px">
+        Eski: 429 ile ağ hatası aynı ham İngilizce mesajda; operatör neyin dolduğunu, ne zaman açılacağını,
+        <b>yeniden denemenin şu an anlamsız olduğunu</b> bilmez — düğme hep oradadır. Yeni: sınıflama
+        adapter'da (<span style="font-family:var(--mono);font-size:11px">rate_limited</span> + nötr
+        <span style="font-family:var(--mono);font-size:11px">limitResetAt</span> damgası), kart pencereyi ve
+        saati Türkçe söyler, düğme saat gelince belirir. Damga hiç gelmezse (bilinmiyorsa) kart bu hâline
+        düşer — lokalize başlık, uydurma saat yok.
+      </p>
+    </div>
+  </figure>
+
+  <footer class="note">
+    <b>Kabul özeti:</b> WO-0053 (order.md <span style="font-family:var(--mono);font-size:11px">fc34905</span>)
+    kapsamının UI yüzü budur: adapter sınıflaması + nötr damga + <span style="font-family:var(--mono);font-size:11px">limit_reset_at</span>
+    kalıcısı + LimitCard (iki koltuk: WO detail + yol haritası taslak sürüşü) + uyarı satırı. Bütçe kapısı
+    (WO-0047) ayrı kalır; Sürdür mekanizması değişmez. Onay gelirse kararlar tarihle kilitlenir
+    (operator_checkpoint tur 1), ardından mimar plan turu koşar (mode: plan — plan.md S5 tablosunu taşır);
+    tek satır uygulama kodu bu onaydan önce yazılmaz.
+  </footer>
+
+</div>
+</body>
+</html>
