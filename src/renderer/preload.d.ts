@@ -30,11 +30,15 @@ declare global {
       runner: RunnerBridge;
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;
+      /** WO-0051 / D3: the ✦ dialog's DEPO scan — { docsRoot, files }, structure-root-relative
+       *  paths (the absolute root never crosses, ADR-0001). */
+      listDecisionDocs: (workspaceId: import('../core/types').WorkspaceId) => Promise<{ docsRoot: string; files: string[] }>;
       /** Diff peek (WO-0031c): capped diff structure for a write-permission card — jailed to the
        *  work order's repo roots (main-side realpath containment). */
       diffPeek: (workOrderId: import('../core/types').WorkOrderId, filePath: string, newContent: string) => Promise<import('../core/diff').LineDiff | null>;
-      /** E2E-only scripting channel (WO-0031c) — present only under DOCKET_E2E. */
-      e2e?: { emit: (ev: RunnerEvent) => Promise<void> };
+      /** E2E-only scripting channel (WO-0031c) — present only under DOCKET_E2E. WO-0051 / D7:
+       *  pickFiles stages the next native-pick answer. */
+      e2e?: { emit: (ev: RunnerEvent) => Promise<void>; pickFiles: (paths: string[] | null) => Promise<void> };
     };
   }
 }

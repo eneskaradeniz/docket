@@ -2163,6 +2163,10 @@ await spec('WO-0049 geçersiz dosya: adlı sebep satırı, sessiz boş yok', asy
 // seed's buildRoadmapMd twin) — never hand-typed JSON inside a fence the parser must re-read.
 const taslakLine = seedOut.trim().split('\n').find((l) => l.startsWith('TASLAK='));
 if (!taslakLine) throw new Error('seed failed: no TASLAK= line');
+// WO-0051: the DEPO world's id + the external candidate path (outside the structure root).
+const depoLine = seedOut.trim().split('\n').find((l) => l.startsWith('TASLAK_DEPO='));
+if (!depoLine) throw new Error('seed failed: no TASLAK_DEPO= line');
+const DEPO = JSON.parse(depoLine.slice('TASLAK_DEPO='.length));
 const DRAFT_MD = (slug, title, fazTitle) =>
   `---\nworkspace: ${slug}\ntitle: ${title}\n---\n\n# ${title}\n\n\`\`\`fazlar\n[\n  {\n    "id": "f0",\n    "title": "${fazTitle}",\n    "aim": "E2E amacı",\n    "blockedBy": [],\n    "tasks": [\n      { "id": "f0-t1", "title": "Taslak görev 1", "repo": "repo-taslak" }\n    ]\n  }\n]\n\`\`\`\n`;
 const openDraftDialog = async () => {
@@ -2313,6 +2317,177 @@ await spec('WO-0050 CLI: roadmap draft --docs --fake → bekleyen satır; approv
   const approveOut = cli(['roadmap', 'approve', '--workspace', 'demo']);
   assert.ok(approveOut.includes('draft approved'), `approve refused: ${approveOut}`);
   assert.ok(cli(['roadmap', 'show', '--workspace', 'demo']).includes('CLI fazı'), 'the approved file did not render');
+});
+
+// ===== WO-0051 — ✦ belge kaynağı: depo taraması · grup dışla · ek belgeler · serbest keşif · döküm çipi =====
+// The 'taslak-depo' world carries a FULL structure root (2 root docs + adr/×2 + notlar/×1 = 5 .md,
+// grouped; 3 groups) and an EXTERNAL candidate at the repo root (outside docs/ — the scan never
+// sees it). The channel chips and the countline are the dialog's whole affordance; the counts and
+// the explore flag ride the drive input to the pane's live line and the card's döküm identity.
+
+await spec('WO-0051 depo taraması: ✦ açılış → depo satırı tek sayı kapalı, keşif ○, sonuç satırı yok', async () => {
+  await switchWs('taslak-kapi', 'taslak-depo');
+  await openRoadmap();
+  await openDraftDialog();
+  const storeline = page.locator('[data-draft-storeline]');
+  assert.equal(await storeline.count(), 1, 'no store line');
+  const text = await storeline.innerText();
+  assert.ok(text.includes('docs/ · 5 belge — tümü dahil'), `the rev-3 single-number line: ${text}`);
+  assert.equal(await page.locator('[data-draft-docpick]').count(), 0, 'the list rendered while collapsed');
+  const explore = page.locator('[data-draft-explore]');
+  assert.equal(await explore.getAttribute('aria-pressed'), 'false', 'keşif default ON');
+  assert.equal(await page.locator('[data-draft-explore-info]').count(), 0, 'the infoline rendered while OFF');
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-open@980.png') });
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+});
+
+await spec('WO-0051 grup dışla: adr grubu düşer → 3 / 5; geri al → tümü dahil', async () => {
+  await openDraftDialog();
+  await page.locator('[data-draft-storeline]').click(); // expand
+  await page.waitForTimeout(250);
+  const rows = page.locator('[data-draft-docpick] [data-draft-group]');
+  assert.equal(await rows.count(), 3, `group rows: ${await rows.count()}`);
+  assert.ok((await rows.first().innerText()).includes('docs/'), 'the root group is not first');
+  await page.getByRole('button', { name: 'Dışla: docs/adr/' }).click();
+  await page.waitForTimeout(200);
+  let line = await page.locator('[data-draft-storeline]').innerText();
+  assert.ok(line.includes('docs/ · 3 / 5 belge'), `after exclude: ${line}`);
+  assert.ok((await page.locator('[data-draft-group="adr"]').getAttribute('data-off')) !== undefined, 'the row did not dim');
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-exclude@980.png') });
+  await page.getByRole('button', { name: 'Geri al: docs/adr/' }).click();
+  await page.waitForTimeout(200);
+  line = await page.locator('[data-draft-storeline]').innerText();
+  assert.ok(line.includes('docs/ · 5 belge — tümü dahil'), `after restore: ${line}`);
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+});
+
+await spec('WO-0051 ek belgeler: sahne pick → adıyla satır; kanal kelimesi yalnız başlıkta; depo sayısı değişmez', async () => {
+  await openDraftDialog();
+  // stage the native pick's answer (D7): a path OUTSIDE the structure root — the scan's blind spot
+  await page.evaluate((p) => window.docket.e2e?.pickFiles([p]), DEPO.external);
+  await page.getByRole('button', { name: '+ Belge ekle' }).click();
+  await page.waitForTimeout(300);
+  const picked = page.locator('[data-draft-picked]');
+  assert.equal(await picked.count(), 1, 'no picked section');
+  const text = await picked.innerText();
+  assert.ok(text.includes('EK BELGELER · 1'), `subhead (CSS-uppercased, said ONCE): ${text}`);
+  assert.ok(text.includes('ROADMAP-DIS.md'), `the row speaks by name: ${text}`);
+  assert.ok(!text.toLowerCase().includes('dışarıdan'), `the old channel word survived: ${text}`);
+  const line = await page.locator('[data-draft-storeline]').innerText();
+  assert.ok(line.includes('docs/ · 5 belge — tümü dahil'), `store counts moved: ${line}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-external@980.png') });
+  await picked.getByRole('button', { name: /Belgeyi çıkar/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('[data-draft-picked]').count(), 0, 'the picked row survived its own remove');
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+});
+
+await spec('WO-0051 keşif çipi: aç → tek sonuç satırı; kapat → satır ölür', async () => {
+  await openDraftDialog();
+  const explore = page.locator('[data-draft-explore]');
+  await explore.click();
+  await page.waitForTimeout(200);
+  assert.equal(await explore.getAttribute('aria-pressed'), 'true', 'the chip did not press');
+  const info = page.locator('[data-draft-explore-info]');
+  assert.equal(await info.count(), 1, 'no consequence line');
+  assert.ok((await info.innerText()).includes('token harcar'), `the line does not state the cost: ${await info.innerText()}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-explore@980.png') });
+  await explore.click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('[data-draft-explore-info]').count(), 0, 'the line survived the toggle-off');
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+});
+
+await spec('WO-0051 default-tümü gider: dokunmadan başlat → pane kaynak satırı 5 belge; kart iner', async () => {
+  await openDraftDialog();
+  await page.locator('#roadmap-draft-note').fill('E2E: depo taramasından taslak.');
+  await page.getByRole('button', { name: /Taslağı başlat/ }).click();
+  await page.waitForTimeout(500);
+  const pane = page.locator('[data-roadmap-pane]');
+  assert.equal(await pane.count(), 1, 'no draft pane');
+  // textContent (not innerText): the line is CSS-uppercased — assert the raw bundle copy
+  const sourceRaw = await page.locator('[data-draft-source]').textContent().catch(() => null);
+  const paneHtml = await pane.innerHTML().catch(() => '');
+  assert.ok(sourceRaw !== null && sourceRaw.includes('kaynak: 5 belge'), `the pane source line lost the composition (raw=${sourceRaw}, head=${paneHtml.slice(0, 400)})`);
+  await draftEmit({ kind: 'tool_use', callId: 'w51-1', tool: 'Read', input: { file_path: 'docs/faz-0-altyapi.md' } });
+  await draftEmit({ kind: 'tool_result', callId: 'w51-1', summary: 'okundu', isError: false });
+  await page.waitForTimeout(300);
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak-depo', 'Depo Taslağı', 'Depo fazı') });
+  await page.waitForTimeout(700);
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.count(), 1, 'no card after plan_ready');
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-card@980.png') });
+});
+
+await spec('WO-0051 döküm çipi (TD-057): kart başı açar → kim satırı + kaynak + arşiv döküm; kapatır', async () => {
+  const card = page.locator('[data-roadmap-draft-card]');
+  await card.getByRole('button', { name: /Dökümü aç/ }).click();
+  await page.waitForTimeout(300);
+  const log = page.locator('[data-draft-log]');
+  assert.equal(await log.count(), 1, 'the chip opened nothing');
+  const logText = await log.innerText();
+  assert.ok(logText.includes('MİMAR — TASLAK'), `identity: ${logText.slice(0, 160)}`);
+  assert.ok(logText.includes('kaynak: 5 belge'), `the counts did not survive the drive: ${logText.slice(0, 200)}`);
+  assert.ok(logText.includes('faz-0-altyapi.md'), `the archived transcript lost the tool line: ${logText.slice(0, 300)}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-depo-log@980.png') });
+  await card.getByRole('button', { name: /Dökümü kapat/ }).click();
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('[data-draft-log]').count(), 0, 'the log survived its own close');
+  await w50Done();
+  await page.waitForTimeout(400);
+});
+
+await spec('WO-0051 döküm çipi eski satırda dürüst düşer: kirli kart açar, kaynak parçası yok', async () => {
+  await switchWs('taslak-depo', 'taslak-kirli');
+  await openRoadmap();
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.count(), 1, 'the seeded kirli row raised no card');
+  await card.getByRole('button', { name: /Dökümü aç/ }).click();
+  await page.waitForTimeout(300);
+  const log = page.locator('[data-draft-log]');
+  assert.equal(await log.count(), 1, 'a pre-WO-0051 session row opens nothing');
+  const logText = await log.innerText();
+  assert.ok(logText.includes('MİMAR — TASLAK'), `identity: ${logText.slice(0, 160)}`);
+  assert.ok(logText.includes('çit koymayı unuttum'), `the archived transcript: ${logText.slice(0, 300)}`);
+  assert.ok(!logText.includes('kaynak:'), `a summary-less row invented a source line: ${logText.slice(0, 200)}`);
+  await card.getByRole('button', { name: /Dökümü kapat/ }).click();
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
+await spec('WO-0051 düz kök (review f6): dosya satırları kaplı + tümü-dahil kuyruğu', async () => {
+  await switchWs('taslak-kirli', 'taslak-duz');
+  await openRoadmap();
+  await openDraftDialog();
+  const line = await page.locator('[data-draft-storeline]').innerText();
+  assert.ok(line.includes('docs/ · 10 belge — tümü dahil'), `flat store line: ${line}`);
+  await page.locator('[data-draft-storeline]').click(); // expand
+  await page.waitForTimeout(250);
+  const fileRows = page.locator('[data-draft-docpick] [data-draft-file]');
+  assert.equal(await fileRows.count(), 8, `the flat cap: ${await fileRows.count()}`);
+  assert.equal(await page.locator('[data-draft-group]').count(), 0, 'group rows on a flat root');
+  const pick = await page.locator('[data-draft-docpick]').innerText();
+  assert.ok(pick.includes('+2 belge — tümü dahil'), `the moreline tail: ${pick.slice(-80)}`);
+  await page.screenshot({ path: join(SHOTS, 'draft-duz-flat@980.png') });
+  await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
+await spec('WO-0051 CLI: roadmap draft --explore --fake → bekleyen satır (keşif bayrağı akar)', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'docket-cli-'));
+  const repoX = join(root, 'repo');
+  mkdirSync(join(repoX, 'docs'), { recursive: true });
+  const db = join(root, 'x.db');
+  const cli = (args) => execFileSync('npx', ['tsx', 'src/cli/index.ts', ...args, '--db', db], { cwd: ROOT, encoding: 'utf8' });
+  cli(['create-workspace', '--label', 'Kesif', '--repo', repoX]);
+  const script = join(root, 's.json');
+  writeFileSync(script, JSON.stringify([
+    { kind: 'started', sessionId: 'cli-draft-x' },
+    { kind: 'plan_ready', planText: DRAFT_MD('kesif', 'Keşif Taslağı', 'Keşif fazı') },
+    { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 5, usd: 0.02 } },
+  ]));
+  const out = cli(['roadmap', 'draft', '--workspace', 'kesif', '--note', 'keşif turu', '--explore', '--fake', script]);
+  assert.ok(out.includes('draft pending'), `no pending line: ${out}`);
+  assert.ok(out.includes('1 faz'), `no figures: ${out}`);
 });
 
 await spec('zero renderer console errors', async () => {

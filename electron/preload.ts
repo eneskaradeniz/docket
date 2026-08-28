@@ -103,10 +103,20 @@ contextBridge.exposeInMainWorld('docket', {
   runner,
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
+  // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-
+  // relative paths (the absolute root never crosses, ADR-0001).
+  listDecisionDocs: (workspaceId: WorkspaceId): Promise<{ docsRoot: string; files: string[] }> =>
+    ipcRenderer.invoke('docket:list-decision-docs', workspaceId),
   diffPeek: (workOrderId: WorkOrderId, filePath: string, newContent: string): Promise<import('../src/core/diff').LineDiff | null> =>
     ipcRenderer.invoke('docket:diff-peek', workOrderId, filePath, newContent),
-  // E2E-only scripting channel (WO-0031c): absent outside DOCKET_E2E runs.
+  // E2E-only scripting channel (WO-0031c): absent outside DOCKET_E2E runs. WO-0051 / D7:
+  // pickFiles stages the next native-pick answer (the dialog itself is undrivable).
   ...(process.env.DOCKET_E2E
-    ? { e2e: { emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev) } }
+    ? {
+        e2e: {
+          emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev),
+          pickFiles: (paths: string[] | null): Promise<void> => ipcRenderer.invoke('docket:e2e:pick-files', paths),
+        },
+      }
     : {}),
 });

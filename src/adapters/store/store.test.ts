@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { strict as assert } from 'node:assert';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -1555,6 +1555,93 @@ describe('WO-0050 — the roadmap_draft row lifecycle (write → read → guard 
     expect(p).toContain('- /tmp/a.md');
     expect(p).toContain(ws.id as string);
     expect(store.roadmapDraftPromptFor('ghost-ws' as WorkspaceId, 'x', [])).toBeUndefined();
+  });
+});
+
+describe('WO-0051 — the ✦ source channels (depo scan · counts persistence · fence root)', () => {
+  const fazlar = [{ id: 'f0', title: 'Kullanıcı Yönetimi', blockedBy: [], tasks: [{ id: 'f0-t1', title: 'Kayıt akışı' }] }];
+  const validMd = (slug: string): string => buildRoadmapMd({ workspaceSlug: slug, title: 'Yol Haritası', fazlar });
+  const wsWithDocs = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    return { root, ws: await store.createWorkspace({ label: 'Depo WS', repos: [{ path: root }] }) };
+  };
+
+  it('decisionDocs: the recursive .md scan — root-relative, sorted, .md only, dot-dirs skipped', async () => {
+    const store = createStore(freshDb());
+    const { root, ws } = await wsWithDocs(store);
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'faz-0-altyapi.md'), 'a', 'utf8');
+    mkdirSync(join(root, 'docs', 'adr'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'adr', 'ADR-9002-olcek.md'), 'b', 'utf8');
+    writeFileSync(join(root, 'docs', 'adr', 'ADR-9001-keşif.md'), 'c', 'utf8');
+    mkdirSync(join(root, 'docs', 'notlar'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'notlar', 'gorusme.md'), 'd', 'utf8');
+    writeFileSync(join(root, 'docs', 'roadmap.md'), 'e', 'utf8'); // the prior document IS a source (D3)
+    writeFileSync(join(root, 'docs', 'resim.png'), 'f', 'utf8'); // not .md
+    mkdirSync(join(root, 'docs', '.hidden'), { recursive: true });
+    writeFileSync(join(root, 'docs', '.hidden', 'gizli.md'), 'g', 'utf8'); // dot-dir
+    expect(store.decisionDocs(ws.id)).toEqual({
+      docsRoot: 'docs',
+      files: ['adr/ADR-9001-keşif.md', 'adr/ADR-9002-olcek.md', 'faz-0-altyapi.md', 'notlar/gorusme.md', 'roadmap.md'],
+    });
+  });
+
+  it('decisionDocs: a workspace with no docs dir fails open to [] (the zero-doc floor)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsWithDocs(store); // freshRoot exists; docs/ inside it does not
+    expect(store.decisionDocs(ws.id)).toEqual({ docsRoot: 'docs', files: [] });
+  });
+
+  it('sourceSummary: persisted at save, read back through getRoadmapDraft; garbage reads undefined (fail-open)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsWithDocs(store);
+    store.saveRoadmapDraft(ws.id, validMd(ws.id as string), {
+      providerSessionId: 'd-51',
+      sourceSummary: { store: 11, external: 1, freeExplore: true },
+    });
+    expect((await store.getRoadmapDraft(ws.id))!.sourceSummary).toEqual({ store: 11, external: 1, freeExplore: true });
+    // a corrupt value degrades to absence — the card's kaynak line omits, never a crash
+    store.db.prepare("UPDATE roadmap_draft SET source_summary = '{garbage'").run();
+    expect((await store.getRoadmapDraft(ws.id))!.sourceSummary).toBeUndefined();
+  });
+
+  it('keep-prior: an İtiraz resume write WITHOUT a summary keeps the original figures (D2)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsWithDocs(store);
+    store.saveRoadmapDraft(ws.id, validMd(ws.id as string), { sourceSummary: { store: 5, external: 2, freeExplore: false } });
+    // the resume's plan_ready carries no composition (the renderer never re-sends it)
+    const revised = buildRoadmapMd({ workspaceSlug: ws.id as string, title: 'Revize', fazlar });
+    store.saveRoadmapDraft(ws.id, revised, { providerSessionId: 'd-resume' });
+    expect((await store.getRoadmapDraft(ws.id))!.sourceSummary).toEqual({ store: 5, external: 2, freeExplore: false });
+  });
+
+  it('roadmapDraftPromptFor threads freeExplore — the ONE sentence appears iff the flag (D5)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsWithDocs(store);
+    expect(store.roadmapDraftPromptFor(ws.id, 'not', [], true)).toContain('explore the repository yourself');
+    expect(store.roadmapDraftPromptFor(ws.id, 'not', [])).not.toContain('explore the repository yourself');
+  });
+
+  it('decisionStoreRootFor: the draft AND the WO architect both land on the workspace structure root (D9 / TD-056)', async () => {
+    const store = createStore(freshDb());
+    const { root, ws } = await wsWithDocs(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'İş', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+    expect(store.decisionStoreRootFor({ role: 'architect', workspaceId: ws.id, mode: 'plan', prompt: '', goalNote: 'n', docPaths: [] })).toBe(join(root, 'docs'));
+    expect(store.decisionStoreRootFor({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(join(root, 'docs'));
+    expect(store.decisionStoreRootFor({ role: 'architect', workOrderId: woid('WO-YOK'), mode: 'plan', prompt: '' })).toBeUndefined();
+  });
+
+  it('migration: a pre-WO-0051 roadmap_draft vintage upgrades — the row survives, the summary reads honestly absent', () => {
+    const p = freshDb();
+    const raw = new DatabaseSync(p);
+    raw.exec('CREATE TABLE roadmap_draft (workspace_id TEXT PRIMARY KEY, md TEXT NOT NULL, provider_session_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
+    raw.prepare('INSERT INTO roadmap_draft VALUES (?,?,?,?,?)').run('ws-old', 'eski taslak', 'sess-old', '2026-08-27T00:00:00Z', '2026-08-27T00:00:00Z');
+    raw.close();
+    const store = createStore(p); // SCHEMA_SQL (IF NOT EXISTS keeps the vintage) + migrate → ALTER
+    const cols = store.db.prepare('PRAGMA table_info(roadmap_draft)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain('source_summary');
+    const row = store.db.prepare("SELECT md FROM roadmap_draft WHERE workspace_id = 'ws-old'").get() as { md: string };
+    expect(row.md).toBe('eski taslak');
   });
 });
 

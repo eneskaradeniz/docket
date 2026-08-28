@@ -93,10 +93,18 @@ export function RoadmapPane({
 
   const hasStream = state.entries.length > 0 || state.status === 'running' || showAsk;
   const emptyRun = state.status === 'running' && state.entries.length === 0;
-  // The source readout (`kaynak: 9 belge`) — the dialog's doc list length, read from the captured
-  // input (paths die with the dialog; the COUNT is the pane's one honest echo of them).
+  // The source readout (`kaynak: 9 belge + 1 dışarıdan`) — the dialog's composition, read from
+  // the captured input (paths die with the dialog; the COUNTS are the pane's one honest echo).
+  // WO-0051: the composition line when the input carries it; the single-count line stays the
+  // fallback for a pre-WO-0051 capture (an İtiraz resume seeds from the session row).
   const input = store.inputOf(driveKey);
   const docCount = input !== undefined && 'docPaths' in input ? input.docPaths.length : undefined;
+  const sourceLine =
+    input !== undefined && 'docSource' in input && input.docSource !== undefined
+      ? UI.roadmapDraftSourceCompose(input.docSource.store, input.docSource.external, input.freeExplore === true)
+      : docCount !== undefined
+        ? UI.roadmapDraftSourceLine(docCount)
+        : undefined;
 
   return (
     <PaneShell
@@ -126,9 +134,9 @@ export function RoadmapPane({
         </div>
       </div>
 
-      {docCount !== undefined && running ? (
-        <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-inkdim">
-          {UI.roadmapDraftSourceLine(docCount)}
+      {sourceLine !== undefined && running ? (
+        <p data-draft-source className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-inkdim">
+          {sourceLine}
         </p>
       ) : null}
 

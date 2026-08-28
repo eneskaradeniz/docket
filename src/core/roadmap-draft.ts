@@ -1,5 +1,5 @@
 // src/core/roadmap-draft.ts — the ✦ draft drive's prompt + the TASLAK card's arithmetic
-// (WO-0050, ADR-0016).
+// (WO-0050, ADR-0016) + the channel composition's pure geometry (WO-0051).
 //
 // ONE mechanism (locked decision 2): generation from the goal note and import from existing
 // faz docs are the SAME workspace-scoped architect plan session; the source-doc LIST is the
@@ -24,7 +24,18 @@ export interface RoadmapDraftPromptInput {
   knownRepos: string[];
   /** Where the approved document will live — the prompt's destination line. */
   roadmapMdPath: string;
+  /** WO-0051 / D5: the serbest keşif opt-in — adds exactly ONE exploration sentence iff true
+   *  (both the import and generate branches). Default off: the ordinary flow is deterministic
+   *  and spends no exploration tokens. */
+  freeExplore?: boolean;
 }
+
+/** WO-0051 / D5: the ONE exploration sentence. Named and rigid by design — the chip's whole
+ *  contract is "a single optional sentence", so the text is test-pinned to appear exactly
+ *  once. Reads stay free for the architect (`fenceDecision` allows reads); the sentence
+ *  grants nothing the fence withholds — it licenses attention, not permission. */
+const EXPLORE_CLAUSE =
+  'Where the listed documents are not enough you may also explore the repository yourself with your read tools (your working directory is its root); the listed paths remain the required reading, and anything you find beyond them is yours to weigh.';
 
 /**
  * The draft drive's first prompt (the architectPrompt voice, order-md.ts). Agent-facing
@@ -61,6 +72,7 @@ export function roadmapDraftPrompt(input: RoadmapDraftPromptInput): string {
     input.goalNote,
     ``,
     ...docs,
+    ...(input.freeExplore === true ? ['', EXPLORE_CLAUSE] : []),
     ``,
     `Deliverable: the COMPLETE roadmap.md document, submitted via ExitPlanMode. The operator reviews it in Docket and approves there; Docket writes the file — you never write it yourself, and the git commit is the operator's.`,
     ``,
@@ -148,4 +160,70 @@ function chainCountOf(fazlar: Array<{ id: string; blockedBy: string[] }>): numbe
     if (f.blockedBy.length > 0) rootsWithEdge.add(find(f.id));
   }
   return rootsWithEdge.size;
+}
+
+// ===== WO-0051 — the channel composition's pure geometry =====
+//
+// The dialog composes the source set from channels (mockup rev 2): the store scan's groups,
+// the prompt-path join, and the composition's persisted memory are all pure string work here
+// (ADR-0006 — no I/O, no node:path); the fs walk itself lives in the decision-store adapter.
+
+/** The composition's persisted memory — COUNTS + the flag, never a path (D2). Written at
+ *  `plan_ready`, kept across an İtiraz resume, deleted with the pending row at approval. */
+export interface DraftSourceSummary {
+  store: number;
+  external: number;
+  freeExplore: boolean;
+}
+
+/** One first-directory-segment group of the store scan. `key: ''` is the structure root
+ *  itself (its direct files); any other key is the first path segment (`'adr'`). */
+export interface DraftDocGroup {
+  key: string;
+  files: string[];
+}
+
+/** The first-directory-segment group key of a scan file (`''` = the structure root itself).
+ *  Exported because the dialog's EXCLUSION set keys on the same rule (review f4: two copies of
+ *  a string expression drift silently) — `draftDocGroups` and the dialog share this one word. */
+export function draftDocGroupKeyOf(file: string): string {
+  const slash = file.indexOf('/');
+  return slash === -1 ? '' : file.slice(0, slash);
+}
+
+/** Group a store scan (structure-root-RELATIVE posix paths) at the FIRST directory segment —
+ *  the mockup's noise unit: docket scale drops 70 work orders with one touch (frame 02).
+ *  `grouped: true` → the dialog renders group rows (any non-root segment exists); a pure-root
+ *  (flat) scan renders file rows (frame 01). Root group first, then alphabetical; files
+ *  sorted within — the dialog is deterministic by contract (mockup karar 3). */
+export function draftDocGroups(files: string[]): { groups: DraftDocGroup[]; grouped: boolean } {
+  const byKey = new Map<string, string[]>();
+  for (const f of files) {
+    const key = draftDocGroupKeyOf(f);
+    const list = byKey.get(key);
+    if (list) list.push(f);
+    else byKey.set(key, [f]);
+  }
+  const groups = [...byKey.entries()]
+    .map(([key, list]) => ({ key, files: [...list].sort() }))
+    .sort((a, b) => (a.key === '' ? -1 : b.key === '' ? 1 : a.key.localeCompare(b.key)));
+  return { groups, grouped: groups.some((g) => g.key !== '') };
+}
+
+/** The prompt's path UNION, deduplicated across channels (review f3): a picked path that
+ *  already IS a store path (`…/repo/docs/adr/x.md` vs the store's `docs/adr/x.md`) enters the
+ *  list once and does not count as an addition — the picker's default dir is the repo, so the
+ *  overlap is the ordinary case, not the exception. Suffix match (`/<storePath>`): an absolute
+ *  pick of a store file resolves to the same file the architect would read either way. */
+export function mergePickedPaths(storePaths: string[], picked: string[]): string[] {
+  const extra = picked.filter((p) => !storePaths.some((sp) => p === sp || p.endsWith(`/${sp}`)));
+  return [...storePaths, ...extra];
+}
+
+/** Join the structure root with scan-relative files into the PROMPT's repo-relative paths
+ *  (`'docs' | 'docs/'` + `'adr/x.md'` → `'docs/adr/x.md'`) — string work only, resolvable
+ *  from the drive cwd (the decision-store repo root). No `//`, no node:path. */
+export function draftStorePaths(docsRoot: string, files: string[]): string[] {
+  const root = docsRoot === '' ? '' : `${docsRoot.replace(/\/+$/, '')}/`;
+  return files.map((f) => root + f);
 }

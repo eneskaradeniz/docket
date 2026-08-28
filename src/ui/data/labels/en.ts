@@ -678,8 +678,7 @@ export const UI = {
   roadmapDraftNotePlaceholder: 'e.g. extract the roadmap from the existing faz docs; keep the dependencies…',
   roadmapDraftNoteErr: 'The goal note is required — the draft is built from it.',
   roadmapDraftDocsLabel: 'Source documents',
-  roadmapDraftDocsOptional: '(optional — import)',
-  roadmapDraftDocPick: '+ Pick documents',
+  roadmapDraftDocPick: '+ Add documents',
   roadmapDraftDocRemoveAria: (name: string) => `Remove document: ${name}`,
   roadmapDraftDocMore: (n: number) => `+${n} more`,
   roadmapDraftStart: 'Start the draft',
@@ -704,6 +703,26 @@ export const UI = {
   roadmapDraftFazRemoveAria: (title: string) => `Remove faz: ${title}`,
   roadmapDraftTaskRemoveAria: (title: string) => `Remove task: ${title}`,
   roadmapDraftAskToast: 'ARCHITECT — DRAFT is waiting for you',
+  // ===== WO-0051 — ✦ source channels: the composition (contract rev 2 · PRESENTATION rev 3) =====
+  roadmapDraftStoreLine: (docsRoot: string, found: number, included: number) =>
+    included === found ? `${docsRoot}/ · ${found} documents — all included` : `${docsRoot}/ · ${included} / ${found} documents`,
+  roadmapDraftScanning: (docsRoot: string) => `scanning ${docsRoot}/…`,
+  roadmapDraftNoDocs: (docsRoot: string) => `no documents in ${docsRoot}/ — the draft generates from the note alone.`,
+  roadmapDraftGroupLabel: (docsRoot: string, key: string) => (key === '' ? `${docsRoot}/` : `${docsRoot}/${key}/`),
+  roadmapDraftGroupCount: (n: number) => `${n} documents`,
+  roadmapDraftExclude: 'exclude',
+  roadmapDraftExcludeAria: (name: string) => `Exclude: ${name}`,
+  roadmapDraftInclude: '↩ restore',
+  roadmapDraftIncludeAria: (name: string) => `Restore: ${name}`,
+  roadmapDraftMoreAll: (n: number) => `+${n} documents — all included`,
+  roadmapDraftPickedSubhead: (n: number) => `added documents · ${n}`,
+  roadmapDraftExploreChip: 'Free exploration',
+  roadmapDraftExploreInfo:
+    'The architect may browse the repo itself — costs tokens; the picked documents still go for sure.',
+  roadmapDraftSourceCompose: (store: number, external: number, explore: boolean) =>
+    store === 0 && external === 0
+      ? 'source: the goal note'
+      : `source: ${store} document(s)${external > 0 ? ` · ${external} added` : ''}${explore ? ' · exploration' : ''}`,
   woEditAria: 'Edit the work order',
   woEditTitle: 'Edit the work order',
   woEditSave: 'Save',

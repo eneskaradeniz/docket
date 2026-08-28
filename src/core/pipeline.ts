@@ -17,6 +17,7 @@ import type { CostSummary, SessionRef, SteerNote } from './types';
 import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
 import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from './runner';
 import type { SessionOwner, SessionStore } from './session-store';
+import type { DraftSourceSummary } from './roadmap-draft';
 import { parseVerdict } from './verdict';
 import { isRiskyPermission } from './risky';
 import type { PermissionRule } from './source';
@@ -34,8 +35,9 @@ export function prepareDriveInput(input: DriveInput, store: SessionStore): Drive
   const out: DriveInput = { ...input };
   if (isDraftDrive(input)) {
     // WO-0050 / D5: ONE mechanism — the store contributes the workspace facts, core's
-    // roadmapDraftPrompt builds the text (paths, never contents).
-    const p = store.roadmapDraftPromptFor(input.workspaceId, input.goalNote, input.docPaths);
+    // roadmapDraftPrompt builds the text (paths, never contents). WO-0051 / D5: the keşif
+    // opt-in rides along as the fourth arg (undefined = the ordinary deterministic prompt).
+    const p = store.roadmapDraftPromptFor(input.workspaceId, input.goalNote, input.docPaths, input.freeExplore === true ? true : undefined);
     if (p) out.prompt = p;
   } else if (input.reviewStepIndex !== undefined) {
     const p = store.stepReviewPromptFor(input.workOrderId, input.reviewStepIndex);
@@ -327,8 +329,21 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             // APPROVAL is a separate host action (WorkOrderSource.approvePlan), not part of the drive loop.
             // WO-0050 / D6: a draft's `plan_ready` is the PROPOSAL — it lands in the workspace's pending
             // roadmap_draft row (md + this provider session id, İtiraz's resume handle) instead.
-            if (draftInput) deps.store.saveRoadmapDraft(draftInput.workspaceId, ev.planText, { providerSessionId });
-            else if (woInput) deps.store.savePendingPlan(woInput.workOrderId, ev.planText);
+            // WO-0051 / D2: the composition's COUNTS ride the same write, IFF the input carried
+            // them (the dialog always does; the CLI and an İtiraz resume do not — a resume's
+            // summary-less write keeps the prior figures, and a counts-less drive writes none
+            // rather than fabricating zeros for paths it may still have carried — review f2).
+            if (draftInput) {
+              const opts: { providerSessionId?: string; sourceSummary?: DraftSourceSummary } = { providerSessionId };
+              if (draftInput.docSource !== undefined) {
+                opts.sourceSummary = {
+                  store: draftInput.docSource.store,
+                  external: draftInput.docSource.external,
+                  freeExplore: draftInput.freeExplore === true,
+                };
+              }
+              deps.store.saveRoadmapDraft(draftInput.workspaceId, ev.planText, opts);
+            } else if (woInput) deps.store.savePendingPlan(woInput.workOrderId, ev.planText);
             yield ev;
             break;
           case 'ask_resolved':

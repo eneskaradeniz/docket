@@ -3,19 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>✦ Belge Kaynağı — Mockup Turu (WO'suz · rev 2)</title>
+<title>✦ Belge Kaynağı — Mockup Turu (rev 3 — sunum turu)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞİLERİYLE birebir (wo-0048
-     mockup'ının devamı). Mockup = bilgi sözleşmesi; piksel tasarımı değil (ev kuralı). */
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞİLERİYLE birebir (rev 2'nin devamı;
+     mockup = bilgi sözleşmesi, piksel tasarımı değil — ev kuralı). */
   :root {
     --bg: #000000; --surface: #0a0a0a; --raised: #171717; --hairline: #262626;
     --ink: #f2f2f2; --dim: #8f8f8f;
     --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
     --bord: color-mix(in srgb, var(--dim) 35%, var(--hairline));
-    --bord-on: color-mix(in srgb, var(--dim) 45%, var(--hairline));
     --sans: "Manrope", system-ui, -apple-system, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     color-scheme: dark;
@@ -28,7 +27,7 @@
   }
   .plate { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 46px; }
 
-  /* --- tabaka kromu (uygulamada YOK — sadece bu onay sayfası) --- */
+  /* --- tabaka kromu (uygulamada YOK — sadece bu öneri sayfası) --- */
   .plate-head h1 { font-size: 17px; font-weight: 700; }
   .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
   .verdict {
@@ -41,62 +40,18 @@
   .kararlar div { font-size: 12.5px; line-height: 1.6; color: var(--dim); }
   .kararlar b { color: var(--ink); font-weight: 600; }
   .kararlar .no { font-family: var(--mono); font-size: 10.5px; color: var(--signal); margin-right: 7px; }
-  .kararlar .m, .why .m, footer .m { font-family: var(--mono); font-size: 11px; }
+  .kararlar .m { font-family: var(--mono); font-size: 11px; }
 
   figure { display: flex; flex-direction: column; gap: 10px; }
   .figcap { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); flex-wrap: wrap; }
   .figcap .no { color: var(--signal); font-weight: 600; }
   .figcap .tag { color: var(--info); }
-  .figcap .tag.rec { color: var(--signal); }
   .why { border-left: 2px solid var(--signal); padding: 2px 0 2px 10px; font-size: 12px; line-height: 1.65; color: var(--dim); }
   .why b { color: var(--ink); font-weight: 600; }
+  .condlab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--signal); }
 
   /* --- ortak parçalar --- */
   .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
-  .meta { font-family: var(--mono); font-size: 10.5px; color: var(--dim); letter-spacing: .02em; }
-
-  .chip {
-    display: inline-flex; align-items: center; border-radius: 5px; padding: 2px 7px;
-    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
-    border: 1px solid var(--hairline); color: var(--dim); background: transparent; white-space: nowrap;
-  }
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 14px;
-    border-radius: 7px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; white-space: nowrap;
-    cursor: pointer; border: 1px solid transparent;
-  }
-  .btn.primary { background: var(--ink); color: var(--bg); }
-  .btn.ghost { background: transparent; color: var(--dim); border-color: var(--hairline); }
-  .btn.ghost:hover { color: var(--ink); border-color: var(--bord); }
-  .ichip {
-    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px;
-    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
-    border: 1px solid var(--hairline); color: var(--dim); background: transparent; cursor: pointer; white-space: nowrap;
-  }
-  .ichip.on { border-color: rgba(108, 160, 206, .6); background: rgba(108, 160, 206, .1); color: var(--ink); }
-
-  /* --- APPBAR (kare 03 bağlamı) --- */
-  .appbar {
-    display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 6px;
-    border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg);
-  }
-  .appbar .mark { font-weight: 700; font-size: 13.5px; padding: 0 6px; }
-  .wswitch { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; cursor: pointer; }
-  .wswitch .bar { width: 3px; height: 13px; border-radius: 2px; background: var(--info); }
-  .wswitch .lb { font-size: 13px; font-weight: 600; }
-  .wswitch .car { color: var(--dim); font-size: 10px; }
-  .appbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-  .seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 7px; overflow: hidden; }
-  .seg button {
-    height: 28px; padding: 0 13px; background: transparent; border: 0; cursor: pointer;
-    font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--dim);
-  }
-  .seg button.on { background: var(--raised); color: var(--ink); }
-  .gear { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); font-size: 14px; border-radius: 6px; cursor: pointer; }
-
-  .screen { border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg); padding: 18px 20px 20px; }
-  .screen-head { display: flex; align-items: baseline; gap: 12px; }
-  .screen-head .cnt { margin-left: auto; }
 
   /* --- DİYALOG (kit Dialog: overlay + kart) --- */
   .overlay { background: rgba(0, 0, 0, .62); border-radius: 10px; padding: 46px 20px; display: flex; justify-content: center; }
@@ -104,9 +59,8 @@
   .dlg-head { display: flex; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--hairline); }
   .dlg-head .t { font-size: 13.5px; font-weight: 700; }
   .dlg-head .x { margin-left: auto; color: var(--dim); font-size: 13px; cursor: pointer; }
-  .dlg-body { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 14px; }
+  .dlg-body { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 15px; }
   .field .lbl { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
-  .field .lbl .opt { text-transform: none; letter-spacing: 0; font-size: 10px; opacity: .8; }
   .field textarea {
     width: 100%; margin-top: 6px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 7px;
     color: var(--ink); font-family: var(--sans); font-size: 12.5px; line-height: 1.55; padding: 8px 10px;
@@ -116,67 +70,84 @@
   .dlg-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px 14px; margin-top: 8px; }
   .dlg-foot .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   .entermark { font-family: var(--mono); font-size: 10px; color: var(--dim); border: 1px solid var(--hairline); border-radius: 4px; padding: 1px 5px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 14px;
+    border-radius: 7px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); }
+  .btn.ghost { background: transparent; color: var(--dim); border-color: var(--hairline); }
+  .btn.ghost:hover { color: var(--ink); border-color: var(--bord); }
 
-  /* Bilgilendirici satır — keşif çipinin sonuç satısı (ADR-0012: sonuç satırları kalır) */
-  .infoline { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px 10px;
-              background: var(--bg); border: 1px solid var(--hairline); border-radius: 7px;
-              font-size: 12px; color: var(--dim); line-height: 1.5; }
+  /* --- rev 3'ün yeni parçaları --- */
+  /* DEPO SATIRI — kutusuz, irow: tek sayı + durum; istisna varsa "20 / 90" */
+  .storeline {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    background: transparent; border: 0; border-radius: 6px; padding: 3px 2px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; color: var(--dim); text-align: left;
+  }
+  .storeline:hover { color: var(--ink); }
+  .storeline .n { color: var(--ink); }
+  .storeline .car { font-size: 10px; }
 
-  /* Sayı satırı (katlı listenin kapağı) */
-  .countline { display: flex; align-items: center; gap: 9px; background: var(--bg); border: 1px solid var(--hairline);
-               border-radius: 7px; padding: 7px 10px; cursor: pointer; }
-  .countline .n { font-family: var(--mono); font-size: 11px; color: var(--ink); white-space: nowrap; }
-  .countline .sub { font-family: var(--mono); font-size: 10px; color: var(--dim); white-space: nowrap; }
-  .countline .car { margin-left: auto; color: var(--dim); font-size: 10px; }
+  /* GRUP SATIRLARI — dot + mono yol + sayı + eylem; dışlanan dim + üstü çizili */
+  .docpick { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+  .grp {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 5px 9px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink);
+  }
+  .grp .inc { width: 5px; height: 5px; border-radius: 9999px; background: var(--proceed); flex: none; }
+  .grp .cnt { margin-left: auto; color: var(--dim); font-size: 10.5px; white-space: nowrap; }
+  .grp .act { color: var(--dim); font-size: 10.5px; cursor: pointer; white-space: nowrap; }
+  .grp .act:hover { color: var(--ink); }
+  .grp.off { opacity: .55; }
+  .grp.off .inc { background: var(--hairline); }
+  .grp.off .nm { text-decoration: line-through; }
 
-  /* Belge satırları — depo (nokta + dışla) · grup · dışarıdan (etiketli) */
-  .docpick { display: flex; flex-direction: column; gap: 6px; margin-top: 7px; }
-  .docpath { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--dim);
-             background: var(--bg); border: 1px solid var(--hairline); border-radius: 6px; padding: 5px 9px; }
-  .docpath .inc { width: 5px; height: 5px; border-radius: 9999px; background: var(--proceed); flex: none; }
-  .docpath .nm { color: var(--ink); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .docpath .rm { margin-left: auto; color: var(--dim); cursor: pointer; white-space: nowrap; }
-  .docpath.off { opacity: .55; }
-  .docpath.off .inc { background: var(--hairline); }
-  .docpath.off .nm { text-decoration: line-through; }
-  .docpath.grp .nm { font-weight: 500; }
-  .docpath.grp .gc { font-family: var(--mono); font-size: 10px; color: var(--dim); flex: none; }
-  .srctag { font-family: var(--mono); font-size: 9.5px; color: var(--info); border: 1px solid rgba(108, 160, 206, .4);
-            border-radius: 4px; padding: 1px 5px; flex: none; white-space: nowrap; }
-  .subhead { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em;
-             color: var(--dim); margin-top: 4px; }
-  .moreline { font-family: var(--mono); font-size: 10.5px; color: var(--dim); padding-left: 2px; }
+  /* EK BELGELER — başlık tek yer; satır: + işareti + AD (sans 13) + önden-kısaltılmış konum + ✕ */
+  .ekhead { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin-top: 8px; }
+  .ekrow {
+    display: flex; align-items: center; gap: 9px;
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 9px;
+  }
+  .ekrow .plus { font-family: var(--mono); font-size: 12px; color: var(--dim); flex: none; }
+  .ekrow .nm { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ekrow .loc {
+    margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    max-width: 42%; white-space: nowrap; overflow: hidden; direction: rtl; text-align: right; flex: none;
+  }
+  .ekrow .rm { color: var(--dim); cursor: pointer; font-size: 12px; flex: none; }
+  .ekrow .rm:hover { color: var(--ink); }
 
-  /* Kanal çipleri satırı: + Belge ekle · Serbest keşif (aç/kapa) */
-  .pickfoot { display: flex; align-items: center; gap: 8px; margin-top: 7px; flex-wrap: wrap; }
+  /* ÇİPLER — tek biçim ichip; keşif aç/kapa */
+  .pickfoot { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+  .ichip {
+    display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 6px;
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    border: 1px solid var(--hairline); color: var(--dim); background: transparent; cursor: pointer; white-space: nowrap;
+  }
+  .ichip:hover { color: var(--ink); }
+  .ichip.on { border-color: rgba(108, 160, 206, .6); background: rgba(108, 160, 206, .1); color: var(--ink); }
+  .ichip .mk { color: var(--info); }
 
-  /* durum etiketi — karelerin gerçek çalışma durumları */
-  .condlab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--signal); }
+  /* keşif sonuç satırı — kutusuz, ✦ uçlu */
+  .infoline { margin-top: 7px; font-size: 12px; line-height: 1.5; color: var(--dim); padding-left: 2px; }
+  .infoline .spark { color: var(--signal); margin-right: 6px; }
 
-  /* --- TASLAK KARAR KARTI (PlanReadyCard kardeşi) + döküm (.log) --- */
-  .draft { margin-top: 12px; background: var(--surface); border: 1px solid var(--bord); border-radius: 8px; overflow: hidden; box-shadow: inset 3px 0 0 var(--signal); }
-  .draft-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 0 15px; }
-  .draft-head .t { font-size: 13px; font-weight: 700; }
-  .draft-sum { padding: 4px 12px 2px 15px; font-size: 12px; color: var(--dim); }
-  .draft-sum b { color: var(--ink); font-weight: 600; }
-  .draft-faz { display: flex; align-items: baseline; gap: 9px; padding: 5px 12px 0 15px; }
-  .draft-faz .fn { font-family: var(--mono); font-size: 10px; color: var(--signal); text-transform: uppercase; letter-spacing: .08em; flex: none; }
-  .draft-faz .ft { font-size: 12.5px; font-weight: 600; }
-  .draft-faz .fm { font-family: var(--mono); font-size: 10px; color: var(--dim); }
-  .draft-foot { display: flex; align-items: center; gap: 8px; padding: 11px 12px 12px 15px; }
-  .draft-foot .whyln { font-size: 11.5px; color: var(--dim); }
-  .draft-foot .right { margin-left: auto; display: flex; gap: 8px; }
-  .log { border-top: 1px solid var(--hairline); background: var(--bg); padding: 10px 14px 12px; }
-  .sysline { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.7; }
-  .tool { display: flex; align-items: center; gap: 8px; background: rgba(23, 23, 23, .4);
-          border-radius: 6px; padding: 5px 10px; margin-top: 6px; font-family: var(--mono); font-size: 11px; }
-  .tool .lb { color: var(--exec, #4ac3ce); font-weight: 500; white-space: nowrap; }
-  .tool .lb.read { color: var(--dim); }
-  .tool .dt { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  /* boş depo satırı */
+  .nolinedoc { font-size: 12px; color: var(--dim); line-height: 1.5; }
+
+  /* eski→yeni satır karşılaştırması (kare 04) */
+  .cmp { display: flex; flex-direction: column; gap: 10px; border: 1px dashed var(--hairline); border-radius: 10px; padding: 16px; }
+  .cmp .oldrow, .cmp .newrow { display: flex; align-items: center; gap: 9px; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 9px; }
+  .cmp .oldlab, .cmp .newlab { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); width: 52px; flex: none; }
+  .oldrow .badge { font-family: var(--mono); font-size: 9.5px; color: var(--info); border: 1px solid rgba(108,160,206,.4); border-radius: 4px; padding: 1px 5px; flex: none; }
+  .oldrow .p { font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
 
   footer.note { border-top: 1px solid var(--hairline); padding-top: 18px; font-size: 12.5px; color: var(--dim); line-height: 1.7; }
   footer.note b { color: var(--ink); }
-  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
 </style>
 </head>
 <body>
@@ -184,33 +155,31 @@
 
   <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
   <header class="plate-head">
-    <h1>✦ Belge Kaynağı — Mockup Turu <span style="color:var(--dim);font-weight:400">· rev 2 (operatör önerisiyle: tek biçim değil, kanalların bileşimi)</span></h1>
+    <h1>✦ Belge Kaynağı — Mockup Turu <span style="color:var(--dim);font-weight:400">· rev 3 — SUNUM turu (sözleşme rev 2'de kalır)</span></h1>
     <p class="sub">
-      WO-0050 ✦ diyaloğu shipped: hedef notu + yerel dosya seçici. Bu tur tek soruya karar verir: kaynak belgeler
-      mimara NASIL ulaşır? 1. revizyon üç biçim (A keşif / B seçim / C önbükümlü) sunuyordu; operatör revizyonu
-      doğru soruyu buldu — <b style="color:var(--ink)">biçim seçilmez, kanallar birleştirilir</b>. Diyalog TEK kalır;
-      kaynak kümesi operatörün özgür kompozisyonudur. Kod yok; onaylanan kare uygulama WO'sunun kabul ölçütüdür
-      (kapsam: bu diyalog + TD-057 döküm çipi + sığarsa TD-056 çit kökü). Kareler İKİ gerçek durumla çizildi:
-      <b style="color:var(--ink)">antreo-app</b> (temiz depo, ~10 faz belgesi) ve <b style="color:var(--ink)">docket'ın
-      kendi kökü</b> (90 .md — 18 sinyal, ~70 iş emri gürültüsü).
+      Rev 2 (kanal kompozisyonu) uygulandı ve operatör denedi; dönüş: <b style="color:var(--ink)">işlev doğru,
+      sunum değil</b> — «dışarıdan» kelimesi üç kez yazıyor, eklenen satırları etiket boğuyor, hiyerarşi ters
+      (kural sessiz, istisna ışıklı), sayı satırı kutusu + çift sayı + «yapı kökü · 3 dizin» süsü kalabalık.
+      Bu tur yalnızca SUNUMU yeniden çizer; kanallar, default-tümü, grup dışlama, sıfır-belge tabanı —
+      bilgi sözleşmesi aynen (rev 2, a22c32b). Kareler gerçek iki durumla çizildi: operatörün gördüğü
+      <b style="color:var(--ink)">antreo-app (9 belge)</b> ve docket'ın kendi kökü (90 belge).
     </p>
-    <div class="verdict"><span>ana iddia:</span> diyalog tek, kanallar serbest — default'lar karakteri taşır: depo tümü dahil, keşif kapalı</div>
+    <div class="verdict"><span>ana iddia:</span> tek blok · tek satır dili · ad önce — kanal kelimesi ekranda en fazla bir kez</div>
     <div class="kararlar">
-      <div><span class="no">1</span><b>Kaynak kümesi = kanalların birleşimi</b> — depo listesi ∪ dışarıdan eklenen yollar ∪ (keşif açıksa) mimarın kendi incelemesi. Küme boşsa hedef notundan sıfırdan üretim; doluysa mimar o yolları okur — tek mekanizma aynen (ADR-0016).</div>
-      <div><span class="no">2</span><b>Üç kanal</b> — <b>depo</b>: yapı kökünün (<span class="m">docs_root:&lt;wsId&gt;</span>, default <span class="m">docs/</span>) <span class="m">.md</span>'leri, diyalog açılışında taranır, varsayılan TÜMÜ dahil, istisna dışlanır · <b>dışarıdan</b>: herhangi bir yol (repo dışı ve yapı kökü dışı dahil — repo kökündeki <span class="m">ROADMAP.md</span> gibi), yerel seçiciyle · <b>serbest keşif</b>: mimar repoyu kendisi de inceleyebilir — çip, default KAPALI.</div>
-      <div><span class="no">3</span><b>Default'lar disiplini</b> — sıradan akış (depo dolu) sıfır seçim işi ve deterministik kalır: sayı satırı kapalıyken <span class="m">Taslağı başlat</span> tümüyle gider. Keşif opt-in'dir: açan bilir ki token harcanır (kuyruk madde 2 ile uyum).</div>
-      <div><span class="no">4</span><b>Prompt YOL taşır, içerik asla</b> — depo ∪ dışarıdan yollar tek listeye girer; keşif açıksa bir "istersen repoyu incele" cümlesi eklenir. Docket hiçbir belgenin içeriğini okumaz. Okuma çidi her zaman serbest (<span class="m">fenceDecision</span> — doğrulandı), yazma çidi karar deposunda kalır.</div>
-      <div><span class="no">5</span><b>Yollar diyalogla ölür</b> — kalıcı ayar yok, veritabanı yok (WO-0050 kararı aynen). Hedef notu zorunlu kalır; bütçe kapısı ve meşgul satırı aynen.</div>
-      <div><span class="no">6</span><b>TD-056 görsel değil</b> (çit kökü hizası — WO kapsam notu); TD-057 bu turun 3. karesidir.</div>
+      <div><span class="no">1</span><b>Kanal adı değişir: «dışarıdan» → «ek belgeler».</b> Eklediğinin adı — konum iddiası yok (repo içi/dışı ayrımı gürültüydü; makine için güvenilir değil, prompt için fark yok). Kelime yalnız başlıkta: <span class="m">ek belgeler · 2</span>. <b>Satır etiketi tamamen kalkar.</b></div>
+      <div><span class="no">2</span><b>Depo satırı kutusuzlaşır</b> — <span class="m">▸ docs/ · 9 belge — tümü dahil</span>. Tek sayı (istisna varsa <span class="m">20 / 90 belge</span>); «yapı kökü · N dizin» kuyruğu ve etiketteki kural cümlesi ölür — «tümü dahil» bilgisi zaten satırın kendisi.</div>
+      <div><span class="no">3</span><b>Eklenen satırın anatomisi ev kartı diline döner</b> — <span class="m">+</span> işareti · <b>dosya ADI</b> (13px sans) · önden-kısaltılmış konum (<span class="m">…/source/base-mobile</span>, dim mono, tam yol tooltip'te) · <span class="m">✕</span>. Depo satırları dot, eklenenler <span class="m">+</span> — kanal farkı tek kelime yazmadan görünür.</div>
+      <div><span class="no">4</span><b>İki çip tek biçim</b> (<span class="m">.ichip</span>); keşif sonuç satırı kutusuz, <span style="color:var(--signal)">✦</span> uçlu — cümle aynen (sonuç satırı, ADR-0012).</div>
+      <div><span class="no">5</span><b>Sıradan akış üç satır</b>: not + depo satırı + iki çip. Göz sırayla üç soruyu yanıtlar: ne yazacağım · ne girecek (tümü) · ne ekleyebilirim.</div>
     </div>
-    <div class="legend chip" style="align-self:flex-start">tek diyalog · kanallar: depo · dışarıdan · serbest keşif — kare 01 temiz durum · 02 gürültü + kanallar açık · 03 taşıyıcılar</div>
+    <div class="legend chip" style="align-self:flex-start">tek diyalog · kare 01 sıradan akış · 02 gürültü + ek belgeler + keşif · 03 boş depo · 04 eski→yeni satır</div>
   </header>
 
-  <!-- ═══════════════ 01 · TEMİZ DURUM — DEFAULT POSTÜR ═══════════════ -->
+  <!-- ═══════════════ 01 · SIRADAN AKIŞ — DOKUNULMAMIŞ POSTÜR ═══════════════ -->
   <figure>
-    <figcaption class="figcap"><span class="no">01</span> TEMİZ DURUM — DEFAULT POSTÜR <span class="tag">— antreo-app: depo dolu, hiçbir şeye dokunmadan başlat</span></figcaption>
+    <figcaption class="figcap"><span class="no">01</span> SIRADAN AKIŞ <span class="tag">— antreo-app: 9 belge, hiçbir şeye dokunmadan</span></figcaption>
 
-    <p class="condlab">durum · antreo-app — temiz depo (12 belge, tek düzey)</p>
+    <p class="condlab">durum · antreo-app — docs/ altında 9 .md (3 dizin)</p>
 
     <div class="overlay">
       <div class="dialog">
@@ -221,22 +190,15 @@
             <textarea rows="3">Mevcut faz dokümanlarından yol haritasını çıkar. Yalnız faz-*.md belgeleri — görüşme notlarını dışla. Bağımlılıkları koru.</textarea>
           </div>
           <div class="field">
-            <div class="lbl">Kaynak belgeler <span class="opt">— varsayılan tümü, istisnayı çıkar</span></div>
-            <div class="countline">
-              <span class="n">12 belge bulundu · 11 dahil</span>
-              <span class="sub">yapı kökü docs/</span>
-              <span class="car">▾</span>
-            </div>
-            <div class="docpick">
-              <div class="docpath"><span class="inc"></span><span class="nm">faz-0-kullanici-altyapisi.md</span><span class="rm">dışla ✕</span></div>
-              <div class="docpath"><span class="inc"></span><span class="nm">faz-1-antrenor-profili.md</span><span class="rm">dışla ✕</span></div>
-              <div class="docpath off"><span class="inc"></span><span class="nm">faz-2-gorusme-notlari.md</span><span class="rm">↩ geri al</span></div>
-              <div class="docpath"><span class="inc"></span><span class="nm">faz-3-odeme.md</span><span class="rm">dışla ✕</span></div>
-              <p class="moreline">+8 belge — tümü dahil</p>
-            </div>
+            <div class="lbl">Kaynak belgeler</div>
+            <!-- depo satırı: kutusuz, tek sayı, durum kelimesiyle -->
+            <button class="storeline" style="margin-top:5px">
+              <span class="car">▸</span>
+              <span>docs/ · <span class="n">9 belge</span> — tümü dahil</span>
+            </button>
             <div class="pickfoot">
               <button class="ichip">+ Belge ekle</button>
-              <button class="ichip">○ Serbest keşif</button>
+              <button class="ichip"><span>○</span> Serbest keşif</button>
             </div>
           </div>
         </div>
@@ -250,21 +212,18 @@
     </div>
 
     <p class="why">
-      <b>Neden:</b> sıradan akış bu karede: sayı satırı kapalı dururken <span class="m">Taslağı başlat</span> basılır —
-      11 belge + hedef notu prompt'a girer, sıfır seçim işi, deterministik, keşif token'ı yok. İstisna lazımsa liste
-      açılır, satır <span class="m">dışla</span> ile düşer (çizilen: görüşme notları). Hedef notu yönlendirir — "yalnız
-      faz-*.md" cümlesi mimarı sözlü süzer; istisnanın sözlü hâli. <b>Sıfır-belge durumu aynı diyalogun tabanı:</b>
-      depo boşsa sayı satırı "belge bulunamadı" der, küme boş kalır, hedef notu tek başına üretimi taşır — ayrı biçim
-      yok. Kanal çipleri bu karede edilgen: <span class="m">+ Belge ekle</span> dokunulmadı, <span class="m">Serbest
-      keşif</span> kapalı (○).
+      <b>Neden:</b> sıradan akış bu kare — not yaz, başlat. Depo satırı tek bakışta üç şey söyler: nerede
+      (<span class="m">docs/</span>), kaç (<span class="m">9 belge</span>), hangi durumda (<span class="m">tümü
+      dahil</span>). Kutu yok, çift sayı yok, «yapı kökü · 3 dizin» süsü yok. Açılışta odak notta; kaynak bloğu
+      sırf <b>sessizce orada</b> — istisna lazımsa satır açılır (kare 02).
     </p>
   </figure>
 
-  <!-- ═══════════════ 02 · GÜRÜLTÜ SINAVI + KANALLAR AÇIK ═══════════════ -->
+  <!-- ═══════════════ 02 · GÜRÜLTÜ + EK BELGELER + KEŞİF AÇIK ═══════════════ -->
   <figure>
-    <figcaption class="figcap"><span class="no">02</span> GÜRÜLTÜ SINAVI + KANALLAR AÇIK <span class="tag">— docket'ın kendi kökü: grup dışla · dışarıdan yol · serbest keşif onayı</span></figcaption>
+    <figcaption class="figcap"><span class="no">02</span> GÜRÜLTÜ KESME + EK BELGELER + KEŞİF <span class="tag">— docket'ın kendi kökü: 90 belge · work-orders dışlanmış · 2 ek belge</span></figcaption>
 
-    <p class="condlab">durum · docket'ın kendi kökü — 90 .md (18 sinyal · ~70 gürültü) · 4 dizin</p>
+    <p class="condlab">durum · docket — docs/ altında 90 .md · operatör 2 belge elle ekledi · keşif açık</p>
 
     <div class="overlay">
       <div class="dialog">
@@ -275,27 +234,79 @@
             <textarea rows="3">Docket'in kendi yol haritasını çıkar — ROADMAP.md hedeflerini faz·görev yapısına çevir.</textarea>
           </div>
           <div class="field">
-            <div class="lbl">Kaynak belgeler <span class="opt">— varsayılan tümü, istisnayı çıkar</span></div>
-            <div class="countline">
-              <span class="n">90 .md · 20 dahil</span>
-              <span class="sub">yapı kökü docs/ · 4 dizin</span>
+            <div class="lbl">Kaynak belgeler</div>
+            <!-- istisna varsa sayı çiftleşir: 20 / 90 -->
+            <button class="storeline" style="margin-top:5px">
               <span class="car">▾</span>
-            </div>
+              <span>docs/ · <span class="n">20 / 90 belge</span></span>
+            </button>
             <div class="docpick">
-              <div class="docpath grp"><span class="nm">docs/ · kök</span><span class="gc">2 belge</span><span class="rm">dışla ✕</span></div>
-              <div class="docpath grp"><span class="nm">docs/adr/</span><span class="gc">16 karar</span><span class="rm">dışla ✕</span></div>
-              <div class="docpath grp off"><span class="nm">docs/work-orders/</span><span class="gc">70 iş emri</span><span class="rm">↩ geri al</span></div>
-              <div class="docpath grp"><span class="nm">docs/probes/</span><span class="gc">2 belge</span><span class="rm">dışla ✕</span></div>
-              <p class="subhead">dışarıdan · 1</p>
-              <div class="docpath"><span class="srctag">dışarıdan</span><span class="nm">…/source/docket/ROADMAP.md</span><span class="rm">✕</span></div>
+              <div class="grp"><span class="inc"></span><span class="nm">docs/</span><span class="cnt">2 belge</span><span class="act">dışla</span></div>
+              <div class="grp"><span class="inc"></span><span class="nm">docs/adr/</span><span class="cnt">16 belge</span><span class="act">dışla</span></div>
+              <div class="grp off"><span class="inc"></span><span class="nm">docs/work-orders/</span><span class="cnt">70 belge</span><span class="act">↩ geri al</span></div>
+              <div class="grp"><span class="inc"></span><span class="nm">docs/probes/</span><span class="cnt">2 belge</span><span class="act">dışla</span></div>
+            </div>
+            <!-- ek belgeler: başlıkta bir kez; satırda etiket YOK -->
+            <p class="ekhead">ek belgeler · 2</p>
+            <div class="docpick" style="margin-top:5px">
+              <div class="ekrow">
+                <span class="plus">+</span>
+                <span class="nm">CLAUDE.md</span>
+                <span class="loc" title="/Users/eneskaradeniz/source/base-mobile/CLAUDE.md">…/source/base-mobile</span>
+                <span class="rm">✕</span>
+              </div>
+              <div class="ekrow">
+                <span class="plus">+</span>
+                <span class="nm">google-services.json</span>
+                <span class="loc" title="/Users/eneskaradeniz/Downloads/antreo/antreo-stg/google-services.json">…/Downloads/antreo/antreo-stg</span>
+                <span class="rm">✕</span>
+              </div>
             </div>
             <div class="pickfoot">
               <button class="ichip">+ Belge ekle</button>
-              <button class="ichip on">✓ Serbest keşif</button>
+              <button class="ichip on"><span class="mk">✓</span> Serbest keşif</button>
             </div>
-            <div class="infoline">
-              <span>✦</span>
-              <span>Mimar repoyu kendisi de inceleyebilir — keşif token harcar; seçili yollar yine kesin gider.</span>
+            <p class="infoline"><span class="spark">✦</span>Mimar repoyu kendisi de gezer — token harcar; seçili belgeler yine kesin gider.</p>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn ghost">Vazgeç</button>
+          <div class="right">
+            <button class="btn primary">Taslağı başlat <span class="entermark">⏎</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> gürültü kesme aynı hareket — satır aç, grubu <span class="m">dışla</span>, kapat; depo satırı
+      hatırlar (<span class="m">20 / 90</span>). <b>Ek belgeler</b> başlığı altında kanal kelimesi tek kez; satır
+      <b>adıyla</b> konuşur (CLAUDE.md), konumu önden kısaltılmış meta — hangi dosya olduğu ilk bakışta, tam yolu
+      tooltip'te. Repo içi mi dışı mı sorusu ölür: eklediğin <span class="m">ek</span>, gerisi ayrıntı.
+      Keşif açıkken tek sonuç satırı kutusuz — cümle aynı, kutu süsü yok.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 03 · BOŞ DEPO — SIFIR-BELGE TABANI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> BOŞ DEPO — SIFIR-BELGE TABANI <span class="tag">— tarama boş/hata: not tek başına üretimi taşır</span></figcaption>
+
+    <p class="condlab">durum · yeni workspace — docs/ içinde .md yok</p>
+
+    <div class="overlay">
+      <div class="dialog" style="width:460px">
+        <div class="dlg-head"><span class="t">Yol haritası taslağı</span><span class="x">✕</span></div>
+        <div class="dlg-body">
+          <div class="field">
+            <div class="lbl">Hedef notu</div>
+            <textarea rows="3">Base-mobile'ın yol haritasını çıkar: onboarding, senkron, profil.</textarea>
+          </div>
+          <div class="field">
+            <div class="lbl">Kaynak belgeler</div>
+            <p class="nolinedoc" style="margin-top:6px">docs/ içinde belge yok — taslak hedef notundan üretilir.</p>
+            <div class="pickfoot">
+              <button class="ichip">+ Belge ekle</button>
+              <button class="ichip"><span>○</span> Serbest keşif</button>
             </div>
           </div>
         </div>
@@ -309,100 +320,45 @@
     </div>
 
     <p class="why">
-      <b>Neden:</b> gürültü sınavı — docket ölçeğinde "tümü" 90 belge olur; bu yüzden depo listesi <b>grup düzeyinde</b>
-      dışlar (<span class="m">work-orders/</span> 70 belge tek dokunuşla düşer, kök 2 + adr 16 + probes 2 kalır).
-      <b>Dışarıdan kanalı</b> yapının kökü dışındaki her şeyi kucaklar: tarama yalnız <span class="m">docs/</span>'u
-      bilir, repo kökündeki <span class="m">ROADMAP.md</span> listeye hiç düşmez — operatör seçiciyle ekler, yol
-      "dışarıdan" etiketiyle listeye girer (repo dışı dosya da aynı kapıdan: masaüstündeki bir plan.md). <b>Serbest
-      keşif çipi açık hâli:</b> bilgi koddaysa / dosya sistemindeyse mimar repoyu kendisi gezer — tek sonuç satırı
-      bedeli söyler (token harcar; seçili yollar yine kesin). Keşif repoyla sınırlıdır (mimarın çalışma dizini repo
-      kökü); repo dışına yol lazımsa o iş dışarıdan kanalının. Prompt bu karede: 20 depo yolu + 1 dışarıdan yol +
-      "istersen repoyu incele" cümlesi + hedef notu — içerik yine asla.
+      <b>Neden:</b> taban aynı diyalogun — ayrı biçim yok (rev 2 karar 1). Tek satır gerçek durumu söyler ve
+      ne olacağını («hedef notundan üretilir»); eylem çipleri ayakta: dışarıdan ekleme kapısı hiç kapanmaz.
+      Tarama sürerken aynı satır <span class="m">docs/ taranıyor…</span> der.
     </p>
   </figure>
 
-  <!-- ═══════════════ 03 · TAŞIYICILAR — TASLAK KARTI + DÖKÜM ÇİPİ (TD-057) ═══════════════ -->
+  <!-- ═══════════════ 04 · ESKİ → YENİ — EKLENEN SATIRIN ANATOMİSİ ═══════════════ -->
   <figure>
-    <figcaption class="figcap"><span class="no">03</span> TAŞIYICILAR — SÜRÜŞ BİTİNCE TEK PENCERE: DÖKÜM ÇİPİ <span class="tag">— TD-057; kanal kompozisyonundan bağımsız</span></figcaption>
+    <figcaption class="figcap"><span class="no">04</span> ESKİ → YENİ — EKLENEN SATIR <span class="tag">— değişimin özü tek satırda</span></figcaption>
 
-    <div class="appbar">
-      <span class="mark">Docket</span>
-      <span class="wswitch"><span class="bar"></span><span class="lb">antreo-app</span><span class="car">▾</span></span>
-      <div class="right">
-        <span class="seg"><button>Pano</button><button class="on">Yol Haritası</button></span>
-        <button class="btn ghost">+ Yeni iş emri</button>
-        <span class="gear">⚙</span>
+    <div class="cmp">
+      <div class="oldrow">
+        <span class="oldlab">eski</span>
+        <span class="badge">dışarıdan</span>
+        <span class="p">/Users/eneskaradeniz/Downloads/antreo/antreo-stg/google-services.json</span>
+        <span style="color:var(--dim);cursor:pointer">✕</span>
       </div>
+      <div class="newrow ekrow" style="border-color:var(--bord)">
+        <span class="newlab">yeni</span>
+        <span class="plus">+</span>
+        <span class="nm">google-services.json</span>
+        <span class="loc" title="/Users/eneskaradeniz/Downloads/antreo/antreo-stg/google-services.json">…/Downloads/antreo/antreo-stg</span>
+        <span class="rm">✕</span>
+      </div>
+      <p class="why" style="border:0;padding-left:0;margin-top:2px">
+        Eski: kanal etiketi + mutlak yol — <del>tanınan ad kesmenin yiyeceği uçta</del>, kanal kelimesi satır
+        başında. Yeni: <b>ad önce</b> (13px sans), konum önden-kısaltılmış dim meta, kanal farkı <span class="m">+</span>
+        işaretinde. Alt başlıktaki kelime <del>dışarıdan</del> → <b>ek belgeler</b>.
+      </p>
     </div>
-
-    <div class="screen">
-      <div class="screen-head">
-        <h2 class="readout">● Yol Haritası</h2>
-        <span class="meta cnt">taslak onay bekliyor</span>
-      </div>
-
-      <!-- TASLAK KARAR KARTI — sürüş bitti, canlı alet yok; kart başında döküm çipi (TD-057) -->
-      <div class="draft">
-        <div class="draft-head">
-          <span class="t">Taslak hazır — gözden geçir</span>
-          <button class="ichip on" style="margin-left:auto">▾ Dökümü kapat</button>
-        </div>
-        <p class="draft-sum"><b>4 faz · 11 görev</b> · 1 bağımlılık zinciri (Değerlendirme → Rezervasyon) · onaylanınca <span class="m" style="font-family:var(--mono);font-size:10.5px">docs/roadmap.md</span> olarak karar deposuna yazılır — commit operatörün.</p>
-        <div class="draft-faz"><span class="fn">FAZ 0</span><span class="ft">Kullanıcı Yönetimi</span><span class="fm">4 görev · api</span></div>
-        <div class="draft-faz"><span class="fn">FAZ 1</span><span class="ft">Antrenör Profili</span><span class="fm">5 görev · api mobile</span></div>
-        <div class="draft-faz"><span class="fn">FAZ 2</span><span class="ft">Değerlendirme</span><span class="fm">3 görev · Faz 4'ü bekliyor</span></div>
-        <div class="draft-foot">
-          <span class="whyln">İş emirlerinden önce dosya onayınla canlanır — durumlar burada görünmez.</span>
-          <div class="right">
-            <button class="btn ghost">İtiraz et</button>
-            <button class="btn ghost">Düzenle</button>
-            <button class="btn primary">Onayla <span class="entermark">⏎</span></button>
-          </div>
-        </div>
-      </div>
-
-      <!-- çipin arkası: taslak oturumunun dökümü — kartın altında açılır (canlı aletin .log'u) -->
-      <div class="log" style="border:1px solid var(--hairline); border-radius:8px; margin:10px 0 0; background:var(--surface);">
-        <p class="sysline">● taslak oturumu — 14:02 · kaynak: 11 belge + 1 dışarıdan · $0,34 · 4dk 10sn · MİMAR</p>
-        <div class="tool"><span class="lb read">Dosya oku</span><span class="dt">docs/faz-0-kullanici-altyapisi.md</span></div>
-        <div class="tool"><span class="lb read">Dosya oku</span><span class="dt">…/source/docket/ROADMAP.md</span></div>
-        <div class="tool"><span class="lb read">Ara</span><span class="dt">bağımlılık bloke gap analizi</span></div>
-      </div>
-    </div>
-
-    <p class="why">
-      <b>Neden:</b> taslak oturumu WO'suzdur, hiçbir deftere kart düşmez (WO-0050 D2) — sürüş bitince
-      <b>tek pencere</b> bu çiptir (TD-057): <span class="m">Dökümü aç</span> kartın altında oturum dökümünü
-      açar (canlı aletin <span class="m">.log</span> anatomisi — kim satırı + kaynak satırı + maliyet; kimlik
-      <span class="m">MİMAR — TASLAK</span>). Kaynak satırı kanal kompozisyonunu hatırlatır
-      (<span class="m">11 belge + 1 dışarıdan</span>). Onayla'dan sonra kayıt zaten dosyadır:
-      <span class="m">roadmap.md</span> + git (ADR-0010 — oturum arşivi değil, karar arşivi). Çip canlı alet
-      dilbilgisinin aynısını konuşur. Onayla/Düzenle/İtiraz aynen; kaynak kümesi nasıl kurulduysa kuruldu, bu
-      kare değişmez.
-    </p>
   </figure>
 
   <footer class="note">
-    <b>Kabul özeti — neyi neden yapıyoruz:</b> kaynak belgeler mimara tek biçimle değil, kanalların serbest
-    kompozisyonuyla ulaşır — <b>depo</b> (yapı kökü taraması, varsayılan tümü, istisna dışlanır · gürültü grup
-    düzeyinde düşer) ∪ <b>dışarıdan</b> (herhangi bir yol: yapı kökü dışı ve repo dışı dahil) ∪ <b>serbest
-    keşif</b> (opt-in; mimar repoyu kendisi gezer, token harcar) + <b>hedef notu</b> (her zaman, sıfır-belge
-    üretiminin tabanı). 1. revizyonun A/B/C tekleri ölür; üçü de kanala iner. Prompt yollar + keşif cümlesi
-    taşır, içerik asla (ADR-0016); okuma çidi serbest (doğrulandı — <span class="m">fenceDecision</span> yazma
-    çididir), yollar diyalogla ölür.
-    <br /><br />
-    <b>Turda kararılacaklar:</b>
-    ① <b>Kanal seti</b> — depo · dışarıdan · serbest keşif: bu üç mü? Öneri: <b>evet</b> (kare 01–02).
-    ② <b>Default'lar</b> — depo tümü dahil + keşif kapalı. Öneri: <b>evet</b> — sıradan akış sıfır seçim işi ve
-    deterministik kalır (token disiplini, kuyruk madde 2).
-    ③ <b>Gürültü stratejisi</b> (depo kanalında) — grup düzeyinde dışla (çizilen) / kök düzey varsayılan, alt
-    dizinler kapalı. Öneri: <b>grup dışla</b> (docket ölçeğinde 70 belgeyi tek tek çıkaracak operatör yok).
-    ④ <b>TD-057 döküm çipi</b> uygulama WO'sunda mı — kare 03. Öneri: <b>evet</b> (kabul ölçütüne girer).
-    ⑤ <b>TD-056 çit kökü hizası</b> sığarsa WO kapsamında — görseli yok, mockup'a karesi gelmez.
-    <br /><br />
-    Onay → kod: uygulama WO'su ayrı bir taze oturumda açılır (numara o turda mint edilir); onaylanan kare
-    <span class="m">docs/ui-mockups/</span> geleneğine göre WO'nun kabul ölçütüne eklenir. Bu dosya onay
-    gelene kadar güncellenir; tek satır uygulama kodu yazılmaz.
+    <b>Kabul özeti:</b> bilgi sözleşmesi rev 2'nin (a22c32b) — kanallar (depo · elle ekleme · serbest keşif),
+    default-tümü, grup düzeyi dışlama, sıfır-belge tabanı, yolların diyalogla ölmesi — hepsi aynen. Bu tur
+    yalnız SUNUMU yeniden çizer: <b>kanal kelimesi ekranda en fazla bir kez</b> (depo için hiç), <b>eklenen
+    satır adıyla konuşur</b>, <b>depo satırı kutusuz tek sayıdır</b>, iki çip tek biçimdir, sonuç satırı kutusuzdur.
+    Onay gelirse uygulama WO-0051'in sunum revizyonu olarak kodlanır (etiket paketi + E2E bakımı + ekran
+    görüntüleri); tek satır uygulama kodu bu onaydan önce yazılmaz.
   </footer>
 
 </div>

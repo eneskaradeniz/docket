@@ -7,6 +7,7 @@
 // the UI's `WorkOrderSource` stays the read/CRUD half.
 import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, WorkOrderId, WorkspaceId } from './types';
 import type { BudgetRefusal } from './runner';
+import type { DraftSourceSummary } from './roadmap-draft';
 
 // WO-0050 / D3: a session's OWNER — every session belongs to exactly one. A work-order session
 // (the pre-WO-0050 universe) or a workspace-scoped session (the roadmap draft drive). The pipeline
@@ -84,13 +85,18 @@ export interface SessionStore {
   /** The roadmap DRAFT drive's first prompt (WO-0050 / D5), assembled from the workspace's facts:
    *  the slug, the known repo slugs, the roadmap file's path — core's `roadmapDraftPrompt` builds
    *  the text (paths-not-contents; ONE mechanism). undefined when the workspace does not resolve
-   *  (the pipeline refuses the drive pre-spawn — no empty-prompt provider run). */
-  roadmapDraftPromptFor(workspaceId: WorkspaceId, goalNote: string, docPaths: string[]): string | undefined;
+   *  (the pipeline refuses the drive pre-spawn — no empty-prompt provider run).
+   *  WO-0051 / D5: `freeExplore` adds the ONE exploration sentence iff true (additive-optional —
+   *  the dialog's ordinary flow passes nothing and the prompt stays deterministic). */
+  roadmapDraftPromptFor(workspaceId: WorkspaceId, goalNote: string, docPaths: string[], freeExplore?: boolean): string | undefined;
   /** The draft drive's `plan_ready` side-effect (WO-0050 / D6): upsert the workspace's ONE pending
    *  `roadmap_draft` row (md + the provider session id İtiraz resumes). Supersede guard inside: a
    *  row whose md PARSES is never overwritten by one that does not — the refusal keeps the prior
-   *  valid proposal ("bozuk taslak geçerliyi ezmesin" at the row, the parse-guard at approval). */
-  saveRoadmapDraft(workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string }): void;
+   *  valid proposal ("bozuk taslak geçerliyi ezmesin" at the row, the parse-guard at approval).
+   *  WO-0051 / D2: `opts.sourceSummary` persists the composition's COUNTS + explore flag — never
+   *  a path; an İtiraz resume's summary-less write KEEPS the prior figures (keep-prior, like the
+   *  provider session id); the summary dies with the row at approval. */
+  saveRoadmapDraft(workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }): void;
   /** A FRESH (non-resume) draft clears the pending row once its gates pass (operator ruling
    *  2026-08-27: supersede — re-opening ✦ already decided the old proposal is dead). An İtiraz
    *  resume never clears; only this call and `approveRoadmapDraft` do. */

@@ -295,20 +295,25 @@ async function resolveWorkspaceArg(arg: string | undefined, store: ReturnType<ty
   return { ws };
 }
 
-// WO-0050 — `roadmap draft --workspace W --note TXT [--docs a,b,c] [--fake SCRIPT]`: drive the
+// WO-0050 — `roadmap draft --workspace W --note TXT [--docs a,b,c] [--explore] [--fake SCRIPT]`: drive the
 // WO-less architect plan session headlessly. Prompt assembly, the budget gate, and the plan_ready →
 // roadmap_draft write all happen INSIDE the pipeline (the same store-side path as the GUI — one
 // mechanism, one implementation); this command only collects the operator's input and streams.
+// WO-0051: --explore is the serbest keşif opt-in; the DEPO scan is a GUI affordance (explicit
+// paths are the terminal's native channel).
 async function roadmapDraftCommand(opts: Record<string, string | true>, store: ReturnType<typeof createStore>): Promise<number> {
   const resolved = await resolveWorkspaceArg(typeof opts.workspace === 'string' ? opts.workspace : undefined, store);
   if ('error' in resolved) return resolved.error;
   const ws = resolved.ws;
   const note = typeof opts.note === 'string' ? opts.note.trim() : '';
   if (!note) {
-    process.stderr.write('usage: roadmap draft --workspace <id-or-label> --note <TXT> [--docs <a,b,c>] [--fake SCRIPT] [--format stream|jsonl|quiet]\n');
+    process.stderr.write('usage: roadmap draft --workspace <id-or-label> --note <TXT> [--docs <a,b,c>] [--explore] [--fake SCRIPT] [--format stream|jsonl|quiet]\n');
     return 2;
   }
   const docPaths = typeof opts.docs === 'string' && opts.docs.trim() ? opts.docs.split(',').map((d) => d.trim()).filter(Boolean) : [];
+  // WO-0051 / D1: the serbest keşif opt-in (--explore → the prompt's ONE exploration sentence).
+  // The DEPO scan stays a GUI affordance — the terminal's paths are explicit by construction.
+  const freeExplore = opts.explore === true;
   const format: DriveFormat = opts.format === 'jsonl' || opts.format === 'quiet' ? opts.format : 'stream';
   const usingFake = typeof opts.fake === 'string';
   if (!usingFake) {
@@ -329,6 +334,7 @@ async function roadmapDraftCommand(opts: Record<string, string | true>, store: R
     prompt: '',
     goalNote: note,
     docPaths,
+    freeExplore: freeExplore ? true : undefined,
     cwd: typeof opts.cwd === 'string' ? opts.cwd : process.cwd(),
   };
   const summary = await runDrive(input, pipeline, (ev) => {
@@ -473,9 +479,9 @@ const HELP_TEXT =
   '  close <woId> [--note TXT]                close a finished WO (attested; stage → closed)\n' +
   '  remove-workspace <id-or-label> [--yes]   delete a workspace + its WOs (refuses without --yes)\n' +
   '  roadmap <show|validate> --workspace W    the derived faz/task view / hand-edit diagnostics\n' +
-  '  roadmap draft --workspace W --note TXT [--docs a,b,c] [--fake SCRIPT]\n' +
-  '          the WO-less architect draft session (--docs = import, else generate; paths into the\n' +
-  '          prompt, never contents — the proposal lands as the pending draft row)\n' +
+  '  roadmap draft --workspace W --note TXT [--docs a,b,c] [--explore] [--fake SCRIPT]\n' +
+  '          the WO-less architect draft session (--docs = import, else generate; --explore = the\n' +
+  '          opt-in repo exploration sentence; paths into the prompt, never contents)\n' +
   '  roadmap approve --workspace W            Onayla: the parse-guarded roadmap.md write (commit is yours)\n' +
   '  docs-root --workspace W [--root DIR|--clear]\n' +
   '          the structure root (default docs/; .docket one setting away — files never move)\n' +

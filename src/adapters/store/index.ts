@@ -21,7 +21,7 @@ import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClo
 import type { Locale } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
@@ -29,7 +29,7 @@ import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
 import { isDraftDrive } from '../../core/runner';
-import { roadmapDraftPrompt } from '../../core/roadmap-draft';
+import { roadmapDraftPrompt, type DraftSourceSummary } from '../../core/roadmap-draft';
 import { rid, tid, wid, woid } from '../ids';
 import { workspaces } from '../fixtures';
 import type {
@@ -66,6 +66,14 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
    *  unconnected workspaces keep today's behavior byte-for-byte). cwd is a host concern — this lives
    *  on the concrete store, not a core port; the composition root calls it while wiring DriveInput. */
   driveCwd(input: DriveInput): string;
+  /** The ✦ dialog's DEPO channel read (WO-0051 / D3): the docs-root setting + the recursive
+   *  `.md` scan under the structure root, paths structure-root-RELATIVE — the absolute root
+   *  never crosses to the renderer (ADR-0001). Concrete-store concern, like driveCwd. */
+  decisionDocs(workspaceId: WorkspaceId): { docsRoot: string; files: string[] };
+  /** The architect write fence's decision-store ROOT (WO-0051 / D9, TD-056): the workspace's
+   *  absolute structure root, docs_root-aligned — undefined when the drive's workspace does not
+   *  resolve (the adapter keeps its cwd-relative default). Concrete-store concern, like driveCwd. */
+  decisionStoreRootFor(input: DriveInput): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
 }
@@ -442,6 +450,11 @@ function migrate(db: DatabaseSync): void {
   const stepCols = new Set((db.prepare('PRAGMA table_info(work_order_step)').all() as { name: string }[]).map((c) => c.name));
   if (!stepCols.has('verdict')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict TEXT');
   if (!stepCols.has('verdict_path')) db.exec('ALTER TABLE work_order_step ADD COLUMN verdict_path TEXT');
+
+  // WO-0051 / D2: roadmap_draft gains the counts-only source summary (additive ALTER — no CHECK;
+  // NULL is the honest pre-WO-0051 vintage, the read fails open).
+  const draftCols = new Set((db.prepare('PRAGMA table_info(roadmap_draft)').all() as { name: string }[]).map((c) => c.name));
+  if (draftCols.size > 0 && !draftCols.has('source_summary')) db.exec('ALTER TABLE roadmap_draft ADD COLUMN source_summary TEXT');
 
   // 2026-08-24: session.status gains 'stopped' (the durable interrupted fact — WO-0039 round 4). A
   // CHECK lives in the table definition, so — the established rebuild: rename → recreate (the
@@ -827,11 +840,24 @@ function roadmapParseWhy(md: string): string | undefined {
     : 'no fazlar fence';
 }
 
-type DraftRow = { workspace_id: string; md: string; provider_session_id: string | null; created_at: string; updated_at: string };
+type DraftRow = { workspace_id: string; md: string; provider_session_id: string | null; source_summary: string | null; created_at: string; updated_at: string };
 
-function saveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string, opts?: { providerSessionId?: string }): void {
-  const prior = db.prepare('SELECT md, provider_session_id FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as
-    | { md: string; provider_session_id: string | null }
+// WO-0051 / D2: parse the composition's COUNTS — fail-open like every settings read (garbage or
+// a pre-WO-0051 NULL reads undefined; the card's kaynak line omits honestly, never a crash).
+function parseSourceSummary(raw: string | null | undefined): DraftSourceSummary | undefined {
+  if (!raw) return undefined;
+  try {
+    const v = JSON.parse(raw) as { store?: unknown; external?: unknown; freeExplore?: unknown };
+    if (typeof v.store !== 'number' || typeof v.external !== 'number' || typeof v.freeExplore !== 'boolean') return undefined;
+    return { store: v.store, external: v.external, freeExplore: v.freeExplore };
+  } catch {
+    return undefined;
+  }
+}
+
+function saveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }): void {
+  const prior = db.prepare('SELECT md, provider_session_id, source_summary FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as
+    | { md: string; provider_session_id: string | null; source_summary: string | null }
     | undefined;
   // Supersede guard (D6): a row whose md PARSES is never overwritten by one that does not. The
   // refusal KEEPS the prior valid proposal — a refusal, not a crash: the drive itself succeeded,
@@ -839,10 +865,13 @@ function saveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string, op
   if (prior && !roadmapParseWhy(prior.md) && roadmapParseWhy(md)) return;
   const now = new Date().toISOString();
   const providerSessionId = opts?.providerSessionId ?? prior?.provider_session_id ?? null;
+  // Keep-prior (WO-0051 / D2), the providerSessionId discipline: an İtiraz resume's write
+  // carries no composition (the renderer never re-sends it) — the ORIGINAL figures survive.
+  const sourceSummary = opts?.sourceSummary !== undefined ? JSON.stringify(opts.sourceSummary) : prior?.source_summary ?? null;
   if (prior) {
-    db.prepare('UPDATE roadmap_draft SET md = ?, provider_session_id = ?, updated_at = ? WHERE workspace_id = ?').run(md, providerSessionId, now, wsId);
+    db.prepare('UPDATE roadmap_draft SET md = ?, provider_session_id = ?, source_summary = ?, updated_at = ? WHERE workspace_id = ?').run(md, providerSessionId, sourceSummary, now, wsId);
   } else {
-    db.prepare('INSERT INTO roadmap_draft (workspace_id, md, provider_session_id, created_at, updated_at) VALUES (?,?,?,?,?)').run(wsId, md, providerSessionId, now, now);
+    db.prepare('INSERT INTO roadmap_draft (workspace_id, md, provider_session_id, source_summary, created_at, updated_at) VALUES (?,?,?,?,?,?)').run(wsId, md, providerSessionId, sourceSummary, now, now);
   }
 }
 
@@ -883,18 +912,28 @@ function getRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId): RoadmapDraft |
   const row = db.prepare('SELECT * FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as DraftRow | undefined;
   if (!row) return null;
   const session = draftSessionRow(db, wsId);
+  const sourceSummary = parseSourceSummary(row.source_summary);
   return {
     md: row.md,
     ...(row.provider_session_id ? { providerSessionId: row.provider_session_id } : {}),
     updatedAt: row.updated_at,
+    ...(sourceSummary ? { sourceSummary } : {}),
     ...(session ? { session } : {}),
   };
 }
 
+// The ✦ dialog's DEPO channel read (WO-0051 / D3): the docs-root setting (the countline's
+// label) + the recursive .md scan under the structure root, paths structure-root-RELATIVE —
+// the ABSOLUTE root never crosses to the renderer (ADR-0001); the dialog prefixes and groups.
+function decisionDocsRow(db: DatabaseSync, wsId: WorkspaceId): { docsRoot: string; files: string[] } {
+  return { docsRoot: settingDocsRoot(db, wsId), files: scanDecisionDocs(structureRoot(db, wsId)) };
+}
+
 // The draft drive's first prompt (D5): the workspace's facts (slug, known repos, the roadmap
 // file's path) feed core's roadmapDraftPrompt — the ONE mechanism, paths never contents.
-// undefined when the workspace does not resolve (the pipeline refuses pre-spawn).
-function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote: string, docPaths: string[]): string | undefined {
+// undefined when the workspace does not resolve (the pipeline refuses pre-spawn). WO-0051 /
+// D5: `freeExplore` adds the ONE exploration sentence iff true.
+function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote: string, docPaths: string[], freeExplore?: boolean): string | undefined {
   const ws = db.prepare('SELECT 1 AS x FROM workspace WHERE id = ?').get(wsId);
   if (!ws) return undefined;
   const knownRepos = (
@@ -906,6 +945,7 @@ function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote:
     workspaceSlug: wsId as string,
     knownRepos,
     roadmapMdPath: join(structureRoot(db, wsId), 'roadmap.md'),
+    ...(freeExplore === true ? { freeExplore: true } : {}),
   });
 }
 
@@ -948,6 +988,17 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
     }
   }
   return decisionStoreRepoPath(db, wsId) ?? process.cwd();
+}
+
+// WO-0051 / D9 (TD-056): the architect write fence's decision-store ROOT, aligned with the
+// workspace's docs_root setting — the composition root fills DriveInput.decisionStoreRoot from
+// this one call (the renderer never carries a path), and the adapter's fence then lands exactly
+// on the structure root instead of the cwd-relative `docs/` default. undefined only when the
+// drive's workspace does not resolve (the adapter keeps its default — never a startup brick).
+function decisionStoreRootRow(db: DatabaseSync, input: DriveInput): string | undefined {
+  if (isDraftDrive(input)) return structureRoot(db, input.workspaceId);
+  const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;
+  return wo ? structureRoot(db, wid(wo.ws)) : undefined;
 }
 
 // The EFFECTIVE rule for a work order: its own order.md rule when the front-matter carries one, else the
@@ -1220,18 +1271,23 @@ export function createStore(dbPath: string): Store {
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
     // WO-0050 — the draft drive's gate + prompt + pending row (D3–D6). The budget method is the
     // draft arm of the unconditional gate; the prompt row feeds core's ONE-mechanism builder;
-    // the draft row is plan_ready's landing.
+    // the draft row is plan_ready's landing. WO-0051: freeExplore rides the prompt, the
+    // composition's counts ride the row (D2/D5) — and the DEPO channel reads through
+    // decisionDocs (D3), the dialog's scan at open.
     budgetBlockForDraft: (workspaceId: WorkspaceId) => budgetBlockForDraftRow(db, workspaceId),
-    roadmapDraftPromptFor: (workspaceId: WorkspaceId, goalNote: string, docPaths: string[]) =>
-      roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths),
-    saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string }) =>
+    roadmapDraftPromptFor: (workspaceId: WorkspaceId, goalNote: string, docPaths: string[], freeExplore?: boolean) =>
+      roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths, freeExplore),
+    saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }) =>
       saveRoadmapDraftRow(db, workspaceId, md, opts),
     clearRoadmapDraft: (workspaceId: WorkspaceId) => {
       db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(workspaceId);
     },
+    decisionDocs: (workspaceId: WorkspaceId) => decisionDocsRow(db, workspaceId),
     // WO-0050 / D8 — the cwd fix: the composition root fills DriveInput.cwd from the connection
-    // table through this one call (process.cwd() only when nothing matches).
+    // table through this one call (process.cwd() only when nothing matches). WO-0051 / D9: the
+    // same root fills the fence's decision-store root (TD-056's alignment).
     driveCwd: (input: DriveInput) => driveCwdRow(db, input),
+    decisionStoreRootFor: (input: DriveInput) => decisionStoreRootRow(db, input),
     // WO-0045 — the flow-mode gate's read (order.md front-matter at spawn time; 'auto' for absent
     // docs/keys — behavior never jumps because the app learned about tempo).
     flowModeFor: (workOrderId: WorkOrderId): 'auto' | 'manual' => {

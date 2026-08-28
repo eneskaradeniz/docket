@@ -311,7 +311,7 @@ export function RoadmapScreen({
   return (
     <main data-roadmap-screen className="mx-auto w-full max-w-[840px] px-5 py-5">
       {body}
-      {draftOpen ? <RoadmapDraftDialog workspaceId={workspace.id} onClose={() => setDraftOpen(false)} /> : null}
+      {draftOpen ? <RoadmapDraftDialog workspaceId={workspace.id} docsRoot={docsRoot} onClose={() => setDraftOpen(false)} /> : null}
       {fazAddOpen && view !== undefined && view.kind === 'ready' ? (
         <FazAddDialog
           workspace={workspace}

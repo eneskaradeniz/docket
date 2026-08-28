@@ -1,6 +1,6 @@
 // e2e/seed.ts — builds a throwaway workspace + WOs across stages for the UI driver (WO-0031).
 // Run via tsx: prints `DB=<path>` for the driver. Never touches the operator's real db/repo.
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -520,5 +520,40 @@ store.recordSession({
   endedAt: monthDay(10),
 });
 console.log(`TASLAK=${JSON.stringify({ taslak: String(wsTaslak.id), kirli: String(wsKirli.id) })}`);
+
+// 16) WO-0051 the DEPO world. 'taslak-depo': a workspace whose structure root CARRIES documents —
+//     two root faz docs + adr/ (2) + notlar/ (1) = 5 .md, grouped at the first directory segment;
+//     plus an EXTERNAL candidate OUTSIDE the structure root (repo root's ROADMAP-DIS.md — the
+//     scan never sees it; the dışarıdan channel's whole point). No roadmap.md: the absent face
+//     keeps the ✦ gate. The existing taslak worlds keep empty roots byte-identical — their
+//     dialogs degrade to 'belge bulunamadı' and every WO-0050 spec keeps its GENERATE semantics.
+const repoDepo = join(root, 'repo-taslak-depo');
+mkdirSync(join(repoDepo, 'docs', 'adr'), { recursive: true });
+mkdirSync(join(repoDepo, 'docs', 'notlar'), { recursive: true });
+writeFileSync(join(repoDepo, 'docs', 'faz-0-altyapi.md'), '# Faz 0\nKullanıcı altyapısı.\n', 'utf8');
+writeFileSync(join(repoDepo, 'docs', 'faz-1-profil.md'), '# Faz 1\nAntrenör profili.\n', 'utf8');
+writeFileSync(join(repoDepo, 'docs', 'adr', 'ADR-9001-olcek.md'), '# ADR-9001\nÖlçek kararı.\n', 'utf8');
+writeFileSync(join(repoDepo, 'docs', 'adr', 'ADR-9002-kesif.md'), '# ADR-9002\nKeşif kararı.\n', 'utf8');
+writeFileSync(join(repoDepo, 'docs', 'notlar', 'gorusme.md'), '# Görüşme\nNotlar.\n', 'utf8');
+writeFileSync(join(repoDepo, 'ROADMAP-DIS.md'), '# Dış plan\nYapı kökünün dışında.\n', 'utf8');
+const wsDepo = await store.createWorkspace({
+  label: 'taslak-depo',
+  repos: [{ path: repoDepo, remote: 'e2e-depo' }],
+  decisionStorePath: repoDepo,
+});
+console.log(`TASLAK_DEPO=${JSON.stringify({ depo: String(wsDepo.id), external: join(repoDepo, 'ROADMAP-DIS.md') })}`);
+
+// 17) WO-0051 review f6 — the FLAT world: a pure-root scan (no subdirectories) exercises the
+//     dialog's file-row branch and the capped-rows moreline, which the grouped world never
+//     touches. Ten root files: 8 visible rows + the '+2 belge — tümü dahil' tail.
+const repoDuz = join(root, 'repo-taslak-duz');
+mkdirSync(join(repoDuz, 'docs'), { recursive: true });
+for (let i = 0; i < 10; i++) writeFileSync(join(repoDuz, 'docs', `faz-${i}-duz.md`), `# Faz ${i}\nDüz kök belgesi.\n`, 'utf8');
+const wsDuz = await store.createWorkspace({
+  label: 'taslak-duz',
+  repos: [{ path: repoDuz, remote: 'e2e-duz' }],
+  decisionStorePath: repoDuz,
+});
+console.log(`TASLAK_DUZ=${JSON.stringify({ duz: String(wsDuz.id) })}`);
 
 console.log(`DB=${join(root, 'e2e.db')}`);

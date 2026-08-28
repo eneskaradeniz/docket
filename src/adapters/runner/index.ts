@@ -230,7 +230,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     // The renderer omits cwd (it cannot know filesystem paths); the composition root fills
     // it. Default to the process cwd as a pilot fallback (ADR-0003 per-track paths later).
     const cwd = input.cwd ?? process.cwd();
-    const roots: ScopeRoots = { repoRoot: cwd, decisionStore: resolve(cwd, DECISION_STORE_DIR) };
+    // WO-0051 / D9 (TD-056): the composition root also fills the workspace's ABSOLUTE structure
+    // root — the write fence then lands exactly on docs_root:<wsId> instead of the cwd-relative
+    // default. Undefined (CLI, tests) keeps the fallback byte-for-byte.
+    const roots: ScopeRoots = { repoRoot: cwd, decisionStore: input.decisionStoreRoot ?? resolve(cwd, DECISION_STORE_DIR) };
     const scope = writeScopeFor(input.role, roots);
     let planReadyEmitted = false;
     let turnCompleteEmitted = false; // tracked to synthesise a turn_complete if the plan-mode stream ends without one (WO-0021)
