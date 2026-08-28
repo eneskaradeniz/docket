@@ -34,6 +34,12 @@ export interface RecordSessionInput {
   // reading must not erase the latest known one), defined OVERWRITES (latest-wins).
   ctx?: { usedTokens: number; maxTokens: number }; // the LATEST context-window reading, checkpointed at each record
   finalUsage?: TurnUsage; // the last observed rich usage detail (the session row's final figure)
+  // WO-0053 — the limit stamp, THREE states (the OrderMdEdit.taskRef set/drop idiom): a string
+  // SETS (the terminal record of a limit death), `null` CLEARS (a later CLEAN leg — a stale
+  // stamp is a lie, unlike the keep-prior ctx reading above, which is the last observation),
+  // undefined KEEPS the prior row's value. The pipeline always knows which of the three it
+  // means; ordinary records stay silent.
+  limitResetAt?: string | null;
 }
 
 /** Server-side persistence + prompt assembly the drive loop needs. The composition root injects the
