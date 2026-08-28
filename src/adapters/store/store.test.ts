@@ -1887,3 +1887,72 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     expect(store.db.prepare('SELECT COUNT(*) AS n FROM session').get()).toMatchObject({ n: 1 });
   });
 });
+
+describe('WO-0053 — the limit stamp on the session row (set · keep · clear)', () => {
+  const wsIn = async (store: ReturnType<typeof createStore>, label: string) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: label, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    return { ws, wo };
+  };
+  const STAMP = '2026-08-29T14:32:00.000Z';
+
+  it('a string SETS, undefined KEEPS, null CLEARS — and hydration carries the honest fact', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Limit stamp');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    // SET — the terminal record of a limit death
+    store.recordSession({ providerSessionId: 'sess-l1', owner, role: 'implementer', status: 'idle', limitResetAt: STAMP });
+    let s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.limitResetAt).toBe(STAMP);
+    // KEEP — an ordinary record from a notes-blind path must not erase it
+    store.recordSession({ providerSessionId: 'sess-l1', owner, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.limitResetAt).toBe(STAMP);
+    // CLEAR — a later CLEAN leg (a stale stamp is a lie)
+    store.recordSession({ providerSessionId: 'sess-l1', owner, role: 'implementer', status: 'idle', cost: { tokensIn: 2, tokensOut: 2, usd: 0.02 }, limitResetAt: null });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('limitResetAt' in s).toBe(false);
+  });
+
+  it('a null CLEAR on an UNstamped row leaves it absent — no churn, never a phantom write', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Limit bare clear');
+    store.recordSession({ providerSessionId: 'sess-l2', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', limitResetAt: null });
+    const s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('limitResetAt' in s).toBe(false);
+    const raw = store.db.prepare('SELECT limit_reset_at FROM session WHERE provider_session_id = ?').get('sess-l2') as { limit_reset_at: string | null };
+    expect(raw.limit_reset_at).toBeNull();
+  });
+
+  it('migrates a pre-WO-0053 DB: the column arrives, old rows stay NULL, and a stamp round-trips through the migrated row', () => {
+    const p = freshDb();
+    // Hand-build the pre-WO-0053 vintage: the owner pair + usage columns present, no 'stopped'
+    // CHECK (so the SESSION_REBUILD_COPY vintage triggers — the copy must carry the new column),
+    // and no limit_reset_at.
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      `CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_session_id TEXT, workspace_id TEXT NOT NULL,
+       work_order_id TEXT, role TEXT NOT NULL, scope_track_id TEXT, status TEXT NOT NULL, transcript TEXT NOT NULL,
+       stop_and_ask TEXT, pending_notes TEXT, cost_tokens_in INTEGER, cost_tokens_out INTEGER, cost_usd REAL,
+       started_at TEXT, ended_at TEXT, step_idx INTEGER, ctx_used_tokens INTEGER, ctx_max_tokens INTEGER, final_model_usage TEXT)`,
+    );
+    raw
+      .prepare("INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, status, transcript) VALUES (?,?,?,?,?,'[]')")
+      .run('old-53', 'ws-x', null, 'architect', 'idle');
+    raw.close();
+
+    const store = createStore(p); // SCHEMA_SQL no-ops the legacy session, then migrate: ALTER + rebuild
+    const cols = (store.db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['limit_reset_at']));
+    const old = store.db.prepare('SELECT limit_reset_at FROM session WHERE provider_session_id = ?').get('old-53') as { limit_reset_at: string | null };
+    expect(old.limit_reset_at).toBeNull(); // pre-WO-0053 rows: honestly absent, never backfilled
+    // the rebuilt table accepts the three-state write (the copy left it a full SCHEMA_SQL table).
+    // The rebuild backfilled the orphan's workspace_id to '' (the WO-0052 fixture's COALESCE rule)
+    // — the write must scope to THAT owner, or the upsert opens a sibling row.
+    store.recordSession({ providerSessionId: 'old-53', owner: { kind: 'draft', workspaceId: '' as never }, role: 'architect', status: 'idle', limitResetAt: STAMP });
+    const stamped = store.db.prepare("SELECT limit_reset_at FROM session WHERE provider_session_id = ? AND workspace_id = '' AND work_order_id IS NULL").get('old-53') as { limit_reset_at: string | null };
+    expect(stamped.limit_reset_at).toBe(STAMP);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n).toBe(1); // one row, upserted
+  });
+});

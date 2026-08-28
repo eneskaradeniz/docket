@@ -87,7 +87,11 @@ CREATE TABLE IF NOT EXISTS session (
   -- drives that never observed a reading/usage — never backfilled, never zeroed):
   ctx_used_tokens INTEGER,  -- the LATEST context-window reading (written at each record)
   ctx_max_tokens INTEGER,   -- the window the latest reading reports against
-  final_model_usage TEXT    -- the last observed rich usage detail (JSON TurnUsage; legs overwrite)
+  final_model_usage TEXT,   -- the last observed rich usage detail (JSON TurnUsage; legs overwrite)
+  limit_reset_at TEXT       -- WO-0053: when this session died on the provider's usage limit, the neutral ISO
+                            -- stamp of when the window opens (the card re-derives after a restart). CLEARED
+                            -- by a later clean leg — a stale stamp is a lie (unlike the ctx pair above,
+                            -- which keeps: it is the last observation). NULL = no limit stop.
 );
 -- WO-0052: ONE row per OBSERVED provider result (a turn_complete, including the HELD intermediates
 -- of a steered drive). OWNED half (not in OBSERVED_TABLES): provider-observed but NOT re-derivable —
