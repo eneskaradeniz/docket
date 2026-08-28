@@ -269,7 +269,17 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // every record (defined OVERWRITES, undefined KEEPS the prior row's values — the pendingNotes
     // rule; a leg that observed nothing leaves the prior leg's figures standing).
     let lastUsage: TurnUsage | undefined;
-    const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string): void => {
+    // WO-0053: the limit stamp's ROUTING TABLE (the architect's finding 1 — a real limit death
+    // arrives as a result message, so the stamp rides the turn_complete terminal record, NOT the
+    // finally's; and the pipeline cannot derive "was stamped" from the fold, so the routing is a
+    // fixed table, not a derivation):
+    //   turn_complete terminal  → `live.lastLimit?.resetAt ?? null` (set on a limit death, CLEAR on
+    //                             a clean leg — a stale stamp is a lie, D3)
+    //   catch/finally error     → `live.lastLimit?.resetAt` (set on a limit throw; a non-limit
+    //                             throw KEEPS a prior stamp — not a clean leg)
+    //   interrupted             → undefined (keep — an abort is not a clean leg)
+    //   ordinary records        → undefined (keep)
+    const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string, limitResetAt?: string | null): void => {
       if (!providerSessionId) return;
       deps.store.recordSession({
         providerSessionId,
@@ -290,6 +300,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         // the honest-absent rule holds: no reading observed → undefined → the store keeps the prior.
         ...(live.context ? { ctx: { usedTokens: live.context.usedTokens, maxTokens: live.context.maxTokens } } : {}),
         ...(lastUsage ? { finalUsage: lastUsage } : {}),
+        ...(limitResetAt !== undefined ? { limitResetAt } : {}),
       });
     };
 
@@ -396,7 +407,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             {
               const synthExit = ev.stopReason === PLAN_EXIT_WITHOUT_RESULT;
               const carryable = synthExit && (ev.cost.usd > 0 || ev.cost.tokensIn > 0 || ev.cost.tokensOut > 0);
-              record('idle', synthExit && !carryable ? undefined : ev.cost, lastActivityIso ?? new Date().toISOString());
+              // WO-0053: the turn terminal is the stamp's HOME (a limit death's error folds first,
+              // this record follows; a clean leg clears any stale stamp — the table above).
+              record('idle', synthExit && !carryable ? undefined : ev.cost, lastActivityIso ?? new Date().toISOString(), live.lastLimit?.resetAt ?? null);
             }
             if (woInput && stepIdx !== undefined) {
               const body = ev.result ?? assistantText;
@@ -452,14 +465,18 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             record('running');
             yield ev;
             break;
-          default: // tool_use, a runner-emitted error — forward as-is
+          default: // tool_use, a runner-emitted error, the WO-0046/WO-0053 live feeds — forward as-is
+            // (context_usage and limit_windows are pane state: yielded to the host fold, never a
+            // store call — the drive is alive; the row's checkpoints ride the records above.)
             yield ev;
             break;
         }
       }
     } catch (e) {
       terminated = true;
-      record('idle', undefined, lastActivityIso ?? startedAtIso);
+      // WO-0053: a throw sets the stamp when the fold holds a limit (the adapter classified it);
+      // a NON-limit throw KEEPS a prior stamp — undefined, never null (not a clean leg).
+      record('idle', undefined, lastActivityIso ?? startedAtIso, live.lastLimit?.resetAt);
       yield { kind: 'error', message: (e as Error)?.message ?? String(e) };
     } finally {
       // The completion guarantee (WO-0026 / F5): a session that started but never got a terminal record —
@@ -470,7 +487,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       // work span, never the idle wait that preceded the stop.
       if (providerSessionId && !terminated) {
         terminated = true;
-        record('idle', undefined, lastActivityIso ?? startedAtIso);
+        record('idle', undefined, lastActivityIso ?? startedAtIso, live.lastLimit?.resetAt);
       }
       if (active !== undefined) {
         active = undefined; // the drive is gone — steer/retractSteer no-op until the next spawn
