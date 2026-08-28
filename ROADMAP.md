@@ -412,6 +412,22 @@ strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefille
       rulings 2026-08-27: structured Düzenle, supersede, draft spend out of the head. 743 tests /
       typecheck both / boundaries / build / 69 E2E green. Spec:
       `docs/work-orders/WO-0050-yol-haritasi-taslak/order.md`.
+- [x] **WO-0051** — ✦ belge kaynağı: the draft's channel composition (depo scan ∪ ek belgeler ∪
+      serbest keşif), the TD-057 döküm chip, the TD-056 fence alignment (merged #57, `d0afba8`).
+      The source set is the operator's free composition — a recursive `.md` scan of the structure
+      root at dialog open (`docket:list-decision-docs`; ALL included by default, exceptions at
+      group level), picked paths (any path, deduplicated against the store), and an opt-in
+      exploration clause (exactly ONE sentence iff on); the prompt carries the path UNION,
+      contents never. Persistence carries COUNTS, never paths (`roadmap_draft.source_summary`,
+      keep-prior across an İtiraz resume, dead with the row at approval). The TASLAK card's
+      `Dökümü aç/kapat` chip opens the identity line + the archived transcript (TD-057 closed);
+      the architect write fence aligns with `docs_root:<wsId>` via the main-filled,
+      never-renderer-set `decisionStoreRoot` (TD-056 closed). Presentation per the operator's
+      rev-3 round (`789d01d`): one block, one row language, names first — the channel word said
+      at most once. CLI `--explore`; E2E 69→78 (the `taslak-depo` grouped + `taslak-duz` flat
+      worlds, the `DOCKET_E2E` staged-pick seam). Reviewer round `bec3fe0` (1 major: the
+      renderer-settable fence root — fixed). 769 tests / typecheck both / boundaries / build /
+      E2E green. Spec: `docs/work-orders/WO-0051-belge-kaynagi/order.md`.
 
 ## Later
 

@@ -151,3 +151,33 @@ table gains a stage/status/task column from this layer.
   table (`driveCwd` — a scoped WO drive in its track repo, a draft/unscoped drive in the
   decision-store repo, `process.cwd()` only when nothing matches), retiring the `process.cwd()`
   fill and the M3/M4 note that awaited it.
+
+## Addendum (2026-08-28, WO-0051 — the source channels, as built)
+
+The draft's source set is the operator's free COMPOSITION of channels (mockup rev 2, `a22c32b`;
+presentation rev 3, `789d01d`) — not a choice among forms:
+
+- **Three channels, one union.** **depo**: a recursive `.md` walk under the structure root at
+  dialog open (`docket:list-decision-docs`; the walk lives in the decision-store adapter),
+  ALL included by default, exceptions excluded at group level (the first directory segment —
+  one touch drops a work-orders/ group of 70). **ek belgeler**: any path via the native
+  picker, outside the structure root and the repo included. **serbest keşif**: an opt-in chip,
+  default OFF; the prompt gains exactly ONE exploration sentence iff on. The prompt carries
+  the path UNION as ONE list, deduplicated across channels (a picked store file enters once) —
+  contents never; the read fence stays open for the architect, the write fence unchanged.
+- **Persistence carries COUNTS, never paths.** The pending row's `source_summary` is a
+  nullable JSON `{store, external, freeExplore}` — written at `plan_ready` iff the input
+  carried counts (the dialog always does; the CLI and an İtiraz resume write none — the
+  resume's write KEEPS the prior figures), dead with the row at approval. Paths die with the
+  dialog (mockup karar 5): counts are the composition's memory, a path never persists.
+- **The workspace's own `roadmap.md` is included by default** — a re-draft is a revision; the
+  prior document is a primary source (the prompt already names the destination). The operator
+  who disagrees excludes the root group.
+- **The scan lists paths only** — directory entries, never file contents. A content reader
+  anywhere in the channel chain would be the source-format parser this ADR rejects, by other
+  means.
+- **The architect write fence aligns with `docs_root:<wsId>` (TD-056 closed):** the
+  composition root fills `decisionStoreRoot` (the workspace's absolute structure root) for
+  every architect drive — unconditionally overwritten, never renderer-settable (review f1) —
+  and the adapter's fence lands exactly on the structure root instead of the cwd-relative
+  `docs/` default. Implementers keep the repo scope and verifiers stay read-only.

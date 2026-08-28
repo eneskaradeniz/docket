@@ -72,7 +72,10 @@ rule restated with its reasons in two places is the duplication this repository 
   line + "Dökümü aç/kapat" chip, the transcript behind the chip — StepPane/ReviewPane/SessionPane
   alike). The roadmap screen carries the console's SECOND live surface — `RoadmapPane`, the same
   pane grammar, identity `MİMAR — TASLAK`; a workspace-scoped draft never overlays a board card,
-  and the head meta says `taslak sürüyor` while it runs (ADR-0013's 2026-08-27 addendum).
+  and the head meta says `taslak sürüyor` while it runs (ADR-0013's 2026-08-27 addendum). The
+  FINISHED draft's transcript is one `Dökümü aç/kapat` away on the TASLAK card's head — the chip
+  grammar's card-level twin (TD-057, ADR-0013's 2026-08-28 addendum); the draft session still
+  never enters a ledger.
   The ActionCard is absent while a drive runs and never renders the resume intent (Sürdür lives only
   in DriveControls). The Kanıt section is dead — evidence is
   contextual (the close card's checklist; a gated action's reason line). The plan-approval gate is
@@ -108,6 +111,12 @@ rule restated with its reasons in two places is the duplication this repository 
   (the `plan_original` document-text carve-out), approval is the parse-guarded `saveRoadmap` write
   and the commit is the operator's; the draft session is budget-gated like every drive
   (`budgetBlockForDraft`; draft spend counts in the month pool, never in the roadmap head).
+  The source set is a free COMPOSITION of channels (WO-0051, ADR-0016's 2026-08-28 addendum):
+  depo scan (structure-root `.md`s at dialog open, ALL included by default, exceptions at group
+  level) ∪ ek belgeler (any picked path, deduplicated against the store) ∪ serbest keşif (opt-in,
+  exactly ONE prompt sentence) — the prompt carries the path UNION; persistence carries COUNTS,
+  never paths (`source_summary`, dying with the row); the architect write fence aligns with
+  `docs_root` (main-filled, never renderer-set).
 
 ## No agent-vendor names — ADR-0006 (and ADR-0002)
 - No agent-vendor name (`Claude`, `Anthropic`, `Cursor`, `Copilot`, `Gemini`, `OpenAI`, `GPT`) appears

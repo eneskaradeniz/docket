@@ -161,3 +161,13 @@ roadmap screen itself, and the pane stands down while the budget refusal card ow
 plan approval card's sibling: parsed per-faz preview, Onayla (the parse-guarded write; the
 commit stays the operator's) / Düzenle (the structured editor over the fence) / İtiraz et (a
 resume of the same provider session with the operator's note).
+
+**Addendum (2026-08-28, WO-0051 — the chip grammar descends to the TASLAK card):** the finished
+draft's transcript is one `Dökümü aç/kapat` away — the card head carries the `PaneLogChip`
+grammar (default closed; only when a session row exists), and opening reveals a SIBLING log
+surface below the card: the identity line (`MİMAR — TASLAK · clock · kaynak: N belge · M ek ·
+$ · duration` — the counts' one honest echo, omitted honestly on pre-WO-0051 rows) + the
+archived transcript (the `SessionCards` precedent). This is the card-level twin of the pane's
+chip — TD-057 closed — and the record-card stance is unchanged: the draft session still never
+enters a ledger, and after Onayla the roadmap file + git is the record (ADR-0010), the window
+dying with the card.

@@ -2,7 +2,7 @@
 id: WO-0051
 title: "✦ Belge kaynağı — the draft's channel composition (store scan ∪ external ∪ free exploration), the TD-057 döküm chip"
 workspace: docket
-status: open
+status: closed
 mode: direct
 review: light
 review_mode: gates
@@ -157,18 +157,43 @@ Out of scope:
 
 - plan_approval: n/a — mode: direct (the mockup rev 2 + the operator-approved S1–S7 skeleton
   are the plan; `plan.md` records the design rulings).
-- operator_checkpoint: PENDING — the in-app walkthrough of the three channels (default-all
-  start · group exclude/restore · external add · explore chip) and the TASLAK card's döküm
-  chip, presented with screenshots; test rounds do not run before this approval (the standing
-  workflow rule; deferral is the operator's to grant and gets written here).
-- ci: the PR runs the full ladder — typecheck (both), `npm test`, `check:boundaries`,
-  `build`, `test:ui` (TD-012: `ci_green` is not exempt).
-- closure: the merge sha + ROADMAP M6 tick + TD-057 (and TD-056 if shipped) updates, proven
-  by the closure commit.
+- operator_checkpoint: RESOLVED 2026-08-28, TWO rounds. Round 1 (the rev-2 build): the
+  in-app walkthrough returned the presentation verdict — «UI güzel olmamış; "dışarıdan" diye
+  gereksiz yazı var; repo içinden de dışarısından da koysam alıyor; burası kullanışlı değil»
+  — the function approved implicitly, the presentation rejected; the ui-ux-designer
+  consultation produced the rev-3 proposal (mockup `789d01d`: one block, one row language,
+  names first; «dışarıdan» → «ek belgeler»). Round 2: the rev-3 mockup approved («tamam
+  yap»), implemented, and the realized app re-presented (screenshots verified against the
+  mockup) — approved. The TD-057 chip, the three channels and the CLI `--explore` were
+  exercised in-app on the operator's real workspaces (antreo-app 9 docs; base-mobile +
+  Downloads picks).
+- ci: green on PR #57 (GitGuardian + the full ladder — typecheck both / `npm test` 769 /
+  `check:boundaries` / `build` / `test:ui` 78 specs).
+- closure: RESOLVED — merged #57 (`d0afba8`, 2026-08-28); ROADMAP M6's fourth item, TD-057
+  and TD-056 both closed, ADR-0013/0016 addenda + CLAUDE.md clauses in the closure commit.
 
 ## Closure
 
-PENDING.
+Merged **#57** (`d0afba8`, 2026-08-28) — docs `389023d` (order + plan, mode: direct) + mockup
+rev 3 `789d01d` (the operator's presentation round, approved in-browser) + feature `d543946`
+(63 files, +1080/−100) + the reviewer round `bec3fe0` (1 major + 8 minor/nit: 7 fixed — the
+fence root unconditionally main-filled so a renderer can never widen the write window, the
+counts-less drives write no fabricated summary, the prompt union deduplicates across channels
+(`mergePickedPaths`), the group-key rule is one exported expression, the E2E staged pick is
+tri-state (a staged cancel no longer hangs headless), the flat-root branch gained its world
+and spec, a scan-window start is held; 3 accepted residues named). Evidence state: the
+channel composition is pipeline-assembled (the exploration sentence test-pinned to exactly
+once iff the flag, in both branches; the union list verbatim without channel labels); the
+scan is adapter-side paths-only (dot-dirs skipped, missing root fail-open — the zero-doc
+floor renders the not-found line and the picker channel stays live); the composition's
+memory is COUNTS on the pending row (`source_summary`, written iff counts were carried,
+keep-prior across an İtiraz resume, garbage reads absent, dead with the row at approval —
+pinned end-to-end through the E2E card identity line, with the pre-WO-0051 degradation
+asserted on the seeded dirty row); TD-057 closed (the card's döküm chip: `MİMAR — TASLAK ·
+clock · kaynak · $ · duration` + the archived transcript); TD-056 closed (the architect
+fence lands exactly on `docs_root:<wsId>` for BOTH drive arms — main-filled, never
+renderer-settable). E2E 78 specs green across the `taslak-depo` (grouped) / `taslak-duz`
+(flat) / existing taslak worlds, including the staged-pick seam. 769 unit tests.
 
 ## Stop-and-ask gates
 
