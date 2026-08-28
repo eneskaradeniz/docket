@@ -273,6 +273,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   auth_failed: 'Provider identity rejected — check the key in Settings → Agent provider.',
   timeout: 'The provider connection timed out — check the network/gateway.',
   executable_missing: 'The provider executable was not found — check the installation.',
+  rate_limited: 'The provider usage limit is full — the reset time is unknown.', // WO-0053: the stamp-less degradation tier
 };
 
 export const WO_EVENT_LABELS: Record<WoEventKind, string> = {

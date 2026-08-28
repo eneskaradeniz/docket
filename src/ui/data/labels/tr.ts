@@ -299,6 +299,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   auth_failed: "Sağlayıcı kimliği reddedildi — Ayarlar → Agent sağlayıcısı'ndan anahtarı kontrol et.",
   timeout: 'Sağlayıcı bağlantısı zaman aşımına uğradı — ağ/ağ geçidi durumunu kontrol et.',
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
+  rate_limited: 'Sağlayıcı kullanım limiti doldu — sıfırlanma saati bilinmiyor.', // WO-0053: damgasız degradasyon katmanı (mockup kare 04)
 };
 
 // Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8; WO-0031c düzenleme/izin türleri eklendi)

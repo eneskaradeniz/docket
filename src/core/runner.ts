@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, TurnUsage, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
+import type { CostSummary, LimitStop, LimitWindow, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, TurnUsage, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
 import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
@@ -66,6 +66,15 @@ export type RunnerEvent =
   // events AND throttled on thinking-token bursts (probe c1 — a long-thinking model produces no
   // transcript entries for minutes while healthy; a fresh reading proves liveness).
   | { kind: 'context_usage'; usedTokens: number; maxTokens: number; percentage: number; cost?: CostSummary; at?: string }
+  // WO-0053 live honesty — the provider's usage-limit windows, sourced from the provider's own
+  // rate-limit surfaces (the push stream message and the session's usage control — the token
+  // tour's S5 row 6). NO transcript line: the fold stores it as state (the context_usage
+  // precedent) and the pane renders the warning line from it. `status` is the adapter's
+  // neutralization of the provider's OWN status word (push channel only — the pull channel
+  // reports windows with NO status, so its events omit it and the fold carries the prior one
+  // forward; the warn line renders on 'warning' alone, never an invented 'ok'). `at` refreshes
+  // the staleness anchor like context_usage: a fresh window reading is a liveness proof.
+  | { kind: 'limit_windows'; windows: LimitWindow[]; status?: 'ok' | 'warning' | 'blocked'; at?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -73,7 +82,11 @@ export type RunnerEvent =
   // payload, not a code: the budget card needs both figures to compose its sentence, and
   // ProviderErrorCode stays a closed vendor-failure enum. Core's English message already carries
   // the numbers; the GUI composes the localized sentence from these fields.
-  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal };
+  // WO-0053: a LIMIT stop carries its facts the same way (the payload-not-a-code precedent) —
+  // the neutral ISO stamp of when the window opens, so the limit card states the clock and its
+  // Sürdür appears only once the moment passes. Stamp-less limit stops carry the code alone and
+  // degrade to the fail card's localized title (no fabricated time, mockup frame 04).
+  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal; limit?: LimitStop };
 
 /** The budget gate's refusal facts (WO-0047): what the month has cost and the cap it met. */
 export interface BudgetRefusal {
@@ -89,7 +102,11 @@ export type ProviderErrorCode =
   | 'auth_missing' // no credentials available to the provider
   | 'auth_failed' // credentials present but rejected
   | 'timeout' // subprocess handshake/connection timed out
-  | 'executable_missing'; // the provider CLI binary was not found
+  | 'executable_missing' // the provider CLI binary was not found
+  // WO-0053: the provider's USAGE LIMIT (the user's window — a 429-class stop), deliberately
+  // NOT provider capacity (an `overloaded` 529 is overload_*: uncoded, the generic fail card —
+  // the degradation title would otherwise claim a window that does not exist).
+  | 'rate_limited';
 
 // The operator's answer to a surfaced `permission_request` (the stop-and-ask).
 export type PermissionDecision = { allow: true } | { allow: false; reason: string };
@@ -479,6 +496,15 @@ export interface LiveSessionState {
    *  Absent until the runner first reports one — never zero, never an empty object (the
    *  `context` precedent). */
   lastUsage?: TurnUsage;
+  /** The latest usage-limit windows reading (WO-0053): the windows plus the push channel's
+   *  own status word (neutralized). Absent until the runner first reports one — never zero,
+   *  never seeded (the `context` precedent). A status-less (pull) reading folds the windows
+   *  and carries the prior status forward; only the push channel asserts status. */
+  limitWindows?: { windows: LimitWindow[]; status?: 'ok' | 'warning' | 'blocked' };
+  /** The limit STOP's facts when the error IS one (WO-0053) — the discriminator the detail
+   *  view branches on: the LimitCard instead of the generic fail card (the `lastRefusal`
+   *  pattern). Cleared by `started` (a Sürdür supersedes the stop; a re-hit re-stamps). */
+  lastLimit?: LimitStop;
   /** ISO moment the drive last PROVED itself alive (WO-0046): an entry was appended (the event's
    *  `at` stamp) or a context reading arrived. The staleness line's anchor — deliberately NOT an
    *  entry-only concept: probe c1 showed a long-thinking model streams no transcript entries for
@@ -507,9 +533,13 @@ export const initialSessionState: LiveSessionState = {
  *  (WO-0027 / Bulgu 9) — the pane offers to answer them; the resolver is still held in the host's runner.
  *  2026-08-24: a row whose status is 'stopped' seeds the fold's 'stopped' — the Sürdür offer and the
  *  "Durduruldu" turn line then derive after an app RESTART too (the fold's own memory dies with the
- *  renderer; the row does not). Pure; empty input → the initial state. */
+ *  renderer; the row does not).
+ *  WO-0053: a row carrying `limitResetAt` re-seeds the fold's 'error' + `lastLimit` — the LimitCard
+ *  re-derives after a restart (a five-hour window outlives the process). ONE boundary: a 'stopped'
+ *  row never re-seeds it — the operator's Durdur is the last real event and raises the stopped pane,
+ *  not a limit card; the stamp stays in the column for the ledger. Pure; empty input → the initial state. */
 export function seedLiveState(
-  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes'>,
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes' | 'limitResetAt'>,
   asks: PermissionAsk[] = [],
 ): LiveSessionState {
   if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0 && session.status === 'none') {
@@ -523,6 +553,9 @@ export function seedLiveState(
     ...(session.pendingNotes?.length ? { pendingNotes: session.pendingNotes } : {}),
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
+    ...(session.limitResetAt && session.status !== 'stopped'
+      ? { status: 'error' as const, lastLimit: { resetAt: session.limitResetAt } }
+      : {}),
   };
 }
 
@@ -539,6 +572,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         pendingPlan: undefined,
         pendingAsks: [],
         lastRefusal: undefined,
+        lastLimit: undefined,
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
@@ -651,8 +685,24 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...(event.cost ? { cost: event.cost } : {}),
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
+    case 'limit_windows':
+      // WO-0053: a windows reading — pane state only (the context_usage precedent). No transcript
+      // line, no status change, never a cost touch. A status-less (pull) reading carries the
+      // prior status forward — the pull channel reports no triple and must not erase the push
+      // channel's warning; a reading WITH a status is the push channel's own assertion.
+      return {
+        ...state,
+        limitWindows: {
+          windows: event.windows,
+          ...(event.status ? { status: event.status } : state.limitWindows?.status ? { status: state.limitWindows.status } : {}),
+        },
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
     case 'error':
       // WO-0047: a gate refusal folds its facts beside the message — the card branches on them.
+      // WO-0053: a limit stop folds its facts the same way (`lastLimit`, the same discriminator
+      // pattern); an error WITHOUT a limit payload leaves a prior stop untouched (the keep rule —
+      // the stamp describes the stop that set it, only `started` or a clean close clears it).
       return {
         ...state,
         status: 'error',
@@ -660,6 +710,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         pendingAsks: [],
         ...(event.code ? { lastErrorCode: event.code } : {}),
         ...(event.refusal ? { lastRefusal: event.refusal } : {}),
+        ...(event.limit ? { lastLimit: event.limit } : {}),
       };
   }
 }
@@ -680,4 +731,15 @@ export function staleMinutes(state: Pick<LiveSessionState, 'status' | 'lastLifeA
   const then = Date.parse(state.lastLifeAt);
   if (Number.isNaN(then)) return undefined;
   return Math.max(0, Math.floor((nowMs - then) / 60000));
+}
+
+/** The limit card's ONE decision (WO-0053): has the stamped reset moment passed? Pure, clock
+ *  injected — the card, its tests and the e2e (static past/future seeds) share one truth, no
+ *  wall-clock seam. 'wait' → the Sürdür is ABSENT with the clock as the standing reason line
+ *  (ADR-0001); 'ready' → exactly one primary button. An unparseable stamp waits — never invite
+ *  a press the provider will reject (the stamp is the adapter's promise; garbage in, no claim). */
+export function limitCrossing(resetAt: string, nowMs: number): 'wait' | 'ready' {
+  const then = Date.parse(resetAt);
+  if (Number.isNaN(then)) return 'wait';
+  return nowMs >= then ? 'ready' : 'wait';
 }
