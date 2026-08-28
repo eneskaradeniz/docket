@@ -2,7 +2,7 @@
 id: WO-0052
 title: "Usage instrumentation floor — persist what the provider already reports (cache split · model usage · turns · durations · context fill)"
 workspace: docket
-status: draft
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -116,6 +116,34 @@ Out of scope:
 - verification: verifier report, all `path:line` pointers resolve at head sha.
 - closure: all tracks merged, `ROADMAP.md` + `docs/tech-debt.md` updated (commit sha).
 - operator_checkpoint: the new fields inspected via `show` on a real or fake drive.
+
+## Closure
+
+Merged **#58** (`d0ea490`, 2026-08-29) — plan `bf7e7cb` (mode: plan; the architect verdict upheld
+the design and ruled all four implementer deviations justified — `model` shortcut + verbatim
+`model_usage` JSON, `finalUsage` on an observed interrupt, the `show` per-turn tail as the
+checkpoint instrument, `session_usage` in the OWNED half — with M1-M3 text corrections: the
+fake-store lock is RUNTIME not compile, the stale CLI/pipeline anchors fixed, the R1 fallback
+bound to a real-drive checkpoint; fill-history ruled floor-only, no tail) + feature `386d833`
+(13 files, +1038/−25: `TurnUsage`/`ModelUsageLine` vocabulary, the `turn_usage` event emitted
+BEFORE the hold check — a steered drive's held intermediates escape too, WO-0045/D3 intact —,
+`session_usage` + ctx/final checkpoints with the PRAGMA-guarded migration and
+`SESSION_REBUILD_COPY` extension, `recordTurnUsage` port, `usageOf` pass-through, the `show`
+instrument) + the reviewer round `9dab9b4` (8 gates clean; one minor fixed RED-first: the
+`final_model_usage` hydration guard rejects a JSON array blob — fail-open reads absent).
+Verifier report at head: **AC1-6 all PASS, every `path:line` anchor resolves** — `monthSpendRow`,
+`applyResultCost` and `costOf` two-ref diffed IDENTICAL, the budget test files untouched; one
+count corrected in the PR body (E2E 84→78 — non-spec checkmarks; the suite itself green).
+Evidence state: operator checkpoint inspected the `show` output in both directions (rich +
+absent) on `--fake` temp-DB drives, reproduced independently; the S4 scripted-SDK mock round
+succeeded first try, so M3's real-drive condition never engaged; `ci_green` = `check` +
+GitGuardian SUCCESS; 802 unit tests (+33, presence AND absence pinned), E2E 78 green locally
+(`test:ui` is not in CI — the local run is the AC6 E2E leg; one environmental note: the suite
+crashes under a sandboxed shell at the theme spec, green unsandboxed). Interrupted-drive spend
+stays honest-absent by design — WO-0026/TD-030's lineage, noted, not reopened. ADR-0006 +
+ADR-0010 addenda, the CLAUDE.md Records metrics sentence, ROADMAP M7 (this WO its first tick),
+TD-058 open (the `model_usage` JSON → normalized child table, for the usage screen's
+model-level queries).
 
 ## Stop-and-ask gates
 

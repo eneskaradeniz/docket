@@ -99,3 +99,14 @@ exact paths to classify agent-configuration writes as risky; naming the agent's 
 is not naming the vendor's *product*. The strip is scoped to those two literals — any other vendor
 name in `core/`, `ui/`, `renderer/` or `electron/` still fails the check. Recorded here because the
 carve-out shipped in WO-0031c's pre-merge fixes with only a script comment as its home.
+
+## Addendum (WO-0052) — the vendor-name ban is a CODE ban; usage metrics carry model ids as DATA
+
+The usage-instrumentation floor persists what the provider's result message already carries,
+including the per-model usage map keyed by model id (`claude-sonnet-4-5` and kin). Those strings
+flow through `usageOf` (the adapter, where the SDK is named) into `session_usage.model` /
+`model_usage` rows and the session's `final_model_usage` — verbatim, as row DATA. The ban above
+governs CODE: no vendor or model name becomes a constant, a branch, or a copy line outside
+`src/adapters/`. A model id in a metrics row is an observation, the same class as a tool-target
+path in `wo_event.detail` (the Records rule, CLAUDE.md 2026-08-26); a model id in a predicate is
+the vendor reaching past the adapter — that stays forbidden.

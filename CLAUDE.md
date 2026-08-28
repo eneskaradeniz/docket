@@ -152,6 +152,9 @@ rule restated with its reasons in two places is the duplication this repository 
   key (the key lives only in `app_setting`). A new event kind is checked against this line — scoped from Paperclip's
   run-log allowlist ("an event never carries a command, an argument, a path, an environment value" — Docket's scope
   keeps targets, excludes secrets).
+- Persisted usage records (WO-0052: `session_usage` rows, the ctx/final checkpoints) are METRICS — token
+  counts, cache splits, durations, model-id strings carried verbatim from the adapter as row DATA; the
+  no-env-values/no-keys bound above is exactly what keeps them honest.
 - A PR opened from this repository names the model that authored the work (provider + model id) in a "Model Used"
   line at the top of the body. A PR without it is incomplete, like a WO without a closure sha.
 

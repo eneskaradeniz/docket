@@ -429,6 +429,36 @@ strip, task fill, `sıradaki`, collapsed past, ✦ dialog, TASLAK card, prefille
       renderer-settable fence root — fixed). 769 tests / typecheck both / boundaries / build /
       E2E green. Spec: `docs/work-orders/WO-0051-belge-kaynagi/order.md`.
 
+## M7 — Kullanım enstrümantasyonu (usage floor → ekranlar)
+
+The token tour (`docs/research/2026-08-28-token-usage-tour.md`, `277b3a9`) measured what Docket
+drops that the provider already reports; this milestone builds the recording floor first, then
+the two screens that read it (the operator's 2026-08-28 sequencing: floor → limit screen →
+usage screen). Remaining tour candidates wait unopened: the ✦ read-mass budget, the checkpoint
+diet, the plan.md embed diet.
+
+- [x] **WO-0052** — the recording floor (merged #58, `d0ea490`). A new `turn_usage` RunnerEvent —
+      one per OBSERVED provider result, emitted BEFORE the adapter's hold check so a steered
+      drive's held intermediates escape too — carries the per-result `usd_delta` under the
+      unchanged `applyResultCost` baseline plus the rich detail the SDK already reports: cache
+      read/creation split, per-model usage map (model ids as row DATA), `numTurns`,
+      `durationMs`/`durationApiMs` (leg-cumulative-so-far, persisted verbatim, never summed).
+      Store: `session_usage` (append-only, OWNED half — a reseed never drops observed history;
+      resume legs append to the same owner pair, no double-count) + nullable session checkpoints
+      `ctx_used_tokens`/`ctx_max_tokens` (the LATEST `context_usage` reading, every `record()`)
+      and `final_model_usage`; PRAGMA-guarded additive migration, `SESSION_REBUILD_COPY`
+      extended, pre-WO-0052 rows stay honestly NULL. Synthetic plan-exit and interrupts write no
+      row — nothing was observed. Budget math byte-identical (`monthSpendRow` two-ref diff'd
+      IDENTICAL); no UI, no new SDK control calls (the `usage_EXPERIMENTAL` surface is the limit
+      screen's). `show <woId>` gained the per-session floor (ctx line, last-usage line, per-turn
+      tail — absent fields print NOTHING) + its first tests. Plan round `bf7e7cb` (mimar verdict:
+      design upheld, 4 deviations ruled justified, fill-history = floor-only — no tail, additive
+      path open); review round 9 gates clean + the array-blob hydration guard (`9dab9b4`);
+      verifier report AC1-6 PASS at head (PR body's E2E count corrected 84→78 — non-spec
+      checkmarks). 802 tests (+33, both absence directions pinned) / typecheck both /
+      boundaries / build / E2E 78 green. ADR-0006 + ADR-0010 addenda, CLAUDE.md Records sentence,
+      TD-058 open. Spec: `docs/work-orders/WO-0052-kullanim-enstrumantasyonu/order.md`.
+
 ## Later
 
 - Packaging and distribution

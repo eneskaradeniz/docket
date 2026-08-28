@@ -132,3 +132,16 @@ the app. Docket never silently degrades, and never guesses in place of a tool it
   problem this product exists to remove.
 - **Treat a missing tool as a hard failure everywhere.** Makes Docket unusable offline or mid-setup for
   reasons unrelated to most of what it does.
+
+## Addendum (WO-0052) — the usage floor: `session_usage` is observed, append-only, OWNED
+
+The per-turn usage table (`session_usage`, one row per OBSERVED provider result — held
+intermediates of a steered drive included) sits in the OWNED half of the schema alongside its
+`session` row: provider-observed and not re-derivable from any local source, so a reseed never
+drops it (`OBSERVED_TABLES` stays the git/forge cache only). Rows are append-only — the session
+upsert never rewrites them; a resume leg appends under the same owner pair. The `session` row's
+usage columns (`ctx_used_tokens` / `ctx_max_tokens` / `final_model_usage`) are nullable
+latest-wins checkpoints (undefined input keeps the prior — the `pending_notes` rule); NULL is the
+honest pre-WO-0052 vintage and hydrates as absent everywhere, never zero. Aggregate cost columns
+and `monthSpendRow` keep their exact accumulation semantics — the floor adds resolution, never
+re-derives the budget's basis.
