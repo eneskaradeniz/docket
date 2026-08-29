@@ -16,6 +16,7 @@ import {
   classifyProviderError,
   createRunner,
   limitStampOf,
+  limitStampFromMessage,
   limitWindowsOf,
   neutralLimitStatus,
   usageOf,
@@ -427,5 +428,43 @@ describe('WO-0053 — the push/pull merge (review finding 5)', () => {
       status: 'warning',
       windows: [{ window: 'seven_day', utilization: 41, resetAt: '2026-08-31T14:32:00.000Z' }],
     });
+  });
+});
+
+// ===== WO-0053 dogfood (2026-08-29, the antreo draft death) — the stamp's third source =====
+// The first REAL 429 carried the reset clock ONLY in the error sentence: no push message, no
+// pull windows (the drive died before any reading). The message below is the operator's verbatim.
+describe('WO-0053 dogfood — the message-text stamp + the error-result plan guard', () => {
+  const REAL_429 = 'API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-08-29 12:01:29][20260829091655ffdbaf3e542147f8]';
+
+  it('limitStampFromMessage parses the provider sentence (zone-less → LOCAL, TZ-stable expectation)', () => {
+    expect(limitStampFromMessage(REAL_429)).toBe(new Date('2026-08-29T12:01:29').toISOString());
+    expect(limitStampFromMessage('rate_limit_error with no clock')).toBeUndefined();
+    expect(limitStampFromMessage('')).toBeUndefined();
+  });
+
+  it('the dogfood death classifies AND stamps from the message alone — no push, no pull', async () => {
+    sdkMock.setUsage(() => Promise.reject(new Error('off')));
+    sdkMock.setScript([
+      initMsg,
+      { type: 'result', subtype: 'error_during_execution', session_id: 's9', is_error: true, errors: [REAL_429], result: REAL_429 },
+    ]);
+    const out = await collect(createRunner(), stepInput);
+    const err = out.find((e) => e.kind === 'error') as Extract<RunnerEvent, { kind: 'error' }>;
+    expect(err.code).toBe('rate_limited');
+    expect(err.limit).toEqual({ resetAt: new Date('2026-08-29T12:01:29').toISOString() });
+  });
+
+  it('an ERROR result text is never a plan: the plan-exit fallback stays silent (the garbage-draft hole)', async () => {
+    sdkMock.setUsage(() => Promise.reject(new Error('off')));
+    const planInput: DriveInput = { role: 'architect', workOrderId: WO, mode: 'plan', prompt: 'p', cwd: '/tmp' };
+    sdkMock.setScript([initMsg, { type: 'result', subtype: 'error_during_execution', session_id: 's9', is_error: true, errors: [REAL_429], result: REAL_429 }]);
+    const out = await collect(createRunner(), planInput);
+    expect(out.some((e) => e.kind === 'plan_ready')).toBe(false);
+    // the SUCCESS direction keeps the fallback: a plan turn ending without ExitPlanMode still
+    // treats the result text as the plan (TD-016's probe finding, unchanged).
+    sdkMock.setScript([initMsg, { type: 'result', subtype: 'success', session_id: 's9', stop_reason: 'end_turn', result: '# Fazlar\n```fazlar\n[]\n```' }]);
+    const out2 = await collect(createRunner(), planInput);
+    expect(out2.some((e) => e.kind === 'plan_ready')).toBe(true);
   });
 });
