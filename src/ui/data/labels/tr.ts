@@ -106,6 +106,9 @@ export function cardReasonText(r: CardReason): string {
       return UI.cardJustWritten;
     case 'session_stopped':
       return 'Oturum durduruldu';
+    case 'limit_stopped':
+      // WO-0053: pano kartının satırı — neden + saat, saat-sız (çekirdek türetmesi Date bilmez).
+      return `Kullanım limiti doldu — sıfırlanma ${UI.limitClock(r.resetAt)}`;
     case 'awaiting_plan_commit':
       // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Plan commiti
       // bekleniyor" twin is dead (one state, one sentence; "commit" never reaches the operator).
@@ -752,7 +755,6 @@ export const UI = {
   limitCardTitle: 'KULLANIM LİMİTİ DOLDU',
   limitCardBody: (window: string, time: string) => `${window} doldu — sıfırlanma ${time}.`,
   limitResumeNote: 'Sürdür kaldığı yerden devam eder; bağlam yeniden okunur.',
-  limitWaitReason: (time: string) => `sürdür ${time}'de açılır`,
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` %${pct}` : ''}${time !== null ? ` — ${time}'de sıfırlanır` : ' — sınır yakın'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5 saatlik pencere' : kind === 'seven_day' ? '7 günlük pencere' : 'pencere'),

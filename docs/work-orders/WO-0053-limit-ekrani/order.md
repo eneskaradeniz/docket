@@ -68,19 +68,24 @@ budget gate (WO-0047) stays separate; resume mechanics are untouched; the usage 
   the SDK method name appears only in Adapter-layer bullets and docs' factual references. The
   stamp is normalized at the boundary: the push channel's epoch `resetsAt` becomes an ISO string
   IN THE ADAPTER — that conversion is this WO's reason to exist.
-- **Mockup rulings (locked with the operator 2026-08-29, rev 1 `cf28681`).** (1) The card
-  speaks PROVIDER windows — no $ figures, no cap copy; the budget card owns those, and the two
-  cards never compete (a budget refusal is pre-spawn, a limit stop is post-flight; the refusal
-  still outranks in the stack — the fresher intent, the fail card's existing `!lastRefusal`
-  guard extended one branch). (2) The button is ABSENT until the reset moment passes; the
-  standing reason line IS the reset time (ADR-0001); present after, with ⏎. (3) The warning line
-  renders only on the provider's OWN warning/blocked signal — never a locally invented threshold
-  (the WO-0046 honest-absent lineage). (4) A limit stop with no known stamp degrades to the fail
-  card with a localized title — never a fabricated time, never a gated button without a reason.
-  (5) The card owns the moment: no instrument renders while it holds (the refusal-card rule,
-  WorkOrderDetail.tsx:1200-1201 — the Oturum card's döküm remains the transcript's home); the
-  card-local «Sürdür» is the fail-card retry precedent, regularized by the ADR-0013 addendum
-  below — DriveControls stays the LIVE drive's process home.
+- **Mockup rulings (locked with the operator 2026-08-29, rev 1 `cf28681`; REVISED at round 2,
+  same day — the realized-app tour).** (1) The card speaks PROVIDER windows — no $ figures, no
+  cap copy; the budget card owns those, and the two cards never compete (a budget refusal is
+  pre-spawn, a limit stop is post-flight; the refusal still outranks in the stack — the fresher
+  intent, the fail card's existing `!lastRefusal` guard extended one branch). (2) **Round-2
+  revision («kartta sürdür butonu olmasın — 2 tane buton oluyor»):** the card is INFORMATIVE
+  and renders only while the stamp is FUTURE — NO action row. The ONE «Sürdür» stays in its
+  normal home (the lone plan button / the step spine's controls), rendered LOCKED while the
+  limit holds (the kit's attribute-free lock — ADR-0001's guarded-action register; the card
+  right above carries the reason, so no tooltip), ⏎ held off; the clock crossing unmounts the
+  card and unlocks the button («kart gider, Sürdür düğmesi gelir»). The board card carries the
+  standing line too — `limit_stopped` in `deriveCardReason`: «Kullanım limiti doldu —
+  sıfırlanma <saat>», clock-free (a later clean leg clears the stamp and the reason reverts).
+  (3) The warning line renders only on the provider's OWN warning/blocked signal — never a
+  locally invented threshold (the WO-0046 honest-absent lineage). (4) A limit stop with no known
+  stamp degrades to the fail card with a localized title — never a fabricated time. (5) While
+  the card holds it owns the moment: no instrument renders (the refusal-card rule; the Oturum
+  card's döküm remains the transcript's home).
 
 ## Scope
 

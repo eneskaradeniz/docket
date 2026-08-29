@@ -2501,49 +2501,45 @@ const limitDeath = (resetAt) => window.docket.e2e?.emit({
   limit: { resetAt, window: 'five_hour' },
 });
 
-await spec('WO-0053 limit 01: the card owns the stop — reason line, NO button, the fail card stands down, no instrument, no budget card', async () => {
+await spec('WO-0053 limit 01: the informative card, the locked Sürdür, the LIVE crossing — then the unlock and the resume', async () => {
   await switchWs('taslak-duz', 'e2e'); // the WO-0051 specs left the board on the draft workspace
   await openDetail('Yeni iş emri örneği');
   await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
-  await page.evaluate(limitDeath, futureStamp());
+  // a SHORT future stamp — the spec WATCHES the real 1s tick cross it (the widened ticker's own pin)
+  await page.evaluate(limitDeath, new Date(Date.now() + 8_000).toISOString());
   await page.waitForTimeout(600);
-  // Frame 01 state A: the card renders with the window + the clock body…
+  // Frame 01 state A (round-2 presentation): the card is INFORMATIVE — window + clock body, no action row
   assert.equal(await page.locator('[data-limit-card]').count(), 1, 'no limit card');
   assert.ok((await page.locator('[data-limit-card]').getByText('KULLANIM LİMİTİ DOLDU').count()) >= 1, 'no card title');
   assert.ok((await page.locator('[data-limit-card]').getByText('5 saatlik pencere').count()) >= 1, 'the raw kind leaked or the window label is missing');
-  // …the action row is ONE thing — the reason line, never a button before the clock (ADR-0001)
-  assert.equal(await page.locator('[data-limit-resume]').count(), 0, 'the button rendered before the reset moment');
-  assert.ok((await page.locator('[data-limit-card]').getByText(/açılır/).count()) >= 1, 'no reason line');
-  // the fail card stands down (the card IS the stop's surface), and the budget card never appears
+  assert.equal(await page.locator('[data-limit-card]').getByRole('button').count(), 0, 'the card carries a button (round 2: it must not)');
+  // the ONE Sürdür stays in its normal home, LOCKED while the limit holds (attribute-free, the kit form)
+  const loneResume = page.locator('button', { hasText: 'Sürdür' }).first();
+  assert.ok((await loneResume.count()) >= 1, 'the lone Sürdür vanished');
+  assert.ok((await loneResume.getAttribute('class') ?? '').includes('pointer-events-none'), 'the lone Sürdür is not locked while the limit holds');
+  // the fail card stands down, the budget card never appears, the instrument suppresses (karar 5)
   assert.equal(await page.getByText('Oturum çöktü').count(), 0, 'the fail card rendered beside the limit card');
   assert.equal(await page.locator('[data-budget-refusal-card]').count(), 0, 'a limit death rendered the BUDGET card');
-  // karar 5: the card owns the moment — the instrument suppresses (the döküm is one click away in the Oturum card)
   assert.equal(await page.locator('#live-pane').count(), 0, 'the instrument rendered under the limit card');
   await page.screenshot({ path: join(SHOTS, 'limit-card-wait@980.png') }); // WO-0053 frame 01 state A (the operator's tour artifact)
-  await backToBoard();
-});
-
-await spec('WO-0053 limit 02: the crossing — a past stamp shows the ONE Sürdür; pressing it re-drives and the card stands down', async () => {
-  await openDetail('Yeni iş emri örneği');
-  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
-  await page.waitForTimeout(500);
-  await page.evaluate(limitDeath, pastStamp());
-  await page.waitForTimeout(600);
-  // Frame 01 state B: exactly one primary Sürdür (+ ⏎) — the retry channel
-  assert.equal(await page.locator('[data-limit-resume]').count(), 1, 'the crossing did not show the button');
-  await page.screenshot({ path: join(SHOTS, 'limit-card-ready@980.png') }); // WO-0053 frame 01 state B (the crossing)
-  await page.locator('[data-limit-resume]').click();
+  // THE CROSSING, live: wait out the short stamp — the card unmounts, the Sürdür unlocks, ⏎ returns
+  await page.waitForTimeout(9_000);
+  assert.equal(await page.locator('[data-limit-card]').count(), 0, 'the card survived its own crossing');
+  assert.ok(!(await loneResume.getAttribute('class') ?? '').includes('pointer-events-none'), 'the Sürdür stayed locked after the crossing');
+  assert.ok((await page.locator('button', { hasText: 'Sürdür' }).count()) === 1, 'more than one Sürdür after the crossing');
+  await page.screenshot({ path: join(SHOTS, 'limit-card-ready@980.png') }); // frame 01 state B (card gone, the button back)
+  await loneResume.click();
   await page.waitForTimeout(700);
-  assert.equal(await page.locator('[data-limit-card]').count(), 0, 'the card survived the resume (started must clear it)');
   assert.ok((await page.getByText('Çalışıyor', { exact: true }).count()) >= 1, 'the resumed drive is not running');
-  // wind down cleanly for the next spec
+  assert.equal(await page.locator('[data-limit-card]').count(), 0, 'a card came back after the resume');
+  // wind down cleanly for the next spec (a stopped row never re-seeds the limit — the boundary)
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();
   await page.waitForTimeout(700);
   await backToBoard();
 });
 
-await spec('WO-0053 limit 03 (frame 02): the warn line renders ONLY on the provider own warning signal', async () => {
+await spec('WO-0053 limit 03 (frame 02 + 04): the warn line on the provider own signal only, then the stamp-less degrade tier', async () => {
   await openDetail('Yeni iş emri örneği');
   await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
@@ -2561,10 +2557,20 @@ await spec('WO-0053 limit 03 (frame 02): the warn line renders ONLY on the provi
   const warnText = (await warn.textContent()) ?? '';
   assert.ok(warnText.includes('5 saatlik pencere'), `the warn line lost the window label: ${warnText}`);
   assert.ok(warnText.includes('%86'), `the warn line lost the utilization: ${warnText}`);
-  // the drive dies on the limit → the card takes over, the pane (and its line) suppress
-  await page.evaluate(limitDeath, futureStamp());
+  // end the drive CLEANLY — the running gate drops the line with the drive, and the clean leg
+  // clears any row stamp (the honest end for the family's middle spec)
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[data-limit-warn]').count(), 0, 'the warn line survived the clean end (the running gate)');
+  // Frame 04 (the degradation tier): a stamp-LESS limit death → the FAIL card with the localized
+  // title, the retry button — never a card promising a clock it does not have
+  await page.getByRole('button', { name: /Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'error', message: 'Usage limit reached', code: 'rate_limited' }));
   await page.waitForTimeout(600);
-  assert.equal(await page.locator('[data-limit-warn]').count(), 0, 'the warn line survived the death');
+  assert.equal(await page.locator('[data-limit-card]').count(), 0, 'a stamp-less death rendered the CARD');
+  assert.ok((await page.getByText('Sağlayıcı kullanım limiti doldu — sıfırlanma saati bilinmiyor.').count()) >= 1, 'no localized degrade title');
+  assert.ok((await page.getByRole('button', { name: 'Yeniden dene', exact: true }).count()) >= 1, 'no retry on the degrade tier');
   await backToBoard();
 });
 
@@ -2577,10 +2583,12 @@ await spec('WO-0053 limit 04 (frame 03): the restart re-derivation — the card 
   assert.equal(await page.locator('[data-limit-card]').count(), 1, 'the card did not render at the death');
   // navigate away and back — the fold is dead, the ROW carries limit_reset_at, the seed re-derives
   await backToBoard();
+  // the BOARD card carries the standing line too (round 2: a limit surface outside the detail)
+  const boardCard = page.locator('[data-wo-id]', { hasText: 'Yeni iş emri örneği' }).first();
+  assert.ok((await boardCard.getByText(/Kullanım limiti doldu/).count()) >= 1, 'the board card carries no limit line');
   await openDetail('Yeni iş emri örneği');
   await page.waitForTimeout(600);
   assert.equal(await page.locator('[data-limit-card]').count(), 1, 'the card did not re-derive from the row');
-  assert.equal(await page.locator('[data-limit-resume]').count(), 0, 'the re-derived card crossed early');
   await backToBoard();
 });
 

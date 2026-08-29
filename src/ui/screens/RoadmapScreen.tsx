@@ -186,26 +186,17 @@ export function RoadmapScreen({
       />
     ) : null;
 
-  // WO-0053 — the draft seat's limit card (the second of the refusal card's two seats). The
-  // Sürdür is the `reply()` twin: `driveStore.start` with the draft input + `resume` and an EMPTY
-  // prompt (no new message — the provider replays and continues), NOT `restart` (which re-issues
-  // the original input as a FRESH session — the wrong leg for a stopped live drive).
-  const resumeDraft = (): void => {
-    if (!draftState.sessionId) return;
-    driveStore.start(
-      draftKey,
-      { role: 'architect', workspaceId: workspace.id, mode: 'plan', prompt: '', goalNote: '', docPaths: [], resume: draftState.sessionId },
-      draftState,
-    );
-  };
+  // WO-0053 — the draft seat's limit card (the second of the refusal card's two seats):
+  // informative, WAIT-state only (operator round 2 — no action row; the crossing unmounts it and
+  // the draft's own re-drive paths serve). Never over the operator's own stop, never beside an
+  // open refusal card.
   const limitCard =
-    draftState.lastLimit !== undefined && !draftRunning && draftState.status !== 'stopped' && refusalCard === null ? (
-      <LimitCard
-        resetAt={draftState.lastLimit.resetAt}
-        windowKind={draftState.lastLimit.window}
-        now={now}
-        onResume={resumeDraft}
-      />
+    draftState.lastLimit !== undefined
+    && !draftRunning
+    && draftState.status !== 'stopped'
+    && refusalCard === null
+    && limitCrossing(draftState.lastLimit.resetAt, now) === 'wait' ? (
+      <LimitCard resetAt={draftState.lastLimit.resetAt} windowKind={draftState.lastLimit.window} />
     ) : null;
 
   // The live half mounts when THIS renderer has a fold for the draft (a running or ended drive

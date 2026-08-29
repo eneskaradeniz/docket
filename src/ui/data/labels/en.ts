@@ -103,6 +103,9 @@ export function cardReasonText(r: CardReason): string {
       return UI.cardJustWritten;
     case 'session_stopped':
       return 'Session stopped';
+    case 'limit_stopped':
+      // WO-0053: the board card's line — the reason + the clock, clock-free (core derives no Date).
+      return `Usage limit reached — resets ${UI.limitClock(r.resetAt)}`;
     case 'awaiting_plan_commit':
       // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Awaiting plan
       // commit" twin is dead (one state, one sentence; "commit" never reaches the operator).
@@ -641,7 +644,6 @@ export const UI = {
   limitCardTitle: 'USAGE LIMIT REACHED',
   limitCardBody: (window: string, time: string) => `${window} is full — resets ${time}.`,
   limitResumeNote: 'Resume continues from where it stopped; the context is re-read.',
-  limitWaitReason: (time: string) => `resume opens at ${time}`,
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` ${pct}%` : ''}${time !== null ? ` — resets at ${time}` : ' — near the limit'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5-hour window' : kind === 'seven_day' ? '7-day window' : 'window'),

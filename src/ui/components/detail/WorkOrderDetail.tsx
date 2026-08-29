@@ -618,14 +618,21 @@ export function WorkOrderDetail({
   // DELIVERED its plan and is awaiting the operator — that is the approval moment, not work
   // (the SDK stream lingers waiting for an in-session approval Docket never gives).
   const planAwaitingOperator = planStage && state.status === 'plan_ready';
-  // WO-0053 (review findings 1-3): the limit surfaces branch on their OWN discriminators, never
-  // the derived turn — the primary real death is a RESULT message (error then turn_complete),
-  // which folds 'done', so a turn-gated card/⏎ would never fire on the real path. A stamped stop
-  // opens the LimitCard; a stamp-less one DEGRADES to the fail card's localized title (mockup
-  // frame 04). Neither renders over the operator's own Durdur (the seed boundary, mirrored live:
-  // `interrupted` folds 'stopped' and leaves the stamp in place).
+  // WO-0053 (review findings 1-3 + operator round 2, 2026-08-29): the limit surfaces branch on
+  // their OWN discriminators, never the derived turn — the primary real death is a RESULT message
+  // (error then turn_complete), which folds 'done', so a turn-gated card/⏎ would never fire on the
+  // real path. A stamped stop opens the INFORMATIVE LimitCard while the stamp is FUTURE only (the
+  // operator's round-2 ruling: the card carries NO button — the ONE Sürdür lives in its normal
+  // home beside it, locked while the limit holds; the clock crossing unmounts the card and
+  // unlocks the button — «kart gider, Sürdür düğmesi gelir»); a stamp-less one DEGRADES to the
+  // fail card's localized title (mockup frame 04). Neither renders over the operator's own Durdur
+  // (the seed boundary, mirrored live: `interrupted` folds 'stopped' and keeps the stamp).
   const limitCardOpen =
-    state.lastLimit !== undefined && !running && state.status !== 'stopped' && state.lastRefusal === undefined;
+    state.lastLimit !== undefined
+    && !running
+    && state.status !== 'stopped'
+    && state.lastRefusal === undefined
+    && limitCrossing(state.lastLimit.resetAt, now) === 'wait';
   const limitDegrade =
     state.lastErrorCode === 'rate_limited' && state.lastLimit === undefined && !running && state.status !== 'stopped' && state.lastRefusal === undefined;
   let primary: (() => void) | undefined;
@@ -642,14 +649,6 @@ export function WorkOrderDetail({
         primary = () => objectPlan(objectionText.trim());
         primaryKind = 'object';
       }
-    } else if (limitCardOpen && limitCrossing(state.lastLimit!.resetAt, now) === 'ready') {
-      // WO-0053 (review finding 1): the limit card's «Sürdür» owns ⏎ gated by the CARD's own
-      // condition, never the derived turn — the primary real death is a RESULT message (error then
-      // turn_complete), which folds 'done', not 'error': a turn-gated branch would strand the
-      // badge on a dead Enter. The same retry channel (the row-resume leg); a pending refusal
-      // outranks (the fresher intent — the raise card's input carries Enter).
-      primary = retry;
-      primaryKind = 'retry';
     } else if ((turn === 'retry' || limitDegrade) && !state.lastRefusal && state.lastLimit === undefined) {
       primary = retry; // ⏎ = Yeniden dene — the fail card's button (incl. the stamp-less degrade tier)
       primaryKind = 'retry';
@@ -676,10 +675,10 @@ export function WorkOrderDetail({
     } else if (stoppedNow) {
       primary = resumeStopped; // ⏎ = ▶ Sürdür — the stopped drive's OWN session (WO-0045 finding 2)
       primaryKind = 'resume';
-    } else if (planStage && !effectivePlan && !showQuestion) {
-      primary = requestPlan; // ⏎ = Plan iste (the decision row's lone button)
+    } else if (planStage && !effectivePlan && !showQuestion && !limitCardOpen) {
+      primary = requestPlan; // ⏎ = Plan iste / Sürdür (the decision row's lone button)
       primaryKind = 'request';
-    } else if (stepResumeId !== undefined) {
+    } else if (stepResumeId !== undefined && !limitCardOpen) {
       primary = resumeStep; // an interrupted 'active' step at restart
       primaryKind = 'resume';
     }
@@ -937,22 +936,12 @@ export function WorkOrderDetail({
       />
     ) : null;
 
-  // WO-0053 — the limit stop's ONE-ACTION card: the fold's `lastLimit` is the discriminator (the
-  // `lastRefusal` pattern). It renders only when the refusal card does NOT (a budget refusal is
-  // the fresher intent in the both-set case — a post-limit Sürdür that met the cap resolves the
-  // cap first; the limit state survives the fold and its card returns), and never over the
-  // operator's own stop (`limitCardOpen` above — finding 3's live mirror of the seed boundary).
-  // The button rides the FAIL CARD's retry channel: `drive-store.restart` is rejected for this
-  // (it re-issues the ORIGINAL input — a fresh session, wrong for a stopped live leg); retry
-  // finds the persisted row's providerSessionId and re-drives with `resume:`, the Sürdür
-  // mechanism verbatim.
+  // WO-0053 — the limit stop's INFORMATIVE card (round 2: no action row — the ONE Sürdür lives
+  // beside it, locked). It renders only when the refusal card does NOT (a budget refusal is the
+  // fresher intent in the both-set case), never over the operator's own stop, and only while the
+  // stamp is FUTURE (the crossing unmounts it — the Sürdür takes over alone).
   const limitCard = limitCardOpen && refusalCard === null ? (
-    <LimitCard
-      resetAt={state.lastLimit!.resetAt}
-      windowKind={state.lastLimit!.window}
-      now={now}
-      onResume={retry}
-    />
+    <LimitCard resetAt={state.lastLimit!.resetAt} windowKind={state.lastLimit!.window} />
   ) : null;
   const limitOpen = limitCard !== null;
 
@@ -1061,9 +1050,13 @@ export function WorkOrderDetail({
                 {planHint ? <p className="min-w-0 flex-1 truncate text-[12px] text-inkdim">{planHint}</p> : null}
               </>
             ) : (
-              <Button variant="primary" size="sm" className="min-w-[92px]" onClick={requestPlan}>
+              // WO-0053 operator round 2: while the limit holds, the ONE Sürdür renders in place,
+              // LOCKED (the kit's attribute-free lock — ADR-0001's guarded-action register; the
+              // limit card right above carries the reason, no tooltip needed) and holds the ⏎
+              // badge off. The clock crossing unmounts the card and unlocks this button.
+              <Button variant="primary" size="sm" className="min-w-[92px]" locked={limitCardOpen} onClick={requestPlan}>
                 {planResumeId ? UI.driveResume : UI.requestPlan}
-                <EnterMark />
+                {limitCardOpen ? null : <EnterMark />}
               </Button>
             )}
           </div>

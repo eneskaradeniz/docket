@@ -371,6 +371,10 @@ export type CardReason =
   | { kind: 'in_progress' }
   | { kind: 'just_written' }
   | { kind: 'session_stopped' } // 2026-08-24: the operator stopped a drive — it resumes, it did not end
+  // WO-0053: a session died on the provider's usage limit — the WO waits on the provider's clock
+  // (the board line names it; clock-free by design — the reason states the stop + reset time, and
+  // a later clean leg clears the stamp so the reason reverts).
+  | { kind: 'limit_stopped'; resetAt: string }
   | { kind: 'awaiting_plan_commit' }
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };
