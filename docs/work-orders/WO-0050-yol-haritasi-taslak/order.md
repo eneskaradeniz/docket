@@ -191,6 +191,22 @@ a fence-less draft offers no Düzenle — the structured editor cannot repair a 
 fence; İtiraz is the path. **The roadmap trilogy is complete** (WO-0048 spine → WO-0049 GUI →
 WO-0050 AI).
 
+**Dogfood addendum (2026-08-29, PR #60's lineage):** the operator's antreo ✦ draft died on a
+429 BEFORE producing a proposal (the 04:16 death that also produced #60's stamp fix), and the
+stale garbage row it left behind exposed the card's wrong action word: the UNREADABLE state
+offered only «İtiraz et» with a REQUIRED note — an objection to a proposal that never existed,
+and friction (invented words) where the operator wanted a plain continue. Ruling (operator,
+2026-08-29): the invalid state's action is **Sürdür** — a NO-NOTE resume of the same provider
+session; İtiraz et (and the note) belongs to a VALID proposal only; the head says «Taslak
+tamamlanamadı» instead of the ready-state lie; a limit stamp still in the future locks the
+Sürdür (the WO-0053 round-2 register); a row with no session names the fresh-✦ path. Pipeline:
+`prepareDriveInput`'s draft arm fills a missing prompt even on a resume — the architect's
+standing draft instruction IS the continue message (the operator invents no words); an İtiraz
+note or any non-empty prompt is untouched (unit-pinned both ways). E2E: the `taslak-olu`
+disposable world (invalid row + dead session) pins the journey — Sürdür → the resumed
+architect's re-proposal turns the card READY; the shared `taslak-kirli` world keeps its
+read-only card specs.
+
 ## Stop-and-ask gates
 
 - Storing a faz/task status anywhere, or a `work_order.task_ref` column (ADR-0016 rule 2) —

@@ -1425,6 +1425,11 @@ export function createStore(dbPath: string): Store {
       updateRoadmapDraftRow(db, id, md);
     },
     approveRoadmapDraft: (id: WorkspaceId) => approveRoadmapDraftRow(db, id),
+    // the card's Sil (dogfood 2026-08-29): the SessionStore's clear over the async port — the
+    // pending row drops, roadmap.md untouched, the session row stays
+    discardRoadmapDraft: async (id: WorkspaceId): Promise<void> => {
+      db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(id);
+    },
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
     recordTurnUsage: (owner: SessionOwner, providerSessionId: string, row: { at: string; delta: CostSummary; usage?: TurnUsage }) =>
       recordTurnUsageRow(db, owner, providerSessionId, row),

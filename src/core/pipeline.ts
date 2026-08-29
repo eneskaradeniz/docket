@@ -24,22 +24,29 @@ import type { PermissionRule } from './source';
 
 /**
  * Fill the first prompt + track scope server-side, from the decision store. The renderer never parses
- * document text (ADR-0007). Order matters (WO-0023 / P1-1 fix): a drive that carries a `resume` id or a
- * non-empty `prompt` (approve / object / reply / step-resume) is left untouched; otherwise the DRAFT arm
- * first (WO-0050 — a draft would otherwise fall into `architectPromptFor` with no WO), then REVIEW before
- * STEP before the pure architect PLAN — the old code matched `role==='architect'` first and clobbered
- * review/step drives with the plan prompt. Pure-ish: reads via the injected store port, no side effects.
+ * document text (ADR-0007). The DRAFT arm runs first and fills a missing prompt even on a resume (the
+ * unreadable draft's no-note Sürdür; a note or any non-empty prompt is untouched) — a draft would
+ * otherwise fall into `architectPromptFor` with no WO. The WO arms keep the WO-0023 / P1-1 order: a drive
+ * that carries a `resume` id or a non-empty `prompt` (approve / object / reply / step-resume) is left
+ * untouched; otherwise REVIEW before STEP before the pure architect PLAN — the old code matched
+ * `role==='architect'` first and clobbered review/step drives with the plan prompt. Pure-ish: reads via
+ * the injected store port, no side effects.
  */
 export function prepareDriveInput(input: DriveInput, store: SessionStore): DriveInput {
+  // WO-0050 / D5: ONE mechanism — the store contributes the workspace facts, core's
+  // roadmapDraftPrompt builds the text (paths, never contents). WO-0051 / D5: the keşif
+  // opt-in rides along as the fourth arg (undefined = the ordinary deterministic prompt).
+  // Dogfood 2026-08-29 (the unreadable draft's Sürdür): a draft resume with NO prompt of its
+  // own is filled too — the architect's standing draft instruction IS the continue message
+  // (the operator invents no words); an İtiraz note or any non-empty prompt is left untouched.
+  if (isDraftDrive(input)) {
+    if (input.prompt) return { ...input };
+    const p = store.roadmapDraftPromptFor(input.workspaceId, input.goalNote, input.docPaths, input.freeExplore === true ? true : undefined);
+    return p ? { ...input, prompt: p } : { ...input };
+  }
   if (input.resume || input.prompt) return { ...input };
   const out: DriveInput = { ...input };
-  if (isDraftDrive(input)) {
-    // WO-0050 / D5: ONE mechanism — the store contributes the workspace facts, core's
-    // roadmapDraftPrompt builds the text (paths, never contents). WO-0051 / D5: the keşif
-    // opt-in rides along as the fourth arg (undefined = the ordinary deterministic prompt).
-    const p = store.roadmapDraftPromptFor(input.workspaceId, input.goalNote, input.docPaths, input.freeExplore === true ? true : undefined);
-    if (p) out.prompt = p;
-  } else if (input.reviewStepIndex !== undefined) {
+  if (input.reviewStepIndex !== undefined) {
     const p = store.stepReviewPromptFor(input.workOrderId, input.reviewStepIndex);
     if (p) out.prompt = p;
   } else if (input.stepIndex !== undefined) {
