@@ -2,7 +2,7 @@
 id: WO-0054
 title: "Usage screen — the recorded month becomes one console surface (month head · live quota windows · role/model/cache breakdown · per-WO ledger with ✦ drafts)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -145,13 +145,24 @@ Out of scope:
 
 ## Evidence required
 
-- operator_checkpoint: mockup tour round 1 (frames 01–04, rulings locked); realized-app round 2
-  (screenshots `docs/ui-shots/usage-*.png`, the live quota observed against a real drive).
-- plan_approval: `plan.md` with the architect verdict — the five flagged decisions (below) are
-  ruled there.
+- operator_checkpoint: RESOLVED 2026-08-29, THREE rounds. Round 1 — the mockup tour (frames
+  01–04, rev 1) approved, 6 rulings locked (commit `fc5180a`). Round 2 — the realized app: the
+  operator drove the real dogfood DB (the antreo 429 deaths) and ruled on the copy — internal
+  jargon never reaches the screen («WO-0052 öncesi», «per-turn defteri», «0-model sonuç» all
+  swept to user language; the E2E pins the leak in reverse). Round 3 — the $0,00-wall question
+  (the 04:16 honest-zero interrupts) answered as designed behavior; the interrupted-leg NULL
+  cost queued as the follow-up candidate (4b, operator approved).
+- plan_approval: RESOLVED — `plan.md` committed `344505d`; one architect round, REVISE with
+  4 findings + 1 nit (all folded), second round PROCEED conditional on 3 one-edit amendments
+  (count fields on the view, the count-free known-basis note, the divergence line absent on
+  the no-cap arm) — all folded, no third round needed.
 - pr_open: the PR (with the Model Used line), CI green on all five gates.
-- verification: the closing verifier's AC pass at the merge head.
-- closure: ROADMAP M7's third tick, PRODUCT.md line, TD-058 note.
+- verification: RESOLVED — the reviewer round at the impl head: verdict **SHIP**, 0 blocker /
+  0 major; 2 minors + 4 nits folded (the raw-compare divergence predicates, the head's
+  readout-XOR-budgetLine, the reactive draft arm, the NULL-sentinel drop, EN grammar, the
+  plan.md Deviations entries).
+- closure: this commit — ROADMAP M7's third tick, PRODUCT.md's usage line, TD-058's closing
+  note.
 
 ## Stop-and-ask gates
 
@@ -179,3 +190,28 @@ Out of scope:
   THIS. The tour's S5 table row "usage screen" is this WO's grounding; quote it in `plan.md`.
 - The mockup is the information contract, not pixel design — the app renders in the app-card
   idiom (the WO-0051 lesson: mockup approval never replaces seeing the realized UI).
+
+## Closure
+
+Merged (the PR's merge commit; branch `wo-0054-kullanim-ekrani`, plan round `344505d`, impl
+`9859ce9`/`2000a90`/`bfcfd0e`/`ad1a390`, review+copy `bf553f7`, main merge `797b492`),
+2026-08-29. The third M7 surface reads the floor without extending it: `src/core/usage.ts`
+derives the whole month view from flat `session_usage` reads (byRole / byModel row-partition /
+cache split / per-WO ledger / counted honesty qualifiers) behind
+`WorkOrderSource.workspaceUsage`; `UsageScreen` renders the month head (the EXISTING budget
+view — the .36s fill its only transition), the live quota panel (both arms — WO + ✦ draft —
+provider-signal-only, text percentages, `limitClock` resets), the breakdown card (no lamp;
+model ids verbatim as row DATA) and the spend list with the ✦ draft line inside it — ✦ spend
+VISIBLE for the first time. The head/breakdown basis divergence and the provider's own
+model-split residual are NARRATED by pure core predicates on raw accumulates, never
+reconciled. The two delete cascades complete WO-0052's append-only promise against the OWNER.
+`num_turns`/durations are structurally unselected; the empty face is figures-free; the copy
+speaks user language (the operator's sweep — internal jargon is E2E-pinned out).
+
+The dogfood interlude (`taslak-surdur-dogfood`, PR #61, merged `4281d51`) rode the same
+checkpoint: the unreadable ✦ draft's İtiraz et retired for ▶ Sürdür (no-note resume; the
+pipeline fills the standing draft prompt) + a confirming Sil — see WO-0050's addendum.
+Follow-up queued (operator-approved): interrupted legs record NULL cost instead of $0.00
+(the usage screen's zero-wall is the visible face of that TD-030-lineage limitation).
+
+Ladder at the merge head: typecheck (both), 877 tests, boundaries, build, E2E all green.

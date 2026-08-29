@@ -484,15 +484,23 @@ diet, the plan.md embed diet.
       end (round 2 dissolved the card-button tension); TD-016's pinned-surface list gains the two
       channels. Spec: `docs/work-orders/WO-0053-limit-ekrani/order.md`.
 
-- [ ] **WO-0054** — the usage screen (open; branch `wo-0054-kullanim-ekrani`, plan `344505d`).
-      The third M7 surface reads the floor: a pure `deriveUsageView` (month-windowed `usd_delta`
-      sums → byRole / byModel row-partition / cache split / per-WO ledger with the ✦ draft rows
-      VISIBLE for the first time; `num_turns`/durations structurally unselected; empty≠zero,
-      counted honesty qualifiers) behind `WorkOrderSource.workspaceUsage`, rendered by
-      `UsageScreen` (month head = the EXISTING budget view; live quota panel = both arms — WO +
-      ✦ draft — provider-signal-only, text pct; the head/breakdown basis divergence NARRATED by
-      a pure predicate, never reconciled; the byModel split's own divergence narrated the same
-      way) + the two delete cascades completing WO-0052's append-only promise against the OWNER.
+- [x] **WO-0054** — the usage screen (merged; plan round `344505d` — one architect REVISE with
+      4 findings + 1 nit, second round PROCEED on 3 folded amendments). The third M7 surface
+      reads the floor: a pure `deriveUsageView` (month-windowed `usd_delta` sums → byRole /
+      byModel row-partition / cache split / per-WO ledger with the ✦ draft rows VISIBLE for the
+      first time; `num_turns`/durations structurally unselected; empty≠zero, counted honesty
+      qualifiers) behind `WorkOrderSource.workspaceUsage`, rendered by `UsageScreen` (month
+      head = the EXISTING budget view; live quota panel = both arms — WO + ✦ draft —
+      provider-signal-only, text pct; the head/breakdown basis divergence NARRATED by pure
+      predicates on RAW accumulates, never reconciled; the byModel split's own divergence
+      narrated the same way) + the two delete cascades completing WO-0052's append-only
+      promise against the OWNER. Reviewer round: SHIP (0 blocker / 0 major; the raw-compare
+      predicates, the head's readout-XOR-budgetLine, the reactive draft arm folded). Operator
+      copy round: internal jargon E2E-pinned OFF the screen («WO-0052», «per-turn» never
+      render). The checkpoint interlude shipped PR #61 (the unreadable ✦ draft's Sürdür/Sil —
+      WO-0050's addendum). 877 tests / typecheck both / boundaries / build / E2E all green.
+      Follow-up queued: interrupted legs record NULL cost (the $0,00-wall fix, operator
+      approved). Spec: `docs/work-orders/WO-0054-kullanim-ekrani/order.md`.
 
 ## Later
 
