@@ -204,6 +204,9 @@ export function RoadmapScreen({
   // The pane stands down while the refusal card owns the moment (the WorkOrderDetail instrument
   // selector's rule: budget-refusal open → no instrument).
   const paneExists = driveStore.get(draftKey) !== undefined && draftState.lastRefusal === undefined && draftState.lastLimit === undefined;
+  // the dogfood round-3 fix: a LIVE draft fold (running OR stopped, proposal or not) means the
+  // screen is NOT the empty face — the hero must not paint over it; the pane's own Sürdür serves
+  const liveBusy = paneExists || askCards !== null || showQuestion || refusalCard !== null || limitCard !== null;
   // The CARD renders from the ROW alone (a restart's pending proposal has no fold — D12), so it
   // gates liveHalf by itself; the pane/ask/question/refusal members gate it on their own.
   // WO-0053: the limit card joins the refusal's both rules — it suppresses the pane (karar 5) and
@@ -246,6 +249,7 @@ export function RoadmapScreen({
           superseded={
             draftState.pendingPlan !== undefined && 'parseError' in draftSummaryOf(draftState.pendingPlan)
           }
+          resumeLocked={draftLimitWaiting}
           onApproved={onRefresh}
           onSaved={onRefresh}
         />
@@ -260,13 +264,22 @@ export function RoadmapScreen({
     body = (
       <>
         {liveHalf}
-        <InviteHero
-          line={UI.roadmapInviteLine}
-          info={UI.roadmapInviteFile(docsRoot)}
-          cta={UI.roadmapDraftAction}
-          onCta={() => setDraftOpen(true)}
-          ctaVariant="signal"
-        />
+        {/* dogfood 2026-08-29, operator round 2: the truly-empty screen invites like the board's
+            hero — dot · one warm line · the button UNDER the text (no info line: the scroll-noise
+            ruling stands). With a pending card above, the text would be scroll noise again — the
+            ✦ action collapses to a FAB pinned to the app's bottom-right corner. */}
+        {draft === null && !liveBusy ? (
+          <InviteHero
+            line={UI.roadmapInviteLine}
+            cta={UI.roadmapDraftAction}
+            onCta={() => setDraftOpen(true)}
+            ctaVariant="signal"
+          />
+        ) : draft !== null && !liveBusy ? (
+          <div className="fixed bottom-5 right-5 z-30">
+            <Button variant="signal" onClick={() => setDraftOpen(true)}>{UI.roadmapDraftAction}</Button>
+          </div>
+        ) : null}
       </>
     );
   } else if (view.kind === 'invalid') {

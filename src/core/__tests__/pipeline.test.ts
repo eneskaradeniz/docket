@@ -253,6 +253,18 @@ describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)
     expect(methods(calls)).not.toContain('architectPromptFor');
   });
 
+  it("prepareDriveInput: a draft resume with NO prompt is filled too — the unreadable draft's no-note Sürdür (dogfood 2026-08-29)", () => {
+    const { store } = fakeStore({ architect: 'PLAN (wrong)' }, true, { draftPrompt: 'taslak promptu' });
+    const resumed = prepareDriveInput(draftDrive({ resume: 'sess-9' }), store);
+    expect(resumed.prompt).toBe('taslak promptu'); // the standing draft instruction IS the continue message
+  });
+
+  it('prepareDriveInput: a draft resume WITH a note keeps the note (the İtiraz path untouched)', () => {
+    const { store } = fakeStore({}, true, { draftPrompt: 'taslak promptu' });
+    const out = prepareDriveInput(draftDrive({ resume: 'sess-9', prompt: 'itirazım' }), store);
+    expect(out.prompt).toBe('itirazım');
+  });
+
   it('a draft at the cap is refused by the DRAFT-arm gate — roadmap draft names the subject, no runner spawns', async () => {
     const block = { observedUsd: 12.5, capUsd: 10 };
     const fr = fakeRunner([started(), txt('never'), done()]);
