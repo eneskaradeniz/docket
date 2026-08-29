@@ -199,7 +199,7 @@ export function RoadmapScreen({
     );
   };
   const limitCard =
-    draftState.lastLimit !== undefined && !draftRunning && refusalCard === null ? (
+    draftState.lastLimit !== undefined && !draftRunning && draftState.status !== 'stopped' && refusalCard === null ? (
       <LimitCard
         resetAt={draftState.lastLimit.resetAt}
         windowKind={draftState.lastLimit.window}

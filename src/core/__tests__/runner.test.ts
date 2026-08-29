@@ -806,3 +806,17 @@ describe('limitCrossing — the card’s one decision (WO-0053)', () => {
     expect(limitCrossing('not-a-date', at(0))).toBe('wait');
   });
 });
+
+// WO-0053 review finding 1's invariant: the PRIMARY real death is a RESULT message — the adapter
+// emits error(limit) THEN turn_complete, so the fold lands 'done' WITH the stop facts still set.
+// The limit surfaces branch on lastLimit, never on the derived turn; this pin holds that promise.
+describe('foldSessionEvent — the result-message limit death (WO-0053 review finding 1)', () => {
+  it('error(limit) then turn_complete folds done WITH lastLimit intact — the card’s discriminator survives the terminal', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's' });
+    s = foldSessionEvent(s, { kind: 'error', message: 'Usage limit reached', code: 'rate_limited', limit: { resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' } });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
+    expect(s.status).toBe('done'); // the turn DID complete — the fold stays honest
+    expect(s.lastLimit).toEqual({ resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' }); // the card branches on this
+    expect(s.lastErrorCode).toBe('rate_limited'); // and the degrade tier on this
+  });
+});

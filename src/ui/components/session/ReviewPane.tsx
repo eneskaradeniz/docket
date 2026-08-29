@@ -92,7 +92,7 @@ export function ReviewPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
-      <PaneWarnline state={state} />
+      <PaneWarnline state={state} running={running} />
       <PaneSteerBar
         live={running}
         pendingNotes={state.pendingNotes}

@@ -275,10 +275,13 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // fixed table, not a derivation):
     //   turn_complete terminal  → `live.lastLimit?.resetAt ?? null` (set on a limit death, CLEAR on
     //                             a clean leg — a stale stamp is a lie, D3)
-    //   catch/finally error     → `live.lastLimit?.resetAt` (set on a limit throw; a non-limit
-    //                             throw KEEPS a prior stamp — not a clean leg)
+    //   catch/finally error     → set on a limit throw; a non-limit throw KEEPS a prior stamp
+    //                             (undefined); a stamp-LESS limit throw CLEARS (null — the
+    //                             provider disproved the old clock; review finding 4)
     //   interrupted             → undefined (keep — an abort is not a clean leg)
     //   ordinary records        → undefined (keep)
+    const limitStampForErrorClose = (s: typeof live): string | null | undefined =>
+      s.lastErrorCode === 'rate_limited' && s.lastLimit === undefined ? null : s.lastLimit?.resetAt;
     const record = (status: SessionRef['status'], cost?: CostSummary, endedAt?: string, limitResetAt?: string | null): void => {
       if (!providerSessionId) return;
       deps.store.recordSession({
@@ -474,9 +477,11 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       }
     } catch (e) {
       terminated = true;
-      // WO-0053: a throw sets the stamp when the fold holds a limit (the adapter classified it);
-      // a NON-limit throw KEEPS a prior stamp — undefined, never null (not a clean leg).
-      record('idle', undefined, lastActivityIso ?? startedAtIso, live.lastLimit?.resetAt);
+      // WO-0053 (review finding 4): a throw sets the stamp when the fold holds a limit; a
+      // NON-limit throw KEEPS a prior stamp (undefined, never null — not a clean leg); a
+      // stamp-LESS limit throw CLEARS — the provider just disproved the old clock, and a restart
+      // must not re-derive a card promising it.
+      record('idle', undefined, lastActivityIso ?? startedAtIso, limitStampForErrorClose(live));
       yield { kind: 'error', message: (e as Error)?.message ?? String(e) };
     } finally {
       // The completion guarantee (WO-0026 / F5): a session that started but never got a terminal record —
@@ -487,7 +492,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       // work span, never the idle wait that preceded the stop.
       if (providerSessionId && !terminated) {
         terminated = true;
-        record('idle', undefined, lastActivityIso ?? startedAtIso, live.lastLimit?.resetAt);
+        record('idle', undefined, lastActivityIso ?? startedAtIso, limitStampForErrorClose(live));
       }
       if (active !== undefined) {
         active = undefined; // the drive is gone — steer/retractSteer no-op until the next spawn

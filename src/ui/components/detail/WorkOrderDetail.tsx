@@ -618,6 +618,16 @@ export function WorkOrderDetail({
   // DELIVERED its plan and is awaiting the operator — that is the approval moment, not work
   // (the SDK stream lingers waiting for an in-session approval Docket never gives).
   const planAwaitingOperator = planStage && state.status === 'plan_ready';
+  // WO-0053 (review findings 1-3): the limit surfaces branch on their OWN discriminators, never
+  // the derived turn — the primary real death is a RESULT message (error then turn_complete),
+  // which folds 'done', so a turn-gated card/⏎ would never fire on the real path. A stamped stop
+  // opens the LimitCard; a stamp-less one DEGRADES to the fail card's localized title (mockup
+  // frame 04). Neither renders over the operator's own Durdur (the seed boundary, mirrored live:
+  // `interrupted` folds 'stopped' and leaves the stamp in place).
+  const limitCardOpen =
+    state.lastLimit !== undefined && !running && state.status !== 'stopped' && state.lastRefusal === undefined;
+  const limitDegrade =
+    state.lastErrorCode === 'rate_limited' && state.lastLimit === undefined && !running && state.status !== 'stopped' && state.lastRefusal === undefined;
   let primary: (() => void) | undefined;
   // What primary IS (not just which closure) — DriveControls draws the ⏎ on ▶ Sürdür only when
   // the resume is really the screen's primary (the decision row outranks it when both render).
@@ -632,14 +642,16 @@ export function WorkOrderDetail({
         primary = () => objectPlan(objectionText.trim());
         primaryKind = 'object';
       }
-    } else if (turn === 'retry' && state.lastLimit !== undefined && state.lastRefusal === undefined && limitCrossing(state.lastLimit.resetAt, now) === 'ready') {
-      // WO-0053: the limit card's «Sürdür» owns ⏎ — the same retry channel (the row-resume leg),
-      // gated by the button's own condition (the badge never outlives the button, ADR-0012). A
-      // pending refusal outranks (the fresher intent — the raise card's input carries Enter).
+    } else if (limitCardOpen && limitCrossing(state.lastLimit!.resetAt, now) === 'ready') {
+      // WO-0053 (review finding 1): the limit card's «Sürdür» owns ⏎ gated by the CARD's own
+      // condition, never the derived turn — the primary real death is a RESULT message (error then
+      // turn_complete), which folds 'done', not 'error': a turn-gated branch would strand the
+      // badge on a dead Enter. The same retry channel (the row-resume leg); a pending refusal
+      // outranks (the fresher intent — the raise card's input carries Enter).
       primary = retry;
       primaryKind = 'retry';
-    } else if (turn === 'retry' && !state.lastRefusal && state.lastLimit === undefined) {
-      primary = retry; // ⏎ = Yeniden dene (the fail card's button)
+    } else if ((turn === 'retry' || limitDegrade) && !state.lastRefusal && state.lastLimit === undefined) {
+      primary = retry; // ⏎ = Yeniden dene — the fail card's button (incl. the stamp-less degrade tier)
       primaryKind = 'retry';
       // WO-0047: a budget REFUSAL owns the moment instead — the two-choice card renders, the fail
       // card stands down, and ⏎ holds (the card's own input carries Enter while valid; the ask-
@@ -854,7 +866,7 @@ export function WorkOrderDetail({
     ) : null;
 
   const failCard =
-    turn === 'retry' && !state.lastRefusal && state.lastLimit === undefined ? (
+    (turn === 'retry' || limitDegrade) && !state.lastRefusal && state.lastLimit === undefined ? (
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
         <div className="min-w-0 flex-1 px-3.5 py-3">
@@ -928,19 +940,20 @@ export function WorkOrderDetail({
   // WO-0053 — the limit stop's ONE-ACTION card: the fold's `lastLimit` is the discriminator (the
   // `lastRefusal` pattern). It renders only when the refusal card does NOT (a budget refusal is
   // the fresher intent in the both-set case — a post-limit Sürdür that met the cap resolves the
-  // cap first; the limit state survives the fold and its card returns). The button rides the FAIL
-  // CARD's retry channel: `drive-store.restart` is rejected for this (it re-issues the ORIGINAL
-  // input — a fresh session, wrong for a stopped live leg); retry finds the persisted row's
-  // providerSessionId and re-drives with `resume:`, the Sürdür mechanism verbatim.
-  const limitCard =
-    state.lastLimit !== undefined && !running && refusalCard === null ? (
-      <LimitCard
-        resetAt={state.lastLimit.resetAt}
-        windowKind={state.lastLimit.window}
-        now={now}
-        onResume={retry}
-      />
-    ) : null;
+  // cap first; the limit state survives the fold and its card returns), and never over the
+  // operator's own stop (`limitCardOpen` above — finding 3's live mirror of the seed boundary).
+  // The button rides the FAIL CARD's retry channel: `drive-store.restart` is rejected for this
+  // (it re-issues the ORIGINAL input — a fresh session, wrong for a stopped live leg); retry
+  // finds the persisted row's providerSessionId and re-drives with `resume:`, the Sürdür
+  // mechanism verbatim.
+  const limitCard = limitCardOpen && refusalCard === null ? (
+    <LimitCard
+      resetAt={state.lastLimit!.resetAt}
+      windowKind={state.lastLimit!.window}
+      now={now}
+      onResume={retry}
+    />
+  ) : null;
   const limitOpen = limitCard !== null;
 
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).

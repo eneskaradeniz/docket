@@ -458,9 +458,13 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             if (status === 'blocked' && resetAt !== undefined) {
               lastRejectedStop = { resetAt, ...(window !== undefined ? { window } : {}) };
             }
+            // Review finding 5: emit the MERGED set (the merge above updated lastWindows), never a
+            // single-window replacement — a typeless push must not wipe the pulled windows, and a
+            // five_hour push must not drop a pulled seven_day (the warn line's subject would
+            // flicker or vanish mid-drive).
             out.push({
               kind: 'limit_windows',
-              windows: window !== undefined ? [{ window, utilization: info.utilization ?? null, resetAt: resetAt ?? null }] : [],
+              windows: lastWindows.map((w) => ({ ...w })),
               ...(status ? { status } : {}),
               at: new Date().toISOString(),
             });

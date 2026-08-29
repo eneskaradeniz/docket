@@ -1134,3 +1134,26 @@ describe('WO-0053 — the limit stamp routing', () => {
     expect(recs.at(-1)).toMatchObject({ owner: { kind: 'draft', workspaceId: WS } });
   });
 });
+
+// WO-0053 review finding 4: the two stamp-LESS closes agree — a limit throw with NO stamp CLEARS
+// (the provider just disproved the old clock; a restart must not re-derive a lying card).
+describe('WO-0053 — the stamp-less limit close (review finding 4)', () => {
+  it('a stamp-LESS limit throw clears the prior stamp (null, never keep)', async () => {
+    const runner = {
+      drive: async function* (): AsyncIterable<RunnerEvent> {
+        yield started();
+        yield { kind: 'error', message: 'Usage limit reached', code: 'rate_limited' } as RunnerEvent;
+        throw new Error('post-error throw');
+      },
+      async decide() {},
+      pendingAsks: async () => [],
+      async interrupt() {},
+      async abort() {},
+    } as SessionRunner;
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = fs.calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as Record<string, unknown>);
+    expect(recs.at(-1)).toMatchObject({ status: 'idle', limitResetAt: null });
+  });
+});

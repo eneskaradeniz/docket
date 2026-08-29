@@ -122,17 +122,18 @@ export function PaneCostline({ state, running, liveStart, now }: {
 
 // --- WO-0053: the limit warn line. The provider's OWN warning signal (`allowed_warning`, the
 //     fold's `limitWindows.status === 'warning'`) — never a locally invented threshold (karar 3);
-//     no signal or an unavailable windows surface renders NOTHING. The costline's voice (mono,
-//     dim, the utilization figure in signal) with a leading triangle — text, never a fill bar
+//     no signal or an unavailable windows surface renders NOTHING. WHILE A DRIVE RUNS only
+//     (review finding 6 — a warning folded mid-leg must not linger on the pane after the leg
+//     ends; frame 02 says "while a drive runs"). The costline's voice (mono, dim, the
+//     utilization figure in signal) with a leading triangle — text, never a fill bar
 //     (ADR-0012). `blocked` never renders here: the drive dies and the LimitCard takes over. ---
-export function PaneWarnline({ state }: { state: LiveSessionState }) {
+export function PaneWarnline({ state, running }: { state: LiveSessionState; running: boolean }) {
   const { UI } = useLabels();
-  if (state.limitWindows?.status !== 'warning') return null;
+  if (!running || state.limitWindows?.status !== 'warning') return null;
   const windows = state.limitWindows.windows;
-  // The line speaks the FULLEST window the provider warned over (a pull merge may hold several;
-  // the highest utilization is the honest subject of the warning).
-  const subject =
-    windows.slice().sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0] ?? windows[0];
+  // The line speaks the FULLEST window the provider warned over (the merged set may hold
+  // several; the highest utilization is the honest subject of the warning).
+  const subject = windows.slice().sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0];
   if (!subject) return null;
   return (
     <p data-limit-warn="" className="flex items-center gap-1.5 font-mono text-[10.5px] text-inkdim">

@@ -406,3 +406,26 @@ describe('WO-0053 — the drive: push message, pull control, the limit-shaped de
     expect(calls).toBe(1); // the second thinking burst never re-reads
   });
 });
+
+// WO-0053 review finding 5: the push channel emits the MERGED window set — a typeless push (the
+// status transition without a rateLimitType) must not wipe what the pull channel fed.
+describe('WO-0053 — the push/pull merge (review finding 5)', () => {
+  it('a TYPELESS push keeps the pulled windows in the feed event', async () => {
+    sdkMock.setUsage(() => Promise.resolve({ rate_limits_available: true, rate_limits: { seven_day: { utilization: 41, resets_at: '2026-08-31T14:32:00.000Z' } } }));
+    sdkMock.setScript([
+      initMsg,
+      { type: 'system', subtype: 'thinking_tokens' },
+      { type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } },
+      resultMsg(),
+    ]);
+    const out = await collect(createRunner(), stepInput);
+    const feed = out.filter((e) => e.kind === 'limit_windows');
+    // the pull fed seven_day; the typeless push asserted the WARNING without naming a window —
+    // the merged set survives (windows + the push's status).
+    expect(feed.at(-1)).toMatchObject({
+      kind: 'limit_windows',
+      status: 'warning',
+      windows: [{ window: 'seven_day', utilization: 41, resetAt: '2026-08-31T14:32:00.000Z' }],
+    });
+  });
+});
