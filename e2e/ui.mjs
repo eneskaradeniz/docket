@@ -2490,6 +2490,98 @@ await spec('WO-0051 CLI: roadmap draft --explore --fake → bekleyen satır (ke�
   assert.ok(out.includes('1 faz'), `no figures: ${out}`);
 });
 
+// ===== WO-0053 — the limit screen (mockup frames 01–04; static past/future stamps, no clock seam) =====
+const HOUR = 3600_000;
+const futureStamp = () => new Date(Date.now() + HOUR).toISOString();
+const pastStamp = () => new Date(Date.now() - 60_000).toISOString();
+const limitDeath = (resetAt) => window.docket.e2e?.emit({
+  kind: 'error',
+  message: 'Usage limit reached',
+  code: 'rate_limited',
+  limit: { resetAt, window: 'five_hour' },
+});
+
+await spec('WO-0053 limit 01: the card owns the stop — reason line, NO button, the fail card stands down, no instrument, no budget card', async () => {
+  await switchWs('taslak-duz', 'e2e'); // the WO-0051 specs left the board on the draft workspace
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(limitDeath, futureStamp());
+  await page.waitForTimeout(600);
+  // Frame 01 state A: the card renders with the window + the clock body…
+  assert.equal(await page.locator('[data-limit-card]').count(), 1, 'no limit card');
+  assert.ok((await page.locator('[data-limit-card]').getByText('KULLANIM LİMİTİ DOLDU').count()) >= 1, 'no card title');
+  assert.ok((await page.locator('[data-limit-card]').getByText('5 saatlik pencere').count()) >= 1, 'the raw kind leaked or the window label is missing');
+  // …the action row is ONE thing — the reason line, never a button before the clock (ADR-0001)
+  assert.equal(await page.locator('[data-limit-resume]').count(), 0, 'the button rendered before the reset moment');
+  assert.ok((await page.locator('[data-limit-card]').getByText(/açılır/).count()) >= 1, 'no reason line');
+  // the fail card stands down (the card IS the stop's surface), and the budget card never appears
+  assert.equal(await page.getByText('Oturum çöktü').count(), 0, 'the fail card rendered beside the limit card');
+  assert.equal(await page.locator('[data-budget-refusal-card]').count(), 0, 'a limit death rendered the BUDGET card');
+  // karar 5: the card owns the moment — the instrument suppresses (the döküm is one click away in the Oturum card)
+  assert.equal(await page.locator('#live-pane').count(), 0, 'the instrument rendered under the limit card');
+  await backToBoard();
+});
+
+await spec('WO-0053 limit 02: the crossing — a past stamp shows the ONE Sürdür; pressing it re-drives and the card stands down', async () => {
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(limitDeath, pastStamp());
+  await page.waitForTimeout(600);
+  // Frame 01 state B: exactly one primary Sürdür (+ ⏎) — the retry channel
+  assert.equal(await page.locator('[data-limit-resume]').count(), 1, 'the crossing did not show the button');
+  await page.locator('[data-limit-resume]').click();
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[data-limit-card]').count(), 0, 'the card survived the resume (started must clear it)');
+  assert.ok((await page.getByText('Çalışıyor', { exact: true }).count()) >= 1, 'the resumed drive is not running');
+  // wind down cleanly for the next spec
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(700);
+  await backToBoard();
+});
+
+await spec('WO-0053 limit 03 (frame 02): the warn line renders ONLY on the provider own warning signal', async () => {
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  // no signal → NOTHING (never a locally invented threshold)
+  assert.equal(await page.locator('[data-limit-warn]').count(), 0, 'the warn line rendered without a signal');
+  const warnStamp = futureStamp();
+  await page.evaluate((resetAt) => window.docket.e2e?.emit({
+    kind: 'limit_windows',
+    windows: [{ window: 'five_hour', utilization: 86, resetAt }],
+    status: 'warning',
+  }), warnStamp);
+  await page.waitForTimeout(400);
+  const warn = page.locator('[data-limit-warn]');
+  assert.equal(await warn.count(), 1, 'no warn line on the provider signal');
+  const warnText = (await warn.textContent()) ?? '';
+  assert.ok(warnText.includes('5 saatlik pencere'), `the warn line lost the window label: ${warnText}`);
+  assert.ok(warnText.includes('%86'), `the warn line lost the utilization: ${warnText}`);
+  // the drive dies on the limit → the card takes over, the pane (and its line) suppress
+  await page.evaluate(limitDeath, futureStamp());
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('[data-limit-warn]').count(), 0, 'the warn line survived the death');
+  await backToBoard();
+});
+
+await spec('WO-0053 limit 04 (frame 03): the restart re-derivation — the card comes back from the ROW stamp', async () => {
+  await openDetail('Yeni iş emri örneği');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(limitDeath, futureStamp());
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('[data-limit-card]').count(), 1, 'the card did not render at the death');
+  // navigate away and back — the fold is dead, the ROW carries limit_reset_at, the seed re-derives
+  await backToBoard();
+  await openDetail('Yeni iş emri örneği');
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('[data-limit-card]').count(), 1, 'the card did not re-derive from the row');
+  assert.equal(await page.locator('[data-limit-resume]').count(), 0, 'the re-derived card crossed early');
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });
