@@ -281,9 +281,9 @@ const wo11 = await mk('TD-053 turu', 'E2E: no plan yet — approve without re-en
 //     Steps stay pending (no recordStep): opening the detail auto-starts step 1 — allowed under
 //     warn, REFUSED at the cap; the sessions' idle rows are only the spend the gate reads.
 const ONE_STEP_PLAN = '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n';
-const monthDay = (day: number): string => {
+const monthDay = (day: number, hour = 12): string => {
   const n = new Date();
-  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), Math.min(day, 28), 12)).toISOString();
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), Math.min(day, 28), hour)).toISOString();
 };
 const wsWarn = await store.createWorkspace({
   label: 'uyarı',
@@ -555,5 +555,89 @@ const wsDuz = await store.createWorkspace({
   decisionStorePath: repoDuz,
 });
 console.log(`TASLAK_DUZ=${JSON.stringify({ duz: String(wsDuz.id) })}`);
+
+// 18) WO-0054 — the usage worlds. 'kullanim': a budgeted workspace whose ledger carries every
+//     shape the breakdown must split (cache-bearing, multi-model with lines that DO NOT sum to
+//     the row's usd_delta — the F2 note's live state, single-model, ✦ draft-owned, out-of-month,
+//     costed-but-unledgered, a ctx checkpoint, and a last-month-STARTED session with in-month
+//     rows — the F1 divergence). 'bos': zero rows, no budget — the empty face. 'uyum': budgeted
+//     and NON-divergent (its session's cost_usd == its row's usd_delta) — the count-0 control.
+//     Figures (locale tr): head basis $17,78 (warn at $16), ledger basis $18,74 — the two bases
+//     disagree by $0,96 and the head never reconciles. The zero-spend WO's absence is the pin.
+const wsKullanim = await store.createWorkspace({
+  label: 'kullanim',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo, // the SHARED root: WO numbering is per decision store and the PK is global
+});
+await store.setBudget(wsKullanim.id, { capUsd: 20, warnPercent: 80 });
+const mkK = (title: string) =>
+  store.createWorkOrder({ workspaceId: wsKullanim.id, title, description: 'E2E: usage ledger.', trackRepos: wsKullanim.repos, reviewMode: 'gates', contextFiles: [] });
+const woK1 = await mkK('Kullanım uygulaması'); // WO-0001 — the spend leader
+const woK2 = await mkK('Kullanım doğrulaması'); // WO-0002
+await mkK('Kullanım boş işi'); // WO-0003 — zero-spend: ABSENT from the list (post-round2 filter)
+const lastMonthDay = (day: number): string =>
+  new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, Math.min(day, 28), 12)).toISOString();
+const kOwner = (woId: typeof woK1.id) => ({ kind: 'wo', workOrderId: woId }) as const;
+// 1) the implementer hero: cache-bearing, the ctx checkpoint's bearer
+store.recordSession({
+  providerSessionId: 'e2e-k-imp', owner: kOwner(woK1.id), role: 'implementer', status: 'idle',
+  cost: { tokensIn: 252_988, tokensOut: 60_934, usd: 13.17 }, ctx: { usedTokens: 124_000, maxTokens: 200_000 },
+  startedAt: monthDay(2), endedAt: monthDay(2),
+});
+store.recordTurnUsage(kOwner(woK1.id), 'e2e-k-imp', { at: monthDay(2, 9), delta: { tokensIn: 253_000, tokensOut: 61_000, usd: 13.17 }, usage: { cacheRead: 1_400_000, cacheCreation: 310_000 } });
+// 2) the F1 divergence session: STARTED last month (the head's basis excludes it), its rows `at`
+//    this month (the ledger includes them) — plus the out-of-month row the read must EXCLUDE.
+store.recordSession({
+  providerSessionId: 'e2e-k-old', owner: kOwner(woK1.id), role: 'implementer', status: 'idle',
+  cost: { tokensIn: 50_000, tokensOut: 5_000, usd: 2.0 }, startedAt: lastMonthDay(15), endedAt: monthDay(6),
+});
+store.recordTurnUsage(kOwner(woK1.id), 'e2e-k-old', { at: lastMonthDay(20), delta: { tokensIn: 900_000, tokensOut: 90_000, usd: 9.99 } }); // EXCLUDED
+store.recordTurnUsage(kOwner(woK1.id), 'e2e-k-old', { at: monthDay(5), delta: { tokensIn: 40_000, tokensOut: 4_000, usd: 1.5 } });
+store.recordTurnUsage(kOwner(woK1.id), 'e2e-k-old', { at: monthDay(6), delta: { tokensIn: 10_000, tokensOut: 1_000, usd: 0.5 } });
+// 3) the architect: a single-model row + the F2 multi-model row (lines Σ 1.0 ≠ usd_delta 1.44 —
+//    the provider's own split on two channels; `model` stays NULL on the 2-line row)
+store.recordSession({
+  providerSessionId: 'e2e-k-arch', owner: kOwner(woK2.id), role: 'architect', status: 'idle',
+  cost: { tokensIn: 141_000, tokensOut: 39_000, usd: 1.12 }, startedAt: monthDay(3), endedAt: monthDay(3),
+});
+store.recordTurnUsage(kOwner(woK2.id), 'e2e-k-arch', { at: monthDay(3, 10), delta: { tokensIn: 96_000, tokensOut: 11_000, usd: 0.72 }, usage: { modelUsage: [{ model: 'glm-5.3', tokensIn: 96_000, tokensOut: 11_000, usd: 0.72 }] } });
+store.recordTurnUsage(kOwner(woK2.id), 'e2e-k-arch', {
+  at: monthDay(3, 12), delta: { tokensIn: 50_000, tokensOut: 8_000, usd: 1.44 },
+  usage: { modelUsage: [{ model: 'glm-5.3', tokensIn: 30_000, tokensOut: 5_000, usd: 0.6 }, { model: 'glm-5.3-flash', tokensIn: 20_000, tokensOut: 3_000, usd: 0.4 }] },
+});
+// 4) the ✦ draft owner — the 1832 un-pin's live row (workspace-keyed, work_order_id NULL)
+store.recordSession({
+  providerSessionId: 'e2e-k-draft', owner: { kind: 'draft', workspaceId: wsKullanim.id }, role: 'architect', status: 'idle',
+  cost: { tokensIn: 201_000, tokensOut: 9_000, usd: 1.41 }, startedAt: monthDay(4), endedAt: monthDay(4),
+});
+store.recordTurnUsage({ kind: 'draft', workspaceId: wsKullanim.id }, 'e2e-k-draft', { at: monthDay(4, 10), delta: { tokensIn: 201_000, tokensOut: 9_000, usd: 1.41 } });
+// 5) the pre-WO-0052 vintage: costed at the session level, ZERO per-turn rows → unledgeredCount 1
+store.recordSession({
+  providerSessionId: 'e2e-k-vintage', owner: kOwner(woK1.id), role: 'architect', status: 'idle',
+  cost: { tokensIn: 30_000, tokensOut: 4_000, usd: 2.08 }, startedAt: monthDay(7), endedAt: monthDay(7),
+});
+// 'bos': zero usage rows, NO budget key — the empty face has nothing to lean on
+mkdirSync(join(root, 'repo-bos'), { recursive: true });
+const wsBos = await store.createWorkspace({
+  label: 'bos',
+  repos: [{ path: join(root, 'repo-bos'), remote: 'e2e-bos' }],
+  decisionStorePath: join(root, 'repo-bos'),
+});
+// 'uyum': budgeted, non-divergent — ONE in-month session whose cost_usd equals its row's
+// usd_delta. Its decision store is the SAME shared root (WO numbering is per decision store and
+// the work_order PK is global — a fresh root would re-mint an existing WO-0001).
+const wsUyum = await store.createWorkspace({
+  label: 'uyum',
+  repos: [{ path: repo, remote: 'e2e-remote' }],
+  decisionStorePath: repo,
+});
+await store.setBudget(wsUyum.id, { capUsd: 20, warnPercent: 80 });
+const woUyum = await store.createWorkOrder({ workspaceId: wsUyum.id, title: 'Kullanım uyum işi', description: 'E2E: the non-divergent control.', trackRepos: wsUyum.repos, reviewMode: 'gates', contextFiles: [] });
+store.recordSession({
+  providerSessionId: 'e2e-u1', owner: { kind: 'wo', workOrderId: woUyum.id }, role: 'implementer', status: 'idle',
+  cost: { tokensIn: 5_000, tokensOut: 500, usd: 0.5 }, startedAt: monthDay(8), endedAt: monthDay(8),
+});
+store.recordTurnUsage({ kind: 'wo', workOrderId: woUyum.id }, 'e2e-u1', { at: monthDay(8, 9), delta: { tokensIn: 5_000, tokensOut: 500, usd: 0.5 } });
+console.log(`USAGE=${JSON.stringify({ kullanim: String(wsKullanim.id), bos: String(wsBos.id), uyum: String(wsUyum.id) })}`);
 
 console.log(`DB=${join(root, 'e2e.db')}`);

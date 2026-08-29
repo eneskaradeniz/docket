@@ -2592,6 +2592,144 @@ await spec('WO-0053 limit 04 (frame 03): the restart re-derivation — the card 
   await backToBoard();
 });
 
+// ===== WO-0054 — kullanım ekranı: dolu yüz, boş yüz, canlı kota (iki kol), drive-sonu tazeleme =====
+// The kullanim world's figures (locale tr): the HEAD basis (session cost_usd over started_at) is
+// $17,78 — warn at the $16 line — while the LEDGER's own `at`-windowed total is $18,74: the two
+// bases disagree and the head NARRATES it, never reconciles (F1). The architect's multi-model row
+// reports lines that do not sum to its usd_delta — the models-split note lives on that state (F2).
+const usageLine = seedOut.trim().split('\n').find((l) => l.startsWith('USAGE='));
+if (!usageLine) throw new Error('seed failed: no USAGE= line');
+const openUsage = async () => {
+  // exact: the board's WO cards ('Kullanım uygulaması'…) substring-match otherwise — the
+  // Segmented's own label is the whole accessible name
+  await page.getByRole('button', { name: 'Kullanım', exact: true }).first().click();
+  await page.waitForTimeout(600); // the read-once-per-entry refresh
+};
+const openBoard = async () => {
+  // the surface SURVIVES workspace swaps; a detail also outranks it in the main chain — the
+  // board is the only place a WO card is clickable, so the drive specs return here explicitly
+  await page.getByRole('button', { name: 'Pano' }).first().click();
+  await page.waitForTimeout(400);
+};
+
+await spec('WO-0054 dolu yüz: ay başlığı (uyarı + çubuk), sapma satırı, rol/model/cache dökümü, WO+✦ listesi, bağlam okuması, deftersiz niteleyici', async () => {
+  await switchWs('e2e', 'kullanim');
+  await openUsage();
+  const screen = await page.locator('[data-usage-screen]').innerText();
+  // the head: the EXISTING budget view — readout + the warn line + a real bar fill; NO re-derivation
+  assert.ok(screen.includes('bu ay $17,78 / $20,00'), `head readout: ${screen.slice(0, 300)}`);
+  assert.ok(screen.includes('uyarı eşiği aşıldı'), `no warn line: ${screen.slice(0, 300)}`);
+  const fill = await page.locator('[data-usage-screen] .hairline-progress > div').first().getAttribute('style');
+  assert.ok(fill !== null && /width:\s*89%/.test(fill), `the bar has no fill: ${fill}`);
+  // F1: the divergence line — the head keys on started_at, the ledger on each row's `at`
+  assert.equal(await page.locator('[data-usage-divergence]').count(), 1, 'no divergence line on disagreeing bases');
+  // the breakdown: roles, models verbatim (row DATA), the unknown bucket, cache, the split note
+  assert.ok(screen.includes('Uygulayıcı') && screen.includes('$15,17 · %81'), `role row: ${screen.slice(0, 500)}`);
+  assert.ok(screen.includes('glm-5.3') && screen.includes('glm-5.3-flash'), 'model ids did not render verbatim');
+  assert.ok(screen.includes('bilinmeyen (0-model sonuç)'), 'no unknown bucket');
+  assert.ok(screen.includes('taze giriş 650k · cache okuma 1.4M · cache yazma 310k'), `cache line: ${screen.slice(0, 700)}`);
+  assert.equal(await page.locator('[data-usage-models-note]').count(), 1, 'no models-split note on the non-summing split');
+  assert.ok(screen.includes('$18,74 · 650k→94k'), `total row: ${screen.slice(0, 900)}`);
+  // the spend list: WO rows usd-desc + the ✦ draft row INSIDE the list; the zero-spend WO absent
+  assert.ok(screen.includes('Kullanım uygulaması') && screen.includes('$15,17 · 2 oturum'), `wo rows: ${screen.slice(0, 1200)}`);
+  assert.ok(screen.includes('Yol haritası taslakları') && screen.includes('$1,41 · 1 oturum'), 'no ✦ draft row');
+  assert.ok(!screen.includes('Kullanım boş işi'), 'the zero-spend WO leaked into the list');
+  // the sessions: the ctx reading + the OBSERVED-result count (never num_turns)
+  assert.ok(screen.includes('bağlam %62 · 124k/200k'), 'no ctx readout');
+  assert.ok(screen.includes('1 sonuç'), 'no observed-result count');
+  // honesty: the pre-WO-0052 vintage names itself
+  assert.ok(screen.includes('per-turn defteri boş'), 'no unledgered qualifier');
+  await page.screenshot({ path: join(SHOTS, 'usage-full@980.png') });
+  await backToBoard();
+});
+
+await spec('WO-0054 boş yüz: davet satırı, hiç rakam yok, kota bölümü sinyalsiz çizilmez', async () => {
+  await switchWs('kullanim', 'bos');
+  await openUsage();
+  const screen = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(screen.includes('Bu ay henüz kayıt yok'), `not the invitation: ${screen.slice(0, 200)}`);
+  assert.equal(await page.locator('[data-usage-limit]').count(), 0, 'the quota panel rendered without a drive');
+  assert.ok(!/\$\s?\d+[.,]\d{2}/.test(screen), `a formatted amount leaked onto the empty face: ${screen}`);
+});
+
+await spec('WO-0054 canlı kota: sinyalsiz yok → sağlayıcı sinyali panel → drive sonu iner; yabancı sürüş boyamaz; ✦ taslak kolu; uyum\'da sapma yok', async () => {
+  // the F1 negative control first: a budgeted NON-divergent workspace renders the head WITHOUT the line
+  await switchWs('bos', 'uyum');
+  await openUsage();
+  const uyumScreen = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(uyumScreen.includes('bu ay $0,50 / $20,00'), `uyum head readout: ${uyumScreen.slice(0, 300)}`);
+  assert.equal(await page.locator('[data-usage-divergence]').count(), 0, 'the divergence line fired on agreeing bases');
+  // a real plan drive on uyum's WO; the usage surface shows NO panel without the provider signal
+  await openBoard();
+  await openDetail('Kullanım uyum işi');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await backToBoard();
+  await openUsage();
+  assert.equal(await page.locator('[data-usage-limit]').count(), 0, 'the panel rendered without a provider signal');
+  // the provider's OWN signal → the panel: window label + utilization + the reset line
+  await page.evaluate((resetAt) => window.docket.e2e?.emit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 62, resetAt }], status: 'warning' }), futureStamp());
+  await page.waitForTimeout(400);
+  const panel = await page.locator('[data-usage-limit]').innerText();
+  assert.ok(panel.includes('5 saatlik pencere'), `no window label: ${panel}`);
+  assert.ok(panel.includes('%62'), `no utilization: ${panel}`);
+  assert.ok(/sıfırlanır/.test(panel), `no reset line: ${panel}`);
+  // karar 4: ANOTHER workspace's drive does not paint this screen (uyum's drive is still live)
+  await switchWs('uyum', 'taslak');
+  await openUsage();
+  assert.equal(await page.locator('[data-usage-limit]').count(), 0, 'a foreign drive painted this screen');
+  // wind the uyum drive down BEFORE the draft can start (the one-drive-at-a-time rule)
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 100, tokensOut: 10, usd: 0.05 } }));
+  await page.waitForTimeout(700);
+  // the ✦ DRAFT arm: the same workspace's draft drive paints it (the ${wsId}:draft arm) —
+  // taslak's ledger is EMPTY, so this also pins the panel above the empty face
+  await openRoadmap();
+  await startDraft('E2E: draft arm — sağlayıcı sinyali taslak sürüşünden okunur.');
+  await openUsage();
+  assert.equal(await page.locator('[data-usage-limit]').count(), 0, 'draft arm: no signal, no panel');
+  await draftEmit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 41, resetAt: futureStamp() }], status: 'ok' });
+  await page.waitForTimeout(400);
+  const dpanel = await page.locator('[data-usage-limit]').innerText();
+  assert.ok(dpanel.includes('✦ taslak sürüşü'), `the draft meta is missing: ${dpanel}`);
+  assert.ok(dpanel.includes('5 saatlik pencere') && dpanel.includes('%41'), `draft panel: ${dpanel}`);
+  await draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1200, tokensOut: 300, usd: 0.12 } });
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[data-usage-limit]').count(), 0, 'the draft panel survived the drive end');
+  await stopAllDrives();
+});
+
+await spec('WO-0054 drive-sonu tazeleme: ekran açıkken satır iner — rakam TUTAR (dört-kanca kuralı); sürüş biter — rakam OYNAR (onEnd pini)', async () => {
+  await switchWs('taslak', 'kullanim');
+  await openUsage();
+  const before = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(before.includes('$18,74'), `pre-drive total missing: ${before.slice(0, 400)}`);
+  // start a plan drive on the kullanim WO, then come BACK to the usage surface: the re-entry's
+  // read is the pre-row baseline ($18,74 — the drive has landed nothing yet)
+  await openBoard();
+  await openDetail('Kullanım uygulaması');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await backToBoard();
+  await openUsage();
+  const baseline = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(baseline.includes('$18,74'), `baseline total missing: ${baseline.slice(0, 400)}`);
+  // a mid-drive turn_usage lands a LEDGER row but fires NO hook — and the screen stays OPEN, so
+  // the four hooks are the whole cadence: the store notifies (a re-render), the figure holds
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_usage', delta: { tokensIn: 5000, tokensOut: 500, usd: 0.33 } }));
+  await page.waitForTimeout(600);
+  const mid = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(mid.includes('$18,74'), 'the figure moved before any hook fired');
+  assert.ok(!mid.includes('$19,07'), 'the mid-drive row leaked into the figure');
+  // the drive ENDS → onEnd → refreshUsage → the landed row becomes visible
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1000, tokensOut: 100, usd: 0.33 } }));
+  await page.waitForTimeout(800);
+  const after = await page.locator('[data-usage-screen]').innerText();
+  assert.ok(after.includes('$19,07'), `the figure did not move at onEnd: ${after.slice(0, 500)}`);
+  await page.screenshot({ path: join(SHOTS, 'usage-drive-refresh@980.png') });
+  await stopAllDrives();
+  await openBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

@@ -2,9 +2,12 @@
 // the spend list, ONE 840px scroll in that fixed order (mockup karar 1; no tabs, no drill-down —
 // the detail's home is the WO card and the CLI tail). The read is workspace-keyed like the
 // board's and the roadmap's (a fresh surface on swap). `view === undefined` → the named loadline;
-// `empty` → the invitation face and NOTHING below it — no zero bars, no empty cards, no figures
-// (AC6) — with the unledgered line DIRECTLY UNDER THE INVITATION when the pre-WO-0052 vintage
-// exists (architect F4: the spend list does not render on this face).
+// `empty` → the invitation face and the LEDGER sections gone — no zero bars, no empty cards, no
+// figures (AC6) — with the unledgered line DIRECTLY UNDER THE INVITATION when the pre-WO-0052
+// vintage exists (architect F4: the spend list does not render on this face). The LIVE quota
+// panel is not a ledger figure (the provider's own % — no $ anywhere): it still renders on the
+// empty face when a drive signals, or a running ✦ draft on an unledgered workspace would be
+// invisible exactly when the operator most needs the window (D7's draft-arm spec pins it).
 //
 // The LIVE quota panel reads the running drive's fold through the app-level drive store, BOTH
 // arms: the WO arm through activeSnapshot (running AND its woId ∈ this workspace's WO ids —
@@ -71,13 +74,16 @@ export function UsageScreen({
     body = <p className="loadline px-1 py-8">{UI.loadUsage}</p>;
   } else if (view.empty) {
     body = (
-      <div data-usage-empty className="rounded-md border border-dashed border-hairline px-3 py-2.5">
-        <p className="text-sm text-ink">{UI.usageEmptyLine}</p>
-        <p className="mt-1 text-xs text-inkdim">{UI.usageEmptyNote}</p>
-        {view.unledgeredCount > 0 ? (
-          <p className="mt-1 text-xs text-inkdim">{UI.usageUnledgeredLine(view.unledgeredCount)}</p>
-        ) : null}
-      </div>
+      <>
+        {windows !== undefined ? <UsageLimitPanel windows={windows.windows} status={windows.status} who={who} /> : null}
+        <div data-usage-empty className="rounded-md border border-dashed border-hairline px-3 py-2.5">
+          <p className="text-sm text-ink">{UI.usageEmptyLine}</p>
+          <p className="mt-1 text-xs text-inkdim">{UI.usageEmptyNote}</p>
+          {view.unledgeredCount > 0 ? (
+            <p className="mt-1 text-xs text-inkdim">{UI.usageUnledgeredLine(view.unledgeredCount)}</p>
+          ) : null}
+        </div>
+      </>
     );
   } else {
     body = (
