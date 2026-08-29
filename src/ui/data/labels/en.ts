@@ -647,6 +647,53 @@ export const UI = {
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` ${pct}%` : ''}${time !== null ? ` — resets at ${time}` : ' — near the limit'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5-hour window' : kind === 'seven_day' ? '7-day window' : 'window'),
+  // ===== WO-0054 — the usage screen (mockup rev 1; month head · live quota · breakdown · list) =====
+  // The month head speaks the EXISTING budget view (WO-0047's math/copy — never re-derived here);
+  // the quota panel reads the provider's own signal only (the WO-0053 rule); a model id is row
+  // DATA (ADR-0006's WO-0052 carve-out). The known-basis note is COUNT-FREE (architect amendment
+  // 2 — WorkspaceBudgetView carries hasUnknown only). usageRoleUnknown speaks RECORDS (the
+  // roleUnknownCount counts rows — D2.3's letter; the mockup's "sessions" wording loses to the
+  // counter's unit), and usageUnledgeredLine stays arm-true (no known-spend-bucket reference —
+  // architect finding 4).
+  surfaceUsage: 'Usage',
+  loadUsage: 'Reading the usage ledger…',
+  usageEmptyLine: 'No records this month yet.',
+  usageEmptyNote: 'Spend accumulates here once a drive runs.',
+  usageMonthTitle: 'THIS MONTH',
+  usageMonthMeta: (d: Date) =>
+    `${new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(d)} · calendar month (UTC)`,
+  usageMonthObserved: (usd: number) => `this month ${formatUsd(usd)}`,
+  usageKnownBasisNote: 'known spend — the cost of some sessions is lost (interrupted legs); it does not enter the total.',
+  usageBasisDivergence: 'The two figures window differently — the head keys on the session start, the breakdown on each row moment; never reconciled.',
+  usageLimitTitle: 'QUOTA WINDOWS · LIVE',
+  usageLimitMeta: (role: string, wo: string) => `${role} · ${wo} drive running`,
+  usageLimitDraftMeta: (role: string) => `${role} · ✦ draft drive`,
+  usageLimitProviderNote: 'The provider reports this itself; without a signal the section does not render.',
+  usageLimitUtilization: (pct: number) => `${pct}%`,
+  usageLimitResetLine: (time: string) => `resets at ${time}`,
+  usageBreakdownTitle: 'BREAKDOWN',
+  usageBreakdownMeta: 'per-turn ledger · this month',
+  usageRolesTitle: 'ROLES',
+  usageRoleSub: (n: number, tin: number, tout: number) => `${n} session${n === 1 ? '' : 's'} · ${formatTokens(tin)}→${formatTokens(tout)}`,
+  usageRoleValue: (usd: number, pct: number) => `${formatUsd(usd)} · ${pct}%`,
+  usageModelsTitle: 'MODELS',
+  usageModelUnknownLabel: 'unknown (0-model results)',
+  usageModelSub: (tin: number, tout: number) => `${formatTokens(tin)}→${formatTokens(tout)}`,
+  usageModelSplitNote: 'The provider own per-model split — it may not total to the row sum; Docket does not correct it.',
+  usageCacheTitle: 'CACHE SPLIT',
+  usageCacheLine: (fresh: number, read: number, creation: number) =>
+    `fresh input ${formatTokens(fresh)} · cache read ${formatTokens(read)} · cache write ${formatTokens(creation)}`,
+  usageTotalLabel: 'total',
+  usageByWoTitle: 'WORK ORDERS',
+  usageWoMeta: 'spend desc · zero-spend not listed',
+  usageWoValue: (usd: number, n: number) => `${formatUsd(usd)} · ${n} session${n === 1 ? '' : 's'}`,
+  usageDraftRowLabel: 'Roadmap drafts',
+  usageDraftWhere: '✦ draft',
+  usageDraftNonAdditive: 'The ✦ line spend also sits in its role bucket — two views of the same rows, never summed.',
+  usageSessionsTitle: 'SESSIONS',
+  usageSessionTurns: (n: number) => `${n} result${n === 1 ? '' : 's'}`,
+  usageUnledgeredLine: (n: number) => `${n} record${n === 1 ? '' : 's'} with an empty per-turn ledger (pre-WO-0052) — their cost does not enter the breakdown.`,
+  usageRoleUnknown: (n: number) => `${n} record${n === 1 ? '' : 's'} with an unknown role — the row exists, its owner does not.`,
   // ===== WO-0049 — the roadmap surface (mockup frames 01/02/03/06/07; 04/05 are WO-0050's) =====
   surfaceBoard: 'Board',
   surfaceRoadmap: 'Roadmap',

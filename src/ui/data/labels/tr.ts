@@ -758,6 +758,52 @@ export const UI = {
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` %${pct}` : ''}${time !== null ? ` — ${time}'de sıfırlanır` : ' — sınır yakın'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5 saatlik pencere' : kind === 'seven_day' ? '7 günlük pencere' : 'pencere'),
+  // ===== WO-0054 — kullanım ekranı (mockup rev 1; ay başlığı · canlı kota · döküm · liste) =====
+  // Ay başlığı MEVCUT bütçe görünümünü konuşur (WO-0047'nin matematiği/kopyası — burada yeniden
+  // türetilmez); kota paneli yalnız sağlayıcının kendi sinyalini okur (WO-0053 kuralı); model
+  // kimliği satır VERİSİDİR (ADR-0006'nın WO-0052 muafiyeti). Bilinen-harcama notu SAYISIZ (mimar
+  // düzeltmesi 2 — WorkspaceBudgetView yalnız hasUnknown taşır). usageRoleUnknown KAYIT sayar
+  // (roleUnknownCount satır sayar — D2.3'ün harfi; mockup'ın «oturum» dili sayacın birimine yenildi),
+  // usageUnledgeredLine kapsız kolda da doğru olanı söyler (hane referansı yok — mimar bulgusu 4).
+  surfaceUsage: 'Kullanım',
+  loadUsage: 'Kullanım kaydı okunuyor…',
+  usageEmptyLine: 'Bu ay henüz kayıt yok.',
+  usageEmptyNote: 'Bir sürüş başlayınca harcama burada birikir.',
+  usageMonthTitle: 'BU AY',
+  usageMonthMeta: (d: Date) =>
+    `${new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(d)} · takvim ayı (UTC)`,
+  usageMonthObserved: (usd: number) => `bu ay ${formatUsd(usd)}`,
+  usageKnownBasisNote: 'bilinen harcama — bazı oturumların maliyeti kayıp (kesilmiş bacak), toplama katılmaz.',
+  usageBasisDivergence: 'İki sayı farklı pencere sayar — başlık oturumun başlangıcını, döküm satır anını işler; uzlaştırılmaz.',
+  usageLimitTitle: 'KOTA PENCERELERİ · CANLI',
+  usageLimitMeta: (role: string, wo: string) => `${role} · ${wo} sürüşü koşuyor`,
+  usageLimitDraftMeta: (role: string) => `${role} · ✦ taslak sürüşü`,
+  usageLimitProviderNote: 'Sağlayıcının kendi bildirmesi; sinyal yoksa bu bölüm çizilmez.',
+  usageLimitUtilization: (pct: number) => `%${pct}`,
+  usageLimitResetLine: (time: string) => `${time}'de sıfırlanır`,
+  usageBreakdownTitle: 'DÖKÜM',
+  usageBreakdownMeta: 'per-turn defteri · bu ay',
+  usageRolesTitle: 'ROLLER',
+  usageRoleSub: (n: number, tin: number, tout: number) => `${n} oturum · ${formatTokens(tin)}→${formatTokens(tout)}`,
+  usageRoleValue: (usd: number, pct: number) => `${formatUsd(usd)} · %${pct}`,
+  usageModelsTitle: 'MODELLER',
+  usageModelUnknownLabel: 'bilinmeyen (0-model sonuç)',
+  usageModelSub: (tin: number, tout: number) => `${formatTokens(tin)}→${formatTokens(tout)}`,
+  usageModelSplitNote: 'Sağlayıcının kendi model dağılımı — satır toplamıyla tutmayabilir; Docket düzelmez.',
+  usageCacheTitle: 'CACHE KIRILIMI',
+  usageCacheLine: (fresh: number, read: number, creation: number) =>
+    `taze giriş ${formatTokens(fresh)} · cache okuma ${formatTokens(read)} · cache yazma ${formatTokens(creation)}`,
+  usageTotalLabel: 'toplam',
+  usageByWoTitle: 'İŞ EMİRLERİ',
+  usageWoMeta: 'harcama azalan · sıfır-harcama listelenmez',
+  usageWoValue: (usd: number, n: number) => `${formatUsd(usd)} · ${n} oturum`,
+  usageDraftRowLabel: 'Yol haritası taslakları',
+  usageDraftWhere: '✦ taslak',
+  usageDraftNonAdditive: '✦ satırının harcaması rol kovasına da yazılır — aynı satırların iki görünümü, toplanmaz.',
+  usageSessionsTitle: 'OTURUMLAR',
+  usageSessionTurns: (n: number) => `${n} sonuç`,
+  usageUnledgeredLine: (n: number) => `${n} kaydın per-turn defteri boş (WO-0052 öncesi) — maliyetleri döküme katılmaz.`,
+  usageRoleUnknown: (n: number) => `${n} kaydın rolü bilinmiyor — satır var, sahibi yok.`,
   // ===== WO-0049 — yol haritası yüzeyi (mockup kare 01/02/03/06/07; 04/05 WO-0050'nin) =====
   // Appbar geçişi (kardeş ekran — pano ve detay dokunulmaz) + üç yüzey hâlinin satırları.
   // Davet yüzeyi eylemsizdir: ✦ Üret/İçe aktar WO-0050'nin; bilgi satırı dosyanın yerini söyler.

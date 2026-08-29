@@ -15,8 +15,9 @@ import { WsDeleteDialog } from './WsDeleteDialog';
 import { WsSettingsModal } from './WsSettingsModal';
 import { WsListModal } from './WsListModal';
 
-/** WO-0049: the two sibling surfaces — the board and the roadmap (ADR-0016 karar 4). */
-export type Surface = 'board' | 'roadmap';
+/** WO-0049: the sibling surfaces — the board and the roadmap (ADR-0016 karar 4); WO-0054 adds
+ *  the third, the usage month (`Kullanım`). */
+export type Surface = 'board' | 'roadmap' | 'usage';
 
 export function AppShell({
   workspaces,
@@ -96,6 +97,7 @@ export function AppShell({
                 options={[
                   { value: 'board', label: UI.surfaceBoard },
                   { value: 'roadmap', label: UI.surfaceRoadmap },
+                  { value: 'usage', label: UI.surfaceUsage },
                 ]}
               />
               <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
