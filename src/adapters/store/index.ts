@@ -153,6 +153,7 @@ type SessionRow = {
   ctx_used_tokens: number | null; // WO-0052
   ctx_max_tokens: number | null; // WO-0052
   final_model_usage: string | null; // WO-0052
+  limit_reset_at: string | null; // WO-0053
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
@@ -226,6 +227,9 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
   const usageField = {
     ...(r.ctx_used_tokens == null || r.ctx_max_tokens == null ? {} : { ctx: { usedTokens: r.ctx_used_tokens, maxTokens: r.ctx_max_tokens } }),
     ...(finalUsage ? { finalUsage } : {}),
+    // WO-0053: NULL = no limit stop (or a pre-WO-0053 row) — the seed's boundary decides what
+    // the UI does with it; hydration only carries the honest fact.
+    ...(r.limit_reset_at ? { limitResetAt: r.limit_reset_at } : {}),
   };
   switch (r.status) {
     case 'stopped_asking':
@@ -370,9 +374,9 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WOs); a foreign row survives instead of being stolen. `IS ?` is SQLite's NULL-safe equality —
   // a draft row's NULL work_order_id must match its own row (and only it).
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
     .get(input.providerSessionId, wsId, woId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null }
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null; limit_reset_at: string | null }
     | undefined;
   const priorTranscript = (() => {
     if (!prior?.transcript) return undefined;
@@ -419,9 +423,14 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
       : { used: prior?.ctx_used_tokens ?? null, max: prior?.ctx_max_tokens ?? null };
   const finalUsageJson =
     input.finalUsage !== undefined ? JSON.stringify(input.finalUsage) : (prior?.final_model_usage ?? null);
+  // WO-0053: the limit stamp's THREE states — a string SETS, null CLEARS (a clean leg; a stale
+  // stamp is a lie), undefined KEEPS the prior row's (the pendingNotes rule). Unlike the ctx pair
+  // above, this is NOT latest-wins: only the pipeline's terminal records ever speak.
+  const limitResetAt =
+    input.limitResetAt !== undefined ? input.limitResetAt : (prior?.limit_reset_at ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     wsId,
@@ -441,6 +450,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     ctxPair.used,
     ctxPair.max,
     finalUsageJson,
+    limitResetAt,
   );
 }
 
@@ -547,13 +557,15 @@ function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] 
 // workspace_id (through the WO join; `''` for an orphan row — joins to nothing, hydrates nowhere).
 const SESSION_REBUILD_COPY =
   'INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage) ' +
+  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at) ' +
   'SELECT provider_session_id, ' +
   "COALESCE((SELECT w.workspace_id FROM work_order w WHERE w.id = session_legacy.work_order_id), ''), work_order_id, " +
   'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ' +
   // WO-0052: the usage columns ride every rebuild — the ALTERs above ran first, so session_legacy
   // always carries them (NULL for a pre-WO-0052 row: honestly absent through the copy).
-  'ctx_used_tokens, ctx_max_tokens, final_model_usage FROM session_legacy';
+  'ctx_used_tokens, ctx_max_tokens, final_model_usage, ' +
+  // WO-0053: the limit stamp rides the same way (NULL for pre-WO-0053 rows).
+  'limit_reset_at FROM session_legacy';
 
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
@@ -573,6 +585,9 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has('ctx_used_tokens')) db.exec('ALTER TABLE session ADD COLUMN ctx_used_tokens INTEGER');
   if (!cols.has('ctx_max_tokens')) db.exec('ALTER TABLE session ADD COLUMN ctx_max_tokens INTEGER');
   if (!cols.has('final_model_usage')) db.exec('ALTER TABLE session ADD COLUMN final_model_usage TEXT');
+  // WO-0053: the limit stamp (the same additive, PRAGMA-guarded discipline — NULL is the honest
+  // pre-WO-0053 vintage, never backfilled; the three-state write rule lives in recordSessionRow).
+  if (!cols.has('limit_reset_at')) db.exec('ALTER TABLE session ADD COLUMN limit_reset_at TEXT');
 
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {

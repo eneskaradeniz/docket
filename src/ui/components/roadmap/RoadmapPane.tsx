@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { initialSessionState, type LiveSessionState } from '../../../core/runner';
 import type { WorkspaceId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, usePaneActivity, usePaneLog } from '../session/pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneWarnline, usePaneActivity, usePaneLog } from '../session/pane-chrome';
 import { DriveControls, type DriveState } from '../session/DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from '../session/drive-store';
 import { ChatTranscript } from '../session/ChatTranscript';
@@ -133,6 +133,7 @@ export function RoadmapPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
+      <PaneWarnline state={state} running={running} />
 
       {sourceLine !== undefined && running ? (
         <p data-draft-source className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-inkdim">

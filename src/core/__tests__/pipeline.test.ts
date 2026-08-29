@@ -1033,3 +1033,127 @@ describe('createPipeline — the usage recording floor (WO-0052)', () => {
     expect(owner).toEqual({ kind: 'draft', workspaceId: WS });
   });
 });
+
+// ===== WO-0053 — the limit stamp's routing table (D5) =====
+// A real limit death arrives as a RESULT message: the adapter pushes error THEN turn_complete,
+// the turn_complete case records (terminated=true — the finally's record is SKIPPED), so the
+// turn terminal is the stamp's home. The table is fixed, not derived — the fold cannot know
+// whether the ROW was stamped (initialSessionState + started-clears), hence null-on-clean and
+// undefined-on-keep are literals at the call sites.
+
+describe('WO-0053 — the limit stamp routing', () => {
+  const STAMP = '2026-08-29T14:32:00.000Z';
+  const limitError = (): RunnerEvent => ({
+    kind: 'error',
+    message: 'Usage limit reached',
+    code: 'rate_limited',
+    limit: { resetAt: STAMP, window: 'five_hour' },
+  });
+  const recordsOf = (calls: FakeStoreCalls[]): Array<Record<string, unknown>> =>
+    calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as Record<string, unknown>);
+
+  it('a limit RESULT death (error then turn_complete): the turn terminal record carries the stamp — the finally never records', async () => {
+    const fr = fakeRunner([started(), limitError(), done()]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs).toHaveLength(2); // started + turn_complete — terminated skips the finally
+    expect(recs[1]).toMatchObject({ status: 'idle', limitResetAt: STAMP });
+  });
+
+  it('a CLEAN turn_complete passes null — the stale stamp on the row clears (a clean leg)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs[1]).toMatchObject({ status: 'idle', limitResetAt: null });
+  });
+
+  it('the stream ENDING after a limit error (the adapter catch shape — no turn_complete): the finally record carries the stamp', async () => {
+    const fr = fakeRunner([started(), limitError()]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs.at(-1)).toMatchObject({ status: 'idle', limitResetAt: STAMP });
+  });
+
+  it('a NON-limit throw keeps the prior stamp — the catch record passes NO key (never null)', async () => {
+    // started first (a session exists), THEN the stream throws mid-drive — the catch's shape.
+    const runner = {
+      drive: async function* (): AsyncIterable<RunnerEvent> {
+        yield started();
+        throw new Error('boom');
+      },
+      async decide() {},
+      pendingAsks: async () => [],
+      async interrupt() {},
+      async abort() {},
+    } as SessionRunner;
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs).toHaveLength(2); // the started record + the catch's terminal
+    expect(recs.at(-1)).toMatchObject({ status: 'idle' });
+    expect('limitResetAt' in recs.at(-1)!).toBe(false); // undefined — the store keeps the prior
+  });
+
+  it('an INTERRUPTED close keeps — the stopped record passes no key', async () => {
+    const fr = fakeRunner([started(), { kind: 'interrupted', at: '2026-08-29T13:47:00.000Z' }]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs.at(-1)).toMatchObject({ status: 'stopped' });
+    expect('limitResetAt' in recs.at(-1)!).toBe(false);
+  });
+
+  it('limit_windows feed events forward to the host fold and write NOTHING — pane state, not a record', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 86, resetAt: STAMP }], status: 'warning' },
+      done(),
+    ]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events.some((e) => e.kind === 'limit_windows')).toBe(true);
+    expect(recordsOf(fs.calls)).toHaveLength(2); // started + turn terminal — the feed wrote nothing
+  });
+
+  it('the DRAFT arm stamps under the draft owner (the taslak drive dies on the limit like any other)', async () => {
+    const fr = fakeRunner([started('s-d'), limitError(), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'taslak promptu' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    const recs = recordsOf(fs.calls);
+    expect(recs.at(-1)).toMatchObject({ limitResetAt: STAMP });
+    expect(recs.at(-1)).toMatchObject({ owner: { kind: 'draft', workspaceId: WS } });
+  });
+});
+
+// WO-0053 review finding 4: the two stamp-LESS closes agree — a limit throw with NO stamp CLEARS
+// (the provider just disproved the old clock; a restart must not re-derive a lying card).
+describe('WO-0053 — the stamp-less limit close (review finding 4)', () => {
+  it('a stamp-LESS limit throw clears the prior stamp (null, never keep)', async () => {
+    const runner = {
+      drive: async function* (): AsyncIterable<RunnerEvent> {
+        yield started();
+        yield { kind: 'error', message: 'Usage limit reached', code: 'rate_limited' } as RunnerEvent;
+        throw new Error('post-error throw');
+      },
+      async decide() {},
+      pendingAsks: async () => [],
+      async interrupt() {},
+      async abort() {},
+    } as SessionRunner;
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const recs = fs.calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as Record<string, unknown>);
+    expect(recs.at(-1)).toMatchObject({ status: 'idle', limitResetAt: null });
+  });
+});

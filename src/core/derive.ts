@@ -228,6 +228,13 @@ export function deriveCardReason(wo: WorkOrder): CardReason {
   // "Plan onayı bekleniyor" over a plan that does not exist.
   if (wo.sessions.some((s) => s.status === 'stopped')) return { kind: 'session_stopped' };
 
+  // WO-0053: a session died on the provider's usage limit — the WO waits on the provider's clock,
+  // not on a gate. Sits AFTER session_stopped (a later Durdur outranks — the seed boundary's rule)
+  // and BEFORE the gates. Clock-free: the line states the stop + the reset time as fact; a later
+  // clean leg clears the stamp and this reason reverts on its own.
+  const limited = wo.sessions.find((s) => s.limitResetAt !== undefined);
+  if (limited?.limitResetAt !== undefined) return { kind: 'limit_stopped', resetAt: limited.limitResetAt };
+
   const unsat = unsatisfiedGateKinds(wo);
   if (unsat.includes('plan_approval')) return { kind: 'awaiting_plan_commit' };
   if (unsat.includes('closure')) return { kind: 'docs_not_updated' };

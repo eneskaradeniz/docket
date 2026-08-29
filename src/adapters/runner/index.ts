@@ -52,7 +52,7 @@ import {
   type ScopeRoots,
   type WriteAttempt,
 } from '../../core/runner';
-import type { CostSummary, TurnUsage } from '../../core/types';
+import type { CostSummary, LimitStop, LimitWindow, TurnUsage } from '../../core/types';
 import type { SessionRunner } from '../../core/runner';
 
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookEditNew']);
@@ -121,6 +121,21 @@ type AnyMsg = {
   stop_reason?: string | null;
   result?: string;
   errors?: string[];
+  // WO-0053: the error-result's own terminal reason (sdk.d.ts:6947 — values include
+  // 'blocking_limit', 'rapid_refill_breaker'). NOTE: `api_error_status` lives on the SUCCESS
+  // arm only (sdk.d.ts:4328) and is deliberately NOT read here — a completed turn that retried
+  // an API error is not a limit stop.
+  terminal_reason?: string;
+  // WO-0053: the provider's PUSH rate-limit message (sdk.d.ts:4257-4289), structural-optional —
+  // only what we name. The overage/credits sub-surface (overageStatus, purchase fields,
+  // extra_usage) stays UNREAD (the order's stop-and-ask gate: this WO carries the stamp metric
+  // only, never account facts).
+  rate_limit_info?: {
+    status?: string; // 'allowed' | 'allowed_warning' | 'rejected'
+    resetsAt?: number; // EPOCH — normalized to ISO at this boundary, the adapter's whole job here
+    rateLimitType?: string; // 'five_hour' | 'seven_day' | … — passes verbatim as data
+    utilization?: number;
+  };
   // WO-0045: command lifecycle (capability msg_lifecycle_v1) — the delivery observability channel.
   command_uuid?: string;
   state?: string;
@@ -289,6 +304,22 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     const scope = writeScopeFor(input.role, roots);
     let planReadyEmitted = false;
     let turnCompleteEmitted = false; // tracked to synthesise a turn_complete if the plan-mode stream ends without one (WO-0021)
+    // WO-0053: the drive's limit caches — the freshest stamp source for a limit-shaped error.
+    // `lastWindows` holds the newest reading per window kind (push + pull merged, exact-key);
+    // `lastRejectedStop` the push channel's own rejection facts (the freshest source of all).
+    // Stamp resolution order (D2): the push rejection → the cached window matching the last
+    // seen kind → stamp-less (the degradation tier; no I/O on the error path).
+    let lastWindows: LimitWindow[] = [];
+    let lastRejectedStop: LimitStop | undefined;
+    let lastSeenKind: string | undefined;
+    const limitStopFor = (): LimitStop | undefined => {
+      if (lastRejectedStop) return lastRejectedStop;
+      if (lastSeenKind !== undefined) {
+        const w = lastWindows.find((x) => x.window === lastSeenKind && x.resetAt !== null);
+        if (w) return { resetAt: w.resetAt!, window: w.window };
+      }
+      return undefined;
+    };
     const abort = new AbortController();
     currentQueue = queue;
     currentAbort = abort;
@@ -409,6 +440,37 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           }
           break;
         }
+        case 'rate_limit_event': {
+          // WO-0053: the provider's PUSH channel (sdk.d.ts:4257) — status neutralized, the epoch
+          // stamp normalized to ISO HERE (the adapter's reason to exist), kind/utilization
+          // verbatim data. A REJECTION also caches its stop facts: the result error that follows
+          // (a limit death arrives as error_during_execution + terminal_reason) picks the stamp
+          // up here first — the freshest source — before the window cache.
+          const info = msg.rate_limit_info;
+          if (info) {
+            const status = neutralLimitStatus(info.status);
+            const resetAt = limitStampOf(info.resetsAt);
+            const window = info.rateLimitType;
+            if (window !== undefined) {
+              lastSeenKind = window;
+              lastWindows = lastWindows.filter((w) => w.window !== window).concat([{ window, utilization: info.utilization ?? null, resetAt: resetAt ?? null }]);
+            }
+            if (status === 'blocked' && resetAt !== undefined) {
+              lastRejectedStop = { resetAt, ...(window !== undefined ? { window } : {}) };
+            }
+            // Review finding 5: emit the MERGED set (the merge above updated lastWindows), never a
+            // single-window replacement — a typeless push must not wipe the pulled windows, and a
+            // five_hour push must not drop a pulled seven_day (the warn line's subject would
+            // flicker or vanish mid-drive).
+            out.push({
+              kind: 'limit_windows',
+              windows: lastWindows.map((w) => ({ ...w })),
+              ...(status ? { status } : {}),
+              at: new Date().toISOString(),
+            });
+          }
+          break;
+        }
         case 'result': {
           // Plan-mode fallback: if the turn ended with no ExitPlanMode tool call
           // (the probe found it can be absent — TD-016), treat the result text as the plan.
@@ -417,7 +479,21 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             out.push({ kind: 'plan_ready', planText: msg.result });
           }
           if (msg.subtype && msg.subtype !== 'success') {
-            out.push({ kind: 'error', message: msg.errors?.[0] ?? msg.subtype });
+            // WO-0053 classification (D2): the trigger is subtype `error_during_execution` AND
+            // (a limit terminal_reason OR the message text matching the limit substrings).
+            // `api_error_status` is NEVER read — it lives on the SUCCESS arm, where a completed
+            // turn that retried an API error would be misclassified as a limit stop.
+            const message = msg.errors?.[0] ?? msg.subtype;
+            const limitShaped =
+              msg.subtype === 'error_during_execution'
+              && ((msg.terminal_reason !== undefined && LIMIT_TERMINAL_REASONS.has(msg.terminal_reason))
+                || classifyProviderError(message) === 'rate_limited');
+            if (limitShaped) {
+              const stop = limitStopFor();
+              out.push({ kind: 'error', message, code: 'rate_limited', ...(stop ? { limit: stop } : {}) });
+            } else {
+              out.push({ kind: 'error', message });
+            }
           }
           // `result` is the SDK's canonical turn answer (WO-0017) — the composition root captures it as the
           // step report at turn_complete. Omitted when absent (the fold ignores it either way).
@@ -483,6 +559,33 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           contextFeedLive = false;
         });
     };
+    // WO-0053 pull feed: the session's usage control at the emitContext cadence — WINDOWS ONLY,
+    // never a status (the pull channel reports no triple; the fold carries the push status
+    // forward). `rate_limits_available === false` reads as ABSENT (API-key/3P sessions have no
+    // windows — honest-absent, never zeros); one rejection disables the pull feed for the drive
+    // (the contextFeedLive rule). The experimental control's name is its own instability warning
+    // (TD-016): this call site is adapter-local, an SDK bump breaks here first.
+    let limitFeedLive = true;
+    let lastLimitEmitAt = 0;
+    const emitLimits = (throttleMs = 0) => {
+      if (!limitFeedLive || !currentQuery) return;
+      const now = Date.now();
+      if (throttleMs && now - lastLimitEmitAt < throttleMs) return;
+      lastLimitEmitAt = now;
+      currentQuery
+        .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()
+        .then((r) => {
+          if (!limitFeedLive) return;
+          if (!r.rate_limits_available) return;
+          const windows = limitWindowsOf(r.rate_limits);
+          if (windows.length === 0) return;
+          for (const w of windows) lastWindows = lastWindows.filter((x) => x.window !== w.window).concat([w]);
+          queue.push({ kind: 'limit_windows', windows, at: new Date().toISOString() });
+        })
+        .catch(() => {
+          limitFeedLive = false;
+        });
+    };
 
     const q = query({ prompt: inputQueue, options });
     currentQuery = q;
@@ -492,7 +595,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         // produces NO transcript events for potentially minutes — a throttled context read here
         // both refreshes the gauge and proves the drive alive, so the staleness line never lies
         // during a long think.
-        if ((msg as AnyMsg).type === 'system' && (msg as AnyMsg).subtype === 'thinking_tokens') emitContext(30_000);
+        if ((msg as AnyMsg).type === 'system' && (msg as AnyMsg).subtype === 'thinking_tokens') {
+          emitContext(30_000);
+          emitLimits(30_000);
+        }
         let sawToolEvent = false;
         for (const e of translate(msg as unknown as AnyMsg)) {
           // The prompt-channel delivery's receipt (D5): the note never entered the SDK queue, so no
@@ -518,6 +624,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             // feed flag drops the reading (the drive is over) — this serves the held/intermediate
             // boundaries of a steered drive (D3) and the per-command boundaries of a long one.
             emitContext();
+            emitLimits();
             // D3 (operator ruling 2026-08-26): a queued note extends the drive — its command's result
             // is INTERMEDIATE. One drive, one terminal event: hold this turn_complete while notes are
             // still queued/live; the final result (note queue empty) carries the accumulated cost and
@@ -525,6 +632,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             if (noteByUuid.size > 0) continue;
             turnCompleteEmitted = true;
             contextFeedLive = false;
+            limitFeedLive = false;
             queue.push({ ...e, cost: { ...driveCost } });
             inputClosed = true;
             inputQueue.close();
@@ -538,7 +646,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           if (e.kind === 'tool_use' || e.kind === 'tool_result') sawToolEvent = true;
         }
         // WO-0046 cadence (probe c1): one read per tool-bearing message, never a busy poll.
-        if (sawToolEvent) emitContext();
+        if (sawToolEvent) {
+          emitContext();
+          emitLimits();
+        }
       }
     } catch (e) {
       const err = e as { name?: string; message?: string };
@@ -547,7 +658,11 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       // AbortError), not a provider failure.
       if (err?.name !== 'AbortError' && !interruptRequested) {
         const raw = err?.message ?? String(e);
-        queue.push({ kind: 'error', message: raw, ...(classifyProviderError(raw) ? { code: classifyProviderError(raw) } : {}) });
+        const code = classifyProviderError(raw);
+        // WO-0053: a thrown limit error carries the stop facts when a stamp is known (the push
+        // rejection's cache first — D2's resolution order); stamp-less stays code-only.
+        const stop = code === 'rate_limited' ? limitStopFor() : undefined;
+        queue.push({ kind: 'error', message: raw, ...(code ? { code } : {}), ...(stop ? { limit: stop } : {}) });
       }
     } finally {
       currentQueue = undefined;
@@ -555,6 +670,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       currentInput = undefined;
       currentQuery = undefined;
       contextFeedLive = false; // a read still in flight lands nowhere (push-after-close is a no-op)
+      limitFeedLive = false; // the pull feed's twin rule
       noteByUuid.clear();
       noteUuid.clear();
       inputQueue.close(); // no-op when the final result already closed it; ends the input side on aborts
@@ -687,7 +803,64 @@ export function classifyProviderError(message: string): ProviderErrorCode | unde
   if (m.includes('authentication') || m.includes('credentials') || m.includes('401') || m.includes('unauthorized')) return 'auth_failed';
   if (m.includes('timed out') || m.includes('timeout') || m.includes('did not complete within')) return 'timeout';
   if (m.includes('executable not found') || m.includes('claude code executable')) return 'executable_missing';
+  // WO-0053: the USAGE-LIMIT arm. `rate_limit` is UNDERSCORED — the SDK's own spelling is
+  // `rate_limit_error`, which a spaced 'rate limit' substring never matches. `overloaded` is
+  // deliberately ABSENT: a 529/overloaded is provider CAPACITY, not the user's window — the
+  // degradation title would claim a window that does not exist.
+  if (m.includes('429') || m.includes('rate_limit') || m.includes('usage limit')) return 'rate_limited';
   return undefined;
+}
+
+// ===== WO-0053 — the limit classification + normalization helpers (this file is the boundary;
+//     after here everything is neutral: an ISO stamp, a status triple, kind strings as data) =====
+
+/** The result-error terminal reasons that ARE usage-limit stops (sdk.d.ts:6947). */
+const LIMIT_TERMINAL_REASONS = new Set(['blocking_limit', 'rapid_refill_breaker']);
+
+/** The push channel's epoch stamp (or a pull-channel ISO string) → the neutral ISO stamp.
+ *  Undefined for absent/null/garbage — the stamp-less degradation tier, never a fabricated time
+ *  (a null resets_at must never become the epoch, which `new Date(null)` would silently claim). */
+export function limitStampOf(v: number | string | null | undefined): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'string') return v.length > 0 ? v : undefined;
+  const ms = new Date(v).getTime();
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+}
+
+/** The provider's own status word → the neutral triple the UI branches on. CODE vocabulary —
+ *  never crosses as the provider's spelling (the TurnUsage renaming precedent). */
+export function neutralLimitStatus(s: string | undefined): 'ok' | 'warning' | 'blocked' | undefined {
+  if (s === 'allowed') return 'ok';
+  if (s === 'allowed_warning') return 'warning';
+  if (s === 'rejected') return 'blocked';
+  return undefined;
+}
+
+/** The PULL channel's rate_limits object (sdk.d.ts:3229-3299) → LimitWindow[]. Kind strings pass
+ *  VERBATIM as data (the model-id ruling) — the named windows' keys and the model-scoped buckets'
+ *  `display_name` labels alike. The credits sub-surface (extra_usage) stays unread: it is an
+ *  account fact, not a window (the order's stop-and-ask gate). */
+export function limitWindowsOf(rl: unknown): LimitWindow[] {
+  if (!rl || typeof rl !== 'object') return [];
+  const stamp = (v: unknown): string | null => (typeof v === 'string' || typeof v === 'number' ? limitStampOf(v) : null) ?? null;
+  const pct = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+  const out: LimitWindow[] = [];
+  for (const [k, v] of Object.entries(rl as Record<string, unknown>)) {
+    if (v === null || v === undefined || k === 'extra_usage') continue;
+    if (k === 'model_scoped') {
+      if (!Array.isArray(v)) continue;
+      for (const entry of v as Array<Record<string, unknown>>) {
+        if (typeof entry.display_name === 'string') {
+          out.push({ window: entry.display_name, utilization: pct(entry.utilization), resetAt: stamp(entry.resets_at) });
+        }
+      }
+      continue;
+    }
+    if (typeof v !== 'object') continue;
+    const w = v as { utilization?: unknown; resets_at?: unknown };
+    out.push({ window: k, utilization: pct(w.utilization), resetAt: stamp(w.resets_at) });
+  }
+  return out;
 }
 
 /** Full provider check (WO-0025): pre-spawn the provider subprocess and complete the initialize handshake

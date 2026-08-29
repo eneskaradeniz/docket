@@ -7,6 +7,7 @@ import {
   isDraftDrive,
   isPlanDrive,
   isUnder,
+  limitCrossing,
   seedLiveState,
   shouldSynthesiseTurnComplete,
   staleMinutes,
@@ -698,5 +699,124 @@ describe('staleMinutes (WO-0046)', () => {
   });
   it('an unparseable stamp is undefined, never NaN', () => {
     expect(staleMinutes({ status: 'running', lastLifeAt: 'not-a-date' }, at(10))).toBeUndefined();
+  });
+});
+
+// ===== WO-0053 — the limit fold (limitWindows, lastLimit, the seed boundary, the crossing) =====
+
+describe('foldSessionEvent — the WO-0053 limit fold (limitWindows)', () => {
+  const win = (over: Partial<{ window: string; utilization: number | null; resetAt: string | null }> = {}) => ({
+    window: 'five_hour',
+    utilization: 86,
+    resetAt: '2026-08-29T14:32:00.000Z',
+    ...over,
+  });
+
+  it('a push-shaped feed (windows + status) folds verbatim, cost byte-identical, no transcript line', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's' });
+    s = foldSessionEvent(s, { kind: 'assistant_text', text: 'çalışıyor' });
+    const before = s.entries.length;
+    s = foldSessionEvent(s, { kind: 'limit_windows', windows: [win()], status: 'warning' });
+    expect(s.limitWindows).toEqual({ windows: [win()], status: 'warning' });
+    expect(s.entries.length).toBe(before); // state only — the steer_queued/context_usage precedent
+    expect(s.cost).toEqual({ tokensIn: 0, tokensOut: 0, usd: 0 }); // never a cost touch
+    expect(s.status).toBe('running'); // no status change — the reading is not a lifecycle
+  });
+
+  it('a pull-shaped feed (windows, NO status) replaces the windows and carries the prior status forward', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'limit_windows', windows: [win()], status: 'warning' });
+    s = foldSessionEvent(s, { kind: 'limit_windows', windows: [win({ window: 'seven_day', utilization: 41 })] });
+    expect(s.limitWindows).toEqual({ windows: [win({ window: 'seven_day', utilization: 41 })], status: 'warning' });
+  });
+
+  it('a pull-shaped feed on a fresh fold leaves status absent — never an invented ok', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'limit_windows', windows: [win()] });
+    expect(s.limitWindows).toEqual({ windows: [win()] });
+  });
+
+  it('the reading refreshes the staleness anchor (a fresh window reading is a liveness proof)', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'limit_windows', windows: [win()], at: '2026-08-29T13:40:00.000Z' });
+    expect(s.lastLifeAt).toBe('2026-08-29T13:40:00.000Z');
+  });
+});
+
+describe('foldSessionEvent — the WO-0053 limit stop (lastLimit)', () => {
+  it('an error carrying a limit folds its facts beside the code (the refusal pattern)', () => {
+    const s = foldSessionEvent(initialSessionState, {
+      kind: 'error',
+      message: 'limit reached',
+      code: 'rate_limited',
+      limit: { resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' },
+    });
+    expect(s.status).toBe('error');
+    expect(s.lastErrorCode).toBe('rate_limited');
+    expect(s.lastLimit).toEqual({ resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' });
+  });
+
+  it('an error WITHOUT a limit payload leaves a prior stop untouched (the keep rule)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'error', message: 'limit', code: 'rate_limited', limit: { resetAt: '2026-08-29T14:32:00.000Z' } });
+    s = foldSessionEvent(s, { kind: 'error', message: 'different failure' });
+    expect(s.lastLimit).toEqual({ resetAt: '2026-08-29T14:32:00.000Z' });
+  });
+
+  it('started clears a prior limit — the Sürdür supersedes the stop (a re-hit re-stamps)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'error', message: 'limit', code: 'rate_limited', limit: { resetAt: '2026-08-29T14:32:00.000Z' } });
+    s = foldSessionEvent(s, { kind: 'started', sessionId: 's' });
+    expect(s.lastLimit).toBeUndefined();
+    expect(s.status).toBe('running');
+  });
+});
+
+describe('seedLiveState — the WO-0053 limit seed', () => {
+  const base = { transcript: [{ speaker: 'assistant' as const, text: 'yarıda' }], cost: undefined, providerSessionId: 'sess-s' };
+
+  it('a stamped row re-seeds error + lastLimit (the card re-derives after a restart)', () => {
+    const s = seedLiveState({ ...base, status: 'idle' as const, limitResetAt: '2026-08-29T14:32:00.000Z' });
+    expect(s.status).toBe('error');
+    expect(s.lastLimit).toEqual({ resetAt: '2026-08-29T14:32:00.000Z' });
+  });
+
+  it('an unstamped row seeds today’s behavior — no forced error, no lastLimit', () => {
+    const s = seedLiveState({ ...base, status: 'idle' as const });
+    expect(s.status).toBe('idle');
+    expect(s.lastLimit).toBeUndefined();
+  });
+
+  it('a STOPPED row never re-seeds the limit — the operator’s Durdur is the last real event', () => {
+    const s = seedLiveState({ ...base, status: 'stopped' as const, limitResetAt: '2026-08-29T14:32:00.000Z' });
+    expect(s.status).toBe('stopped'); // the stopped pane, not a LimitCard over it
+    expect(s.lastLimit).toBeUndefined();
+  });
+});
+
+describe('limitCrossing — the card’s one decision (WO-0053)', () => {
+  const stamp = '2026-08-29T14:32:00.000Z';
+  const at = (min: number): number => Date.parse('2026-08-29T14:00:00.000Z') + min * 60000;
+
+  it('a future stamp waits — the Sürdür is absent with the clock as the reason line', () => {
+    expect(limitCrossing(stamp, at(31))).toBe('wait');
+  });
+  it('a past stamp is ready — exactly one primary button', () => {
+    expect(limitCrossing(stamp, at(33))).toBe('ready');
+  });
+  it('the boundary itself is ready', () => {
+    expect(limitCrossing(stamp, Date.parse(stamp))).toBe('ready');
+  });
+  it('an unparseable stamp waits — never invite a press the provider will reject', () => {
+    expect(limitCrossing('not-a-date', at(0))).toBe('wait');
+  });
+});
+
+// WO-0053 review finding 1's invariant: the PRIMARY real death is a RESULT message — the adapter
+// emits error(limit) THEN turn_complete, so the fold lands 'done' WITH the stop facts still set.
+// The limit surfaces branch on lastLimit, never on the derived turn; this pin holds that promise.
+describe('foldSessionEvent — the result-message limit death (WO-0053 review finding 1)', () => {
+  it('error(limit) then turn_complete folds done WITH lastLimit intact — the card’s discriminator survives the terminal', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's' });
+    s = foldSessionEvent(s, { kind: 'error', message: 'Usage limit reached', code: 'rate_limited', limit: { resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' } });
+    s = foldSessionEvent(s, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } });
+    expect(s.status).toBe('done'); // the turn DID complete — the fold stays honest
+    expect(s.lastLimit).toEqual({ resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' }); // the card branches on this
+    expect(s.lastErrorCode).toBe('rate_limited'); // and the degrade tier on this
   });
 });

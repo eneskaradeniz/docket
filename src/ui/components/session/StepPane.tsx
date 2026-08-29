@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { initialSessionState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneLogChip, PaneShell, PaneSteerBar, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneLogChip, PaneShell, PaneSteerBar, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -130,6 +130,7 @@ export function StepPane({
             {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
           </div>
         </div>
+        <PaneWarnline state={state} running={running} />
         <PaneSteerBar
           live={running}
           pendingNotes={state.pendingNotes}

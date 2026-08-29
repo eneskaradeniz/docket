@@ -106,6 +106,9 @@ export function cardReasonText(r: CardReason): string {
       return UI.cardJustWritten;
     case 'session_stopped':
       return 'Oturum durduruldu';
+    case 'limit_stopped':
+      // WO-0053: pano kartının satırı — neden + saat, saat-sız (çekirdek türetmesi Date bilmez).
+      return `Kullanım limiti doldu — sıfırlanma ${UI.limitClock(r.resetAt)}`;
     case 'awaiting_plan_commit':
       // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Plan commiti
       // bekleniyor" twin is dead (one state, one sentence; "commit" never reaches the operator).
@@ -299,6 +302,7 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   auth_failed: "Sağlayıcı kimliği reddedildi — Ayarlar → Agent sağlayıcısı'ndan anahtarı kontrol et.",
   timeout: 'Sağlayıcı bağlantısı zaman aşımına uğradı — ağ/ağ geçidi durumunu kontrol et.',
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
+  rate_limited: 'Sağlayıcı kullanım limiti doldu — sıfırlanma saati bilinmiyor.', // WO-0053: damgasız degradasyon katmanı (mockup kare 04)
 };
 
 // Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8; WO-0031c düzenleme/izin türleri eklendi)
@@ -734,6 +738,26 @@ export const UI = {
   budgetErrWarn: '1–100 arası bir oran gir.',
   budgetMonthReadout: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)}`,
   budgetMonthReadoutKnown: (m: number, cap: number) => `bu ay bilinen harcama ${formatUsd(m)} / ${formatUsd(cap)}`,
+  // ===== WO-0053 — limit ekranı (mockup rev 1 `cf28681`; kararlar turda kilitlendi) =====
+  // Kart bütçe kartının TEK EYLEMLİ kardeşi: aksiyon satırı ya bir düğme (Sürdür ⏎) ya bir neden
+  // satırıdır (saat); kart sağlayıcı penceresini konuşur — $/kapı kelimesi bütçe kartının. Pencere
+  // kimliği ham gösterilmez (ADR-0007 — limitWindowLabel eşlemesi, woIdLabel düzeni).
+  limitClock: (iso: string) => {
+    // Gün farkındalı saat: bugünse HH:MM, değilse gün kısaltması + HH:MM (7 günlük pencere yaşar).
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const p = (n: number): string => String(n).padStart(2, '0');
+    const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (d.toDateString() === new Date().toDateString()) return hm;
+    const DAYS = ['paz', 'pzt', 'sal', 'car', 'per', 'cum', 'cmt'];
+    return `${DAYS[d.getDay()]} ${hm}`;
+  },
+  limitCardTitle: 'KULLANIM LİMİTİ DOLDU',
+  limitCardBody: (window: string, time: string) => `${window} doldu — sıfırlanma ${time}.`,
+  limitResumeNote: 'Sürdür kaldığı yerden devam eder; bağlam yeniden okunur.',
+  limitWarnLine: (window: string, pct: number | null, time: string | null) =>
+    `${window}${pct !== null ? ` %${pct}` : ''}${time !== null ? ` — ${time}'de sıfırlanır` : ' — sınır yakın'}`,
+  limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5 saatlik pencere' : kind === 'seven_day' ? '7 günlük pencere' : 'pencere'),
   // ===== WO-0049 — yol haritası yüzeyi (mockup kare 01/02/03/06/07; 04/05 WO-0050'nin) =====
   // Appbar geçişi (kardeş ekran — pano ve detay dokunulmaz) + üç yüzey hâlinin satırları.
   // Davet yüzeyi eylemsizdir: ✦ Üret/İçe aktar WO-0050'nin; bilgi satırı dosyanın yerini söyler.

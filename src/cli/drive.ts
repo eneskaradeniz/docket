@@ -86,13 +86,18 @@ export function formatEvent(ev: RunnerEvent, format: DriveFormat): string | unde
     case 'permission_request': return `⛔ ask ${ev.tool}`;
     case 'plan_ready': return `📋 plan ready (${ev.planText.length} chars)`;
     case 'context_usage': return `◍ ctx ${ev.percentage}% (${ev.usedTokens}/${ev.maxTokens})`;
+    case 'limit_windows':
+      // The live windows feed is pane state, not a stream line (jsonl carried it at the top).
+      return undefined;
     case 'turn_complete': return `✓ done`;
     // WO-0047: a budget refusal names its resolution — raising the cap is a settings action;
     // the CLI deliberately has no force flag (the order's ruling).
+    // WO-0053: a limit stop names its clock and its resume path — the same classified sentence
+    // the GUI card carries (the refusal line's mirror), never a bare 429.
     case 'error':
-      return ev.refusal
-        ? `✗ ${ev.message} — raise the monthly cap in settings to continue (no --force-budget)`
-        : `✗ ${ev.message}`;
+      if (ev.refusal) return `✗ ${ev.message} — raise the monthly cap in settings to continue (no --force-budget)`;
+      if (ev.limit) return `✗ ${ev.message} — window resets ${ev.limit.resetAt}; resume re-drives this session (--resume)`;
+      return `✗ ${ev.message}`;
     default: return undefined;
   }
 }

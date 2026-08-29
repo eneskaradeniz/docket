@@ -129,6 +129,11 @@ export type SessionRef = (
   // last observed rich detail (latest-wins across legs).
   ctx?: { usedTokens: number; maxTokens: number };
   finalUsage?: TurnUsage;
+  // WO-0053 — when this session's drive died on the provider's usage limit, the neutral
+  // ISO stamp of when the window opens (the card re-derives from it after a restart).
+  // CLEARED by a later clean leg (a stale stamp is a lie — unlike the ctx reading, which
+  // is the last observation and keeps). Absent = no limit stop (or pre-WO-0053 rows).
+  limitResetAt?: string;
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
   startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)
   endedAt?: string; // ISO — when it terminally ended (turn complete / abort / error); absent while live
@@ -294,6 +299,29 @@ export interface TurnUsage {
   modelUsage?: ModelUsageLine[];
 }
 
+// ===== WO-0053 — the limit-screen vocabulary =====
+// The provider's usage limit as PRODUCT facts (the token tour's S5 row 6). Window kind
+// strings (`five_hour`, model-scoped labels) are DATA carried verbatim from the adapter
+// (the model-id ruling, ADR-0006's WO-0052 addendum) — display maps them through the
+// label bundle, never raw. `utilization` is the provider's own percentage figure (0-100
+// on the documented channel); `resetAt` an ISO string — the adapter normalizes the push
+// channel's epoch stamp AT THE BOUNDARY. Absent means not-reported, never zero.
+
+/** One provider usage-limit window reading (WO-0053). */
+export interface LimitWindow {
+  window: string; // the provider's kind string, verbatim data (e.g. 'five_hour')
+  utilization: number | null;
+  resetAt: string | null; // ISO
+}
+
+/** The facts of a limit STOP (WO-0053) — the payload the error arm carries beside its
+ * code (the `refusal` precedent: a payload, not a code). `window` absent when the stop
+ * carried no kind. */
+export interface LimitStop {
+  resetAt: string; // ISO — when the provider says the window opens
+  window?: string;
+}
+
 // ===== RAW STATE (the adapter provides this — fixtures now; SQLite/git in M3) =====
 export interface WorkOrder {
   id: WorkOrderId;
@@ -343,6 +371,10 @@ export type CardReason =
   | { kind: 'in_progress' }
   | { kind: 'just_written' }
   | { kind: 'session_stopped' } // 2026-08-24: the operator stopped a drive — it resumes, it did not end
+  // WO-0053: a session died on the provider's usage limit — the WO waits on the provider's clock
+  // (the board line names it; clock-free by design — the reason states the stop + reset time, and
+  // a later clean leg clears the stamp so the reason reverts).
+  | { kind: 'limit_stopped'; resetAt: string }
   | { kind: 'awaiting_plan_commit' }
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };

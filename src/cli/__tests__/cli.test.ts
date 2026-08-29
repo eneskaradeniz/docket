@@ -205,6 +205,22 @@ describe('formatEvent — output formatter', () => {
     expect(formatEvent(plan('hello'), 'stream')).toMatch(/plan ready/);
     expect(formatEvent(perm(), 'stream')).toMatch(/ask/);
   });
+  // WO-0053: the limit stop's stream line names the clock and the resume path (the refusal
+  // mirror); the live windows feed stays pane state — no stream line, but jsonl carries it.
+  it('a limit error names the stamp + the resume path; the windows feed is jsonl-only', () => {
+    const limitErr: RunnerEvent = {
+      kind: 'error',
+      message: 'Usage limit reached',
+      code: 'rate_limited',
+      limit: { resetAt: '2026-08-29T14:32:00.000Z', window: 'five_hour' },
+    };
+    const line = formatEvent(limitErr, 'stream')!;
+    expect(line).toContain('2026-08-29T14:32:00.000Z');
+    expect(line).toContain('--resume');
+    const feed: RunnerEvent = { kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 86, resetAt: '2026-08-29T14:32:00.000Z' }], status: 'warning' };
+    expect(formatEvent(feed, 'stream')).toBeUndefined();
+    expect(JSON.parse(formatEvent(feed, 'jsonl')!).kind).toBe('limit_windows');
+  });
 });
 // The CLI's `close` command is a thin store.closeWorkOrder call — covered by store.test.ts's
 // closeWorkOrder describe (preconditions, ## Closure note, gates/merged_at, stage → closed) and
