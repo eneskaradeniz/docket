@@ -9,6 +9,7 @@ import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { workOrders } from '../fixtures';
 import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
+import { monthWindow } from '../../core/budget';
 import { rid, woid } from '../ids';
 import type { RepoId, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
@@ -1829,7 +1830,7 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     expect(store.usageRowsFor(wo.id)).toEqual([]); // an interrupted drive appends nothing
   });
 
-  it('draft-owner rows persist (workspace-keyed) and stay invisible to usageRowsFor(workOrderId) — write-only until queue 4', async () => {
+  it('draft rows surface under workspaceUsage(ws).draft (queue 4 landed — WO-0054) and stay invisible to usageRowsFor(workOrderId)', async () => {
     const store = createStore(freshDb());
     const root = freshRoot();
     const ws = await store.createWorkspace({ label: 'Usage draft', repos: [{ path: root }] });
@@ -1837,8 +1838,12 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     store.recordTurnUsage(owner, 'sess-draft', { at: '2026-08-28T10:03:00.000Z', delta: { tokensIn: 7, tokensOut: 7, usd: 0.007 }, usage: { cacheRead: 5 } });
     const raw = store.db.prepare('SELECT COUNT(*) AS n FROM session_usage WHERE provider_session_id = ?').get('sess-draft') as { n: number };
     expect(raw.n).toBe(1); // the row persisted under the draft owner
+    // the WO-0054 un-pin, BOTH directions: the DRAFT read is workspace-scoped and carries the rows…
+    const view = await store.workspaceUsage(ws.id);
+    expect(view.empty).toBe(false); // draft rows ARE rows
+    expect(view.draft).toEqual({ usd: 0.01, tokensIn: 7, tokensOut: 7, sessionCount: 1 }); // round2(0.007)
     const anyWo = await store.createWorkOrder({ workspaceId: ws.id, title: 'D', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    expect(store.usageRowsFor(anyWo.id)).toEqual([]); // draft rows never hydrate through a WO read
+    expect(store.usageRowsFor(anyWo.id)).toEqual([]); // …and draft rows still never hydrate through a WO read
   });
 
   it('usageRowsFor scopes to ONE work order, insertion-ordered', async () => {
@@ -1954,5 +1959,186 @@ describe('WO-0053 — the limit stamp on the session row (set · keep · clear)'
     const stamped = store.db.prepare("SELECT limit_reset_at FROM session WHERE provider_session_id = ? AND workspace_id = '' AND work_order_id IS NULL").get('old-53') as { limit_reset_at: string | null };
     expect(stamped.limit_reset_at).toBe(STAMP);
     expect((store.db.prepare('SELECT COUNT(*) AS n FROM session').get() as { n: number }).n).toBe(1); // one row, upserted
+  });
+});
+
+// ===== WO-0054 — the usage screen's store read (workspaceUsage) + the cascade completion =====
+// The read is the ledger's ONE workspace-scoped shape: flat rows only (SQL never aggregates —
+// TD-058), windowed on the CURRENT UTC calendar month by `at`, joined in core to the session
+// facts (role/cost/started_at/ctx). The cascade completion makes a deleted owner's spend die
+// with the owner — the ledger is append-only against the UPSERT, not against the OWNER.
+describe('WO-0054 — workspaceUsage (the pure view over the usage ledger) + the delete cascades', () => {
+  const wsIn = async (store: ReturnType<typeof createStore>, label: string) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: label, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    return { ws, wo };
+  };
+  // The read's own window (core's UTC calendar month) — the fixtures must land inside it.
+  const month = monthWindow(new Date());
+  const inMonth = (day: number, hour = 10): string =>
+    new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), Math.min(day, 27), hour)).toISOString();
+  const lastMonthIso = (): string =>
+    new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 15, 12)).toISOString();
+  const expectInsideMonth = (): void => {
+    const probe = inMonth(3);
+    if (probe < month.startIso || probe >= month.endIso) throw new Error('fixture drifted out of the read window');
+  };
+
+  it('scopes to ONE workspace — another workspace’s rows and sessions never appear', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    // WO numbering is per decision-store ROOT, so two roots both mint WO-0001 and collide on the
+    // global work_order PK (the WO-0047 block's note) — the two-workspace rows go in directly.
+    const wsOnly = async (label: string) => {
+      const root = freshRoot();
+      return store.createWorkspace({ label, repos: [{ path: root }] });
+    };
+    const wsa = await wsOnly('Kullanım A');
+    const wsb = await wsOnly('Kullanım B');
+    const woRow = (id: string, wsId: WorkspaceId, title: string): WorkOrderId => {
+      store.db
+        .prepare(
+          `INSERT INTO work_order (id, workspace_id, title, mode, gate_plan_approved, gate_verifier_resolvable,
+           gate_closure_docs_sha, cost_tokens_in, cost_tokens_out, cost_usd, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(id, wsId, title, 'plan', 1, null, null, 0, 0, 0, SEED_OBSERVED_AT);
+      return woid(id);
+    };
+    const woA = woRow('WO-9101', wsa.id, 'Kullanım A işi');
+    const woB = woRow('WO-9102', wsb.id, 'Kullanım B işi');
+    store.recordSession({ providerSessionId: 'sa', owner: { kind: 'wo', workOrderId: woA }, role: 'implementer', status: 'idle', startedAt: inMonth(3), endedAt: inMonth(3) });
+    store.recordSession({ providerSessionId: 'sb', owner: { kind: 'wo', workOrderId: woB }, role: 'architect', status: 'idle', startedAt: inMonth(4), endedAt: inMonth(4) });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: woA }, 'sa', { at: inMonth(3), delta: { tokensIn: 10, tokensOut: 1, usd: 0.5 } });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: woB }, 'sb', { at: inMonth(4), delta: { tokensIn: 20, tokensOut: 2, usd: 9.99 } });
+    const va = await store.workspaceUsage(wsa.id);
+    expect(va.empty).toBe(false);
+    expect(va.totals).toEqual({ usd: 0.5, tokensIn: 10, tokensOut: 1 });
+    expect(va.byRole.map((x) => x.role)).toEqual(['implementer']);
+    expect(va.workOrders).toEqual([{ id: woA, title: 'Kullanım A işi', usd: 0.5, sessionCount: 1 }]);
+    expect(va.roleUnknownCount).toBe(0);
+    const vb = await store.workspaceUsage(wsb.id);
+    expect(vb.totals.usd).toBe(9.99);
+    expect(vb.workOrders).toEqual([{ id: woB, title: 'Kullanım B işi', usd: 9.99, sessionCount: 1 }]);
+  });
+
+  it('windows on `at`: an out-of-month row is excluded; an in-month row of a last-month-STARTED session counts (the basis divergence, store-level)', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım pencere');
+    // the session STARTED last month; its cost_usd covers both months; one row lands this month
+    store.recordSession({
+      providerSessionId: 'sold',
+      owner: { kind: 'wo', workOrderId: wo.id },
+      role: 'implementer',
+      status: 'idle',
+      cost: { tokensIn: 100, tokensOut: 10, usd: 0.75 },
+      startedAt: lastMonthIso(),
+      endedAt: inMonth(5),
+    });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'sold', { at: lastMonthIso(), delta: { tokensIn: 50, tokensOut: 5, usd: 0.5 } });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'sold', { at: inMonth(5), delta: { tokensIn: 25, tokensOut: 2, usd: 0.25 } });
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.totals).toEqual({ usd: 0.25, tokensIn: 25, tokensOut: 2 }); // the July row is out
+    expect(v.workOrders[0]!.usd).toBe(0.25);
+    // the HEAD's basis (cost_usd over started_at) reads 0.75 — the divergence is real, narrated
+    // by the head's qualifier line, never reconciled (basisDiverges is core-pinned)
+    expect(v.unledgeredCount).toBe(0); // the session HAS an in-month row
+  });
+
+  it('joins the role and the ctx checkpoint through the session row — the ctx reading is the LATEST one', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım rol');
+    store.recordSession({
+      providerSessionId: 'sr',
+      owner: { kind: 'wo', workOrderId: wo.id },
+      role: 'architect',
+      status: 'idle',
+      ctx: { usedTokens: 124_000, maxTokens: 200_000 },
+      startedAt: inMonth(6),
+      endedAt: inMonth(6),
+    });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'sr', { at: inMonth(6, 9), delta: { tokensIn: 100, tokensOut: 10, usd: 0.3 } });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'sr', { at: inMonth(6, 11), delta: { tokensIn: 50, tokensOut: 5, usd: 0.2 } });
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.byRole).toEqual([{ role: 'architect', usd: 0.5, tokensIn: 150, tokensOut: 15, sessionCount: 1, pct: 100 }]);
+    const s = v.sessions[0]!;
+    expect(s.role).toBe('architect');
+    expect(s.turnCount).toBe(2); // the observed-result COUNT — num_turns is not even in the fact
+    expect(s.lastAt).toBe(inMonth(6, 11));
+    expect(s.ctxPct).toBe(62); // round(124000/200000·100)
+  });
+
+  it('a row whose session row is gone paints no role bucket and raises roleUnknownCount (the legacy vintage)', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım yetim');
+    store.recordSession({ providerSessionId: 'kept', owner: { kind: 'wo', workOrderId: wo.id }, role: 'verifier', status: 'idle', startedAt: inMonth(7), endedAt: inMonth(7) });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'kept', { at: inMonth(7), delta: { tokensIn: 10, tokensOut: 1, usd: 0.1 } });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'ghost', { at: inMonth(7), delta: { tokensIn: 20, tokensOut: 2, usd: 0.2 } });
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.totals.usd).toBe(0.3); // both rows count
+    expect(v.byRole.map((x) => x.role)).toEqual(['verifier']);
+    expect(v.roleUnknownCount).toBe(1);
+  });
+
+  it('a corrupt model_usage blob hydrates ABSENT (fail-open) — the read is not bricked', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım bozuk');
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'bad', { at: inMonth(8), delta: { tokensIn: 10, tokensOut: 1, usd: 0.1 } });
+    store.db.prepare('UPDATE session_usage SET model_usage = ? WHERE provider_session_id = ?').run('[]', 'bad');
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.hasModelSplit).toBe(false);
+    expect(v.byModel).toEqual([{ model: undefined, usd: 0.1, tokensIn: 10, tokensOut: 1 }]); // the row scalars land
+  });
+
+  it('unledgeredCount — a costed in-month session with an empty ledger counts; a session WITH rows does not', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım deftersiz');
+    store.recordSession({ providerSessionId: 'vintage', owner: { kind: 'wo', workOrderId: wo.id }, role: 'architect', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 2.08 }, startedAt: inMonth(2), endedAt: inMonth(2) });
+    store.recordSession({ providerSessionId: 'ledgered', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', cost: { tokensIn: 1, tokensOut: 1, usd: 1.0 }, startedAt: inMonth(3), endedAt: inMonth(3) });
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'ledgered', { at: inMonth(3), delta: { tokensIn: 5, tokensOut: 1, usd: 0.4 } });
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.unledgeredCount).toBe(1); // 'vintage' only — 'ledgered' has a per-turn row
+    // the pre-WO-0052 session's cost stays OUT of the breakdown — the head's basis carries it
+    expect(v.totals.usd).toBe(0.4);
+  });
+
+  it('zero rows → the empty face (no figures, no buckets, no draft)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsIn(store, 'Kullanım boş');
+    const v = await store.workspaceUsage(ws.id);
+    expect(v.empty).toBe(true);
+    expect(v.totals.usd).toBe(0);
+    expect('draft' in v).toBe(false);
+    expect(v.unledgeredCount).toBe(0);
+    expect(v.roleUnknownCount).toBe(0);
+  });
+
+  it('deleteWorkOrder removes the work order’s usage rows (the cascade completion, WO-0054)', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Kullanım sil');
+    store.recordTurnUsage({ kind: 'wo', workOrderId: wo.id }, 'gone', { at: inMonth(9), delta: { tokensIn: 10, tokensOut: 1, usd: 0.7 } });
+    expect((await store.workspaceUsage(ws.id)).totals.usd).toBe(0.7);
+    await store.deleteWorkOrder(wo.id);
+    const after = await store.workspaceUsage(ws.id);
+    expect(after.empty).toBe(true); // the spend did not outlive its owner
+    expect(after.roleUnknownCount).toBe(0); // not even as an orphan — the rows went WITH the owner
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM session_usage').get() as { n: number }).n).toBe(0);
+  });
+
+  it('deleteWorkspace removes the workspace’s usage rows — the ✦ draft rows included', async () => {
+    expectInsideMonth();
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Kullanım ws-sil', repos: [{ path: root }] });
+    store.recordTurnUsage({ kind: 'draft', workspaceId: ws.id }, 'draft-sess', { at: inMonth(9), delta: { tokensIn: 10, tokensOut: 1, usd: 1.41 } });
+    expect((await store.workspaceUsage(ws.id)).draft!.usd).toBe(1.41);
+    await store.deleteWorkspace(ws.id);
+    expect((store.db.prepare('SELECT COUNT(*) AS n FROM session_usage').get() as { n: number }).n).toBe(0); // the draft spend died with the workspace
   });
 });

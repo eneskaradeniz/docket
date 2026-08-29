@@ -136,6 +136,8 @@ ipcMain.handle('docket:source:repo-connections', (_e, id: WorkspaceId) => store.
 ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: RepoId, newPath: string) => store.updateRepoPath(id, repoId, newPath));
 // WO-0047: the workspace's calendar-month observed spend (the warn line's figure).
 ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
+// WO-0054: the workspace's usage month, derived — the pure view over the usage ledger.
+ipcMain.handle('docket:source:workspace-usage', (_e, id: WorkspaceId) => store.workspaceUsage(id));
 // WO-0048 — the roadmap layer's spine channels (the screen itself is WO-0049's; these exist so it
 // wires UI-only). getRoadmap derives the whole view store-side; saveRoadmap's parse guard throws.
 ipcMain.handle('docket:source:get-roadmap', (_e, id: WorkspaceId) => store.getRoadmap(id));
