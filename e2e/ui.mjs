@@ -2520,6 +2520,7 @@ await spec('WO-0053 limit 01: the card owns the stop — reason line, NO button,
   assert.equal(await page.locator('[data-budget-refusal-card]').count(), 0, 'a limit death rendered the BUDGET card');
   // karar 5: the card owns the moment — the instrument suppresses (the döküm is one click away in the Oturum card)
   assert.equal(await page.locator('#live-pane').count(), 0, 'the instrument rendered under the limit card');
+  await page.screenshot({ path: join(SHOTS, 'limit-card-wait@980.png') }); // WO-0053 frame 01 state A (the operator's tour artifact)
   await backToBoard();
 });
 
@@ -2531,6 +2532,7 @@ await spec('WO-0053 limit 02: the crossing — a past stamp shows the ONE Sürd�
   await page.waitForTimeout(600);
   // Frame 01 state B: exactly one primary Sürdür (+ ⏎) — the retry channel
   assert.equal(await page.locator('[data-limit-resume]').count(), 1, 'the crossing did not show the button');
+  await page.screenshot({ path: join(SHOTS, 'limit-card-ready@980.png') }); // WO-0053 frame 01 state B (the crossing)
   await page.locator('[data-limit-resume]').click();
   await page.waitForTimeout(700);
   assert.equal(await page.locator('[data-limit-card]').count(), 0, 'the card survived the resume (started must clear it)');
