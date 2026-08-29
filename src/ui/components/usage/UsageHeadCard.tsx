@@ -23,7 +23,7 @@ export function UsageHeadCard({ budget, usage }: { budget?: WorkspaceBudgetView;
     budget !== undefined && budget.threshold.capUsd > 0
       ? Math.min(100, Math.round((budget.monthUsd / budget.threshold.capUsd) * 100))
       : undefined;
-  const divergent = budget !== undefined && basisDiverges(budget.monthUsd, usage.totals.usd);
+  const divergent = budget !== undefined && basisDiverges(budget.monthUsd, usage.totalsRawUsd);
   return (
     <div className="rounded-md border border-hairline bg-surface px-3 py-2.5 shadow-sm">
       <div className="flex items-baseline gap-2.5">
@@ -37,14 +37,17 @@ export function UsageHeadCard({ budget, usage }: { budget?: WorkspaceBudgetView;
       ) : null}
       {budget !== undefined ? (
         <>
-          <p className="mt-2 text-sm text-ink">
-            {budget.hasUnknown
-              ? UI.budgetMonthReadoutKnown(budget.monthUsd, budget.threshold.capUsd)
-              : UI.budgetMonthReadout(budget.monthUsd, budget.threshold.capUsd)}
-          </p>
+          {/* the board card's shape (the review round): ONE month line — budgetLine carries the
+              figures + the status when the cap is breached; the plain readout only when ok */}
           {budget.status !== 'ok' ? (
-            <p className="mt-1 text-xs text-signal">{budgetLine(budget.status, budget.hasUnknown, budget.monthUsd, budget.threshold.capUsd)}</p>
-          ) : null}
+            <p className="mt-2 text-xs text-signal">{budgetLine(budget.status, budget.hasUnknown, budget.monthUsd, budget.threshold.capUsd)}</p>
+          ) : (
+            <p className="mt-2 text-sm text-ink">
+              {budget.hasUnknown
+                ? UI.budgetMonthReadoutKnown(budget.monthUsd, budget.threshold.capUsd)
+                : UI.budgetMonthReadout(budget.monthUsd, budget.threshold.capUsd)}
+            </p>
+          )}
           {budget.hasUnknown ? <p className="mt-1 text-xs text-inkdim">{UI.usageKnownBasisNote}</p> : null}
           {divergent ? (
             <p data-usage-divergence className="mt-1 text-xs text-inkdim">

@@ -3,7 +3,7 @@
 // The window is a FIXED UTC month — core stays clock-free and the tests carry no clock seam.
 import { describe, expect, it } from 'vitest';
 import type { DeriveUsageInput, UsageFactRow, UsageSessionFact } from '../usage';
-import { basisDiverges, deriveUsageView, modelSplitDiverges } from '../usage';
+import { basisDiverges, deriveUsageView } from '../usage';
 import type { WorkOrderId } from '../types';
 
 // Tests may build identities (the boundary carve-out, the roadmap.test.ts precedent).
@@ -117,7 +117,7 @@ describe('deriveUsageView — the D2 rules, one test each', () => {
       }),
     );
     expect(divergent.hasModelSplit).toBe(true);
-    expect(modelSplitDiverges(divergent)).toBe(true); // lines Σ 0.5 vs the row total 1.0
+    expect(divergent.modelSplitDiverges).toBe(true); // lines Σ 0.5 vs the row total 1.0
 
     const agreeing = deriveUsageView(
       input({
@@ -133,14 +133,54 @@ describe('deriveUsageView — the D2 rules, one test each', () => {
         ],
       }),
     );
-    expect(modelSplitDiverges(agreeing)).toBe(false);
+    expect(agreeing.modelSplitDiverges).toBe(false);
 
     // the guard half: an all-shortcut month never diverges, whatever the totals
     const shortcut = deriveUsageView(
       input({ rows: [row({ providerSessionId: 's', usdDelta: 0.4, model: 'glm-5.3' })] }),
     );
     expect(shortcut.hasModelSplit).toBe(false);
-    expect(modelSplitDiverges(shortcut)).toBe(false);
+    expect(shortcut.modelSplitDiverges).toBe(false);
+  });
+
+  it('F2 (review round): rounding dust cannot fire the split note — the comparison is RAW', () => {
+    // three buckets each rounding UP half a cent: the ROUNDED Σ drifts 0.012 from the rounded
+    // total (an exported view-reading predicate compared rounded sums and false-fired); the raw
+    // Σ equals the raw total exactly — dust is not the provider's two-channel story
+    const dusty = deriveUsageView(
+      input({
+        rows: [
+          row({
+            providerSessionId: 'd',
+            usdDelta: 0.018,
+            modelUsage: [
+              { model: 'a', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+              { model: 'b', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+              { model: 'c', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(dusty.hasModelSplit).toBe(true);
+    expect(dusty.modelSplitDiverges).toBe(false); // raw Σ 0.018 === raw total 0.018
+    // the same shape GENUINELY apart (the row total moved, the lines did not) still fires
+    const apart = deriveUsageView(
+      input({
+        rows: [
+          row({
+            providerSessionId: 'd',
+            usdDelta: 0.118,
+            modelUsage: [
+              { model: 'a', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+              { model: 'b', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+              { model: 'c', tokensIn: 100, tokensOut: 10, usd: 0.006 },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(apart.modelSplitDiverges).toBe(true); // raw Σ 0.018 vs raw total 0.118
   });
 
   it('D2.4: byRole — usd desc, pct of the totals, zero-row roles ABSENT', () => {
@@ -199,7 +239,7 @@ describe('deriveUsageView — the D2 rules, one test each', () => {
     // totals come from the ROW scalars — the multi-model row's full delta lands ONCE, in totals
     expect(v.totals.usd).toBe(2.0);
     // Σ byModel (1.7) ≠ totals (2.0) → the split diverges (the note's live state)
-    expect(modelSplitDiverges(v)).toBe(true);
+    expect(v.modelSplitDiverges).toBe(true);
   });
 
   it('D2.6: cache — sums over the reporting rows, freshIn over all rows, hasCacheFigures both directions', () => {

@@ -102,9 +102,15 @@ export interface UsageSessionRow {
 export interface WorkspaceUsageView {
   empty: boolean; // ZERO windowed rows (draft rows are rows)
   totals: { usd: number; tokensIn: number; tokensOut: number };
+  totalsRawUsd: number; // the UNROUNDED ledger total — basisDiverges' input; the readout
+  // renders totals.usd, never this (comparing rounded figures let bucket-rounding dust fire
+  // the divergence note spuriously — the review round's fix: compare raw, tolerate half a cent)
   byRole: UsageRoleBucket[]; // usd desc; a role with zero rows is ABSENT
   byModel: UsageModelBucket[]; // usd desc; the unknown bucket last; model ids verbatim
   hasModelSplit: boolean; // ≥1 row carried modelUsage lines — the models note's precondition
+  modelSplitDiverges: boolean; // the models note's gate, computed HERE against RAW accumulates
+  // (Σ of the unrounded byModel buckets vs totalsRawUsd) — an exported view-reading predicate
+  // compared rounded sums and could read dust as divergence (the review round's fix)
   cache: UsageCacheSplit; // hasCacheFigures gates the card
   workOrders: UsageOrderRow[]; // usd desc; zero-spend WOs absent
   draft?: UsageDraftRow; // present ONLY when draft rows exist (the 1832 un-pin's read half)
@@ -127,18 +133,11 @@ const CENT_HALF = 0.005;
 /** The head-vs-breakdown basis divergence (plan D2.1): true when the budget view's month figure
  *  (`session.cost_usd` over `started_at`, WO-0047's own basis) and the ledger's windowed total
  *  (`usd_delta` over `at`) disagree by more than half a cent. The head's qualifier line renders
- *  ONLY on true — a narration, never a reconciliation, never a third figure. */
-export function basisDiverges(budgetMonthUsd: number, ledgerTotalsUsd: number): boolean {
-  return Math.abs(budgetMonthUsd - ledgerTotalsUsd) > CENT_HALF;
-}
-
-/** The models-block split note's predicate (plan D2.2): true when a provider per-model split
- *  exists AND its Σ does not total to the row-scalar total within half a cent — the provider's
- *  own accounting on two channels, narrated as exactly that, never corrected by Docket. */
-export function modelSplitDiverges(view: WorkspaceUsageView): boolean {
-  if (!view.hasModelSplit) return false;
-  const byModelUsd = view.byModel.reduce((s, b) => s + b.usd, 0);
-  return Math.abs(byModelUsd - view.totals.usd) > CENT_HALF;
+ *  ONLY on true — a narration, never a reconciliation, never a third figure. Pass the LEDGER'S
+ *  RAW total (`view.totalsRawUsd`): comparing the rendered (rounded) figures let per-bucket
+ *  rounding dust read as divergence (the review round's fix). */
+export function basisDiverges(budgetMonthUsd: number, ledgerTotalsRawUsd: number): boolean {
+  return Math.abs(budgetMonthUsd - ledgerTotalsRawUsd) > CENT_HALF;
 }
 
 /**
@@ -335,12 +334,20 @@ export function deriveUsageView(input: DeriveUsageInput): WorkspaceUsageView {
     if (factByPsid.get(r.providerSessionId)?.role === undefined) roleUnknownCount += 1;
   }
 
+  // The models note's gate on RAW accumulates (the review round's fix): the buckets' ROUNDED usd
+  // can drift from the rounded total by up to ~half a cent per bucket — dust, not the provider's
+  // own two-channel story. hasModelSplit folds in here: an all-shortcut month never diverges.
+  let byModelRawUsd = unknownModel ? unknownModel.usd : 0;
+  for (const b of modelAcc.values()) byModelRawUsd += b.usd;
+
   return {
     empty: inWindow.length === 0,
     totals,
+    totalsRawUsd: usd,
     byRole,
     byModel,
     hasModelSplit,
+    modelSplitDiverges: hasModelSplit && Math.abs(byModelRawUsd - usd) > CENT_HALF,
     cache,
     workOrders,
     ...(draft ? { draft } : {}),

@@ -2626,7 +2626,7 @@ await spec('WO-0054 dolu yüz: ay başlığı (uyarı + çubuk), sapma satırı,
   // the breakdown: roles, models verbatim (row DATA), the unknown bucket, cache, the split note
   assert.ok(screen.includes('Uygulayıcı') && screen.includes('$15,17 · %81'), `role row: ${screen.slice(0, 500)}`);
   assert.ok(screen.includes('glm-5.3') && screen.includes('glm-5.3-flash'), 'model ids did not render verbatim');
-  assert.ok(screen.includes('bilinmeyen (0-model sonuç)'), 'no unknown bucket');
+  assert.ok(screen.includes('bilinmeyen model'), 'no unknown bucket');
   assert.ok(screen.includes('taze giriş 650k · cache okuma 1.4M · cache yazma 310k'), `cache line: ${screen.slice(0, 700)}`);
   assert.equal(await page.locator('[data-usage-models-note]').count(), 1, 'no models-split note on the non-summing split');
   assert.ok(screen.includes('$18,74 · 650k→94k'), `total row: ${screen.slice(0, 900)}`);
@@ -2637,8 +2637,9 @@ await spec('WO-0054 dolu yüz: ay başlığı (uyarı + çubuk), sapma satırı,
   // the sessions: the ctx reading + the OBSERVED-result count (never num_turns)
   assert.ok(screen.includes('bağlam %62 · 124k/200k'), 'no ctx readout');
   assert.ok(screen.includes('1 sonuç'), 'no observed-result count');
-  // honesty: the pre-WO-0052 vintage names itself
-  assert.ok(screen.includes('per-turn defteri boş'), 'no unledgered qualifier');
+  // honesty: the detail-less vintage names itself — in USER language, never internal WO jargon
+  assert.ok(screen.includes('ayrıntı kaydı yok'), 'no unledgered qualifier');
+  assert.ok(!screen.includes('WO-0052') && !screen.includes('per-turn'), 'internal jargon leaked to the screen');
   await page.screenshot({ path: join(SHOTS, 'usage-full@980.png') });
   await backToBoard();
 });

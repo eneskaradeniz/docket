@@ -3,11 +3,10 @@
 // Roles through ROLE_LABELS; model ids verbatim in mono — row DATA, the ADR-0006 WO-0052
 // carve-out's sanctioned display; the modelUnknown bucket renders LAST. The models-split note
 // (architect F2) narrates the provider's own split when it does not total to the row-scalar sum —
-// `modelSplitDiverges`, never Docket arithmetic, absent when they agree. The cache block renders
-// ONLY when the month reported cache figures (AC4) — never a 0/0/0 row. Figures are static text
-// (ADR-0012): readouts, no animation.
+// the view's `modelSplitDiverges` (computed in core against RAW accumulates), never Docket
+// arithmetic, absent when they agree. The cache block renders ONLY when the month reported cache
+// figures (AC4) — never a 0/0/0 row. Figures are static text (ADR-0012): readouts, no animation.
 import type { WorkspaceUsageView } from '../../../core/usage';
-import { modelSplitDiverges } from '../../../core/usage';
 import { useLabels } from '../../data/locale';
 
 export function UsageBreakdownCard({ view }: { view: WorkspaceUsageView }) {
@@ -52,7 +51,7 @@ export function UsageBreakdownCard({ view }: { view: WorkspaceUsageView }) {
           </div>
         ))}
       </div>
-      {modelSplitDiverges(view) ? (
+      {view.modelSplitDiverges ? (
         <p data-usage-models-note className="mt-1 text-xs text-inkdim">
           {UI.usageModelSplitNote}
         </p>

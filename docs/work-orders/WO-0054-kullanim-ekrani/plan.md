@@ -552,11 +552,29 @@ RED before GREEN at every step.
 
 ## Deviations
 
-None in implementation (the plan is pre-code). The architect round's 4 findings + 1 nit
-(2026-08-29) are folded INTO this revision — they amend the design, they are not deviations
-from the order; the verdicts are recorded under RULINGS. (Any deviation found during
-implementation lands here, numbered, with its reason; a deviation that touches a stop-and-ask
-gate STOPS instead.)
+The architect round's 4 findings + 1 nit (2026-08-29) are folded INTO this revision — they
+amend the design, they are not deviations from the order; the verdicts are recorded under
+RULINGS. (Any deviation found during implementation lands here, numbered, with its reason; a
+deviation that touches a stop-and-ask gate STOPS instead.)
+
+1. **The empty face renders the live quota panel** (S4, commit `bfcfd0e`; reviewer finding 1).
+   Plan D6 read AC6's "no figures anywhere" as barring the panel; the realized face mounts it
+   above the invitation. Reason: AC3 requires the ✦ draft arm, and the `taslak` world's ledger
+   is empty — the panel is the provider's own percentage (no `$` anywhere, spec 2's shape regex
+   still passes), not a ledger figure. The plan's D6 comment is corrected in the file.
+2. **The divergence comparisons run on RAW accumulates** (review round, reviewer finding 2).
+   Plan D2.1/D2.2 said "a pure exported predicate"; as written it compared ROUNDED figures
+   (`totals.usd`, the per-bucket rounded `byModel[].usd`), so accumulated round2 dust could
+   false-fire both notes. The essence survives — the computation stays in core, unit-tested
+   both directions, never UI-side: the view carries `totalsRawUsd` (basisDiverges' input) and
+   a computed `modelSplitDiverges` field (Σ of the unrounded buckets vs the unrounded total;
+   hasModelSplit folded in). The 0.005 cent-half tolerance is unchanged — on raw figures it is
+   exactly right. The dust construction (3 buckets each rounding up half a cent) is pinned
+   false in S1.
+3. **The head renders the readout XOR budgetLine, not both** (review round, reviewer finding 3).
+   The plan's "readout + status line" stack repeated the same figures on a warn month
+   (`budgetLine` re-embeds `$X / $Y`). The board card's own shape is adopted: budgetLine alone
+   when the cap is breached (it carries the figures + the status), the plain readout when ok.
 
 ## Risks
 

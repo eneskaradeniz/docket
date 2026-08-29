@@ -599,16 +599,21 @@ function usageSessionFacts(db: DatabaseSync, wsId: WorkspaceId): UsageSessionFac
     ctx_used_tokens: number | null;
     ctx_max_tokens: number | null;
   }>;
-  return rows.map((r) => ({
-    providerSessionId: r.provider_session_id ?? '',
-    workOrderId: r.work_order_id == null ? null : woid(r.work_order_id),
-    ...(r.role ? { role: r.role as SessionRole } : {}),
-    ...(r.cost_usd == null ? {} : { costUsd: r.cost_usd }),
-    ...(r.started_at == null ? {} : { startedAt: r.started_at }),
-    ...(r.ctx_used_tokens != null && r.ctx_max_tokens != null
-      ? { ctx: { usedTokens: r.ctx_used_tokens, maxTokens: r.ctx_max_tokens } }
-      : {}),
-  }));
+  return rows
+    .filter((r): r is typeof r & { provider_session_id: string } => r.provider_session_id != null) // an
+    // identity-less session can join nothing — a '' sentinel would MERGE such rows into one map
+    // entry (the review round's fix; unreachable via recordSession, which always carries the
+    // provider handle)
+    .map((r) => ({
+      providerSessionId: r.provider_session_id,
+      workOrderId: r.work_order_id == null ? null : woid(r.work_order_id),
+      ...(r.role ? { role: r.role as SessionRole } : {}),
+      ...(r.cost_usd == null ? {} : { costUsd: r.cost_usd }),
+      ...(r.started_at == null ? {} : { startedAt: r.started_at }),
+      ...(r.ctx_used_tokens != null && r.ctx_max_tokens != null
+        ? { ctx: { usedTokens: r.ctx_used_tokens, maxTokens: r.ctx_max_tokens } }
+        : {}),
+    }));
 }
 
 // WO-0054: the work-order titles the spend list renders — the only order fields the view needs.

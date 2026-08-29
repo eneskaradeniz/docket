@@ -15,7 +15,7 @@
 // `${workspaceId}:draft` key (a draft key never enters activeSnapshot — drive-store.ts:101-105).
 // The store's one-active-drive rule makes the arms mutually exclusive; without a signal the
 // section is ABSENT, never from rows, never from a stamp (AC3, the WO-0053 rule inherited).
-import { useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import { initialSessionState } from '../../core/runner';
 import type { WorkspaceUsageView } from '../../core/usage';
@@ -50,7 +50,15 @@ export function UsageScreen({
     active !== undefined && active.running && active.woId !== undefined && woIds.includes(active.woId)
       ? active
       : undefined;
-  const draftRunning = driveStore.get(draftKey)?.running ?? false;
+  // The draft arm's liveness read is a SUBSCRIPTION (the review round's fix): a plain
+  // `driveStore.get(draftKey)?.running` during render is non-reactive — a future
+  // "start a draft from elsewhere" would leave the panel absent until an unrelated re-render.
+  // A boolean snapshot is identity-stable, so no #185-style loop.
+  const draftRunning = useSyncExternalStore(
+    driveStore.subscribe,
+    () => driveStore.get(draftKey)?.running ?? false,
+    () => false,
+  );
   const liveKey = woArm !== undefined ? woArm.key : draftRunning ? draftKey : undefined;
   // The seed is a STABLE identity (the RoadmapScreen precedent — a fresh object per getSnapshot
   // call loops React, #185). No drive ever holds the '' key, so the idle arm reads the initial
