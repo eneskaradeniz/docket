@@ -149,6 +149,7 @@ ipcMain.handle('docket:source:save-roadmap', (_e, id: WorkspaceId, md: string) =
 ipcMain.handle('docket:source:get-roadmap-draft', (_e, id: WorkspaceId) => store.getRoadmapDraft(id));
 ipcMain.handle('docket:source:update-roadmap-draft', (_e, id: WorkspaceId, md: string) => store.updateRoadmapDraft(id, md));
 ipcMain.handle('docket:source:approve-roadmap-draft', (_e, id: WorkspaceId) => store.approveRoadmapDraft(id));
+ipcMain.handle('docket:source:discard-roadmap-draft', (_e, id: WorkspaceId) => store.discardRoadmapDraft(id));
 
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the

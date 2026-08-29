@@ -476,7 +476,7 @@ console.log(`ROADMAP=${JSON.stringify({ foto: String(woFoto.id), yetim: String(w
 // 15) WO-0050 the draft worlds. 'taslak': a clean workspace, NO roadmap.md (the absent face + the
 //     ✦ gate — spec 1's happy generate flow starts from scratch; the file never pre-exists).
 //     'taslak-kirli': a seeded INVALID draft row (no fence) + its draft session row — the card's
-//     parse-guard face (Onayla absent, İtiraz remains) without running a drive.
+//     parse-guard face (Onayla absent, İtiraz et gone, Sürdür the one action — dogfood 2026-08-29).
 mkdirSync(join(root, 'repo-taslak'), { recursive: true });
 mkdirSync(join(root, 'repo-kirli'), { recursive: true });
 const wsTaslak = await store.createWorkspace({
@@ -500,6 +500,26 @@ store.recordSession({
   endedAt: monthDay(9),
 });
 store.saveRoadmapDraft(wsKirli.id, '---\nworkspace: nope\ntitle: Kirli\n---\n\n# Kirli\n\nProse var, çit yok.\n', { providerSessionId: 'e2e-kirli-architect' });
+// 'taslak-olu' (dogfood 2026-08-29): the SAME invalid shape as kirli but DISPOSABLE — the dead
+// ✦ drive's resume journey (Sürdür → re-proposal) runs here, so the shared kirli world stays
+// pristine for its read-only card specs and the WO-0051 chip spec.
+mkdirSync(join(root, 'repo-olu'), { recursive: true });
+const wsOlu = await store.createWorkspace({
+  label: 'taslak-olu',
+  repos: [{ path: join(root, 'repo-olu'), remote: 'e2e-olu' }],
+  decisionStorePath: join(root, 'repo-olu'),
+});
+store.recordSession({
+  providerSessionId: 'e2e-olu-architect',
+  owner: { kind: 'draft', workspaceId: wsOlu.id },
+  role: 'architect',
+  status: 'idle',
+  transcript: [{ speaker: 'assistant', text: 'öldü, teklif yok' }],
+  cost: { tokensIn: 500, tokensOut: 120, usd: 0.04 },
+  startedAt: monthDay(9),
+  endedAt: monthDay(9),
+});
+store.saveRoadmapDraft(wsOlu.id, '---\nworkspace: nope\ntitle: Ölü\n---\n\n# Ölü\n\nSürüş öldü, çit yok.\n', { providerSessionId: 'e2e-olu-architect' });
 // 'taslak-kapi': the draft's OWN budget gate world — at its cap before any ✦ click (ascii label:
 // slugify strips the Turkish ı, so the label IS the slug the draft md's front-matter must name).
 mkdirSync(join(root, 'repo-kapi'), { recursive: true });
@@ -519,7 +539,7 @@ store.recordSession({
   startedAt: monthDay(10),
   endedAt: monthDay(10),
 });
-console.log(`TASLAK=${JSON.stringify({ taslak: String(wsTaslak.id), kirli: String(wsKirli.id) })}`);
+console.log(`TASLAK=${JSON.stringify({ taslak: String(wsTaslak.id), kirli: String(wsKirli.id), olu: String(wsOlu.id) })}`);
 
 // 16) WO-0051 the DEPO world. 'taslak-depo': a workspace whose structure root CARRIES documents —
 //     two root faz docs + adr/ (2) + notlar/ (1) = 5 .md, grouped at the first directory segment;

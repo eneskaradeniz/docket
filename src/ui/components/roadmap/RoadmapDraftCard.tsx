@@ -17,7 +17,7 @@ import type { RoadmapDraft, WorkOrderSource } from '../../../core/source';
 import type { Workspace, WorkspaceId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { toast } from '../../chrome/ToastHost';
-import { Button, Input, Textarea, cn } from '../../kit';
+import { Button, Dialog, Input, Textarea, cn } from '../../kit';
 import { EnterMark } from '../EnterMark';
 import { seedLiveState, initialSessionState } from '../../../core/runner';
 import { useDriveStore } from '../session/drive-store';
@@ -30,6 +30,7 @@ export function RoadmapDraftCard({
   docsRoot,
   source,
   superseded,
+  resumeLocked,
   onApproved,
   onSaved,
 }: {
@@ -41,6 +42,9 @@ export function RoadmapDraftCard({
   /** The drive's LAST proposal could not be read while the pending row is valid — the supersede
    *  guard kept the prior draft (the honest line; the screen computes it from the live fold). */
   superseded?: boolean;
+  /** A limit stamp still in the future (the screen's draftLimitWaiting) — the unreadable state's
+   *  Sürdür waits with it, the kit's attribute-free lock (WO-0053 round-2 register). */
+  resumeLocked?: boolean;
   /** Onayla landed: the screen refreshes to the ready face. */
   onApproved: () => void;
   /** Düzenle's Bitti wrote the row: the screen re-reads the draft. */
@@ -118,6 +122,51 @@ export function RoadmapDraftCard({
     setEditOpen(true);
   };
 
+  // Dogfood 2026-08-29 (the 04:16 antreo 429 death's aftermath): an UNREADABLE draft has no
+  // proposal to object to — İtiraz et was the wrong word AND the wrong demand (a required note
+  // for a pure retry). The invalid state's actions are SÜRÜDÜR (a no-note resume of the same
+  // provider session — prompt: '' + resume, the pipeline fills the standing draft prompt) and
+  // SIL (discard the pending row outright; the next ✦ starts from scratch). Locked while a
+  // limit stamp holds (resumeLocked); when the row carries no session there is nothing to
+  // resume — the reason line names the fresh-✦ path.
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const resumeDraft = (): void => {
+    if (busy || resumeLocked || !draft.providerSessionId) return;
+    const seed = draft.session !== undefined ? seedLiveState(draft.session) : initialSessionState;
+    const ok = store.start(
+      driveKey,
+      {
+        role: 'architect',
+        workspaceId: wsId,
+        mode: 'plan',
+        prompt: '',
+        goalNote: '',
+        docPaths: [],
+        resume: draft.providerSessionId,
+      },
+      seed,
+    );
+    if (!ok) {
+      setResumeBusy(true); // the one-drive refusal keeps the button + names itself (the object rule)
+      return;
+    }
+    setResumeBusy(false);
+  };
+  const discardDraft = (): void => {
+    if (busy) return;
+    setBusy(true);
+    void source.discardRoadmapDraft(wsId).then(() => {
+      setBusy(false);
+      onSaved(); // the re-read finds no row — the card leaves, the screen is fresh-✦ territory
+    }).catch(() => {
+      setBusy(false);
+      toast.push({ kind: 'error', title: UI.roadmapDraftDiscardFailed(UI.saveFailed) });
+    });
+  };
+  // the operator's round 2: Sil CONFIRMS — the discard is a scratch-start decision, the dialog
+  // names exactly what dies (the pending row) and what stays (the file, the session history)
+  const [discardOpen, setDiscardOpen] = useState(false);
+
   const patchFaz = (idx: number, patch: Partial<FazSpec>): void => {
     setEditFazlar((prior) => prior.map((f, i) => (i === idx ? { ...f, ...patch } : f)));
   };
@@ -187,7 +236,7 @@ export function RoadmapDraftCard({
       <div className="lamp lamp-signal" />
       <div className="min-w-0 w-full px-3.5 py-3">
         <div ref={headRef} className="flex items-baseline justify-between gap-3">
-          <p className="readout text-signal">{UI.roadmapDraftCardHead}</p>
+          <p className="readout text-signal">{invalid ? UI.roadmapDraftCardHeadUnreadable : UI.roadmapDraftCardHead}</p>
           {session !== undefined ? (
             <span className="ml-auto self-center">
               <PaneLogChip open={logOpen} onToggle={toggleLog} />
@@ -325,17 +374,40 @@ export function RoadmapDraftCard({
           </div>
         ) : null}
         {!editOpen ? (
-          <div className="mt-2.5 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => { setObjectOpen((v) => !v); setObjectBusy(false); }}>{UI.object}</Button>
+          // the operator's seats (dogfood 2026-08-29): LEFT-aligned, not right — the action row
+          // reads with the card, not against it
+          <div className="mt-2.5 flex items-center justify-start gap-2">
             {!invalid ? (
               <>
+                <Button variant="ghost" size="sm" onClick={() => { setObjectOpen((v) => !v); setObjectBusy(false); }}>{UI.object}</Button>
                 <Button variant="ghost" size="sm" data-draft-edit onClick={openEditor}>{UI.editPlan}</Button>
                 <Button variant="primary" size="sm" data-draft-approve onClick={approve}>
                   {UI.roadmapDraftApprove}
                   <EnterMark />
                 </Button>
               </>
-            ) : null}
+            ) : (
+              <>
+                {draft.providerSessionId ? (
+                  <>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      data-draft-resume
+                      busy={resumeBusy}
+                      locked={resumeLocked}
+                      onClick={resumeDraft}
+                    >
+                      {UI.driveResume}
+                    </Button>
+                    <Button variant="ghost" size="sm" data-draft-discard onClick={() => setDiscardOpen(true)}>{UI.deleteWo}</Button>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-inkdim" data-draft-no-resume>{UI.roadmapDraftNoSessionLine}</p>
+                )}
+                {resumeBusy ? <p role="alert" className="text-[11px] text-error">{UI.roadmapDraftBusy}</p> : null}
+              </>
+            )}
           </div>
         ) : null}
       </div>
@@ -366,6 +438,23 @@ export function RoadmapDraftCard({
         )}
       </div>
     ) : null}
+    <Dialog
+      open={discardOpen}
+      onOpenChange={setDiscardOpen}
+      title={UI.roadmapDraftDiscardTitle}
+      closeAria={UI.cancel}
+      narrow
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setDiscardOpen(false)}>{UI.cancel}</Button>
+          <Button variant="danger" size="sm" data-draft-discard-confirm busy={busy} onClick={() => { setDiscardOpen(false); discardDraft(); }}>
+            {UI.deleteWo}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-ink">{UI.roadmapDraftDiscardBody}</p>
+    </Dialog>
     </>
   );
 }

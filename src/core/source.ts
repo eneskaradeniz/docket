@@ -154,6 +154,11 @@ export interface WorkOrderSource {
   // operator's edited fazlar serialized back over the draft. Refuses — changing nothing — when the
   // edited md fails to parse (an operator act may not degrade; a read may).
   updateRoadmapDraft(id: WorkspaceId, md: string): Promise<void>;
+  // The card's Sil (dogfood 2026-08-29): drops the PENDING draft row outright — roadmap.md is
+  // never written, the row's session stays (history), and the next ✦ starts from scratch. The
+  // operator's discard of an unreadable/unwanted proposal; no confirm dialog (a pending proposal
+  // is regenerable — the delete-confirm discipline guards evidence, not this).
+  discardRoadmapDraft(id: WorkspaceId): Promise<void>;
   // Onayla ⏎ (WO-0050): the atomic decision — parse-guard (refuse, write nothing, on a draft that
   // cannot re-read: "bozuk taslak geçerliyi ezmesin") + write roadmap.md under the structure root +
   // byte-identical re-read + DELETE the pending row, in one call (no half state). The git commit

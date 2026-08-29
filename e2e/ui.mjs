@@ -2130,8 +2130,7 @@ await spec('WO-0049 yapı kökü: .docket → yok yüzeyi; docs → geri (dosyal
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(600); // onDocsRootChanged → the surface follows the root
   const screen = await page.locator('[data-roadmap-screen]').innerText();
-  assert.ok(screen.includes('yol haritası henüz yok'), `not the invitation: ${screen.slice(0, 140)}`);
-  assert.ok(screen.includes('.docket/roadmap.md'), `the file line does not name the new root: ${screen.slice(0, 180)}`);
+  assert.equal(await page.getByRole('button', { name: '✦ Üret / İçe aktar' }).count(), 1, 'the absent face lost its ✦ action');
   await page.screenshot({ path: join(SHOTS, 'roadmap-root-absent@980.png') });
   // back to docs: the full surface returns unchanged — the files never moved, only the pointer did
   await page.locator('button[aria-label="Ayarlar"]').click();
@@ -2183,18 +2182,52 @@ const draftEmit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
 const w50Done = () =>
   draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1200, tokensOut: 300, usd: 0.12 } });
 
-await spec('WO-0050 geçersiz taslak: kart iner, adlı tanı satırı, Onayla/Düzenle yok, İtiraz kalır', async () => {
+await spec('WO-0050 geçersiz taslak (dogfood 2026-08-29): dürüst başlık, İtiraz kalktı, Sürdür tek eylem', async () => {
   await switchWs('e2e', 'taslak-kirli');
   await openRoadmap();
   const card = page.locator('[data-roadmap-draft-card]');
   assert.equal(await card.count(), 1, 'the seeded draft row raised no card');
   const text = await card.innerText();
+  assert.ok(text.includes('TASLAK TAMAMLANAMADI'), `not the unreadable head: ${text.slice(0, 160)}`); // the readout's CSS uppercases innerText
   assert.ok(text.includes('Taslak okunamadı'), `not the invalid line: ${text.slice(0, 160)}`);
   assert.ok(text.includes('fazlar bloğu yok'), `no named diagnostic: ${text.slice(0, 220)}`);
   assert.equal(await card.getByRole('button', { name: 'Onayla', exact: true }).count(), 0, 'Onayla rendered on an invalid draft');
   assert.equal(await card.getByRole('button', { name: 'Düzenle', exact: true }).count(), 0, 'Düzenle rendered on a fence-less draft');
-  assert.ok((await card.getByRole('button', { name: 'İtiraz et' }).count()) === 1, 'İtiraz et died');
+  assert.equal(await card.getByRole('button', { name: 'İtiraz et' }).count(), 0, 'İtiraz et still offers an objection target that does not exist');
+  assert.equal(await card.locator('[data-draft-resume]').count(), 1, 'no Sürdür on the unreadable draft (the session row exists)');
+  assert.equal(await card.locator('[data-draft-discard]').count(), 1, 'no Sil beside the Sürdür (the scratch-start path)');
+  // Sil CONFIRMS (the operator's round 2): the dialog names what dies; Vazgeç keeps the card
+  await card.locator('[data-draft-discard]').click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.getByRole('dialog').count(), 1, 'Sil fired without its confirm dialog');
+  await page.locator('[data-draft-discard-confirm]').waitFor({ state: 'visible' });
+  await page.getByRole('dialog').getByRole('button', { name: 'Vazgeç' }).last().click(); // the footer's Vazgeç — the X's aria shares the word
+  await page.waitForTimeout(300);
+  assert.equal(await card.count(), 1, 'Vazgeç discarded the card anyway');
   await page.screenshot({ path: join(SHOTS, 'draft-invalid@980.png') });
+  await page.getByRole('button', { name: 'Pano' }).click();
+});
+
+await spec('WO-0050 ölü taslak yolculuğu: Sürdür notsuz resume → yeni öneri kartı hazırlar', async () => {
+  await switchWs('taslak-kirli', 'taslak-olu');
+  await openRoadmap();
+  const card = page.locator('[data-roadmap-draft-card]');
+  assert.equal(await card.locator('[data-draft-resume]').count(), 1, 'no Sürdür on the dead draft');
+  await card.locator('[data-draft-resume]').click();
+  await page.waitForTimeout(600);
+  const pane = page.locator('[data-roadmap-pane]');
+  assert.equal(await pane.count(), 1, 'Sürdür did not raise the draft pane');
+  const head = await pane.innerText();
+  assert.ok(head.includes('MİMAR — TASLAK'), `identity line: ${head.slice(0, 120)}`);
+  // the resumed architect re-proposes: the pending row turns VALID — the card is READY again
+  await draftEmit({ kind: 'plan_ready', planText: DRAFT_MD('taslak-olu', 'Ölü Başlık', 'İlk faz') });
+  await draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 300, tokensOut: 80, usd: 0.03 } });
+  await page.waitForTimeout(500);
+  const t2 = await card.innerText();
+  assert.ok(t2.includes('TASLAK HAZIR'), `the resumed proposal did not turn the card ready: ${t2.slice(0, 160)}`);
+  assert.equal(await card.getByRole('button', { name: 'Onayla', exact: true }).count(), 1, 'no Onayla on the renewed draft');
+  // the spec chain continues on taslak-kirli (the next spec's switchWs FROM assumption)
+  await switchWs('taslak-olu', 'taslak-kirli');
   await page.getByRole('button', { name: 'Pano' }).click();
 });
 
@@ -2202,7 +2235,7 @@ await spec('WO-0050 mutlu üretim: boş yüzey ✦ → sürüş → kart iner �
   await switchWs('taslak-kirli', 'taslak');
   await openRoadmap();
   const screen = await page.locator('[data-roadmap-screen]').innerText();
-  assert.ok(screen.includes('yol haritası henüz yok'), `not the absent face: ${screen.slice(0, 160)}`);
+  assert.equal(await page.getByRole('button', { name: '✦ Üret / İçe aktar' }).count(), 1, 'not the absent face (no ✦ action)');
   await startDraft('E2E: iki görevli tek fazlı taslak üret.');
   // the live half: the pane in the shared grammar, the WO-less identity, the source readout
   const pane = page.locator('[data-roadmap-pane]');
