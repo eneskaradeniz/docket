@@ -459,6 +459,31 @@ diet, the plan.md embed diet.
       boundaries / build / E2E 78 green. ADR-0006 + ADR-0010 addenda, CLAUDE.md Records sentence,
       TD-058 open. Spec: `docs/work-orders/WO-0052-kullanim-enstrumantasyonu/order.md`.
 
+- [x] **WO-0053** — the limit screen (merged #59, `28f8801`). The two channels WO-0052 reserved
+      are read: the push `rate_limit_event` (status neutralized `allowed|allowed_warning|rejected`
+      → `ok|warning|blocked`, the epoch `resetsAt` → ISO at the boundary) and the pull
+      `usage_EXPERIMENTAL` control at the `emitContext` cadence (windows only, `rate_limits_available
+      === false` absent, one-rejection kill). Every 429-shaped death classifies to `rate_limited`
+      (`error_during_execution` + `terminal_reason`/`errors[0]`; `api_error_status` never read;
+      `overloaded` out — capacity, not the window). Core: the `limit_windows` feed + the `limit?`
+      stop payload (the refusal pattern) + the fold + `limitCrossing` + the seed boundary (a
+      stopped row never re-raises the limit). Store: `session.limit_reset_at` — set at the limit
+      terminal, CLEARED by a clean leg (a stale stamp is a lie), kept through non-limit throws;
+      PRAGMA-guarded, rebuild-copy extended. UI (operator round 2): the INFORMATIVE card —
+      actionless, wait-state only, the crossing unmounts it («kart gider, Sürdür düğmesi gelir»);
+      the ONE «Sürdür» locked in its normal home while the limit holds (attribute-free, ADR-0001's
+      guarded register), ⏎ held off; the provider-signal-only warn line (running-gated); the
+      board's `limit_stopped` reason line (clock-free; a clean leg reverts it); the stamp-less
+      degrade to the localized fail-card title. CLI names the stamp + the resume path. Mockup rev
+      1 `cf28681` (6 rulings, round 2 revised them); architect plan round REVISE (8 findings
+      folded) → PROCEED `6629b5e`; reviewer round 1 blocker + 3 majors folded `1c1e5de` (the
+      load-bearing one: the real death folds `done` — the surfaces branch on their own
+      discriminator); verifier AC1-8 PASS at head, its closure gap (the board arm's core test)
+      fixed at close. 842 tests at merge (+4 at close) / typecheck both / boundaries / build /
+      E2E 82/82 (the live 9s tick crossing pinned for real). ADR-0013 needed NO addendum in the
+      end (round 2 dissolved the card-button tension); TD-016's pinned-surface list gains the two
+      channels. Spec: `docs/work-orders/WO-0053-limit-ekrani/order.md`.
+
 ## Later
 
 - Packaging and distribution

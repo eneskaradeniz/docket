@@ -799,3 +799,36 @@ describe('nextManuelAction — what the manuel card offers (WO-0045)', () => {
     expect(nextManuelAction([])).toBeUndefined();
   });
 });
+
+// WO-0053 (verifier's closure gap): the board reason's limit arm — precedence pinned in core,
+// the way ADR-0006 demands (the e2e saw the line; the RULE lived untested).
+describe('deriveCardReason — the limit_stopped arm (WO-0053)', () => {
+  const stamped = aWorkOrder({
+    sessions: [aSession({ role: 'implementer', status: 'idle', providerSessionId: 's-l', limitResetAt: '2026-08-29T14:32:00.000Z' })],
+  });
+  it('a stamped row yields the limit reason with its clock', () => {
+    expect(deriveCardReason(stamped)).toEqual({ kind: 'limit_stopped', resetAt: '2026-08-29T14:32:00.000Z' });
+  });
+  it('a STOPPED row still outranks — the operator’s Durdur is the last real event (the seed boundary’s rule)', () => {
+    const both = aWorkOrder({
+      sessions: [
+        aSession({ role: 'implementer', status: 'stopped', providerSessionId: 's-x', limitResetAt: '2026-08-29T14:32:00.000Z' }),
+      ],
+    });
+    expect(deriveCardReason(both)).toEqual({ kind: 'session_stopped' });
+  });
+  it('a RUNNING session outranks too — it is working, not waiting on a clock', () => {
+    const both = aWorkOrder({
+      sessions: [
+        aSession({ role: 'implementer', status: 'running', providerSessionId: 's-r', limitResetAt: '2026-08-29T14:32:00.000Z' }),
+      ],
+    });
+    expect(deriveCardReason(both)).toEqual({ kind: 'in_progress' });
+  });
+  it('a cleared stamp reverts to the ordinary reasons (the clean leg’s honest revert)', () => {
+    const clean = aWorkOrder({
+      sessions: [aSession({ role: 'implementer', status: 'idle', providerSessionId: 's-c' })],
+    });
+    expect(deriveCardReason(clean)).toEqual({ kind: 'awaiting_next_session' }); // no limit arm fires
+  });
+});

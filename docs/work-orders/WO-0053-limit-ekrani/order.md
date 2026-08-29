@@ -2,7 +2,7 @@
 id: WO-0053
 title: "Limit screen — the provider's usage limit becomes a first-class stop (adapter classification · neutral reset stamp · live windows readout · one-button Sürdür)"
 workspace: docket
-status: draft
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -183,18 +183,67 @@ Out of scope:
 
 ## Evidence required
 
-- operator_checkpoint: TWO rounds (the WO-0051 flow). Round 1 RESOLVED 2026-08-29 — the mockup
-  tour (frames 01–04, rev 1 `cf28681`) approved; the rulings above are locked. Round 2 = the
-  realized app re-presented against the approved frames.
-- plan_approval: architect verdict, `plan.md` committed (mode: plan — the open design slots:
-  the card/warn-line copy values and the pull-feed cadence details are decided there).
-- pr_open: PR URL, head sha.
-- ci: green on the PR (the full ladder).
-- verification: verifier report, all `path:line` pointers resolve at head sha.
-- closure: all tracks merged, `ROADMAP.md` + `docs/tech-debt.md` updated (commit sha).
+- operator_checkpoint: RESOLVED 2026-08-29, TWO rounds. Round 1 — the mockup tour (frames 01–04,
+  rev 1 `cf28681`) approved, the rulings locked. Round 2 — the realized app re-presented
+  (screenshots `docs/ui-shots/limit-card-{wait,ready}@980.png`, the E2E walkthrough against the
+  real pipeline): the FUNCTION approved, the PRESENTATION revised by the operator's directive
+  («kartta sürdür butonu olmasın — 2 tane buton oluyor… kart gider sürdür butonu gelir») and
+  re-presented — approved («kaldığın yerden devam et»).
+- plan_approval: RESOLVED — `plan.md` committed `6629b5e`; one architect round, REVISE with 8
+  findings (all folded, the load-bearing one: the stamp rides the `turn_complete` terminal, not
+  the finally), final verdict PROCEED with 2 clarification NITs folded.
+- pr_open: PR #59 (`https://github.com/eneskaradeniz/docket/pull/59`), head `bf48274`, merged
+  `28f8801`.
+- ci: green — typecheck (both), 842 tests at the merge head (+4 closure-gap tests after: 846),
+  `check:boundaries`, build, E2E 82/82.
+- verification: RESOLVED — the closing verifier's AC1-8 PASS at head `28f8801`, every claim with
+  path:line evidence; its one önemli gap (the board reason arm had no CORE test — ADR-0006's
+  test-first rule) fixed in the closure commit (`derive.test.ts`, precedence pinned: stamped →
+  limit_stopped; stopped/running outrank; a cleared stamp reverts). Its three not-level residuals
+  are recorded under Notes.
+- closure: this commit — ROADMAP M7's second tick, TD-016's pinned-surface list extended, the
+  spec closed.
+
+## Closure
+
+Merged PR #59 (`28f8801`), 2026-08-29. The provider's usage limit is a first-class stop: the
+adapter reads the two reserved channels (push `rate_limit_event` — status neutralized, the epoch
+stamp → ISO at the boundary; pull `usage_EXPERIMENTAL…` at the `emitContext` cadence, windows
+only, one-rejection kill) and classifies every 429-shaped death onto `rate_limited` (the result
+arm triggers on `error_during_execution` + `terminal_reason`/`errors[0]`; `api_error_status` —
+SUCCESS arm only — is never read; `overloaded` is deliberately out: provider capacity, not the
+user's window). Core carries the `limit_windows` feed, the `limit?` stop payload, the
+`lastLimit`/`limitWindows` fold, `limitCrossing`, and the seed boundary (a stopped row never
+re-raises the limit). The row persists `limit_reset_at` (set at the limit terminal, cleared by a
+clean leg, kept through non-limit throws; a stamp-less limit close CLEARS — the provider
+disproved the old clock). The UI: the informative card (round 2: actionless, wait-state only —
+the crossing unmounts it), the ONE «Sürdür» locked in its normal home while the limit holds
+(attribute-free, ADR-0001's guarded register), the provider-signal-only warn line (running-gated),
+the board's `limit_stopped` reason line (clock-free; a clean leg reverts it), and the localized
+degrade title for stamp-less stops. The CLI names the stamp + the resume path.
+
+Reviewer round (1 blocker + 3 majors + 4 minors, all folded `1c1e5de`): the load-bearing fix —
+the primary real death is a RESULT message that folds `done`, so the limit surfaces branch on
+their own discriminator, never the derived turn. Verifier: AC1-8 PASS at head with path:line
+evidence; its önemli gap (the board reason arm's missing core test) fixed in this closure commit.
+
+**ADR-0013: NO addendum was needed after all** — the order's drafted sentence ("a decision-stack
+card that terminates a drive may carry its own one-button resume") described the ROUND-1 design;
+round 2 removed the card's button entirely, and with it the tension with "Sürdür lives only in
+DriveControls" (the locked lone button is the pre-existing 2026-08-23 empty-state button, and the
+kit lock is ADR-0001's own register). ADR-0006 likewise needed nothing — the WO-0052 addendum's
+data-vs-code split already covers window kind strings (stated here, per the order's Notes).
+
+Known unpinned residuals (the verifier's not-level gaps, accepted): the adapter catch arm's own
+event push (the thrown-429 path is classification-pinned, not path-pinned — the scripted mock
+cannot make the generator throw); the e2e's resume assertion is outcome-level (a fresh drive
+would also read Çalışıyor — the resume channel itself is pinned by the requestPlan/resume unit
+shapes, not by a spec); the draft seat's card has no dedicated spec (same component, second
+render site), and on the STEP seat the round-2 "locked Sürdür" reads as absent-with-reason (the
+instrument suppression removes DriveControls entirely while the card holds — karar 5's
+interpretation, recorded here as the ruling).
 
 ## Stop-and-ask gates
-
 - Any budget figure, cap copy, or gate-semantics change on the limit surfaces (WO-0047's line).
 - A fabricated reset time or utilization anywhere (absent means absent — WO-0052's floor rule).
 - A `disabled`/`aria-disabled` attribute in `src/ui/` (ADR-0001 — reason lines are the vocabulary).
