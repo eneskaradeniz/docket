@@ -307,18 +307,20 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     // WO-0053: the drive's limit caches — the freshest stamp source for a limit-shaped error.
     // `lastWindows` holds the newest reading per window kind (push + pull merged, exact-key);
     // `lastRejectedStop` the push channel's own rejection facts (the freshest source of all).
-    // Stamp resolution order (D2): the push rejection → the cached window matching the last
-    // seen kind → stamp-less (the degradation tier; no I/O on the error path).
+    // Stamp resolution order (D2 + the dogfood's third source): the push rejection → the cached
+    // window matching the last seen kind → the error MESSAGE's own sentence (the antreo death
+    // carried the clock only there) → stamp-less (the degradation tier; no I/O on the error path).
     let lastWindows: LimitWindow[] = [];
     let lastRejectedStop: LimitStop | undefined;
     let lastSeenKind: string | undefined;
-    const limitStopFor = (): LimitStop | undefined => {
+    const limitStopFor = (message?: string): LimitStop | undefined => {
       if (lastRejectedStop) return lastRejectedStop;
       if (lastSeenKind !== undefined) {
         const w = lastWindows.find((x) => x.window === lastSeenKind && x.resetAt !== null);
         if (w) return { resetAt: w.resetAt!, window: w.window };
       }
-      return undefined;
+      const parsed = message !== undefined ? limitStampFromMessage(message) : undefined;
+      return parsed !== undefined ? { resetAt: parsed } : undefined;
     };
     const abort = new AbortController();
     currentQueue = queue;
@@ -473,8 +475,12 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         }
         case 'result': {
           // Plan-mode fallback: if the turn ended with no ExitPlanMode tool call
-          // (the probe found it can be absent — TD-016), treat the result text as the plan.
-          if (isPlanDrive && !planReadyEmitted && msg.result) {
+          // (the probe found it can be absent — TD-016), treat the result text as the plan —
+          // but NEVER an ERROR result's text: the dogfood's antreo death (429) carried the
+          // provider's error sentence in `result`, and the fallback saved it as a garbage
+          // roadmap_draft row («Taslak okunamadı — fazlar bloğu yok»). Only a SUCCESS result
+          // is a plan-exit.
+          if (isPlanDrive && !planReadyEmitted && msg.result && (!msg.subtype || msg.subtype === 'success')) {
             planReadyEmitted = true;
             out.push({ kind: 'plan_ready', planText: msg.result });
           }
@@ -489,7 +495,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
               && ((msg.terminal_reason !== undefined && LIMIT_TERMINAL_REASONS.has(msg.terminal_reason))
                 || classifyProviderError(message) === 'rate_limited');
             if (limitShaped) {
-              const stop = limitStopFor();
+              const stop = limitStopFor(message);
               out.push({ kind: 'error', message, code: 'rate_limited', ...(stop ? { limit: stop } : {}) });
             } else {
               out.push({ kind: 'error', message });
@@ -659,9 +665,10 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       if (err?.name !== 'AbortError' && !interruptRequested) {
         const raw = err?.message ?? String(e);
         const code = classifyProviderError(raw);
-        // WO-0053: a thrown limit error carries the stop facts when a stamp is known (the push
-        // rejection's cache first — D2's resolution order); stamp-less stays code-only.
-        const stop = code === 'rate_limited' ? limitStopFor() : undefined;
+        // WO-0053: a thrown limit error carries the stop facts when a stamp is known (push
+        // rejection → cached window → the message's own sentence — D2 + the dogfood's third
+        // source); stamp-less stays code-only.
+        const stop = code === 'rate_limited' ? limitStopFor(raw) : undefined;
         queue.push({ kind: 'error', message: raw, ...(code ? { code } : {}), ...(stop ? { limit: stop } : {}) });
       }
     } finally {
@@ -834,6 +841,21 @@ export function neutralLimitStatus(s: string | undefined): 'ok' | 'warning' | 'b
   if (s === 'allowed_warning') return 'warning';
   if (s === 'rejected') return 'blocked';
   return undefined;
+}
+
+/** WO-0053 dogfood (2026-08-29, the antreo draft death — the first REAL hit): the reset clock
+ *  arrived ONLY in the human-readable error text — no push message, no pull windows (the drive
+ *  died before any window reading), so both caches were empty and the stop went stamp-less. The
+ *  stamp's THIRD source: parse the provider's own sentence ("… Your limit will reset at
+ *  2026-08-29 12:01:29") at the boundary. The timestamp is zone-less in the message and is read
+ *  as LOCAL time (the provider renders it in the console's convention) — the honest choice the
+ *  message offers; the push/pull channels stay the freshest sources when present. */
+const LIMIT_RESET_IN_MESSAGE_RE = /limit will reset at (\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/i;
+export function limitStampFromMessage(message: string): string | undefined {
+  const m = LIMIT_RESET_IN_MESSAGE_RE.exec(message);
+  if (!m) return undefined;
+  const ms = new Date(`${m[1]!}T${m[2]!}`).getTime(); // zone-less date-time parses as LOCAL
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
 }
 
 /** The PULL channel's rate_limits object (sdk.d.ts:3229-3299) → LimitWindow[]. Kind strings pass
