@@ -111,7 +111,9 @@ created; default `gates`) sets the operator's involvement:
 
 - **Already modelled:** multi-repo tracks (`depends_on`), decision store (`Workspace.decisionStore`),
   three roles, evidence-gated merge + closure, vendor-neutral runner port, SQLite store, persistence
-  + resume, derived cost, xterm transcript.
+  + resume, derived cost, xterm transcript, usage visibility (the month usage screen over the
+  recorded per-turn ledger — spend by role/model/cache/work order, live provider quota windows,
+  WO-0054).
 - **New (to build):**
   - Workspace + repo-connection **management UI** (WO-0004; ADR-0009 connection model).
   - **Context attachments** on the work order.

@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kullanım Ekranı — Mockup Turu (rev 1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞERLERİYLE birebir (ev kuralı:
+     mockup = bilgi sözleşmesi, piksel tasarımı değil). Kart dili WorkOrderCard/FazCard; kota
+     satırı pane uyarı satırının (WO-0053) sesi; ay çubuğu FazCard'ın hairline-progress'i. */
+  :root {
+    --bg: #000000; --surface: #0a0a0a; --raised: #171717; --hairline: #262626;
+    --ink: #f2f2f2; --dim: #8f8f8f;
+    --signal: #f5b544; --proceed: #4cc38a; --info: #6ca0ce; --error: #e5484d;
+    --bord: color-mix(in srgb, var(--dim) 35%, var(--hairline));
+    --sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased; letter-spacing: 0.01em;
+    padding: 40px 20px 80px;
+  }
+  .plate { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 46px; }
+
+  /* --- tabaka kromu (uygulamada YOK — sadece bu öneri sayfası) --- */
+  .plate-head h1 { font-size: 17px; font-weight: 700; }
+  .plate-head .sub { margin-top: 6px; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+  .verdict {
+    margin-top: 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px dashed var(--hairline); border-radius: 8px; padding: 8px 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .1em;
+  }
+  .verdict b { color: var(--signal); font-weight: 600; }
+  .kararlar { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .kararlar div { font-size: 12.5px; line-height: 1.6; color: var(--dim); }
+  .kararlar b { color: var(--ink); font-weight: 600; }
+  .kararlar .no { font-family: var(--mono); font-size: 10.5px; color: var(--signal); margin-right: 7px; }
+  .kararlar .m { font-family: var(--mono); font-size: 11px; }
+
+  figure { display: flex; flex-direction: column; gap: 10px; }
+  .figcap { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--dim); flex-wrap: wrap; }
+  .figcap .no { color: var(--signal); font-weight: 600; }
+  .figcap .tag { color: var(--info); }
+  .why { border-left: 2px solid var(--signal); padding: 2px 0 2px 10px; font-size: 12px; line-height: 1.65; color: var(--dim); }
+  .why b { color: var(--ink); font-weight: 600; }
+  .condlab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--signal); }
+
+  /* --- ortak parçalar (uygulamanın sınıflarından çeviri) --- */
+  .readout { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+
+  /* --- ÜST ŞERİT (kare 01 kesiti — AppShell) --- */
+  .topbar {
+    display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px;
+    border: 1px solid var(--hairline); border-radius: 10px 10px 0 0; background: var(--surface);
+  }
+  .topbar .wordmark { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .14em; color: var(--ink); }
+  .topbar .ws { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--dim); border: 1px solid var(--hairline); border-radius: 7px; padding: 4px 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; padding: 2px; margin-left: auto; }
+  .seg span { font-size: 12px; font-weight: 600; color: var(--dim); padding: 4px 12px; border-radius: 6px; }
+  .seg span.on { background: var(--raised); color: var(--ink); }
+  .topbar .newbtn { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 7px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; }
+  .topbar .gear { color: var(--dim); font-size: 14px; }
+
+  /* --- EKRAN GÖVDESİ (840 kolon) --- */
+  .screen { border: 1px solid var(--hairline); border-top: 0; border-radius: 0 0 10px 10px; background: var(--bg); padding: 20px; }
+  .col { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .screentitle { display: flex; align-items: baseline; gap: 10px; }
+  .screentitle h2 { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .screentitle .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+  .ucard { border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.35); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .uhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .uhead .readout { color: var(--signal); }
+  .uhead .monthmeta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+  .bar { height: 4px; border-radius: 2px; background: var(--hairline); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 2px; background: var(--signal); transition: width .36s ease; }
+  .bar i.ok { background: var(--proceed); }
+  .uline { font-size: 12.5px; color: var(--ink); }
+  .uline .m { font-family: var(--mono); font-size: 11.5px; }
+  .unote { font-size: 12px; color: var(--dim); line-height: 1.5; }
+  .uwarn { font-size: 12px; color: var(--signal); }
+
+  .qrow { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--dim); flex-wrap: wrap; }
+  .qrow .w { color: var(--ink); }
+  .qrow .pct { color: var(--signal); font-weight: 600; }
+  .qrow .pct.steady { color: var(--dim); font-weight: 500; }
+  .qrow .live { display: inline-block; width: 5px; height: 5px; border-radius: 9999px; background: var(--proceed); animation: breathe 2.2s ease-in-out infinite; margin-right: 4px; vertical-align: 1px; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+  .brow { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 2px 0; }
+  .brow .k { font-size: 12.5px; color: var(--ink); }
+  .brow .k .sub { color: var(--dim); font-size: 11.5px; }
+  .brow .v { font-family: var(--mono); font-size: 11.5px; color: var(--dim); text-align: right; white-space: nowrap; }
+  .brow .v b { color: var(--ink); font-weight: 600; }
+  .brow.total { border-top: 1px solid var(--hairline); margin-top: 4px; padding-top: 6px; }
+
+  .lrow { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--hairline); }
+  .lrow:last-child { border-bottom: 0; }
+  .lrow .id { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .lrow .t { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lrow .v { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--dim); white-space: nowrap; }
+  .lrow .v b { color: var(--ink); font-weight: 600; }
+  .lrow.draft .t { color: var(--signal); }
+  .sesrow { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--hairline) 55%, transparent); font-size: 12px; }
+  .sesrow:last-child { border-bottom: 0; }
+  .sesrow .role { font-weight: 700; color: var(--info); }
+  .sesrow .role.mim { color: var(--proceed); }
+  .sesrow .role.dog { color: var(--signal); }
+  .sesrow .where { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+  .sesrow .nums { margin-left: auto; display: flex; gap: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+  .sesrow .nums b { color: var(--ink); font-weight: 600; }
+  .secttl { margin-top: 6px; }
+
+  /* --- kare 02 sahne --- */
+  .stage { border: 1px dashed var(--hairline); border-radius: 10px; padding: 26px 22px; display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .stage .stg { display: flex; flex-direction: column; gap: 8px; min-width: 300px; flex: 1; }
+  .stagelab { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+
+  /* --- kare 04 karşılaştırma --- */
+  .cmp { display: flex; flex-direction: column; gap: 10px; border: 1px dashed var(--hairline); border-radius: 10px; padding: 16px; }
+  .cmp .oldrow { border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .cmp .rawmsg { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.7; }
+  del { color: var(--error); opacity: .75; text-decoration-thickness: 1px; }
+
+  footer.note { border-top: 1px solid var(--hairline); padding-top: 18px; font-size: 12.5px; color: var(--dim); line-height: 1.7; }
+  footer.note b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
+  <header class="plate-head">
+    <h1>Kullanım Ekranı — Mockup Turu <span style="color:var(--dim);font-weight:400">· rev 1 — WO-0054</span></h1>
+    <p class="sub">
+      WO-0052 zemini kaydetti (tur başına <b style="color:var(--ink)">session_usage</b> satırları, bağlam
+      damgaları) ama tek okuyucusu CLI; ✦ taslak harcaması bugün <b style="color:var(--ink)">hiç görünmez</b>.
+      Bu tur ayın resmini tek konsol yüzeyine taşır — z.ai kişisel-kullanım sayfasının Docket'e çevirisi:
+      kota ilerlemesi → <b style="color:var(--ink)">ay-bütçe başlığı</b>, canlı pencereler →
+      <b style="color:var(--ink)">sağlayıcı sinyali</b>, tüketim dökümü → <b style="color:var(--ink)">defterin
+      kendisi</b>. Kartlar pano kartının, kota satırı pane uyarı satırının, ay çubuğu FazCard'ın dilinde.
+    </p>
+    <div class="verdict"><span>ana iddia:</span> ekran ÜÇ soruyu tek bakışta cevaplar — bu ay ne kadar kaldı, pencere dolu mu, para nereye gitti</div>
+    <div class="kararlar">
+      <div><span class="no">1</span><b>Üçüncü yüzey, tek kaydırma.</b> <span class="m">Kullanım</span> Segmented'a girer (<span class="m">Pano · Yol Haritası · Kullanım</span>); ekran 840px tek kolon, sıra sabit: <b>ay başlığı → canlı kota → döküm → liste</b>. Sekme yok, dril-down yok; detayın evi zaten var (WO kartı, CLI dökümü).</div>
+      <div><span class="no">2</span><b>Başlık-baz sapması niteflenir, uzlaştırılmaz.</b> Başlık bütçe görünümünü okur (<span class="m">started_at</span> penceresinde <span class="m">cost_usd</span> — «bilinen harcama»); döküm per-turn defterden (<span class="m">at</span> penceresinde <span class="m">usd_delta</span> toplamları). Geçen ay başlayıp bu ay harcayan oturum iki tabanı ayrı oynatır — bu dürüsttür, niteleyici satır söyler; iki sayı birbirine ezdirilmez.</div>
+      <div><span class="no">3</span><b>✦ taslak çift-görünümdür, toplam değildir.</b> Taslak harcaması hem <b>Mimar</b> rol kovasında hem listedeki <span class="m">✦ taslaklar</span> satırında görünür — aynı satırların iki görünümü. Liste içinde bölümdür, kardeş toplam değil: rakamlar toplanmaz, rol kovası + WO satırları + taslak satırı yan yana sayılmaz.</div>
+      <div><span class="no">4</span><b>Canlı kota yalnız çalışandan.</b> Panel koşan sürüşün <span class="m">limit_windows</span> akışından çizilir (WO kolu VE <span class="m">✦ taslak kolu</span>); sinyal yoksa ya da sürüş yoksa <b>bölüm hiç çizilmez</b> — satırdan/damgadan asla (WO-0053 kuralı). Doluluk <b>metinle yüzde</b>, çubuk yok: payda sağlayıcının, Docket'in değil. (Ay çubuğu Docket'in kendi eşiğidir — orada bar vardır.)</div>
+      <div><span class="no">5</span><b>Rakam dürüstlüğü.</b> Boş defter = davet satırı, <b>hiç rakam yok</b> (<span class="m">$0,00</span> asla). Maliyetli ama per-turn defteri boş oturumlar (WO-0052 öncesi) niteleyici satır taşır; satırı gitmiş oturumun rolü «bilinmiyor»; <span class="m">num_turns</span>/süre hiç okunmaz (bacak-kümülatif — asla toplanmaz).</div>
+      <div><span class="no">6</span><b>Lamp yok, rakam statik.</b> Kullanım kartları app-card dilinde ama <b>lamp'sız</b> — lamp WO durum sinyalidir, burada yalan söylerdi. Hiçbir rakam animasyonlanmaz (ADR-0012); tek geçiş ay çubuğunun dolgusudur (<span class="m">.36s</span>), o da ay değişince.</div>
+    </div>
+    <div class="legend chip" style="align-self:flex-start;font-family:var(--mono);font-size:10.5px;color:var(--dim)">ekran · kare 01 dolu yüzey · 02 canlı kota iki an · 03 boş yüzey + dürüstlük satırları · 04 eski→yeni</div>
+  </header>
+
+  <!-- ═══════════════ 01 · DOLU YÜZEY — EKRANIN TAM GÖRÜNÜMÜ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> DOLU YÜZEY <span class="tag">— tek kaydırma: başlık → kota → döküm → liste</span></figcaption>
+
+    <p class="condlab">durum · ağustos 2026 · ay harcaması $17,65 / kap $20,00 (uyarı %80 = $16,00 aşıldı) · bir sürüş koşuyor</p>
+
+    <div class="topbar">
+      <span class="wordmark">DOCKET</span>
+      <span class="ws">karar deposu <span style="font-size:9px">▾</span></span>
+      <span class="seg"><span>Pano</span><span>Yol Haritası</span><span class="on">Kullanım</span></span>
+      <span class="newbtn">+ Yeni iş emri</span>
+      <span class="gear">⚙</span>
+    </div>
+    <div class="screen">
+      <div class="col">
+
+        <!-- ay başlığı -->
+        <div class="ucard" style="border-color:color-mix(in srgb, var(--signal) 40%, var(--hairline))">
+          <div class="uhead">
+            <span class="readout">BU AY</span>
+            <span class="monthmeta">ağustos 2026 · takvim ayı (UTC)</span>
+          </div>
+          <div class="bar"><i style="width:88%"></i></div>
+          <p class="uline">bu ay <span class="m">$17,65</span> / <span class="m">$20,00</span></p>
+          <p class="uwarn">bütçe uyarıda — sınır $16,00'da aşıldı</p>
+          <p class="unote">bilinen harcama — 2 oturumun maliyeti kayıp (kesilmiş bacak), toplama katılmaz.</p>
+        </div>
+
+        <!-- canlı kota -->
+        <div class="ucard">
+          <div class="uhead">
+            <span class="readout">KOTA PENCERELERİ · CANLI</span>
+            <span class="monthmeta">uygulayıcı · WO-0053 sürüşü koşuyor</span>
+          </div>
+          <p class="qrow"><span class="live"></span><span class="w">5 saatlik pencere</span> <span class="pct">%86</span> — 14:32'de sıfırlanır</p>
+          <p class="qrow"><span class="w">7 günlük pencere</span> <span class="pct steady">%41</span> — 30 Ağu 09:00'da sıfırlanır</p>
+          <p class="unote">Sağlayıcının kendi bildirmesi; sinyal yoksa bu bölüm çizilmez.</p>
+        </div>
+
+        <!-- döküm -->
+        <div class="ucard">
+          <div class="uhead"><span class="readout">DÖKÜM</span><span class="monthmeta">per-turn defteri · ağustos</span></div>
+          <div class="brow"><span class="k">Roller</span><span class="v">&nbsp;</span></div>
+          <div class="brow"><span class="k">Uygulayıcı <span class="sub">3 oturum · 253k→61k</span></span><span class="v"><b>$13,17</b> · %75</span></div>
+          <div class="brow"><span class="k">Mimar <span class="sub">6 oturum · 141k→39k</span></span><span class="v"><b>$3,37</b> · %19</span></div>
+          <div class="brow"><span class="k">Doğrulayıcı <span class="sub">1 oturum · 81k→10k</span></span><span class="v"><b>$1,12</b> · %6</span></div>
+          <div class="brow" style="margin-top:8px"><span class="k">Modeller</span><span class="v">&nbsp;</span></div>
+          <div class="brow"><span class="k glm" style="font-family:var(--mono);font-size:11.5px">glm-5.3 <span class="sub" style="font-family:var(--sans)">402k→85k</span></span><span class="v"><b>$14,02</b></span></div>
+          <div class="brow"><span class="k" style="font-family:var(--mono);font-size:11.5px">glm-5.3-flash <span class="sub" style="font-family:var(--sans)">96k→11k</span></span><span class="v"><b>$2,19</b></span></div>
+          <div class="brow"><span class="k">bilinmeyen <span class="sub">0-model sonuç</span></span><span class="v"><b>$1,44</b></span></div>
+          <div class="brow" style="margin-top:8px"><span class="k">Cache kırılımı</span><span class="v">&nbsp;</span></div>
+          <div class="brow"><span class="k">taze giriş · cache okuma · cache yazma</span><span class="v"><b>502k · 1,4M · 310k</b></span></div>
+          <div class="brow total"><span class="k">toplam</span><span class="v"><b>$17,65</b> · 599k→96k</span></div>
+        </div>
+
+        <!-- harcama listesi -->
+        <div class="ucard">
+          <div class="uhead"><span class="readout">İŞ EMİRLERİ</span><span class="monthmeta">harcama azalan · sıfır-harcama listelenmez</span></div>
+          <div class="lrow"><span class="id">WO-0052</span><span class="t">Kullanım enstrümantasyonu</span><span class="v"><b>$6,84</b> · 9 oturum</span></div>
+          <div class="lrow"><span class="id">WO-0053</span><span class="t">Limit ekranı</span><span class="v"><b>$4,12</b> · 7 oturum</span></div>
+          <div class="lrow"><span class="id">WO-0051</span><span class="t">Belge kaynağı</span><span class="v"><b>$3,28</b> · 6 oturum</span></div>
+          <div class="lrow"><span class="id">WO-0047</span><span class="t">Bütçe kapısı</span><span class="v"><b>$2,00</b> · 5 oturum</span></div>
+          <div class="lrow draft"><span class="id">✦</span><span class="t">Yol haritası taslakları</span><span class="v"><b>$1,41</b> · 1 oturum</span></div>
+          <p class="unote" style="margin-top:6px">✦ satırı rol kovasının <b>Mimar</b> hanesine de yazılır — aynı satırların iki görünümü, toplanmaz.</p>
+
+          <div class="uhead secttl"><span class="readout">OTURUMLAR</span><span class="monthmeta">son sonuç azalan</span></div>
+          <div class="sesrow"><span class="role">Uygulayıcı</span><span class="where">WO-0053</span><span class="nums"><span><b>$4,12</b></span><span>253k→61k</span><span>48 sonuç</span><span>04:02</span><span>bağlam %62 · 124k/200k</span></span></div>
+          <div class="sesrow"><span class="role mim">Mimar</span><span class="where">✦ taslak</span><span class="nums"><span><b>$1,41</b></span><span>201k→9k</span><span>7 sonuç</span><span>12:01</span><span>bağlam %20 · 201k/1M</span></span></div>
+          <div class="sesrow"><span class="role dog">Doğrulayıcı</span><span class="where">WO-0053</span><span class="nums"><span><b>$1,12</b></span><span>81k→10k</span><span>12 sonuç</span><span>04:47</span></span></div>
+          <div class="sesrow"><span class="role mim">Mimar</span><span class="where">WO-0053</span><span class="nums"><span><b>$1,29</b></span><span>36k→12k</span><span>9 sonuç</span><span>03:12</span><span>bağlam %18 · 36k/200k</span></span></div>
+          <p class="unote" style="margin-top:6px">2 oturumun per-turn defteri boş (WO-0052 öncesi kayıt yok) — maliyetleri yukarıdaki «bilinen harcama» hanesinde taşınır, döküme katılmaz.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden bu sıra:</b> operatörün üç sorusu önem sırasıyla — ne kadar kaldı (başlık), şu an tıkanıyor
+      mu (kota), para nereye gitti (döküm + liste). Başlık <b>mevcut bütçe görünümünü</b> render eder
+      (WO-0047'nin matematiği/kopyası; burada bar vardır — eşik Docket'in); kota paneli pane uyarı
+      satırının sesiyle konuşur (mono · sönük · yüzde sinyal durumunda renkli). Döküm kartı tek kart,
+      üç blok (roller/modeller/cache) — model kimliği <b>satır verisi olarak aynen</b> (kimlik-asla-display
+      kuralının veri istisnası, WO-0052 mutabakatı). Oturum satırındaki <span style="font-family:var(--mono);font-size:11px">bağlam %62 · 124k/200k</span>
+      WO-0052'nin kalıcı son-okuma damgasıdır; ✦ taslak satırı <span style="font-family:var(--mono);font-size:11px">201k/1M</span>
+      taşır — turun 4. bulgusu (201k kütleyi yalnız [1m] taşır) ekranda kendini gösterir.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 02 · CANLI KOTA — İKİ AN ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> CANLI KOTA <span class="tag">— sinyal var / sinyal yok (bölüm gider)</span></figcaption>
+
+    <p class="condlab">sol · sürüş koşuyor, sağlayıcı iki pencere bildiriyor · sağ · sürüş yok (ya da sinyal hiç gelmedi)</p>
+
+    <div class="stage">
+      <div class="stg">
+        <span class="stagelab">an A — canlı sinyal</span>
+        <div class="ucard">
+          <div class="uhead"><span class="readout">KOTA PENCERELERİ · CANLI</span></div>
+          <p class="qrow"><span class="live"></span><span class="w">5 saatlik pencere</span> <span class="pct">%86</span> — 14:32'de sıfırlanır</p>
+          <p class="qrow"><span class="w">7 günlük pencere</span> <span class="pct steady">%41</span> — 30 Ağu 09:00'da sıfırlanır</p>
+        </div>
+        <span class="stagelab" style="margin-top:10px">an A' — taslak kolu (✦ sürüşü koşuyor)</span>
+        <div class="ucard">
+          <div class="uhead"><span class="readout">KOTA PENCERELERİ · CANLI</span><span class="monthmeta">mimar · ✦ taslak sürüşü</span></div>
+          <p class="qrow"><span class="live"></span><span class="w">5 saatlik pencere</span> <span class="pct">%62</span> — 16:05'te sıfırlanır</p>
+        </div>
+      </div>
+      <div class="stg">
+        <span class="stagelab">an B — sinyal yok</span>
+        <div class="ucard" style="border-style:dashed;border-color:color-mix(in srgb, var(--dim) 40%, var(--hairline));box-shadow:none;background:transparent">
+          <p class="unote" style="text-align:center;padding:14px 8px">— bölüm çizilmez —</p>
+        </div>
+        <span class="stagelab" style="margin-top:10px">aynı anda, başka workspace'in sürüşü</span>
+        <div class="ucard" style="border-style:dashed;border-color:color-mix(in srgb, var(--dim) 40%, var(--hairline));box-shadow:none;background:transparent">
+          <p class="unote" style="text-align:center;padding:14px 8px">— bu ekran onu göstermez —</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> kota <b>canlı bir gözlemdir</b>, kayıt değil — WO-0053'ün kuralı aynen miras alınır:
+      yalnız sağlayıcının kendi akışından, yalnız sürüş koşarken. Sürüp biten sürüşün pencere durusu
+      satıra yazılmaz (yalnız <span style="font-family:var(--mono);font-size:11px">limit_reset_at</span> damgası var, o LimitCard'ın). Tek-aktif-sürüüş
+      kuralı gereği panel <b>bu workspace'in</b> sürüşünü gösterir — başka workspace'in koşanı bu ekrana
+      boyamaz. ✦ taslak sürüşü <span style="font-family:var(--mono);font-size:11px">activeSnapshot</span>'a girmediği için panel iki kolu ayrıca okur (WO + taslak).
+      Doluluk yüzde olarak metinde; çubuk <b>bilinçli olarak yok</b> — %100'ün ne olduğu sağlayıcının
+      bilgisi, Docket bir ölçek çizemez. Saat biçimi LimitCard'ın saat dilinden (gün-farkındalıklı
+      etiket-saati ailesi).
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 03 · BOŞ YÜZEY + DÜRÜSTLÜK SATIRLARI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> BOŞ YÜZEY + DÜRÜSTLÜK SATIRLARI <span class="tag">— rakam yok, davet var; eksik söylenir</span></figcaption>
+
+    <p class="condlab">sol · yeni workspace, defter boş · sağ · dolu ekrandaki üç dürüstlük satırı yakından</p>
+
+    <div class="stage">
+      <div class="stg">
+        <span class="stagelab">boş defter</span>
+        <div class="ucard" style="border-style:dashed;box-shadow:none;background:transparent">
+          <p class="uline" style="padding:6px 2px">Bu ay henüz kayıt yok.</p>
+          <p class="unote">Bir sürüş başlayınca harcama burada birikir — tek satır, tek davet; <b style="color:var(--ink)">$0,00 yok</b>, boş kart yok, sıfır çubuk yok.</p>
+        </div>
+      </div>
+      <div class="stg">
+        <span class="stagelab">dolu ekrandaki dürüstlük satırları (yakın plan)</span>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <p class="unote" style="border-left:2px solid var(--hairline);padding-left:10px">bilinen harcama — 2 oturumun maliyeti kayıp (kesilmiş bacak), toplama katılmaz.</p>
+          <p class="unote" style="border-left:2px solid var(--hairline);padding-left:10px">2 oturumun per-turn defteri boş (WO-0052 öncesi kayıt yok) — maliyetleri «bilinen harcama» hanesinde taşınır, döküme katılmaz.</p>
+          <p class="unote" style="border-left:2px solid var(--hairline);padding-left:10px">1 oturumun rolü bilinmiyor — kaydı var, satırı silinmiş.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> sıfır ile yok aynı şey değildir (TD-030 soyu): hiç satır yoksa gösterilecek <b>iddia</b>
+      yoktur — davet satırı yeter (ADR-0012: boş yüzey 1 kısa satır). Üç dürüstlük satırı üç farklı
+      eksik türünü ayırt eder: maliyeti <b>hiç gözlenmemiş</b> oturum (başlığın «bilinen harcama»sı),
+      maliyeti olan ama <b>per-turn defteri olmayan</b> oturum (WO-0052'den önce koşmuş — ay sonunda
+      tur bulgularının görünürlüğü işte bu satıra bağlı), ve <b>sahibi silinmiş</b> satır. Dördüncü tür
+      önlendi: WO/workspace silinince defter satırları da gider (cascade tamamlaması) — yoksa ölü bir
+      WO kimliği altında harcama görünürdü.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 04 · ESKİ → YENİ — BUGÜN NEDEN YETMEZ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">04</span> ESKİ → YENİ <span class="tag">— ay resmi bugün iki yerde parçalı</span></figcaption>
+
+    <div class="cmp">
+      <div class="oldrow">
+        <p class="readout">BUGÜN · İKİ PARÇA</p>
+        <p class="rawmsg">ayarlar → bütçe: <span style="color:var(--ink)">bu ay $17,65 / $20,00</span> &nbsp;·&nbsp; terminal: <span style="color:var(--ink)">docket show WO-0053</span><br>
+        session s3 · implementer · idle · in 252988 out 60934 · $13.17<br>
+        &nbsp;&nbsp;ctx 124172/200000 · last usage: 48 turns · 32.8m · cache r 1,4M c 310k<br>
+        <del>rol/model/cache dağılımı yok · taslak harcaması hiç yok · hangi WO ne yedi ancak el hesabı</del></p>
+      </div>
+      <p class="why" style="border:0;padding-left:0;margin-top:2px">
+        Eski: ay resmi ayarlar penceresinde <b>tek satır</b>, detay terminalde <b>WO-WO</b> gezmeyi gerektirir;
+        ✦ taslakların parası (turun 4. bulgusu — en pahalı okuma) <b>hiçbir yerde</b> görünmez. Yeni: tek
+        ekranda ay-bütçe durumu, canlı pencere doluluğu, rol/model/cache dağılımı ve WO+taslak listesi —
+        verinin tamamı WO-0052 zemininden, <b>tek yeni kayıt yok</b>; ekran yalnızca okur.
+      </p>
+    </div>
+  </figure>
+
+  <footer class="note">
+    <b>Kabul özeti:</b> WO-0054 (order.md) kapsamının UI yüzü budur: üçüncü yüzey + ay başlığı (mevcut
+    bütçe görünümü) + canlı kota paneli + döküm kartları + WO/taslak/oturum listesi + silme cascade
+    tamamlaması. Bütçe kapısı (WO-0047) ve limit yüzeyleri (WO-0053) olduğugu gibi kalır; ctx kuyruk
+    tablosu ve per-category split ertelenmiş kalır. Onay gelirse kararlar tarihle kilitlenir
+    (operator_checkpoint tur 1), ardından mimar plan turu koşar (mode: plan — plan.md turun S5
+    tablosunu taşır); tek satır uygulama kodu bu onaydan önce yazılmaz.
+  </footer>
+
+</div>
+</body>
+</html>

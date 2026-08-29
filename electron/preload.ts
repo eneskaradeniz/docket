@@ -27,6 +27,8 @@ const source: WorkOrderSource = {
   repoConnections: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:repo-connections', id),
   // The workspace's calendar-month observed spend (WO-0047) — the warn line's figure.
   workspaceMonthSpend: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-month-spend', id),
+  // The workspace's usage month, derived (WO-0054) — the pure view over the usage ledger.
+  workspaceUsage: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-usage', id),
   getRoadmap: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap', id),
   getRoadmapMd: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap-md', id),
   saveRoadmap: (id: WorkspaceId, md: string) => ipcRenderer.invoke('docket:source:save-roadmap', id, md),

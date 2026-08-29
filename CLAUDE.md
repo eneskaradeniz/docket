@@ -158,6 +158,13 @@ rule restated with its reasons in two places is the duplication this repository 
 - A PR opened from this repository names the model that authored the work (provider + model id) in a "Model Used"
   line at the top of the body. A PR without it is incomplete, like a WO without a closure sha.
 
+## Operator manual-check gate — added 2026-08-29
+- Every work chunk (a stage, a fix round) ends with a SHORT manual scenario for the operator —
+  numbered steps, minute-scale, against `npm run dev` (the operator launches it; the assistant
+  never does). Until the operator's verdict: no commit, no next chunk, no closure. Liking it
+  closes the chunk; not liking it iterates (or restarts).
+- Agents may draft and implement, but a tour never advances past the operator's manual check.
+
 ## CI — ADR-0011
 - `npm run typecheck` (both `tsconfig.json` and `tsconfig.electron.json`), `npm test`, `npm run build`, and the
   boundary checks above run on every pull request and on every push to `main`. Run the boundary checks locally

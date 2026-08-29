@@ -27,6 +27,7 @@ import { parsePlanSteps } from '../../core/plan-steps';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
+import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSessionFact, type WorkspaceUsageView } from '../../core/usage';
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
 import { isDraftDrive } from '../../core/runner';
 import { roadmapDraftPrompt, type DraftSourceSummary } from '../../core/roadmap-draft';
@@ -38,6 +39,7 @@ import type {
   CostSummary,
   RepoId,
   SessionRef,
+  SessionRole,
   WoEvent,
   WoEventKind,
   SourceLink,
@@ -504,24 +506,29 @@ type SessionUsageRow = {
   modelUsage?: ModelUsageLine[];
 };
 
-function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] {
-  const rows = db
-    .prepare('SELECT * FROM session_usage WHERE work_order_id = ? ORDER BY id')
-    .all(woId) as Array<{
-    provider_session_id: string;
-    at: string;
-    tokens_in: number;
-    tokens_out: number;
-    usd_delta: number;
-    cache_read: number | null;
-    cache_creation: number | null;
-    num_turns: number | null;
-    duration_ms: number | null;
-    duration_api_ms: number | null;
-    model: string | null;
-    model_usage: string | null;
-  }>;
-  return rows.map((r) => ({
+// The raw shape `SELECT *` returns for one session_usage row (shared by the WO-scoped CLI read and
+// the WO-0054 workspace read below).
+type SessionUsageRowRaw = {
+  work_order_id: string | null;
+  provider_session_id: string;
+  at: string;
+  tokens_in: number;
+  tokens_out: number;
+  usd_delta: number;
+  cache_read: number | null;
+  cache_creation: number | null;
+  num_turns: number | null;
+  duration_ms: number | null;
+  duration_api_ms: number | null;
+  model: string | null;
+  model_usage: string | null;
+};
+
+// The row hydrator (WO-0054 extracted it from usageRowsForWo — behavior byte-identical; the CLI
+// `show` tail is the regression witness): NULL rich fields hydrate ABSENT, never zeros, and a
+// corrupt model_usage blob fails open (the pending_notes precedent) instead of bricking the read.
+function hydrateUsageRow(r: SessionUsageRowRaw): SessionUsageRow {
+  return {
     providerSessionId: r.provider_session_id,
     at: r.at,
     tokensIn: r.tokens_in,
@@ -542,7 +549,91 @@ function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] 
         return {}; // a corrupt blob must not brick the read (the pending_notes precedent)
       }
     })(),
-  }));
+  };
+}
+
+function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] {
+  const rows = db.prepare('SELECT * FROM session_usage WHERE work_order_id = ? ORDER BY id').all(woId) as SessionUsageRowRaw[];
+  return rows.map(hydrateUsageRow);
+}
+
+// WO-0054: the workspace's month-windowed usage FACTS for the pure derivation (core/usage.ts) —
+// flat rows only, hydrated MINUS num_turns/duration_*: the leg-cumulative legs are not even
+// selected into the fact, so AC6's never-sum guarantee is structural, not conventional.
+// work_order_id NULL stays NULL (the ✦ draft arm) — this is the ledger's ONE workspace-scoped read.
+function usageFactRowsForWs(db: DatabaseSync, wsId: WorkspaceId, window: { startIso: string; endIso: string }): UsageFactRow[] {
+  const rows = db
+    .prepare('SELECT * FROM session_usage WHERE workspace_id = ? AND at >= ? AND at < ? ORDER BY id')
+    .all(wsId, window.startIso, window.endIso) as SessionUsageRowRaw[];
+  return rows.map((r) => {
+    const h = hydrateUsageRow(r);
+    return {
+      workOrderId: r.work_order_id == null ? null : woid(r.work_order_id),
+      providerSessionId: h.providerSessionId,
+      at: h.at,
+      tokensIn: h.tokensIn,
+      tokensOut: h.tokensOut,
+      usdDelta: h.usd,
+      ...(h.cacheRead === undefined ? {} : { cacheRead: h.cacheRead }),
+      ...(h.cacheCreation === undefined ? {} : { cacheCreation: h.cacheCreation }),
+      ...(h.model === undefined ? {} : { model: h.model }),
+      ...(h.modelUsage === undefined ? {} : { modelUsage: h.modelUsage }),
+    };
+  });
+}
+
+// WO-0054: the workspace's session facts (BOTH arms — a draft session row's work_order_id is NULL
+// and rides too): the join side + the honesty probes, UNWINDOWED. `woid` only on non-NULL
+// (ADR-0003). No transcript, no pendingNotes — this read lifts nothing it does not render.
+function usageSessionFacts(db: DatabaseSync, wsId: WorkspaceId): UsageSessionFact[] {
+  const rows = db
+    .prepare(
+      'SELECT provider_session_id, work_order_id, role, cost_usd, started_at, ctx_used_tokens, ctx_max_tokens FROM session WHERE workspace_id = ?',
+    )
+    .all(wsId) as Array<{
+    provider_session_id: string | null;
+    work_order_id: string | null;
+    role: string;
+    cost_usd: number | null;
+    started_at: string | null;
+    ctx_used_tokens: number | null;
+    ctx_max_tokens: number | null;
+  }>;
+  return rows
+    .filter((r): r is typeof r & { provider_session_id: string } => r.provider_session_id != null) // an
+    // identity-less session can join nothing — a '' sentinel would MERGE such rows into one map
+    // entry (the review round's fix; unreachable via recordSession, which always carries the
+    // provider handle)
+    .map((r) => ({
+      providerSessionId: r.provider_session_id,
+      workOrderId: r.work_order_id == null ? null : woid(r.work_order_id),
+      ...(r.role ? { role: r.role as SessionRole } : {}),
+      ...(r.cost_usd == null ? {} : { costUsd: r.cost_usd }),
+      ...(r.started_at == null ? {} : { startedAt: r.started_at }),
+      ...(r.ctx_used_tokens != null && r.ctx_max_tokens != null
+        ? { ctx: { usedTokens: r.ctx_used_tokens, maxTokens: r.ctx_max_tokens } }
+        : {}),
+    }));
+}
+
+// WO-0054: the work-order titles the spend list renders — the only order fields the view needs.
+function usageOrderFacts(db: DatabaseSync, wsId: WorkspaceId): UsageOrderFact[] {
+  return (
+    db.prepare('SELECT id, title FROM work_order WHERE workspace_id = ?').all(wsId) as Array<{ id: string; title: string }>
+  ).map((r) => ({ id: woid(r.id), title: r.title }));
+}
+
+// WO-0054: the workspace's usage month — monthWindow ONCE, the three flat readers, then the PURE
+// derivation (core/usage.ts). SQL selects flat rows only; every aggregation is core TS (TD-058
+// stays closed — the model_usage JSON never enters SQL).
+function workspaceUsageRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceUsageView {
+  const win = monthWindow(new Date());
+  return deriveUsageView({
+    window: win,
+    rows: usageFactRowsForWs(db, wsId, win),
+    sessions: usageSessionFacts(db, wsId),
+    orders: usageOrderFacts(db, wsId),
+  });
 }
 
 // Additive migration for DBs created before WO-0010. No UNIQUE constraint is added —
@@ -770,6 +861,12 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   const woIds = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(id) as { id: string }[];
   for (const x of woIds) deleteWorkOrderRows(db, woid(x.id), dir);
   db.prepare('DELETE FROM session WHERE workspace_id = ? AND work_order_id IS NULL').run(id);
+  // WO-0054 cascade completion: one workspace-scoped statement covers BOTH arms — the WO rows
+  // (already gone via the per-WO cascade above) and the work_order_id IS NULL ✦ draft rows. The
+  // usage ledger is append-only against the UPSERT, not against the OWNER (WO-0052's schema note);
+  // a deleted owner's spend must not outlive the month head's basis (the mockup's frame-03 note:
+  // «dördüncü tür önlendi»).
+  db.prepare('DELETE FROM session_usage WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`docs_root:${id}`);
@@ -1245,6 +1342,10 @@ function deleteWorkOrderRows(db: DatabaseSync, id: WorkOrderId, dir: string | un
   db.prepare('DELETE FROM wo_event WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order_step WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM session WHERE work_order_id = ?').run(id);
+  // WO-0054 cascade completion: the usage ledger is append-only against the UPSERT, not against
+  // the OWNER (WO-0052's schema note promised "never deleted by the session upsert" — the upsert,
+  // not the owner). A deleted owner's usd_delta must not outlive the month head's basis.
+  db.prepare('DELETE FROM session_usage WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM track_depends_on WHERE track_id IN (SELECT id FROM track WHERE work_order_id = ?)').run(id);
   db.prepare('DELETE FROM track WHERE work_order_id = ?').run(id);
   db.prepare('DELETE FROM work_order_source WHERE work_order_id = ?').run(id);
@@ -1537,6 +1638,8 @@ export function createStore(dbPath: string): Store {
     // The workspace's calendar-month observed spend (WO-0047) — the board/band warn line's and
     // the settings readout's figure, from the same row the gate reads.
     workspaceMonthSpend: (id: WorkspaceId) => Promise.resolve(monthSpendRow(db, id)),
+    // WO-0054: the usage month — the pure derivation over the flat readers (workspaceUsageRow).
+    workspaceUsage: (id: WorkspaceId) => Promise.resolve(workspaceUsageRow(db, id)),
     updateRepoPath: async (id: WorkspaceId, repoId: RepoId, newPath: string) => {
       updateRepoPathRow(db, id, repoId, newPath);
     },

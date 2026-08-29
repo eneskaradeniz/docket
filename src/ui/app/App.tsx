@@ -8,6 +8,7 @@ import { overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { roadmapTaskOf, type RoadmapView } from '../../core/roadmap';
 import { DEFAULT_DOCS_ROOT } from '../../core/roadmap-md';
+import type { WorkspaceUsageView } from '../../core/usage';
 import { useLabels } from '../data/locale';
 import { AppShell, type Surface } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
@@ -16,6 +17,7 @@ import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RoadmapScreen } from '../screens/RoadmapScreen';
+import { UsageScreen } from '../screens/UsageScreen';
 import { InviteHero } from '../components/InviteHero';
 import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 import { createDriveStore, DriveStoreContext, useActiveDrive } from '../components/session/drive-store';
@@ -331,6 +333,25 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   useEffect(() => {
     if (selectedId !== null) refreshRoadmap();
   }, [selectedId, refreshRoadmap]);
+  // WO-0054: the usage month — the pure read (the derivation is core's; the port is one channel).
+  // Same cadence as the roadmap read: workspace entry + surface entry + the four drive hooks.
+  const [usage, setUsage] = useState<WorkspaceUsageView | undefined>(undefined);
+  const refreshUsage = useCallback(() => {
+    if (!workspaceId) {
+      setUsage(undefined);
+      return;
+    }
+    void source
+      .workspaceUsage(workspaceId)
+      .then(setUsage)
+      .catch(() => setUsage(undefined));
+  }, [source, workspaceId]);
+  useEffect(() => {
+    refreshUsage();
+  }, [refreshUsage]);
+  useEffect(() => {
+    if (surface === 'usage') refreshUsage();
+  }, [surface, refreshUsage]);
   // The refusal card's RAISE action (WO-0047): a PERMANENT settings write (the operator's ruling —
   // no one-month override); the warn ratio keeps the stored value, defaulting to 80.
   const handleRaiseBudget = useCallback(
@@ -452,6 +473,17 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         budgetHasUnknown={budget?.hasUnknown ?? false}
       />
     ) : null;
+  } else if (surface === 'usage') {
+    // WO-0054: the third surface, keyed by workspace like its siblings (a fresh surface on swap).
+    main = currentWorkspace ? (
+      <UsageScreen
+        key={workspaceId ?? 'none'}
+        view={usage}
+        budget={budget}
+        workspace={currentWorkspace}
+        woIds={workOrders.filter((w) => w.workspace === workspaceId).map((w) => w.id)}
+      />
+    ) : null;
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
     // transition of the old one — the all-done pulse must not fire across the swap.
@@ -494,6 +526,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       refreshWorkOrders();
       refreshBudget(); // WO-0047: the terminal record lands the drive's cost — the month figure moves
       refreshRoadmap(); // WO-0049: a closed/opened WO flips its task's derived status
+      refreshUsage(); // WO-0054: the terminal usage rows land — the ledger's figures move
       setDetailNonce((n) => n + 1);
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
@@ -507,6 +540,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       refreshWorkOrders();
       refreshBudget(); // WO-0047: a resumed drive's accumulated cost rides the row from the start
       refreshRoadmap();
+      refreshUsage(); // WO-0054: the drive's first rows join the ledger
     };
     // base-mobile trial: the pipeline returns the session row to 'running' when the last ask is
     // answered, but nothing else fires for ask_resolved — refresh here so the rows snapshot agrees
@@ -516,6 +550,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       refreshWorkOrders();
       refreshBudget();
       refreshRoadmap();
+      refreshUsage(); // WO-0054: the same refresh moment the ask's records need
     };
     driveStore.onAsk = (key) => {
       refreshWorkOrders();
@@ -567,12 +602,13 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       refreshWorkOrders();
       refreshBudget(); // WO-0047: an erroring drive still records its observed cost
       refreshRoadmap();
+      refreshUsage(); // WO-0054: an erroring drive's observed rows land with it
       const wo = woOf(key);
       if (isBackground(key) && wo !== undefined) {
         toast.push({ kind: 'error', title: UI.toastErrTitle(woIdLabel(wo)) });
       }
     };
-  }, [driveStore, refreshWorkOrders, refreshBudget, refreshRoadmap, UI, woIdLabel]);
+  }, [driveStore, refreshWorkOrders, refreshBudget, refreshRoadmap, refreshUsage, UI, woIdLabel]);
 
   // The window-title counter: "(n) izin bekliyor" while any work order waits on the operator. The
   // live fold outranks a stale stopped_asking row — an ask the operator already answered is being

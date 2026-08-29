@@ -6,6 +6,7 @@
 // carries loading/error states. This replaces the throwaway sync IPC bridge (TD-017).
 import type { RepoId, SessionRef, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 import type { RoadmapView } from './roadmap';
+import type { WorkspaceUsageView } from './usage';
 import type { DraftSourceSummary } from './roadmap-draft';
 
 export interface RepoConnectionInput {
@@ -115,6 +116,15 @@ export interface WorkOrderSource {
   // flags that the figure is the KNOWN spend so the surfaces can state the basis
   // ("bilinen harcama") instead of silently undercounting.
   workspaceMonthSpend(id: WorkspaceId): Promise<{ usd: number; hasUnknown: boolean }>;
+  // The workspace's usage month, derived (WO-0054): the pure `WorkspaceUsageView` over the
+  // workspace's `session_usage` rows windowed on the CURRENT UTC calendar month (`at`), plus the
+  // session facts (role / cost / started_at / ctx checkpoint) and the work-order titles the
+  // derivation joins in core. SQL selects FLAT ROWS ONLY — every aggregation is core TS (TD-058's
+  // shape). The read carries NO num_turns/duration_* (leg-cumulative, never summed) and NO
+  // figures over zero rows: `empty` is the honest face, `unledgeredCount`/`roleUnknownCount` are
+  // the honesty qualifiers (pre-WO-0052 vintages / rows whose owner is gone), and the ✦ draft
+  // rows (work_order_id NULL) surface under `draft` — the ledger's one workspace-scoped read.
+  workspaceUsage(id: WorkspaceId): Promise<WorkspaceUsageView>;
   // Move a repo's local path (WO-0033): rewrites connection.local_path ONLY — the RepoId, the
   // definition row and the remote stay. Throws (changing nothing) when the new path's basename
   // differs from the RepoId — identity is the basename; a different name is a different repo.
