@@ -194,8 +194,8 @@ Out of scope:
   the finally), final verdict PROCEED with 2 clarification NITs folded.
 - pr_open: PR #59 (`https://github.com/eneskaradeniz/docket/pull/59`), head `bf48274`, merged
   `28f8801`.
-- ci: green — typecheck (both), 842 tests at the merge head (+4 closure-gap tests after: 846),
-  `check:boundaries`, build, E2E 82/82.
+- ci: green — typecheck (both), 842 tests at the merge head (+4 closure-gap tests after: 846;
+  +3 dogfood-fix tests at #60: 849), `check:boundaries`, build, E2E 82/82.
 - verification: RESOLVED — the closing verifier's AC1-8 PASS at head `28f8801`, every claim with
   path:line evidence; its one önemli gap (the board reason arm had no CORE test — ADR-0006's
   test-first rule) fixed in the closure commit (`derive.test.ts`, precedence pinned: stamped →
@@ -242,6 +242,19 @@ shapes, not by a spec); the draft seat's card has no dedicated spec (same compon
 render site), and on the STEP seat the round-2 "locked Sürdür" reads as absent-with-reason (the
 instrument suppression removes DriveControls entirely while the card holds — karar 5's
 interpretation, recorded here as the ruling).
+
+**Dogfood addendum (2026-08-29, hours after close — PR #60, merged `a7fef22`):** the first REAL
+429 (the operator's antreo ✦ draft death, 04:16) exposed what the scripted tests could not:
+the reset clock arrived ONLY in the human-readable error sentence — no push message, no pull
+windows (the drive died before any reading) — so both caches were empty, the stop went
+stamp-less, and the roadmap screen showed no card. The stamp gained a THIRD source:
+`limitStampFromMessage` parses the provider's own sentence ("… Your limit will reset at
+2026-08-29 12:01:29") at the boundary, after the push rejection and the cached window (the
+zone-less timestamp reads as LOCAL — the honest choice the message offers); the operator's
+verbatim message is the test pin. The same death exposed a second hole: the plan-exit fallback
+treated the ERROR result's text as a plan — the 429 sentence became a garbage pending
+`roadmap_draft` row («Taslak okunamadı — fazlar bloğu yok»); the fallback now fires only on a
+SUCCESS result. 849 tests, the full ladder, E2E 82/82.
 
 ## Stop-and-ask gates
 - Any budget figure, cap copy, or gate-semantics change on the limit surfaces (WO-0047's line).
