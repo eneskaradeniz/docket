@@ -484,6 +484,16 @@ diet, the plan.md embed diet.
       end (round 2 dissolved the card-button tension); TD-016's pinned-surface list gains the two
       channels. Spec: `docs/work-orders/WO-0053-limit-ekrani/order.md`.
 
+- [ ] **WO-0054** — the usage screen (open; branch `wo-0054-kullanim-ekrani`, plan `344505d`).
+      The third M7 surface reads the floor: a pure `deriveUsageView` (month-windowed `usd_delta`
+      sums → byRole / byModel row-partition / cache split / per-WO ledger with the ✦ draft rows
+      VISIBLE for the first time; `num_turns`/durations structurally unselected; empty≠zero,
+      counted honesty qualifiers) behind `WorkOrderSource.workspaceUsage`, rendered by
+      `UsageScreen` (month head = the EXISTING budget view; live quota panel = both arms — WO +
+      ✦ draft — provider-signal-only, text pct; the head/breakdown basis divergence NARRATED by
+      a pure predicate, never reconciled; the byModel split's own divergence narrated the same
+      way) + the two delete cascades completing WO-0052's append-only promise against the OWNER.
+
 ## Later
 
 - Packaging and distribution
