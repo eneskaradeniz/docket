@@ -504,7 +504,7 @@ diet, the plan.md embed diet.
 
 ## M8 — Canlı görünürlük (the agent-task lifecycle on the live surface)
 
-- [ ] **WO-0055** — live agent visibility: the SDK's agent-task lifecycle (probe t1:
+- [x] **WO-0055** — live agent visibility (merged #63, `93e3f1f`): the SDK's agent-task lifecycle (probe t1:
       `task_started`/`task_notification`, `parent_tool_use_id` nesting link, `task_type:
       'local_agent'` discriminator, the wire tool name `Agent`) becomes ONE core event kind
       (`agent_task`, phase-discriminated); the fold keys its replay guards on OPEN tasks (a

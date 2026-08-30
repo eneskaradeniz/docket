@@ -2,7 +2,7 @@
 id: WO-0055
 title: "Live agent visibility — the runner's agent-task lifecycle as session events, agent tasks on the live surface (transcript rows · running-agent count · nested subagent tools)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -142,6 +142,10 @@ Out of scope (gates):
 
 ## Notes
 
+- **CLOSED (2026-08-30):** merged as PR #63 (`93e3f1f`) on the operator's rev-2 approval
+  (the WO-0058 dogfood check). 908 unit / 89 E2E / typecheck both / boundaries / build green;
+  evidence in this directory, ROADMAP M8, TD-016, the ADR-0013 addendum, and the three
+  `docs/ui-shots/agent-*.png` shots.
 - Design source: the operator-approved session plan (2026-08-30, `.claude/plans/
   s-radaki-kuyruk-5-canl-eager-anchor.md`), rulings D1–D7; branch points are marked in plan.md.
 - Stage 1 CLOSED on the operator's approval (2026-08-30, "onaylıyorum devam et") with the CLI
