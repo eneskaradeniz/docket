@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -92,6 +92,7 @@ export function ReviewPane({
           {hasStream && !emptyRun ? <PaneLogChip open={logOpen} onToggle={toggleLog} /> : null}
         </div>
       </div>
+      <PaneAgentStrip state={state} now={now} />
       <PaneWarnline state={state} running={running} />
       <PaneSteerBar
         live={running}

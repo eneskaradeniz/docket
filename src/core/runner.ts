@@ -746,6 +746,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
               ...(event.callId ? { callId: event.callId } : {}),
               ...(event.description ? { description: event.description } : {}),
               ...(event.subagentType ? { subagentType: event.subagentType } : {}),
+              ...(event.at ? { at: event.at } : {}),
             },
           ],
           ...(event.at ? { lastLifeAt: event.at } : {}),
@@ -762,6 +763,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
             taskId: event.taskId,
             ...(event.status ? { status: event.status } : {}),
             ...(event.summary ? { summary: event.summary } : {}),
+            ...(event.at ? { at: event.at } : {}),
           },
         ],
         ...(event.at ? { lastLifeAt: event.at } : {}),
@@ -785,12 +787,13 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
 }
 
 /** WO-0055: the tasks that started and never ended in this transcript — the activity line's
- *  "N ajan sürüyor" count and the running lamps. DERIVED, not folded, so a seeded/restarted
- *  pane re-derives it from the persisted rows (the seedLiveState discipline: no new state
- *  field). The LATEST edge per taskId decides open-ness — a task that re-opened after an end
- *  (the SendMessage restart, probe t1) counts once, at its newest leg. Pure. */
-export function openAgentTasks(entries: TranscriptLine[]): { taskId: string; callId?: string; description?: string }[] {
-  const open = new Map<string, { taskId: string; callId?: string; description?: string }>();
+ *  "N ajan sürüyor" count, the running lamps, and (rev 2) the live strip's per-agent rows.
+ *  DERIVED, not folded, so a seeded/restarted pane re-derives it from the persisted rows (the
+ *  seedLiveState discipline: no new state field). The LATEST edge per taskId decides open-ness —
+ *  a task that re-opened after an end (the SendMessage restart, probe t1) counts once, at its
+ *  newest leg. `at` rides the newest start — the strip's elapsed clock. Pure. */
+export function openAgentTasks(entries: TranscriptLine[]): { taskId: string; callId?: string; description?: string; at?: string }[] {
+  const open = new Map<string, { taskId: string; callId?: string; description?: string; at?: string }>();
   for (const e of entries) {
     if (e.speaker !== 'agent_task') continue;
     if (e.phase === 'started') {
@@ -798,6 +801,7 @@ export function openAgentTasks(entries: TranscriptLine[]): { taskId: string; cal
         taskId: e.taskId,
         ...(e.callId ? { callId: e.callId } : {}),
         ...(e.description ? { description: e.description } : {}),
+        ...(e.at ? { at: e.at } : {}),
       });
     } else {
       open.delete(e.taskId);

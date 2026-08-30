@@ -10,6 +10,7 @@ import { openAgentTasks, staleMinutes, STALE_AFTER_MIN, type LiveSessionState } 
 import type { SteerNote, TranscriptLine } from '../../../core/types';
 import { Input, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
+import { GUTTER_AGENT } from '../../data/labels';
 
 // --- lamp semantics: one color per state, amber only for "seni bekliyor" ---
 export type LampTone = 'idle' | 'signal' | 'run' | 'done' | 'error';
@@ -95,6 +96,32 @@ export function usePaneActivity(state: LiveSessionState, running: boolean, now?:
     line = UI.actThinking;
   }
   return { show: running || state.status !== 'idle' || state.entries.length > 0, line, stale };
+}
+
+// --- WO-0055 rev 2: the live AGENT STRIP — one row per RUNNING agent task, visible with the
+//     döküm chip CLOSED (the count line said how many; this says WHO and HOW LONG — the
+//     operator's rev-2 ruling "her koşan ajan için bir satır: görev + süre"). Elapsed derives
+//     from the task row's own `at` (the only clock that survives a restart). Absent when no
+//     agent runs (ADR-0001). Consumed by all four panes beside PaneWarnline. ---
+export function PaneAgentStrip({ state, now }: { state: LiveSessionState; now?: number }) {
+  const { UI } = useLabels();
+  const agents = openAgentTasks(state.entries);
+  if (agents.length === 0) return null;
+  return (
+    <div data-agent-strip="" className="mb-1 flex flex-col gap-0.5">
+      {agents.map((a) => {
+        const startedMs = a.at !== undefined ? Date.parse(a.at) : NaN;
+        const elapsed = !Number.isNaN(startedMs) && now !== undefined ? UI.formatDuration(Math.max(0, now - startedMs)) : undefined;
+        return (
+          <div key={a.taskId} className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] tracking-[0.04em] text-inkdim">
+            <span className="shrink-0 text-remote" aria-hidden="true">{GUTTER_AGENT}</span>
+            <span className="min-w-0 truncate normal-case text-ink">{a.description ?? UI.agentTaskLabel}</span>
+            {elapsed !== undefined ? <span className="ml-auto shrink-0 tabular-nums">{elapsed}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // --- WO-0046: the shared costline. Cost in the card's own vocabulary (`formatCost`: $ · in→out —

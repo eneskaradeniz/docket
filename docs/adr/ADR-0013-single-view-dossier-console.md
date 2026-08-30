@@ -174,12 +174,14 @@ dying with the card.
 
 **Addendum (2026-08-30, WO-0055 — agent-task rows live INSIDE the chip grammar):** the provider's
 agent-task lifecycle renders as TRANSCRIPT CONTENT behind the existing `Dökümü aç/kapat` chip —
-a composite tool block (the delegation call adopting its task: the task's own words in the
-detail slot, the running lamp watching the TASK's status, the end digest filling the body until
-the real report wins the pair), with the subagent's own rows nested INSIDE that block. It is
-not a second live surface, not a pane, not a ledger card; the session cards and the draft card
-re-nest identically through the same components. The activity verb line gains exactly one
-precedence arm (running agents, between staleness and the tool verb); ambient/housekeeping
-tasks (`skip_transcript`, `local_bash`) never render. The one live-edge exception to "nothing
-opens itself": a RUNNING agent's children stay visible (clamped); once ended they collapse
-behind the click like every other output.
+an IDENTITY block (rev 2, the operator's "takip edilebilirlik" ruling): head `◈ Ajan — <type,
+data voice> · <status word>`, the task's own sentence as the first body line (never
+click-gated), the subagent's rows nested under a vertical rail, the end's status word + digest
+as the closing line, and the delegation call's report (the pair's result) opening on the head
+like every tool block. It is not a second live surface, not a pane, not a ledger card; the
+session cards and the draft card re-nest identically through the same components. Beside the
+chip, a live STRIP names each running agent (one row: the task's words + elapsed). The activity
+verb line keeps exactly one precedence arm (running agents, between staleness and the tool
+verb); ambient/housekeeping tasks (`skip_transcript`, `local_bash`) never render. The one
+live-edge exception to "nothing opens itself": a RUNNING agent's children stay visible
+(clamped); once ended they collapse behind the click like every other output.

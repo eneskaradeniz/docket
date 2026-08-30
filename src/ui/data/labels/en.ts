@@ -155,6 +155,8 @@ export const AGENT_TASK_STATUS_LABELS: Record<AgentTaskStatus, string> = {
   failed: 'failed',
   stopped: 'stopped',
 };
+// WO-0055 rev 2: the running-status word in the block head (with live dots while the task runs).
+export const AGENT_TASK_RUNNING_WORD = 'running';
 
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -630,6 +632,7 @@ export const UI = {
   agentTaskLabel: 'Agent',
   agentRunningLine: (n: number) => (n === 1 ? '1 agent running' : `${n} agents running`),
   orphanAgentEnd: 'agent end — no matching task',
+  agentBlockAria: 'Agent output — show/hide',
   staleLine: (n: number) => `no new output for ${n} min`,
   // WO-0047 budget gate: warn/cap lines (card + band — known-spend qualifier, no fill bar),
   // the refusal card's two choices, the settings section. Money via formatUsd.
@@ -979,6 +982,8 @@ const en: Labels = {
   CARD_ACTION_AREA,
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
+  AGENT_TASK_STATUS_LABELS,
+  AGENT_TASK_RUNNING_WORD,
   TOOL_LABELS,
   TOOL_VERBS,
   MODE_LABELS,

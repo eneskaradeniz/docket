@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TranscriptLine } from '../../../core/runner';
 import type { SessionRole } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { GUTTER_RESULT, GUTTER_TOOL } from '../../data/labels';
+import { GUTTER_AGENT, GUTTER_RESULT, GUTTER_TOOL } from '../../data/labels';
 import type { Labels } from '../../data/labels';
 import { cn } from '../../kit';
 import { MarkdownBody } from '../detail/MarkdownBody';
@@ -80,7 +80,9 @@ const TOOL_FAMILY: Record<string, string> = {
 type AgentInfo = {
   taskId: string;
   description?: string;
-  status?: 'completed' | 'failed' | 'stopped'; // absent = the task is OPEN (the running lamp)
+  /** Provider vocabulary — rendered in the dim DATA voice (the raw-name precedent), never as a word. */
+  type?: string;
+  status?: 'completed' | 'failed' | 'stopped'; // absent = the task is OPEN (the running word + dots)
   summary?: string;
 };
 type ChatGroup =
@@ -137,36 +139,17 @@ const ToolPair = memo(function ToolPair({
   result,
   pulse,
   className,
-  agent,
-  childrenGroups,
-  role,
-  labelOverride,
 }: {
   tool: string;
   detail?: string;
   result?: { summary: string; isError: boolean };
   pulse: boolean;
   className?: string;
-  /** WO-0055: the agent task this call IS (adopted at task_started) — suppresses the running
-   *  lamp once the task ENDED (before the delegation call's own result may have arrived). */
-  agent?: AgentInfo;
-  /** The subagent's own rows, nested INSIDE the block: clamped-visible while the task RUNS
-   *  (the live edge shows the work — the one new operator-facing ruling the S2 manual check
-   *  votes on), click-collapsed once it ENDED ("nothing opens itself", 2026-08-23). */
-  childrenGroups?: ChatGroup[];
-  /** Children render turn bars — they need the session role. */
-  role: SessionRole;
-  /** WO-0055: a STANDALONE agent block (no delegation row behind it) labels itself with the
-   *  agent word instead of a tool name. */
-  labelOverride?: { text: string; hue: string };
 }) {
   const { TOOL_LABELS, toolLabel, UI } = useLabels();
   // An unknown tool's NAME rides the detail slot as DATA (mono, honest) — "Araç çağrısı" alone
   // answered nothing (operator, 2026-08-23: "ne araç çağrısı belli değil bu nedir?").
-  const knownTool = labelOverride !== undefined || TOOL_LABELS[tool] !== undefined;
-  const labelText = labelOverride?.text ?? toolLabel(tool);
-  const labelHue = labelOverride?.hue ?? (TOOL_FAMILY[tool] ?? 'text-inkdim');
-  const agentRunning = agent !== undefined && agent.status === undefined;
+  const knownTool = TOOL_LABELS[tool] !== undefined;
   // 2026-08-23 ruling: purely user-driven — no autoOpen, no touched/userOpen duality. The output
   // opens on click and ONLY on click, identically in live/compact/archived.
   const [open, setOpen] = useState(false);
@@ -188,7 +171,7 @@ const ToolPair = memo(function ToolPair({
           full command still wraps in the detail cell (the long form, 2026-08-22 ruling). */}
       <span className="grid min-w-0 flex-1 grid-cols-[12px_7rem_12px_1fr] items-center gap-1.5">
         <span className="shrink-0 text-[10px] text-inkdim" aria-hidden="true">{GUTTER_TOOL}</span>
-        <span className={cn('min-w-0 truncate font-medium', labelHue)}>{labelText}</span>
+        <span className={cn('min-w-0 truncate font-medium', TOOL_FAMILY[tool] ?? 'text-inkdim')}>{toolLabel(tool)}</span>
         <span className="shrink-0 text-inkdim" aria-hidden="true">{detail || !knownTool ? '—' : ''}</span>
         <span className={cn('min-w-0 text-ink', open ? 'whitespace-normal break-words' : 'truncate')}>
           {!knownTool ? tool + (detail ? ` · ${detail}` : '') : detail}
@@ -198,24 +181,10 @@ const ToolPair = memo(function ToolPair({
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
       </span>
       {/* Only the RUNNING mark stays a dot; a FAILURE tints the whole block below (operator,
-          2026-08-23: the 5px red dot was invisible — "o sohbet balonu kırmızı olabilir").
-          WO-0055: the dot also dies when the ADOPTED AGENT TASK ended — the task's own status,
-          not the delegation call's result, is what the lamp watches. */}
-      {!result && !agentRunning ? <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" /> : null}
+          2026-08-23: the 5px red dot was invisible — "o sohbet balonu kırmızı olabilir"). */}
+      {!result ? <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" /> : null}
     </>
   );
-
-  const childrenBody =
-    childrenGroups !== undefined && childrenGroups.length > 0 && (agentRunning || open) ? (
-      // One gutter step per nesting level (recursion adds its own); CLAMPED while the task runs
-      // (the live edge must not push the reading column around), full once explicitly opened.
-      <div
-        data-chat-entry="agent_children"
-        className={cn('min-w-0 pl-4 pr-1 pb-1', agentRunning ? 'max-h-40 overflow-y-auto' : undefined)}
-      >
-        <GroupRows groups={childrenGroups} role={role} />
-      </div>
-    ) : null;
 
   return (
     <div
@@ -233,9 +202,112 @@ const ToolPair = memo(function ToolPair({
       >
         {header}
       </button>
-      {childrenBody}
       {open && !result ? (
         <div className="px-2.5 pb-2 font-mono text-[11px] leading-relaxed text-inkdim">{UI.toolNoResult}</div>
+      ) : null}
+      {open && result ? (
+        <div
+          data-chat-entry="tool_result"
+          {...(pulse ? { 'data-live': '1' } : {})}
+          className={cn(
+            'whitespace-pre-wrap break-words px-2.5 pb-2 font-mono text-[11px] leading-relaxed',
+            result.isError ? 'text-error' : 'text-inkdim',
+          )}
+        >
+          → {result.summary}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+/** WO-0055 rev 2 — the AGENT BLOCK (operator ruling 2026-08-30, "devret tasarımı takip
+ *  edilebilirliği zor"): the adopted task renders as an IDENTITY block, not a disguised tool
+ *  row. Head: ◈ AJAN — <type in the dim data voice> · <status word (koşuyor··· / bitti /
+ *  başarısız / kesildi)>. The task's OWN sentence is the first body line, never click-gated.
+ *  The subagent's rows nest under a vertical rail — clamped while the task RUNS (the live edge
+ *  shows the work), click-collapsed once it ENDED ("nothing opens itself", 2026-08-23). The
+ *  end's status word + digest form the closing line, visible the moment the end lands. The
+ *  delegation call's report (the pair's result) opens on the head, like every tool block. */
+const AgentBlock = memo(function AgentBlock({
+  agent,
+  result,
+  childrenGroups,
+  role,
+  pulse,
+  className,
+}: {
+  agent: AgentInfo;
+  result?: { summary: string; isError: boolean };
+  childrenGroups?: ChatGroup[];
+  role: SessionRole;
+  pulse: boolean;
+  className?: string;
+}) {
+  const { AGENT_TASK_STATUS_LABELS, AGENT_TASK_RUNNING_WORD, UI } = useLabels();
+  const [open, setOpen] = useState(false);
+  const blockRef = useRef<HTMLDivElement>(null);
+  const toggle = (): void => {
+    const next = !open;
+    setOpen(next);
+    if (next) requestAnimationFrame(() => blockRef.current?.scrollIntoView({ block: 'nearest' }));
+  };
+  const running = agent.status === undefined;
+  const statusWord = running ? AGENT_TASK_RUNNING_WORD : agent.status !== undefined ? AGENT_TASK_STATUS_LABELS[agent.status] : undefined;
+  const showChildren = childrenGroups !== undefined && childrenGroups.length > 0 && (running || open);
+  return (
+    <div
+      ref={blockRef}
+      data-chat-entry="agent_block"
+      {...(pulse ? { 'data-live': '1' } : {})}
+      className={cn('rounded-md', agent.status === 'failed' ? 'bg-error/15 ring-1 ring-inset ring-error/40' : 'bg-raised/40', className)}
+    >
+      <button
+        type="button"
+        className="irow flex w-full items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left font-mono text-[11px] leading-relaxed"
+        aria-expanded={open}
+        aria-label={UI.agentBlockAria}
+        onClick={toggle}
+      >
+        <span className="grid min-w-0 flex-1 grid-cols-[12px_auto_1fr_auto] items-center gap-1.5">
+          <span className="shrink-0 text-[10px] text-remote" aria-hidden="true">{GUTTER_AGENT}</span>
+          <span className="shrink-0 font-medium uppercase tracking-[0.06em] text-remote">{UI.agentTaskLabel}</span>
+          {/* the provider's own type word — the dim DATA voice (the raw-name precedent) */}
+          <span className="min-w-0 truncate font-mono text-[10px] text-inkdim">
+            {agent.type !== undefined ? `— ${agent.type}` : ''}
+          </span>
+          <span className={cn('shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.06em]', running ? 'text-info' : 'text-inkdim')}>
+            <span className={running ? 'live-dots' : undefined}>{statusWord}</span>
+          </span>
+        </span>
+        <span className="shrink-0 text-inkdim" aria-hidden="true">
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </span>
+        {running ? <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" /> : null}
+      </button>
+      {/* the task's own words — the block's subject, never click-gated */}
+      {agent.description !== undefined ? (
+        <p className="break-words px-2.5 pb-1.5 text-[13px] leading-relaxed text-ink">{agent.description}</p>
+      ) : null}
+      {showChildren ? (
+        // the vertical RAIL connects the identity head to the subagent's rows (rev 2's nesting
+        // visual); one more rail per nesting level via recursion; CLAMPED while running.
+        <div
+          data-chat-entry="agent_children"
+          className={cn('ml-3 border-l border-hairline pl-3 pr-1 pb-1', running ? 'max-h-40 overflow-y-auto' : undefined)}
+        >
+          <GroupRows groups={childrenGroups} role={role} />
+        </div>
+      ) : null}
+      {!running && agent.summary !== undefined ? (
+        // the closing line: status word + the provider's own digest — visible the moment the end lands
+        <div
+          data-chat-entry="agent_digest"
+          className={cn('break-words px-2.5 pb-2 font-mono text-[11px] leading-relaxed', agent.status === 'failed' ? 'text-error' : 'text-inkdim')}
+        >
+          {statusWord !== undefined ? `${statusWord} — ` : ''}
+          {agent.summary}
+        </div>
       ) : null}
       {open && result ? (
         <div
@@ -309,33 +381,18 @@ function renderGroup(g: ChatGroup, role: SessionRole, pulse: boolean, top: strin
         </section>
       );
     case 'tool':
-      return (
-        <ToolPair
-          className={top}
-          tool={g.tool}
-          detail={g.detail}
-          result={g.result}
-          pulse={pulse}
-          agent={g.agent}
-          childrenGroups={g.children}
-          role={role}
-        />
+      // rev 2: a tool group that ADOPTED its agent task renders as the identity AgentBlock;
+      // a plain call stays the v1 tool row.
+      return g.agent !== undefined ? (
+        <AgentBlock className={top} agent={g.agent} result={g.result} childrenGroups={g.children} role={role} pulse={pulse} />
+      ) : (
+        <ToolPair className={top} tool={g.tool} detail={g.detail} result={g.result} pulse={pulse} />
       );
     case 'agent':
       // The STANDALONE agent block — no delegation row behind it (capped off, or the task
-      // arrived without a callId). Labels itself with the agent word, remote hue.
+      // arrived without a callId). Same identity anatomy, remote hue.
       return (
-        <ToolPair
-          className={top}
-          tool=""
-          labelOverride={{ text: UI.agentTaskLabel, hue: 'text-remote' }}
-          detail={g.agent.description}
-          result={g.result}
-          pulse={pulse}
-          agent={g.agent}
-          childrenGroups={g.children}
-          role={role}
-        />
+        <AgentBlock className={top} agent={g.agent} result={g.result} childrenGroups={g.children} role={role} pulse={pulse} />
       );
     case 'result':
       return <ResultRow className={top} summary={g.orphan ? UI.orphanResult : g.summary} isError={g.isError} pulse={pulse} />;
@@ -518,11 +575,14 @@ function ChatLog({
           // callId — the SendMessage re-open) adopts its NEW delegation row via byCallId; the
           // byTaskId re-registration points the next end at the new leg.
           if (line.phase === 'started') {
-            const info: AgentInfo = { taskId: line.taskId, ...(line.description ? { description: line.description } : {}) };
+            const info: AgentInfo = {
+              taskId: line.taskId,
+              ...(line.description ? { description: line.description } : {}),
+              ...(line.subagentType ? { type: line.subagentType } : {}),
+            };
             const host = line.callId !== undefined ? byCallId.get(line.callId) : undefined;
             if (host && host.kind === 'tool') {
               host.agent = info;
-              if (!host.detail) host.detail = line.description;
               byTaskId.set(line.taskId, host);
             } else {
               const g: ChatGroup = { kind: 'agent', callId: line.callId, agent: info, children: [] };
@@ -537,6 +597,7 @@ function ChatLog({
               target.agent = {
                 taskId: prior.taskId,
                 ...(prior.description ? { description: prior.description } : {}),
+                ...(prior.type ? { type: prior.type } : {}),
                 ...(line.status ? { status: line.status } : {}),
                 ...(line.summary ? { summary: line.summary } : {}),
               };
@@ -558,18 +619,9 @@ function ChatLog({
       }
     };
     for (const line of visible) appendLine(listFor(line), line);
-    // The digest post-pass: an ENDED agent block with a summary but no delegation result yet
-    // shows the digest as its click-open body (an interrupted task still closes with its own
-    // words); when the real tool_result (the report) arrives, the pair keeps owning `result`.
-    const fillDigest = (list: ChatGroup[]): void => {
-      for (const g of list) {
-        if ((g.kind === 'tool' || g.kind === 'agent') && g.agent?.summary !== undefined && !g.result) {
-          g.result = { summary: g.agent.summary, isError: g.agent.status === 'failed' };
-        }
-        if ((g.kind === 'tool' || g.kind === 'agent') && g.children !== undefined) fillDigest(g.children);
-      }
-    };
-    fillDigest(out);
+    // (rev 2: the old digest post-pass is GONE — the end's status word + digest render as the
+    // block's closing LINE, always visible; the click-open body is the delegation call's own
+    // result, the real report, whenever the pair completed.)
     return out;
     // UI rides the dep list: noteFor re-localizes a live column on a locale switch (TD-040's close).
   }, [visible, UI]);

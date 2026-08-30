@@ -11,6 +11,6 @@ import type { Labels } from './tr';
 
 export { tr, en };
 export type { Labels };
-export { STEP_MARK, VERDICT_MARK, GUTTER_TOOL, GUTTER_RESULT } from './marks';
+export { STEP_MARK, VERDICT_MARK, GUTTER_TOOL, GUTTER_RESULT, GUTTER_AGENT } from './marks';
 
 export const LABEL_BUNDLES: Record<Locale, Labels> = { tr, en };

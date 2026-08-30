@@ -91,9 +91,11 @@ export type TranscriptLine =
   // WO-0055: one provider agent task's lifecycle (probe t1: task_started/task_notification).
   // `taskId` is the provider's id — the fold's pairing key (the callId precedent). `description`
   // and `summary` are operator-language CONTENT (the detail-slot ruling); `subagentType` is
-  // provider vocabulary carried as DATA, never rendered (ADR-0007).
-  | { speaker: 'agent_task'; phase: 'started'; taskId: string; callId?: string; description?: string; subagentType?: string }
-  | { speaker: 'agent_task'; phase: 'ended'; taskId: string; status?: AgentTaskStatus; summary?: string }
+  // provider vocabulary carried as DATA, never rendered (ADR-0007). Rev 2: `at` rides the row —
+  // the live strip's per-agent elapsed time needs the task's own start moment (the row is the
+  // only clock that survives restart; pure derive from entries, no new state field).
+  | { speaker: 'agent_task'; phase: 'started'; taskId: string; callId?: string; description?: string; subagentType?: string; at?: string }
+  | { speaker: 'agent_task'; phase: 'ended'; taskId: string; status?: AgentTaskStatus; summary?: string; at?: string }
   | { speaker: 'note'; kind: TranscriptNoteKind; detail?: string };
 
 /** One operator steering note (WO-0045). Queued into the running drive's mirror, delivered once at

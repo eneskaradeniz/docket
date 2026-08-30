@@ -130,6 +130,26 @@ RESTART after its end — the parent's `SendMessage` re-opened the SAME `task_id
   chip grammar — a composite tool block, not a second live surface, not a pane, not a ledger
   card"). CLAUDE.md unchanged.
 
+- **D8 — rev 2: the IDENTITY agent block + the live strip (operator ruling 2026-08-30).** The
+  dogfood run (WO-0057, clean pass, the reviewer independently verifying the persisted rows)
+  came back with "devret tasarımı takip edilebilirliği zor" — four directions selected
+  (identity, chronology, live visibility, nesting visual), the layout ratified as the
+  ENHANCED COMPOSITE BLOCK:
+  - Head: `◈ AJAN — <subagentType in the dim DATA voice> · <status word>` — `koşuyor` with
+    live dots while open, `bitti/başarısız/kesildi` after the end. The word `Devret` leaves the
+    head (it read like a command); the delegation call remains the block's click-open body (the
+    real report, whenever the pair completed).
+  - The task's OWN sentence is the first body line, NEVER click-gated; the end's status word +
+    digest form the closing line, visible the moment the end lands (the old digest post-pass is
+    GONE — no duplicate body).
+  - Children nest under a vertical rail (`border-l`), clamped while running, click-collapsed
+    when ended — the v1 live-edge exception stands.
+  - `PaneAgentStrip` (all four panes, chip-closed): one row per RUNNING agent — `◈ <görev> ·
+    <süre>` — elapsed from the row's own `at` (rev 2 added `at` to the agent_task transcript
+    rows; the row is the only clock that survives restart). The count line stays.
+  - Vocabulary: `GUTTER_AGENT = '◈'` (marks), `AGENT_TASK_RUNNING_WORD` (tr «koşuyor» /
+    en «running»), `agentBlockAria` — all through the bundle seam (compiler parity).
+
 ## Stage 1 — core + adapter + CLI (test-first)
 
 Step 0: probe t1 (`probe-task.mjs`, one Task-subagent spawn → `raw/t1-task.log`) pins

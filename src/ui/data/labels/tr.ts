@@ -168,6 +168,8 @@ export const AGENT_TASK_STATUS_LABELS: Record<AgentTaskStatus, string> = {
   failed: 'başarısız',
   stopped: 'kesildi',
 };
+// WO-0055 rev 2: blok başlığındaki koşan-durum kelimesi (canlıysa noktalarla: koşuyor···).
+export const AGENT_TASK_RUNNING_WORD = 'koşuyor';
 
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -739,6 +741,7 @@ export const UI = {
   agentTaskLabel: 'Ajan',
   agentRunningLine: (n: number) => (n === 1 ? '1 ajan sürüyor' : `${n} ajan sürüyor`),
   orphanAgentEnd: 'ajan sonu — eşleşen görev yok',
+  agentBlockAria: 'Ajan çıktısı — aç/kapat',
   // WO-0047 bütçe kapısı: warn/limit satıları (kart + bant — bilinen-harcama niteleyicisiyle,
   // dolgu çubuğu yok, ADR-0012), ret kartının iki seçeneği, ayarlar bölümü. Para formatUsd ile.
   budgetWarnLine: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)} — uyarı eşiği aşıldı`,
@@ -1145,6 +1148,8 @@ const tr = {
   CARD_ACTION_AREA,
   STEP_STATUS_LABELS,
   LIVE_STATUS_LABELS,
+  AGENT_TASK_STATUS_LABELS,
+  AGENT_TASK_RUNNING_WORD,
   TOOL_LABELS,
   TOOL_VERBS,
   MODE_LABELS,

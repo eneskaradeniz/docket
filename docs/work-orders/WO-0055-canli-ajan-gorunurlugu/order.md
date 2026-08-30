@@ -147,4 +147,13 @@ Out of scope (gates):
 - Stage 1 CLOSED on the operator's approval (2026-08-30, "onaylıyorum devam et") with the CLI
   manual scenario DEFERRED (the WO-0045 precedent) — the deferred check rides Stage 2's
   `npm run dev` scenario, which exercises the same rows live.
+- Stage 2 dogfood (2026-08-30, WO-0057 clean pass — one real Task subagent, the reviewer
+  independently verifying the persisted agent rows, verdict proceed) returned the operator's
+  design verdict: "devret tasarımı takip edilebilirliği zor". Rev 2 ruled the same day (plan.md
+  D8, layout ratified: the enhanced composite block) — the four selected directions (identity,
+  chronology, live visibility, nesting visual) land BEFORE the PR.
+- Dogfood observation (gateway outage window, api.z.ai 500s): the SDK stream carries no
+  message for the CLI's stderr API errors — Docket stayed honestly at "Düşünüyor"/the
+  staleness line while a leg hung ~8 min. "Surface the last stderr line beside the staleness
+  line" is a future candidate, out of scope here.
 - The queue's other approved candidate (NULL cost on interrupted legs) is deliberately NOT here.

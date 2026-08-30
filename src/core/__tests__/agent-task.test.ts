@@ -32,7 +32,7 @@ describe('foldSessionEvent — the agent task fold (WO-0055)', () => {
   it('started appends exactly one row carrying its facts and refreshes lastLifeAt from at', () => {
     const s = run(initialSessionState, start({ callId: 'call_1', description: 'Tara', subagentType: 'general-purpose', at: '2026-08-30T10:00:00Z' }));
     expect(s.entries).toEqual([
-      { speaker: 'agent_task', phase: 'started', taskId: 't1', callId: 'call_1', description: 'Tara', subagentType: 'general-purpose' },
+      { speaker: 'agent_task', phase: 'started', taskId: 't1', callId: 'call_1', description: 'Tara', subagentType: 'general-purpose', at: '2026-08-30T10:00:00Z' },
     ]);
     expect(s.lastLifeAt).toBe('2026-08-30T10:00:00Z');
   });
@@ -57,7 +57,7 @@ describe('foldSessionEvent — the agent task fold (WO-0055)', () => {
     const s = run(initialSessionState, start({}), end({ status: 'failed', summary: 'yol yok', at: '2026-08-30T10:01:00Z' }));
     expect(s.entries).toEqual([
       { speaker: 'agent_task', phase: 'started', taskId: 't1' },
-      { speaker: 'agent_task', phase: 'ended', taskId: 't1', status: 'failed', summary: 'yol yok' },
+      { speaker: 'agent_task', phase: 'ended', taskId: 't1', status: 'failed', summary: 'yol yok', at: '2026-08-30T10:01:00Z' },
     ]);
     expect(s.lastLifeAt).toBe('2026-08-30T10:01:00Z');
   });

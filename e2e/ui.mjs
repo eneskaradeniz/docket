@@ -2767,7 +2767,7 @@ await spec('WO-0054 drive-sonu tazeleme: ekran açıkken satır iner — rakam T
 // ===== WO-0055 — live agent visibility: the composite delegation block, the running count, the
 // honest orphans, the archived re-nesting =====
 
-await spec('WO-0055: the agent task nests in its delegation block; the activity line counts running agents', async () => {
+await spec('WO-0055 rev 2: the identity agent block + the live strip name the running agents', async () => {
   await stopAllDrives(); // one drive at a time — stage on a FRESH work order
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
   await page.waitForTimeout(350);
@@ -2782,24 +2782,30 @@ await spec('WO-0055: the agent task nests in its delegation block; the activity 
   await page.waitForTimeout(300);
   let header = (await page.locator('#live-pane').first().textContent()) ?? '';
   assert.ok(header.includes('Devrediyor'), `the delegation call lost its verb: ${header.slice(0, 300)}`);
-  await emit({ kind: 'agent_task', phase: 'started', taskId: 't-1', callId: 'cT', description: 'Dosyaları tara' });
+  await emit({ kind: 'agent_task', phase: 'started', taskId: 't-1', callId: 'cT', description: 'Dosyaları tara', subagentType: 'general-purpose', at: new Date().toISOString() });
   await emit({ kind: 'tool_use', callId: 'cN1', tool: 'Bash', input: { command: 'ls' }, parentToolUseId: 'cT' });
   await page.waitForTimeout(400);
   header = (await page.locator('#live-pane').first().textContent()) ?? '';
   assert.ok(header.includes('1 ajan sürüyor'), `the activity line carries no running-agent count: ${header.slice(0, 300)}`);
-  // behind the chip: the composite block — Devret label, the task's own words in the detail slot,
-  // the subagent's row nested INSIDE (the live edge shows the work), the running lamp on
+  // rev 2 — the LIVE STRIP (chip CLOSED): one row per running agent, the task's own words + elapsed
+  const strip = page.locator('[data-agent-strip]');
+  assert.equal(await strip.count(), 1, 'no live agent strip while an agent runs');
+  assert.ok(((await strip.textContent()) ?? '').includes('Dosyaları tara'), 'the strip does not name the running agent');
+  // behind the chip: the IDENTITY block — ◈ Ajan head (type word in the data voice) + the
+  // running status; the task's own sentence visible WITHOUT clicking; the nested row inside
   await page.locator('[data-pane-log-toggle]').first().click();
   await page.waitForTimeout(300);
   const chat = page.locator('[data-chat]').first();
-  const delegation = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dosyaları tara' }).first();
-  assert.equal(await delegation.count(), 1, 'no composite delegation block with the task description');
-  assert.ok(((await delegation.textContent()) ?? '').includes('Devret'), 'the delegation block lost its label');
-  assert.ok(((await delegation.textContent()) ?? '').includes('Komut çalıştır'), 'the subagent row is not nested inside the block');
-  assert.ok((await delegation.locator('.lamp-run').count()) >= 1, 'no running lamp on the open agent task');
+  const block = chat.locator('[data-chat-entry="agent_block"]').first();
+  assert.equal(await block.count(), 1, 'no agent identity block behind the chip');
+  const head = (await block.textContent()) ?? '';
+  assert.ok(head.includes('Ajan') && head.includes('koşuyor'), `the block head lost its identity/status: ${head.slice(0, 200)}`);
+  assert.ok(head.includes('general-purpose'), 'the type word is missing from the head');
+  assert.ok(head.includes('Dosyaları tara'), 'the task sentence is not visible on the block');
+  assert.ok(((await block.textContent()) ?? '').includes('Komut çalıştır'), 'the subagent row is not nested inside the block');
+  assert.ok((await block.locator('.lamp-run').count()) >= 1, 'no running lamp on the open agent task');
   // the nested call CLOSES first (still under the running count), then the task ENDS: the lamp
-  // dies, the live children collapse behind the click, the line reverts to the delegation verb —
-  // the newest unmatched call is now the delegation itself (the nested one is answered)
+  // dies, the strip disappears, the closing line carries the status + digest, the line reverts
   await emit({ kind: 'tool_result', callId: 'cN1', summary: 'docs src package.json', isError: false, parentToolUseId: 'cT' });
   await page.waitForTimeout(300);
   header = (await page.locator('#live-pane').first().textContent()) ?? '';
@@ -2809,12 +2815,16 @@ await spec('WO-0055: the agent task nests in its delegation block; the activity 
   header = (await page.locator('#live-pane').first().textContent()) ?? '';
   assert.ok(!header.includes('ajan sürüyor'), 'the count survived the last end');
   assert.ok(header.includes('Devrediyor'), 'the line did not revert to the unmatched delegation verb');
-  assert.equal(await delegation.locator('.lamp-run').count(), 0, 'the lamp stayed on after the end');
-  assert.equal(await delegation.locator('[data-chat-entry="agent_children"]').count(), 0, 'children stayed visible after the end');
-  await delegation.locator('button').first().click();
+  assert.equal(await strip.count(), 0, 'the strip survived the last end');
+  assert.equal(await block.locator('.lamp-run').count(), 0, 'the lamp stayed on after the end');
+  const headText = (await block.textContent()) ?? '';
+  assert.ok(headText.includes('bitti'), 'the head did not flip to the end status word');
+  assert.equal(await block.locator('[data-chat-entry="agent_digest"]').count(), 1, 'no closing digest line after the end');
+  assert.ok(((await block.locator('[data-chat-entry="agent_digest"]').textContent()) ?? '').includes('Dört dosya buldum'), 'the digest lost the provider summary');
+  assert.equal(await block.locator('[data-chat-entry="agent_children"]').count(), 0, 'children stayed visible after the end');
+  await block.locator('button').first().click();
   await page.waitForTimeout(300);
-  assert.equal(await delegation.locator('[data-chat-entry="agent_children"]').count(), 1, 'the opened block did not reveal the nested rows');
-  assert.ok(((await delegation.textContent()) ?? '').includes('Dört dosya buldum'), 'the end digest did not fill the body');
+  assert.equal(await block.locator('[data-chat-entry="agent_children"]').count(), 1, 'the opened block did not reveal the nested rows');
   await page.screenshot({ path: join(SHOTS, 'agent-block@980.png') });
   await stopAllDrives();
   await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
@@ -2843,9 +2853,9 @@ await spec('WO-0055: depth-2 nesting and the honest orphan ends', async () => {
   await emit({ kind: 'tool_use', callId: 'd2', tool: 'Agent', input: { description: 'İç görev' }, parentToolUseId: 'd1' });
   await emit({ kind: 'agent_task', phase: 'started', taskId: 'td2', callId: 'd2', description: 'İç görev' });
   await page.waitForTimeout(400);
-  const outer = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dış görev' }).first();
+  const outer = chat.locator('[data-chat-entry="agent_block"]', { hasText: 'Dış görev' }).first();
   assert.equal(await outer.count(), 1, 'the outer block is missing');
-  const inner = outer.locator('[data-chat-entry="tool_use"]', { hasText: 'İç görev' }).first();
+  const inner = outer.locator('[data-chat-entry="agent_block"]', { hasText: 'İç görev' }).first();
   assert.equal(await inner.count(), 1, 'the inner delegation did not nest inside the outer block');
   // (the beheaded END is a RENDER-level case: live, the FOLD drops an end with no open task —
   // pinned in agent-task.test.ts. The renderer's honest orphan row is asserted in the archived
@@ -2868,15 +2878,19 @@ await spec('WO-0055: the archived card re-nests identically (seeded agent rows)'
   await card.locator('button').first().click(); // the card head IS the aç/kapa (the ledger has no chip)
   await page.waitForTimeout(400);
   const chat = card.locator('[data-chat]').first();
-  const delegation = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dosyaları tara' }).first();
-  assert.equal(await delegation.count(), 1, 'the archived transcript did not re-nest the delegation block');
-  // the task ENDED in the seed → the children hide behind the card head's click (nothing opens itself)
-  await delegation.locator('button').first().click();
+  const block = chat.locator('[data-chat-entry="agent_block"]').first();
+  assert.equal(await block.count(), 1, 'the archived transcript did not re-nest the agent block');
+  const head = (await block.textContent()) ?? '';
+  assert.ok(head.includes('Ajan') && head.includes('bitti'), `the archived head lost its identity/status: ${head.slice(0, 200)}`);
+  assert.ok(head.includes('Dosyaları tara'), 'the task sentence is not visible on the archived block');
+  assert.equal(await block.locator('[data-chat-entry="agent_digest"]').count(), 1, 'the archived block lost its closing digest');
+  // the task ENDED in the seed → the children hide behind the head's click (nothing opens itself)
+  await block.locator('button').first().click();
   await page.waitForTimeout(300);
-  assert.ok(((await delegation.textContent()) ?? '').includes('Komut çalıştır'), 'the nested subagent row did not survive the archive');
-  // the REAL report won the pair over the end digest
-  assert.ok(((await delegation.textContent()) ?? '').includes('Alt ajan raporu'), 'the report did not win the pair');
-  assert.ok(((await delegation.textContent()) ?? '').includes('ls'), 'the nested command detail is missing');
+  assert.ok(((await block.textContent()) ?? '').includes('Komut çalıştır'), 'the nested subagent row did not survive the archive');
+  // the REAL report won the pair over the end digest — the click-open body
+  assert.ok(((await block.textContent()) ?? '').includes('Alt ajan raporu'), 'the report did not win the pair');
+  assert.ok(((await block.textContent()) ?? '').includes('ls'), 'the nested command detail is missing');
   // the beheaded end's ONE honest self-describing row (word + digest)
   const chatText = (await chat.textContent()) ?? '';
   assert.ok(chatText.includes('ajan sonu') && chatText.includes('Yetim özet'), 'the beheaded end lost its one honest row');
