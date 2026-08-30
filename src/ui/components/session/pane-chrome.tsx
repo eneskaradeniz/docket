@@ -6,10 +6,11 @@
 // three live surfaces (SessionPane · StepPane · ReviewPane); the step/review panes had neither.
 import { useState, useRef, type ReactNode } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
-import { staleMinutes, STALE_AFTER_MIN, type LiveSessionState } from '../../../core/runner';
+import { openAgentTasks, staleMinutes, STALE_AFTER_MIN, type LiveSessionState } from '../../../core/runner';
 import type { SteerNote, TranscriptLine } from '../../../core/types';
 import { Input, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
+import { GUTTER_AGENT } from '../../data/labels';
 
 // --- lamp semantics: one color per state, amber only for "seni bekliyor" ---
 export type LampTone = 'idle' | 'signal' | 'run' | 'done' | 'error';
@@ -56,7 +57,12 @@ export function PaneError({ message }: { message: string }) {
 //     live-dots — the reason line is not motion. Gated on the FOLD's 'running', never the handle's:
 //     an ask held parks the fold at stopped_asking and the asking verb names why it waits — a
 //     staleness accusation there would blame the operator. The plan-closing moment (plan_ready +
-//     running) keeps precedence: it is the wind-down, not a wait. ---
+//     running) keeps precedence: it is the wind-down, not a wait.
+//     WO-0055: RUNNING AGENTS sit between the silence and the tool verb — at the moment a
+//     subagent starts, the newest unmatched tool_use IS the delegation call ("Devrediyor",
+//     strictly less information than a count), and while agents run an unrelated parent tool
+//     call would otherwise overwrite the agent line. Backgrounded shell tasks produce no agent
+//     rows (the adapter's discriminator), so they can never inflate the count. ---
 export function usePaneActivity(state: LiveSessionState, running: boolean, now?: number): { show: boolean; line: string; stale: boolean } {
   const { LIVE_STATUS_LABELS, UI, toolVerb } = useLabels();
   const staleMins = running && state.status === 'running' && now !== undefined ? staleMinutes(state, now) : undefined;
@@ -68,11 +74,16 @@ export function usePaneActivity(state: LiveSessionState, running: boolean, now?:
     stale = true;
     line = UI.staleLine(staleMins);
   } else if (running) {
-    const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
-    const pending = [...state.entries]
-      .reverse()
-      .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
-    line = pending ? toolVerb(pending.tool) : UI.actThinking;
+    const agents = openAgentTasks(state.entries);
+    if (agents.length > 0) {
+      line = UI.agentRunningLine(agents.length);
+    } else {
+      const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
+      const pending = [...state.entries]
+        .reverse()
+        .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
+      line = pending ? toolVerb(pending.tool) : UI.actThinking;
+    }
   } else if (state.status === 'stopped_asking') {
     line = LIVE_STATUS_LABELS.stopped_asking;
   } else if (state.status === 'done') {
@@ -85,6 +96,32 @@ export function usePaneActivity(state: LiveSessionState, running: boolean, now?:
     line = UI.actThinking;
   }
   return { show: running || state.status !== 'idle' || state.entries.length > 0, line, stale };
+}
+
+// --- WO-0055 rev 2: the live AGENT STRIP — one row per RUNNING agent task, visible with the
+//     döküm chip CLOSED (the count line said how many; this says WHO and HOW LONG — the
+//     operator's rev-2 ruling "her koşan ajan için bir satır: görev + süre"). Elapsed derives
+//     from the task row's own `at` (the only clock that survives a restart). Absent when no
+//     agent runs (ADR-0001). Consumed by all four panes beside PaneWarnline. ---
+export function PaneAgentStrip({ state, now }: { state: LiveSessionState; now?: number }) {
+  const { UI } = useLabels();
+  const agents = openAgentTasks(state.entries);
+  if (agents.length === 0) return null;
+  return (
+    <div data-agent-strip="" className="mb-1 flex flex-col gap-0.5">
+      {agents.map((a) => {
+        const startedMs = a.at !== undefined ? Date.parse(a.at) : NaN;
+        const elapsed = !Number.isNaN(startedMs) && now !== undefined ? UI.formatDuration(Math.max(0, now - startedMs)) : undefined;
+        return (
+          <div key={a.taskId} className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] tracking-[0.04em] text-inkdim">
+            <span className="shrink-0 text-remote" aria-hidden="true">{GUTTER_AGENT}</span>
+            <span className="min-w-0 truncate normal-case text-ink">{a.description ?? UI.agentTaskLabel}</span>
+            {elapsed !== undefined ? <span className="ml-auto shrink-0 tabular-nums">{elapsed}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // --- WO-0046: the shared costline. Cost in the card's own vocabulary (`formatCost`: $ · in→out —

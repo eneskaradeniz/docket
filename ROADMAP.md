@@ -502,6 +502,20 @@ diet, the plan.md embed diet.
       Follow-up queued: interrupted legs record NULL cost (the $0,00-wall fix, operator
       approved). Spec: `docs/work-orders/WO-0054-kullanim-ekrani/order.md`.
 
+## M8 — Canlı görünürlük (the agent-task lifecycle on the live surface)
+
+- [ ] **WO-0055** — live agent visibility: the SDK's agent-task lifecycle (probe t1:
+      `task_started`/`task_notification`, `parent_tool_use_id` nesting link, `task_type:
+      'local_agent'` discriminator, the wire tool name `Agent`) becomes ONE core event kind
+      (`agent_task`, phase-discriminated); the fold keys its replay guards on OPEN tasks (a
+      task legitimately re-opens after its end — the SendMessage restart); agent rows ride the
+      schema-free transcript (no migration, no audit row); the live panes render the composite
+      delegation block (the subagent's own rows nested inside — clamped while running,
+      click-collapsed when ended; the end digest fills the body until the real report wins the
+      pair), the activity line counts running agents (`N ajan sürüyor`, between staleness and
+      the tool verb), ambient/`local_bash` tasks never render. Spec:
+      `docs/work-orders/WO-0055-canli-ajan-gorunurlugu/order.md`.
+
 ## Later
 
 - Packaging and distribution

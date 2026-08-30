@@ -447,6 +447,15 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             record('running');
             yield ev;
             break;
+          case 'agent_task':
+            // WO-0055: the same döküm-kaybı rule at every agent-task edge — an interrupt mid-task
+            // must not lose the transcript since the last tool_result (the subagent's own rows
+            // fold between checkpoints). Two writes per task, never a stream: task_progress is
+            // unread (plan D3). NO audit row — the wo_event CHECK gains no kind; task churn
+            // would spam the audit log (plan D2).
+            record('running');
+            yield ev;
+            break;
           case 'steer_queued':
             // WO-0045: the runner acknowledged the note into its queue. The mirror normally already
             // holds it (pipeline.steer's optimistic add — a Durdur in the call gap must not lose the

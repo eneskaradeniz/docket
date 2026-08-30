@@ -468,3 +468,87 @@ describe('WO-0053 dogfood — the message-text stamp + the error-result plan gua
     expect(out2.some((e) => e.kind === 'plan_ready')).toBe(true);
   });
 });
+
+// ===== WO-0055 — the agent-task lifecycle translate (probe t1's shapes, scripted) =====
+describe('createRunner().drive — the agent-task lifecycle (scripted SDK, WO-0055)', () => {
+  const taskStarted = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'system', subtype: 'task_started', task_id: 'a5ce', tool_use_id: 'call_T',
+    description: 'Run ls and summarize', subagent_type: 'general-purpose', task_type: 'local_agent', ...over,
+  });
+  // WILD-EXACT (probe t1 line 121): the notification carries NO task_type/subagent_type — bare
+  // task_id + status + summary. The END pairs by task_id; the discriminator guards the START only.
+  const taskNotification = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'system', subtype: 'task_notification', task_id: 'a5ce', tool_use_id: 'call_T',
+    status: 'completed', summary: 'one-line summary', ...over,
+  });
+  const task = async (events: unknown[]): Promise<RunnerEvent[]> => {
+    sdkMock.setScript([initMsg, ...events, resultMsg()]);
+    const runner = createRunner();
+    return collect(runner, stepInput);
+  };
+
+  it('a real Task-subagent start → the started event, callId === tool_use_id (probe t1 pinned)', async () => {
+    const out = await task([taskStarted()]);
+    expect(out[1]).toEqual({
+      kind: 'agent_task', phase: 'started', taskId: 'a5ce', callId: 'call_T',
+      description: 'Run ls and summarize', subagentType: 'general-purpose',
+      at: expect.any(String),
+    });
+  });
+
+  it('a backgrounded shell (local_bash, probe c2) and an ambient task NEVER start; the end passes the boundary (the FOLD drops it — agent-task.test.ts pins the drop)', async () => {
+    const shell = await task([
+      taskStarted({ task_type: 'local_bash', subagent_type: undefined, description: 'Sleep for 8 seconds' }),
+      taskNotification({ summary: 'slept' }),
+    ]);
+    expect(shell.filter((e) => e.kind === 'agent_task' && e.phase === 'started')).toEqual([]); // the discriminator guards the START
+    expect(shell.find((e) => e.kind === 'agent_task')).toMatchObject({ phase: 'ended', taskId: 'a5ce', status: 'completed' }); // pairs by task_id; the fold's no-open-task guard is the ambient safety
+    const ambient = await task([taskStarted({ skip_transcript: true }), taskNotification({ skip_transcript: true })]);
+    expect(ambient.filter((e) => e.kind === 'agent_task')).toEqual([]); // the flag is honored on both bookends
+  });
+
+  it('the notification ends the task with its status + digest; an unknown status is never fabricated', async () => {
+    const out = await task([taskStarted(), taskNotification({ status: 'failed', summary: 'yol yok' })]);
+    expect(out[2]).toEqual({
+      kind: 'agent_task', phase: 'ended', taskId: 'a5ce', status: 'failed', summary: 'yol yok',
+      at: expect.any(String),
+    });
+    const weird = await task([taskStarted(), taskNotification({ status: 'weird' })]);
+    expect(weird.some((e) => e.kind === 'agent_task')).toBe(true); // the start passed
+    expect(weird.filter((e) => e.kind === 'agent_task')).toHaveLength(1); // the end did not
+  });
+
+  it('task_updated / task_progress / background_tasks_changed stay UNREAD (the TD-016 conscious pin)', async () => {
+    const out = await task([
+      { type: 'system', subtype: 'task_updated', task_id: 'a5ce', patch: { status: 'completed' } },
+      { type: 'system', subtype: 'task_progress', task_id: 'a5ce', description: 'Running', usage: { total_tokens: 0, tool_uses: 1, duration_ms: 5 } },
+      { type: 'system', subtype: 'background_tasks_changed', tasks: [] },
+    ]);
+    expect(out.some((e) => e.kind === 'agent_task')).toBe(false);
+  });
+
+  it('a start without tool_use_id carries NO callId key (absent, not null)', async () => {
+    const out = await task([taskStarted({ tool_use_id: undefined })]);
+    const ev = out[1] as Extract<RunnerEvent, { kind: 'agent_task' }>;
+    expect('callId' in ev).toBe(false);
+  });
+
+  it('the nesting link threads onto tool_use/tool_result/assistant_text; null omits the key', async () => {
+    sdkMock.setScript([
+      initMsg,
+      { type: 'assistant', parent_tool_use_id: 'call_T', message: { content: [{ type: 'text', text: 'alt ajan yazısı' }, { type: 'tool_use', id: 'call_C', name: 'Bash', input: { command: 'ls' } }] } },
+      { type: 'user', parent_tool_use_id: 'call_T', message: { content: [{ type: 'tool_result', tool_use_id: 'call_C', content: 'dosyalar' }] } },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'ebeveyn' }] } },
+      resultMsg(),
+    ]);
+    const runner = createRunner();
+    const out = await collect(runner, stepInput);
+    const nested = out.filter((e) => e.kind === 'tool_use' || e.kind === 'tool_result' || e.kind === 'assistant_text');
+    expect(nested.find((e) => e.kind === 'tool_use')).toMatchObject({ tool: 'Bash', parentToolUseId: 'call_T' });
+    expect(nested.find((e) => e.kind === 'tool_result')).toMatchObject({ callId: 'call_C', parentToolUseId: 'call_T' });
+    const texts = nested.filter((e) => e.kind === 'assistant_text');
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toMatchObject({ text: 'alt ajan yazısı', parentToolUseId: 'call_T' });
+    expect(texts[1]).toEqual({ kind: 'assistant_text', text: 'ebeveyn', at: expect.any(String) }); // null → omitted
+  });
+});

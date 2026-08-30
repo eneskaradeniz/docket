@@ -22,3 +22,6 @@ export const VERDICT_MARK: Record<'proceed' | 'revise', string> = {
 // (toolLabel) live in the bundles.
 export const GUTTER_TOOL = '▸';
 export const GUTTER_RESULT = '·';
+// WO-0055 rev 2 — the agent block's identity glyph (◈ the diamond marks a DELEGATED life inside
+// the column, distinct from the parent's own ▸ rows).
+export const GUTTER_AGENT = '◈';

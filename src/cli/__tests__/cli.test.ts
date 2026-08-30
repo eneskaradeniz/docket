@@ -296,3 +296,22 @@ describe('show — the per-session usage section (WO-0052)', () => {
     expect(out).not.toMatch(/turn .*\$0\.00/);
   });
 });
+
+// ===== WO-0055 — the agent task's stream lines =====
+describe('formatEvent — the agent_task lines (WO-0055)', () => {
+  const s: RunnerEvent = { kind: 'agent_task', phase: 'started', taskId: 'a5ce', callId: 'call_T', description: 'Run ls and summarize' };
+  const e: RunnerEvent = { kind: 'agent_task', phase: 'ended', taskId: 'a5ce', status: 'completed', summary: 'the dir listing' };
+  it('started → ⇄ agent <description>', () => {
+    expect(formatEvent(s, 'stream')).toBe('⇄ agent Run ls and summarize');
+  });
+  it('ended → ⇲ agent <status> — <summary>', () => {
+    expect(formatEvent(e, 'stream')).toBe('  ⇲ agent completed — the dir listing');
+  });
+  it('a status-less, summary-less end degrades to the bare close', () => {
+    expect(formatEvent({ kind: 'agent_task', phase: 'ended', taskId: 'x' }, 'stream')).toBe('  ⇲ agent');
+  });
+  it('quiet → undefined; jsonl → the event verbatim', () => {
+    expect(formatEvent(s, 'quiet')).toBeUndefined();
+    expect(JSON.parse(formatEvent(e, 'jsonl')!)).toEqual(e);
+  });
+});

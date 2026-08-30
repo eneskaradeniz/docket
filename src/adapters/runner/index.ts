@@ -140,7 +140,39 @@ type AnyMsg = {
   command_uuid?: string;
   state?: string;
   capabilities?: string[];
+  // WO-0055: the agent-task lifecycle family (sdk.d.ts task messages), structural-optional — only
+  // what we name. The START and the NOTIFICATION bookends translate; `task_updated`,
+  // `task_progress`, `background_tasks_changed` and `tool_use_result` are CONSCIOUSLY UNREAD
+  // (plan D3 — TD-016 lists them; the notification's summary IS the report text, probe t1).
+  task_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  subagent_type?: string;
+  task_type?: string;
+  skip_transcript?: boolean;
+  status?: string;
+  summary?: string;
+  // WO-0055: the subagent nesting link — message-level, `string | null` in the SDK. null → the
+  // event key is OMITTED (the absent-not-zero discipline).
+  parent_tool_use_id?: string | null;
 };
+
+// WO-0055: does this task message describe an AGENT task (vs a backgrounded shell/monitor)?
+// Ambient/housekeeping tasks (skip_transcript) are ignored ENTIRELY — they are the provider's
+// bookkeeping, not ajan işi. PINNED by probe t1 (raw/t1-task.log): a real Task-tool subagent
+// carries task_type 'local_agent' + subagent_type 'general-purpose'; a backgrounded Bash
+// carries task_type 'local_bash' with no subagent_type (probe c2/s1/s3).
+function isAgentTask(m: AnyMsg): boolean {
+  if (m.skip_transcript === true) return false;
+  if (m.task_type === 'local_bash') return false;
+  return m.subagent_type !== undefined || m.task_type === 'local_agent';
+}
+
+// WO-0055: the nesting link narrows to a non-empty string; null/absent → undefined (the key is
+// omitted at the event boundary, never null).
+function parentOf(m: AnyMsg): string | undefined {
+  return typeof m.parent_tool_use_id === 'string' && m.parent_tool_use_id ? m.parent_tool_use_id : undefined;
+}
 
 // Shell-command write classification. Delegates the pure policy to core's `classifyCommandLine` (tested
 // there); this thin shim only resolves a redirect target against cwd (core imports no Node path module —
@@ -397,6 +429,40 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
             lifecycleSupported = (msg.capabilities ?? []).includes('msg_lifecycle_v1');
             out.push({ kind: 'started', sessionId: msg.session_id, at: new Date().toISOString() });
           }
+          // WO-0055: the agent-task lifecycle bookends. The DISCRIMINATOR guards the START only —
+          // the wild notification carries NO task_type/subagent_type (probe t1 line 121: bare
+          // task_id + status + summary), so the END pairs by task_id and the FOLD drops any end
+          // with no open task behind it (ambient safety lives there). A task may restart after
+          // its end under the SAME task_id with a NEW tool_use_id (the SendMessage re-open,
+          // probe t1) — the fold's OPEN-task guard handles replays and re-opens.
+          // `task_updated`-only ends are a named branch point (plan D3): never observed in the
+          // wild, the fold's first-end-wins makes the defensive arm additive.
+          if (msg.subtype === 'task_started' && msg.task_id && isAgentTask(msg)) {
+            out.push({
+              kind: 'agent_task',
+              phase: 'started',
+              taskId: msg.task_id,
+              ...(msg.tool_use_id ? { callId: msg.tool_use_id } : {}),
+              ...(msg.description ? { description: msg.description } : {}),
+              ...(msg.subagent_type ? { subagentType: msg.subagent_type } : {}),
+              at: new Date().toISOString(),
+            });
+          }
+          if (
+            msg.subtype === 'task_notification'
+            && msg.task_id
+            && msg.skip_transcript !== true // the provider's own "hide this" flag, honored on both bookends
+            && (msg.status === 'completed' || msg.status === 'failed' || msg.status === 'stopped')
+          ) {
+            out.push({
+              kind: 'agent_task',
+              phase: 'ended',
+              taskId: msg.task_id,
+              status: msg.status,
+              ...(msg.summary ? { summary: msg.summary } : {}),
+              at: new Date().toISOString(),
+            });
+          }
           break;
         case 'command_lifecycle': {
           // WO-0045 delivery: OUR uuid entering execution (state 'started') is the note's application
@@ -414,14 +480,16 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         case 'assistant': {
           // WO-0046: content events carry the receive-stamp — the fold's liveness anchor.
           const at = new Date().toISOString();
+          // WO-0055: a SUBAGENT's message — its rows nest under the delegation block.
+          const parentToolUseId = parentOf(msg);
           for (const b of msg.message?.content ?? []) {
-            if (b.type === 'text' && b.text) out.push({ kind: 'assistant_text', text: b.text, at });
+            if (b.type === 'text' && b.text) out.push({ kind: 'assistant_text', text: b.text, at, ...(parentToolUseId ? { parentToolUseId } : {}) });
             if (b.type === 'tool_use') {
               if (b.name === 'ExitPlanMode') {
                 planReadyEmitted = true;
                 out.push({ kind: 'plan_ready', planText: planTextFromInput(b.input) });
               } else {
-                out.push({ kind: 'tool_use', callId: b.id ?? '', tool: b.name ?? '', input: b.input ?? {}, at });
+                out.push({ kind: 'tool_use', callId: b.id ?? '', tool: b.name ?? '', input: b.input ?? {}, at, ...(parentToolUseId ? { parentToolUseId } : {}) });
               }
             }
           }
@@ -429,6 +497,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         }
         case 'user': {
           const at = new Date().toISOString();
+          const parentToolUseId = parentOf(msg);
           for (const b of msg.message?.content ?? []) {
             if (b.type === 'tool_result') {
               out.push({
@@ -437,6 +506,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
                 summary: blockSummary(b.content),
                 isError: !!b.is_error,
                 at,
+                ...(parentToolUseId ? { parentToolUseId } : {}),
               });
             }
           }

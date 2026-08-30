@@ -11,7 +11,7 @@
 // The role write-scope fence (ADR-0002) is pure domain logic and lives here so it
 // is testable without an agent (TD-001: the runner enforces role write-scopes in the
 // permission callback, not in a prompt). The event→pane fold is likewise pure.
-import type { CostSummary, LimitStop, LimitWindow, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, TurnUsage, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
+import type { AgentTaskStatus, CostSummary, LimitStop, LimitWindow, PermissionAsk, SessionRef, SessionRole, SteerNote, TrackId, TurnUsage, WorkOrderId, WorkspaceId, TranscriptLine } from './types';
 import type { PermissionRule } from './source';
 
 // --- The stream the runner yields. A vendor-neutral projection of a session.
@@ -21,9 +21,11 @@ export type RunnerEvent =
   // WO-0046: the content events carry the same ISO receive-stamp as the lifecycle ones — the fold
   // turns each into the staleness anchor (`lastLifeAt`); an unstamped event (a scripted fake)
   // honestly leaves the prior anchor alone.
-  | { kind: 'assistant_text'; text: string; at?: string }
-  | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown>; at?: string }
-  | { kind: 'tool_result'; callId: string; summary: string; isError: boolean; at?: string }
+  // WO-0055: `parentToolUseId` is the subagent nesting link (the delegation call's id) — the fold
+  // threads it onto the transcript line so the döküm nests identically live and archived.
+  | { kind: 'assistant_text'; text: string; parentToolUseId?: string; at?: string }
+  | { kind: 'tool_use'; callId: string; tool: string; input: Record<string, unknown>; parentToolUseId?: string; at?: string }
+  | { kind: 'tool_result'; callId: string; summary: string; isError: boolean; parentToolUseId?: string; at?: string }
   | { kind: 'permission_request'; requestId: string; tool: string; input: Record<string, unknown>; title?: string; reason?: string }
   // The runner emits this when decide() answers a requestId (WO-0027): with PARALLEL asks, nothing else can
   // identify which held ask was answered (tool_result carries callId, not requestId) — the old fold guessed
@@ -75,6 +77,26 @@ export type RunnerEvent =
   // forward; the warn line renders on 'warning' alone, never an invented 'ok'). `at` refreshes
   // the staleness anchor like context_usage: a fresh window reading is a liveness proof.
   | { kind: 'limit_windows'; windows: LimitWindow[]; status?: 'ok' | 'warning' | 'blocked'; at?: string }
+  // WO-0055 live agent visibility — ONE provider agent task's lifecycle edge (probe t1: the SDK's
+  // task_started / task_notification; task_id + tool_use_id === the delegation call's callId).
+  // `started` carries the task's facts (callId, description, subagentType when reported);
+  // `ended` carries the closing status + digest. Ambient/housekeeping tasks never reach here —
+  // the adapter filters them (isAgentTask). A task may RESTART after its end under the SAME
+  // taskId with a NEW callId (the parent's SendMessage re-open, t1 lines 221-226) — the fold's
+  // replay guard keys on OPEN tasks, not on "ever started". State + transcript line only: no
+  // status change, no cost touch (the turn_usage discipline); `at` refreshes the staleness
+  // anchor (a task edge is a liveness proof — the context_usage precedent).
+  | {
+      kind: 'agent_task';
+      phase: 'started' | 'ended';
+      taskId: string;
+      callId?: string; // started — the delegation call this task IS
+      description?: string; // started — operator-language content (the detail-slot ruling)
+      subagentType?: string; // started — provider vocabulary as DATA, never rendered (ADR-0007)
+      status?: AgentTaskStatus; // ended — absent = not reported, never fabricated
+      summary?: string; // ended — the provider's closing digest
+      at?: string;
+    }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -580,7 +602,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       return {
         ...state,
         status: state.status === 'idle' ? 'running' : state.status,
-        entries: [...state.entries, { speaker: 'assistant', text: event.text }],
+        entries: [...state.entries, { speaker: 'assistant', text: event.text, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'tool_use':
@@ -588,7 +610,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // adjacency pairing broke on parallel calls (orphan headerless result walls).
       return {
         ...state,
-        entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId }],
+        entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'tool_result':
@@ -596,7 +618,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // (the result carries callId, the ask carries requestId). Only `ask_resolved` removes an ask.
       return {
         ...state,
-        entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId }],
+        entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
     case 'permission_request':
@@ -698,6 +720,55 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         },
         ...(event.at ? { lastLifeAt: event.at } : {}),
       };
+    case 'agent_task': {
+      // WO-0055: the agent task's lifecycle edges. Openness is derived from the LATEST edge for
+      // the taskId (a backward scan) — started-after-an-end legitimately re-opens (the
+      // SendMessage restart, probe t1), so the guards key on the open/closed STATE, never on
+      // "ever started".
+      let open = false;
+      for (let i = state.entries.length - 1; i >= 0; i--) {
+        const e = state.entries[i];
+        if (e && e.speaker === 'agent_task' && e.taskId === event.taskId) {
+          open = e.phase === 'started';
+          break;
+        }
+      }
+      if (event.phase === 'started') {
+        if (open) return state; // replay never double-opens an OPEN task
+        return {
+          ...state,
+          entries: [
+            ...state.entries,
+            {
+              speaker: 'agent_task',
+              phase: 'started',
+              taskId: event.taskId,
+              ...(event.callId ? { callId: event.callId } : {}),
+              ...(event.description ? { description: event.description } : {}),
+              ...(event.subagentType ? { subagentType: event.subagentType } : {}),
+              ...(event.at ? { at: event.at } : {}),
+            },
+          ],
+          ...(event.at ? { lastLifeAt: event.at } : {}),
+        };
+      }
+      if (!open) return state; // no OPEN task behind this end — dropped (no orphan wall)
+      return {
+        ...state,
+        entries: [
+          ...state.entries,
+          {
+            speaker: 'agent_task',
+            phase: 'ended',
+            taskId: event.taskId,
+            ...(event.status ? { status: event.status } : {}),
+            ...(event.summary ? { summary: event.summary } : {}),
+            ...(event.at ? { at: event.at } : {}),
+          },
+        ],
+        ...(event.at ? { lastLifeAt: event.at } : {}),
+      };
+    }
     case 'error':
       // WO-0047: a gate refusal folds its facts beside the message — the card branches on them.
       // WO-0053: a limit stop folds its facts the same way (`lastLimit`, the same discriminator
@@ -713,6 +784,30 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...(event.limit ? { lastLimit: event.limit } : {}),
       };
   }
+}
+
+/** WO-0055: the tasks that started and never ended in this transcript — the activity line's
+ *  "N ajan sürüyor" count, the running lamps, and (rev 2) the live strip's per-agent rows.
+ *  DERIVED, not folded, so a seeded/restarted pane re-derives it from the persisted rows (the
+ *  seedLiveState discipline: no new state field). The LATEST edge per taskId decides open-ness —
+ *  a task that re-opened after an end (the SendMessage restart, probe t1) counts once, at its
+ *  newest leg. `at` rides the newest start — the strip's elapsed clock. Pure. */
+export function openAgentTasks(entries: TranscriptLine[]): { taskId: string; callId?: string; description?: string; at?: string }[] {
+  const open = new Map<string, { taskId: string; callId?: string; description?: string; at?: string }>();
+  for (const e of entries) {
+    if (e.speaker !== 'agent_task') continue;
+    if (e.phase === 'started') {
+      open.set(e.taskId, {
+        taskId: e.taskId,
+        ...(e.callId ? { callId: e.callId } : {}),
+        ...(e.description ? { description: e.description } : {}),
+        ...(e.at ? { at: e.at } : {}),
+      });
+    } else {
+      open.delete(e.taskId);
+    }
+  }
+  return [...open.values()];
 }
 
 /** The staleness threshold (WO-0046, operator ruling 2026-08-26): a RUNNING drive whose last

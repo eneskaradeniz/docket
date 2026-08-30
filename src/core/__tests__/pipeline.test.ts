@@ -1169,3 +1169,40 @@ describe('WO-0053 — the stamp-less limit close (review finding 4)', () => {
     expect(recs.at(-1)).toMatchObject({ status: 'idle', limitResetAt: null });
   });
 });
+
+// ===== WO-0055 — the agent-task edges (the döküm kaybı rule at the subagent's rows) =====
+describe('createPipeline — the agent-task edges (WO-0055)', () => {
+  const taskStarted = (): RunnerEvent => ({ kind: 'agent_task', phase: 'started', taskId: 'a5ce', callId: 'call_T', description: 'Tara' });
+  const taskEnded = (): RunnerEvent => ({ kind: 'agent_task', phase: 'ended', taskId: 'a5ce', status: 'completed', summary: 'bitti' });
+  const transcripts = (calls: FakeStoreCalls[]) =>
+    calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { status: string; transcript: unknown[] });
+
+  it('every agent-task edge checkpoints the transcript — the row carries the subagent rows', async () => {
+    const fr = fakeRunner([started(), taskStarted(), taskEnded(), done('report')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const withAgent = transcripts(fs.calls).filter((r) => JSON.stringify(r.transcript).includes('"agent_task"'));
+    expect(withAgent.length).toBeGreaterThanOrEqual(2); // the start edge AND the end edge recorded
+  });
+
+  it('NO audit row for any agent-task event (the wo_event CHECK gains no kind — plan D2)', async () => {
+    const fr = fakeRunner([started(), taskStarted(), taskEnded(), done('report')]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    expect(fs.calls.filter((c) => c.method === 'recordAuditEvent')).toEqual([]);
+  });
+
+  it('an interrupt right after a task start persists the started row (döküm kaybı, replayed for agents)', async () => {
+    const fr = fakeRunner([started(), taskStarted(), { kind: 'interrupted' }]);
+    const fs = fakeStore({ step: { prompt: 'do step 1' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, stepDrive());
+    const last = transcripts(fs.calls).at(-1)!;
+    expect(last.status).toBe('stopped');
+    expect(last.transcript).toEqual(
+      expect.arrayContaining([expect.objectContaining({ speaker: 'agent_task', phase: 'started', taskId: 'a5ce' })]),
+    );
+  });
+});
