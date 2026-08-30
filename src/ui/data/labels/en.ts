@@ -7,6 +7,7 @@
 import type {
   AbsentReason,
   ActionIntent,
+  AgentTaskStatus,
   BoardBucket,
   CardAction,
   CardActionKind,
@@ -147,6 +148,14 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Error',
 };
 
+// WO-0055: how a provider agent task ended (tr's twin). A status-less end renders status-less —
+// never fabricated.
+export const AGENT_TASK_STATUS_LABELS: Record<AgentTaskStatus, string> = {
+  completed: 'done',
+  failed: 'failed',
+  stopped: 'stopped',
+};
+
 
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Write file',
@@ -159,6 +168,7 @@ export const TOOL_LABELS: Record<string, string> = {
   Grep: 'Search',
   Glob: 'Find files',
   Task: 'Delegate',
+  Agent: 'Delegate', // WO-0055 (probe t1): the delegation tool's on-the-wire name in this SDK vintage
   WebFetch: 'Fetch page',
   WebSearch: 'Search the web',
   ExitPlanMode: 'End plan',
@@ -180,6 +190,7 @@ export const TOOL_VERBS: Record<string, string> = {
   Grep: 'Searching',
   Glob: 'Finding files',
   Task: 'Delegating',
+  Agent: 'Delegating', // WO-0055: the wire name's twin (probe t1)
   WebFetch: 'Fetching page',
   WebSearch: 'Searching the web',
   ExitPlanMode: 'Finishing plan',
@@ -201,6 +212,14 @@ export function transcriptLineText(line: TranscriptLine): string {
       return line.text;
     case 'operator':
       return `${UI.operatorSpeaker}: ${line.text}`;
+    case 'agent_task': // WO-0055: the agent task's flat projection (label + content words)
+      if (line.phase === 'started') {
+        return line.description ? `${UI.agentTaskLabel} — ${line.description}` : UI.agentTaskLabel;
+      }
+      {
+        const head = line.status ? `${UI.agentTaskLabel} ${AGENT_TASK_STATUS_LABELS[line.status]}` : UI.agentTaskLabel;
+        return line.summary ? `${head} — ${line.summary}` : head;
+      }
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
@@ -606,6 +625,11 @@ export const UI = {
   // WO-0046 live honesty: the context readout (the costline's own language — text, no motion)
   // and the staleness line (3-minute threshold, the honest heir of the indefinite wait).
   contextReadout: (pct: number, used: number, max: number) => `ctx ${pct}% · ${formatTokens(used)}/${formatTokens(max)}`,
+  // WO-0055 live agent visibility: the activity line's running-agent arm + the transcript row's
+  // label words (tr's twin). Identifiers (taskId/callId/subagentType) stay DATA — never rendered.
+  agentTaskLabel: 'Agent',
+  agentRunningLine: (n: number) => (n === 1 ? '1 agent running' : `${n} agents running`),
+  orphanAgentEnd: 'agent end — no matching task',
   staleLine: (n: number) => `no new output for ${n} min`,
   // WO-0047 budget gate: warn/cap lines (card + band — known-spend qualifier, no fill bar),
   // the refusal card's two choices, the settings section. Money via formatUsd.

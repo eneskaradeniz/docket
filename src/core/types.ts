@@ -73,12 +73,27 @@ export type TranscriptNoteKind =
   | 'interrupted'
   | 'session_started' // 2026-08-24: the drive opened (resumes add one each — the multi-run timeline)
   | 'session_done'; // 2026-08-24: the turn completed — the transcript's own closing line
+
+/** WO-0055: how a provider agent task ended. Absent on an ended row = the provider reported
+ *  no status — rendered status-less, never fabricated. */
+export type AgentTaskStatus = 'completed' | 'failed' | 'stopped';
+
 export type TranscriptLine =
-  | { speaker: 'assistant'; text: string }
-  | { speaker: 'tool_use'; tool: string; detail: string; callId?: string }
-  | { speaker: 'tool_result'; summary: string; isError: boolean; callId?: string }
+  // WO-0055: `parentToolUseId` is the callId of the delegation (Agent/Task) call whose SUBAGENT
+  // produced this line — the transcript's nesting link. Absent on top-level rows; the key is
+  // omitted, never null (the `callId?` discipline). `agent_task` lines never carry it: a task
+  // row IS top-level (the UI adopts it into its delegation block by callId).
+  | { speaker: 'assistant'; text: string; parentToolUseId?: string }
+  | { speaker: 'tool_use'; tool: string; detail: string; callId?: string; parentToolUseId?: string }
+  | { speaker: 'tool_result'; summary: string; isError: boolean; callId?: string; parentToolUseId?: string }
   | { speaker: 'system'; text: string }
   | { speaker: 'operator'; text: string; noteId?: string } // a DELIVERED steer note (WO-0045) — first-class session content, never a `note` (those are live-only Docket commentary)
+  // WO-0055: one provider agent task's lifecycle (probe t1: task_started/task_notification).
+  // `taskId` is the provider's id — the fold's pairing key (the callId precedent). `description`
+  // and `summary` are operator-language CONTENT (the detail-slot ruling); `subagentType` is
+  // provider vocabulary carried as DATA, never rendered (ADR-0007).
+  | { speaker: 'agent_task'; phase: 'started'; taskId: string; callId?: string; description?: string; subagentType?: string }
+  | { speaker: 'agent_task'; phase: 'ended'; taskId: string; status?: AgentTaskStatus; summary?: string }
   | { speaker: 'note'; kind: TranscriptNoteKind; detail?: string };
 
 /** One operator steering note (WO-0045). Queued into the running drive's mirror, delivered once at

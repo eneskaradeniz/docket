@@ -86,6 +86,11 @@ export function formatEvent(ev: RunnerEvent, format: DriveFormat): string | unde
     case 'permission_request': return `⛔ ask ${ev.tool}`;
     case 'plan_ready': return `📋 plan ready (${ev.planText.length} chars)`;
     case 'context_usage': return `◍ ctx ${ev.percentage}% (${ev.usedTokens}/${ev.maxTokens})`;
+    // WO-0055: the agent task's lifecycle edges — the delegation opens, the digest closes.
+    case 'agent_task':
+      return ev.phase === 'started'
+        ? `⇄ agent ${ev.description ?? ''}`.trimEnd()
+        : `  ⇲ agent${ev.status ? ` ${ev.status}` : ''}${ev.summary ? ` — ${ev.summary}` : ''}`.trimEnd();
     case 'limit_windows':
       // The live windows feed is pane state, not a stream line (jsonl carried it at the top).
       return undefined;

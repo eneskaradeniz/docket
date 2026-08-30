@@ -11,7 +11,7 @@ import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
 import { monthWindow } from '../../core/budget';
 import { rid, woid } from '../ids';
-import type { RepoId, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
+import type { RepoId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
@@ -2140,5 +2140,24 @@ describe('WO-0054 — workspaceUsage (the pure view over the usage ledger) + the
     expect((await store.workspaceUsage(ws.id)).draft!.usd).toBe(1.41);
     await store.deleteWorkspace(ws.id);
     expect((store.db.prepare('SELECT COUNT(*) AS n FROM session_usage').get() as { n: number }).n).toBe(0); // the draft spend died with the workspace
+  });
+});
+
+// ===== WO-0055 — the agent-task rows ride the schema-free transcript (no migration needed) =====
+describe('WO-0055 — agent rows persist through the transcript round-trip', () => {
+  it('agent rows round-trip byte-for-byte; a shorter later write does not drop them', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Agent rows', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Agent rows', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const agentRows: TranscriptLine[] = [
+      { speaker: 'agent_task', phase: 'started', taskId: 'a5ce', callId: 'call_T', description: 'Tara', subagentType: 'general-purpose' },
+      { speaker: 'agent_task', phase: 'ended', taskId: 'a5ce', status: 'completed', summary: 'bitti' },
+    ];
+    store.recordSession({ providerSessionId: 's-agent', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle', transcript: [...agentRows] });
+    // a later SHORTER record cannot wipe the fuller checkpoint (the longer-row-wins rule, döküm kaybı)
+    store.recordSession({ providerSessionId: 's-agent', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
+    const hydrated = await store.getWorkOrder(wo.id);
+    expect(hydrated!.sessions[0]!.transcript).toEqual([...agentRows]);
   });
 });

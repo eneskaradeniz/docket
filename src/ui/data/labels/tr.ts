@@ -7,6 +7,7 @@
 import type {
   AbsentReason,
   ActionIntent,
+  AgentTaskStatus,
   BoardBucket,
   CardAction,
   CardActionKind,
@@ -160,6 +161,14 @@ export const LIVE_STATUS_LABELS: Record<LiveSessionStatus, string> = {
   error: 'Hata',
 };
 
+// WO-0055: bir ajan task'ının kapanış durumu (AgentTaskStatus → görüntü). Durum bildirilmemişse
+// satır durumsuz okunur — asla uydurulmaz (absent-not-zero).
+export const AGENT_TASK_STATUS_LABELS: Record<AgentTaskStatus, string> = {
+  completed: 'bitti',
+  failed: 'başarısız',
+  stopped: 'kesildi',
+};
+
 
 export const TOOL_LABELS: Record<string, string> = {
   Write: 'Dosya yaz',
@@ -172,6 +181,7 @@ export const TOOL_LABELS: Record<string, string> = {
   Grep: 'Ara',
   Glob: 'Dosya bul',
   Task: 'Devret',
+  Agent: 'Devret', // WO-0055 (probe t1): the delegation tool's on-the-wire name in this SDK vintage
   WebFetch: 'Sayfa getir',
   WebSearch: "Web'de ara",
   ExitPlanMode: 'Planı bitir',
@@ -197,6 +207,7 @@ export const TOOL_VERBS: Record<string, string> = {
   Grep: 'Arıyor', // Ara → Arıyor (suppletive; not derivable from the label)
   Glob: 'Dosya buluyor',
   Task: 'Devrediyor',
+  Agent: 'Devrediyor', // WO-0055: the wire name's twin (probe t1)
   WebFetch: 'Sayfa getiriyor',
   WebSearch: "Web'de arıyor",
   ExitPlanMode: 'Planı bitiriyor',
@@ -220,6 +231,14 @@ export function transcriptLineText(line: TranscriptLine): string {
       return line.text;
     case 'operator':
       return `${UI.operatorSpeaker}: ${line.text}`;
+    case 'agent_task': // WO-0055: the agent task's flat projection (label + content words)
+      if (line.phase === 'started') {
+        return line.description ? `${UI.agentTaskLabel} — ${line.description}` : UI.agentTaskLabel;
+      }
+      {
+        const head = line.status ? `${UI.agentTaskLabel} ${AGENT_TASK_STATUS_LABELS[line.status]}` : UI.agentTaskLabel;
+        return line.summary ? `${head} — ${line.summary}` : head;
+      }
     case 'note':
       return UI.noteFor(line.kind, line.detail);
   }
@@ -714,6 +733,12 @@ export const UI = {
   // operatör kararı 2026-08-26) + sessizlik satırı (3 dk eşiği — Düşünüyor···'ün dürüst halefi).
   contextReadout: (pct: number, used: number, max: number) => `bağlam %${pct} · ${formatTokens(used)}/${formatTokens(max)}`,
   staleLine: (n: number) => `${n} dk'dır yeni çıktı yok`,
+  // WO-0055 canlı ajan görünürlüğü: etkinlik satırının koşan-ajan kolunun dili + döküm satırının
+  // etiket sözcükleri. Tanımlayıcılar (taskId/callId/subagentType) veri olarak kalır — hiçbiri
+  // görüntülenmez (ADR-0007); description/summary içeriktir (detay yuvası ruling'i).
+  agentTaskLabel: 'Ajan',
+  agentRunningLine: (n: number) => (n === 1 ? '1 ajan sürüyor' : `${n} ajan sürüyor`),
+  orphanAgentEnd: 'ajan sonu — eşleşen görev yok',
   // WO-0047 bütçe kapısı: warn/limit satıları (kart + bant — bilinen-harcama niteleyicisiyle,
   // dolgu çubuğu yok, ADR-0012), ret kartının iki seçeneği, ayarlar bölümü. Para formatUsd ile.
   budgetWarnLine: (m: number, cap: number) => `bu ay ${formatUsd(m)} / ${formatUsd(cap)} — uyarı eşiği aşıldı`,
