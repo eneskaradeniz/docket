@@ -509,6 +509,29 @@ export const UI = {
   providerStatusOk: 'Ready',
   providerStatusUnknown: 'Status unknown — save a key or run Test',
   providerTest: 'Test',
+  // Settings sections (WO-0059 rev 3 — no tabs; readout heads)
+  settingsTabProvider: 'Provider',
+  settingsTabGeneral: 'General',
+  settingsTabWorkspace: 'Workspace',
+  // Model preference (WO-0059 rev 3 — per-role matrix) — the id flows VERBATIM in mono on screen
+  // (UsageBreakdownCard's data ruling); only these words come from the bundle.
+  modelSectionLabel: 'Models',
+  modelHeadCustom: 'custom',
+  modelCustomSuffix: 'custom model',
+  modelMatrixAria: 'Model selection per role',
+  modelClear: 'Clear',
+  modelRoleHint: 'An empty role = the provider default model runs for it.',
+  // The provider source word is granted ONLY to a known shape; an unknown source renders NOTHING
+  // (never the raw id — ADR-0007). Signature: (source: string) => string | undefined.
+  providerSourceLabel: (source: string): string | undefined => {
+    const s = source.toLowerCase();
+    if (s === 'handshake') return undefined;
+    if (s.includes('oauth')) return 'OAuth login';
+    if (s.includes('api') && s.includes('key')) return 'API key';
+    if (s.includes('env')) return 'env key';
+    if (s.includes('login') || s.includes('logged')) return 'provider login';
+    return undefined;
+  },
   reviewHeader: 'Architect review',
   reviewHint: "The architect is reviewing this step's report…",
   verdictCardProceedTitle: 'The architect said proceed',

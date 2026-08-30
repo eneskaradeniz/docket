@@ -1,14 +1,16 @@
-// App settings (WO-0031 restyle on the kit Dialog): auth status + Test + the DEFAULT permission rule
-// (WO-0031c — each work order carries its own; this is only the default new ones start from) + the
-// language selector (WO-0035 — live: writes the stored row + the localStorage mirror) + the theme
-// selector (WO-0040 — Sistem/Açık/Karanlık; renderer-local localStorage per the app-settings.ts
-// ruling: presentation only, no port) + version. The stored-API-key field was removed at the
-// operator's request — auth rides the provider CLI login, which Test verifies.
-// WO-0047: the workspace's monthly budget — cap + warn percent as one atomic draft with Kaydet
-// (numbers never write mid-keystroke; the Segmented immediate-write pattern suits closed enums,
-// not decimals) + Kaldır when a threshold exists + the current month readout beneath.
-import { useEffect, useState } from 'react';
-import type { AppSettings, ProviderStatus } from '../../core/app-settings';
+// App settings (WO-0031 restyle on the kit Dialog) — WO-0059 rev 3 (the operator's 2026-08-31
+// "her şey kötü, kullanışsız" round, redesigned with the ui-ux pass): ONE SCROLL, no tabs — three
+// readout-headed sections (SAĞLAYICI · MODELLER · GENEL · ÇALIŞMA ALANI) separated by hairlines,
+// the version line in the footer's left slot (the WsSettingsModal idiom). The model preference is
+// PER-ROLE and renders as an ASSIGNMENT MATRIX (the one aesthetic risk): preset ids are COLUMN
+// HEADS — each id appears ONCE — each role row carries its rlamp + role hue, a pressed cell shows
+// ● (the karar-deposu marker idiom), and an `özel` column holds the verbatim custom id. Empty role
+// = provider default, SHOWN by the unpressed grid (no placeholder fake). More than 4 presets or an
+// empty preset set degrades to full-width role rows with wrapped chips. All state rides the same
+// atomic draft (one Kaydet, never a mid-keystroke write); the workspace section is ABSENT on an
+// empty database (ADR-0001); errors stay under their fields with role="alert" (WO-0036).
+import { Fragment, useEffect, useState } from 'react';
+import type { AppSettings, ProviderStatus, RoleModels } from '../../core/app-settings';
 import type { PermissionRule, WorkOrderSource } from '../../core/source';
 import type { WorkspaceId } from '../../core/types';
 import type { BudgetThreshold } from '../../core/budget';
@@ -19,6 +21,10 @@ import { useTheme } from '../data/theme';
 import { VERSION } from '../data/version';
 import { Button, Dialog, Field, Input, Segmented, Spinner } from '../kit';
 
+const MODEL_ROLES = ['architect', 'implementer', 'verifier'] as const;
+type ModelRole = (typeof MODEL_ROLES)[number];
+const ROLE_HUE: Record<ModelRole, string> = { architect: 'text-signal', implementer: 'text-info', verifier: 'text-proceed' };
+
 export function AppSettingsModal({
   settings,
   workspaceId,
@@ -28,7 +34,7 @@ export function AppSettingsModal({
   onClose,
 }: {
   settings: AppSettings;
-  /** WO-0047: the active workspace — null (empty database) renders no budget section (ADR-0001). */
+  /** WO-0047: the active workspace — null (empty database) renders no workspace section (ADR-0001). */
   workspaceId: WorkspaceId | null;
   source: WorkOrderSource;
   onBudgetChanged: () => void;
@@ -36,7 +42,7 @@ export function AppSettingsModal({
   onDocsRootChanged: () => void;
   onClose: () => void;
 }) {
-  const { UI, PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS } = useLabels();
+  const { UI, PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS, ROLE_LABELS } = useLabels();
   const { locale, setLocale } = useLocale();
   const { mode, setMode } = useTheme();
   // Auth status (WO-0025 / B1): the quick check on open tells the operator where auth stands before the
@@ -56,13 +62,10 @@ export function AppSettingsModal({
       setTesting(false);
     }
   };
-  const statusText =
-    status === undefined
-      ? UI.providerStatusUnknown
-      : status.ok
-        ? `${UI.providerStatusOk} (${status.source})`
-        : PROVIDER_ERROR_LABELS[status.code];
   const statusTone = status?.ok ? 'text-proceed' : 'text-error';
+  // WO-0059 rev 3: the auth SOURCE is provider-owned data — only a KNOWN shape gets a word
+  // (the limitWindowLabel posture); an unknown source renders NOTHING rather than the raw id.
+  const sourceLabel = status?.ok ? UI.providerSourceLabel(status.source) : undefined;
 
   // WO-0047 — the workspace's budget section state: the stored threshold, the draft, the month's
   // observed spend (the readout), and per-field errors that appear only after a save attempt
@@ -115,7 +118,7 @@ export function AppSettingsModal({
     }
   };
 
-  // WO-0049 — the structure-root section (docs_root:<wsId>): one atomic draft, the same posture as
+  // WO-0049 — the structure root (docs_root:<wsId>): one atomic draft, the same posture as
   // budget. The read returns the EFFECTIVE root ('docs' when unset), so there is no Kaldır — writing
   // `docs` IS the reset (the port cannot tell stored-default from unset, by design). Validation is
   // the pure core's own normalizeDocsRoot (the parseAmount precedent); the store re-refuses loudly.
@@ -146,80 +149,257 @@ export function AppSettingsModal({
     }
   };
 
+  // WO-0059 rev 2/3 — the per-role model preference: ONE atomic draft for the three roles (never a
+  // mid-keystroke write), operator-global. The presets are adapter-minted DATA rendered as the
+  // matrix's column heads; a cell press FILLS that role's draft (a picker, not a writer) and a
+  // second press on the pressed cell clears it. No validity state: no format is knowable core-side
+  // — the provider validates the id at spawn; the fields never lock (ADR-0001).
+  const [modelsStored, setModelsStored] = useState<RoleModels | undefined>(undefined);
+  const [modelsDraft, setModelsDraft] = useState<Record<ModelRole, string>>({ architect: '', implementer: '', verifier: '' });
+  const [presets, setPresets] = useState<string[]>([]);
+  const [modelsBusy, setModelsBusy] = useState(false);
+  useEffect(() => {
+    void settings.getModels?.().then((m) => {
+      setModelsStored(m);
+      setModelsDraft({ architect: m?.architect ?? '', implementer: m?.implementer ?? '', verifier: m?.verifier ?? '' });
+    });
+    void settings.modelOptions?.().then(setPresets).catch(() => setPresets([]));
+  }, [settings]);
+  const setRoleDraft = (role: ModelRole, value: string): void => setModelsDraft((d) => ({ ...d, [role]: value }));
+  const toggleRolePreset = (role: ModelRole, id: string): void =>
+    setModelsDraft((d) => ({ ...d, [role]: d[role] === id ? '' : id }));
+  const saveModels = async (): Promise<void> => {
+    if (modelsBusy) return;
+    setModelsBusy(true);
+    try {
+      const clean: RoleModels = {};
+      for (const role of MODEL_ROLES) {
+        const trimmed = modelsDraft[role].trim();
+        if (trimmed) clean[role] = trimmed;
+      }
+      await settings.setModels?.(Object.keys(clean).length > 0 ? clean : undefined);
+      const stored = (await settings.getModels?.()) ?? undefined;
+      setModelsStored(stored);
+      setModelsDraft({ architect: stored?.architect ?? '', implementer: stored?.implementer ?? '', verifier: stored?.verifier ?? '' });
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+  const clearModels = async (): Promise<void> => {
+    if (modelsBusy) return;
+    setModelsBusy(true);
+    try {
+      await settings.setModels?.(undefined);
+      setModelsStored(undefined);
+      setModelsDraft({ architect: '', implementer: '', verifier: '' });
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  const matrixColumns =
+    presets.length > 0 && presets.length <= 4
+      ? { gridTemplateColumns: `92px repeat(${presets.length}, minmax(0, 1fr)) 140px` }
+      : undefined;
+
   return (
     <Dialog
       open
+      wide
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.settings}
       closeAria={UI.dialogCloseAria}
       footer={
-        <Button variant="primary" size="sm" onClick={onClose}>
-          {UI.close}
-        </Button>
+        <>
+          <span className="mr-auto font-mono text-[11px] text-inkdim">{UI.productName} · v{VERSION}</span>
+          <Button variant="primary" size="sm" onClick={onClose}>
+            {UI.close}
+          </Button>
+        </>
       }
     >
-      <div className="flex flex-col gap-5">
-        <section>
+      <div className="flex flex-col">
+        {/* ===== SAĞLAYICI — auth + Test; the one first-run blocker leads ===== */}
+        <section data-provider-section="" className="pb-4">
           <div className="flex items-center gap-3">
-            {testing ? <Spinner /> : <span className={`text-xs ${statusTone}`}>{statusText}</span>}
+            <h2 className="readout">{UI.settingsTabProvider}</h2>
             <button type="button" onClick={() => void runTest()} className="alink ml-auto text-[12px]">
               {UI.providerTest}
             </button>
           </div>
+          <p className="mt-1.5 flex items-center gap-2 text-[12px]">
+            {testing ? (
+              <Spinner />
+            ) : (
+              <>
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${status === undefined ? 'bg-inkdim/40' : status.ok ? 'bg-proceed' : 'bg-error'}`}
+                />
+                <span className={statusTone}>
+                  {status === undefined ? UI.providerStatusUnknown : status.ok ? UI.providerStatusOk : PROVIDER_ERROR_LABELS[status.code]}
+                </span>
+                {status?.ok && sourceLabel ? (
+                  <span className="font-mono text-[11px] text-inkdim">{sourceLabel}</span>
+                ) : null}
+              </>
+            )}
+          </p>
         </section>
 
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.permRuleLabel}
-          </span>
-          <Segmented
-            value={rule}
-            onValueChange={(r) => { setRule(r); void settings.setPermissionRule?.(r); }}
-            options={[
-              { value: 'ask_every', label: PERMISSION_RULE_LABELS.ask_every },
-              { value: 'risky_excluded', label: PERMISSION_RULE_LABELS.risky_excluded },
-              { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
-            ]}
-          />
+        {/* ===== MODELLER — the per-role assignment matrix (WO-0059 rev 3) ===== */}
+        <section data-model-section="" className="border-t border-hairline py-4">
+          <h2 className="readout">{UI.modelSectionLabel}</h2>
+          {matrixColumns ? (
+            <div
+              data-model-matrix=""
+              role="group"
+              aria-label={UI.modelMatrixAria}
+              className="mt-2.5 grid items-center gap-x-2 gap-y-1.5"
+              style={matrixColumns}
+            >
+              <span />
+              {presets.map((id) => (
+                <span key={id} title={id} className="truncate font-mono text-[10px] tracking-wide text-inkdim">
+                  {id}
+                </span>
+              ))}
+              <span className="truncate font-mono text-[10px] tracking-wide text-inkdim">{UI.modelHeadCustom}</span>
+              {MODEL_ROLES.map((role) => (
+                <Fragment key={role}>
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`rlamp rlamp-${role}`} />
+                    <span className={`text-[11px] font-medium uppercase tracking-wider ${ROLE_HUE[role]}`}>{ROLE_LABELS[role]}</span>
+                  </span>
+                  {presets.map((id) => {
+                    const pressed = modelsDraft[role] === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-pressed={pressed}
+                        aria-label={`${ROLE_LABELS[role]} · ${id}`}
+                        title={`${ROLE_LABELS[role]} · ${id}`}
+                        onClick={() => toggleRolePreset(role, id)}
+                        className={`ichip flex h-6 items-center justify-center rounded text-[11px] ${pressed ? 'ichip-on' : ''}`}
+                      >
+                        {pressed ? '●' : ''}
+                      </button>
+                    );
+                  })}
+                  <Input
+                    value={modelsDraft[role]}
+                    aria-label={`${ROLE_LABELS[role]} · ${UI.modelCustomSuffix}`}
+                    className="h-6 font-mono text-[11px]"
+                    onChange={(e) => setRoleDraft(role, e.target.value)}
+                  />
+                </Fragment>
+              ))}
+            </div>
+          ) : (
+            /* The degrade: more presets than the matrix can hold (adapter data, open-ended) or an
+               empty set — full-width role rows, wrapped chips, the same draft. */
+            <div className="mt-2.5 flex flex-col gap-3">
+              {MODEL_ROLES.map((role) => (
+                <div key={role}>
+                  <div className="flex items-center gap-2">
+                    <span aria-hidden="true" className={`rlamp rlamp-${role}`} />
+                    <span className={`text-[11px] font-medium uppercase tracking-wider ${ROLE_HUE[role]}`}>{ROLE_LABELS[role]}</span>
+                    <Input
+                      value={modelsDraft[role]}
+                      aria-label={ROLE_LABELS[role]}
+                      className="ml-auto h-6 w-56 font-mono text-[11px]"
+                      onChange={(e) => setRoleDraft(role, e.target.value)}
+                    />
+                  </div>
+                  {presets.length > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {presets.map((id) => {
+                        const pressed = modelsDraft[role] === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            aria-pressed={pressed}
+                            onClick={() => toggleRolePreset(role, id)}
+                            className={`ichip rounded px-1.5 py-px font-mono text-[10px] tracking-wide ${pressed ? 'ichip-on' : ''}`}
+                          >
+                            {id}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] text-inkdim">{UI.modelRoleHint}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="primary" size="sm" busy={modelsBusy} locked={modelsBusy} onClick={() => void saveModels()}>
+              {UI.woEditSave}
+            </Button>
+            {modelsStored ? (
+              <Button variant="ghost" size="sm" onClick={() => void clearModels()}>{UI.modelClear}</Button>
+            ) : null}
+          </div>
         </section>
 
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.language}
-          </span>
-          <Segmented
-            value={locale}
-            onValueChange={(l) => setLocale(l)}
-            options={[
-              { value: 'tr', label: UI.langTr },
-              { value: 'en', label: UI.langEn },
-            ]}
-          />
-        </section>
-
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.theme}
-          </span>
-          <Segmented
-            value={mode}
-            onValueChange={(m) => setMode(m)}
-            options={[
-              { value: 'system', label: UI.themeSystem },
-              { value: 'light', label: UI.themeLight },
-              { value: 'dark', label: UI.themeDark },
-            ]}
-          />
+        {/* ===== GENEL — the console's own voice and face; instant-apply segments ===== */}
+        <section data-general-section="" className="border-t border-hairline py-4">
+          <h2 className="readout">{UI.settingsTabGeneral}</h2>
+          <div className="mt-2.5 flex flex-col gap-2.5">
+            <div className="flex items-center gap-3">
+              <span className="text-[13px] text-ink">{UI.permRuleLabel}</span>
+              <span className="ml-auto">
+                <Segmented
+                  size="sm"
+                  value={rule}
+                  onValueChange={(r) => { setRule(r); void settings.setPermissionRule?.(r); }}
+                  options={[
+                    { value: 'ask_every', label: PERMISSION_RULE_LABELS.ask_every },
+                    { value: 'risky_excluded', label: PERMISSION_RULE_LABELS.risky_excluded },
+                    { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
+                  ]}
+                />
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[13px] text-ink">{UI.language}</span>
+              <span className="ml-auto">
+                <Segmented
+                  size="sm"
+                  value={locale}
+                  onValueChange={(l) => setLocale(l)}
+                  options={[
+                    { value: 'tr', label: UI.langTr },
+                    { value: 'en', label: UI.langEn },
+                  ]}
+                />
+              </span>
+              <span className="ml-3 text-[13px] text-ink">{UI.theme}</span>
+              <span>
+                <Segmented
+                  size="sm"
+                  value={mode}
+                  onValueChange={(m) => setMode(m)}
+                  options={[
+                    { value: 'system', label: UI.themeSystem },
+                    { value: 'light', label: UI.themeLight },
+                    { value: 'dark', label: UI.themeDark },
+                  ]}
+                />
+              </span>
+            </div>
+          </div>
         </section>
 
         {workspaceId ? (
-          // WO-0047 — the workspace's month-spend threshold. One atomic draft (cap + warn percent
-          // persist as ONE row); the readout beneath is the feedback loop, in the money voice.
-          <section data-budget-section="">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-              {UI.budgetLabel}
-            </span>
-            <div className="grid grid-cols-2 gap-3">
+          /* ===== ÇALIŞMA ALANI — the economics and the pointer of THIS workspace; the whole
+             section is ABSENT on an empty database (ADR-0001), not shown inert. ===== */
+          <section data-workspace-section="" className="border-t border-hairline pt-4">
+            <h2 className="readout">{UI.settingsTabWorkspace}</h2>
+            <div data-budget-section="" className="mt-2.5 grid grid-cols-2 gap-3">
               <Field label={UI.budgetCapLabel} error={capErr}>
                 <Input
                   value={capText}
@@ -261,40 +441,28 @@ export function AppSettingsModal({
                 </span>
               ) : null}
             </div>
-          </section>
-        ) : null}
-
-        {workspaceId ? (
-          // WO-0049 — the structure root: where this workspace's roadmap.md + work orders live.
-          // The warn line is informative and STAYS (ADR-0012): switching is a permanent-feeling act
-          // the operator must make with open eyes (files never move — Docket only changes its mind
-          // about where to look; ADR-0016 rule 3).
-          <section data-docs-root-section="">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-              {UI.docsRootLabel}
-            </span>
-            <Input
-              value={rootText}
-              aria-label={UI.docsRootLabel}
-              aria-invalid={rootErr !== null}
-              className="font-mono"
-              onChange={(e) => { setRootText(e.target.value); setRootTouched(true); }}
-            />
-            {rootErr !== null ? (
-              <p role="alert" className="mt-1.5 text-[11.5px] text-error">{rootErr}</p>
-            ) : null}
-            <div className="mt-2 flex items-center gap-2">
-              <Button variant="primary" size="sm" busy={rootBusy} locked={rootBusy} onClick={() => void saveDocsRoot()}>
-                {UI.woEditSave}
-              </Button>
-              <span className="ml-auto text-right text-[11px] text-inkdim">{UI.docsRootWarn}</span>
+            <div data-docs-root-section="">
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[13px] text-ink">{UI.docsRootLabel}</span>
+                <Input
+                  value={rootText}
+                  aria-label={UI.docsRootLabel}
+                  aria-invalid={rootErr !== null}
+                  className="ml-auto w-44 font-mono"
+                  onChange={(e) => { setRootText(e.target.value); setRootTouched(true); }}
+                />
+                <Button variant="primary" size="sm" busy={rootBusy} locked={rootBusy} onClick={() => void saveDocsRoot()}>
+                  {UI.woEditSave}
+                </Button>
+              </div>
+              {rootErr !== null ? (
+                <p role="alert" className="mt-1.5 text-[11.5px] text-error">{rootErr}</p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-inkdim">{UI.docsRootWarn}</p>
+              )}
             </div>
           </section>
         ) : null}
-
-        <p className="border-t border-hairline pt-3 font-mono text-[11px] text-inkdim">
-          {UI.productName} · v{VERSION}
-        </p>
       </div>
     </Dialog>
   );

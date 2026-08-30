@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { AppSettings, Locale } from '../src/core/app-settings';
+import type { AppSettings, Locale, RoleModels } from '../src/core/app-settings';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
@@ -71,6 +71,11 @@ const settings: AppSettings = {
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
   setLocale: (locale: Locale): Promise<void> => ipcRenderer.invoke('docket:settings:set-locale', locale),
+  // WO-0059 rev 2: the per-role model preference (DB half) + the adapter-minted presets (the
+  // checkProvider pattern — the handler lives main-side, composed from the runner adapter).
+  getModels: (): Promise<RoleModels | undefined> => ipcRenderer.invoke('docket:settings:get-models'),
+  setModels: (models: RoleModels | undefined): Promise<void> => ipcRenderer.invoke('docket:settings:set-models', models),
+  modelOptions: (): Promise<string[]> => ipcRenderer.invoke('docket:settings:model-options'),
   // The workspace's month-spend threshold (WO-0047): undefined clears it (raise = permanent write).
   getDocsRoot: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-docs-root', workspaceId),
   setDocsRoot: (workspaceId: WorkspaceId, root: string | undefined) =>
@@ -119,6 +124,7 @@ contextBridge.exposeInMainWorld('docket', {
         e2e: {
           emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev),
           pickFiles: (paths: string[] | null): Promise<void> => ipcRenderer.invoke('docket:e2e:pick-files', paths),
+          lastDriveInput: (): Promise<DriveInput | undefined> => ipcRenderer.invoke('docket:e2e:last-drive-input'),
         },
       }
     : {}),

@@ -6,7 +6,7 @@
 // git-observed fact nor a decision about work — it is machine-local app configuration.
 import type { ProviderErrorCode } from './runner';
 import type { PermissionRule } from './source';
-import type { WorkspaceId } from './types';
+import type { SessionRole, WorkspaceId } from './types';
 import type { BudgetThreshold } from './budget';
 
 /** Vendor-neutral provider readiness: the happy path names the auth SOURCE (e.g. 'oauth', 'env'); the
@@ -14,6 +14,12 @@ import type { BudgetThreshold } from './budget';
 export type ProviderStatus =
   | { ok: true; source: string }
   | { ok: false; code: ProviderErrorCode; message: string };
+
+/** The per-role model preference (WO-0059 rev 2, the operator's correction): the PLAN rides the
+ *  best model while implementation rides a simpler one — the axis is the SESSION ROLE, not one
+ *  global value. A role absent from the map = the provider's own default for it. Ids are DATA,
+ *  carried verbatim; core never validates or names a value (ADR-0006's WO-0052 carve-out). */
+export type RoleModels = Partial<Record<SessionRole, string>>;
 
 /** The UI locale (WO-0035 / ADR-0007): a pure union carrying no display strings — the words live in the
  *  per-locale bundles in src/ui/data/labels/, keyed by this type. */
@@ -36,6 +42,18 @@ export interface AppSettings {
    *  never of the project — this row, not workspace.yaml). */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** The per-role model preference (WO-0059 rev 2): one map, three roles; an absent role = the
+   *  provider's own default. undefined = nothing stored. The composition root reads it at SPAWN
+   *  time and picks the drive's role row, so a change hits the next drive, never a running one. */
+  getModels(): Promise<RoleModels | undefined>;
+  /** Store (or clear, on undefined/empty) the per-role preference. The ids ride verbatim; the
+   *  store normalizes shape (unknown role keys and blanks dropped), never values. */
+  setModels(models: RoleModels | undefined): Promise<void>;
+  /** The preset model ids the ADAPTER offers (the checkProvider pattern — provider vocabulary is
+   *  minted adapter-side and crosses as DATA; ADR-0006 names the provider adapter as the one
+   *  place). [] → the UI's preset chips render ABSENT (ADR-0001); the free-text field is
+   *  unaffected. */
+  modelOptions(): Promise<string[]>;
   /** The workspace's month-spend threshold (WO-0047): cap + warn percent, ONE atomic pair per
    *  workspace (solo scale — no per-agent or per-project scoping). undefined = none configured:
    *  the gate fails open and the surfaces show nothing. */

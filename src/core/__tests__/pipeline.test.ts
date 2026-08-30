@@ -179,6 +179,37 @@ describe('prepareDriveInput — prompt selection', () => {
   });
 });
 
+// ===== the model preference rides the drive input (WO-0059) =====
+// The composition root resolves the GLOBAL `model` setting at spawn time and puts it on the input
+// (the permissionRule posture — the renderer never sends it). The pipeline is a pass-through: it
+// never defaults, drops or transforms the id — the adapter maps it verbatim (S2). Both arms of the
+// union carry it: drafts are drives (one preference, both owners).
+
+describe('drive input model field — carried, never defaulted (WO-0059)', () => {
+  it('a WO drive carrying model reaches the runner unchanged', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive({ model: 'model-check-x' }));
+    expect((fr.drivenInputs[0] as WoDriveInput).model).toBe('model-check-x');
+  });
+
+  it("a DRAFT drive carrying model survives prepareDriveInput's prompt fill (the spread never drops it)", () => {
+    const { store } = fakeStore({}, true, { draftPrompt: 'draft it' });
+    const out = prepareDriveInput(draftDrive({ model: 'model-check-x' }), store);
+    expect(out.prompt).toBe('draft it');
+    expect(out.model).toBe('model-check-x');
+  });
+
+  it('no model anywhere → undefined at the runner (core fabricates no default)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    expect((fr.drivenInputs[0] as WoDriveInput).model).toBeUndefined();
+  });
+});
+
 // ===== the workspace budget gate (WO-0047) =====
 // The FIRST gate and the only one that sees EVERY drive — plan, step, review, resume alike: each
 // spawns a runner that bills. The refusal is the plan gate's shape plus its FACTS (observed, cap)

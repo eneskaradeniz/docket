@@ -2898,6 +2898,77 @@ await spec('WO-0055: the archived card re-nests identically (seeded agent rows)'
   await backToBoard();
 });
 
+// ===== WO-0059 rev 3 — the PER-ROLE model matrix + the single-scroll settings screen =====
+await spec('WO-0059 model tercihi: tek akış bölümler, rol matrisi (● atama + özel kolon), kaydet/turu, sürüşte taşınır, Temizle', async () => {
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  const dlg = page.locator('[role="dialog"]');
+  // ONE scroll, readout-headed sections — no tabs: every section is on the page at once
+  assert.equal(await dlg.locator('[data-provider-section]').count(), 1, 'the provider section is missing');
+  assert.equal(await dlg.locator('[data-model-section]').count(), 1, 'the model section is missing');
+  assert.equal(await dlg.locator('[data-general-section]').count(), 1, 'the general section is missing');
+  assert.equal(await dlg.locator('[data-workspace-section]').count(), 1, 'the workspace section is missing');
+  assert.ok((await dlg.getByText('Riskli hariç').count()) >= 1, 'the permission rule is not on the page');
+  // the matrix: preset ids are COLUMN HEADS (once each), role rows carry their lamps
+  const matrix = page.locator('[data-model-matrix]');
+  assert.equal(await matrix.count(), 1, 'the model matrix is missing');
+  const head = ((await matrix.locator('span').first().textContent()) ?? '').trim();
+  assert.equal(head, '', 'the matrix corner is not empty');
+  const first = 'claude-fable-5';
+  assert.ok(((await matrix.textContent()) ?? '').includes(first), 'the preset head is missing');
+  // a cell PRESS assigns the role: ● shows, the row's custom input mirrors the id (same draft)
+  const fableCell = matrix.locator('button[aria-label="Mimar · claude-fable-5"]');
+  assert.equal(await fableCell.count(), 1, 'the architect × fable cell is missing');
+  await fableCell.click();
+  await page.waitForTimeout(150);
+  assert.equal(await fableCell.getAttribute('aria-pressed'), 'true', 'the cell press did not land');
+  assert.equal(((await fableCell.textContent()) ?? '').trim(), '●', 'the pressed cell carries no marker');
+  const architectCustom = matrix.locator('input[aria-label="Mimar · özel model"]');
+  assert.equal(await architectCustom.inputValue(), first, 'the custom input does not mirror the draft');
+  await page.screenshot({ path: join(SHOTS, 'model-section@980.png') });
+  // Kaydet writes; the port reads the ROW back (the DB, not the draft state)
+  await page.locator('[data-model-section] button', { hasText: 'Kaydet' }).click();
+  await page.waitForTimeout(400);
+  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect, first, 'the stored row does not read back');
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  // the drive carries it — a FRESH WO (the proven create flow: create only, then the manual
+  // Plan iste; the auto "Oluştur ve plan iste" path is a multi-hop chain this spec need not ride).
+  // The plan drive's role is ARCHITECT → the architect row rides (the per-role mapping's own pin).
+  await stopAllDrives(); // the one-drive-at-a-time rule: no lingering drive may hold the start
+  // a drive left running on a detail whose pane is NOT open shows NO Durdur at board level — stop it
+  // where it lives (the auto review chain's WO), or the start below dies on the store's active lock.
+  await openDetail('Ajan arşivi');
+  await stopAllDrives();
+  await backToBoard();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Model kanıt');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  // spawn → main resolves the input: POLL the readback (any earlier spawn carried no model, so
+  // only the NEW one satisfies).
+  let carriedModel;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    carriedModel = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
+    if (carriedModel?.model === first) break;
+  }
+  assert.equal(carriedModel?.model, first, `the resolved drive input does not carry the architect model: ${JSON.stringify(carriedModel)}`);
+  assert.equal(carriedModel?.role, 'architect', 'the carry spec did not run an architect drive');
+  await stopAllDrives();
+  // Temizle clears; the default hint returns (absent-again, not a disabled field)
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  await page.locator('[data-model-section] button', { hasText: 'Temizle' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.docket.settings.getModels()), undefined, 'Temizle did not clear the row');
+  assert.ok(((await page.locator('[data-model-section]').innerText()) ?? '').includes('Boş rol ='), 'the default hint did not return');
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

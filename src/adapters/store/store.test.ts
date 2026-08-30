@@ -685,6 +685,27 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     store.db.prepare("UPDATE app_setting SET value = 'xx' WHERE key = 'locale'").run();
     expect(await store.getLocale()).toBeUndefined();
   });
+  it('per-role models round-trip; blank roles drop, unknown keys never persist, clear leaves no row (WO-0059 rev 2)', async () => {
+    const store = createStore(freshDb());
+    // no row → undefined: every role rides the provider's own default (the store never names a value)
+    expect(await store.getModels()).toBeUndefined();
+    await store.setModels({ architect: 'model-check-x', implementer: '  model-check-y  ', verifier: '  ' });
+    expect(await store.getModels()).toEqual({ architect: 'model-check-x', implementer: 'model-check-y' });
+    // a write with NO usable role clears the row entirely
+    await store.setModels({ verifier: '  ' });
+    expect(await store.getModels()).toBeUndefined();
+    expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
+    // a garbage ROW reads undefined (the settingBudget posture): a corrupt map opens no gate
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', 'not-json')").run();
+    expect(await store.getModels()).toBeUndefined();
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', '{\"architect\":5,\"unknown\":\"x\"}')").run();
+    expect(await store.getModels()).toBeUndefined(); // a map with no usable role row is nothing
+    // undefined clears
+    await store.setModels({ architect: 'model-check-x' });
+    await store.setModels(undefined);
+    expect(await store.getModels()).toBeUndefined();
+    expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
+  });
 });
 
 describe('WO-0030 — yaşam döngüsü olay günlüğü (audit)', () => {

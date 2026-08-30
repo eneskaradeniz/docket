@@ -18,6 +18,7 @@ import {
   limitStampOf,
   limitStampFromMessage,
   limitWindowsOf,
+  modelOptions,
   neutralLimitStatus,
   usageOf,
 } from './index';
@@ -36,7 +37,11 @@ const sdkMock = vi.hoisted(() => {
   let script: unknown[] = [];
   let usageImpl: () => Promise<unknown> = () => Promise.reject(new Error('limit feed off (mock)'));
   let usageCalls = 0;
-  const query = () => {
+  // WO-0059: record the query argument so a test can pin what the adapter put on Options
+  // (previously discarded — the spawn shape was unobservable).
+  let lastQueryOptions: Record<string, unknown> | undefined;
+  const query = (arg?: { options?: Record<string, unknown> }) => {
+    lastQueryOptions = arg?.options;
     async function* gen() {
       for (const m of script) {
         if (m && typeof m === 'object' && '__gate' in (m as Record<string, unknown>)) {
@@ -65,6 +70,7 @@ const sdkMock = vi.hoisted(() => {
       usageImpl = impl;
     },
     usageCallCount: () => usageCalls,
+    lastOptions: () => lastQueryOptions,
     gate: (): { promise: Promise<void>; release: () => void } => {
       let release!: () => void;
       const promise = new Promise<void>((r) => {
@@ -550,5 +556,33 @@ describe('createRunner().drive — the agent-task lifecycle (scripted SDK, WO-00
     expect(texts).toHaveLength(2);
     expect(texts[0]).toMatchObject({ text: 'alt ajan yazısı', parentToolUseId: 'call_T' });
     expect(texts[1]).toEqual({ kind: 'assistant_text', text: 'ebeveyn', at: expect.any(String) }); // null → omitted
+  });
+});
+
+// ===== WO-0059 — the model preference reaches Options.model verbatim =====
+// The adapter is the ONLY layer that translates the neutral input id into the provider's spawn
+// option; it invents no default and no alias table. The presets (`modelOptions`) are minted HERE —
+// the one file in the tree allowed to name an id (ADR-0006's WO-0052 carve-out).
+
+describe('model selection — input id → Options.model (WO-0059)', () => {
+  it('an input carrying model lands on Options.model exactly (verbatim, alias or full id)', async () => {
+    sdkMock.setScript([initMsg, resultMsg()]);
+    const runner = createRunner();
+    await collect(runner, { ...stepInput, model: 'model-check-x' });
+    expect(sdkMock.lastOptions()?.model).toBe('model-check-x');
+  });
+
+  it('no model on the input → Options.model stays undefined (no default invented adapter-side)', async () => {
+    sdkMock.setScript([initMsg, resultMsg()]);
+    const runner = createRunner();
+    await collect(runner, stepInput);
+    expect(sdkMock.lastOptions()?.model).toBeUndefined();
+  });
+
+  it('modelOptions() names the provider presets — the SDK-documented ids, data for the picker', () => {
+    const presets = modelOptions();
+    expect(presets.length).toBeGreaterThan(0);
+    expect(presets).toContain('claude-fable-5');
+    expect(presets).toContain('claude-sonnet-5');
   });
 });

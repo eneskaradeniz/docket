@@ -597,6 +597,9 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     // Options.env REPLACES the subprocess env — compose over process.env so PATH/HOME survive.
     if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
     if (input.resume) options.resume = input.resume;
+    // WO-0059: the operator's model preference — the composition root resolved it at spawn time;
+    // this is the ONLY translation the id gets (verbatim; alias or full id, the provider validates).
+    if (input.model) options.model = input.model;
 
     // WO-0046 cost truth (probe raw/c2.log + raw/s2b-late-note.log, findings §C; review f2):
     // usd is cumulative within one query process and RESETS at resume (per-drive baseline from
@@ -870,6 +873,15 @@ export function quickProviderCheck(env: NodeJS.ProcessEnv = process.env): 'env' 
     // fall through
   }
   return 'unknown';
+}
+
+/** WO-0059 — the preset model ids the settings picker offers. The id literals live HERE ONLY (c1 /
+ *  ADR-0006's WO-0052 carve-out: a model id may be data minted in the provider adapter, never a
+ *  constant elsewhere); they cross the boundary as a plain string[] and the UI renders them
+ *  verbatim. The list is the SDK's OWN documented examples (sdk.d.ts `Options.model`) — anything
+ *  else rides the free-text field, so this catalog cannot go stale in a way that blocks anyone. */
+export function modelOptions(): string[] {
+  return ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5'];
 }
 
 /** Map a raw provider error string onto the neutral code. String matching is heuristic — the messages are

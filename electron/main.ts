@@ -7,14 +7,14 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session } fro
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { checkProvider, createRunner, providerEnvForKey } from '../src/adapters/runner';
+import { checkProvider, createRunner, modelOptions, providerEnvForKey } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { Locale } from '../src/core/app-settings';
+import type { Locale, RoleModels } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
@@ -242,6 +242,11 @@ ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule)
 // WO-0035: the UI locale — undefined (no explicit choice) survives the structured clone.
 ipcMain.handle('docket:settings:get-locale', () => store.getLocale());
 ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLocale(locale));
+// WO-0059 rev 2: the per-role model preference (the DB half) + the adapter-minted presets — the
+// checkProvider pattern: the id vocabulary lives in the runner adapter, main only composes the channel.
+ipcMain.handle('docket:settings:get-models', () => store.getModels());
+ipcMain.handle('docket:settings:set-models', (_e, models: RoleModels | undefined) => store.setModels(models));
+ipcMain.handle('docket:settings:model-options', () => modelOptions());
 // WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
 ipcMain.handle('docket:settings:get-docs-root', (_e, workspaceId: WorkspaceId) => store.getDocsRoot(workspaceId));
 ipcMain.handle('docket:settings:set-docs-root', (_e, workspaceId: WorkspaceId, root: string | undefined) => store.setDocsRoot(workspaceId, root));
@@ -299,6 +304,9 @@ const runner: E2eRunner | ReturnType<typeof createRunner> = process.env.DOCKET_E
 const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });
 // The one active drive's generator — Zorla kes (docket:runner:abort) closes it via injected return.
 let activeDrive: AsyncIterable<RunnerEvent> & { return?: (v: unknown) => Promise<unknown> } | undefined;
+// WO-0059 (E2E): the last resolved drive input this process spawned — read via the gated
+// docket:e2e:last-drive-input channel; production never registers it.
+let lastResolvedDriveInput: DriveInput | undefined;
 
 ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // The renderer cannot know filesystem paths; the composition root fills cwd. Everything else — prompt
@@ -323,12 +331,20 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // adapter's cwd-relative default. Non-architect drives carry no root at all (their scopes
   // never read it — writeScopeFor gives implementers the repo and verifiers read-only).
   const decisionStoreRoot = input.role === 'architect' ? store.decisionStoreRootFor(input) : undefined;
+  // WO-0059 rev 2: the PER-ROLE model preference resolves HERE, at spawn time — the drive's own
+  // role picks its row (the draft arm is an architect session and inherits the architect's). A
+  // mid-life settings change hits the next drive, never a running one. The renderer never sends a
+  // model; a renderer-supplied one is overwritten, exactly like the root.
+  const models = await store.getModels();
+  const model = models?.[input.role];
   const driveInput: DriveInput = {
     ...input,
     cwd: input.cwd ?? store.driveCwd(input),
     decisionStoreRoot,
     permissionRule,
+    ...(model ? { model } : {}),
   };
+  lastResolvedDriveInput = driveInput;
   const iterator = pipeline.drive(driveInput);
   activeDrive = iterator;
   try {
@@ -385,6 +401,8 @@ ipcMain.handle('docket:runner:pending-asks', () => runner.pendingAsks());
 
 // E2E-only scripting channel (WO-0031c): push a scripted RunnerEvent into the active fake drive.
 // WO-0051 / D7: stage the next pick-files answer (null = a cancelled dialog).
+// WO-0059: read back the last RESOLVED drive input — the main-side fills (cwd, permissionRule,
+// decisionStoreRoot, the model preference) become assertable without a real provider run.
 if (process.env.DOCKET_E2E) {
   ipcMain.handle('docket:e2e:emit', (_e, ev: RunnerEvent) => {
     (runner as E2eRunner).emit(ev);
@@ -392,6 +410,7 @@ if (process.env.DOCKET_E2E) {
   ipcMain.handle('docket:e2e:pick-files', (_e, paths: string[] | null) => {
     stagedPickFiles = paths;
   });
+  ipcMain.handle('docket:e2e:last-drive-input', () => lastResolvedDriveInput);
 }
 
 app.whenReady().then(() => {
