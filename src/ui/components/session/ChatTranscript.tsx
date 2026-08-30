@@ -1,9 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { TranscriptLine } from '../../../core/runner';
 import type { SessionRole } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { GUTTER_RESULT, GUTTER_TOOL } from '../../data/labels';
+import type { Labels } from '../../data/labels';
 import { cn } from '../../kit';
 import { MarkdownBody } from '../detail/MarkdownBody';
 
@@ -65,15 +67,27 @@ const TOOL_FAMILY: Record<string, string> = {
   WebFetch: 'text-remote',
   WebSearch: 'text-remote',
   Task: 'text-remote',
+  Agent: 'text-remote', // WO-0055 (probe t1): the delegation tool's on-the-wire name
   ExitPlanMode: 'text-inkdim',
 };
 
 /** One rendered group — the grouping IS the design: consecutive assistant entries share a turn,
- *  and a tool_result merges into the call it answers (the pair is one instrument block). */
+ *  and a tool_result merges into the call it answers (the pair is one instrument block).
+ *  WO-0055: a group can be an AGENT TASK's block — a `tool` group that ADOPTED its task (the
+ *  delegation row the task IS, carrying `agent` + the subagent's own `children` rows nested
+ *  inside), or a standalone `agent` group (the task whose delegation row is absent — capped off
+ *  or pre-adoption). Children are full ChatGroups, so depth ≥ 2 nests by recursion. */
+type AgentInfo = {
+  taskId: string;
+  description?: string;
+  status?: 'completed' | 'failed' | 'stopped'; // absent = the task is OPEN (the running lamp)
+  summary?: string;
+};
 type ChatGroup =
   | { kind: 'turn'; texts: string[] }
   | { kind: 'operator'; text: string } // a DELIVERED steer note (WO-0045) — first-class session content, never a SysRow
-  | { kind: 'tool'; tool: string; detail?: string; callId?: string; result?: { summary: string; isError: boolean } }
+  | { kind: 'tool'; tool: string; detail?: string; callId?: string; result?: { summary: string; isError: boolean }; agent?: AgentInfo; children?: ChatGroup[] }
+  | { kind: 'agent'; callId?: string; agent: AgentInfo; result?: { summary: string; isError: boolean }; children?: ChatGroup[] }
   | { kind: 'result'; summary: string; isError: boolean; orphan?: boolean }
   | { kind: 'sys'; text: string };
 
@@ -83,6 +97,7 @@ const GROUP_TOP: Record<ChatGroup['kind'], string> = {
   turn: 'mt-2.5',
   operator: 'mt-2.5', // the operator line reads as a TURN of its own — the same rhythm as the roles
   tool: 'mt-2',
+  agent: 'mt-2', // the standalone agent block rides the tool rhythm (it IS a delegation block)
   result: 'mt-0.5',
   sys: 'mt-2',
 };
@@ -122,17 +137,36 @@ const ToolPair = memo(function ToolPair({
   result,
   pulse,
   className,
+  agent,
+  childrenGroups,
+  role,
+  labelOverride,
 }: {
   tool: string;
   detail?: string;
   result?: { summary: string; isError: boolean };
   pulse: boolean;
   className?: string;
+  /** WO-0055: the agent task this call IS (adopted at task_started) — suppresses the running
+   *  lamp once the task ENDED (before the delegation call's own result may have arrived). */
+  agent?: AgentInfo;
+  /** The subagent's own rows, nested INSIDE the block: clamped-visible while the task RUNS
+   *  (the live edge shows the work — the one new operator-facing ruling the S2 manual check
+   *  votes on), click-collapsed once it ENDED ("nothing opens itself", 2026-08-23). */
+  childrenGroups?: ChatGroup[];
+  /** Children render turn bars — they need the session role. */
+  role: SessionRole;
+  /** WO-0055: a STANDALONE agent block (no delegation row behind it) labels itself with the
+   *  agent word instead of a tool name. */
+  labelOverride?: { text: string; hue: string };
 }) {
   const { TOOL_LABELS, toolLabel, UI } = useLabels();
   // An unknown tool's NAME rides the detail slot as DATA (mono, honest) — "Araç çağrısı" alone
   // answered nothing (operator, 2026-08-23: "ne araç çağrısı belli değil bu nedir?").
-  const knownTool = TOOL_LABELS[tool] !== undefined;
+  const knownTool = labelOverride !== undefined || TOOL_LABELS[tool] !== undefined;
+  const labelText = labelOverride?.text ?? toolLabel(tool);
+  const labelHue = labelOverride?.hue ?? (TOOL_FAMILY[tool] ?? 'text-inkdim');
+  const agentRunning = agent !== undefined && agent.status === undefined;
   // 2026-08-23 ruling: purely user-driven — no autoOpen, no touched/userOpen duality. The output
   // opens on click and ONLY on click, identically in live/compact/archived.
   const [open, setOpen] = useState(false);
@@ -154,7 +188,7 @@ const ToolPair = memo(function ToolPair({
           full command still wraps in the detail cell (the long form, 2026-08-22 ruling). */}
       <span className="grid min-w-0 flex-1 grid-cols-[12px_7rem_12px_1fr] items-center gap-1.5">
         <span className="shrink-0 text-[10px] text-inkdim" aria-hidden="true">{GUTTER_TOOL}</span>
-        <span className={cn('min-w-0 truncate font-medium', TOOL_FAMILY[tool] ?? 'text-inkdim')}>{toolLabel(tool)}</span>
+        <span className={cn('min-w-0 truncate font-medium', labelHue)}>{labelText}</span>
         <span className="shrink-0 text-inkdim" aria-hidden="true">{detail || !knownTool ? '—' : ''}</span>
         <span className={cn('min-w-0 text-ink', open ? 'whitespace-normal break-words' : 'truncate')}>
           {!knownTool ? tool + (detail ? ` · ${detail}` : '') : detail}
@@ -164,10 +198,24 @@ const ToolPair = memo(function ToolPair({
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
       </span>
       {/* Only the RUNNING mark stays a dot; a FAILURE tints the whole block below (operator,
-          2026-08-23: the 5px red dot was invisible — "o sohbet balonu kırmızı olabilir"). */}
-      {!result ? <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" /> : null}
+          2026-08-23: the 5px red dot was invisible — "o sohbet balonu kırmızı olabilir").
+          WO-0055: the dot also dies when the ADOPTED AGENT TASK ended — the task's own status,
+          not the delegation call's result, is what the lamp watches. */}
+      {!result && !agentRunning ? <span className="h-[5px] w-[5px] shrink-0 rounded-full lamp-run" aria-hidden="true" /> : null}
     </>
   );
+
+  const childrenBody =
+    childrenGroups !== undefined && childrenGroups.length > 0 && (agentRunning || open) ? (
+      // One gutter step per nesting level (recursion adds its own); CLAMPED while the task runs
+      // (the live edge must not push the reading column around), full once explicitly opened.
+      <div
+        data-chat-entry="agent_children"
+        className={cn('min-w-0 pl-4 pr-1 pb-1', agentRunning ? 'max-h-40 overflow-y-auto' : undefined)}
+      >
+        <GroupRows groups={childrenGroups} role={role} />
+      </div>
+    ) : null;
 
   return (
     <div
@@ -185,6 +233,7 @@ const ToolPair = memo(function ToolPair({
       >
         {header}
       </button>
+      {childrenBody}
       {open && !result ? (
         <div className="px-2.5 pb-2 font-mono text-[11px] leading-relaxed text-inkdim">{UI.toolNoResult}</div>
       ) : null}
@@ -237,6 +286,68 @@ const SysRow = memo(function SysRow({ text, pulse, className }: { text: string; 
       {text}
     </div>
   );
+});
+
+/** WO-0055: renders ONE group of a SIBLING LIST — the root column or an agent block's children
+ *  (recursion makes depth ≥ 2 nest naturally). Nested rows never pulse: the host block carries
+ *  the running mark, and a nested append washes the whole block via the root tail's pulse. */
+function renderGroup(g: ChatGroup, role: SessionRole, pulse: boolean, top: string | undefined, UI: Labels['UI']): ReactNode {
+  switch (g.kind) {
+    case 'turn':
+      return <ChatTurn className={top} texts={g.texts} role={role} pulse={pulse} />;
+    case 'operator':
+      return (
+        <section
+          data-chat-entry="operator"
+          className={cn(
+            'relative pl-6 before:absolute before:bottom-0.5 before:left-1.5 before:top-0.5 before:w-[3px] before:rounded-full before:bg-signal before:content-[""]',
+            top,
+          )}
+        >
+          <p className="mb-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-signal">{UI.operatorSpeaker}</p>
+          <p className="text-[13px] leading-relaxed text-ink">{g.text}</p>
+        </section>
+      );
+    case 'tool':
+      return (
+        <ToolPair
+          className={top}
+          tool={g.tool}
+          detail={g.detail}
+          result={g.result}
+          pulse={pulse}
+          agent={g.agent}
+          childrenGroups={g.children}
+          role={role}
+        />
+      );
+    case 'agent':
+      // The STANDALONE agent block — no delegation row behind it (capped off, or the task
+      // arrived without a callId). Labels itself with the agent word, remote hue.
+      return (
+        <ToolPair
+          className={top}
+          tool=""
+          labelOverride={{ text: UI.agentTaskLabel, hue: 'text-remote' }}
+          detail={g.agent.description}
+          result={g.result}
+          pulse={pulse}
+          agent={g.agent}
+          childrenGroups={g.children}
+          role={role}
+        />
+      );
+    case 'result':
+      return <ResultRow className={top} summary={g.orphan ? UI.orphanResult : g.summary} isError={g.isError} pulse={pulse} />;
+    case 'sys':
+      return <SysRow className={top} text={g.text} pulse={pulse} />;
+  }
+}
+
+/** WO-0055: one sibling list of nested groups inside an agent block. */
+const GroupRows = memo(function GroupRows({ groups, role }: { groups: ChatGroup[]; role: SessionRole }) {
+  const { UI } = useLabels();
+  return <>{groups.map((g, i) => renderGroup(g, role, false, i > 0 ? GROUP_TOP[g.kind] : undefined, UI))}</>;
 });
 
 /** The last 800 entries render; older ones fall off with a head line (windowing is a recorded debt). */
@@ -318,37 +429,64 @@ function ChatLog({
   const visible = useMemo(() => (head > 0 ? entries.slice(head) : entries), [entries, head]);
   const groups = useMemo<ChatGroup[]>(() => {
     const out: ChatGroup[] = [];
-    for (const line of visible) {
+    // WO-0055: the registries are SHARED across every nesting level — a subagent's rows find
+    // their delegation block by parentToolUseId wherever that block lives; a task's end finds it
+    // by taskId. A block registers under the delegation call's id; a task that arrived with NO
+    // matching delegation row registers its standalone agent group instead.
+    const byCallId = new Map<string, ChatGroup>();
+    const byTaskId = new Map<string, ChatGroup>();
+    /** The sibling list a line belongs to: the parented rows nest INSIDE their delegation
+     *  block's children; an UNMATCHED parent (restart mid-task, the 800-cap beheading) renders
+     *  at top level, unchanged — the honest orphan. */
+    const listFor = (line: TranscriptLine): ChatGroup[] => {
+      const pid = line.speaker === 'assistant' || line.speaker === 'tool_use' || line.speaker === 'tool_result'
+        ? line.parentToolUseId
+        : undefined;
+      if (pid === undefined) return out;
+      const parent = byCallId.get(pid);
+      if (!parent || (parent.kind !== 'tool' && parent.kind !== 'agent')) return out;
+      if (parent.children === undefined) parent.children = [];
+      return parent.children;
+    };
+    /** The per-line grouping rules for ONE sibling list — verbatim from the pre-WO-0055 builder
+     *  (callId pairing + FIFO fallback + the plan pseudo-result classifiers + the honest orphan);
+     *  the list parameter is the only generalization. */
+    const appendLine = (list: ChatGroup[], line: TranscriptLine): void => {
       switch (line.speaker) {
         case 'assistant': {
-          const last = out[out.length - 1];
+          const last = list[list.length - 1];
           if (last?.kind === 'turn') last.texts.push(line.text);
-          else out.push({ kind: 'turn', texts: [line.text] });
+          else list.push({ kind: 'turn', texts: [line.text] });
           break;
         }
         case 'operator':
           // WO-0045: the note applied at a boundary — the turn grammar with the OPERATOR gutter
           // word, so the döküm reads iş → OPERATÖR notu → iş. Consecutive notes stay separate
           // rows (each was its own steering decision).
-          out.push({ kind: 'operator', text: line.text });
+          list.push({ kind: 'operator', text: line.text });
           break;
-        case 'tool_use':
-          out.push({ kind: 'tool', tool: line.tool, detail: line.detail, callId: line.callId });
+        case 'tool_use': {
+          const g: ChatGroup = { kind: 'tool', tool: line.tool, detail: line.detail, callId: line.callId };
+          list.push(g);
+          if (line.callId !== undefined) byCallId.set(line.callId, g);
           break;
+        }
         case 'tool_result': {
           // The result merges into the call it answers — ONE instrument block per pair, paired by
           // callId (2026-08-23 §5): adjacency pairing broke on parallel calls (the agent fires
           // c1..c4, results stream back interleaved) and produced orphan headerless result walls.
           // Fallback for pre-callId persisted rows: FIFO — the OLDEST call still awaiting a
           // result takes it (the agent's completion order tracks call order closely enough).
+          // WO-0055: the search is WITHIN the sibling list — a subagent's result pairs with the
+          // subagent's call, never across the delegation boundary.
           const byId = line.callId !== undefined
-            ? [...out].reverse().find((g) => g.kind === 'tool' && g.callId === line.callId && !g.result)
+            ? [...list].reverse().find((g) => g.kind === 'tool' && g.callId === line.callId && !g.result)
             : undefined;
-          const fifo = byId ?? out.find((g) => g.kind === 'tool' && !g.result);
+          const fifo = byId ?? list.find((g) => g.kind === 'tool' && !g.result);
           const target = byId ?? fifo;
           if (target && target.kind === 'tool') {
             target.result = { summary: line.summary, isError: line.isError };
-          } else if (/^User has (approved|rejected) your plan/.test(line.summary)) {
+          } else if (list === out && /^User has (approved|rejected) your plan/.test(line.summary)) {
             // The SDK's plan-mode CLOSURE pseudo-result — a tool_result whose callId belongs to
             // NO tool call (verified in the wild, 2026-08-23): the harness ACCEPTED the agent's
             // plan submission ("User has approved your plan…"). It is NOT the operator's Docket
@@ -358,7 +496,7 @@ function ChatLog({
               kind: 'sys',
               text: line.summary.startsWith('User has approved') ? UI.planApprovedNote : UI.planRejectedNote,
             });
-          } else if (/^Plan submitted\./.test(line.summary)) {
+          } else if (list === out && /^Plan submitted\./.test(line.summary)) {
             // WO-0039 stabilization (2026-08-23): the PLAN GATE's denial echo — Docket's own
             // "Plan submitted. STOP…" message comes back as the ExitPlanMode call's tool_result,
             // and that call renders as plan_ready (never a tool_use row), so the result is an
@@ -367,19 +505,71 @@ function ChatLog({
             out.push({ kind: 'sys', text: UI.planApprovedNote });
           } else {
             // A true orphan (restart mid-tool): ONE clamped honest row, never a headerless wall.
-            out.push({ kind: 'result', summary: line.summary, isError: line.isError, orphan: true });
+            list.push({ kind: 'result', summary: line.summary, isError: line.isError, orphan: true });
+          }
+          break;
+        }
+        case 'agent_task': {
+          // WO-0055: the task's lifecycle edges shape the nesting. START: adopt the delegation
+          // row (the Task/Agent call whose id rode task_started.tool_use_id) — its detail slot
+          // carries the task's own words; no row behind it → a standalone agent block. END: the
+          // task's status + digest land on ITS block; a beheaded end shows ONE honest digest row
+          // (nothing, when the provider reported no summary). A restarted task (same taskId, NEW
+          // callId — the SendMessage re-open) adopts its NEW delegation row via byCallId; the
+          // byTaskId re-registration points the next end at the new leg.
+          if (line.phase === 'started') {
+            const info: AgentInfo = { taskId: line.taskId, ...(line.description ? { description: line.description } : {}) };
+            const host = line.callId !== undefined ? byCallId.get(line.callId) : undefined;
+            if (host && host.kind === 'tool') {
+              host.agent = info;
+              if (!host.detail) host.detail = line.description;
+              byTaskId.set(line.taskId, host);
+            } else {
+              const g: ChatGroup = { kind: 'agent', callId: line.callId, agent: info, children: [] };
+              out.push(g);
+              if (line.callId !== undefined) byCallId.set(line.callId, g);
+              byTaskId.set(line.taskId, g);
+            }
+          } else {
+            const target = byTaskId.get(line.taskId);
+            const prior = target && (target.kind === 'tool' || target.kind === 'agent') ? target.agent : undefined;
+            if (target && (target.kind === 'tool' || target.kind === 'agent') && prior) {
+              target.agent = {
+                taskId: prior.taskId,
+                ...(prior.description ? { description: prior.description } : {}),
+                ...(line.status ? { status: line.status } : {}),
+                ...(line.summary ? { summary: line.summary } : {}),
+              };
+            } else if (line.summary !== undefined) {
+              // A beheaded end (the parent fell off the 800-cap / a pre-WO-0055 row): ONE honest
+              // self-describing row; no summary → nothing: never an empty claim, never a wall.
+              out.push({ kind: 'result', summary: `${UI.orphanAgentEnd} — ${line.summary}`, isError: line.status === 'failed' });
+            } // no matching block, no summary → nothing: never an empty claim, never a wall
           }
           break;
         }
         case 'system':
         case 'note':
-          out.push({
+          list.push({
             kind: 'sys',
             text: line.speaker === 'note' ? UI.noteFor(line.kind, line.detail) : line.text,
           });
           break;
       }
-    }
+    };
+    for (const line of visible) appendLine(listFor(line), line);
+    // The digest post-pass: an ENDED agent block with a summary but no delegation result yet
+    // shows the digest as its click-open body (an interrupted task still closes with its own
+    // words); when the real tool_result (the report) arrives, the pair keeps owning `result`.
+    const fillDigest = (list: ChatGroup[]): void => {
+      for (const g of list) {
+        if ((g.kind === 'tool' || g.kind === 'agent') && g.agent?.summary !== undefined && !g.result) {
+          g.result = { summary: g.agent.summary, isError: g.agent.status === 'failed' };
+        }
+        if ((g.kind === 'tool' || g.kind === 'agent') && g.children !== undefined) fillDigest(g.children);
+      }
+    };
+    fillDigest(out);
     return out;
     // UI rides the dep list: noteFor re-localizes a live column on a locale switch (TD-040's close).
   }, [visible, UI]);
@@ -431,40 +621,7 @@ function ChatLog({
             const pulse = i === pulseIndex;
             // The head line counts as a first child — the rhythm starts right after it.
             const top = i > 0 || head > 0 ? GROUP_TOP[g.kind] : undefined;
-            switch (g.kind) {
-              case 'turn':
-                return <ChatTurn key={i} className={top} texts={g.texts} role={role} pulse={pulse} />;
-              case 'operator':
-                return (
-                  <section
-                    key={i}
-                    data-chat-entry="operator"
-                    className={cn(
-                      'relative pl-6 before:absolute before:bottom-0.5 before:left-1.5 before:top-0.5 before:w-[3px] before:rounded-full before:bg-signal before:content-[""]',
-                      top,
-                    )}
-                  >
-                    <p className="mb-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-signal">
-                      {UI.operatorSpeaker}
-                    </p>
-                    <p className="text-[13px] leading-relaxed text-ink">{g.text}</p>
-                  </section>
-                );
-              case 'tool':
-                return <ToolPair key={i} className={top} tool={g.tool} detail={g.detail} result={g.result} pulse={pulse} />;
-              case 'result':
-                return (
-                  <ResultRow
-                    key={i}
-                    className={top}
-                    summary={g.orphan ? UI.orphanResult : g.summary}
-                    isError={g.isError}
-                    pulse={pulse}
-                  />
-                );
-              case 'sys':
-                return <SysRow key={i} className={top} text={g.text} pulse={pulse} />;
-            }
+            return <Fragment key={i}>{renderGroup(g, role, pulse, top, UI)}</Fragment>;
           })}
         </div>
       </div>

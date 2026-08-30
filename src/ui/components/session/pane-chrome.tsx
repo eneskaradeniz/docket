@@ -6,7 +6,7 @@
 // three live surfaces (SessionPane · StepPane · ReviewPane); the step/review panes had neither.
 import { useState, useRef, type ReactNode } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
-import { staleMinutes, STALE_AFTER_MIN, type LiveSessionState } from '../../../core/runner';
+import { openAgentTasks, staleMinutes, STALE_AFTER_MIN, type LiveSessionState } from '../../../core/runner';
 import type { SteerNote, TranscriptLine } from '../../../core/types';
 import { Input, cn } from '../../kit';
 import { useLabels } from '../../data/locale';
@@ -56,7 +56,12 @@ export function PaneError({ message }: { message: string }) {
 //     live-dots — the reason line is not motion. Gated on the FOLD's 'running', never the handle's:
 //     an ask held parks the fold at stopped_asking and the asking verb names why it waits — a
 //     staleness accusation there would blame the operator. The plan-closing moment (plan_ready +
-//     running) keeps precedence: it is the wind-down, not a wait. ---
+//     running) keeps precedence: it is the wind-down, not a wait.
+//     WO-0055: RUNNING AGENTS sit between the silence and the tool verb — at the moment a
+//     subagent starts, the newest unmatched tool_use IS the delegation call ("Devrediyor",
+//     strictly less information than a count), and while agents run an unrelated parent tool
+//     call would otherwise overwrite the agent line. Backgrounded shell tasks produce no agent
+//     rows (the adapter's discriminator), so they can never inflate the count. ---
 export function usePaneActivity(state: LiveSessionState, running: boolean, now?: number): { show: boolean; line: string; stale: boolean } {
   const { LIVE_STATUS_LABELS, UI, toolVerb } = useLabels();
   const staleMins = running && state.status === 'running' && now !== undefined ? staleMinutes(state, now) : undefined;
@@ -68,11 +73,16 @@ export function usePaneActivity(state: LiveSessionState, running: boolean, now?:
     stale = true;
     line = UI.staleLine(staleMins);
   } else if (running) {
-    const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
-    const pending = [...state.entries]
-      .reverse()
-      .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
-    line = pending ? toolVerb(pending.tool) : UI.actThinking;
+    const agents = openAgentTasks(state.entries);
+    if (agents.length > 0) {
+      line = UI.agentRunningLine(agents.length);
+    } else {
+      const matched = new Set(state.entries.flatMap((e) => (e.speaker === 'tool_result' && e.callId ? [e.callId] : [])));
+      const pending = [...state.entries]
+        .reverse()
+        .find((e): e is Extract<TranscriptLine, { speaker: 'tool_use' }> => e.speaker === 'tool_use' && e.callId !== undefined && !matched.has(e.callId));
+      line = pending ? toolVerb(pending.tool) : UI.actThinking;
+    }
   } else if (state.status === 'stopped_asking') {
     line = LIVE_STATUS_LABELS.stopped_asking;
   } else if (state.status === 'done') {

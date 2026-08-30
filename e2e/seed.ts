@@ -115,6 +115,36 @@ store.recordSession({
 });
 await store.closeWorkOrder(wo4.id, 'e2e closed');
 
+// 4b) WO-0055 — an ARCHIVED session whose transcript carries agent-task rows: the archived card's
+//     döküm must re-nest identically (the delegation block adopting its task, the subagent's own
+//     rows nested inside, the real report winning the pair over the end digest).
+const woAgent = await mk('Ajan arşivi', 'E2E: an archived session with agent-task rows.');
+await store.approvePlan(woAgent.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+store.recordStep(woAgent.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+store.recordSession({
+  providerSessionId: 'e2e-wo-agent',
+  owner: { kind: 'wo', workOrderId: woAgent.id },
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [
+    { speaker: 'note', kind: 'session_started', detail: '2026-08-30T10:00:00.000Z' },
+    { speaker: 'assistant', text: 'Önce bir alt ajan çalıştırıyorum.' },
+    { speaker: 'tool_use', tool: 'Agent', detail: '', callId: 'cT' },
+    { speaker: 'agent_task', phase: 'started', taskId: 't-arc', callId: 'cT', description: 'Dosyaları tara' },
+    { speaker: 'tool_use', tool: 'Bash', detail: 'ls', callId: 'cN1', parentToolUseId: 'cT' },
+    { speaker: 'tool_result', summary: 'docs src package.json', isError: false, callId: 'cN1', parentToolUseId: 'cT' },
+    { speaker: 'agent_task', phase: 'ended', taskId: 't-arc', status: 'completed', summary: 'Dört dosya buldum' },
+    { speaker: 'tool_result', summary: 'Alt ajan raporu: dört dosya', isError: false, callId: 'cT' },
+    // a BEHEADED end (its start fell off the 800-cap in a long session): ONE honest row, word + digest
+    { speaker: 'agent_task', phase: 'ended', taskId: 't-ghost', status: 'failed', summary: 'Yetim özet' },
+    { speaker: 'note', kind: 'session_done', detail: '2026-08-30T10:02:00.000Z' },
+  ],
+  cost: { tokensIn: 9_000, tokensOut: 1_200, usd: 0.31 },
+  startedAt: new Date('2026-08-30T10:00:00Z').toISOString(),
+  endedAt: new Date('2026-08-30T10:02:00Z').toISOString(),
+});
+
 // 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment
 //    (ask card + `Sıra sende` substrip + glow-signal) rendered statically from the persisted session.
 //    WO-0031f: the step aim is distinctive — the H-4 band-focus spec reads it back.

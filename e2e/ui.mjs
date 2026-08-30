@@ -2764,6 +2764,126 @@ await spec('WO-0054 drive-sonu tazeleme: ekran açıkken satır iner — rakam T
   await openBoard();
 });
 
+// ===== WO-0055 — live agent visibility: the composite delegation block, the running count, the
+// honest orphans, the archived re-nesting =====
+
+await spec('WO-0055: the agent task nests in its delegation block; the activity line counts running agents', async () => {
+  await stopAllDrives(); // one drive at a time — stage on a FRESH work order
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Ajan görünür denemesi');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  const emit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
+  // the delegation call alone says the VERB; the task start promotes the line to the COUNT
+  await emit({ kind: 'tool_use', callId: 'cT', tool: 'Agent', input: { description: 'Dosyaları tara' } });
+  await page.waitForTimeout(300);
+  let header = (await page.locator('#live-pane').first().textContent()) ?? '';
+  assert.ok(header.includes('Devrediyor'), `the delegation call lost its verb: ${header.slice(0, 300)}`);
+  await emit({ kind: 'agent_task', phase: 'started', taskId: 't-1', callId: 'cT', description: 'Dosyaları tara' });
+  await emit({ kind: 'tool_use', callId: 'cN1', tool: 'Bash', input: { command: 'ls' }, parentToolUseId: 'cT' });
+  await page.waitForTimeout(400);
+  header = (await page.locator('#live-pane').first().textContent()) ?? '';
+  assert.ok(header.includes('1 ajan sürüyor'), `the activity line carries no running-agent count: ${header.slice(0, 300)}`);
+  // behind the chip: the composite block — Devret label, the task's own words in the detail slot,
+  // the subagent's row nested INSIDE (the live edge shows the work), the running lamp on
+  await page.locator('[data-pane-log-toggle]').first().click();
+  await page.waitForTimeout(300);
+  const chat = page.locator('[data-chat]').first();
+  const delegation = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dosyaları tara' }).first();
+  assert.equal(await delegation.count(), 1, 'no composite delegation block with the task description');
+  assert.ok(((await delegation.textContent()) ?? '').includes('Devret'), 'the delegation block lost its label');
+  assert.ok(((await delegation.textContent()) ?? '').includes('Komut çalıştır'), 'the subagent row is not nested inside the block');
+  assert.ok((await delegation.locator('.lamp-run').count()) >= 1, 'no running lamp on the open agent task');
+  // the nested call CLOSES first (still under the running count), then the task ENDS: the lamp
+  // dies, the live children collapse behind the click, the line reverts to the delegation verb —
+  // the newest unmatched call is now the delegation itself (the nested one is answered)
+  await emit({ kind: 'tool_result', callId: 'cN1', summary: 'docs src package.json', isError: false, parentToolUseId: 'cT' });
+  await page.waitForTimeout(300);
+  header = (await page.locator('#live-pane').first().textContent()) ?? '';
+  assert.ok(header.includes('1 ajan sürüyor'), 'the count dropped while the agent was still open');
+  await emit({ kind: 'agent_task', phase: 'ended', taskId: 't-1', status: 'completed', summary: 'Dört dosya buldum' });
+  await page.waitForTimeout(400);
+  header = (await page.locator('#live-pane').first().textContent()) ?? '';
+  assert.ok(!header.includes('ajan sürüyor'), 'the count survived the last end');
+  assert.ok(header.includes('Devrediyor'), 'the line did not revert to the unmatched delegation verb');
+  assert.equal(await delegation.locator('.lamp-run').count(), 0, 'the lamp stayed on after the end');
+  assert.equal(await delegation.locator('[data-chat-entry="agent_children"]').count(), 0, 'children stayed visible after the end');
+  await delegation.locator('button').first().click();
+  await page.waitForTimeout(300);
+  assert.equal(await delegation.locator('[data-chat-entry="agent_children"]').count(), 1, 'the opened block did not reveal the nested rows');
+  assert.ok(((await delegation.textContent()) ?? '').includes('Dört dosya buldum'), 'the end digest did not fill the body');
+  await page.screenshot({ path: join(SHOTS, 'agent-block@980.png') });
+  await stopAllDrives();
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('Evet, sil').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Ajan görünür' }).count(), 0, 'the throwaway WO survived');
+});
+
+await spec('WO-0055: depth-2 nesting and the honest orphan ends', async () => {
+  await stopAllDrives();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Ajan derinlik denemesi');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  const emit = (ev) => page.evaluate((e) => window.docket.e2e?.emit(e), ev);
+  await page.locator('[data-pane-log-toggle]').first().click();
+  await page.waitForTimeout(300);
+  const chat = page.locator('[data-chat]').first();
+  // an inner delegation INSIDE the outer block's children (the subagent delegates further)
+  await emit({ kind: 'tool_use', callId: 'd1', tool: 'Agent', input: { description: 'Dış görev' } });
+  await emit({ kind: 'agent_task', phase: 'started', taskId: 'td1', callId: 'd1', description: 'Dış görev' });
+  await emit({ kind: 'tool_use', callId: 'd2', tool: 'Agent', input: { description: 'İç görev' }, parentToolUseId: 'd1' });
+  await emit({ kind: 'agent_task', phase: 'started', taskId: 'td2', callId: 'd2', description: 'İç görev' });
+  await page.waitForTimeout(400);
+  const outer = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dış görev' }).first();
+  assert.equal(await outer.count(), 1, 'the outer block is missing');
+  const inner = outer.locator('[data-chat-entry="tool_use"]', { hasText: 'İç görev' }).first();
+  assert.equal(await inner.count(), 1, 'the inner delegation did not nest inside the outer block');
+  // (the beheaded END is a RENDER-level case: live, the FOLD drops an end with no open task —
+  // pinned in agent-task.test.ts. The renderer's honest orphan row is asserted in the archived
+  // spec below, where the seed writes the transcript directly.)
+  await page.screenshot({ path: join(SHOTS, 'agent-depth@980.png') });
+  await stopAllDrives();
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByText('Evet, sil').click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Ajan derinlik' }).count(), 0, 'the throwaway WO survived');
+});
+
+await spec('WO-0055: the archived card re-nests identically (seeded agent rows)', async () => {
+  await switchWs('kullanim', 'e2e'); // the usage block left the app on 'kullanim'; the seed's WO lives in 'e2e'
+  await openDetail('Ajan arşivi');
+  await page.waitForTimeout(450);
+  const card = page.locator('[data-session-card]').filter({ hasText: 'Adım 1' }).first();
+  assert.equal(await card.count(), 1, 'the seeded agent session card is missing');
+  await card.locator('button').first().click(); // the card head IS the aç/kapa (the ledger has no chip)
+  await page.waitForTimeout(400);
+  const chat = card.locator('[data-chat]').first();
+  const delegation = chat.locator('[data-chat-entry="tool_use"]', { hasText: 'Dosyaları tara' }).first();
+  assert.equal(await delegation.count(), 1, 'the archived transcript did not re-nest the delegation block');
+  // the task ENDED in the seed → the children hide behind the card head's click (nothing opens itself)
+  await delegation.locator('button').first().click();
+  await page.waitForTimeout(300);
+  assert.ok(((await delegation.textContent()) ?? '').includes('Komut çalıştır'), 'the nested subagent row did not survive the archive');
+  // the REAL report won the pair over the end digest
+  assert.ok(((await delegation.textContent()) ?? '').includes('Alt ajan raporu'), 'the report did not win the pair');
+  assert.ok(((await delegation.textContent()) ?? '').includes('ls'), 'the nested command detail is missing');
+  // the beheaded end's ONE honest self-describing row (word + digest)
+  const chatText = (await chat.textContent()) ?? '';
+  assert.ok(chatText.includes('ajan sonu') && chatText.includes('Yetim özet'), 'the beheaded end lost its one honest row');
+  await page.screenshot({ path: join(SHOTS, 'agent-archived@980.png') });
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });
