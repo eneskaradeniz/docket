@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
-import type { Locale } from '../../core/app-settings';
+import type { Locale, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
@@ -87,17 +87,22 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   readonly db: DatabaseSync;
 }
 
-/** The DB-backed half of the AppSettings port (WO-0025): the provider key in the `app_setting` table. The
- *  check-half (checkProvider) lives in the runner adapter — only it may touch the provider. */
+/** The DB-backed half of the AppSettings port (WO-0025). WO-0059 rev 4: the stored provider key
+ *  RETIRED (its port methods, its row swept at open); checkProvider lives in the runner adapter —
+ *  only it may touch the provider. */
 export interface AppSettingsData {
-  getProviderKey(): Promise<string | undefined>;
-  setProviderKey(key: string | undefined): Promise<void>;
   getPermissionRule(): Promise<PermissionRule>;
   setPermissionRule(rule: PermissionRule): Promise<void>;
   /** The operator's explicit UI-locale choice (WO-0035): undefined = none stored — the renderer
    *  detects the system language; only a deliberate pick reaches this row. */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models` — the three
+   *  session roles, an absent role = the provider's own default. Ids ride VERBATIM; the store
+   *  normalizes SHAPE only (unknown role keys and blank values drop), never names or validates a
+   *  value (ADR-0006: ids are data). undefined = nothing stored. */
+  getModels(): Promise<RoleModels | undefined>;
+  setModels(models: RoleModels | undefined): Promise<void>;
   /** The workspace's month-spend threshold (WO-0047) — the AppSettings port's scoped half; the
    *  shape + semantics live on the port (src/core/app-settings.ts). */
   getBudget(workspaceId: WorkspaceId): Promise<BudgetThreshold | undefined>;
@@ -998,6 +1003,28 @@ function settingLocale(db: DatabaseSync): Locale | undefined {
   return value === 'tr' || value === 'en' ? value : undefined;
 }
 
+// The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models`. The store
+// normalizes SHAPE only — unknown role keys and blank values drop; a map with no usable role row
+// is nothing. Any id is legal (the provider validates), so unlike locale there is no value
+// enumeration to check — ids ride verbatim, trimmed.
+const MODEL_ROLES: ReadonlySet<string> = new Set(['architect', 'implementer', 'verifier']);
+function settingModels(db: DatabaseSync): RoleModels | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('models') as { value: string } | undefined)?.value;
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const out: RoleModels = {};
+    for (const [role, id] of Object.entries(parsed)) {
+      if (!MODEL_ROLES.has(role) || typeof id !== 'string') continue;
+      const trimmed = id.trim();
+      if (trimmed) out[role as keyof RoleModels] = trimmed;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The workspace's structure root setting (WO-0048, ADR-0016): a RAW string row `docs_root:<wsId>`
 // (no JSON — one value). The read FAILS OPEN (the settingBudget posture): an absent or invalid row
 // reads as the `docs` default — a corrupt row must not hide the workspace's documents. The WRITE
@@ -1433,6 +1460,9 @@ export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
+  // WO-0059 rev 4: the stored provider key RETIRED — a leftover row would be an invisible stale
+  // credential (nothing reads it anymore, nothing could clear it). One-time idempotent sweep.
+  db.prepare("DELETE FROM app_setting WHERE key = 'provider_key'").run();
   // Startup sweep (WO-0026 / F5, the process-kill path): no session survives a process restart, so any row
   // still claiming `running` is a leftover from a dead drive — make it idle. `stopped_asking` rows stay
   // (their provider session is resumable and the ask is still the operator's to answer). Caveat: a second
@@ -1832,17 +1862,6 @@ export function createStore(dbPath: string): Store {
       return Promise.resolve();
     },
 
-    // Operator app preferences (WO-0025) — the provider key lives in the shared DB so BOTH hosts (GUI + CLI)
-    // see it; never returned to the renderer except through this port's get. undefined clears it.
-    getProviderKey: () =>
-      Promise.resolve(
-        (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('provider_key') as { value: string } | undefined)?.value,
-      ),
-    setProviderKey: (key: string | undefined) => {
-      if (key === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run('provider_key');
-      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('provider_key', key);
-      return Promise.resolve();
-    },
     getPermissionRule: () => Promise.resolve(settingPermissionRule(db)),
     setPermissionRule: (rule: PermissionRule) => {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_rule', rule);
@@ -1851,6 +1870,22 @@ export function createStore(dbPath: string): Store {
     getLocale: () => Promise.resolve(settingLocale(db)),
     setLocale: (locale: Locale) => {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('locale', locale);
+      return Promise.resolve();
+    },
+    // WO-0059 rev 2: the per-role model preference — ONE atomic JSON row (the budget posture);
+    // undefined or a map with no usable role clears the row entirely.
+    getModels: () => Promise.resolve(settingModels(db)),
+    setModels: (models: RoleModels | undefined) => {
+      const clean: RoleModels = {};
+      if (models) {
+        for (const [role, id] of Object.entries(models)) {
+          if (!MODEL_ROLES.has(role) || typeof id !== 'string') continue;
+          const trimmed = id.trim();
+          if (trimmed) clean[role as keyof RoleModels] = trimmed;
+        }
+      }
+      if (Object.keys(clean).length === 0) db.prepare('DELETE FROM app_setting WHERE key = ?').run('models');
+      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('models', JSON.stringify(clean));
       return Promise.resolve();
     },
     // The workspace's month-spend threshold (WO-0047): one atomic JSON pair per workspace; a

@@ -121,10 +121,6 @@ export function AppShell({
       {settingsOpen ? (
         <AppSettingsModal
           settings={settings}
-          workspaceId={workspaceId}
-          source={source}
-          onBudgetChanged={onBudgetChanged}
-          onDocsRootChanged={onDocsRootChanged}
           onClose={() => setSettingsOpen(false)}
         />
       ) : null}
@@ -133,10 +129,13 @@ export function AppShell({
           mode="edit"
           workspace={editingWs}
           source={source}
+          settings={settings}
           onClose={() => setWsModal('closed')}
           onSaved={onWorkspacesChanged}
           onDeleteWorkspace={() => setWsModal('delete')}
           driveLive={wsDriveLive(editingWs.id)}
+          onBudgetChanged={onBudgetChanged}
+          onDocsRootChanged={onDocsRootChanged}
         />
       ) : null}
       {wsModal === 'create' ? (

@@ -1,300 +1,229 @@
-// App settings (WO-0031 restyle on the kit Dialog): auth status + Test + the DEFAULT permission rule
-// (WO-0031c — each work order carries its own; this is only the default new ones start from) + the
-// language selector (WO-0035 — live: writes the stored row + the localStorage mirror) + the theme
-// selector (WO-0040 — Sistem/Açık/Karanlık; renderer-local localStorage per the app-settings.ts
-// ruling: presentation only, no port) + version. The stored-API-key field was removed at the
-// operator's request — auth rides the provider CLI login, which Test verifies.
-// WO-0047: the workspace's monthly budget — cap + warn percent as one atomic draft with Kaydet
-// (numbers never write mid-keystroke; the Segmented immediate-write pattern suits closed enums,
-// not decimals) + Kaldır when a threshold exists + the current month readout beneath.
-import { useEffect, useState } from 'react';
-import type { AppSettings, ProviderStatus } from '../../core/app-settings';
-import type { PermissionRule, WorkOrderSource } from '../../core/source';
-import type { WorkspaceId } from '../../core/types';
-import type { BudgetThreshold } from '../../core/budget';
-import { DEFAULT_WARN_PERCENT, parseAmount } from '../../core/budget';
-import { normalizeDocsRoot } from '../../core/roadmap-md';
+// AppSettingsModal — WO-0059 rev 4 (the from-scratch round; the operator's 2026-09-09 rulings,
+// four mockup tours docs/ui-mockups/ayarlar-sold-menu.html rev 5→8): a LEFT MENU + right content
+// pane in an xl (880px) dialog. Two menu items — Modeller · Genel — bare single-line names
+// (sentence case; the rev-6 mono readouts under them died at tour 4: "title yeterli").
+//
+// Sağlayıcı DIED with the stored API key (the port methods, the env injection, the row — swept at
+// open): its successor is ONE line in Genel — the provider's presence, `Hazır` / `Bulunamadı` +
+// `Doğrula` (the spawn-free account read), the name itself crossing as adapter DATA
+// (providerDisplayName — a vendor literal may live only in the adapter, c1).
+//
+// The model preference is PER-ROLE SEGMENTS (Default · haiku · sonnet · opus — worst→best,
+// adapter-minted alias tiers rendered verbatim as DATA) that write INSTANTLY: a closed enum
+// commits on click (the dil/tema segment behavior) — the modal holds NO text field at all.
+// ÇALIŞMA ALANI moved to the workspace's Düzenle dialog (per-workspace facts, global settings
+// stay global). Copy is plain Turkish — no internal jargon renders.
+import { useEffect, useRef, useState } from 'react';
+import type { AppSettings, ProviderStatus, RoleModels } from '../../core/app-settings';
+import type { PermissionRule } from '../../core/source';
 import { useLabels, useLocale } from '../data/locale';
 import { useTheme } from '../data/theme';
 import { VERSION } from '../data/version';
-import { Button, Dialog, Field, Input, Segmented, Spinner } from '../kit';
+import { Button, Dialog, Segmented, Spinner } from '../kit';
+import { toast } from './ToastHost';
 
-export function AppSettingsModal({
-  settings,
-  workspaceId,
-  source,
-  onBudgetChanged,
-  onDocsRootChanged,
-  onClose,
-}: {
-  settings: AppSettings;
-  /** WO-0047: the active workspace — null (empty database) renders no budget section (ADR-0001). */
-  workspaceId: WorkspaceId | null;
-  source: WorkOrderSource;
-  onBudgetChanged: () => void;
-  /** WO-0049: fired when the structure root changes — App re-reads the roadmap (its only consumer). */
-  onDocsRootChanged: () => void;
-  onClose: () => void;
-}) {
-  const { UI, PERMISSION_RULE_LABELS, PROVIDER_ERROR_LABELS } = useLabels();
+const MODEL_ROLES = ['architect', 'implementer', 'verifier'] as const;
+type ModelRole = (typeof MODEL_ROLES)[number];
+const ROLE_HUE: Record<ModelRole, string> = { architect: 'text-signal', implementer: 'text-info', verifier: 'text-proceed' };
+type Section = 'models' | 'general';
+
+/** One menu item — a bare single-line name (rev 8: no sub-readout; the title is enough). */
+function MenuItem({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-settings-item={active ? 'on' : 'off'}
+      aria-current={active ? 'true' : 'false'}
+      onClick={onClick}
+      className={`w-full rounded-[7px] px-2.5 py-2 text-left text-[13px] font-medium tracking-tight transition-colors duration-150 ${
+        active ? 'bg-raised text-ink' : 'text-inkdim hover:bg-raised/60 hover:text-ink'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+export function AppSettingsModal({ settings, onClose }: { settings: AppSettings; onClose: () => void }) {
+  const { UI, PERMISSION_RULE_LABELS, ROLE_LABELS } = useLabels();
   const { locale, setLocale } = useLocale();
   const { mode, setMode } = useTheme();
-  // Auth status (WO-0025 / B1): the quick check on open tells the operator where auth stands before the
-  // first "Plan iste" throws; Test re-runs the zero-token handshake on demand.
+  const [section, setSection] = useState<Section>('models');
+  // The permission rule's default (rev 1-3 carry-over): lives in Genel, instant-apply segment.
   const [rule, setRule] = useState<PermissionRule>('risky_excluded');
+  // WO-0059 rev 4 — the per-role tier map + the adapter-minted tiers. No draft: a segment click
+  // writes through (read-modify-write, one port call) and re-reads so the row is the one truth.
+  const [models, setModels] = useState<RoleModels | undefined>(undefined);
+  const modelsRef = useRef<RoleModels | undefined>(undefined); // the map of record between click and re-read
+  const [presets, setPresets] = useState<string[]>([]);
+  // The presence line: the name is provider DATA; the status is the spawn-free account read.
+  const [providerName, setProviderName] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<ProviderStatus | undefined>(undefined);
-  const [testing, setTesting] = useState(false);
+  // The MOUNT check is in flight too — the line starts neutral (spinner), never a premature
+  // «Bulunamadı» (review f5: the two-state word is for RESULTS, not for the loading window).
+  const [verifying, setVerifying] = useState(true);
+
   useEffect(() => {
-    void settings.getPermissionRule?.().then((r) => setRule(r ?? 'risky_excluded'));
-    void settings.checkProvider().then(setStatus).catch(() => setStatus(undefined));
+    void settings.getPermissionRule().then((r) => setRule(r ?? 'risky_excluded'));
+    void settings.getModels().then((m) => { modelsRef.current = m; setModels(m); }).catch(() => setModels(undefined));
+    void settings.modelOptions().then(setPresets).catch(() => setPresets([]));
+    void settings.providerName().then(setProviderName).catch(() => setProviderName(undefined));
+    void settings.checkProvider().then((s) => { setStatus(s); setVerifying(false); }).catch(() => { setStatus(undefined); setVerifying(false); });
   }, [settings]);
-  const runTest = async (): Promise<void> => {
-    setTesting(true);
+
+  const verify = async (): Promise<void> => {
+    setVerifying(true);
     try {
       setStatus(await settings.checkProvider());
+    } catch {
+      setStatus(undefined);
     } finally {
-      setTesting(false);
+      setVerifying(false);
     }
   };
-  const statusText =
-    status === undefined
-      ? UI.providerStatusUnknown
-      : status.ok
-        ? `${UI.providerStatusOk} (${status.source})`
-        : PROVIDER_ERROR_LABELS[status.code];
+
+  const setRoleTier = (role: ModelRole, tier: string): void => {
+    // The map of record is the REF, not the state — two quick clicks inside one IPC round-trip
+    // would otherwise build the second write from the stale map and silently drop the first tier
+    // (review f4). Optimistic update first, then the write; a failed write toasts and re-reads.
+    const next: RoleModels = { ...(modelsRef.current ?? {}) };
+    if (tier === '') delete next[role];
+    else next[role] = tier;
+    modelsRef.current = next;
+    setModels(next);
+    settings.setModels(Object.keys(next).length > 0 ? next : undefined)
+      .then(() => settings.getModels())
+      .then((stored) => { modelsRef.current = stored; setModels(stored); })
+      .catch(() => {
+        toast.push({ kind: 'error', title: UI.saveFailed });
+        settings.getModels().then((stored) => { modelsRef.current = stored; setModels(stored); }).catch(() => undefined);
+      });
+  };
+
+  // The two-state word is for RESULTS only — while a check runs the spinner speaks instead.
+  const statusWord = status?.ok ? UI.providerStatusOk : UI.providerStatusMissing;
   const statusTone = status?.ok ? 'text-proceed' : 'text-error';
 
-  // WO-0047 — the workspace's budget section state: the stored threshold, the draft, the month's
-  // observed spend (the readout), and per-field errors that appear only after a save attempt
-  // (WO-0036: the refusal teaches under the field it failed on; validity never locks the button).
-  const [budgetStored, setBudgetStored] = useState<BudgetThreshold | undefined>(undefined);
-  const [capText, setCapText] = useState('');
-  const [warnText, setWarnText] = useState('');
-  const [monthSpend, setMonthSpend] = useState<{ usd: number; hasUnknown: boolean } | undefined>(undefined);
-  const [budgetTouched, setBudgetTouched] = useState(false);
-  const [budgetBusy, setBudgetBusy] = useState(false);
-  const readBudget = (wsId: WorkspaceId): void => {
-    void settings.getBudget?.(wsId).then((t) => {
-      setBudgetStored(t);
-      setCapText(t ? String(t.capUsd) : '');
-      setWarnText(t ? String(t.warnPercent) : '');
-      setBudgetTouched(false);
-    });
-    void source.workspaceMonthSpend(wsId).then(setMonthSpend).catch(() => setMonthSpend(undefined));
-  };
-  useEffect(() => {
-    if (workspaceId) readBudget(workspaceId);
-  }, [workspaceId, settings, source]);
-  const capParsed = parseAmount(capText);
-  const warnParsed = parseAmount(warnText);
-  const capErr = !budgetTouched || budgetBusy ? null : !(capParsed > 0) ? UI.budgetErrCap : null;
-  const warnErr = !budgetTouched || budgetBusy ? null : !(warnParsed >= 1 && warnParsed <= 100) ? UI.budgetErrWarn : null;
-  const budgetValid = capParsed > 0 && warnParsed >= 1 && warnParsed <= 100;
-  const saveBudget = async (): Promise<void> => {
-    if (!workspaceId) return;
-    setBudgetTouched(true);
-    if (!budgetValid || budgetBusy) return;
-    setBudgetBusy(true);
-    try {
-      await settings.setBudget?.(workspaceId, { capUsd: capParsed, warnPercent: warnParsed });
-      readBudget(workspaceId);
-      onBudgetChanged();
-    } finally {
-      setBudgetBusy(false);
-    }
-  };
-  const clearBudget = async (): Promise<void> => {
-    if (!workspaceId || budgetBusy) return;
-    setBudgetBusy(true);
-    try {
-      await settings.setBudget?.(workspaceId, undefined);
-      readBudget(workspaceId);
-      onBudgetChanged();
-    } finally {
-      setBudgetBusy(false);
-    }
-  };
-
-  // WO-0049 — the structure-root section (docs_root:<wsId>): one atomic draft, the same posture as
-  // budget. The read returns the EFFECTIVE root ('docs' when unset), so there is no Kaldır — writing
-  // `docs` IS the reset (the port cannot tell stored-default from unset, by design). Validation is
-  // the pure core's own normalizeDocsRoot (the parseAmount precedent); the store re-refuses loudly.
-  const [rootText, setRootText] = useState('');
-  const [rootTouched, setRootTouched] = useState(false);
-  const [rootBusy, setRootBusy] = useState(false);
-  useEffect(() => {
-    if (!workspaceId) return;
-    void settings.getDocsRoot(workspaceId).then((r) => {
-      setRootText(r);
-      setRootTouched(false);
-    });
-  }, [workspaceId, settings]);
-  const rootErr = !rootTouched || rootBusy ? null : normalizeDocsRoot(rootText) === undefined ? UI.docsRootErr : null;
-  const saveDocsRoot = async (): Promise<void> => {
-    if (!workspaceId || rootBusy) return;
-    setRootTouched(true);
-    const normalized = normalizeDocsRoot(rootText);
-    if (normalized === undefined) return;
-    setRootBusy(true);
-    try {
-      await settings.setDocsRoot(workspaceId, normalized);
-      setRootText(normalized);
-      setRootTouched(false);
-      onDocsRootChanged();
-    } finally {
-      setRootBusy(false);
-    }
-  };
+  const roleRow = (role: ModelRole) => (
+    <div className="flex items-center gap-2.5 py-0.5">
+      <span aria-hidden="true" className={`rlamp rlamp-${role}`} />
+      <span className={`text-[12.5px] font-medium tracking-tight ${ROLE_HUE[role]}`}>{ROLE_LABELS[role]}</span>
+      <span className="ml-auto">
+        <Segmented
+          size="sm"
+          value={models?.[role] ?? ''}
+          onValueChange={(tier) => setRoleTier(role, tier)}
+          options={[
+            { value: '', label: UI.modelDefaultTier },
+            ...presets.map((tier) => ({ value: tier, label: tier })),
+          ]}
+        />
+      </span>
+    </div>
+  );
 
   return (
     <Dialog
       open
+      xl
       onOpenChange={(o) => { if (!o) onClose(); }}
       title={UI.settings}
       closeAria={UI.dialogCloseAria}
       footer={
-        <Button variant="primary" size="sm" onClick={onClose}>
-          {UI.close}
-        </Button>
+        <>
+          <span className="mr-auto font-mono text-[11px] text-inkdim">{UI.productName} · v{VERSION}</span>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            {UI.close}
+          </Button>
+        </>
       }
     >
-      <div className="flex flex-col gap-5">
-        <section>
-          <div className="flex items-center gap-3">
-            {testing ? <Spinner /> : <span className={`text-xs ${statusTone}`}>{statusText}</span>}
-            <button type="button" onClick={() => void runTest()} className="alink ml-auto text-[12px]">
-              {UI.providerTest}
-            </button>
-          </div>
-        </section>
+      <div className="flex min-h-[360px] gap-0">
+        {/* ===== the sunken menu rail: two bare names; the rail's well is the only divider ===== */}
+        <nav data-settings-menu="" aria-label={UI.settings} className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-bg/60 p-2">
+          <MenuItem label={UI.modelSectionLabel} active={section === 'models'} onClick={() => setSection('models')} />
+          <MenuItem label={UI.settingsTabGeneral} active={section === 'general'} onClick={() => setSection('general')} />
+        </nav>
 
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.permRuleLabel}
-          </span>
-          <Segmented
-            value={rule}
-            onValueChange={(r) => { setRule(r); void settings.setPermissionRule?.(r); }}
-            options={[
-              { value: 'ask_every', label: PERMISSION_RULE_LABELS.ask_every },
-              { value: 'risky_excluded', label: PERMISSION_RULE_LABELS.risky_excluded },
-              { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
-            ]}
-          />
-        </section>
+        <div className="min-w-0 flex-1 px-5 py-4">
+          {section === 'models' ? (
+            /* ===== MODELLER — the per-role tier segments (rev 4): worst→best, instant write ===== */
+            <section data-model-section="" className="flex flex-col gap-2.5">
+              <h2 className="text-[13px] font-semibold tracking-tight text-ink">{UI.modelSectionLabel}</h2>
+              <p className="text-[11px] leading-relaxed text-inkdim">{UI.modelTierLine}</p>
+              <div data-model-rows="" role="group" aria-label={UI.modelMatrixAria} className="mt-1 flex flex-col gap-1.5">
+                {MODEL_ROLES.map(roleRow)}
+              </div>
+              <p className="text-[11px] text-inkdim">{UI.modelDraftLine(ROLE_LABELS.architect)}</p>
+            </section>
+          ) : (
+            /* ===== GENEL — the provider's presence line + the console's voice, face, cadence ===== */
+            <section data-general-section="" className="flex flex-col gap-2.5">
+              <h2 className="text-[13px] font-semibold tracking-tight text-ink">{UI.settingsTabGeneral}</h2>
 
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.language}
-          </span>
-          <Segmented
-            value={locale}
-            onValueChange={(l) => setLocale(l)}
-            options={[
-              { value: 'tr', label: UI.langTr },
-              { value: 'en', label: UI.langEn },
-            ]}
-          />
-        </section>
-
-        <section>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-            {UI.theme}
-          </span>
-          <Segmented
-            value={mode}
-            onValueChange={(m) => setMode(m)}
-            options={[
-              { value: 'system', label: UI.themeSystem },
-              { value: 'light', label: UI.themeLight },
-              { value: 'dark', label: UI.themeDark },
-            ]}
-          />
-        </section>
-
-        {workspaceId ? (
-          // WO-0047 — the workspace's month-spend threshold. One atomic draft (cap + warn percent
-          // persist as ONE row); the readout beneath is the feedback loop, in the money voice.
-          <section data-budget-section="">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-              {UI.budgetLabel}
-            </span>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={UI.budgetCapLabel} error={capErr}>
-                <Input
-                  value={capText}
-                  inputMode="decimal"
-                  aria-label={UI.budgetCapLabel}
-                  aria-invalid={capErr !== null}
-                  onChange={(e) => { setCapText(e.target.value); setBudgetTouched(true); }}
-                />
-              </Field>
-              <Field
-                label={UI.budgetWarnPercentLabel}
-                error={warnErr}
-                hint={budgetStored ? undefined : `${DEFAULT_WARN_PERCENT}`}
-              >
-                <Input
-                  value={warnText}
-                  inputMode="decimal"
-                  aria-label={UI.budgetWarnPercentLabel}
-                  aria-invalid={warnErr !== null}
-                  onChange={(e) => { setWarnText(e.target.value); setBudgetTouched(true); }}
-                />
-              </Field>
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <Button variant="primary" size="sm" busy={budgetBusy} locked={budgetBusy} onClick={() => void saveBudget()}>
-                {UI.budgetSave}
-              </Button>
-              {budgetStored ? (
-                <Button variant="ghost" size="sm" onClick={() => void clearBudget()}>{UI.budgetClear}</Button>
-              ) : null}
-              {budgetStored && monthSpend ? (
-                <span
-                  data-budget-month-readout=""
-                  className="ml-auto font-mono text-[11px] text-inkdim"
+              <div data-provider-line="" className="flex items-center gap-2 rounded-lg border border-hairline px-2.5 py-2">
+                {providerName !== undefined ? <span className="text-[12.5px] font-medium text-ink">{providerName}</span> : null}
+                {verifying ? (
+                  <Spinner />
+                ) : (
+                  <span className={`text-[12px] font-medium ${statusTone}`}>{statusWord}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void verify()}
+                  className={`alink ml-auto text-[12px] ${verifying ? 'opacity-45' : ''}`}
                 >
-                  {monthSpend.hasUnknown
-                    ? UI.budgetMonthReadoutKnown(monthSpend.usd, budgetStored.capUsd)
-                    : UI.budgetMonthReadout(monthSpend.usd, budgetStored.capUsd)}
+                  {UI.providerVerify}
+                </button>
+              </div>
+
+              <div className="mt-1 flex items-center gap-3">
+                <span className="text-[13px] text-ink">{UI.permRuleLabel}</span>
+                <span className="ml-auto">
+                  <Segmented
+                    size="sm"
+                    value={rule}
+                    onValueChange={(r) => { setRule(r); void settings.setPermissionRule?.(r); }}
+                    options={[
+                      { value: 'ask_every', label: PERMISSION_RULE_LABELS.ask_every },
+                      { value: 'risky_excluded', label: PERMISSION_RULE_LABELS.risky_excluded },
+                      { value: 'full_auto', label: PERMISSION_RULE_LABELS.full_auto },
+                    ]}
+                  />
                 </span>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
-
-        {workspaceId ? (
-          // WO-0049 — the structure root: where this workspace's roadmap.md + work orders live.
-          // The warn line is informative and STAYS (ADR-0012): switching is a permanent-feeling act
-          // the operator must make with open eyes (files never move — Docket only changes its mind
-          // about where to look; ADR-0016 rule 3).
-          <section data-docs-root-section="">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">
-              {UI.docsRootLabel}
-            </span>
-            <Input
-              value={rootText}
-              aria-label={UI.docsRootLabel}
-              aria-invalid={rootErr !== null}
-              className="font-mono"
-              onChange={(e) => { setRootText(e.target.value); setRootTouched(true); }}
-            />
-            {rootErr !== null ? (
-              <p role="alert" className="mt-1.5 text-[11.5px] text-error">{rootErr}</p>
-            ) : null}
-            <div className="mt-2 flex items-center gap-2">
-              <Button variant="primary" size="sm" busy={rootBusy} locked={rootBusy} onClick={() => void saveDocsRoot()}>
-                {UI.woEditSave}
-              </Button>
-              <span className="ml-auto text-right text-[11px] text-inkdim">{UI.docsRootWarn}</span>
-            </div>
-          </section>
-        ) : null}
-
-        <p className="border-t border-hairline pt-3 font-mono text-[11px] text-inkdim">
-          {UI.productName} · v{VERSION}
-        </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[13px] text-ink">{UI.language}</span>
+                <span className="ml-auto">
+                  <Segmented
+                    size="sm"
+                    value={locale}
+                    onValueChange={(l) => setLocale(l)}
+                    options={[
+                      { value: 'tr', label: UI.langTr },
+                      { value: 'en', label: UI.langEn },
+                    ]}
+                  />
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[13px] text-ink">{UI.theme}</span>
+                <span className="ml-auto">
+                  <Segmented
+                    size="sm"
+                    value={mode}
+                    onValueChange={(m) => setMode(m)}
+                    options={[
+                      { value: 'system', label: UI.themeSystem },
+                      { value: 'light', label: UI.themeLight },
+                      { value: 'dark', label: UI.themeDark },
+                    ]}
+                  />
+                </span>
+              </div>
+            </section>
+          )}
+        </div>
       </div>
     </Dialog>
   );

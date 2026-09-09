@@ -137,6 +137,9 @@ rule restated with its reasons in two places is the duplication this repository 
   (ADR-0007, WO-0035); repository documents stay English regardless of UI locale.
 
 ## Where things live — ADR-0003, ADR-0001
+- `src/cli/` is the assistant's headless test surface (`npm run cli`) — not a product surface; the
+  GUI is the product (operator ruling 2026-09-09: "sadece senin için kalsın"). It is one of the two
+  composition roots and stays thin; never present it as an operator feature.
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
 - Workspace roadmap (the faz/task planning layer, ADR-0016): `<structure root>/roadmap.md` (default

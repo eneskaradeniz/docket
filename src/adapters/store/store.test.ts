@@ -543,10 +543,8 @@ describe('closeWorkOrder — operator-attested closure (WO-0025 / P1-2)', () => 
     const reloaded = await store.getWorkOrder(wo.id);
     expect(reloaded!.stage).toBe('closed');
 
-    await store.setProviderKey('sk-test-123');
-    expect(await store.getProviderKey()).toBe('sk-test-123');
-    await store.setProviderKey(undefined);
-    expect(await store.getProviderKey()).toBeUndefined();
+    // WO-0059 rev 4: the key round-trip that lived here died with the stored key — the sweep test
+    // (the provider_key row deleted at open) carries the ruling now.
   });
 });
 
@@ -684,6 +682,34 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     expect(await store.getLocale()).toBe('en');
     store.db.prepare("UPDATE app_setting SET value = 'xx' WHERE key = 'locale'").run();
     expect(await store.getLocale()).toBeUndefined();
+  });
+  it('per-role models round-trip; blank roles drop, unknown keys never persist, clear leaves no row (WO-0059 rev 2)', async () => {
+    const store = createStore(freshDb());
+    // no row → undefined: every role rides the provider's own default (the store never names a value)
+    expect(await store.getModels()).toBeUndefined();
+    await store.setModels({ architect: 'model-check-x', implementer: '  model-check-y  ', verifier: '  ' });
+    expect(await store.getModels()).toEqual({ architect: 'model-check-x', implementer: 'model-check-y' });
+    // a write with NO usable role clears the row entirely
+    await store.setModels({ verifier: '  ' });
+    expect(await store.getModels()).toBeUndefined();
+    expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
+    // a garbage ROW reads undefined (the settingBudget posture): a corrupt map opens no gate
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', 'not-json')").run();
+    expect(await store.getModels()).toBeUndefined();
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', '{\"architect\":5,\"unknown\":\"x\"}')").run();
+    expect(await store.getModels()).toBeUndefined(); // a map with no usable role row is nothing
+    // undefined clears
+    await store.setModels({ architect: 'model-check-x' });
+    await store.setModels(undefined);
+    expect(await store.getModels()).toBeUndefined();
+    expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
+  });
+  it('a legacy provider_key row is swept at open — the stored-key concept retired (WO-0059 rev 4)', () => {
+    const path = freshDb();
+    const first = createStore(path);
+    first.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('provider_key', 'sk-stale')").run();
+    const second = createStore(path); // the reopen runs the sweep
+    expect(second.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'provider_key'").get()).toEqual({ n: 0 });
   });
 });
 
@@ -1835,7 +1861,10 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     const root = freshRoot();
     const ws = await store.createWorkspace({ label: 'Usage draft', repos: [{ path: root }] });
     const owner = { kind: 'draft', workspaceId: ws.id } as const;
-    store.recordTurnUsage(owner, 'sess-draft', { at: '2026-08-28T10:03:00.000Z', delta: { tokensIn: 7, tokensOut: 7, usd: 0.007 }, usage: { cacheRead: 5 } });
+    // The read windows by CALENDAR MONTH — an absolute stamp rots when the month rolls (found live
+    // 2026-09-09: an August stamp went empty on Sept 1). Stamp inside the CURRENT month.
+    const stamp = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15, 10, 3)).toISOString();
+    store.recordTurnUsage(owner, 'sess-draft', { at: stamp, delta: { tokensIn: 7, tokensOut: 7, usd: 0.007 }, usage: { cacheRead: 5 } });
     const raw = store.db.prepare('SELECT COUNT(*) AS n FROM session_usage WHERE provider_session_id = ?').get('sess-draft') as { n: number };
     expect(raw.n).toBe(1); // the row persisted under the draft owner
     // the WO-0054 un-pin, BOTH directions: the DRAFT read is workspace-scoped and carries the rows…

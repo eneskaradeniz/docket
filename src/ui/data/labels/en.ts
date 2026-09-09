@@ -507,8 +507,19 @@ export const UI = {
     return `${h}h ${min % 60}m`;
   },
   providerStatusOk: 'Ready',
-  providerStatusUnknown: 'Status unknown — save a key or run Test',
-  providerTest: 'Test',
+  providerStatusMissing: 'Not found',
+  providerVerify: 'Verify',
+  providerVerifying: 'Verifying',
+  // Settings menu (WO-0059 rev 4 — a left menu with TWO items; sentence case, single-line names)
+  settingsTabGeneral: 'General',
+  // Model preference (WO-0059 rev 4 — role rows + tier segments; instant write). Tier names are
+  // adapter DATA (c1 — the providerDisplayName/modelOptions posture); the bundle carries only
+  // neutral words.
+  modelSectionLabel: 'Models',
+  modelDefaultTier: 'Default',
+  modelMatrixAria: 'Model tier per role',
+  modelTierLine: 'Tier names resolve to whatever your setup maps them to.',
+  modelDraftLine: (role: string): string => `✦ the draft drive follows the ${role} row.`,
   reviewHeader: 'Architect review',
   reviewHint: "The architect is reviewing this step's report…",
   verdictCardProceedTitle: 'The architect said proceed',
@@ -763,6 +774,9 @@ export const UI = {
   docsRootLabel: 'Structure root',
   docsRootWarn: 'Files never move; work-order numbering restarts under the new root.',
   docsRootErr: 'Enter a safe relative path (e.g. docs or .docket).',
+  // WO-0059 rev 4: the root + budget group moved from global settings into the ws edit dialog —
+  // the group's heading
+  wsRootBudgetLabel: 'Structure root & budget',
   // ===== WO-0050 — the ✦ draft drive (mockup frames 03/04/05). ONE mechanism: generation and
   // import are the same architect draft session; the source-doc list is the only distinction.
   // (Operator-facing copy stays Turkish in tr; en mirrors the shapes for the compile contract.)

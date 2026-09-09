@@ -565,10 +565,20 @@ export const UI = {
     const h = Math.floor(min / 60);
     return `${h}s ${min % 60}dk`;
   },
-  // Sağlayıcı ayarları (WO-0025 / B1)
-  providerStatusOk: 'Hazır', // + source shown appended by the modal
-  providerStatusUnknown: 'Durum bilinmiyor — anahtar kaydet ya da Test et',
-  providerTest: 'Test et',
+  // Sağlayıcı durumu (WO-0059 rev 4 — saklı anahtar öldü; tek satır: varlık + çalışma)
+  providerStatusOk: 'Hazır',
+  providerStatusMissing: 'Bulunamadı',
+  providerVerify: 'Doğrula',
+  providerVerifying: 'Doğrulanıyor',
+  // Ayarlar menüsü (WO-0059 rev 4 — sol menü İKİ öğe; sentence case, tek satır ad)
+  settingsTabGeneral: 'Genel',
+  // Model tercihi (WO-0059 rev 4 — rol satırı + kademe segmenti; anlık yazar). Kademe adları
+  // adapter verisidir (c1 — providerDisplayName/modelOptions üslubu); paket yalnız nötr kelimeyi taşır.
+  modelSectionLabel: 'Modeller',
+  modelDefaultTier: 'Default',
+  modelMatrixAria: 'Rol başına model kademesi',
+  modelTierLine: 'Kademe adları kurulumundaki modellere eşlenir.',
+  modelDraftLine: (role: string): string => `✦ taslak sürüşü ${role} satırını izler.`,
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',
@@ -882,6 +892,8 @@ export const UI = {
   docsRootLabel: 'Yapı kökü',
   docsRootWarn: 'Dosyalar taşınmaz; iş emri numaralandırması yeni kökte baştan sayılır.',
   docsRootErr: 'Güvenli göreli yol gir (ör. docs ya da .docket).',
+  // WO-0059 rev 4: kök + bütçe grubu genel ayarlardan ws Düzenle dialoguna taşındı — grup başlığı
+  wsRootBudgetLabel: 'Yapı kökü ve bütçe',
   // ===== WO-0050 — ✦ taslak sürüşü (mockup kare 03/04/05) =====
   // Tek mekanizma (ADR-0016 karar 2): üretim de içe aktarma da aynı mimar taslak oturumu; ayrımı
   // yalnız kaynak belge listesi yapar — prompt'a YOL yazılır, içeriği ajan okur. Kart dilinde

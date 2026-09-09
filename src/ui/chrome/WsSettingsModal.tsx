@@ -11,6 +11,10 @@ import { useEffect, useRef, useState } from 'react';
 import { BookMarked, FolderOpen, Pencil, Plus, X } from 'lucide-react';
 import type { RepoId, Workspace } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
+import type { AppSettings } from '../../core/app-settings';
+import type { BudgetThreshold } from '../../core/budget';
+import { DEFAULT_WARN_PERCENT, parseAmount } from '../../core/budget';
+import { normalizeDocsRoot } from '../../core/roadmap-md';
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Tooltip } from '../kit';
 import { toast } from './ToastHost';
@@ -36,20 +40,30 @@ export function WsSettingsModal({
   mode,
   workspace,
   source,
+  settings,
   onClose,
   onSaved,
   onDeleteWorkspace,
   driveLive,
+  onBudgetChanged,
+  onDocsRootChanged,
 }: {
   mode: 'create' | 'edit';
   workspace?: Workspace;
   source: WorkOrderSource;
+  /** WO-0059 rev 4: the per-workspace knobs (budget + structure root) MOVED here from the global
+   *  settings — they are this workspace's facts, not the console's. Edit mode only. */
+  settings?: AppSettings;
   onClose: () => void;
   onSaved: () => void;
   /** WO-0032: edit mode only — hands the workspace up so AppShell can swap this modal for the confirm. */
   onDeleteWorkspace?: (ws: Workspace) => void;
   /** WO-0032: a live drive in this workspace — the Sil entry is absent with the reason (ADR-0001). */
   driveLive?: boolean;
+  /** WO-0047: fired when the budget threshold changes — App refreshes its view. */
+  onBudgetChanged?: () => void;
+  /** WO-0049: fired when the structure root changes — App re-reads the roadmap. */
+  onDocsRootChanged?: () => void;
 }) {
   const { UI, woIdLabel } = useLabels();
   const [name, setName] = useState(workspace?.label ?? '');
@@ -69,6 +83,86 @@ export function WsSettingsModal({
   );
   const [acting, setActing] = useState(false); // a per-action store call is in flight
   const [saving, setSaving] = useState(false);
+
+  // ===== WO-0059 rev 4 — the per-workspace knobs MOVED here from the global settings (they are
+  // THIS workspace's facts). Edit mode only; the same draft posture the settings section carried:
+  // one atomic Kaydet per group, errors under their fields, validity never locks a button.
+  const [budgetStored, setBudgetStored] = useState<BudgetThreshold | undefined>(undefined);
+  const [capText, setCapText] = useState('');
+  const [warnText, setWarnText] = useState('');
+  const [monthSpend, setMonthSpend] = useState<{ usd: number; hasUnknown: boolean } | undefined>(undefined);
+  const [budgetTouched, setBudgetTouched] = useState(false);
+  const [budgetBusy, setBudgetBusy] = useState(false);
+  const [rootText, setRootText] = useState('');
+  const [rootTouched, setRootTouched] = useState(false);
+  const [rootBusy, setRootBusy] = useState(false);
+  const wsId = workspace?.id;
+  useEffect(() => {
+    if (mode !== 'edit' || !wsId || !settings) return;
+    let alive = true;
+    void settings.getBudget?.(wsId).then((t) => {
+      if (!alive) return;
+      setBudgetStored(t);
+      setCapText(t ? String(t.capUsd) : '');
+      setWarnText(t ? String(t.warnPercent) : '');
+      setBudgetTouched(false);
+    });
+    void source.workspaceMonthSpend(wsId).then((s) => { if (alive) setMonthSpend(s); }).catch(() => { if (alive) setMonthSpend(undefined); });
+    void settings.getDocsRoot(wsId).then((r) => {
+      if (!alive) return;
+      setRootText(r);
+      setRootTouched(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [mode, wsId, settings, source]);
+  const capParsed = parseAmount(capText);
+  const warnParsed = parseAmount(warnText);
+  const capErr = !budgetTouched || budgetBusy ? null : !(capParsed > 0) ? UI.budgetErrCap : null;
+  const warnErr = !budgetTouched || budgetBusy ? null : !(warnParsed >= 1 && warnParsed <= 100) ? UI.budgetErrWarn : null;
+  const budgetValid = capParsed > 0 && warnParsed >= 1 && warnParsed <= 100;
+  const saveBudget = async (): Promise<void> => {
+    if (!wsId || !settings) return;
+    setBudgetTouched(true);
+    if (!budgetValid || budgetBusy) return;
+    setBudgetBusy(true);
+    try {
+      await settings.setBudget?.(wsId, { capUsd: capParsed, warnPercent: warnParsed });
+      setBudgetStored(await settings.getBudget?.(wsId));
+      onBudgetChanged?.();
+    } finally {
+      setBudgetBusy(false);
+    }
+  };
+  const clearBudget = async (): Promise<void> => {
+    if (!wsId || !settings || budgetBusy) return;
+    setBudgetBusy(true);
+    try {
+      await settings.setBudget?.(wsId, undefined);
+      setBudgetStored(await settings.getBudget?.(wsId));
+      setBudgetTouched(false);
+      onBudgetChanged?.();
+    } finally {
+      setBudgetBusy(false);
+    }
+  };
+  const rootErr = !rootTouched || rootBusy ? null : normalizeDocsRoot(rootText) === undefined ? UI.docsRootErr : null;
+  const saveDocsRoot = async (): Promise<void> => {
+    if (!wsId || !settings || rootBusy) return;
+    setRootTouched(true);
+    const normalized = normalizeDocsRoot(rootText);
+    if (normalized === undefined) return;
+    setRootBusy(true);
+    try {
+      await settings.setDocsRoot(wsId, normalized);
+      setRootText(normalized);
+      setRootTouched(false);
+      onDocsRootChanged?.();
+    } finally {
+      setRootBusy(false);
+    }
+  };
   /** The add row sits behind a `+ Depo ekle` reveal (operator review: both screens stay clean).
    *  Create keeps it open after a successful Ekle (a listing flow); edit collapses — one action at
    *  a time. Escape collapses it; a failed add keeps it open with its error line. */
@@ -438,6 +532,9 @@ export function WsSettingsModal({
                   </div>
                   {row.editing !== undefined ? (
                     <Input
+                      // WO-0059 rev 4: the editor announces its row — the path line's title div
+                      // unmounts while editing, so the name here is also the test's stable anchor.
+                      aria-label={`${UI.wsRepoEditAria}: ${row.name}`}
                       value={row.editing}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -521,6 +618,76 @@ export function WsSettingsModal({
           )}
           {draftErr ? <span role="alert" className="mt-1.5 block text-[11px] text-error">{draftErr}</span> : null}
         </section>
+
+        {mode === 'edit' && workspace && settings ? (
+          /* ===== WO-0059 rev 4: the per-workspace knobs, moved home from the global settings —
+             the economics (budget) and the pointer (structure root) of THIS workspace. ===== */
+          <section data-ws-knobs="">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.wsRootBudgetLabel}</span>
+            <div data-budget-section="" className="grid grid-cols-2 gap-3">
+              <Field label={UI.budgetCapLabel} error={capErr}>
+                <Input
+                  value={capText}
+                  inputMode="decimal"
+                  aria-label={UI.budgetCapLabel}
+                  aria-invalid={capErr !== null}
+                  onChange={(e) => { setCapText(e.target.value); setBudgetTouched(true); }}
+                />
+              </Field>
+              <Field
+                label={UI.budgetWarnPercentLabel}
+                error={warnErr}
+                hint={budgetStored ? undefined : `${DEFAULT_WARN_PERCENT}`}
+              >
+                <Input
+                  value={warnText}
+                  inputMode="decimal"
+                  aria-label={UI.budgetWarnPercentLabel}
+                  aria-invalid={warnErr !== null}
+                  onChange={(e) => { setWarnText(e.target.value); setBudgetTouched(true); }}
+                />
+              </Field>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <Button variant="primary" size="sm" busy={budgetBusy} locked={budgetBusy} onClick={() => void saveBudget()}>
+                {UI.budgetSave}
+              </Button>
+              {budgetStored ? (
+                <Button variant="ghost" size="sm" onClick={() => void clearBudget()}>{UI.budgetClear}</Button>
+              ) : null}
+              {budgetStored && monthSpend ? (
+                <span
+                  data-budget-month-readout=""
+                  className="ml-auto font-mono text-[11px] text-inkdim"
+                >
+                  {monthSpend.hasUnknown
+                    ? UI.budgetMonthReadoutKnown(monthSpend.usd, budgetStored.capUsd)
+                    : UI.budgetMonthReadout(monthSpend.usd, budgetStored.capUsd)}
+                </span>
+              ) : null}
+            </div>
+            <div data-docs-root-section="">
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[13px] text-ink">{UI.docsRootLabel}</span>
+                <Input
+                  value={rootText}
+                  aria-label={UI.docsRootLabel}
+                  aria-invalid={rootErr !== null}
+                  className="ml-auto w-44 font-mono"
+                  onChange={(e) => { setRootText(e.target.value); setRootTouched(true); }}
+                />
+                <Button variant="primary" size="sm" busy={rootBusy} locked={rootBusy} onClick={() => void saveDocsRoot()}>
+                  {UI.woEditSave}
+                </Button>
+              </div>
+              {rootErr !== null ? (
+                <p role="alert" className="mt-1.5 text-[11.5px] text-error">{rootErr}</p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-inkdim">{UI.docsRootWarn}</p>
+              )}
+            </div>
+          </section>
+        ) : null}
       </div>
     </Dialog>
   );

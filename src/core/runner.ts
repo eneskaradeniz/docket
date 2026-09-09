@@ -177,6 +177,12 @@ export interface WoDriveInput {
    *  default) by the composition root. Omitted → the pipeline's injected policy governs (tests,
    *  scripted runners). The fence denies out-of-scope writes under every rule; this is cadence, not scope. */
   permissionRule?: PermissionRule;
+  /** The provider model id for this drive (WO-0059): the GLOBAL `model` preference, resolved by the
+   *  composition root at SPAWN time (the permissionRule posture — the renderer never sends it) and
+   *  mapped verbatim to the provider's session options by the adapter. undefined = the provider's
+   *  own default governs. Core never defaults it and never names a value (ADR-0006's WO-0052
+   *  carve-out: a model id is data, not code). */
+  model?: string;
   /** WHO started this drive (WO-0045). 'auto' = a host's sequencing effect (the verdict auto-advance, a
    *  pane's mount auto-drive) — the pipeline refuses these in `manual` flow mode before spawning.
    *  Absent = the operator (a click, the CLI, a test) — always allowed. */
@@ -224,6 +230,9 @@ export interface DraftDriveInput {
   stepIndex?: never;
   reviewStepIndex?: never;
   permissionRule?: PermissionRule;
+  /** WO-0059: the same global model preference as the WO arm — main-resolved at spawn time,
+   *  verbatim to the adapter. Drafts are drives; one preference, both owners. */
+  model?: string;
   origin?: 'operator' | 'auto';
   deliveringNote?: { id: string; text: string };
 }
