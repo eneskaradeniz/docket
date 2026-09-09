@@ -156,8 +156,12 @@ Out of scope:
 - plan_approval: RESOLVED 2026-08-30 — the session plan (model + appbar chip) approved by the
   operator in plan mode; scope questions answered (global / chips+free-text / countdown+hover /
   limit-wins).
-- operator_checkpoint: PENDING — the manual scenarios are presented (this order's Notes); the
-  verdict gates the commit and every next chunk.
+- operator_checkpoint: DEFERRED to the operator's next session (the WO-0045 precedent — the
+  deferred round is recorded, not dropped): the five rev-4 scenarios above ride `npm run dev`;
+  the rev-3 scenarios they replace are gone with the surfaces they described.
+- pr_open: RESOLVED — PR #64 (`https://github.com/eneskaradeniz/docket/pull/64`), head `97cc209`,
+  merged `5e14ce3` (the operator-ordered plan → implement → review → pr-merge flow; the manual
+  tour follows).
 - ci: green at the working tree, 2026-09-09 (rev 4, post-review) — typecheck (both tsconfigs), 916
   unit tests (+1 store sweep; the tier-list pin retargeted; one date-rotted usage stamp fixed to
   the current month), `check:boundaries` clean, build clean, **E2E 97/97 green** (exit 0). The
