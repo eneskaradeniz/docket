@@ -7,7 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session } fro
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { checkProvider, createRunner, modelOptions, providerEnvForKey } from '../src/adapters/runner';
+import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
@@ -235,8 +235,7 @@ ipcMain.handle('docket:source:get-work-order-events', (_e, id: WorkOrderId) => s
 
 // --- Operator app settings (WO-0025 / B1): the provider key lives in the shared DB (both hosts see it);
 //   the provider check runs in the runner adapter — the only place that may touch the provider. ---
-ipcMain.handle('docket:settings:get-provider-key', () => store.getProviderKey());
-ipcMain.handle('docket:settings:set-provider-key', (_e, key: string | undefined) => store.setProviderKey(key));
+// WO-0059 rev 4: the get/set-provider-key IPC pair died with the stored key — nothing to bridge.
 ipcMain.handle('docket:settings:get-permission-rule', () => store.getPermissionRule());
 ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule) => store.setPermissionRule(rule));
 // WO-0035: the UI locale — undefined (no explicit choice) survives the structured clone.
@@ -247,6 +246,8 @@ ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLo
 ipcMain.handle('docket:settings:get-models', () => store.getModels());
 ipcMain.handle('docket:settings:set-models', (_e, models: RoleModels | undefined) => store.setModels(models));
 ipcMain.handle('docket:settings:model-options', () => modelOptions());
+// WO-0059 rev 4: the status line's subject name — provider vocabulary crosses as DATA (c1).
+ipcMain.handle('docket:settings:provider-name', () => providerDisplayName());
 // WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
 ipcMain.handle('docket:settings:get-docs-root', (_e, workspaceId: WorkspaceId) => store.getDocsRoot(workspaceId));
 ipcMain.handle('docket:settings:set-docs-root', (_e, workspaceId: WorkspaceId, root: string | undefined) => store.setDocsRoot(workspaceId, root));
@@ -256,10 +257,9 @@ ipcMain.handle(
   (_e, workspaceId: WorkspaceId, threshold: import('../src/core/budget').BudgetThreshold | undefined) =>
     store.setBudget(workspaceId, threshold),
 );
-ipcMain.handle('docket:settings:check-provider', async () => {
-  const key = await store.getProviderKey();
-  return checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
-});
+// WO-0059 rev 4: no stored key exists to inject — the check runs against the operator's OWN
+// identity (the CLI's login / the environment). The UI speaks the result as one line.
+ipcMain.handle('docket:settings:check-provider', () => checkProvider());
 
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
@@ -291,14 +291,13 @@ ipcMain.handle('docket:list-decision-docs', (_e, workspaceId: WorkspaceId) => st
 // --- Session runner (WO-0008). The renderer's runner.drive() (callback form, exposed by
 //   the preload) invokes here; main fills cwd (the renderer cannot know filesystem paths)
 //   and forwards each RunnerEvent back over 'docket:runner:event' until the run completes. ---
-// The stored provider key (WO-0025 / B1) becomes the subprocess env — Options.env REPLACES the env, so
-// process.env is spread (the SDK's own login files must keep working when no key is stored).
+// WO-0059 rev 4: no key env is composed anymore — the subprocess inherits the operator's own
+// environment (the SDK's login files / the setup's own mapping are the identity).
 // Under DOCKET_E2E the scripted fake runner replaces the SDK entirely (WO-0031c): same port, same
 // pipeline, zero tokens — the E2E driver pushes events through `docket:e2e:emit`.
-const providerKey = process.env.DOCKET_E2E ? undefined : await store.getProviderKey();
 const runner: E2eRunner | ReturnType<typeof createRunner> = process.env.DOCKET_E2E
   ? createE2eRunner()
-  : createRunner(providerKey !== undefined ? { env: providerEnvForKey(providerKey) } : {});
+  : createRunner();
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });

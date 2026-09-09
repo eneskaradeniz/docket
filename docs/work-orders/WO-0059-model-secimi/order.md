@@ -46,6 +46,46 @@ puts it on the drive input (the `permissionRule` precedent); the adapter maps it
   holds the verbatim custom id; >4 presets or an empty set degrades to full-width role rows. The
   raw auth-source id (`Hazır (handshake)`) no longer renders — known sources get a word
   (`providerSourceLabel`), unknown sources render nothing.
+- **CORRECTION 3 (operator, 2026-09-09 — the settings-from-scratch round; four mockup tours
+  `docs/ui-mockups/ayarlar-sold-menu.html`, rev 5→8, all rulings dated that day):**
+  1. **The settings surface is a LEFT MENU + right content pane** (the operator's own direction,
+     replacing CORRECTION 2's one-scroll cut): an 880px dialog, a 200px sunken menu rail
+     (`bg` ground + one vertical hairline; active item raised + ink), ONE section's content at
+     the right. Rev 2's tab ban was about TOP TABS — the vertical menu is the operator's own
+     ruling and supersedes it.
+  2. **The menu has TWO items: `Modeller` · `Genel`** — bare single-line names (13px, sentence
+     case; the rev-6 mono status readouts under menu items were removed at tour 4: "title
+     yeterli"). Section titles inside the content are sentence case, normal size.
+  3. **The SAĞLAYICI section DIES.** The stored-API-key concept is removed end to end: the UI
+     section, the port methods (`getProviderKey`/`setProviderKey`), the IPC pair, the spawn-time
+     env injection, and the stored row (one-time cleanup). The CLI's own login + the operator's
+     setup are the identity; Docket shows only PRESENCE: **`Claude Code · Hazır` /
+     `Bulunamadı` + `Doğrula`** as the FIRST line of Genel (`checkProvider` with no key —
+     spawn-free account read; the three states update in place). The menu is the operator's own
+     summary: "claude code varlığını ve çalıştığını göstermek yeterli".
+  4. **The ÇALIŞMA ALANI section MOVES to the workspace's Düzenle dialog** (structure root +
+     monthly budget — per-workspace facts that never belonged in global settings). Global
+     settings keep only truly global things.
+  5. **The preset set is a CLOSED ENUM of ALIAS TIERS, ordered worst→best: `Default · haiku ·
+     sonnet · opus`** (Default first = "leave it to the setup", not a power tier). `modelOptions()`
+     returns `['haiku','sonnet','opus']`. The rev-1-3 matrix, its `özel` free-text column, and
+     the preset full ids (`claude-*`) are replaced. SDK-verified (2026-09-09): `Options.model` is
+     "Claude model alias or full model name"; alias resolution is the setup's own business
+     (`ANTHROPIC_DEFAULT_*_MODEL`) — the tier name rides verbatim, the endpoint resolves. A
+     custom full id remains SDK-possible; the UI cell returns as a small addition if ever needed.
+  6. **Segments write INSTANTLY** (the dil/tema segment behavior — a closed enum commits on
+     click); no Kaydet, no draft, no text field — the whole modal is buttons. Copy is PLAIN
+     TURKISH, no internal jargon ("gateway" never renders): the one informative lines are
+     «Kademe adları kurulumundaki modellere eşlenir.» and «✦ taslak sürüşü Mimar satırını
+     izler.».
+  7. **The permission-rule control (izin kuralı) stays in Genel** — it lived there in rev 1-3;
+     the mockup's enumeration omitted it, dropping a live setting would be a regression. Same
+     for the locale + theme segments.
+  8. **Docket's own CLI (`src/cli/`) STAYS** — the assistant's headless test surface, never a
+     product surface (the operator: "sadece senin için kalsın"); recorded as one line in
+     CLAUDE.md, not code change.
+  - **Session-role label:** the app's locked vocabulary is `Doğrulayıcı` (ROLE_LABELS); the
+    mockup's "Denetçi" yields to it (ADR-0007: one word per concept).
 - **The singleton runner is a non-problem:** `createRunner(...)` (electron/main.ts) receives only
   env; `Options` is rebuilt per drive inside `runDrive` from the input — so the model must ride the
   per-drive input. `RunnerOptions` is untouched.
@@ -118,10 +158,16 @@ Out of scope:
   limit-wins).
 - operator_checkpoint: PENDING — the manual scenarios are presented (this order's Notes); the
   verdict gates the commit and every next chunk.
-- ci: green at the working tree, 2026-08-31 — typecheck (both tsconfigs), 915 unit tests (+7
-  pipeline, +1 store, +3 adapter, +2 labels), `check:boundaries` clean, build clean, E2E all
-  specs green (the new `WO-0059 model tercihi` spec incl. the main-side carry readback through
-  `docket:e2e:last-drive-input`; screenshot `model-section@980.png` in this folder).
+- ci: green at the working tree, 2026-09-09 (rev 4, post-review) — typecheck (both tsconfigs), 916
+  unit tests (+1 store sweep; the tier-list pin retargeted; one date-rotted usage stamp fixed to
+  the current month), `check:boundaries` clean, build clean, **E2E 97/97 green** (exit 0). The
+  reviewer round caught the real cascade: the moved knob groups broke three dialogs-worth of stale
+  spec surfaces (WO-0033's dialog-wide editor count, WO-0035/0040's opening-pane assumption,
+  WO-0047/0049's settings-modal reads) — all rewired to the ws Düzenle dialog (`openWsEdit`
+  targets the CURRENT workspace through Tümünü gör), and the ws-settings editor input gained a
+  row-announcing `aria-label` (the path line's title div unmounts while editing — the old anchor
+  deleted itself). Screenshots `settings-menu@980.png` / `settings-general@980.png` in this
+  folder.
 - pr_open: PENDING the operator verdict — the PR carries the "Model Used" line; the merge sha is
   recorded at closure.
 
@@ -135,18 +181,17 @@ Out of scope:
 
 ## Notes
 
-- **Manual checkpoint rev 3 (the operator's minute-scale scenarios, `npm run dev`):**
-  1. Ayarlar'ı aç → TEK akış, dört bölüm: SAĞLAYICI (kimlik + Test) · MODELLER · GENEL (izin
-     kuralı, dil, tema) · ÇALIŞMA ALANI (bütçe, yapı kökü). Sürüm satırı footer'ın solunda.
-  2. MODELLER matrisi: kolon başlıkları hazır id'ler (her id BİR kez) + özel kolonu; rol satırları
-     kendi lambasıyla (MİMAR amber, UYGULAYICI mavi, DOĞRULAYICI yeşil). MİMAR × claude-fable-5
-     hücresine tıkla → ● basılı, özel alan aynı id'yi aynalar. UYGULAYICI × başka bir hücre → aynı.
-  3. Bir hücreye ikinci tık → atamayı kaldırır; özel alana elle id yaz → o id bir başlıksa hücre
-     otomatik basılır. Kaydet → kapat-aç → atamalar yerinde.
-  4. Temizle → üç rol boşalır, ipucu satırı geri gelir; yeniden başlat → boş kalır.
-  5. Gerçek sürüş: plan (mimar) → Kullanım MODELLER'de mimarın modeli; uygulayıcı adımı → onun
-     modeli. Ayrıca ham kaynak id'si artık akmaz: bilinen kaynak kelime alır (OAuth girişi, API
-     anahtarı…), bilinmeyen hiçbir şey.
+- **Manual checkpoint rev 4 (the operator's minute-scale scenarios, `npm run dev`):**
+  1. Ayarlar'ı aç → 880px dialog; SOLDA iki çıplak ad (Modeller · Genel), sağda Modeller içeriği.
+     Sağlayıcı ve Çalışma alanı bölümleri YOK; dialogda tek metin alanı bile yok.
+  2. Modeller: Mimar satırında `opus`'a tıkla → segment basılı, Kaydet düğmesi YOK (anlık yazım);
+     dialogu kapat-aç → opus yerinde (satır, taslak değil).
+  3. Genel: ilk satır `<ad> · Hazır/Bulunamadı` + `Doğrula` — bas, spinner satırın içine insin,
+     sonuç yerinde. İzin kuralı + dil + tema segmentleri anlık uygulanır.
+  4. Çalışma alanı değiştiriciden ⚙ (Düzenle) → «Yapı kökü ve bütçe» grupları burada; kaydet-turu
+     eski davranışında (taşınma, kayıp yok).
+  5. Gerçek sürüş: plan (mimar) → Kullanım ekranının MODELLER dökümünde mimarın kademesi
+     görünür; uygulayıcı adımı onunkini taşır.
 - The draft drive (✦) is an architect session: it inherits the architect's row — one map, all arms.
 - The adapter mock in `runner/index.test.ts` now records its `Options` argument (a `lastOptions()`
   accessor) — previously discarded; the spawn shape was unobservable.

@@ -579,10 +579,7 @@ describe('model selection — input id → Options.model (WO-0059)', () => {
     expect(sdkMock.lastOptions()?.model).toBeUndefined();
   });
 
-  it('modelOptions() names the provider presets — the SDK-documented ids, data for the picker', () => {
-    const presets = modelOptions();
-    expect(presets.length).toBeGreaterThan(0);
-    expect(presets).toContain('claude-fable-5');
-    expect(presets).toContain('claude-sonnet-5');
+  it('modelOptions() names the ALIAS TIERS worst→best — data for the picker (WO-0059 rev 4)', () => {
+    expect(modelOptions()).toEqual(['haiku', 'sonnet', 'opus']);
   });
 });

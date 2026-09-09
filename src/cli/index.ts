@@ -12,7 +12,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkProvider, createRunner, providerEnvForKey, quickProviderCheck } from '../adapters/runner';
+import { checkProvider, createRunner, quickProviderCheck } from '../adapters/runner';
 import { createStore } from '../adapters/store';
 import { rid, woid } from '../adapters/ids';
 import { autoAllowPolicy, createPipeline } from '../core/pipeline';
@@ -73,9 +73,7 @@ async function driveCommand(woIdArg: string | undefined, opts: Record<string, st
       return 2;
     }
   }
-  const runner = usingFake
-    ? createFakeRunner(opts.fake as string).runner
-    : createRunner((await store.getProviderKey()) !== undefined ? { env: providerEnvForKey((await store.getProviderKey())!) } : {});
+  const runner = usingFake ? createFakeRunner(opts.fake as string).runner : createRunner();
   // Headless default is auto (the agent is fully privileged; the fence is a tripwire, not a boundary).
   // WO-0029 / B18: cadence is per-drive now — the GUI resolves its stored setting the same way in main.
   const permission = autoAllowPolicy();
@@ -323,9 +321,7 @@ async function roadmapDraftCommand(opts: Record<string, string | true>, store: R
       return 2;
     }
   }
-  const runner = usingFake
-    ? createFakeRunner(opts.fake as string).runner
-    : createRunner((await store.getProviderKey()) !== undefined ? { env: providerEnvForKey((await store.getProviderKey())!) } : {});
+  const runner = usingFake ? createFakeRunner(opts.fake as string).runner : createRunner();
   const pipeline = createPipeline({ runner, store, permission: autoAllowPolicy() });
   const input: DraftDriveInput = {
     role: 'architect',
@@ -425,8 +421,8 @@ async function doctorCommand(opts: Record<string, string | true>, dbPath: string
   const quick = quickProviderCheck();
   process.stdout.write(`provider (quick): ${quick}\n`);
   if (opts.verify === true || opts.verify === 'true') {
-    const key = store ? await store.getProviderKey() : undefined;
-    const full = await checkProvider(key !== undefined ? providerEnvForKey(key) : undefined);
+    // WO-0059 rev 4: no stored key — the check runs against the operator's own identity.
+    const full = await checkProvider();
     process.stdout.write(full.ok ? `provider (full handshake): ok (${full.source}) — zero tokens spent\n` : `provider (full handshake): FAILED (${full.code}) — ${full.message}\n`);
     return full.ok ? 0 : 1;
   }

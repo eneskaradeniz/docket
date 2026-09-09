@@ -61,12 +61,11 @@ const source: WorkOrderSource = {
   getWorkOrderEvents: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-events', id),
 };
 
-// Operator app settings (WO-0025 / B1): the provider key + check. The key never crosses to the renderer
-// except through getProviderKey (the settings modal); the check runs main-side.
+// Operator app settings (WO-0025 / B1). WO-0059 rev 4: the key methods are gone — the check runs
+// main-side against the operator's own identity.
 const settings: AppSettings = {
-  getProviderKey: () => ipcRenderer.invoke('docket:settings:get-provider-key'),
-  setProviderKey: (key: string | undefined) => ipcRenderer.invoke('docket:settings:set-provider-key', key),
   checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
+  providerName: () => ipcRenderer.invoke('docket:settings:provider-name'),
   getPermissionRule: () => ipcRenderer.invoke('docket:settings:get-permission-rule'),
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),

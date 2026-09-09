@@ -15,6 +15,7 @@ export function Dialog({
   children,
   footer,
   wide,
+  xl,
   narrow,
   stacked,
   onOpenAutoFocus,
@@ -27,6 +28,9 @@ export function Dialog({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** WO-0059 rev 4: Settings' own width (880px) — the left-menu + content two-column body needs
+   *  more room than `wide` gives. */
+  xl?: boolean;
   /** Focused confirm width (440px) — the yes/no dialogs. */
   narrow?: boolean;
   /** Opens OVER another open dialog (WO-0032): lifts this pair above the base dialog's z-40/z-50,
@@ -52,6 +56,7 @@ export function Dialog({
             `dialog-rise fixed inset-x-4 top-[7vh] ${zi.content} mx-auto flex max-h-[86vh] w-[min(92vw,540px)] flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-2xl`,
             narrow && 'w-[min(92vw,440px)]',
             wide && 'w-[min(94vw,680px)]',
+            xl && 'w-[min(94vw,880px)]',
           )}
         >
           <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">

@@ -87,11 +87,10 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   readonly db: DatabaseSync;
 }
 
-/** The DB-backed half of the AppSettings port (WO-0025): the provider key in the `app_setting` table. The
- *  check-half (checkProvider) lives in the runner adapter — only it may touch the provider. */
+/** The DB-backed half of the AppSettings port (WO-0025). WO-0059 rev 4: the stored provider key
+ *  RETIRED (its port methods, its row swept at open); checkProvider lives in the runner adapter —
+ *  only it may touch the provider. */
 export interface AppSettingsData {
-  getProviderKey(): Promise<string | undefined>;
-  setProviderKey(key: string | undefined): Promise<void>;
   getPermissionRule(): Promise<PermissionRule>;
   setPermissionRule(rule: PermissionRule): Promise<void>;
   /** The operator's explicit UI-locale choice (WO-0035): undefined = none stored — the renderer
@@ -1461,6 +1460,9 @@ export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
+  // WO-0059 rev 4: the stored provider key RETIRED — a leftover row would be an invisible stale
+  // credential (nothing reads it anymore, nothing could clear it). One-time idempotent sweep.
+  db.prepare("DELETE FROM app_setting WHERE key = 'provider_key'").run();
   // Startup sweep (WO-0026 / F5, the process-kill path): no session survives a process restart, so any row
   // still claiming `running` is a leftover from a dead drive — make it idle. `stopped_asking` rows stay
   // (their provider session is resumable and the ask is still the operator's to answer). Caveat: a second
@@ -1860,17 +1862,6 @@ export function createStore(dbPath: string): Store {
       return Promise.resolve();
     },
 
-    // Operator app preferences (WO-0025) — the provider key lives in the shared DB so BOTH hosts (GUI + CLI)
-    // see it; never returned to the renderer except through this port's get. undefined clears it.
-    getProviderKey: () =>
-      Promise.resolve(
-        (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('provider_key') as { value: string } | undefined)?.value,
-      ),
-    setProviderKey: (key: string | undefined) => {
-      if (key === undefined) db.prepare('DELETE FROM app_setting WHERE key = ?').run('provider_key');
-      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('provider_key', key);
-      return Promise.resolve();
-    },
     getPermissionRule: () => Promise.resolve(settingPermissionRule(db)),
     setPermissionRule: (rule: PermissionRule) => {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('permission_rule', rule);

@@ -286,8 +286,9 @@ function planTextFromInput(input: Record<string, unknown> | undefined): string {
   return summarizeToolInput(input) || JSON.stringify(input, null, 2);
 }
 
-/** Optional runner construction (WO-0025 / B1): `env` REPLACES the subprocess env (SDK semantics), so the
- *  host spreads process.env itself — see `providerEnvForKey`. */
+/** Optional runner construction (WO-0025 / B1): `env` REPLACES the subprocess env (SDK semantics),
+ *  so a host that passes one must spread process.env itself. WO-0059 rev 4: no host passes one
+ *  anymore (the stored key retired) — every spawn inherits the operator's own environment. */
 export interface RunnerOptions {
   env?: Record<string, string>;
 }
@@ -849,19 +850,15 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
 }
 
 // ===== Provider surface (WO-0025 / B1) — the vendor vocabulary lives HERE ONLY (c1 / ADR-0006) =====
-// Core speaks ProviderErrorCode/ProviderStatus; this module classifies the provider's raw strings, builds
-// the env-var map, and can run a token-free handshake check. Everything crossing the boundary is neutral.
+// Core speaks ProviderErrorCode/ProviderStatus; this module classifies the provider's raw strings and
+// can run a token-free handshake check. Everything crossing the boundary is neutral.
 
-/** The provider's API-key env var name. Only this module (and hosts wiring env) may spell it. */
+/** The provider's API-key env var name. Only this module (and hosts wiring env) may spell it.
+ *  WO-0059 rev 4: no host composes a key env anymore (the stored key retired); the name survives
+ *  only as quickProviderCheck's env-presence probe. */
 const PROVIDER_KEY_ENV = 'ANTHROPIC_API_KEY';
 /** The provider CLI's login directory (auth present when it exists). */
 const PROVIDER_LOGIN_DIR = '.claude';
-
-/** Build the env map for a stored key. NOTE: Options.env REPLACES the subprocess env — the host MUST
- *  spread process.env when composing: { ...process.env, ...providerEnvForKey(key) }. */
-export function providerEnvForKey(key: string): Record<string, string> {
-  return { [PROVIDER_KEY_ENV]: key };
-}
 
 /** A cheap, spawn-free readiness hint: the key env var is set, or the provider CLI's login dir exists.
  *  Unknown ('unknown', never a guess) otherwise — the same honesty rule as M3 health checks. */
@@ -875,13 +872,23 @@ export function quickProviderCheck(env: NodeJS.ProcessEnv = process.env): 'env' 
   return 'unknown';
 }
 
-/** WO-0059 — the preset model ids the settings picker offers. The id literals live HERE ONLY (c1 /
- *  ADR-0006's WO-0052 carve-out: a model id may be data minted in the provider adapter, never a
- *  constant elsewhere); they cross the boundary as a plain string[] and the UI renders them
- *  verbatim. The list is the SDK's OWN documented examples (sdk.d.ts `Options.model`) — anything
- *  else rides the free-text field, so this catalog cannot go stale in a way that blocks anyone. */
+/** WO-0059 rev 4 — the preset model ALIAS TIERS the settings picker offers, ordered worst→best
+ *  (Default is the picker's own first cell, "leave it to the setup", minted UI-side). The tier
+ *  literals live HERE ONLY (c1 / ADR-0006's WO-0052 carve-out: a model name may be data minted in
+ *  the provider adapter, never a constant elsewhere); they cross the boundary as a plain string[]
+ *  and the UI renders them verbatim. Tiers are the CLI's own aliases — `Options.model` accepts
+ *  "alias or full model name", and each tier resolves to whatever the operator's setup maps it to
+ *  (ANTHROPIC_DEFAULT_*_MODEL); a custom full id stays SDK-possible but has no picker cell
+ *  (rev 4: the `özel` column died with the from-scratch settings). */
 export function modelOptions(): string[] {
-  return ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5'];
+  return ['haiku', 'sonnet', 'opus'];
+}
+
+/** WO-0059 rev 4 — the provider's DISPLAY NAME for the settings status line (rendered as
+ *  «{name} · Hazır»). A provider-vocabulary literal may live only HERE (the c1 carve-out); it
+ *  crosses the boundary as DATA and the UI renders it verbatim — the modelOptions posture. */
+export function providerDisplayName(): string {
+  return 'Claude Code';
 }
 
 /** Map a raw provider error string onto the neutral code. String matching is heuristic — the messages are

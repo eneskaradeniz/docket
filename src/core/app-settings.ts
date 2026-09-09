@@ -1,9 +1,11 @@
 // src/core/app-settings.ts — the operator-preferences PORT (WO-0025 / B1).
 //
-// Operator preferences (the provider key) live in the shared DB so BOTH hosts see them (the Electron GUI and
+// Operator preferences live in the shared DB so BOTH hosts see them (the Electron GUI and
 // the CLI open the same docket.db); theme stays renderer-local localStorage because it is presentation only.
 // ADR-0010's observed|owned split gains a third, tiny category here: an operator preference is neither a
 // git-observed fact nor a decision about work — it is machine-local app configuration.
+// WO-0059 rev 4: the stored provider API key RETIRED (port methods, spawn-env injection, the stored
+// row) — the CLI's own login + the operator's setup are the identity; only checkProvider survived.
 import type { ProviderErrorCode } from './runner';
 import type { PermissionRule } from './source';
 import type { SessionRole, WorkspaceId } from './types';
@@ -26,10 +28,6 @@ export type RoleModels = Partial<Record<SessionRole, string>>;
 export type Locale = 'tr' | 'en';
 
 export interface AppSettings {
-  /** The stored provider API key, if the operator saved one. Never logged. */
-  getProviderKey(): Promise<string | undefined>;
-  /** Store (or clear, on undefined) the provider API key. */
-  setProviderKey(key: string | undefined): Promise<void>;
   /** The DEFAULT permission rule (WO-0031c): Settings holds only the default — each work order carries
    *  its own rule (order.md front-matter; changeable from the ask card). 'ask'/'auto' legacy values map
    *  to ask_every/risky_excluded at the store. The fence keeps denying out-of-scope writes under every
@@ -54,6 +52,9 @@ export interface AppSettings {
    *  place). [] → the UI's preset chips render ABSENT (ADR-0001); the free-text field is
    *  unaffected. */
   modelOptions(): Promise<string[]>;
+  /** The provider's DISPLAY NAME for the status line (WO-0059 rev 4) — provider vocabulary minted
+   *  adapter-side, crossing as DATA (the modelOptions posture); the UI renders it verbatim. */
+  providerName(): Promise<string>;
   /** The workspace's month-spend threshold (WO-0047): cap + warn percent, ONE atomic pair per
    *  workspace (solo scale — no per-agent or per-project scoping). undefined = none configured:
    *  the gate fails open and the surfaces show nothing. */
@@ -71,6 +72,9 @@ export interface AppSettings {
    *  initiated write refuses loudly, unlike the fail-open read). `.docket` is the named
    *  alternative for keeping the documents out of the tree. */
   setDocsRoot(workspaceId: WorkspaceId, root: string | undefined): Promise<void>;
-  /** Full provider check: spawns the provider handshake (no prompt — zero tokens) and reports auth state. */
+  /** Full provider check (WO-0059 rev 4 — the Sağlayıcı section died, the check stayed): runs the
+   *  spawn-free provider handshake (no prompt — zero tokens) against the OPERATOR'S OWN identity
+   *  (the CLI's login / the environment — no stored key exists to inject anymore). Reports auth
+   *  state; the UI speaks it as one line (the name is adapter DATA — providerName). */
   checkProvider(): Promise<ProviderStatus>;
 }

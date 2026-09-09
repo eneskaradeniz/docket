@@ -565,33 +565,20 @@ export const UI = {
     const h = Math.floor(min / 60);
     return `${h}s ${min % 60}dk`;
   },
-  // Sağlayıcı ayarları (WO-0025 / B1)
-  providerStatusOk: 'Hazır', // + source shown appended by the modal
-  providerStatusUnknown: 'Durum bilinmiyor — anahtar kaydet ya da Test et',
-  providerTest: 'Test et',
-  // Ayarlar bölümleri (WO-0059 rev 3 — sekmeler yok; readout başlıklar)
-  settingsTabProvider: 'Sağlayıcı',
+  // Sağlayıcı durumu (WO-0059 rev 4 — saklı anahtar öldü; tek satır: varlık + çalışma)
+  providerStatusOk: 'Hazır',
+  providerStatusMissing: 'Bulunamadı',
+  providerVerify: 'Doğrula',
+  providerVerifying: 'Doğrulanıyor',
+  // Ayarlar menüsü (WO-0059 rev 4 — sol menü İKİ öğe; sentence case, tek satır ad)
   settingsTabGeneral: 'Genel',
-  settingsTabWorkspace: 'Çalışma alanı',
-  // Model tercihi (WO-0059 rev 3 — rol başına matris) — id ekranda VERBATIM mono akar
-  // (UsageBreakdownCard'ın veri kuralı); yalnız bu kelimeler paketten gelir.
+  // Model tercihi (WO-0059 rev 4 — rol satırı + kademe segmenti; anlık yazar). Kademe adları
+  // adapter verisidir (c1 — providerDisplayName/modelOptions üslubu); paket yalnız nötr kelimeyi taşır.
   modelSectionLabel: 'Modeller',
-  modelHeadCustom: 'özel',
-  modelCustomSuffix: 'özel model',
-  modelMatrixAria: 'Rol başına model seçimi',
-  modelClear: 'Temizle',
-  modelRoleHint: 'Boş rol = sağlayıcının kendi varsayılan modeli çalışır.',
-  // Sağlayıcı kaynak adı yalnız BİLİNEN şekle kelime alır; bilinmeyen kaynak hiçbir şey göstermez
-  // (ham id asla render edilmez — ADR-0007). Söz dizimi: (source: string) => string | undefined.
-  providerSourceLabel: (source: string): string | undefined => {
-    const s = source.toLowerCase();
-    if (s === 'handshake') return undefined;
-    if (s.includes('oauth')) return 'OAuth girişi';
-    if (s.includes('api') && s.includes('key')) return 'API anahtarı';
-    if (s.includes('env')) return 'env anahtarı';
-    if (s.includes('login') || s.includes('logged')) return 'sağlayıcı girişi';
-    return undefined;
-  },
+  modelDefaultTier: 'Default',
+  modelMatrixAria: 'Rol başına model kademesi',
+  modelTierLine: 'Kademe adları kurulumundaki modellere eşlenir.',
+  modelDraftLine: (role: string): string => `✦ taslak sürüşü ${role} satırını izler.`,
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',
@@ -905,6 +892,8 @@ export const UI = {
   docsRootLabel: 'Yapı kökü',
   docsRootWarn: 'Dosyalar taşınmaz; iş emri numaralandırması yeni kökte baştan sayılır.',
   docsRootErr: 'Güvenli göreli yol gir (ör. docs ya da .docket).',
+  // WO-0059 rev 4: kök + bütçe grubu genel ayarlardan ws Düzenle dialoguna taşındı — grup başlığı
+  wsRootBudgetLabel: 'Yapı kökü ve bütçe',
   // ===== WO-0050 — ✦ taslak sürüşü (mockup kare 03/04/05) =====
   // Tek mekanizma (ADR-0016 karar 2): üretim de içe aktarma da aynı mimar taslak oturumu; ayrımı
   // yalnız kaynak belge listesi yapar — prompt'a YOL yazılır, içeriği ajan okur. Kart dilinde

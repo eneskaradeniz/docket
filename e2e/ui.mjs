@@ -80,6 +80,21 @@ const stopAllDrives = async () => {
     await page.waitForTimeout(700);
   }
 };
+// WO-0059 rev 4: the ws Düzenle dialog — the per-workspace knobs' home since the settings modal
+// became global-only (Modeller · Genel). MAX_WS=4 hides most seeds in the dropdown, so this rides
+// 'Tümünü gör' and clicks the ⚙ on the CURRENT workspace's row (its name reads off the switcher).
+const openWsEdit = async () => {
+  const current = ((await page.locator('header button').first().textContent()) ?? '').replace(/[▾▎]/g, '').trim();
+  await page.locator('header button').first().click();
+  await page.waitForTimeout(400);
+  const seeAll = page.getByRole('button', { name: /Tümünü gör/ });
+  if ((await seeAll.count()) > 0) {
+    await seeAll.first().click();
+    await page.waitForTimeout(400);
+  }
+  await page.locator('div').filter({ hasText: current }).last().locator('button[aria-label="Çalışma alanı ayarları"]').last().click();
+  await page.waitForTimeout(500);
+};
 
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(700); // board load effect
@@ -1440,9 +1455,12 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   assert.equal(await dlg.locator('div[title^="/"]').count(), 2, 'the collision changed the row count');
   await page.screenshot({ path: join(SHOTS, 'ws-repos-ledger@980.png') });
   // path edit: same basename moves; a different basename refuses inline and ESC reverts.
+  // WO-0059 rev 4: the editor input announces its row (the path line's title div unmounts while
+  // editing — a row-scoped anchor would self-delete; the aria-label is the stable anchor).
+  const rowEditor = (name) => dlg.locator(`input[aria-label="Depo yolunu düzenle: ${name}"]`);
   await rowByPath('/tmp/e2e-ikinci-depo').getByRole('button', { name: 'Depo yolunu düzenle' }).click();
   await page.waitForTimeout(250);
-  const editor = dlg.locator('input.font-mono:not([placeholder])');
+  const editor = rowEditor('e2e-ikinci-depo');
   assert.ok((await editor.count()) === 1, 'the ✎ did not open a path editor');
   assert.equal(await editor.inputValue(), '/tmp/e2e-ikinci-depo', 'the editor seeded the wrong row');
   await editor.fill('/tmp/yeni/yol/e2e-ikinci-depo');
@@ -1451,14 +1469,15 @@ await spec('WS depo: Defter rows — full path, guards, path edit, name collisio
   assert.ok((await dlg.locator('div[title="/tmp/yeni/yol/e2e-ikinci-depo"]').count()) >= 1, 'the path edit did not commit');
   await rowByPath('/tmp/yeni/yol/e2e-ikinci-depo').getByRole('button', { name: 'Depo yolunu düzenle' }).click();
   await page.waitForTimeout(250);
-  await editor.fill('/tmp/farkli-ad');
-  await editor.press('Enter');
+  const editor2 = rowEditor('e2e-ikinci-depo');
+  await editor2.fill('/tmp/farkli-ad');
+  await editor2.press('Enter');
   await page.waitForTimeout(400);
   assert.ok((await dlg.getByText('Ad değişemez', { exact: false }).count()) >= 1, 'no basename refusal line');
-  assert.equal((await editor.count()), 1, 'a failed commit closed the editor (the typed text would be lost)');
-  await editor.press('Escape');
+  assert.equal((await editor2.count()), 1, 'a failed commit closed the editor (the typed text would be lost)');
+  await editor2.press('Escape');
   await page.waitForTimeout(300);
-  assert.equal(await editor.count(), 0, 'ESC did not revert the editor');
+  assert.equal(await editor2.count(), 0, 'ESC did not revert the editor');
   assert.equal(await page.locator('[role="dialog"]').count(), 1, 'ESC closed the whole dialog instead of the editor');
   assert.ok((await dlg.locator('div[title="/tmp/yeni/yol/e2e-ikinci-depo"]').count()) >= 1, 'ESC changed the committed path');
   // confirmless removal brings the ledger back to one row (net zero for the suite); the guard
@@ -1547,7 +1566,7 @@ await spec('empty DB: the real appbar + the invitation hero; workspace create �
     assert.ok((await dlg.locator(`div[title="${wsRepo}"]`).count()) >= 1, 'the valid row did not land');
     await dlg.getByRole('button', { name: 'Depo yolunu düzenle' }).click();
     await emptyPage.waitForTimeout(250);
-    const editor = dlg.locator('input.font-mono:not([placeholder])');
+    const editor = dlg.locator('input[aria-label="Depo yolunu düzenle: repo"]');
     await editor.fill('apps/web');
     await editor.press('Enter');
     await emptyPage.waitForTimeout(300);
@@ -1593,6 +1612,9 @@ await spec('language toggle flips the UI instantly (tr → en → tr, WO-0035)',
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(350);
   const dlg = page.locator('[role="dialog"]');
+  // WO-0059 rev 4: dil + tema Genel bölmesinde — menüden oraya geç
+  await dlg.locator('[data-settings-item]', { hasText: 'Genel' }).click();
+  await page.waitForTimeout(250);
   await dlg.getByRole('button', { name: 'English' }).click();
   await page.waitForTimeout(400);
   // the modal re-localizes itself, the html lang follows, and — without any restart — the board
@@ -1610,6 +1632,8 @@ await spec('language toggle flips the UI instantly (tr → en → tr, WO-0035)',
   // and back to tr — the gear itself now speaks EN
   await page.locator('button[aria-label="Settings"]').click();
   await page.waitForTimeout(350);
+  await page.locator('[role="dialog"]').locator('[data-settings-item]', { hasText: 'General' }).click();
+  await page.waitForTimeout(250);
   await page.locator('[role="dialog"]').getByRole('button', { name: 'Türkçe' }).click();
   await page.waitForTimeout(400);
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute('lang')), 'tr', 'html lang did not return');
@@ -1644,6 +1668,9 @@ await spec('a fresh install with a tr system language boots tr (detection, WO-00
     // must prove the DB row, not the mirror
     await pa.locator('button[aria-label="Ayarlar"]').click();
     await pa.waitForTimeout(350);
+    // WO-0059 rev 4: dil Genel bölmesinde — menüden oraya geç
+    await pa.locator('[role="dialog"] [data-settings-item]', { hasText: 'Genel' }).click();
+    await pa.waitForTimeout(250);
     await pa.locator('[role="dialog"]').getByRole('button', { name: 'English' }).click();
     await pa.waitForTimeout(400);
     await pa.evaluate(() => localStorage.clear());
@@ -1694,6 +1721,9 @@ await spec('Tema: Açık/Karanlık pin, Sistem follows the OS live (WO-0040)', a
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(350);
   const dlg = page.locator('[role="dialog"]');
+  // WO-0059 rev 4: tema Genel bölmesinde — menüden oraya geç
+  await dlg.locator('[data-settings-item]', { hasText: 'Genel' }).click();
+  await page.waitForTimeout(250);
   // Açık pins light: the attribute, the computed ground and the mirror
   await dlg.getByRole('button', { name: 'Açık', exact: true }).click();
   await page.waitForTimeout(250);
@@ -1711,7 +1741,10 @@ await spec('Tema: Açık/Karanlık pin, Sistem follows the OS live (WO-0040)', a
   // Karanlık pins dark explicitly
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(350);
-  await dlg.getByRole('button', { name: 'Karanlık', exact: true }).click();
+  const dlg2 = page.locator('[role="dialog"]');
+  await dlg2.locator('[data-settings-item]', { hasText: 'Genel' }).click();
+  await page.waitForTimeout(250);
+  await dlg2.getByRole('button', { name: 'Karanlık', exact: true }).click();
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), 'dark', 'Karanlık did not pin dark');
   assert.equal(await page.evaluate(() => localStorage.getItem('docket.theme')), 'dark', 'the dark pick did not reach the mirror');
@@ -1995,10 +2028,9 @@ await spec('WO-0047 kapı B: yükselt → kalıcı ayar + reddedilen sürüş ye
   await w45Done('# Rapor\n\nkapı sonrası adım tamam.');
   await page.waitForTimeout(900);
   await stopAllDrives();
-  // The settings readout names the NEW cap (a permanent write): observed + new limit, and the
-  // warn line is gone — the workspace is back under its (raised) threshold.
-  await page.locator('button[aria-label="Ayarlar"]').click();
-  await page.waitForTimeout(500);
+  // WO-0059 rev 4: the budget group MOVED to the ws Düzenle dialog — the month readout (it names
+  // the NEW cap: observed + limit, the warn line gone) lives there now.
+  await openWsEdit();
   const readout = await page.locator('[data-budget-month-readout]').first().textContent();
   assert.ok(readout && readout.includes('$15,10'), `the month readout carries no new cap: ${readout}`);
   await page.screenshot({ path: join(SHOTS, 'budget-settings@980.png') });
@@ -2115,8 +2147,8 @@ await spec('WO-0049 ekle diyalogları: görev (boş başlık + depo reddi, sonra
 });
 
 await spec('WO-0049 yapı kökü: .docket → yok yüzeyi; docs → geri (dosyalar taşınmaz)', async () => {
-  await page.locator('button[aria-label="Ayarlar"]').click();
-  await page.waitForTimeout(500);
+  // WO-0059 rev 4: the root knob lives in the ws Düzenle dialog now (global settings are global-only)
+  await openWsEdit();
   const input = page.locator('[data-docs-root-section] input');
   assert.equal(await input.inputValue(), 'docs', 'the effective root does not read docs');
   await input.fill('../x');
@@ -2133,8 +2165,7 @@ await spec('WO-0049 yapı kökü: .docket → yok yüzeyi; docs → geri (dosyal
   assert.equal(await page.getByRole('button', { name: '✦ Üret / İçe aktar' }).count(), 1, 'the absent face lost its ✦ action');
   await page.screenshot({ path: join(SHOTS, 'roadmap-root-absent@980.png') });
   // back to docs: the full surface returns unchanged — the files never moved, only the pointer did
-  await page.locator('button[aria-label="Ayarlar"]').click();
-  await page.waitForTimeout(500);
+  await openWsEdit();
   await page.locator('[data-docs-root-section] input').fill('docs');
   await page.locator('[data-docs-root-section] button', { hasText: 'Kaydet' }).click();
   await page.waitForTimeout(400);
@@ -2898,48 +2929,40 @@ await spec('WO-0055: the archived card re-nests identically (seeded agent rows)'
   await backToBoard();
 });
 
-// ===== WO-0059 rev 3 — the PER-ROLE model matrix + the single-scroll settings screen =====
-await spec('WO-0059 model tercihi: tek akış bölümler, rol matrisi (● atama + özel kolon), kaydet/turu, sürüşte taşınır, Temizle', async () => {
+// ===== WO-0059 rev 4 — the from-scratch settings: a LEFT MENU (Modeller · Genel), per-role tier
+// segments that write INSTANTLY, the provider's presence line (the stored key retired) =====
+await spec('WO-0059 rev 4 ayarlar: sol menü iki öğe, rol kademe segmentleri (anlık yazım + kalıcılık), varlık satırı, sürüşte taşınır', async () => {
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(450);
   const dlg = page.locator('[role="dialog"]');
-  // ONE scroll, readout-headed sections — no tabs: every section is on the page at once
-  assert.equal(await dlg.locator('[data-provider-section]').count(), 1, 'the provider section is missing');
+  // the menu: exactly TWO bare items — no provider section, no workspace section anywhere
+  assert.equal(await dlg.locator('[data-settings-item]').count(), 2, 'the menu does not carry exactly two items');
   assert.equal(await dlg.locator('[data-model-section]').count(), 1, 'the model section is missing');
-  assert.equal(await dlg.locator('[data-general-section]').count(), 1, 'the general section is missing');
-  assert.equal(await dlg.locator('[data-workspace-section]').count(), 1, 'the workspace section is missing');
-  assert.ok((await dlg.getByText('Riskli hariç').count()) >= 1, 'the permission rule is not on the page');
-  // the matrix: preset ids are COLUMN HEADS (once each), role rows carry their lamps
-  const matrix = page.locator('[data-model-matrix]');
-  assert.equal(await matrix.count(), 1, 'the model matrix is missing');
-  const head = ((await matrix.locator('span').first().textContent()) ?? '').trim();
-  assert.equal(head, '', 'the matrix corner is not empty');
-  const first = 'claude-fable-5';
-  assert.ok(((await matrix.textContent()) ?? '').includes(first), 'the preset head is missing');
-  // a cell PRESS assigns the role: ● shows, the row's custom input mirrors the id (same draft)
-  const fableCell = matrix.locator('button[aria-label="Mimar · claude-fable-5"]');
-  assert.equal(await fableCell.count(), 1, 'the architect × fable cell is missing');
-  await fableCell.click();
-  await page.waitForTimeout(150);
-  assert.equal(await fableCell.getAttribute('aria-pressed'), 'true', 'the cell press did not land');
-  assert.equal(((await fableCell.textContent()) ?? '').trim(), '●', 'the pressed cell carries no marker');
-  const architectCustom = matrix.locator('input[aria-label="Mimar · özel model"]');
-  assert.equal(await architectCustom.inputValue(), first, 'the custom input does not mirror the draft');
-  await page.screenshot({ path: join(SHOTS, 'model-section@980.png') });
-  // Kaydet writes; the port reads the ROW back (the DB, not the draft state)
-  await page.locator('[data-model-section] button', { hasText: 'Kaydet' }).click();
-  await page.waitForTimeout(400);
-  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect, first, 'the stored row does not read back');
+  assert.equal(await dlg.locator('[data-general-section]').count(), 0, 'the general section leaked into the models pane');
+  assert.ok(((await dlg.locator('[data-model-section]').innerText()) ?? '').includes('Mimar'), 'the role rows are missing');
+  // the tier segments: Default + the adapter's worst→best tiers; a click WRITES THROUGH (no Kaydet)
+  const mimarRow = dlg.locator('[data-model-rows] > div', { hasText: 'Mimar' });
+  await mimarRow.getByRole('button', { name: 'opus', exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect, 'opus', 'the Mimar tier did not write through');
+  assert.equal(await mimarRow.locator('button[aria-pressed="true"]').textContent(), 'opus', 'the segment did not read pressed');
+  await page.screenshot({ path: join(SHOTS, 'settings-menu@980.png') });
+  // Genel: the presence line (name + the two-state word) + the permission rule + language + theme
+  await dlg.locator('[data-settings-item]', { hasText: 'Genel' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await dlg.locator('[data-general-section]').count(), 1, 'the general section did not open');
+  assert.equal(await dlg.locator('[data-provider-line]').count(), 1, 'the presence line is missing');
+  const line = ((await dlg.locator('[data-provider-line]').innerText()) ?? '').trim();
+  assert.ok(/Hazır|Bulunamadı|Doğrulanıyor/.test(line), `the presence line lost its two-state word: ${line}`);
+  assert.ok((await dlg.getByText('Riskli hariç').count()) >= 1, 'the permission rule is not in Genel');
+  await page.screenshot({ path: join(SHOTS, 'settings-general@980.png') });
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
-  // the drive carries it — a FRESH WO (the proven create flow: create only, then the manual
-  // Plan iste; the auto "Oluştur ve plan iste" path is a multi-hop chain this spec need not ride).
-  // The plan drive's role is ARCHITECT → the architect row rides (the per-role mapping's own pin).
+  // the tier survives the dialog (the ROW, not renderer state) — and the drive carries it: a FRESH
+  // WO, the plan drive's role is ARCHITECT → the architect row rides (the per-role mapping's pin).
   await stopAllDrives(); // the one-drive-at-a-time rule: no lingering drive may hold the start
-  // a drive left running on a detail whose pane is NOT open shows NO Durdur at board level — stop it
-  // where it lives (the auto review chain's WO), or the start below dies on the store's active lock.
   await openDetail('Ajan arşivi');
-  await stopAllDrives();
+  await stopAllDrives(); // a drive on an unopened detail shows no Durdur at board level — stop it there
   await backToBoard();
   await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
   await page.waitForTimeout(350);
@@ -2947,24 +2970,31 @@ await spec('WO-0059 model tercihi: tek akış bölümler, rol matrisi (● atama
   await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
   await page.waitForTimeout(1400);
   await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
-  // spawn → main resolves the input: POLL the readback (any earlier spawn carried no model, so
-  // only the NEW one satisfies).
   let carriedModel;
   for (let i = 0; i < 20; i++) {
     await page.waitForTimeout(250);
     carriedModel = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
-    if (carriedModel?.model === first) break;
+    if (carriedModel?.model === 'opus') break;
   }
-  assert.equal(carriedModel?.model, first, `the resolved drive input does not carry the architect model: ${JSON.stringify(carriedModel)}`);
+  assert.equal(carriedModel?.model, 'opus', `the resolved drive input does not carry the architect tier: ${JSON.stringify(carriedModel)}`);
   assert.equal(carriedModel?.role, 'architect', 'the carry spec did not run an architect drive');
   await stopAllDrives();
-  // Temizle clears; the default hint returns (absent-again, not a disabled field)
+  // cleanup: Default clears the architect row (an instant write, no Kaldır button exists)
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(450);
-  await page.locator('[data-model-section] button', { hasText: 'Temizle' }).click();
+  await dlg.locator('[data-model-rows] > div', { hasText: 'Mimar' }).getByRole('button', { name: 'Default', exact: true }).click();
   await page.waitForTimeout(300);
-  assert.equal(await page.evaluate(() => window.docket.settings.getModels()), undefined, 'Temizle did not clear the row');
-  assert.ok(((await page.locator('[data-model-section]').innerText()) ?? '').includes('Boş rol ='), 'the default hint did not return');
+  assert.equal(await page.evaluate(() => window.docket.settings.getModels()), undefined, 'Default did not clear the row');
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+});
+
+await spec('WO-0059 rev 4: kök + bütçe grupları ws Düzenle dialogunda — genel ayarlardan taşındı', async () => {
+  await openWsEdit();
+  const dlg = page.locator('[role="dialog"]');
+  assert.equal(await dlg.locator('[data-ws-knobs]').count(), 1, 'the moved knob group is not in the ws edit dialog');
+  assert.ok((await dlg.locator('[data-budget-section]').count()) === 1, 'the budget group is missing');
+  assert.ok((await dlg.locator('[data-docs-root-section]').count()) === 1, 'the docs-root group is missing');
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
 });
