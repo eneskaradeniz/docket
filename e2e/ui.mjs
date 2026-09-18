@@ -853,7 +853,9 @@ await spec('strip gates the order.md writers while a drive runs (guarded in plac
   await page.locator('h1').first().hover();
   await page.waitForTimeout(150);
   await pencil.first().hover();
-  await page.waitForTimeout(600); // the kit Tooltip's 350ms delay
+  // TD-048's remedy: WAIT for the tooltip instead of a timed window — the kit's 350ms delay is a
+  // floor a loaded host can exceed, and one dropped assert here cascades into three
+  await page.getByText('Oturum çalışırken düzen kapalı').first().waitFor({ state: 'visible', timeout: 5_000 });
   assert.ok((await page.getByText('Oturum çalışırken düzen kapalı').count()) >= 1, 'the gate tooltip did not open');
   await page.screenshot({ path: join(SHOTS, 'strip-gated@980.png') });
   await page.getByRole('button', { name: 'Durdur', exact: true }).click();

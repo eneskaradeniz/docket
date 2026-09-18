@@ -56,7 +56,17 @@ export function UsageHeadCard({ budget, usage }: { budget?: WorkspaceBudgetView;
           ) : null}
         </>
       ) : (
-        <p className="mt-2 text-sm text-ink">{UI.usageMonthObserved(usage.totals.usd)}</p>
+        <>
+          {/* WO-0061: the LEDGER's own known-spend basis — an interrupted leg (a NULL-cost session
+              started in-window) makes the total a lower bound; the head says so, never a bare
+              $0,00 over an honest unknown */}
+          <p className="mt-2 text-sm text-ink">
+            {usage.hasUnknown
+              ? UI.usageMonthObservedKnown(usage.totals.usd)
+              : UI.usageMonthObserved(usage.totals.usd)}
+          </p>
+          {usage.hasUnknown ? <p className="mt-1 text-xs text-inkdim">{UI.usageKnownBasisNote}</p> : null}
+        </>
       )}
     </div>
   );

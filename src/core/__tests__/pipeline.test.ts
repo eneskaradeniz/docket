@@ -798,8 +798,11 @@ describe('createPipeline — the interrupted close (WO-0039 stabilization)', () 
     const fs = fakeStore({ step: { prompt: 'do step 1' } });
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
     const out = await collect(p, stepDrive());
-    const session = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { status: string };
+    const session = fs.calls.filter((c) => c.method === 'recordSession').at(-1)!.args[0] as { status: string; cost?: unknown };
     expect(session.status).toBe('stopped');
+    // WO-0061: the interrupted close carries NO cost — the store writes NULL, the known-spend
+    // basis sees it (abort precedes the result; a zero summary would paint the $0,00 wall)
+    expect(session.cost).toBeUndefined();
     expect(methods(fs.calls)).not.toContain('recordStepReport');
     expect(out.at(-1)).toEqual({ kind: 'interrupted' });
   });
