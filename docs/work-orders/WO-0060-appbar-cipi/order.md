@@ -258,8 +258,8 @@ Out of scope:
 - operator_checkpoint: DEFERRED to the operator's next session (the WO-0045 precedent) — the
   numbered scenarios in the stage plan ride `npm run dev`; the branch merged ahead of the tour at
   the operator's "kaldığın yerden devam et" tempo.
-- pr_open: PR opened from this branch; the "Model Used" line rides the body; the merge sha is
-  recorded at closure.
+- pr_open: RESOLVED — PR #65 (`https://github.com/eneskaradeniz/docket/pull/65`), head `f5d9299`,
+  merged `9f0e9fa` (the operator-ordered flow; the manual tour rides the next session).
 - ci_green: green at the working tree, 2026-09-19 — typecheck (both tsconfigs), 931 unit tests
   (916 base + 14 chip-family), `check:boundaries` clean, build clean, **E2E 102/102 green
   (exit 0)** — the six chip specs rebased onto the post-rev-4 tree (the block runs after the
