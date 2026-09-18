@@ -303,6 +303,12 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 
 ## M3 — Evidence layer
 
+- [x] **WO-0062** — Forge surface probe (PR #67, merge `d61ea1f`, 2026-09-19): the read surface
+      measured before the port freezes — four gh calls cover ingestion + reconciliation + health;
+      sha → PR resolves for BOTH head and merge shas; the 5000/h budget makes a 30s reconciler
+      free; one token reads docket + the antreo-app org. Findings + the vendor-neutral port
+      sketch: `docs/work-orders/WO-0062-forge-probe/report.md` — the Forge WO's Context, five
+      open design questions carried there.
 - [ ] `Forge` interface, GitHub implementation over `gh`
 - [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
       run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
