@@ -2,7 +2,7 @@
 id: WO-0061
 title: "NULL-fix — the usage screen's known-spend basis (interrupted legs stay NULL · hasUnknown reaches the month head)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -76,7 +76,11 @@ Out of scope:
   düzeltelim"; the scope is the queued item's verified remainder).
 - operator_checkpoint: PENDING — the manual scenario rides the Notes; the verdict gates the
   merge.
-- ci_green / pr_open / closure: PENDING — the usual ladder; the PR carries the "Model Used" line.
+- ci_green: green, 2026-09-19 — typecheck (both), 933 unit tests (+2 usage hasUnknown pins, +1
+  store NULL write pin, +1 pipeline cost pin), `check:boundaries` clean, build clean,
+  **E2E 102/102 green (exit 0)** — the run that also surfaced and landed TD-048's remedy.
+- pr_open / closure: RESOLVED — PR #66 (`https://github.com/eneskaradeniz/docket/pull/66`),
+  head `b26a663`, merged `e9f10a6`; status closed at this commit.
 
 ## Stop-and-ask gates
 
