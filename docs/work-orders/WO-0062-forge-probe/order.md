@@ -99,11 +99,12 @@ work order's job, informed by what the probe actually finds.
 
 - plan_approval: mode `direct` — this order IS the plan (the light-review posture; the probe
   matrix above is the plan).
-- probe_permissions: the read-only gh allow-list, presented to and OK'd by the operator before
-  the first call (the WO-0055 precedent).
+- probe_permissions: RESOLVED — the eight-row read-only allow-list was presented and OK'd
+  (2026-09-19); every call made sits inside it. Matrix result: 8/8 answered, none blocked.
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — the
   report itself is the reviewable artifact.
-- ci_green: green at the working tree (docs-only WO — the ladder runs to prove the tree clean).
+- ci_green: green at the working tree, 2026-09-19 (docs-only WO — the ladder runs to prove the
+  tree clean; see the report for the findings).
 
 ## Stop-and-ask gates
 
