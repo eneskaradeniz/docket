@@ -35,8 +35,16 @@ transcript and stop-and-ask regions stay provisional until M0 reports.
       violations and detection gaps → WO-0006 (TD-014, TD-015); the branch-protection gap is TD-013.
 - [ ] **WO-0003** — Visual hierarchy pass. The prototype is structurally right and visually flat; nothing is
       dominant, so the board does not answer "what needs me most" at a glance. Presentation only.
-- [ ] **WO-0004** — Workspace connection management: add, update, remove connections (ADR-0009). Replaces the
-      two hardcoded workspaces. Also the onboarding path a third party would use.
+- [x] **WO-0004** — Workspace connection management (ADR-0009). DELIVERED PIECEMEAL, before its own
+      order was drafted (marked closed 2026-09-19): workspace create/edit with per-action
+      repo-connection add / path-edit / remove is WO-0014 + the WO-0031b kit restyle + WO-0033's
+      ledger; full-cascade workspace deletion (counted confirm, running-drive guard, `--yes` CLI
+      mirror) is WO-0032; the switcher + add-workspace entry are the WorkspaceSwitcher/WsListModal
+      pair in the appbar; the per-workspace knobs (budget, structure root) moved into the modal
+      with WO-0047/0049 and WO-0059's rev-4 settings. Onboarding path = the same create flow.
+      The fixture FIRST-RUN seed (Docket + DateApp) remains by design — M3's yaml scanner
+      replaces it (the store header records this); until then operator-created workspaces
+      coexist with the seeds.
 - [x] **WO-0006** — ADR-0007/0003 live violations and detection gaps (TD-014, TD-015). Done: the `'' as RepoId`
       cast in `derive.ts` is gone (`primaryRepo` is now `RepoId | undefined`, an unused field); the work-order
       number on the card is permitted as display via `labels.ts` (`woIdLabel`) with an ADR-0007 carve-out — no
@@ -336,7 +344,8 @@ WO-0002 routed all copy through `labels.ts`.
 
 - [ ] DateApp onboarded (multi-repo, dedicated decision store, cross-repo tracks with `depends_on`)
 - [ ] Briefing bundle assembly, including cross-repo contracts
-- [ ] Workspace switcher
+- [x] Workspace switcher — delivered with the WO-0014 management UI (the appbar WorkspaceSwitcher
+      + the WsListModal add entry; marked 2026-09-19)
 
 ## M5 — Workspace overview
 
