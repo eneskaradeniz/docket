@@ -4,13 +4,13 @@ import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSourc
 import type { SessionRunner } from '../../core/runner';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
-import { overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
+import { limitInEffect, overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { roadmapTaskOf, type RoadmapView } from '../../core/roadmap';
 import { DEFAULT_DOCS_ROOT } from '../../core/roadmap-md';
 import type { WorkspaceUsageView } from '../../core/usage';
 import { useLabels } from '../data/locale';
-import { AppShell, type Surface } from '../chrome/AppShell';
+import { AppShell, type AppbarActivity, type Surface } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
@@ -20,7 +20,7 @@ import { RoadmapScreen } from '../screens/RoadmapScreen';
 import { UsageScreen } from '../screens/UsageScreen';
 import { InviteHero } from '../components/InviteHero';
 import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
-import { createDriveStore, DriveStoreContext, useActiveDrive } from '../components/session/drive-store';
+import { createDriveStore, DriveStoreContext, useActiveDrive, useDriveActivity } from '../components/session/drive-store';
 import { ToastHost, toast } from '../chrome/ToastHost';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -135,6 +135,9 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
   // NOT re-render per transcript line). One subscription feeds the board overlay, the Sil gate and
   // the title counter, so all three agree with the detail screen.
   const activeDrive = useActiveDrive(driveStore);
+  // WO-0060: the appbar chip's facts — a SECOND subscription on the same store; activitySnapshot's
+  // primitive content-compare keeps it silent per streamed line and per ~30s windows-pull emit.
+  const driveActivity = useDriveActivity(driveStore);
 
   const cards = useMemo(
     () =>
@@ -145,6 +148,26 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         ),
     [workOrders, workspaceId, activeDrive],
   );
+
+  // WO-0060: the chip's input. The limit is an ACCOUNT fact → every WO's rows flatten into
+  // limitInEffect (App holds the unfiltered list), and the live stamp covers the ✦ draft, which has
+  // no rows at all. The amber arm folds into `limitWarn`'s presence — AppShell never hears the
+  // fold's status word. Date.now() in a memo is deliberate: stamps move only when these deps move;
+  // the chip's own ticker owns every subsequent second.
+  const appbarActivity = useMemo<AppbarActivity>(() => {
+    const running = driveActivity?.running === true;
+    return {
+      running: running ? 1 : 0,
+      limitResetAt: limitInEffect(
+        workOrders.flatMap((w) => w.sessions),
+        driveActivity?.limitResetAt,
+        Date.now(),
+      ),
+      ...(running && driveActivity?.limitStatus === 'warning' && driveActivity.limitSubject
+        ? { limitWarn: driveActivity.limitSubject }
+        : {}),
+    };
+  }, [workOrders, driveActivity]);
 
   const refreshWorkspaces = useCallback(() => {
     source.getWorkspaces().then((ws) => {
@@ -385,6 +408,7 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
       onDocsRootChanged={refreshRoadmap}
       surface={surface}
       onSurfaceChange={setSurface}
+      driveActivity={appbarActivity}
     />
   ) : null;
 

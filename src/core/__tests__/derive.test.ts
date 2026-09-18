@@ -17,6 +17,7 @@ import type {
   WorkOrderId,
 } from '../types';
 import {
+  appbarDriveTier,
   deriveBucket,
   deriveCardAction,
   deriveCardActionRank,
@@ -28,6 +29,7 @@ import {
   deriveTrackMerge,
   deriveTrackStage,
   deriveWorkOrderCost,
+  limitInEffect,
   nextManuelAction,
   overlayLiveDrive,
   sessionForTrack,
@@ -830,5 +832,72 @@ describe('deriveCardReason — the limit_stopped arm (WO-0053)', () => {
       sessions: [aSession({ role: 'implementer', status: 'idle', providerSessionId: 's-c' })],
     });
     expect(deriveCardReason(clean)).toEqual({ kind: 'awaiting_next_session' }); // no limit arm fires
+  });
+});
+
+// WO-0060: the appbar chip's two core facts. `limitInEffect` scans the ACCOUNT's session rows (the
+// provider limit is an account fact, not a WO fact); only stamps that PARSE and are strictly future
+// count — a past stamp is already healed, a garbage stamp is not a claim. `appbarDriveTier` is the
+// LOCKED ladder (red > amber > green > none) as one core rule, the way deriveTurnState owns the
+// header band's.
+describe('limitInEffect (WO-0060)', () => {
+  const NOW = Date.parse('2026-08-31T12:00:00.000Z');
+  const at = (offsetMs: number): string => new Date(NOW + offsetMs).toISOString();
+  const row = (limitResetAt?: string) => [aSession({ role: 'implementer', status: 'idle', providerSessionId: 's-1', ...(limitResetAt !== undefined ? { limitResetAt } : {}) })];
+
+  it('no rows, no live stamp → undefined', () => {
+    expect(limitInEffect([], undefined, NOW)).toBeUndefined();
+  });
+  it('a single future row → that stamp', () => {
+    expect(limitInEffect(row(at(60_000)), undefined, NOW)).toBe(at(60_000));
+  });
+  it('only past rows → undefined (self-healing — a crossed clock is not a limit)', () => {
+    expect(limitInEffect(row(at(-60_000)), undefined, NOW)).toBeUndefined();
+  });
+  it('several future rows → the max', () => {
+    expect(limitInEffect(row(at(60_000)).concat(row(at(300_000))), undefined, NOW)).toBe(at(300_000));
+  });
+  it('past + future mix → the future one', () => {
+    expect(limitInEffect(row(at(-60_000)).concat(row(at(120_000))), undefined, NOW)).toBe(at(120_000));
+  });
+  it('live + rows → the max (a live EARLIER stamp must not mask a later row stamp)', () => {
+    expect(limitInEffect(row(at(600_000)), at(60_000), NOW)).toBe(at(600_000));
+    expect(limitInEffect(row(at(60_000)), at(600_000), NOW)).toBe(at(600_000));
+  });
+  it('live alone, zero rows → live (the ✦ draft arm — a draft has no WO sessions)', () => {
+    expect(limitInEffect([], at(60_000), NOW)).toBe(at(60_000));
+  });
+  it('an unparseable stamp mixed with a real one → ignored, the real future stamp wins', () => {
+    expect(limitInEffect(row('not-a-date').concat(row(at(60_000))), undefined, NOW)).toBe(at(60_000));
+  });
+  it('an unparseable stamp alone → undefined (garbage is not a claim)', () => {
+    expect(limitInEffect(row('not-a-date'), undefined, NOW)).toBeUndefined();
+  });
+  it('nowMs === stamp → undefined (strictly future — the boundary is already healed)', () => {
+    expect(limitInEffect(row(at(0)), undefined, NOW)).toBeUndefined();
+  });
+  it('empty-string and absent stamps are skipped', () => {
+    expect(limitInEffect(row(''), undefined, NOW)).toBeUndefined();
+    expect(limitInEffect([aSession({ role: 'implementer', status: 'idle', providerSessionId: 's-2' })], '', NOW)).toBeUndefined();
+  });
+});
+
+describe('appbarDriveTier (WO-0060)', () => {
+  const NOW = Date.parse('2026-08-31T12:00:00.000Z');
+  const future = new Date(NOW + 300_000).toISOString();
+  const past = new Date(NOW - 300_000).toISOString();
+
+  it('the ladder: a waiting limit outranks warn, warn outranks running', () => {
+    expect(appbarDriveTier({ running: true, limitResetAt: future, warn: true }, NOW)).toBe('limit');
+    expect(appbarDriveTier({ running: false, limitResetAt: future, warn: false }, NOW)).toBe('limit');
+    expect(appbarDriveTier({ running: true, warn: true }, NOW)).toBe('warn');
+    expect(appbarDriveTier({ running: true, warn: false }, NOW)).toBe('running');
+    expect(appbarDriveTier({ running: false, warn: false }, NOW)).toBe('none');
+  });
+  it('the hand-over: a crossed stamp + a running drive → running (the limit no longer claims)', () => {
+    expect(appbarDriveTier({ running: true, limitResetAt: past, warn: false }, NOW)).toBe('running');
+  });
+  it('a warn signal without a running drive → none (amber rides the live fold; no fold, no amber)', () => {
+    expect(appbarDriveTier({ running: false, warn: true }, NOW)).toBe('none');
   });
 });

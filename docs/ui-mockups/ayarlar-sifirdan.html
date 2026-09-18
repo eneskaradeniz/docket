@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ayarlar — Sıfırdan Mockup Turu (rev 4)</title>
+<style>
+  /* Docket "Kontrol Konsolu" kimliği — src/index.css token DEĞERLERİYLE birebir.
+     Mockup = bilgi sözleşmesi; dış bağımlılık yok (webfont yüklenmez, stack'ler index.css ile aynı). */
+  :root {
+    --bg:#000000; --surface:#0a0a0a; --raised:#171717; --hairline:#262626;
+    --ink:#f2f2f2; --dim:#8f8f8f;
+    --signal:#f5b544; --proceed:#4cc38a; --info:#6ca0ce; --error:#e5484d;
+    --bord: color-mix(in srgb, var(--dim) 35%, var(--hairline));
+    --sans:"Manrope",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; letter-spacing:.01em;
+    padding:40px 20px 80px;
+  }
+  .plate { max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:46px; }
+
+  /* --- tabaka kromu (uygulamada YOK) --- */
+  .plate-head h1 { font-size:17px; font-weight:700; }
+  .plate-head .sub { margin-top:6px; font-size:12.5px; color:var(--dim); line-height:1.6; }
+  .plate-head .sub b { color:var(--ink); font-weight:600; }
+  .verdict {
+    margin-top:14px; display:inline-flex; align-items:center; gap:8px;
+    border:1px dashed var(--hairline); border-radius:8px; padding:8px 12px;
+    font-family:var(--mono); font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em;
+  }
+  .verdict b { color:var(--signal); font-weight:600; }
+  .kararlar { margin-top:14px; display:flex; flex-direction:column; gap:6px; }
+  .kararlar div { font-size:12.5px; line-height:1.6; color:var(--dim); }
+  .kararlar b { color:var(--ink); font-weight:600; }
+  .kararlar .no { font-family:var(--mono); font-size:10.5px; color:var(--signal); margin-right:7px; }
+  .kararlar .m { font-family:var(--mono); font-size:11px; }
+  .legend { align-self:flex-start; margin-top:14px; font-family:var(--mono); font-size:10.5px; color:var(--dim); }
+
+  figure { display:flex; flex-direction:column; gap:10px; }
+  .figcap { display:flex; align-items:baseline; gap:10px; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); flex-wrap:wrap; }
+  .figcap .no { color:var(--signal); font-weight:600; }
+  .figcap .tag { color:var(--info); }
+  .why { border-left:2px solid var(--signal); padding:2px 0 2px 10px; font-size:12px; line-height:1.65; color:var(--dim); }
+  .why b { color:var(--ink); font-weight:600; }
+  .why .m { font-family:var(--mono); font-size:11px; }
+  .condlab { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--signal); }
+
+  /* --- kit çevirileri: Dialog (wide=680) --- */
+  .dlg {
+    width:680px; max-width:100%; overflow:hidden;
+    border:1px solid var(--hairline); border-radius:12px; background:var(--surface);
+    box-shadow:0 25px 50px -12px rgba(0,0,0,.6);
+  }
+  .dlg-head { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--hairline); padding:12px 16px; }
+  .dlg-head .t { font-size:14px; font-weight:600; letter-spacing:-.01em; }
+  .dlg-x { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:0; border-radius:6px; background:transparent; color:var(--dim); cursor:pointer; transition:background-color .12s ease, color .12s ease; }
+  .dlg-x:hover { background:var(--raised); color:var(--ink); }
+  .dlg-body { padding:14px 16px 16px; display:flex; flex-direction:column; gap:22px; }
+  .dlg-foot { display:flex; align-items:center; border-top:1px solid var(--hairline); background:color-mix(in srgb, var(--raised) 40%, transparent); padding:12px 16px; }
+  .dlg-foot .ver { font:400 11px var(--mono); color:var(--dim); }
+
+  /* --- kit çevirileri: bölüm + alan --- */
+  .sec { display:flex; flex-direction:column; gap:9px; }
+  .sec-h { font:500 11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  .sec-h::before { content:'● '; color:var(--hairline); } /* rack bölüm başlığının nokta açılışı */
+  .secline { font-size:11px; color:var(--dim); line-height:1.5; }
+  .f-label { display:block; font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--dim); margin-bottom:6px; }
+  .f-sub { display:block; font-size:11px; color:var(--dim); margin-bottom:5px; }
+  .inp {
+    width:100%; border:1px solid var(--hairline); background:var(--bg); border-radius:8px;
+    padding:6px 10px; font-family:var(--sans); font-size:13px; color:var(--ink);
+  }
+  .inp.mono { font-family:var(--mono); font-size:12px; }
+  .inp::placeholder { color:color-mix(in srgb, var(--dim) 70%, transparent); }
+  .row { display:flex; align-items:center; gap:8px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .hint-r { margin-left:auto; font-size:11px; color:var(--dim); text-align:right; }
+  .mread { margin-left:auto; font:400 11px var(--mono); color:var(--dim); white-space:nowrap; }
+
+  /* --- kit çevirileri: Button sm / ghost / alink / durum --- */
+  .btn {
+    display:inline-flex; align-items:center; justify-content:center; gap:6px; height:28px; padding:0 10px;
+    border-radius:8px; font-family:var(--sans); font-size:12px; font-weight:500; white-space:nowrap;
+    border:1px solid transparent; cursor:pointer; transition:filter .12s ease, background-color .12s ease, color .12s ease;
+  }
+  .btn.primary { background:var(--ink); color:var(--bg); font-weight:600; }
+  .btn.primary:hover { filter:brightness(1.1); }
+  .btn.ghost { color:var(--dim); }
+  .btn.ghost:hover { color:var(--ink); background:var(--raised); }
+  .entermark { font:500 10px var(--mono); color:var(--dim); border:1px solid var(--hairline); border-radius:4px; padding:1px 5px; }
+  .entermark.onink { color:rgba(0,0,0,.62); border-color:rgba(0,0,0,.32); }
+  .alink { color:var(--info); font:500 12px var(--mono); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .alink:hover { background:color-mix(in srgb, var(--info) 14%, transparent); }
+  .alink.dim { color:var(--dim); opacity:.45; }
+  .st-ok { font-size:12px; color:var(--proceed); }
+  .st-unknown { font-size:12px; color:var(--error); }
+  .spin { width:14px; height:14px; border-radius:9999px; border:2px solid var(--hairline); border-top-color:var(--ink); animation:rot 1s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+
+  /* --- kit çevirileri: Segmented --- */
+  .seg { display:inline-flex; gap:2px; border:1px solid var(--hairline); background:var(--bg); border-radius:8px; padding:2px; }
+  .seg button {
+    border:0; background:transparent; border-radius:6px; padding:4px 10px; cursor:pointer;
+    font:500 11px var(--mono); color:var(--dim);
+    transition:background-color .12s ease, color .12s ease;
+  }
+  .seg button:hover { background:color-mix(in srgb, var(--raised) 60%, transparent); color:var(--ink); }
+  .seg button[aria-pressed="true"] { background:var(--raised); color:var(--ink); }
+
+  /* --- MODELLER A: rol satırı --- */
+  .mrows { display:flex; flex-direction:column; gap:6px; }
+  .mrow { display:flex; align-items:center; gap:10px; padding:2px 0; }
+  .mrow .seg { margin-left:auto; }
+  .rlamp { display:inline-block; width:3px; height:11px; border-radius:2px; flex:none; }
+  .rlamp-architect { background:var(--signal); }
+  .rlamp-implementer { background:var(--info); }
+  .rlamp-verifier { background:var(--proceed); }
+  .mrole { font:500 11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--ink); }
+
+  /* --- `özel` açılımı (state transition, ≤200ms — WsSettingsModal'ın satır açma izi) --- */
+  @keyframes reveal { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+  .mreveal { margin:6px 0 2px 13px; max-width:430px; display:flex; flex-direction:column; gap:5px; animation:reveal .2s ease-out; }
+  .mreveal .row .inp { flex:1; }
+  .err { font-size:11px; color:var(--error); }
+
+  /* --- MODELLER B: rol kartları + çipler (.ichip / .ichip-on sesi) --- */
+  .rcards { display:flex; flex-direction:column; gap:8px; }
+  .rcardB { border:1px solid var(--hairline); background:var(--bg); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .rcB-head { display:flex; align-items:center; gap:8px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip {
+    display:inline-flex; align-items:center; border:1px solid var(--hairline); color:var(--dim);
+    border-radius:6px; padding:3px 9px; font:500 11px var(--mono); cursor:pointer;
+    transition:border-color .12s ease, color .12s ease, background-color .12s ease;
+  }
+  .chip:hover { border-color:var(--dim); color:var(--ink); }
+  .chip.on {
+    border-color:color-mix(in srgb, var(--info) 60%, transparent);
+    background:color-mix(in srgb, var(--info) 10%, transparent);
+    color:var(--ink);
+  }
+
+  /* --- MODELLER C: hafif liste --- */
+  .mtable { width:100%; border-collapse:collapse; }
+  .mtable th { font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--dim); text-align:left; padding:6px 10px; border-bottom:1px solid var(--hairline); }
+  .mtable td { padding:8px 10px; border-bottom:1px solid var(--hairline); }
+  .mtable tr:last-child td { border-bottom:0; }
+  .selchip {
+    display:inline-flex; align-items:center; gap:7px; border:1px solid var(--hairline); color:var(--ink);
+    border-radius:6px; padding:3px 9px; font:500 11px var(--mono); background:var(--bg); cursor:pointer;
+  }
+  .selchip:hover { border-color:var(--dim); }
+  .selchip .caret { color:var(--dim); font-size:9px; }
+
+  /* --- durum şeridi sahnesi --- */
+  .stage { border:1px dashed var(--hairline); border-radius:10px; padding:20px 18px; display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; }
+  .stage .col { display:flex; flex-direction:column; gap:8px; min-width:280px; flex:1; }
+  .stagelab { font:500 10px var(--mono); text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+
+  footer.note { border-top:1px solid var(--hairline); padding-top:18px; font-size:12.5px; color:var(--dim); line-height:1.7; }
+  footer.note b { color:var(--ink); }
+  footer.note .m { font-family:var(--mono); font-size:11px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation:none !important; transition:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="plate">
+
+  <!-- ═══════════════ TABAKA BAŞLIĞI (uygulamada yok) ═══════════════ -->
+  <header class="plate-head">
+    <h1>Ayarlar — Sıfırdan Mockup Turu <span style="color:var(--dim);font-weight:400">· rev 4 — WO-0059 model seçimi + WO-0060 yarımı</span></h1>
+    <p class="sub">
+      İki kesim reddedildi: <b>rev 2</b> sekmeli (<s>sekmeler yasak</s>), <b>rev 3</b> 3×3 atama matrisi
+      (<s>ızgara soğuk</s>). Operatörün istedi: <b>basit sade kullanışlı modern bir settings sayfası; model seçimi düzgün olsun.</b>
+      rev 4'ün içeriği: model tercihi <b>rol başına</b> (MİMAR · UYGULAYICI · DENETÇİ), seçenekler alias kademeleri
+      <span style="font-family:var(--mono);font-size:11px">Default · sonnet · opus · haiku · özel</span> — matristen çok daha
+      basit bir şekil mümkün. Kareler uygulamanın gerçek diliyle çizildi: palet ve ölçüler
+      <span style="font-family:var(--mono);font-size:11px">src/index.css</span> token değerleri, rol kimliği
+      <b>denetim şeridinin rol lambaları</b>, seçici <b>kit Segmented'ın</b> (dil/tema'nın bugünkü sesi) dilinde.
+    </p>
+    <div class="verdict"><span>ana iddia:</span> model seçimi ÜÇ SATIRDIR — matris değil, kart değil; her rol kendi segmentini taşır</div>
+    <div class="kararlar">
+      <div><span class="no">1</span><b>Roller satırdır.</b> <span class="m">MİMAR / UYGULAYICI / DENETÇİ</span> üç ince satır; kimlik rol lambasıyla taşınır — MİMAR sarı, UYGULAYICI mavi, DENETÇİ yeşil, uygulama boyunca aynı üç hue (denetim şeridi + oturum kartlarının aynısı).</div>
+      <div><span class="no">2</span><b>Kademe seçimi kit Segmented'ın dilinde.</b> Kapalı enum anlık yazar (dil/tema izi — <span class="m">Segmented immediate-write</span>); serbest kimlik <span class="m">özel</span>'in ardında, Enter/blur commit (WsSettingsModal'ın satır düzenleyici izi). Dinlenme hâlinde satır başına 4 hücre — seçenek patlaması yok.</div>
+      <div><span class="no">3</span><b>Default bir seçenektir, boşluk değil.</b> Segmentin İLK hücresi; "seçilmemiş rol" durumu yoktur — boş = gateway default'u, kasıtlı bir tercihtir.</div>
+      <div><span class="no">4</span><b>Açıklama paragrafı yok; iki tek-satır kalır:</b> kademe→gateway eşlemesi başlığın altında, ✦ taslağın MİMAR satırını izlemesi satırların altında (ikisi de neden/sonuç satırı — ADR-0012).</div>
+      <div><span class="no">5</span><b>Hata alanın altında, kalıcı, <span class="m">role=alert</span></b> (WO-0036); kayıt hatası toast'ta — footer hata taşımaz. Zorunluluk işareti yok; geçerlilik asla Kaydet'i kilitlemez.</div>
+      <div><span class="no">6</span><b>Tek akış, sekme yok.</b> Bölümler rack'in nokta-açılışlı readout başlığıyla ayrılır; her draft grubunun kendi atomik Kaydet'i; footer solda sürüm, sağda yalnız Kapat.</div>
+    </div>
+    <div class="legend">kare 01 önerilen tamamı · 02 özel'in iki hâli · 03 kart alternatifi · 04 liste alternatifi + üç durum</div>
+  </header>
+
+  <!-- ═══════════════ 01 · ÖNERİLEN TAM TASARIM ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">01</span> ÖNERİLEN TAM TASARIM <span class="tag">— tek akış · MODELLER = A (rol satırı + segment)</span></figcaption>
+
+    <p class="condlab">durum · anahtar kayıtlı · MİMAR=opus · UYGULAYICI=sonnet · DENETÇİ=Default · kök docs · bütçe $25 / %80</p>
+
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t">Ayarlar</span>
+        <button class="dlg-x" aria-label="Kapat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="dlg-body">
+
+        <!-- SAĞLAYICI -->
+        <section class="sec">
+          <h2 class="sec-h">SAĞLAYICI</h2>
+          <div class="row">
+            <span class="st-ok">Hazır</span>
+            <a class="alink" style="margin-left:auto" href="#">Test et</a>
+          </div>
+          <div>
+            <span class="f-label">API anahtarı</span>
+            <div class="row">
+              <input class="inp mono" type="password" style="flex:1" value="••••••••••••••••" aria-label="API anahtarı" />
+              <button class="btn primary">Kaydet <span class="entermark onink">⏎</span></button>
+            </div>
+          </div>
+        </section>
+
+        <!-- MODELLER — alternatif A -->
+        <section class="sec">
+          <h2 class="sec-h">MODELLER</h2>
+          <p class="secline">Kademe, gateway'de kendi modeline eşlenir.</p>
+          <div class="mrows">
+            <div class="mrow">
+              <span class="rlamp rlamp-architect"></span><span class="mrole">MİMAR</span>
+              <div class="seg" role="group" aria-label="MİMAR kademesi">
+                <button type="button">Default</button>
+                <button type="button">sonnet</button>
+                <button type="button" aria-pressed="true">opus</button>
+                <button type="button">haiku</button>
+                <button type="button">özel</button>
+              </div>
+            </div>
+            <div class="mrow">
+              <span class="rlamp rlamp-implementer"></span><span class="mrole">UYGULAYICI</span>
+              <div class="seg" role="group" aria-label="UYGULAYICI kademesi">
+                <button type="button">Default</button>
+                <button type="button" aria-pressed="true">sonnet</button>
+                <button type="button">opus</button>
+                <button type="button">haiku</button>
+                <button type="button">özel</button>
+              </div>
+            </div>
+            <div class="mrow">
+              <span class="rlamp rlamp-verifier"></span><span class="mrole">DENETÇİ</span>
+              <div class="seg" role="group" aria-label="DENETÇİ kademesi">
+                <button type="button" aria-pressed="true">Default</button>
+                <button type="button">sonnet</button>
+                <button type="button">opus</button>
+                <button type="button">haiku</button>
+                <button type="button">özel</button>
+              </div>
+            </div>
+          </div>
+          <p class="secline">✦ taslak sürüşü MİMAR satırını izler.</p>
+        </section>
+
+        <!-- GENEL -->
+        <section class="sec">
+          <h2 class="sec-h">GENEL</h2>
+          <div class="grid2">
+            <div>
+              <span class="f-label">Dil</span>
+              <div class="seg" role="group" aria-label="Dil">
+                <button type="button" aria-pressed="true">Türkçe</button>
+                <button type="button">English</button>
+              </div>
+            </div>
+            <div>
+              <span class="f-label">Tema</span>
+              <div class="seg" role="group" aria-label="Tema">
+                <button type="button" aria-pressed="true">Sistem</button>
+                <button type="button">Açık</button>
+                <button type="button">Karanlık</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ÇALIŞMA ALANI -->
+        <section class="sec">
+          <h2 class="sec-h">ÇALIŞMA ALANI</h2>
+
+          <div>
+            <span class="f-label">Yapı kökü</span>
+            <div class="row">
+              <input class="inp mono" style="flex:1" value="docs" aria-label="Yapı kökü" />
+              <button class="btn primary">Kaydet</button>
+            </div>
+            <div class="row" style="margin-top:6px">
+              <span class="hint-r">Dosyalar taşınmaz; iş emri numaralandırması yeni kökte baştan sayılır.</span>
+            </div>
+          </div>
+
+          <div>
+            <span class="f-label">Aylık bütçe</span>
+            <div class="grid2">
+              <div>
+                <span class="f-sub">Limit ($)</span>
+                <input class="inp mono" value="25" aria-label="Limit ($)" />
+              </div>
+              <div>
+                <span class="f-sub">Uyarı eşiği (%)</span>
+                <input class="inp mono" value="80" aria-label="Uyarı eşiği (%)" />
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button class="btn primary">Kaydet</button>
+              <button class="btn ghost">Kaldır</button>
+              <span class="mread">bu ay $3,12 / $25,00</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+      <div class="dlg-foot">
+        <span class="ver">Docket · v0.1.0</span>
+        <button class="btn ghost" style="margin-left:auto">Kapat</button>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> dört bölüm tek dikey akışta — sekme yok, kaydırma tek yön. Model kararları üç satırda biter:
+      rol lambası kimliği <b>uygulamanın her yerinde aynı üç hue</b> olduğu için MİMAR satırı aranmaz, görünür.
+      Segment bu dialogun zaten var olan seçici sesi (dil/tema) — <b>sıfır yeni gramer</b>; kapalı enum anlık yazar,
+      <span class="m">özel</span> kademeli açılır. Dinlenme hâli satır başına 4 hücre; serbest kimlik isteyen
+      operatör zaten ne yazacağını bilir. Dialog genişliği kit'in mevcut <span class="m">wide</span> (680px) hâli —
+      5 hücreli segmente nefes verir, yeni bir ölçek tanıtmaz. Footer sessizdir: solda sürüm, sağda Kapat;
+      hata asla footer'da konuşmaz.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 02 · ALTERNATİF A — `özel`İN İKİ HÂLİ ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">02</span> MODELLER · ALTERNATİF A <span class="tag">— özel açık: girilmiş + boş/hatalı</span></figcaption>
+
+    <p class="condlab">durum · MİMAR=özel, kimlik girilmiş · UYGULAYICI=özel, alan boş — hata satırı alanın altında · modal gövdesi kısaltıldı (yalnız MODELLER)</p>
+
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t">Ayarlar</span>
+        <button class="dlg-x" aria-label="Kapat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="dlg-body">
+        <section class="sec">
+          <h2 class="sec-h">MODELLER</h2>
+          <p class="secline">Kademe, gateway'de kendi modeline eşlenir.</p>
+          <div class="mrows">
+            <div class="mrow">
+              <span class="rlamp rlamp-architect"></span><span class="mrole">MİMAR</span>
+              <div class="seg" role="group" aria-label="MİMAR kademesi">
+                <button type="button">Default</button>
+                <button type="button">sonnet</button>
+                <button type="button">opus</button>
+                <button type="button">haiku</button>
+                <button type="button" aria-pressed="true">özel</button>
+              </div>
+            </div>
+            <div class="mreveal">
+              <div class="row">
+                <input class="inp mono" style="flex:1" value="glm-4.7-air" aria-label="MİMAR özel model kimliği" />
+                <span class="entermark">⏎</span>
+              </div>
+            </div>
+
+            <div class="mrow" style="margin-top:6px">
+              <span class="rlamp rlamp-implementer"></span><span class="mrole">UYGULAYICI</span>
+              <div class="seg" role="group" aria-label="UYGULAYICI kademesi">
+                <button type="button">Default</button>
+                <button type="button">sonnet</button>
+                <button type="button">opus</button>
+                <button type="button">haiku</button>
+                <button type="button" aria-pressed="true">özel</button>
+              </div>
+            </div>
+            <div class="mreveal">
+              <div class="row">
+                <input class="inp mono" style="flex:1" value="" placeholder="tam model kimliği (ör. glm-4.7)" aria-label="UYGULAYICI özel model kimliği" aria-invalid="true" />
+              </div>
+              <span class="err" role="alert">Tam model kimliği gir.</span>
+            </div>
+
+            <div class="mrow" style="margin-top:6px">
+              <span class="rlamp rlamp-verifier"></span><span class="mrole">DENETÇİ</span>
+              <div class="seg" role="group" aria-label="DENETÇİ kademesi">
+                <button type="button" aria-pressed="true">Default</button>
+                <button type="button">sonnet</button>
+                <button type="button">opus</button>
+                <button type="button">haiku</button>
+                <button type="button">özel</button>
+              </div>
+            </div>
+          </div>
+          <p class="secline">✦ taslak sürüşü MİMAR satırını izler.</p>
+        </section>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Neden:</b> <span class="m">özel</span> segmentin beşinci hücresi değil bir KAPISI — seçilince satırın altında
+      mono giriş açılır (state transition, ≤200ms; WsSettingsModal'ın satır açma izi), kapanınca hiç iz kalmaz.
+      Commit Enter/blur'dadır: girilmiş satırda ⏎ rozeti taahhüdü gösterir, buton açmaz. Hata alanın altında kalıcı
+      (<span class="m">role=alert</span>), geçerlilik hiçbir şeyi kilitlemez (WO-0036); kayıt hatası toast'a gider.
+      Açılım satırın SOL kenarına hizalıdır (lambanın 13px sağında) — F-deseni bozulmaz, göz satırdan aşağı düşer.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 03 · ALTERNATİF B — ROL KARTLARI ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">03</span> MODELLER · ALTERNATİF B <span class="tag">— rol kartları + kademe çipleri</span></figcaption>
+
+    <p class="condlab">durum · örnek veri kare 01 ile aynı · modal gövdesi kısaltıldı (yalnız MODELLER)</p>
+
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t">Ayarlar</span>
+        <button class="dlg-x" aria-label="Kapat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="dlg-body">
+        <section class="sec">
+          <h2 class="sec-h">MODELLER</h2>
+          <p class="secline">Kademe, gateway'de kendi modeline eşlenir.</p>
+          <div class="rcards">
+            <div class="rcardB">
+              <div class="rcB-head"><span class="rlamp rlamp-architect"></span><span class="mrole">MİMAR</span></div>
+              <div class="chips" role="group" aria-label="MİMAR kademesi">
+                <span class="chip">Default</span>
+                <span class="chip">sonnet</span>
+                <span class="chip on">opus</span>
+                <span class="chip">haiku</span>
+                <span class="chip">özel</span>
+              </div>
+            </div>
+            <div class="rcardB">
+              <div class="rcB-head"><span class="rlamp rlamp-implementer"></span><span class="mrole">UYGULAYICI</span></div>
+              <div class="chips" role="group" aria-label="UYGULAYICI kademesi">
+                <span class="chip">Default</span>
+                <span class="chip on">sonnet</span>
+                <span class="chip">opus</span>
+                <span class="chip">haiku</span>
+                <span class="chip">özel</span>
+              </div>
+            </div>
+            <div class="rcardB">
+              <div class="rcB-head"><span class="rlamp rlamp-verifier"></span><span class="mrole">DENETÇİ</span></div>
+              <div class="chips" role="group" aria-label="DENETÇİ kademesi">
+                <span class="chip on">Default</span>
+                <span class="chip">sonnet</span>
+                <span class="chip">opus</span>
+                <span class="chip">haiku</span>
+                <span class="chip">özel</span>
+              </div>
+            </div>
+          </div>
+          <p class="secline">✦ taslak sürüşü MİMAR kartını izler.</p>
+        </section>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Dürüst değerlendirme:</b> kartlar sakin, dokunmatik hedefi cömert ve çip-on (info tint) uygulamanın
+      seçili-çip sesi. Ama aynı ÜÇ karar burada ~2,5× dikey alan yer; 680px dialogda GENEL + ÇALIŞMA ALANI
+      fold altına kayar. Daha zor elde: kart çerçevesi "bu bir yönetilen NESNE" iması taşır — o imayı bu
+      ekranda taşıyan tek şey çalışma alanının kendisidir; rol bir nesne değil bir TERCİHTİR. `özel` açılımı
+      kartın içine sıkışır ya da kartı ikiye böler — ikisi de A'nın satır açılımından hantal.
+    </p>
+  </figure>
+
+  <!-- ═══════════════ 04 · ALTERNATİF C — HAFİF LİSTE + DURUMLAR ═══════════════ -->
+  <figure>
+    <figcaption class="figcap"><span class="no">04</span> MODELLER · ALTERNATİF C <span class="tag">— hafif liste · + sağlayıcı/bütçe durum şeridi</span></figcaption>
+
+    <p class="condlab">durum · örnek veri kare 01 ile aynı · ardından üç durum: anahtar yok · test sürüyor · hata satırı</p>
+
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t">Ayarlar</span>
+        <button class="dlg-x" aria-label="Kapat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="dlg-body">
+        <section class="sec">
+          <h2 class="sec-h">MODELLER</h2>
+          <p class="secline">Kademe, gateway'de kendi modeline eşlenir.</p>
+          <table class="mtable">
+            <thead>
+              <tr><th>ROL</th><th>KADEME</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="row" style="gap:8px"><span class="rlamp rlamp-architect"></span><span class="mrole">MİMAR</span></span></td>
+                <td><span class="selchip">opus <span class="caret">▾</span></span></td>
+              </tr>
+              <tr>
+                <td><span class="row" style="gap:8px"><span class="rlamp rlamp-implementer"></span><span class="mrole">UYGULAYICI</span></span></td>
+                <td><span class="selchip">sonnet <span class="caret">▾</span></span></td>
+              </tr>
+              <tr>
+                <td><span class="row" style="gap:8px"><span class="rlamp rlamp-verifier"></span><span class="mrole">DENETÇİ</span></span></td>
+                <td><span class="selchip">Default <span class="caret">▾</span></span></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="secline">✦ taslak sürüşü MİMAR satırını izler.</p>
+        </section>
+      </div>
+    </div>
+
+    <div class="stage" style="margin-top:2px">
+      <div class="col">
+        <span class="stagelab">anahtar yok — SAĞLAYICI</span>
+        <div class="row">
+          <span class="st-unknown">Durum bilinmiyor — anahtar kaydet ya da Test et</span>
+        </div>
+        <div class="row">
+          <a class="alink" style="margin-left:auto" href="#">Test et</a>
+        </div>
+      </div>
+      <div class="col">
+        <span class="stagelab">test sürüyor — SAĞLAYICI</span>
+        <div class="row">
+          <span class="spin" aria-label="Test ediliyor"></span>
+          <a class="alink dim" style="margin-left:auto" href="#">Test et</a>
+        </div>
+      </div>
+      <div class="col">
+        <span class="stagelab">hata satırı — alanın altında</span>
+        <div>
+          <span class="f-sub">Limit ($)</span>
+          <input class="inp mono" value="0" aria-label="Limit ($)" aria-invalid="true" />
+          <span class="err" role="alert" style="display:block;margin-top:5px">Sıfırdan büyük bir tutar gir.</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="why">
+      <b>Alternatif C — dürüst değerlendirme:</b> matrisin sadeleşmiş hâli; preset kolonları tek hücreye indi ama
+      <b>ızgara sesi duruyor</b> — rev 3'ün reddedilen soğukluğunun hafifletilmiş hâli, öğrenilmiş bir redde saygı
+      duruşu. Daha kötü tarafı: değer ▾'ın ARDINDA — üç rolün üçü için mevcut tercih <b>birer tık uzakta</b>
+      okunur (recognition over recall ihlali). Tek üstünlüğü yoğunluk; A zaten aynı yoğunluğu segmentin sabit
+      hücreleriyle, tık eskitmeden veriyor. Durum şeridi ise tasarımdan bağımsız sözleşmedir: bilinmeyen durum
+      kırmızı konuşur (bugünkü gibi), test sırasında spinner durum satırının yerini yutar, alan hatası SADECE
+      alanın altındadır.
+    </p>
+  </figure>
+
+  <footer class="note">
+    <b>Kabul özeti:</b> önerilen kesim kare 01 — MODELLER = A (rol satırı + Segmented), tek akış, dört bölüm + sessiz
+    footer. Palet ve ölçüler <span style="font-family:var(--mono);font-size:11px">src/index.css</span> koyu token
+    değerleriyle birebir; açık yüz aynı token'ların light override'ıdır (mockup koyu tabanlıdır). Kademe→gateway
+    eşlemesi (<span style="font-family:var(--mono);font-size:11px">ANTHROPIC_DEFAULT_*_MODEL</span>) operatörün
+    gateway işi; Docket yalnız alias'ı yazar. Onay gelirse kararlar tarihle kilitlenir (operator_checkpoint tur 1);
+    uygulama test-first olmayan UI yüzünde yürür ve her chunk operatörün manuel kontrolüne sunulur — tek satır
+    uygulama kodu bu onaydan önce yazılmaz.
+  </footer>
+
+</div>
+</body>
+</html>

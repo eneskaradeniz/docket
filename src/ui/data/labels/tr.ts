@@ -796,6 +796,26 @@ export const UI = {
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` %${pct}` : ''}${time !== null ? ` — ${time}'de sıfırlanır` : ' — sınır yakın'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5 saatlik pencere' : kind === 'seven_day' ? '7 günlük pencere' : 'pencere'),
+  // ===== WO-0060 — appbar sürüş/limit çipi (boşta yok · yeşil sayaç · amber uyarı · kırmızı geri sayım) =====
+  // Çip PASİF gösterge: tıklama yok, iş-emri kimliği yok. appbarRunningCount, agentRunningLine
+  // DEĞİLDİR — o alt-ajan (WO-0055), bu sürüş sayar; ikisi tek anahtarda birleşirse iki yönde de
+  // yalan söyler. limitCountdown, formatDuration'dan AYRI anahtar kastıyla: o geçen-süre
+  // kopyasını konuşur (Xs Ydk'ta tavan yapar), bu geri sayımı gün katmanıyla (beş saatlik pencere
+  // «4s 12dk», yedi günlük «2g 3s» yaşar).
+  appbarRunningCount: (n: number) => (n === 1 ? '1 sürüyor' : `${n} sürüyor`),
+  limitCountdown: (ms: number) => {
+    if (ms < 0) ms = 0; // ticker'ın çaprazlama yarışı — negatif kare bir kare yaşar, sonra çip söker
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}sn`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}dk`;
+    const h = Math.floor(min / 60);
+    if (h < 48) return `${h}s ${min % 60}dk`;
+    const d = Math.floor(h / 24);
+    return `${d}g ${h % 24}s`;
+  },
+  appbarLimitWarn: 'limit yaklaşıyor',
+  appbarLimitAria: (time: string) => `Kullanım limiti doldu — ${time}'de sıfırlanır`,
   // ===== WO-0054 — kullanım ekranı (mockup rev 1; ay başlığı · canlı kota · döküm · liste) =====
   // Ay başlığı MEVCUT bütçe görünümünü konuşur (WO-0047'nin matematiği/kopyası — burada yeniden
   // türetilmez); kota paneli yalnız sağlayıcının kendi sinyalini okur (WO-0053 kuralı); model

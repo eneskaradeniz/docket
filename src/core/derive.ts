@@ -1,7 +1,9 @@
 // The product rules (ADR-0005 consequence): pure functions over WorkOrder state. No React, no I/O.
 // `whoseTurn` is the gate engine from ADR-0001 read in the other direction.
 import { GATES } from './gates';
-import type { LiveSessionStatus } from './runner'; // type-only — runner imports only types.ts, no cycle
+// runner imports only types.ts — no cycle. WO-0060 added the one VALUE import: the appbar chip's
+// red gate shares the LimitCard's ONE clock truth (limitCrossing), never a re-derived comparison.
+import { limitCrossing, type LiveSessionStatus } from './runner';
 import type {
   AbsentReason,
   ActionIntent,
@@ -241,6 +243,55 @@ export function deriveCardReason(wo: WorkOrder): CardReason {
 
   if (ciActivelyRunning(wo)) return { kind: 'ci_running' };
   return { kind: 'awaiting_next_session' };
+}
+
+// ===== Appbar drive/limit chip (WO-0060) =====
+//
+// The top bar's one glance fact, DERIVED not stored: is the provider's account limit in effect
+// (an ACCOUNT fact — every work order's rows are scanned, the ✦ draft rides the live stamp), and
+// which tier does the chip speak. The ladder is the LOCKED product rule — red > amber > green >
+// none — owned in core the way deriveTurnState owns the header band's turn line.
+
+/** The account-wide limit stamp: only stamps that PARSE and are STRICTLY future count (`nowMs ===
+ *  stamp` is already healed; a past stamp is a crossed clock, not a limit; a garbage stamp is not
+ *  a claim — the OPPOSITE of limitCrossing's wait-on-garbage, which is why the two share no
+ *  helper). The latest future stamp wins, so a live EARLIER stamp can never mask a later row
+ *  stamp — "live outranks" is simply the max. The caller flattens every WO's sessions (App holds
+ *  the unfiltered list); `liveResetAt` is the active fold's `lastLimit.resetAt` and covers the
+ *  draft arm, which has no session rows at all. */
+export function limitInEffect(
+  sessions: ReadonlyArray<Pick<SessionRef, 'limitResetAt'>>,
+  liveResetAt: string | undefined,
+  nowMs: number,
+): string | undefined {
+  let bestMs: number | undefined;
+  let bestStamp: string | undefined;
+  const consider = (stamp: string | undefined): void => {
+    if (!stamp) return;
+    const then = Date.parse(stamp);
+    if (Number.isNaN(then) || then <= nowMs) return;
+    if (bestMs === undefined || then > bestMs) {
+      bestMs = then;
+      bestStamp = stamp;
+    }
+  };
+  for (const s of sessions) consider(s.limitResetAt);
+  consider(liveResetAt);
+  return bestStamp;
+}
+
+export type AppbarDriveTier = 'limit' | 'warn' | 'running' | 'none';
+
+/** The chip's tier — the LOCKED ladder. Red gates on `limitCrossing` (one truth with the
+ *  LimitCard's clock: the stamp still waiting = the limit still claiming). Amber rides the live
+ *  fold's provider warning, so it only ever overlaps green — there it wins (attention goes to the
+ *  scarcer resource). The input contract excludes unparseable stamps: `limitInEffect` never
+ *  emits one; a crossed stamp falls through to the running arm (the hand-over). */
+export function appbarDriveTier(input: { running: boolean; limitResetAt?: string; warn: boolean }, nowMs: number): AppbarDriveTier {
+  if (input.limitResetAt !== undefined && limitCrossing(input.limitResetAt, nowMs) === 'wait') return 'limit';
+  if (input.running && input.warn) return 'warn';
+  if (input.running) return 'running';
+  return 'none';
 }
 
 export function deriveRail(wo: WorkOrder): StageRailStep[] {
