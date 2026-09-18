@@ -31,6 +31,23 @@ describe('locale bundles (WO-0035)', () => {
     expect(en.UI.formatDuration(65_000)).toBe('1m 5s');
   });
 
+  it('the chip countdown speaks the day tier; the count + warn body localize (WO-0060)', () => {
+    expect(tr.UI.limitCountdown(42_000)).toBe('42sn');
+    expect(tr.UI.limitCountdown(58 * 60_000)).toBe('58dk');
+    expect(tr.UI.limitCountdown(4 * 3_600_000 + 12 * 60_000)).toBe('4s 12dk');
+    expect(tr.UI.limitCountdown(2 * 86_400_000 + 3 * 3_600_000)).toBe('2g 3s');
+    expect(tr.UI.limitCountdown(-5)).toBe('0sn'); // the crossing race clamps to one last frame
+    expect(en.UI.limitCountdown(4 * 3_600_000 + 12 * 60_000)).toBe('4h 12m');
+    expect(en.UI.limitCountdown(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d 3h');
+    expect(tr.UI.appbarRunningCount(1)).toBe('1 sürüyor');
+    expect(tr.UI.appbarRunningCount(2)).toBe('2 sürüyor');
+    expect(en.UI.appbarRunningCount(1)).toBe('1 running');
+    expect(tr.UI.appbarLimitWarn).toBe('limit yaklaşıyor');
+    expect(en.UI.appbarLimitWarn).toBe('limit approaching');
+    expect(tr.UI.appbarLimitAria('14:32')).toBe("Kullanım limiti doldu — 14:32'de sıfırlanır");
+    expect(en.UI.appbarLimitAria('14:32')).toBe('Usage limit reached — resets at 14:32');
+  });
+
   it('month abbreviations localize', () => {
     // 17:15Z stays inside August in every timezone (±14h) — the month, not the hour, is the assertion
     expect(tr.formatDateTime('2026-08-15T17:15:00Z')).toContain('Ağu');

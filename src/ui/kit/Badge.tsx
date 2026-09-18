@@ -13,11 +13,26 @@ const tones: Record<BadgeTone, string> = {
   error: 'border-error/50 text-error bg-error/10',
 };
 
-export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
+export function Badge({
+  tone = 'neutral',
+  children,
+  caps = true,
+  className,
+}: {
+  tone?: BadgeTone;
+  children: ReactNode;
+  /** WO-0060: the appbar chip must opt OUT of the uppercase — "4s 12dk" would read "4S 12DK" and S
+   *  is both saniye and saat. The default stays caps, so every existing call site is pixel-identical. */
+  caps?: boolean;
+  /** Escape hatch for one-off layout (the chip's icon gap) — the tone map stays the one truth. */
+  className?: string;
+}) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded border px-1.5 py-px font-mono text-[10px] font-medium uppercase tracking-wider',
+        'inline-flex items-center rounded border px-1.5 py-px font-mono text-[10px] font-medium tracking-wider',
+        caps && 'uppercase',
+        className,
         tones[tone],
       )}
     >

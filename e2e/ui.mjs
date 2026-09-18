@@ -2642,7 +2642,9 @@ await spec('WO-0053 limit 04 (frame 03): the restart re-derivation — the card 
   await openDetail('Yeni iş emri örneği');
   await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
   await page.waitForTimeout(500);
-  await page.evaluate(limitDeath, futureStamp());
+  // a SHORT stamp: this row's leftover must CROSS before the WO-0060 chip block runs at the
+  // suite's tail — a +1h leftover would hold the chip red through every later spec (found live).
+  await page.evaluate(limitDeath, new Date(Date.now() + 8_000).toISOString());
   await page.waitForTimeout(600);
   assert.equal(await page.locator('[data-limit-card]').count(), 1, 'the card did not render at the death');
   // navigate away and back — the fold is dead, the ROW carries limit_reset_at, the seed re-derives
@@ -2952,8 +2954,16 @@ await spec('WO-0059 rev 4 ayarlar: sol menü iki öğe, rol kademe segmentleri (
   await page.waitForTimeout(300);
   assert.equal(await dlg.locator('[data-general-section]').count(), 1, 'the general section did not open');
   assert.equal(await dlg.locator('[data-provider-line]').count(), 1, 'the presence line is missing');
-  const line = ((await dlg.locator('[data-provider-line]').innerText()) ?? '').trim();
-  assert.ok(/Hazır|Bulunamadı|Doğrulanıyor/.test(line), `the presence line lost its two-state word: ${line}`);
+  // the mount check is a REAL spawn-free handshake — the machine may make it slower than one
+  // waitForTimeout: poll until a RESULT word replaces the spinner (the two-state word is for
+  // results only; a bare «Claude Code · Doğrula» line is the still-verifying shape)
+  let line = '';
+  for (let i = 0; i < 40; i++) {
+    line = ((await dlg.locator('[data-provider-line]').innerText()) ?? '').trim();
+    if (/Hazır|Bulunamadı/.test(line)) break;
+    await page.waitForTimeout(250);
+  }
+  assert.ok(/Hazır|Bulunamadı/.test(line), `the presence line lost its two-state word: ${line}`);
   assert.ok((await dlg.getByText('Riskli hariç').count()) >= 1, 'the permission rule is not in Genel');
   await page.screenshot({ path: join(SHOTS, 'settings-general@980.png') });
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
@@ -2997,6 +3007,138 @@ await spec('WO-0059 rev 4: kök + bütçe grupları ws Düzenle dialogunda — g
   assert.ok((await dlg.locator('[data-docs-root-section]').count()) === 1, 'the docs-root group is missing');
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
+});
+
+// ===== WO-0060 — the appbar drive/limit chip: the account's health in one glance =====
+// The chip is ACCOUNT-wide and reads PERSISTED rows, so every earlier spec's leftovers speak here —
+// the block runs LAST and ends on a clean world: limit-04's stamp is deliberately SHORT (+8s) —
+// it crosses while the later suites run, so the chip block opens on a CLEAN world (a +1h leftover
+// would hold the chip red through every later spec; found live). The rows-only pin rides chip 06's
+// reload. One chip,
+// one element: [data-appbar-drive][data-tier="limit|warn|running"].
+const chip = page.locator('[data-appbar-drive]');
+const chipTier = async () => (await chip.getAttribute('data-tier'));
+
+await spec('WO-0060 çip 02: sürüş YEŞİL sayaç — 1 sürüyor; Durdur iner', async () => {
+  // the rev-4 settings spec leaves the app on this WO's DETAIL — one ESC lands back on the board
+  await backToBoard();
+  await openDetail('Model kanıt');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  assert.equal(await chip.count(), 1, 'a running drive lit no chip');
+  assert.equal(await chipTier(), 'running', 'the running drive is not the green tier');
+  assert.ok(((await chip.textContent()) ?? '').includes('1 sürüyor'), 'the green chip lost its count copy');
+  await page.screenshot({ path: join(SHOTS, 'appbar-chip-running@980.png') });
+  const durdur = page.getByRole('button', { name: 'Durdur', exact: true });
+  if ((await durdur.count()) === 0) {
+    await page.screenshot({ path: join(SHOTS, 'chip02-debug@980.png') });
+    console.log('CHIP02 DEBUG:', ((await page.locator('main').innerText()) ?? '').slice(0, 700).replace(/\n+/g, ' | '));
+  }
+  await durdur.first().click();
+  await page.waitForTimeout(700);
+  assert.equal(await chip.count(), 0, 'the chip survived Durdur');
+  await backToBoard();
+});
+
+await spec('WO-0060 çip 03: sağlayıcının warning\'i AMBER — gövde figuresiz, tooltip pencere+%+saat; ok\'a dönüş yeşile iner', async () => {
+  await openDetail('Model kanıt');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  assert.equal(await chipTier(), 'running', 'the staging drive did not light green');
+  await page.evaluate((resetAt) => window.docket.e2e?.emit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 86, resetAt }], status: 'warning' }), futureStamp());
+  await page.waitForTimeout(400);
+  assert.equal(await chip.count(), 1, 'the warning lit a second chip');
+  assert.equal(await chipTier(), 'warn', 'the provider warning did not take the chip');
+  const body = (await chip.textContent()) ?? '';
+  assert.ok(body.includes('limit yaklaşıyor'), `the amber body is missing: ${body}`);
+  assert.ok(!body.includes('86'), `the amber body leaked the utilization figure: ${body}`);
+  await chip.hover();
+  await page.waitForTimeout(700); // Radix delayDuration 350
+  const tip = (await page.locator('[role="tooltip"]').textContent()) ?? '';
+  assert.ok(tip.includes('5 saatlik pencere'), `the tooltip lost the window label: ${tip}`);
+  assert.ok(tip.includes('%86'), `the tooltip lost the utilization: ${tip}`);
+  await page.screenshot({ path: join(SHOTS, 'appbar-chip-warn@980.png') });
+  // the provider's OWN all-clear reverts to green without ending the drive
+  await page.evaluate((resetAt) => window.docket.e2e?.emit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 40, resetAt }], status: 'ok' }), futureStamp());
+  await page.waitForTimeout(400);
+  assert.equal(await chipTier(), 'running', 'the chip stayed amber after the all-clear');
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 2, usd: 0.01 } }));
+  await page.waitForTimeout(700);
+  assert.equal(await chip.count(), 0, 'the chip survived the clean end');
+  await backToBoard();
+});
+
+await spec('WO-0060 çip 04: KIRMIZI amber\'i ezer; geri sayım tikler; gerçek çaprazlama çipi söker; temiz bacak dünyayı temizler', async () => {
+  await openDetail('Model kanıt');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate((resetAt) => window.docket.e2e?.emit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 90, resetAt }], status: 'warning' }), futureStamp());
+  await page.waitForTimeout(400);
+  assert.equal(await chipTier(), 'warn', 'the staging warning did not take');
+  // the limit death while the warning holds: still ONE chip, and it is red (the locked ladder)
+  await page.evaluate(limitDeath, new Date(Date.now() + 8_000).toISOString());
+  await page.waitForTimeout(500);
+  assert.equal(await chip.count(), 1, 'the limit death rendered a second chip');
+  assert.equal(await chipTier(), 'limit', 'red did not outrank amber');
+  const read1 = (await chip.textContent()) ?? '';
+  await page.waitForTimeout(1200);
+  const read2 = (await chip.textContent()) ?? '';
+  assert.notEqual(read1, read2, `the countdown does not tick: ${read1} vs ${read2}`);
+  await page.screenshot({ path: join(SHOTS, 'appbar-chip-limit@980.png') });
+  // the SHORT stamp crossed for real: the chip unmounts ITSELF (the ticker's own gate)
+  await page.waitForTimeout(8_500);
+  assert.equal(await chip.count(), 0, 'the chip survived its own crossing');
+  // cleanup: the crossed row stamp re-seeds the card — the clean leg clears it for the whole suite
+  await page.locator('button', { hasText: 'Sürdür' }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 2, usd: 0.01 } }));
+  await page.waitForTimeout(800);
+  assert.equal(await chip.count(), 0, 'a chip came back on the cleanup leg');
+  await backToBoard();
+});
+
+await spec('WO-0060 çip 05: ✦ TASLAK sayar — WO\'suz erişicinin kanıtı; taslak uyarısı amber boyar', async () => {
+  await stopAllDrives();
+  await switchWs('e2e', 'taslak');
+  await openRoadmap();
+  await startDraft('E2E: çip — taslak sürüşü appbar çipini yakar.');
+  await page.waitForTimeout(400);
+  assert.equal(await chip.count(), 1, 'the draft drive lit no chip (the WO-less arm is dead)');
+  assert.equal(await chipTier(), 'running', 'the draft drive is not the green tier');
+  assert.ok(((await chip.textContent()) ?? '').includes('1 sürüyor'), 'the draft chip lost its count copy');
+  await draftEmit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 55, resetAt: futureStamp() }], status: 'warning' });
+  await page.waitForTimeout(400);
+  assert.equal(await chipTier(), 'warn', 'the draft warning did not take (the WO-less arm)');
+  await draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1200, tokensOut: 300, usd: 0.12 } });
+  await page.waitForTimeout(700);
+  assert.equal(await chip.count(), 0, 'the chip survived the draft end');
+  await stopAllDrives();
+});
+
+await spec('WO-0060 çip 06: reload — kırmızı çip SATIRDAN yeniden türer; çaprazlama iner; dünya temiz biter', async () => {
+  await switchWs('taslak', 'e2e');
+  await openBoard(); // chip 05 left the ROADMAP surface up — the card lives on the board
+  await openDetail('Model kanıt');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(500);
+  await page.evaluate(limitDeath, new Date(Date.now() + 30_000).toISOString());
+  await page.waitForTimeout(500);
+  assert.equal(await chipTier(), 'limit', 'no red chip at the death');
+  await page.reload();
+  await page.waitForTimeout(900);
+  // the fold is gone — the chip re-derives from the row via the mount-time getWorkOrders
+  assert.equal(await chip.count(), 1, 'the chip did not re-derive from the row after the reload');
+  assert.equal(await chipTier(), 'limit', 'the re-derived chip is not red');
+  await page.waitForTimeout(31_000); // the real crossing, rows only
+  assert.equal(await chip.count(), 0, 'the re-derived chip survived its crossing');
+  // the app reloaded onto the seed's first workspace — read the switcher's own label to get back
+  const from = ((await page.locator('header button').first().textContent()) ?? '').trim();
+  await switchWs(from, 'e2e');
+  // cleanup: the crossed stamp re-seeds the card; the clean leg clears the row — world clean
+  await openDetail('Model kanıt');
+  // the crossed stamp is INERT (a past stamp is excluded by limitInEffect; the board line is
+  // history, wiped by the next run's seed) — the resume-after-reload leg is not worth its risk
+  assert.equal(await chip.count(), 0, 'a chip survived the final clean leg');
 });
 
 await spec('zero renderer console errors', async () => {

@@ -19,6 +19,7 @@ import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { DriveInput, LiveSessionState, PermissionDecision, TranscriptLine } from '../../../core/runner';
 import { foldSessionEvent, initialSessionState, isDraftDrive } from '../../../core/runner';
 import type { SessionRunner } from '../../../core/runner';
+import type { LimitWindow } from '../../../core/types';
 
 export interface DriveHandle {
   state: LiveSessionState;
@@ -37,6 +38,20 @@ export interface ActiveDriveSnapshot {
   running: boolean;
   booting: boolean;
   status: LiveSessionState['status'];
+}
+
+/** WO-0060: the appbar chip's facts — the same ONE active drive, read for ACCOUNT health instead of
+ *  for a card. Deliberately WO-less: `activeSnapshot` bails on the ✦ draft (its key never enters
+ *  keyWo — the draft must never overlay a board card), but the chip counts the draft like any
+ *  drive, so this accessor keys off `active` alone. The limit facts ride the fold: `limitResetAt`
+ *  is `lastLimit.resetAt` (the ONLY live red source — `limitWindows[].resetAt` is a window-OPENING
+ *  time and would paint a mere warning red), `limitStatus`/`limitSubject` carry the provider's own
+ *  warning word and its fullest window (the chip body stays figure-free; the tooltip speaks it). */
+export interface DriveActivity {
+  running: boolean;
+  limitStatus?: 'ok' | 'warning' | 'blocked';
+  limitResetAt?: string;
+  limitSubject?: LimitWindow;
 }
 
 type Listener = () => void;
@@ -70,12 +85,22 @@ export function createDriveStore(runner: SessionRunner) {
   // contract's error toast. Distinct from onEnd, which fires for every completion.
   let onError: ((key: string) => void) | undefined;
   let active: string | undefined; // the one running key (one drive at a time)
+  // WO-0060: the drive that ended LAST. `active` clears in the fold loop's finally BEFORE onEnd →
+  // refreshWorkOrders lands the updated rows (a DB read) — keyed on `active` alone, the chip would
+  // drop its red/fold facts for one read and pop them back. The snapshot keys on `active ??
+  // lastActive`; nothing clears it by hand (forgetWo deletes the fold, so a deleted WO self-heals).
+  let lastActive: string | undefined;
   // The active-drive snapshot cache (identity-stable — see activeSnapshot).
   let snapDirty = true;
   let snap: ActiveDriveSnapshot | undefined;
+  // The activity snapshot cache (WO-0060 — same discipline, own flag: both caches recompute on
+  // notify, and a shared flag would let the first accessor's recompute hide the second's).
+  let actDirty = true;
+  let act: DriveActivity | undefined;
 
   const notify = (): void => {
     snapDirty = true;
+    actDirty = true;
     for (const l of listeners) l();
   };
 
@@ -116,6 +141,45 @@ export function createDriveStore(runner: SessionRunner) {
     }
     snap = next;
     return snap;
+  }
+
+  /** WO-0060: the appbar chip's snapshot — `activeSnapshot`'s content-compare discipline, keyed off
+   *  `active ?? lastActive` (see the `lastActive` note: no end-of-drive blink), WO-less by design
+   *  (the ✦ draft counts). Compares PRIMITIVES only — the windows array's identity changes on every
+   *  ~30s pull emit, and the header must not re-render for that. `limitSubject` is the fullest
+   *  window by PaneWarnline's own sort (pane-chrome.tsx — one ranking, two voices); the UI never
+   *  sorts. */
+  function activitySnapshot(): DriveActivity | undefined {
+    if (!actDirty) return act;
+    actDirty = false;
+    const key = active ?? lastActive;
+    const h = key === undefined ? undefined : drives.get(key);
+    if (!key || !h) {
+      if (act !== undefined) act = undefined;
+      return act;
+    }
+    const st = h.state;
+    const windows = st.limitWindows?.windows;
+    const subject = windows?.slice().sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0];
+    const next: DriveActivity = {
+      running: h.running,
+      ...(st.limitWindows?.status !== undefined ? { limitStatus: st.limitWindows.status } : {}),
+      ...(st.lastLimit?.resetAt !== undefined ? { limitResetAt: st.lastLimit.resetAt } : {}),
+      ...(subject !== undefined ? { limitSubject: subject } : {}),
+    };
+    if (
+      act &&
+      act.running === next.running &&
+      act.limitStatus === next.limitStatus &&
+      act.limitResetAt === next.limitResetAt &&
+      act.limitSubject?.window === next.limitSubject?.window &&
+      act.limitSubject?.utilization === next.limitSubject?.utilization &&
+      act.limitSubject?.resetAt === next.limitSubject?.resetAt
+    ) {
+      return act;
+    }
+    act = next;
+    return act;
   }
 
   function snapshot(key: string, seed: () => LiveSessionState): LiveSessionState {
@@ -162,6 +226,7 @@ export function createDriveStore(runner: SessionRunner) {
         const cur = drives.get(key);
         if (cur) drives.set(key, { ...cur, running: false });
         if (active === key) active = undefined;
+        lastActive = key; // WO-0060: the chip keeps reading this fold until the rows refresh
         notify();
         onEnd?.(key);
       }
@@ -248,6 +313,7 @@ export function createDriveStore(runner: SessionRunner) {
     get,
     snapshot,
     activeSnapshot,
+    activitySnapshot,
     start,
     restart,
     decide,
@@ -310,5 +376,16 @@ export function useActiveDrive(store: DriveStore): ActiveDriveSnapshot | undefin
     (l) => store.subscribe(l),
     () => store.activeSnapshot(),
     () => store.activeSnapshot(),
+  );
+}
+
+/** WO-0060: bind the App to the active drive's limit/running facts for the appbar chip — the same
+ *  identity-stable discipline as useActiveDrive (activitySnapshot's primitive content-compare owns
+ *  it: never a re-render per streamed line, never per windows-pull emit). */
+export function useDriveActivity(store: DriveStore): DriveActivity | undefined {
+  return useSyncExternalStore(
+    (l) => store.subscribe(l),
+    () => store.activitySnapshot(),
+    () => store.activitySnapshot(),
   );
 }

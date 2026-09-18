@@ -685,6 +685,26 @@ export const UI = {
   limitWarnLine: (window: string, pct: number | null, time: string | null) =>
     `${window}${pct !== null ? ` ${pct}%` : ''}${time !== null ? ` — resets at ${time}` : ' — near the limit'}`,
   limitWindowLabel: (kind: string): string => (kind === 'five_hour' ? '5-hour window' : kind === 'seven_day' ? '7-day window' : 'window'),
+  // ===== WO-0060 — the appbar drive/limit chip (idle none · green count · amber warning · red countdown) =====
+  // The chip is a PASSIVE indicator: no click, no WO identity. appbarRunningCount is NOT
+  // agentRunningLine — that counts sub-agents (WO-0055), this counts drives; merging the two into
+  // one key would lie in both directions. limitCountdown is a SEPARATE key on purpose:
+  // formatDuration speaks elapsed copy (tops out at Xh Ym), this speaks a countdown with a day
+  // tier (the five-hour window lives as "4h 12m", the seven-day as "2d 3h").
+  appbarRunningCount: (n: number) => (n === 1 ? '1 running' : `${n} running`),
+  limitCountdown: (ms: number) => {
+    if (ms < 0) ms = 0; // the ticker's crossing race — one negative frame, then the chip unmounts
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m`;
+    const h = Math.floor(min / 60);
+    if (h < 48) return `${h}h ${min % 60}m`;
+    const d = Math.floor(h / 24);
+    return `${d}d ${h % 24}h`;
+  },
+  appbarLimitWarn: 'limit approaching',
+  appbarLimitAria: (time: string) => `Usage limit reached — resets at ${time}`,
   // ===== WO-0054 — the usage screen (mockup rev 1; month head · live quota · breakdown · list) =====
   // The month head speaks the EXISTING budget view (WO-0047's math/copy — never re-derived here);
   // the quota panel reads the provider's own signal only (the WO-0053 rule); a model id is row

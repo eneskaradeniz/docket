@@ -9,6 +9,7 @@ import type { WorkOrderSource } from '../../core/source';
 import type { AppSettings } from '../../core/app-settings';
 import { useLabels } from '../data/locale';
 import { Button, Segmented, Tooltip } from '../kit';
+import { AppbarDriveChip } from './AppbarDriveChip';
 import { AppSettingsModal } from './AppSettingsModal';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { WsDeleteDialog } from './WsDeleteDialog';
@@ -18,6 +19,17 @@ import { WsListModal } from './WsListModal';
 /** WO-0049: the sibling surfaces — the board and the roadmap (ADR-0016 karar 4); WO-0054 adds
  *  the third, the usage month (`Kullanım`). */
 export type Surface = 'board' | 'roadmap' | 'usage';
+
+/** WO-0060: the drive/limit chip's input — ACCOUNT health at a glance. `running` is the drive
+ *  count (the architecture runs one at a time; 0/1); `limitResetAt` is the account-wide in-effect
+ *  stamp (App folds every WO's rows + the live stamp through core's `limitInEffect`); `limitWarn`
+ *  carries the provider's own warning window while a drive runs — its PRESENCE is the amber arm,
+ *  so this file never hears the fold's status word. Presentational: no drive-store import. */
+export interface AppbarActivity {
+  running: number;
+  limitResetAt?: string;
+  limitWarn?: { window: string; utilization: number | null; resetAt: string | null };
+}
 
 export function AppShell({
   workspaces,
@@ -34,6 +46,7 @@ export function AppShell({
   onDocsRootChanged,
   surface,
   onSurfaceChange,
+  driveActivity,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -56,6 +69,9 @@ export function AppShell({
   /** WO-0049: the active sibling surface — the switch sits beside `+ Yeni iş emri`. */
   surface: Surface;
   onSurfaceChange: (s: Surface) => void;
+  /** WO-0060: the drive/limit chip's facts — account-wide, so it renders OUTSIDE the
+   *  `workspaceId !== null` guard: an account fact is not workspace-scoped. */
+  driveActivity: AppbarActivity;
 }) {
   const { UI } = useLabels();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -88,6 +104,9 @@ export function AppShell({
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          {/* WO-0060: first child of the no-drag cluster, outside the workspace guard — a chip in the
+              drag half would swallow window drags; the account fact outlives workspaces. */}
+          <AppbarDriveChip activity={driveActivity} />
           {workspaceId !== null ? (
             <>
               <Segmented
