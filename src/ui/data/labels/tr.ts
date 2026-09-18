@@ -831,6 +831,8 @@ export const UI = {
   usageMonthMeta: (d: Date) =>
     `${new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(d)} · takvim ayı (UTC)`,
   usageMonthObserved: (usd: number) => `bu ay ${formatUsd(usd)}`,
+  // WO-0061: kesilen bacağı olan ayda defter toplamı ALT SINIRDIR — başlık bilinen-harcama der
+  usageMonthObservedKnown: (usd: number) => `bu ay bilinen harcama ${formatUsd(usd)}`,
   usageKnownBasisNote: 'bilinen harcama — bazı oturumların maliyeti hiç bildirilmedi; toplam onları içermez.',
   usageBasisDivergence: 'İki sayı farklı pencere sayar — üsttekiler ay içinde başlayan oturumlar, döküm ay içinde işlenen harcama.',
   usageLimitTitle: 'KOTA PENCERELERİ · CANLI',

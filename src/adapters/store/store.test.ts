@@ -1855,6 +1855,15 @@ describe('WO-0052 — session_usage rows + the ctx/finalUsage checkpoints', () =
     expect('finalUsage' in s).toBe(false);
     expect(store.usageRowsFor(wo.id)).toEqual([]); // an interrupted drive appends nothing
   });
+  it('an interrupted leg writes NULL cost — the honest absent the known-spend basis reads (WO-0061)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Usage null');
+    // a Durdur/abort close carries NO cost (the pipeline passes undefined) — the row must stay
+    // NULL, never a painted $0.00 the usage head would speak as truth
+    store.recordSession({ providerSessionId: 'sess-null-cost', owner: { kind: 'wo', workOrderId: wo.id }, role: 'verifier', status: 'stopped' });
+    const row = store.db.prepare('SELECT cost_usd FROM session WHERE provider_session_id = ?').get('sess-null-cost') as { cost_usd: number | null };
+    expect(row.cost_usd).toBeNull();
+  });
 
   it('draft rows surface under workspaceUsage(ws).draft (queue 4 landed — WO-0054) and stay invisible to usageRowsFor(workOrderId)', async () => {
     const store = createStore(freshDb());

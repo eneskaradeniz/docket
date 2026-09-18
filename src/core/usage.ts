@@ -117,6 +117,10 @@ export interface WorkspaceUsageView {
   sessions: UsageSessionRow[]; // lastAt desc
   unledgeredCount: number; // in-month costed sessions with an empty per-turn ledger; 0 = false
   roleUnknownCount: number; // rows whose session/role join fails (the owner is gone); 0 = false
+  /** WO-0061: ≥1 session STARTED in the window carries no cost (the interrupted leg — abort
+   *  precedes the result). The ledger total is then a LOWER BOUND, and the head says
+   *  «bilinen harcama» instead of speaking a bare figure. */
+  hasUnknown: boolean;
 }
 
 // Cent-round the money sums (the roadmap pattern, src/core/roadmap.ts:196-198 — module-private
@@ -334,6 +338,17 @@ export function deriveUsageView(input: DeriveUsageInput): WorkspaceUsageView {
     if (factByPsid.get(r.providerSessionId)?.role === undefined) roleUnknownCount += 1;
   }
 
+  // WO-0061: the known-spend basis — a session that STARTED in the window but never reported a
+  // cost (the interrupted leg: abort precedes the result) makes the ledger total a LOWER BOUND.
+  // The sessions facts carry costUsd only when non-NULL, so the absence is the signal.
+  let hasUnknown = false;
+  for (const s of sessions) {
+    if (s.costUsd === undefined && s.startedAt !== undefined && s.startedAt >= win.startIso && s.startedAt < win.endIso) {
+      hasUnknown = true;
+      break;
+    }
+  }
+
   // The models note's gate on RAW accumulates (the review round's fix): the buckets' ROUNDED usd
   // can drift from the rounded total by up to ~half a cent per bucket — dust, not the provider's
   // own two-channel story. hasModelSplit folds in here: an all-shortcut month never diverges.
@@ -354,5 +369,6 @@ export function deriveUsageView(input: DeriveUsageInput): WorkspaceUsageView {
     sessions: sessionRows,
     unledgeredCount,
     roleUnknownCount,
+    hasUnknown,
   };
 }

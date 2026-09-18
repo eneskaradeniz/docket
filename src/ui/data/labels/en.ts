@@ -721,6 +721,9 @@ export const UI = {
   usageMonthMeta: (d: Date) =>
     `${new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(d)} · calendar month (UTC)`,
   usageMonthObserved: (usd: number) => `this month ${formatUsd(usd)}`,
+  // WO-0061: a month with an interrupted leg — the ledger total is a LOWER BOUND; the head says
+  // known-spend
+  usageMonthObservedKnown: (usd: number) => `known spend this month ${formatUsd(usd)}`,
   usageKnownBasisNote: 'known spend — some sessions never had a cost reported; the total does not include them.',
   usageBasisDivergence: 'The two figures window differently — the upper counts sessions that started this month, the breakdown the spend used this month.',
   usageLimitTitle: 'QUOTA WINDOWS · LIVE',

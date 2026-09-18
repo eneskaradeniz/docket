@@ -47,6 +47,23 @@ describe('deriveUsageView — the D2 rules, one test each', () => {
     expect(v.sessions).toEqual([]);
     expect(v.unledgeredCount).toBe(0);
     expect(v.roleUnknownCount).toBe(0);
+    expect(v.hasUnknown).toBe(false);
+  });
+
+  // WO-0061: the known-spend basis — an in-window session with NO cost (the interrupted leg:
+  // abort precedes the result) makes the ledger total a lower bound, and the head must know it.
+  it('hasUnknown: an in-window NULL-cost session flips it; paid and out-of-window sessions do not', () => {
+    expect(deriveUsageView(input({})).hasUnknown).toBe(false);
+    expect(
+      deriveUsageView(input({ sessions: [session({ providerSessionId: 's-paid', costUsd: 0.05, startedAt: '2026-08-10T10:00:00.000Z' })] }))
+        .hasUnknown,
+    ).toBe(false);
+    expect(
+      deriveUsageView(input({ sessions: [session({ providerSessionId: 's-out', startedAt: '2026-07-10T10:00:00.000Z' })] })).hasUnknown,
+    ).toBe(false);
+    expect(
+      deriveUsageView(input({ sessions: [session({ providerSessionId: 's-null', startedAt: '2026-08-10T10:00:00.000Z' })] })).hasUnknown,
+    ).toBe(true);
   });
 
   it('D2.9: money is cent-exact round2 — 3.10+4.20+1.00+2.60+1.50 === 12.40, never 12.399999…', () => {
