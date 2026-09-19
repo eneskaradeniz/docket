@@ -475,6 +475,9 @@ export const UI = {
   woContextAdd: '▸ Add file',
   woReviewLabel: 'Review',
   woCreateBtn: 'Create',
+  // WO-0071 — the track depends_on picker (visible when ≥2 tracks; a track's own chip never renders)
+  createDependsTitle: 'Dependencies',
+  createDependsHint: 'a track can depend on other selected tracks',
   requestPlan: 'Request plan',
   planReadyHeader: 'Plan ready',
   object: 'Object',

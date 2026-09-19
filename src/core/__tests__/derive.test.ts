@@ -7,6 +7,7 @@ import type {
   EvidenceKind,
   EvidenceStatus,
   PrimaryAction,
+  RepoId,
   SessionRef,
   StageId,
   StepView,
@@ -36,6 +37,7 @@ import {
   sessionForTrack,
   toCardView,
   toDetailView,
+  validateTrackDependencies,
   whoseTurn,
 } from '../derive';
 import { aSession, aTrack, aWorkOrder } from './builders';
@@ -1032,5 +1034,59 @@ describe('extractPointers — the `path:line` token extractor (WO-0069)', () => 
 
   it('an empty body extracts nothing', () => {
     expect(extractPointers('')).toEqual([]);
+  });
+});
+
+// ===== WO-0071 — the depends_on write-side validator (pure, store runs it before any write) =====
+describe('validateTrackDependencies (WO-0071)', () => {
+  const rid = (s: string): RepoId => s as RepoId; // the builders.ts idiom (a cast, never a constructor)
+  const repos = [rid('app'), rid('api'), rid('web')];
+
+  it('absent input → [] (the pre-WO-0071 behavior byte-for-byte)', () => {
+    expect(validateTrackDependencies(undefined, repos)).toEqual([]);
+  });
+
+  it('an empty list → []', () => {
+    expect(validateTrackDependencies([], repos)).toEqual([]);
+  });
+
+  it('valid pairs → []', () => {
+    expect(validateTrackDependencies([{ repo: rid('api'), dependsOn: [rid('app'), rid('web')] }], repos)).toEqual([]);
+  });
+
+  it('self-dependence is rejected (repo ∈ its own dependsOn)', () => {
+    expect(validateTrackDependencies([{ repo: rid('app'), dependsOn: [rid('app')] }], repos)).toHaveLength(1);
+    expect(validateTrackDependencies([{ repo: rid('app'), dependsOn: [rid('app')] }], repos)[0]).toContain('cannot depend on itself');
+  });
+
+  it('a dependsOn target outside the WO trackRepos is rejected', () => {
+    const problems = validateTrackDependencies([{ repo: rid('api'), dependsOn: [rid('docs')] }], repos);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'docs'");
+    expect(problems[0]).toContain("not one of this work order's tracks");
+  });
+
+  it('an entry naming a repo the WO does not track is rejected', () => {
+    const problems = validateTrackDependencies([{ repo: rid('docs'), dependsOn: [rid('app')] }], repos);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("'docs'");
+  });
+
+  it('a duplicate pair is rejected', () => {
+    const input = [
+      { repo: rid('api'), dependsOn: [rid('app')] },
+      { repo: rid('api'), dependsOn: [rid('app')] },
+    ];
+    const problems = validateTrackDependencies(input, repos);
+    expect(problems).toEqual([expect.stringContaining("duplicate dependency: 'api' -> 'app'")]);
+  });
+
+  it('every problem is reported — the store throws only the first', () => {
+    const problems = validateTrackDependencies([{ repo: rid('app'), dependsOn: [rid('app'), rid('app'), rid('nope')] }], repos);
+    // app→app = self; the repeat = self AGAIN + the duplicate pair; app→nope = unknown. 4 messages.
+    expect(problems).toHaveLength(4);
+    expect(problems[0]).toContain('cannot depend on itself');
+    expect(problems[2]).toContain('duplicate dependency');
+    expect(problems[3]).toContain("'nope'");
   });
 });

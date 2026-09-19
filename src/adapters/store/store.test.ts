@@ -11,9 +11,10 @@ import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
 import { monthWindow } from '../../core/budget';
 import type { PromptOverrides } from '../../core/app-settings';
-import { rid, wid, woid } from '../ids';
+import { rid, tid, wid, woid } from '../ids';
 import type { RepoId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
+import { implementerPrompt, verifierPrompt } from '../../core/order-md';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
 const freshDbs: string[] = [];
@@ -2626,5 +2627,202 @@ describe('WO-0070 — prompt overrides (row round-trip + override-first assembly
     await store.setPromptOverrides({ implementer: '   \n\t  ' });
     expect(await store.getPromptOverrides()).toBeUndefined(); // the write normalized it away
     expect((await store.stepPromptFor(wo.id, 1))?.prompt).toBe(before?.prompt);
+  });
+});
+
+// ===== WO-0071 — track depends_on: the write path, the fence round-trip, the briefing bundle =====
+describe('WO-0071 — track depends_on: the write path (createWorkOrder)', () => {
+  // Two repos under one throwaway root; the decision store defaults to repos[0] ('app'), so the
+  // structure root is <root>/app/docs and the WO dir lands there.
+  const wsTwoRepos = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Makine', repos: [{ path: join(root, 'app') }, { path: join(root, 'api') }] });
+    return { ws, root };
+  };
+
+  it('with trackDependencies → the rows land with the track id formula and hydrate back as Track.dependsOn', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsTwoRepos(store);
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Makine', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+      trackDependencies: [{ repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] }], // api → app
+    });
+    const tracks = (await store.getWorkOrder(wo.id))!.tracks;
+    expect(tracks.find((t) => t.repo === ws.repos[1])!.dependsOn).toEqual(['WO-0001-app']);
+    expect(tracks.find((t) => t.repo === ws.repos[0])!.dependsOn).toEqual([]);
+    expect(store.db.prepare('SELECT track_id, depends_on_track_id FROM track_depends_on').all()).toEqual([
+      { track_id: 'WO-0001-api', depends_on_track_id: 'WO-0001-app' },
+    ]);
+  });
+
+  it('absent input → zero rows and empty dependsOn arrays (byte-stable with pre-WO-0071)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsTwoRepos(store);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Sade', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM track_depends_on').all()).toEqual([{ n: 0 }]);
+    for (const t of (await store.getWorkOrder(wo.id))!.tracks) expect(t.dependsOn).toEqual([]);
+  });
+
+  it('self-dependence is refused before anything is written', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsTwoRepos(store);
+    await assert.rejects(
+      () =>
+        store.createWorkOrder({
+          workspaceId: ws.id, title: 'Self', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+          trackDependencies: [{ repo: ws.repos[0]!, dependsOn: [ws.repos[0]!] }],
+        }),
+      /cannot depend on itself/,
+    );
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM work_order').all()).toEqual([{ n: 0 }]);
+    expect(store.db.prepare('SELECT COUNT(*) AS n FROM track').all()).toEqual([{ n: 0 }]);
+    expect(existsSync(join(root, 'app', 'docs', 'work-orders', 'WO-0001-self'))).toBe(false);
+  });
+
+  it('a dependency outside the WO trackRepos is refused (track_depends_on is intra-WO)', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsTwoRepos(store);
+    await assert.rejects(
+      () =>
+        store.createWorkOrder({
+          workspaceId: ws.id, title: 'Foreign', description: 'x', trackRepos: [ws.repos[0]!], reviewMode: 'gates', contextFiles: [],
+          trackDependencies: [{ repo: ws.repos[0]!, dependsOn: [ws.repos[1]! as RepoId] }], // api is a ws repo but NOT a track here
+        }),
+      /not one of this work order's tracks/,
+    );
+  });
+
+  it('a duplicate pair is refused', async () => {
+    const store = createStore(freshDb());
+    const { ws } = await wsTwoRepos(store);
+    await assert.rejects(
+      () =>
+        store.createWorkOrder({
+          workspaceId: ws.id, title: 'Dup', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+          trackDependencies: [
+            { repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] },
+            { repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] },
+          ],
+        }),
+      /duplicate dependency/,
+    );
+  });
+
+  it('order.md round-trips the fence: write → re-read from disk carries the pairs', async () => {
+    const store = createStore(freshDb());
+    const { ws, root } = await wsTwoRepos(store);
+    await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Fence', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+      trackDependencies: [{ repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] }],
+    });
+    const md = readFileSync(join(root, 'app', 'docs', 'work-orders', 'WO-0001-fence', 'order.md'), 'utf8');
+    expect(md).toContain('tracks:\n  - repo: app\n    depends_on: []\n  - repo: api\n    depends_on: [app]\n');
+  });
+});
+
+describe('WO-0071 — the briefing bundle (stepPromptFor carries the dependency report PATH)', () => {
+  const plan =
+    '# p\n\n```steps\n[\n' +
+    '  {"role":"implementer","aim":"app iskelet","scope":"app"},\n' +
+    '  {"role":"implementer","aim":"api bagla","scope":"api"},\n' +
+    '  {"role":"verifier","aim":"api dogrulama","scope":"api"},\n' +
+    '  {"role":"implementer","aim":"app revizyon","scope":"app"}\n' +
+    ']\n```';
+  const OBJECTIVE = 'baglantili makine';
+  // The api track depends on app; the WO dir is <root>/app/docs/work-orders/WO-0001-briefed.
+  const briefedWo = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Makine', repos: [{ path: join(root, 'app') }, { path: join(root, 'api') }] });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Briefed', description: OBJECTIVE, trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+      trackDependencies: [{ repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] }],
+    });
+    await store.approvePlan(wo.id, plan);
+    return { wo, woDir: join(root, 'app', 'docs', 'work-orders', 'WO-0001-briefed') };
+  };
+  const expectBuiltin = (opts: { idx: number; role: 'implementer' | 'verifier'; aim: string; ref: string; woDir: string; planText?: string; briefing?: Array<{ repo: string; path: string }> }): string => {
+    const input = {
+      objective: OBJECTIVE,
+      step: { idx: opts.idx, role: opts.role, aim: opts.aim, scope: { kind: 'track' as const, ref: opts.ref } },
+      planText: opts.planText ?? plan,
+      orderMdPath: join(opts.woDir, 'order.md'),
+      ...(opts.briefing ? { briefing: opts.briefing } : {}),
+    };
+    return opts.role === 'verifier' ? verifierPrompt(input) : implementerPrompt(input);
+  };
+
+  it('the dependent step\u2019s prompt carries the dependency\u2019s report path \u2014 one section, after the plan', async () => {
+    const store = createStore(freshDb());
+    const { wo, woDir } = await briefedWo(store);
+    store.recordStepReport(wo.id, 1, 'implementer', '# app raporu');
+    const got = await store.stepPromptFor(wo.id, 2);
+    expect(got?.scope).toBe(tid('WO-0001-api'));
+    const reportPath = join(woDir, 'reports', 'step-01-implementer.md');
+    expect(got!.prompt).toContain('Briefing — your track depends on:');
+    expect(got!.prompt).toContain(`- app: ${reportPath}`);
+    expect(got!.prompt).toContain("(read these at your fence; they are the dependency's latest contract)");
+    // the section sits after the plan block and before the work line
+    expect(got!.prompt.indexOf('Briefing — your track depends on:')).toBeGreaterThan(got!.prompt.indexOf('# p'));
+    expect(got!.prompt.indexOf('Work autonomously to implement')).toBeGreaterThan(got!.prompt.indexOf('Briefing — your track depends on:'));
+    // the assembled prompt is exactly core's template with the found briefing
+    expect(got!.prompt).toBe(expectBuiltin({ idx: 2, role: 'implementer', aim: 'api bagla', ref: 'api', woDir, briefing: [{ repo: 'app', path: reportPath }] }));
+  });
+
+  it('an independent track\u2019s prompt is byte-identical to the pre-WO-0071 template', async () => {
+    const store = createStore(freshDb());
+    const { wo, woDir } = await briefedWo(store);
+    store.recordStepReport(wo.id, 1, 'implementer', '# app raporu');
+    const got = await store.stepPromptFor(wo.id, 1); // app depends on nothing
+    expect(got!.prompt).toBe(expectBuiltin({ idx: 1, role: 'implementer', aim: 'app iskelet', ref: 'app', woDir }));
+    expect(got!.prompt).not.toContain('Briefing');
+  });
+
+  it('no report on disk → the section is absent (byte-identical)', async () => {
+    const store = createStore(freshDb());
+    const { wo, woDir } = await briefedWo(store);
+    const got = await store.stepPromptFor(wo.id, 2);
+    expect(got!.prompt).toBe(expectBuiltin({ idx: 2, role: 'implementer', aim: 'api bagla', ref: 'api', woDir }));
+    expect(got!.prompt).not.toContain('Briefing');
+  });
+
+  it('latest idx wins, a deleted file falls back to the latest EXISTING one, none left → absent', async () => {
+    const store = createStore(freshDb());
+    const { wo, woDir } = await briefedWo(store);
+    store.recordStepReport(wo.id, 1, 'implementer', '# app v1');
+    store.recordStepReport(wo.id, 4, 'implementer', '# app v2');
+    const got = await store.stepPromptFor(wo.id, 2);
+    expect(got!.prompt).toContain(`- app: ${join(woDir, 'reports', 'step-04-implementer.md')}`);
+    rmSync(join(woDir, 'reports', 'step-04-implementer.md'));
+    const fell = await store.stepPromptFor(wo.id, 2);
+    expect(fell!.prompt).toContain(`- app: ${join(woDir, 'reports', 'step-01-implementer.md')}`);
+    rmSync(join(woDir, 'reports', 'step-01-implementer.md'));
+    const gone = await store.stepPromptFor(wo.id, 2);
+    expect(gone!.prompt).toBe(expectBuiltin({ idx: 2, role: 'implementer', aim: 'api bagla', ref: 'api', woDir }));
+  });
+
+  it('the verifier template never carries the bundle — even on a dependent track', async () => {
+    const store = createStore(freshDb());
+    const { wo, woDir } = await briefedWo(store);
+    store.recordStepReport(wo.id, 1, 'implementer', '# app raporu');
+    const got = await store.stepPromptFor(wo.id, 3); // verifier scoped api (the dependent track)
+    expect(got!.prompt).toBe(expectBuiltin({ idx: 3, role: 'verifier', aim: 'api dogrulama', ref: 'api', woDir }));
+    expect(got!.prompt).not.toContain('Briefing');
+  });
+
+  it('an all-scoped step report is the work order\u2019s, never a dependency\u2019s \u2014 it does not brief', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Makine', repos: [{ path: join(root, 'app') }, { path: join(root, 'api') }] });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Allscope', description: OBJECTIVE, trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+      trackDependencies: [{ repo: ws.repos[1]!, dependsOn: [ws.repos[0]!] }],
+    });
+    const allPlan = '# p\n\n```steps\n[{"role":"implementer","aim":"hepsine dokun","scope":"all"},{"role":"implementer","aim":"api bagla","scope":"api"}]\n```';
+    await store.approvePlan(wo.id, allPlan);
+    store.recordStepReport(wo.id, 1, 'implementer', '# tum is');
+    const woDir = join(root, 'app', 'docs', 'work-orders', 'WO-0001-allscope');
+    const got = await store.stepPromptFor(wo.id, 2);
+    expect(got!.prompt).toBe(expectBuiltin({ idx: 2, role: 'implementer', aim: 'api bagla', ref: 'api', woDir, planText: allPlan }));
+    expect(got!.prompt).not.toContain('Briefing');
   });
 });

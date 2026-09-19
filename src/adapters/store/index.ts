@@ -18,7 +18,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, type ObservedStep } from '../../core/derive';
+import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, validateTrackDependencies, type ObservedStep } from '../../core/derive';
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
@@ -47,6 +47,7 @@ import type {
   WoEventKind,
   SourceLink,
   StepRole,
+  StepSpec,
   StepView,
   Track,
   TrackId,
@@ -1627,6 +1628,53 @@ function deleteWorkOrderRow(db: DatabaseSync, id: WorkOrderId): void {
   deleteWorkOrderRows(db, id, woConnectedDir(db, id));
 }
 
+// WO-0071 — the briefing bundle: for the step's track, each dependency track's LATEST step report
+// that still EXISTS on disk, as {repo, absolute path}. The dependency's contract is the report its
+// own implementer/verifier already wrote (WO-0020's artifact); the prompt names the PATH and the
+// agent reads it at its own fence — never contents (the WO-0050 ruling). A step scoped 'all'
+// belongs to the whole work order, not to one track, so it never briefs a dependency; architect-role
+// steps are outside the bundle for the same reason the WO names implementer/verifier reports.
+// Latest idx first, first existing file wins; a dependency whose reports are all gone from disk
+// contributes no line — all gone → [] → the prompt stays byte-identical to the pre-WO-0071 template.
+function trackBriefing(
+  db: DatabaseSync,
+  workOrderId: WorkOrderId,
+  woDirOnDisk: string, // the WO's own dir — report_path is WO-dir-relative (writeStepReport's pointer)
+  specs: StepSpec[],
+  scope: TrackId,
+): Array<{ repo: string; path: string }> {
+  const deps = db.prepare('SELECT depends_on_track_id FROM track_depends_on WHERE track_id = ?').all(scope) as {
+    depends_on_track_id: string;
+  }[];
+  if (deps.length === 0) return [];
+  const runRows = db
+    .prepare('SELECT idx, report_path FROM work_order_step WHERE work_order_id = ?')
+    .all(workOrderId) as { idx: number; report_path: string | null }[];
+  const reportByStep = new Map(
+    runRows.filter((r) => r.report_path != null).map((r) => [r.idx, r.report_path as string]),
+  );
+  const out: Array<{ repo: string; path: string }> = [];
+  for (const dep of deps) {
+    const depId = tid(dep.depends_on_track_id);
+    const row = db.prepare('SELECT repo FROM track WHERE id = ? AND work_order_id = ?').get(depId, workOrderId) as
+      | { repo: string }
+      | undefined;
+    if (!row) continue; // a row outside this WO cannot be written; skip, never invent a line
+    const path = specs
+      .filter(
+        (s) =>
+          (s.role === 'implementer' || s.role === 'verifier') &&
+          s.scope.kind === 'track' &&
+          resolveStepScope(db, workOrderId, s.scope.ref) === depId,
+      )
+      .sort((a, b) => b.idx - a.idx)
+      .map((s) => reportByStep.get(s.idx))
+      .find((p): p is string => p !== undefined && existsSync(join(woDirOnDisk, p)));
+    if (path) out.push({ repo: row.repo, path: join(woDirOnDisk, path) });
+  }
+  return out;
+}
+
 // Assemble a step session's prompt + resolved scope server-side, symmetric to architectPromptFor. Reads
 // order.md (objective) + plan.md (planText + the step's spec); resolves the step's track scope. Returns
 // undefined when the plan/step is missing — main then leaves the prompt untouched (no accidental free-form run).
@@ -1636,12 +1684,23 @@ function buildStepPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): { prom
   const { order, plan } = readWoDocs(dir, id);
   if (!plan) return undefined;
   const parsed = parseOrderMd(order);
-  const spec = parsePlanSteps(plan).find((s) => s.idx === idx);
+  const specs = parsePlanSteps(plan);
+  const spec = specs.find((s) => s.idx === idx);
   if (!spec) return undefined;
   const scope = spec.scope.kind === 'track' ? resolveStepScope(db, id, spec.scope.ref) : undefined;
   const woDirOnDisk = findWorkOrderDir(dir, id);
   const orderMdPath = woDirOnDisk ? `${woDirOnDisk}/order.md` : '';
-  const input = { objective: parsed.objective, step: spec, planText: plan, orderMdPath };
+  // WO-0071: the briefing rides only when the scope resolved AND at least one dependency still has
+  // a report on disk — otherwise the key is absent and the prompt is byte-identical to today's.
+  // Resolution runs against the WO DIR (report_path is WO-dir-relative — writeStepReport's pointer).
+  const briefing = scope && woDirOnDisk ? trackBriefing(db, id, woDirOnDisk, specs, scope) : [];
+  const input = {
+    objective: parsed.objective,
+    step: spec,
+    planText: plan,
+    orderMdPath,
+    ...(briefing.length > 0 ? { briefing } : {}),
+  };
   // WO-0070: the override is read ONCE per assembly call, keyed to the step's role; absent → built-in.
   const overrides = settingPromptOverrides(db);
   const prompt = withOverride(
@@ -1694,6 +1753,18 @@ function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id
       `INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
     ).run(`${input.id}-${repoSlug}`, input.id, repoSlug, null, null, 'run', JSON.stringify({ state: 'running', checks: [] }), null, now);
+  }
+  // WO-0071 — the table's first runtime write path: one row per (track → dependency) pair, both ids
+  // the SAME `${woId}-${repoSlug}` formula the track insert above uses. Absent input → zero rows
+  // (byte-stable with every pre-WO-0071 creation). Validation already ran in the orchestrator.
+  for (const dep of input.trackDependencies ?? []) {
+    const trackId = `${input.id}-${dep.repo as string}`;
+    for (const d of dep.dependsOn) {
+      db.prepare('INSERT INTO track_depends_on (track_id, depends_on_track_id) VALUES (?, ?)').run(
+        trackId,
+        `${input.id}-${d as string}`,
+      );
+    }
   }
   const wo = hydrateWorkOrder(db, input.id);
   if (!wo) throw new Error(`createWorkOrder: failed to hydrate ${input.id}`);
@@ -1930,6 +2001,11 @@ export function createStore(dbPath: string): Store {
     // author order.md into the working tree (no commit) → insert the observed row + tracks. The async
     // wrapper turns fs/DB errors into a rejected promise the UI can surface (modal stays open).
     createWorkOrder: async (input: CreateWorkOrderInput) => {
+      // WO-0071: the dependency facts are validated BEFORE anything is written — a refusal leaves
+      // no WO row, no track_depends_on rows, no order.md. The store throws the FIRST message
+      // (the createWorkOrder throw style; the full list stays the validator's).
+      const problems = validateTrackDependencies(input.trackDependencies, input.trackRepos);
+      if (problems.length > 0) throw new Error(`createWorkOrder: ${problems[0]}`);
       const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
       const slug = slugify(input.title);
@@ -1951,6 +2027,14 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.trackDependencies
+            ? {
+                trackDependencies: input.trackDependencies.map((d) => ({
+                  repo: d.repo as string,
+                  dependsOn: d.dependsOn.map((x) => x as string),
+                })),
+              }
+            : {}),
         }),
       );
       const created = createWorkOrderRow(db, { ...input, id });
