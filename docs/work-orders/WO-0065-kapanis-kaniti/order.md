@@ -2,7 +2,7 @@
 id: WO-0065
 title: "Kapanış kanıtı — the closure gate observes: the operator attestation gains its forge fact (WO-NNNN-in-title match, measured)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -102,11 +102,16 @@ Out of scope:
 
 - plan_approval: mode `plan` — this order IS the approved session plan (the continuing
   BUILD-FIRST delegation; the two live probes above are the measured ground).
-- probe_permissions: the two read-only `gh pr list` calls sit inside the WO-0062 matrix's
-  row-3 family (list + JSON field set); no new write-shaped surface.
+- probe_permissions: RESOLVED — the two read-only `gh pr list` calls sat inside the WO-0062
+  matrix's row-3 family (list + JSON field set); no new write-shaped surface; both excerpts
+  became the adapter fixture.
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — the
   scenario joins the deferred tour: close a merged WO, read the timeline's «gözlemlendi» line.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **980 unit tests** (+11:
+  3 adapter search pins, 5 closure-evidence pins, 3 store pins incl. the migration), build,
+  `check:boundaries` 8/8 clean.
+- pr_open / closure: RESOLVED — PR #70 (`https://github.com/eneskaradeniz/docket/pull/70`),
+  head `116abd7`, merged `d300c4d`; closed at this commit.
 
 ## Stop-and-ask gates
 

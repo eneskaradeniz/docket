@@ -324,6 +324,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       (`docket:forge:*`, in-flight guard) and the board's **Depo** section — health + open PRs +
       «son gözlem», triggered on open/focus/after-action/manual/the 60 s tick. The git half of
       reconciliation (the yaml scanner) and the closure-gate upgrade stay open.
+- [x] **WO-0065** — Kapanış kanıtı (PR #70, merge `d300c4d`, 2026-09-19): the closure gate
+      observes — the M2 attestation gains its forge fact. `searchPullRequests` (the fifth read,
+      measured live: closed page + `"<WO-id> in:title"`), the `ClosureEvidence` union
+      (observed/absent/unknown — never throws, a degraded forge never blocks closure), the
+      `forge_merge` audit event (CHECK migration, rows preserved), and the timeline rendering
+      all three bases. `canClose` untouched — evidence, not precondition. Order:
+      `docs/work-orders/WO-0065-kapanis-kaniti/order.md`.
 - [x] `Forge` interface, GitHub implementation over `gh` (WO-0063)
 - [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
       run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
