@@ -5,6 +5,7 @@ import type { SessionRunner } from '../../core/runner';
 import type { ForgeView, ForgeWatch } from '../../core/forge';
 import type { SystemHealth, SystemHealthWatch } from '../../core/health';
 import type { WorkspaceBudgetView } from '../../core/budget';
+import type { ChangesBridge } from '../components/detail/ChangesSection';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
 import { limitInEffect, overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
 import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
@@ -33,8 +34,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 // an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
 // on mount, the selected work order + its docs load on selection, each with a state for the
 // in-flight/failed case. The runner is provided via context for the session pane.
-export function App({ source, settings, runner, forge: forgeWatch, health: healthWatch }: { source: WorkOrderSource;
-  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch; health?: SystemHealthWatch }) {
+export function App({ source, settings, runner, forge: forgeWatch, health: healthWatch, changes: changesBridge }: { source: WorkOrderSource;
+  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch; health?: SystemHealthWatch; changes?: ChangesBridge }) {
   const { UI, woIdLabel } = useLabels();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -551,6 +552,7 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         onDelete={handleDeleteWorkOrder}
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
         taskChip={detailTaskChip}
+        changes={changesBridge}
       />
     ) : (
       <p className="loadline px-4 py-8">{UI.loadSteps}</p>

@@ -618,6 +618,26 @@ export const UI = {
   // reason line, never a disabled control.
   healthTitle: 'Health',
   healthCreateWaits: '“Create workspace” appears here once the required tools are ready',
+  // WO-0068 — the Changes section (ADR-0018): the operator's console. Every write is an explicit
+  // click; merge takes the counted confirm; a failed act speaks git's own line, never silence.
+  secChanges: 'Changes',
+  changesCommit: 'Commit',
+  changesCommitMessage: 'commit message',
+  changesPush: 'Push',
+  changesPushInfo: 'the first push creates the remote branch',
+  changesCreatePr: 'Open PR',
+  changesMerge: 'Merge',
+  changesMergeConfirm: (n: number) => `PR #${n} will be merged — merging cannot be undone.`,
+  changesBranch: (b: string) => `branch ${b}`,
+  changesAhead: (n: number) => `${n} ahead`,
+  changesEmpty: 'working tree clean',
+  changesRefresh: 'Refresh',
+  changesNewFile: 'new file',
+  changesCommitDone: 'committed',
+  changesSent: 'pushed',
+  changesMerged: 'merged',
+  changesPrOpened: (n: number) => `PR #${n} opened`,
+  changesFailed: 'action failed',
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
     detail?: string,

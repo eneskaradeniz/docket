@@ -10,10 +10,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
+import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
-import { observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget } from '../src/core/forge';
+import { ForgeError, observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget, type RepoRef } from '../src/core/forge';
+import type { ChangesWatch, CommitResult, CreatePrResult, MergeResult, PushResult, RepoChanges } from '../src/core/console';
 import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
@@ -261,6 +263,144 @@ ipcMain.handle('docket:diff-peek', (_e, workOrderId: WorkOrderId, filePath: stri
     return unifiedDiffLines(oldText, newContent);
   } catch {
     return null; // unreadable (permissions/binary) → no peek
+  }
+});
+
+// --- The operator's console (WO-0068, ADR-0018): the Değişiklikler reads + the one-click writes.
+//   ADR-0018's rulings, enforced here where the only listener lives: every write fires from an
+//   EXPLICIT renderer invoke (never from the drive pipeline — it holds no reference to any of
+//   this; the forge writes are adapter-extra methods, not on the Forge port); every channel jails
+//   its target to the work order's own repo paths (the diff-peek's containment, WO-0031c) — the
+//   request's repoPath must realpath to EXACTLY one of those roots, and a path outside the jail
+//   is never touched, it is answered honestly; every write answers { ok, … } or { ok: false,
+//   error } with git's/gh's own line — never a silent success. No channel records a wo_event: a
+//   console act's durable truth is the next scan's observation, not a Docket-side claim. ---
+const gitRun = gitProcessRunner();
+const realOrSelf = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+// The console jail: undefined = outside the work order's repos. A repo target must EXIST (a
+// missing path is not a target) and must BE one of the WO's connected roots — equality, not
+// "under", because the target is the repo itself.
+const consoleJail = (workOrderId: WorkOrderId, repoPath: string): string | undefined => {
+  const abs = isAbsolute(repoPath) ? repoPath : resolve(process.cwd(), repoPath);
+  let real: string;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return undefined;
+  }
+  return store.woRepoPaths(workOrderId).map(realOrSelf).find((root) => root === real);
+};
+// The forge remote for a jailed repo (the create-pr / merge channels): the connection row whose
+// local path IS the jailed root, parsed at use time (the WO-0063 answer-1 rule). A string return
+// is the carried reason.
+const forgeRefFor = (workOrderId: WorkOrderId, repoPath: string): RepoRef | string => {
+  const target = store.forgeScanTargetsForWorkOrder(workOrderId).find((t) => realOrSelf(t.path) === repoPath);
+  if (!target) return 'repo has no forge connection';
+  const parsed = parseRepoRemote(target.repoRemote);
+  return parsed.kind === 'ok' ? parsed.ref : parsed.reason;
+};
+
+const changesWatch: ChangesWatch = {
+  changesFor: (id) =>
+    Promise.all(
+      store.woRepoPaths(id).map(async (p): Promise<RepoChanges> => {
+        const status = await gitStatus(gitRun, p);
+        const base: RepoChanges = { path: p, repo: basename(p) || p, files: [] };
+        if (status.kind === 'error') return { ...base, degraded: status.error };
+        return {
+          ...base,
+          ...(status.branch !== undefined ? { branch: status.branch } : {}),
+          ...(status.ahead !== undefined ? { ahead: status.ahead } : {}),
+          files: status.files,
+        };
+      }),
+    ),
+  diffFor: async (id, repoPath, file) => {
+    const root = consoleJail(id, repoPath);
+    if (root === undefined) return null;
+    return unifiedPatchToDiff(await gitDiff(gitRun, root, file));
+  },
+};
+ipcMain.handle('docket:console:status', (_e, id: WorkOrderId) => changesWatch.changesFor(id));
+ipcMain.handle('docket:console:diff', (_e, id: WorkOrderId, repoPath: string, file: string) => changesWatch.diffFor(id, repoPath, file));
+
+ipcMain.handle(
+  'docket:console:commit',
+  async (_e, id: WorkOrderId, repoPath: string, message: string): Promise<CommitResult> => {
+    try {
+      const root = consoleJail(id, repoPath);
+      if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+      if (message.trim() === '') return { ok: false, error: 'empty commit message' }; // the operator's own words, or nothing
+      const add = await gitRun(['-C', root, 'add', '-A']);
+      if (add.exit !== 0) return { ok: false, error: carriedLine(add, `git add failed (exit ${add.exit})`) };
+      const commit = await gitRun(['-C', root, 'commit', '-m', message]);
+      if (commit.exit !== 0) return { ok: false, error: carriedLine(commit, `git commit failed (exit ${commit.exit})`) };
+      const head = await gitRun(['-C', root, 'rev-parse', 'HEAD']);
+      if (head.exit !== 0) return { ok: false, error: carriedLine(head, `git rev-parse failed (exit ${head.exit})`) };
+      return { ok: true, sha: head.stdout.trim() };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  },
+);
+
+ipcMain.handle('docket:console:push', async (_e, id: WorkOrderId, repoPath: string): Promise<PushResult> => {
+  try {
+    const root = consoleJail(id, repoPath);
+    if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+    // The branch resolves HERE, from the repo's own HEAD — never from the renderer's word (the
+    // cwd-fill rule: the renderer cannot know filesystem facts).
+    const status = await gitStatus(gitRun, root);
+    if (status.kind !== 'ok' || status.branch === undefined) return { ok: false, error: 'no branch to push' };
+    const r = await gitRun(['-C', root, 'push', '-u', 'origin', status.branch]); // first push creates the remote branch — the UI says so
+    if (r.exit !== 0) return { ok: false, error: carriedLine(r, `git push failed (exit ${r.exit})`) };
+    return { ok: true, branch: status.branch };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+});
+
+ipcMain.handle(
+  'docket:console:create-pr',
+  async (_e, id: WorkOrderId, repoPath: string, summary: string): Promise<CreatePrResult> => {
+    try {
+      const root = consoleJail(id, repoPath);
+      if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+      if (summary.trim() === '') return { ok: false, error: 'empty pull-request summary' };
+      const status = await gitStatus(gitRun, root);
+      if (status.kind !== 'ok' || status.branch === undefined) return { ok: false, error: 'no branch to open a PR from' };
+      const ref = forgeRefFor(id, root);
+      if (typeof ref === 'string') return { ok: false, error: ref };
+      // The title rule (the ADR-0017 convention the closure evidence searches by): the WO id
+      // leads as a WORD, the operator's own words follow; the body carries them verbatim.
+      const url = await forge.createPr(ref, { head: status.branch, title: `${id} — ${summary.trim()}`, body: summary.trim() });
+      const number = Number(/pull\/(\d+)/.exec(url)?.[1]);
+      if (!Number.isInteger(number)) return { ok: false, error: 'pr created, but its url carries no number' };
+      return { ok: true, number, url };
+    } catch (e) {
+      return { ok: false, error: e instanceof ForgeError ? e.message : ((e as Error)?.message ?? String(e)) };
+    }
+  },
+);
+
+ipcMain.handle('docket:console:merge', async (_e, id: WorkOrderId, repoPath: string, prNumber: number): Promise<MergeResult> => {
+  try {
+    const root = consoleJail(id, repoPath);
+    if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+    // NO confirm here — the counted confirm is the UI's (ADR-0018 decision 3); this channel only
+    // refuses what is outside the jail.
+    const ref = forgeRefFor(id, root);
+    if (typeof ref === 'string') return { ok: false, error: ref };
+    await forge.mergePr(ref, prNumber);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof ForgeError ? e.message : ((e as Error)?.message ?? String(e)) };
   }
 });
 

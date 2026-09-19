@@ -8,11 +8,13 @@
 // required) is untouched. Belgeler became COLLAPSED ROWS (the operator's wall-of-prose complaint):
 // filename + one-line teaser + section count; expansion is the .repbody idiom, height-capped.
 import { useRef, useState, type ReactNode } from 'react';
+import type { RepoChanges } from '../../../core/console';
 import { stripUnfilledSections } from '../../../core/order-md';
 import { splitStepsFence } from '../../../core/plan-steps';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { Labels } from '../../data/labels';
 import { useLabels } from '../../data/locale';
+import { ChangesSection, type ChangesBridge } from './ChangesSection';
 import { isLiveSessionRow, SessionCards } from './SessionCards';
 import { SourceLinks } from './SourceLinks';
 import { MarkdownBody } from './MarkdownBody';
@@ -78,6 +80,7 @@ export function buildRecordSections({
   docs,
   UI,
   liveSessionId,
+  changes,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -85,6 +88,9 @@ export function buildRecordSections({
   /** WO-0044 (reviewer round): the live drive's provider session id — the ledger skips the
    *  persisted 'running' row that matches it (pure history, even on the mid-run re-entry path). */
   liveSessionId?: string;
+  /** WO-0068: the console's observed per-repo changes, fetched by the detail (undefined = the
+   *  bridge is absent or the look has not landed). The section is ABSENT with nothing to show. */
+  changes?: { bridge: ChangesBridge; repos: RepoChanges[]; onRefresh: () => void };
 }): DetailSection[] {
   const sections: DetailSection[] = [];
   if (docs.order || docs.plan) {
@@ -109,6 +115,20 @@ export function buildRecordSections({
   }
   if (detail.sources.length > 0) {
     sections.push({ id: 'sources', title: UI.secSources, node: <SourceLinks sources={detail.sources} /> });
+  }
+  // WO-0068 — the Değişiklikler section: the working trees' observed truth, one card per connected
+  // repo, the operator's console beneath it. ABSENT with nothing to show — no repo row, or every
+  // tree clean AND no branch info anywhere (the order's own gate); a degraded look speaks, so its
+  // reason line IS content (the forge scan's degraded-meta ruling).
+  if (changes) {
+    const hasContent = changes.repos.some((c) => c.files.length > 0 || c.branch !== undefined || c.degraded !== undefined);
+    if (hasContent) {
+      sections.push({
+        id: 'changes',
+        title: UI.secChanges,
+        node: <ChangesSection woId={detail.id} repos={changes.repos} bridge={changes.bridge} onRefresh={changes.onRefresh} />,
+      });
+    }
   }
   // The ledger rides the stack — the session CARDS (artifact headline + aç/kapa terminal, WO-0038).
   // detail.steps (the full views — verdicts included) replaces the parsed fence: the card headline
