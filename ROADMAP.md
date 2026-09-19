@@ -427,6 +427,23 @@ gate model, after the board and the detail view.
       Derived per mount, read-only, rows navigate. Subagent-implemented, independently
       verified. Order: `docs/work-orders/WO-0072-genel-bakis/order.md`.
 
+- [x] **WO-0073** — GUI-only: the CLI removed (2026-09-20 operator ruling; faz-1 inventory → operator
+      approval → removal): `src/cli/` (8 files, 1653 lines — WO-0024's second composition root, 11
+      commands) + the `cli` script + both tsconfig entries + `COMPOSITION_ROOTS`' CLI arm (the ONE root is
+      `electron/main.ts`; checks' meaning unchanged, 10/10 clean) + `usageRowsFor`/`usageRowsForWo` (the
+      concrete-only CLI `show` read; `hydrateUsageRow` and the WO-0054 facts read stay — persistence
+      semantics re-witnessed column-level in store.test.ts) + `quickProviderCheck` and its two provider
+      consts (the ONE operator exception to the adapters gate; the port, `createRunner`, `checkProvider`
+      untouched) + the 2 CLI-native E2E specs (operator-approved; `tsx` stays — `e2e/seed.ts` uses it).
+      Integrity verified: the SDK imports ONLY in `src/adapters/runner/`, the Forge port + single
+      `github.ts` adapter stand. ADR-0006 addendum (history kept, not rewritten); CLAUDE.md's two
+      live-rule spots updated; TD-032 closed (its subject is gone). Ladder green: typecheck ×2, 1056
+      unit tests, build, boundaries 10/10. E2E HONEST BASELINE: the suite is 60/98 red on `main`
+      itself — the E2E-untested queue WOs' selector/assertion rot (the switchWs cascade, the
+      WO-0065/0069/0072 surface changes) — and this branch's failure set is IDENTICAL (0 new, 0 gone;
+      the 2 deleted CLI specs had been green). The red suite is the deferred operator test phase's
+      opening inventory. Order: `docs/work-orders/WO-0073-gui-only/order.md`.
+
 - [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)

@@ -6,9 +6,10 @@ rule restated with its reasons in two places is the duplication this repository 
 ## Layering — ADR-0006
 - `src/core/` is pure: no React, no I/O, no Node. It imports nothing from `src/adapters/` or `src/ui/`.
 - `src/ui/` imports from `src/core/` and reaches the outside world only through a port defined in `core`.
-- A composition root imports an adapter — the Electron main process (`electron/main.ts`) or the CLI entry
-  (`src/cli/index.ts`). CI: no Node builtin or `node:` specifier imported in `core/`, `ui/` or `renderer/`, and
-  no adapter import outside a composition root.
+- A composition root imports an adapter — and there is exactly ONE: the Electron main process
+  (`electron/main.ts`). The CLI root WO-0024 added is gone (WO-0073, GUI-only; ADR-0006 addendum). CI: no
+  Node builtin or `node:` specifier imported in `core/`, `ui/` or `renderer/`, and no adapter import outside
+  the composition root.
 
 ## Test-first for `core` — ADR-0006
 - `src/core/` is written test-first. React components are not — they are verified by running them.
@@ -137,9 +138,9 @@ rule restated with its reasons in two places is the duplication this repository 
   (ADR-0007, WO-0035); repository documents stay English regardless of UI locale.
 
 ## Where things live — ADR-0003, ADR-0001
-- `src/cli/` is the assistant's headless test surface (`npm run cli`) — not a product surface; the
-  GUI is the product (operator ruling 2026-09-09: "sadece senin için kalsın"). It is one of the two
-  composition roots and stays thin; never present it as an operator feature.
+- GUI-only (operator rulings 2026-09-09 "sadece senin için kalsın" → 2026-09-20 removal): there is no CLI
+  surface — `src/cli/` and `npm run cli` are gone (WO-0073); the headless role they played is carried by the
+  E2E spec's e2e bridge and the core port fakes.
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
 - Workspace roadmap (the faz/task planning layer, ADR-0016): `<structure root>/roadmap.md` (default

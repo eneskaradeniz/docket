@@ -25,7 +25,7 @@ const BRAND = ['wid', 'rid', 'woid', 'tid']; // branded-identity constructors, d
 // runtime, not a Node builtin, so it rides along. WO-0006 widened this from a 4-name list to every builtin.
 const NODE_BUILTINS = new Set(builtinModules);
 const isNodeSpecifier = (spec) => spec.startsWith('node:') || NODE_BUILTINS.has(spec) || spec === 'electron';
-const COMPOSITION_ROOTS = new Set(['electron/main.ts', 'src/cli/index.ts']); // a composition root imports an adapter (ADR-0006; WO-0024 widened to the CLI)
+const COMPOSITION_ROOTS = new Set(['electron/main.ts']); // a composition root imports an adapter (ADR-0006; WO-0024's CLI root removed by WO-0073 — the one root is the Electron main)
 
 const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))];
 const read = (f) => readFileSync(f, 'utf8').split('\n');
