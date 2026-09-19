@@ -29,6 +29,7 @@ const fake: Forge = {
   pullRequestForSha: () => Promise.resolve<ForgePr | undefined>(undefined),
   checks: () =>
     Promise.resolve<ForgeCheck[]>([{ name: 'check', status: 'completed', conclusion: 'success' }]),
+  searchPullRequests: () => Promise.resolve<ForgePr[]>([]),
 };
 
 describe('forge port shapes (WO-0063)', () => {

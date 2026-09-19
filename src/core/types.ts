@@ -227,7 +227,10 @@ export type WoEventKind =
   | 'steer_queued'
   | 'steer_delivered'
   | 'steer_retracted'
-  | 'flow_mode_changed';
+  | 'flow_mode_changed'
+  // WO-0065: the closure's observed fact — what the forge SAW (a JSON ClosureEvidence detail:
+  // observed merge / honest absence / the unknown with its reason)
+  | 'forge_merge';
 
 export interface WoEvent {
   kind: WoEventKind;

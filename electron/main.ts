@@ -12,7 +12,7 @@ import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
-import { reconcileWorkspaceForge, type ForgeTarget } from '../src/core/forge';
+import { observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget } from '../src/core/forge';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
@@ -263,7 +263,19 @@ ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store
 
 // --- Work-order closure (WO-0025 / P1-2). Operator-attested: appends the ## Closure note to order.md and
 //   records merged_at + verifier + closure-sha facts. Preconditions re-checked server-side. ---
-ipcMain.handle('docket:source:close-work-order', (_e, id: WorkOrderId, note: string) => store.closeWorkOrder(id, note));
+// WO-0065: the close observes BEFORE it writes — one forge look for the WO's workspace (never
+// throws; the worst case is the unknown basis), then the close carries the evidence in. The
+// renderer passes two args; the evidence is this file's job (it owns the forge).
+ipcMain.handle('docket:source:close-work-order', async (_e, id: WorkOrderId, note: string) => {
+  const targets: ForgeTarget[] = store.forgeScanTargetsForWorkOrder(id).map((t) => {
+    const parsed = parseRepoRemote(t.repoRemote);
+    return parsed.kind === 'ok'
+      ? { repoRemote: t.repoRemote, ref: parsed.ref }
+      : { repoRemote: t.repoRemote, unknownReason: parsed.reason };
+  });
+  const evidence = await observeClosureEvidence({ forge, targets, woId: id });
+  return store.closeWorkOrder(id, note, evidence);
+});
 ipcMain.handle('docket:source:override-step-verdict', (_e, id: WorkOrderId, idx: number) => store.overrideStepVerdict(id, idx));
 ipcMain.handle('docket:source:get-work-order-events', (_e, id: WorkOrderId) => store.getWorkOrderEvents(id));
 

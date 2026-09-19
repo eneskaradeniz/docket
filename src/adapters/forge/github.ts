@@ -135,6 +135,30 @@ function fail(r: GhResult): ForgeError {
   return new ForgeError(failureReason(r));
 }
 
+// The shared list-row mapper (the open page and the closure search speak the same wire shape):
+// UPPERCASE state → lowercase, '' reviewDecision → 'none', null/missing → absent, edge-only.
+function mapPrListRows(rows: PrListRow[]): ForgePr[] {
+  return rows.map((row) => {
+    const wire = row.state.toLowerCase();
+    if (wire !== 'open' && wire !== 'closed' && wire !== 'merged')
+      throw new ForgeError(`unknown pull-request state "${row.state}"`);
+    const pr: ForgePr = {
+      number: row.number,
+      state: wire,
+      headSha: row.headRefOid,
+      headBranch: row.headRefName,
+      baseBranch: row.baseRefName,
+      url: row.url,
+    };
+    if (row.title !== '') pr.title = row.title;
+    // '' → 'none' at the edge (the frozen mapping); absence (null OR a missing key) stays absence
+    if (row.reviewDecision != null) pr.reviewDecision = row.reviewDecision === '' ? 'none' : row.reviewDecision;
+    if (row.mergedAt != null) pr.mergedAt = row.mergedAt;
+    if (row.mergeCommit != null) pr.mergeSha = row.mergeCommit.oid;
+    return pr;
+  });
+}
+
 function parseJson<T>(r: GhResult): T {
   try {
     return JSON.parse(r.stdout) as T;
@@ -166,26 +190,18 @@ export class GitHubForge implements Forge {
   async pullRequests(repo: RepoRef, state: ForgePrStateFilter): Promise<ForgePr[]> {
     const r = await this.run(['pr', 'list', '--repo', `${repo.owner}/${repo.name}`, '--state', state, '--json', PR_FIELDS]);
     if (r.exit !== 0) throw fail(r);
-    const rows = parseJson<PrListRow[]>(r);
-    return rows.map((row) => {
-      const wire = row.state.toLowerCase();
-      if (wire !== 'open' && wire !== 'closed' && wire !== 'merged')
-        throw new ForgeError(`unknown pull-request state "${row.state}"`);
-      const pr: ForgePr = {
-        number: row.number,
-        state: wire,
-        headSha: row.headRefOid,
-        headBranch: row.headRefName,
-        baseBranch: row.baseRefName,
-        url: row.url,
-      };
-      if (row.title !== '') pr.title = row.title;
-      // '' → 'none' at the edge (the frozen mapping); absence (null OR a missing key) stays absence
-      if (row.reviewDecision != null) pr.reviewDecision = row.reviewDecision === '' ? 'none' : row.reviewDecision;
-      if (row.mergedAt != null) pr.mergedAt = row.mergedAt;
-      if (row.mergeCommit != null) pr.mergeSha = row.mergeCommit.oid;
-      return pr;
-    });
+    return mapPrListRows(parseJson<PrListRow[]>(r));
+  }
+
+  async searchPullRequests(repo: RepoRef, inTitle: string): Promise<ForgePr[]> {
+    // WO-0065's measured shape (2026-09-19): the closed page filtered by an in-title search —
+    // the same `pr list` family, one call, the closure-candidate search.
+    const r = await this.run([
+      'pr', 'list', '--repo', `${repo.owner}/${repo.name}`, '--state', 'closed',
+      '--search', `${inTitle} in:title`, '--json', PR_FIELDS,
+    ]);
+    if (r.exit !== 0) throw fail(r);
+    return mapPrListRows(parseJson<PrListRow[]>(r));
   }
 
   async pullRequestForSha(repo: RepoRef, sha: string): Promise<ForgePr | undefined> {

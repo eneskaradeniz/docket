@@ -8,6 +8,7 @@ import type { RepoId, SessionRef, StepRole, StepView, WoEvent, Workspace, WorkOr
 import type { RoadmapView } from './roadmap';
 import type { WorkspaceUsageView } from './usage';
 import type { DraftSourceSummary } from './roadmap-draft';
+import type { ClosureEvidence } from './forge';
 
 export interface RepoConnectionInput {
   path: string;
@@ -236,7 +237,10 @@ export interface WorkOrderSource {
   // OPERATOR-ATTESTED closure, the mirror of the plan gate's ruling above: track merges are attested by the
   // operator (merged_at), the verifier gate is set, and the closure sha is the decision-store HEAD at close
   // time ("closed at this commit"), not yet an M3 docs-commit sha. Stage becomes `closed`.
-  closeWorkOrder(workOrderId: WorkOrderId, note: string): Promise<void>;
+  // WO-0065: `evidence` carries what the forge SAW (observed merge / absent / unknown) — handed
+  // in by the composition root, which owns the forge; the store records it as a `forge_merge`
+  // event. Absent = the legacy attested close (the CLI/test path): nothing extra, nothing claimed.
+  closeWorkOrder(workOrderId: WorkOrderId, note: string, evidence?: ClosureEvidence): Promise<void>;
 
   // WO-0029 / B19: the operator's override on a revise verdict ("Devam et") — the step's row flips to
   // proceed; the architect's original text stays in the verdict file. Idempotent (no-op when not revise).

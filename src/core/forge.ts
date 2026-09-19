@@ -11,7 +11,7 @@
 //   `ForgeError` carrying a displayable reason — never a guess;
 // - normalization happens ONCE at the adapter edge (case, empty review decisions, null vs
 //   absent); core receives clean values.
-import type { WorkspaceId } from './types';
+import type { WorkOrderId, WorkspaceId } from './types';
 
 /** A repo on the forge, resolved from the persisted `connection.repo_remote` string (parsed in
  *  the adapter at read time — no new connection column, WO-0063 answer 1). */
@@ -74,6 +74,10 @@ export interface Forge {
   pullRequestForSha(repo: RepoRef, sha: string): Promise<ForgePr | undefined>;
   /** CI facts for a sha (one call) — stays queryable after merge. */
   checks(repo: RepoRef, sha: string): Promise<ForgeCheck[]>;
+  /** The CLOSED-page PRs whose title carries `inTitle` — the closure-candidate search (one
+   *  call; measured 2026-09-19, WO-0065's order carries the observed excerpts). A closed-
+   *  unmerged row comes back too: only `state === 'merged'` is evidence. */
+  searchPullRequests(repo: RepoRef, inTitle: string): Promise<ForgePr[]>;
 }
 
 // ===== The observed forge cache + reconciliation (WO-0064, ADR-0010's forge half) =====
@@ -140,6 +144,55 @@ export interface ForgeWatch {
    *  overlaps a running cycle is a no-op. */
   reconcile(id: WorkspaceId): Promise<void>;
   view(id: WorkspaceId): Promise<ForgeView>;
+}
+
+// ===== The closure evidence (WO-0065): the M2 attestation gains its observed counterpart =====
+
+/** What the closure SAW on the forge. `observed` = a merged PR carries this WO's number in its
+ *  title (the documented WO-NNNN-in-title convention — measured, not guessed). `absent` = the
+ *  look succeeded and found nothing («closed on attestation» is then the honest label).
+ *  `unknown` = the forge could not be reached — closure still proceeds (a degraded dependency
+ *  never stops the app), and the timeline says what was not looked at. */
+export type ClosureEvidence =
+  | { basis: 'observed'; prNumber: number; mergeSha?: string; url: string; mergedAt?: string }
+  | { basis: 'absent' }
+  | { basis: 'unknown'; reason: string };
+
+/** The closure-time look (WO-0065): ONE search per connected repo whose remote parses, the
+ *  merged rows only (latest `mergedAt` wins), first hit wins across repos. NEVER throws — the
+ *  worst case is an `unknown` carrying the last error's reason. An unparseable remote is not a
+ *  look; with no look possible at all the result is `absent` (nothing was searchable, so
+ *  nothing was found — the basis line still speaks). */
+export async function observeClosureEvidence(deps: {
+  forge: Forge;
+  targets: ForgeTarget[];
+  woId: WorkOrderId;
+}): Promise<ClosureEvidence> {
+  let succeeded = false;
+  let lastReason: string | undefined;
+  for (const target of deps.targets) {
+    if (!target.ref) continue; // unparseable remote — not a look, not an unknown
+    try {
+      const hits = await deps.forge.searchPullRequests(target.ref, deps.woId);
+      succeeded = true;
+      const merged = hits
+        .filter((p) => p.state === 'merged')
+        .sort((a, b) => (b.mergedAt ?? '').localeCompare(a.mergedAt ?? ''));
+      const pr = merged[0];
+      if (pr)
+        return {
+          basis: 'observed',
+          prNumber: pr.number,
+          url: pr.url,
+          ...(pr.mergeSha !== undefined ? { mergeSha: pr.mergeSha } : {}),
+          ...(pr.mergedAt !== undefined ? { mergedAt: pr.mergedAt } : {}),
+        };
+    } catch (e) {
+      lastReason = e instanceof ForgeError ? e.message : String(e);
+    }
+  }
+  if (!succeeded && lastReason !== undefined) return { basis: 'unknown', reason: lastReason };
+  return { basis: 'absent' };
 }
 
 /** Reconcile ONE workspace's connected repos against the forge (WO-0064). Per repo, one

@@ -24,7 +24,7 @@ import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
-import type { ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
+import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
@@ -90,6 +90,8 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, F
    *  root's scan input. The adapter-side `RepoRef` parse happens THERE (main owns the forge
    *  adapter); the store never names the forge product. */
   forgeScanTargets(id: WorkspaceId): { repoRemote: string; path: string }[];
+  /** WO-0065: the same read for a WORK ORDER's workspace — the closure look's input. */
+  forgeScanTargetsForWorkOrder(workOrderId: WorkOrderId): { repoRemote: string; path: string }[];
 }
 
 /** The DB-backed half of the AppSettings port (WO-0025). WO-0059 rev 4: the stored provider key
@@ -762,12 +764,13 @@ function migrate(db: DatabaseSync): void {
   }
 
   // WO-0031c: wo_event's kind CHECK widens (wo_edited/rule_changed/permission_decision; WO-0039
-  // stabilization adds plan_save_refused). A CHECK lives in the table definition, so — like the
-  // legacy track.stage rebuild above — rename → recreate (the widened SCHEMA_SQL) → id-preserving
-  // copy (append order is the audit's meaning) → drop.
+  // stabilization adds plan_save_refused; WO-0065 adds forge_merge — the closure's observed
+  // fact). A CHECK lives in the table definition, so — like the legacy track.stage rebuild
+  // above — rename → recreate (the widened SCHEMA_SQL) → id-preserving copy (append order is
+  // the audit's meaning) → drop.
   const woEventSql =
     (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wo_event'").get() as { sql: string } | undefined)?.sql ?? '';
-  if (woEventSql && (!woEventSql.includes("'wo_edited'") || !woEventSql.includes("'plan_save_refused'") || !woEventSql.includes("'steer_queued'"))) {
+  if (woEventSql && (!woEventSql.includes("'wo_edited'") || !woEventSql.includes("'plan_save_refused'") || !woEventSql.includes("'steer_queued'") || !woEventSql.includes("'forge_merge'"))) {
     // Reviewer round (WO-0045): transactional, like the session rebuild above — a crash between
     // COPY and DROP otherwise leaves an empty (fresh-CHECK) wo_event plus an orphaned *_legacy,
     // silently erasing the audit; the satisfied condition would never re-run.
@@ -1931,7 +1934,7 @@ export function createStore(dbPath: string): Store {
     // Docket records the three facts deriveStage needs (track merged_at, verifier gate, closure sha = the
     // decision-store HEAD at close time). order.md gains a `## Closure` note. M3's forge observation replaces
     // the attestations with observed PR/CI/merge + a docs-commit sha.
-    closeWorkOrder: async (workOrderId: WorkOrderId, note: string) => {
+    closeWorkOrder: async (workOrderId: WorkOrderId, note: string, evidence?: ClosureEvidence) => {
       const wo = db.prepare('SELECT workspace_id, gate_plan_approved, gate_closure_docs_sha FROM work_order WHERE id = ?').get(workOrderId) as
         | { workspace_id: string; gate_plan_approved: number; gate_closure_docs_sha: string | null }
         | undefined;
@@ -1964,6 +1967,20 @@ export function createStore(dbPath: string): Store {
       db.prepare('UPDATE track SET merged_at = ? WHERE work_order_id = ?').run(now, workOrderId);
       db.prepare('UPDATE work_order SET gate_verifier_resolvable = 1, gate_closure_docs_sha = ? WHERE id = ?').run(sha, workOrderId);
       appendEvent(db, workOrderId as string, 'closed', sha);
+      // WO-0065: the closure's OBSERVED fact — what the forge SAW, handed in by the composition
+      // root (the only place that owns the forge). Absent input = the legacy attested close
+      // (the CLI/test path): no event, nothing claimed. The detail carries targets and
+      // messages only — never auth output (the Records line).
+      if (evidence) appendEvent(db, workOrderId as string, 'forge_merge', JSON.stringify(evidence));
+    },
+
+    // WO-0065: the composition root's closure-look input — the WO's workspace connection rows
+    // (remote + path), resolved to ForgeTargets main-side (the adapter parse lives there).
+    forgeScanTargetsForWorkOrder: (workOrderId: WorkOrderId) => {
+      const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      return wo ? forgeScanTargetsRow(db, wid(wo.workspace_id)) : [];
     },
     // The plan's steps (WO-0017) — specs parsed from plan.md + zipped with the observed run state. Detail-only.
     getWorkOrderSteps: (id: WorkOrderId) => Promise.resolve(buildWorkOrderSteps(db, id)),
