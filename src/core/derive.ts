@@ -17,6 +17,7 @@ import type {
   EvidenceKind,
   EvidenceStatus,
   PrimaryAction,
+  RepoId,
   SessionRef,
   SessionRole,
   StageId,
@@ -400,6 +401,46 @@ export function deriveTrackMerge(wo: WorkOrder, track: Track): TrackMergeAction 
     return { kind: 'absent', reason: 'ci_not_green' };
   }
   return { kind: 'available' };
+}
+
+// ===== WO-0071 — the depends_on write-side validator =====
+//
+// The read side is deriveTrackMerge above (it consumes Track.dependsOn); the write side gets ONE
+// pure gate here, run by the store's createWorkOrder before anything is written. [] = valid — the
+// absent/valid case every pre-existing caller rides. Messages are agent/store-facing English (the
+// store throws the first one; the UI surfaces its own refusal copy).
+
+/**
+ * Validate creation-input track dependencies against the work order's own tracks. Pure — no I/O,
+ * no store. Rejects: self-dependence (repo ∈ its own dependsOn), any repo outside `trackRepos`
+ * (both an entry's own repo and a dependsOn target — track_depends_on is intra-WO by schema),
+ * and a duplicate (repo → dep) pair. Absent input or a fully valid list → [].
+ */
+export function validateTrackDependencies(
+  input: ReadonlyArray<{ repo: RepoId; dependsOn: ReadonlyArray<RepoId> }> | undefined,
+  trackRepos: ReadonlyArray<RepoId>,
+): string[] {
+  if (!input || input.length === 0) return [];
+  const known = new Set<string>(trackRepos.map((r) => r as string));
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of input) {
+    const repo = entry.repo as string;
+    if (!known.has(repo)) {
+      problems.push(`track dependencies name '${repo}', which is not one of this work order's tracks`);
+    }
+    for (const dep of entry.dependsOn) {
+      const depSlug = dep as string;
+      if (depSlug === repo) problems.push(`track '${repo}' cannot depend on itself`);
+      else if (!known.has(depSlug)) {
+        problems.push(`track '${repo}' depends on '${depSlug}', which is not one of this work order's tracks`);
+      }
+      const pair = `${repo} -> ${depSlug}`;
+      if (seen.has(pair)) problems.push(`duplicate dependency: '${repo}' -> '${depSlug}'`);
+      seen.add(pair);
+    }
+  }
+  return problems;
 }
 
 export function sessionForTrack(wo: WorkOrder, trackId: TrackId): SessionRef | undefined {

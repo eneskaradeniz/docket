@@ -199,3 +199,38 @@ describe('roadmap.md file helpers (WO-0048, ADR-0016)', () => {
     expect(nextWorkOrderNumber(r)).toBe('WO-0043');
   });
 });
+
+// ===== WO-0071 — the tracks fence round-trips depends_on =====
+describe('buildOrderMd — depends_on (WO-0071: the intra-WO dependency facts ride the fence)', () => {
+  const base = { id: 'WO-0071', title: 'Makine', workspaceSlug: 'docket', description: 'x', trackRepos: ['app', 'api'], reviewMode: 'gates' as const, contextFiles: [] };
+
+  it('absent trackDependencies → every track emits `depends_on: []` exactly as today', () => {
+    const md = buildOrderMd(base);
+    expect(md).toContain('tracks:\n  - repo: app\n    depends_on: []\n  - repo: api\n    depends_on: []\n');
+  });
+
+  it('an explicit empty list emits [] the same way', () => {
+    const md = buildOrderMd({ ...base, trackDependencies: [{ repo: 'app', dependsOn: [] }] });
+    expect(md).toContain('  - repo: app\n    depends_on: []');
+  });
+
+  it('a dependency serializes as a YAML flow list inside the fence', () => {
+    const md = buildOrderMd({ ...base, trackDependencies: [{ repo: 'api', dependsOn: ['app'] }] });
+    expect(md).toContain('tracks:\n  - repo: app\n    depends_on: []\n  - repo: api\n    depends_on: [app]\n');
+  });
+
+  it('multiple dependencies join comma-separated in the given order', () => {
+    const md = buildOrderMd({
+      ...base,
+      trackRepos: ['app', 'api', 'web'],
+      trackDependencies: [{ repo: 'web', dependsOn: ['api', 'app'] }],
+    });
+    expect(md).toContain('  - repo: web\n    depends_on: [api, app]');
+  });
+
+  it('a track with no entry still emits [] — the fence stays total', () => {
+    const md = buildOrderMd({ ...base, trackDependencies: [{ repo: 'api', dependsOn: ['app'] }] });
+    expect(md).toContain('  - repo: app\n    depends_on: []');
+    expect(md).toContain('  - repo: api\n    depends_on: [app]');
+  });
+});

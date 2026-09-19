@@ -222,6 +222,11 @@ export interface StepPromptInput {
   step: StepSpec;
   planText: string;
   orderMdPath: string;
+  /** WO-0071 — the briefing bundle: the step's track's dependencies' latest existing reports, as
+   *  absolute PATHS (never contents — prompts carry paths, the WO-0050 ruling). Absent/empty → the
+   *  prompt is byte-identical to the pre-WO-0071 template (the existing prompt tests are the
+   *  fallback proof). The implementer template consumes it; the verifier's stays path-free. */
+  briefing?: Array<{ repo: string; path: string }>;
 }
 
 function stepScopeText(scope: StepScope): string {
@@ -239,6 +244,16 @@ export function implementerPrompt(input: StepPromptInput): string {
     ``,
     `The approved plan:`,
     input.planText || '(see plan.md)',
+    // WO-0071 — the briefing bundle: the dependency's latest report PATH, listed after the plan and
+    // before the work line. Absent/empty list → nothing inserted (byte-identical to the old template).
+    ...(input.briefing && input.briefing.length > 0
+      ? [
+          ``,
+          `Briefing — your track depends on:`,
+          ...input.briefing.map((b) => `- ${b.repo}: ${b.path}`),
+          `(read these at your fence; they are the dependency's latest contract)`,
+        ]
+      : []),
     ``,
     `Work autonomously to implement this step within your scope. When you are done, end your turn with a concise report in MARKDOWN (use ## headings and bullet lists): what you changed, the files you touched, and any concerns for the verifier. That report is saved as this step's outcome.`,
     ``,

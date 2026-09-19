@@ -523,6 +523,9 @@ export const UI = {
   woContextAdd: '▸ Dosya ekle',
   woReviewLabel: 'Denetim',
   woCreateBtn: 'Oluştur',
+  // WO-0071 — iz bağımlılığı seçimi (≥2 iz seçiliyken görünür; kendi çipi hiç render edilmez)
+  createDependsTitle: 'Bağımlılıklar',
+  createDependsHint: 'bir iz, seçili başka izlere bağlanabilir',
   // Plan döngüsü (WO-0016)
   requestPlan: 'Plan iste',
   planReadyHeader: 'Plan hazır',

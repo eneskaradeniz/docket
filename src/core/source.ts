@@ -63,6 +63,14 @@ export type FlowMode = 'auto' | 'manual';
 // `full_auto` = Tam otomatik. The fence (scope) is unchanged in all three — this is cadence, not scope.
 export type PermissionRule = 'ask_every' | 'risky_excluded' | 'full_auto';
 
+// WO-0071 — the intra-WO dependency fact: `repo` (one of this work order's own tracks) waits for
+// the merges of every track named in `dependsOn` (also this WO's own tracks — track_depends_on is
+// intra-WO by schema). Cross-WO ordering lives at the roadmap layer (ADR-0016), never here.
+export interface TrackDependencyInput {
+  repo: RepoId;
+  dependsOn: RepoId[];
+}
+
 export interface CreateWorkOrderInput {
   workspaceId: WorkspaceId;
   title: string;
@@ -73,6 +81,10 @@ export interface CreateWorkOrderInput {
   contextFiles: string[]; // local file paths → order.md Context
   permissionRule?: PermissionRule; // → order.md front-matter (permission_rule, WO-0031c); omit = the Settings default
   taskRef?: string; // → order.md front-matter task (WO-0048, ADR-0016): the roadmap link — document text, never a DB column
+  // WO-0071: per-track depends_on — → the `track_depends_on` rows + order.md's `depends_on:` keys.
+  // Absent = the pre-WO-0071 behavior byte-for-byte (zero rows, empty lists). Validated purely by
+  // core's validateTrackDependencies before anything is written.
+  trackDependencies?: TrackDependencyInput[];
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and

@@ -84,14 +84,24 @@ export interface OrderMdInput {
   contextFiles: string[]; // local file paths → Context
   permissionRule?: PermissionRule; // → front-matter permission_rule (WO-0031c); the WO carries its own rule
   taskRef?: string; // → front-matter task (WO-0048, ADR-0016): the roadmap link; omitted when unlinked
+  // WO-0071: the intra-WO depends_on facts, serialized back into the tracks fence as YAML flow
+  // lists (`depends_on: [app]`). Absent = every track emits `depends_on: []` (the pre-WO-0071
+  // bytes). A track with no entry — or an explicit empty list — emits `[]` the same way.
+  trackDependencies?: Array<{ repo: string; dependsOn: string[] }>;
 }
 
 // Compose the order.md body. Follows docs/work-orders/TEMPLATE.md + the WO-0013/0014 front-matter
 // convention. `review_mode` is new (distinct from `mode` plan|direct and the `review` cadence key);
 // WO-0016's architect runtime reads it. Document text lives in git, not the DB (ADR-0010 rule 1).
 export function buildOrderMd(input: OrderMdInput): string {
+  const deps = new Map((input.trackDependencies ?? []).map((d) => [d.repo, d.dependsOn]));
   const tracks = input.trackRepos.length
-    ? input.trackRepos.map((r) => `  - repo: ${r}\n    depends_on: []`).join('\n')
+    ? input.trackRepos
+        .map((r) => {
+          const list = deps.get(r) ?? [];
+          return `  - repo: ${r}\n    depends_on: [${list.join(', ')}]`;
+        })
+        .join('\n')
     : '  []';
   const context =
     input.contextFiles.length > 0

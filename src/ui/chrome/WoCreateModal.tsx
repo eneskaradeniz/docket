@@ -57,6 +57,9 @@ export function WoCreateModal({
   const [title, setTitle] = useState(prefill?.title ?? '');
   const [description, setDescription] = useState(prefill?.note ?? '');
   const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(prefill !== undefined ? seededTracks : trackOptions);
+  // WO-0071: per-track depends_on picks — the track's RepoId keyed by its string form (a plain
+  // string compare against branded ids, the seededTracks precedent; no identity constructor in ui).
+  const [depSelection, setDepSelection] = useState<Record<string, RepoId[]>>({});
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
@@ -64,7 +67,29 @@ export function WoCreateModal({
   const titleRef = useRef<HTMLInputElement>(null);
 
   function toggleTrack(repo: RepoId) {
-    setSelectedTracks((prev) => (prev.includes(repo) ? prev.filter((r) => r !== repo) : [...prev, repo]));
+    const on = selectedTracks.includes(repo);
+    setSelectedTracks(on ? selectedTracks.filter((r) => r !== repo) : [...selectedTracks, repo]);
+    // A deselected track loses its own picks AND every pick naming it — a stale entry must not
+    // resurrect as a dependency when the repo comes back.
+    if (on) {
+      setDepSelection((prev) => {
+        const next: Record<string, RepoId[]> = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (k !== (repo as string)) next[k] = v.filter((x) => x !== repo);
+        }
+        return next;
+      });
+    }
+  }
+
+  function toggleDep(track: RepoId, dep: RepoId) {
+    setDepSelection((prev) => {
+      const cur = prev[track as string] ?? [];
+      const next = cur.includes(dep) ? cur.filter((x) => x !== dep) : [...cur, dep];
+      const record: Record<string, RepoId[]> = { ...prev, [track as string]: next };
+      if (next.length === 0) delete record[track as string];
+      return record;
+    });
   }
 
   async function pickContext() {
@@ -87,6 +112,11 @@ export function WoCreateModal({
       return;
     }
     setTitleErr(null);
+    // WO-0071: only tracks WITH ≥1 pick enter the payload; a pick naming a since-deselected track
+    // never rides. Empty map → the field stays absent (the pre-WO-0071 call, byte-for-byte).
+    const picked = selectedTracks
+      .map((t) => ({ repo: t, dependsOn: (depSelection[t as string] ?? []).filter((d) => selectedTracks.includes(d)) }))
+      .filter((e) => e.dependsOn.length > 0);
     try {
       const wo = await source.createWorkOrder({
         workspaceId: workspace.id,
@@ -98,6 +128,7 @@ export function WoCreateModal({
         permissionRule,
         // WO-0049: the task→WO link — the task identity, written regardless of the track selection.
         ...(prefill !== undefined ? { taskRef: prefill.taskId } : {}),
+        ...(picked.length > 0 ? { trackDependencies: picked } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -172,6 +203,40 @@ export function WoCreateModal({
                   </button>
                 );
               })}
+            </div>
+          </section>
+        ) : null}
+
+        {/* WO-0071: the per-track depends_on picker — absent below 2 selected tracks (one track has
+            nothing to depend on, ADR-0001); a track's own chip is simply never rendered, so
+            self-dependence has no path in (the store validator is the second layer). */}
+        {selectedTracks.length >= 2 ? (
+          <section>
+            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.createDependsTitle}</span>
+            <span className="mb-2 block text-[11px] text-inkdim">{UI.createDependsHint}</span>
+            <div className="flex flex-col gap-1.5">
+              {selectedTracks.map((t) => (
+                <div key={t as string} className="flex flex-wrap items-center gap-1.5">
+                  <span className="min-w-[88px] font-mono text-[11px]">{t as string}</span>
+                  {selectedTracks
+                    .filter((o) => o !== t)
+                    .map((o) => {
+                      const on = (depSelection[t as string] ?? []).includes(o);
+                      return (
+                        <button
+                          type="button"
+                          key={o as string}
+                          aria-pressed={on}
+                          onClick={() => toggleDep(t, o)}
+                          className={`ichip inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${on ? 'ichip-on' : ''}`}
+                        >
+                          <span aria-hidden="true" className={`font-mono text-[11px] ${on ? 'text-info' : ''}`}>{on ? '✓' : '○'}</span>
+                          <span className="font-mono text-[11px]">{o as string}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              ))}
             </div>
           </section>
         ) : null}
