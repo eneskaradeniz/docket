@@ -57,8 +57,15 @@ export function EvidencePanel({
           tone: 'info',
           ...(it.exemption ? { title: it.exemption.reason, reason: it.exemption.reason } : {}),
         });
+      } else if (it.status === 'unknown') {
+        // WO-0069: "we could not look" (ADR-0010) — a dim informative line, never an error tone,
+        // never the absence sentence (nothing is missing; nothing was observed either).
+        chips.push({ key: `wo-${it.kind}`, text: UI.evidenceUnknown, tone: 'dim' });
       } else {
-        chips.push({ key: `wo-${it.kind}`, text: ABSENCE[it.kind] ?? EVIDENCE_LABELS[it.kind], tone: 'dim' });
+        // WO-0069: a RECORDED verifier report whose pointers missed is not an absence — the miss
+        // line speaks the unresolved pointers instead of claiming the report does not exist.
+        const miss = it.kind === 'verification' && it.status === 'unsatisfied';
+        chips.push({ key: `wo-${it.kind}`, text: miss ? UI.evdVerificationMiss : (ABSENCE[it.kind] ?? EVIDENCE_LABELS[it.kind]), tone: 'dim' });
       }
     }
     for (const ln of tracks) {
@@ -80,6 +87,16 @@ export function EvidencePanel({
           text: `${UI.evdPrCi(UI.ciExempt)}${suffix}`,
           tone: 'info',
           ...(ci.exemption ? { title: ci.exemption.reason } : {}),
+        };
+      } else if (ci?.status === 'unknown') {
+        // WO-0069: the forge scan degraded — the run hydrates unknown with the scan's verbatim
+        // reason under the chip (data carried, never re-worded); dim, never an error tone.
+        const reason = ln.track.ci.kind === 'run' && ln.track.ci.state === 'unknown' ? ln.track.ci.reason : undefined;
+        chip = {
+          key: `tr-${ln.track.id}`,
+          text: `${UI.evdPrCi(UI.ciUnknown)}${suffix}`,
+          tone: 'dim',
+          ...(reason ? { title: reason, reason } : {}),
         };
       } else {
         chip = { key: `tr-${ln.track.id}`, text: UI.evdCiRed(multiRepo ? repo : undefined), tone: 'dim' };

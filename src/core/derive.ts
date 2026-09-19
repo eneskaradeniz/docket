@@ -72,8 +72,14 @@ function woGateStatus(wo: WorkOrder, kind: EvidenceKind): EvidenceStatus {
   switch (kind) {
     case 'plan_approval':
       return wo.gateInputs.planApproved ? 'satisfied' : 'unsatisfied';
-    case 'verification':
-      return wo.gateInputs.verifierReport?.resolvablePointers ? 'satisfied' : 'unsatisfied';
+    case 'verification': {
+      // WO-0069: the verification gate is a COMPUTED fact, and an absent computation is not a
+      // failure — undefined (no verifier report recorded, or nothing extractable in it) is "we
+      // could not look" (ADR-0010's unknown): never a pass, never rendered as a miss.
+      const report = wo.gateInputs.verifierReport;
+      if (report === undefined) return 'unknown';
+      return report.resolvablePointers ? 'satisfied' : 'unsatisfied';
+    }
     case 'closure':
       return wo.gateInputs.closureDocsSha != null ? 'satisfied' : 'unsatisfied';
     default:
@@ -98,6 +104,9 @@ function ciActivelyRunning(wo: WorkOrder): boolean {
 
 function trackCiStatus(t: Track): EvidenceStatus {
   if (t.ci.kind === 'exempt') return 'exempt';
+  // WO-0069: an unobserved CI run (the forge scan degraded — hydrateTracks' override) is "we could
+  // not look", never a failure (ADR-0010); the merge gate still refuses it (deriveTrackMerge).
+  if (t.ci.state === 'unknown') return 'unknown';
   return t.ci.state === 'success' ? 'satisfied' : 'unsatisfied';
 }
 
@@ -117,10 +126,55 @@ export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks' | 'sessi
   if (wo.sessions.length === 0 && !wo.gateInputs.planApproved) return 'written';
   if (!wo.gateInputs.planApproved) return 'architect_approval';
   const allMerged = wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
+  // WO-0069: verification-unknown (`verifierReport` undefined — "we could not look") is NOT
+  // satisfied here: the optional chain reads falsy, so a gate never passes on unknown (ADR-0010).
   if (allMerged && wo.gateInputs.verifierReport?.resolvablePointers) {
     return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
   }
   return 'implementation';
+}
+
+// ===== `path:line` pointer extraction (WO-0069 — the observation half) =====
+//
+// A verifier report claims its evidence by pointing at files (`src/core/derive.ts:116`). The
+// verification gate stores whether those pointers RESOLVED, so the tokens must be extractable
+// pure-side; the STORE resolves them against the work order's repo roots (core never touches fs —
+// ADR-0006). A pointer is a path-like token immediately followed by `:digits`:
+//   - path-like = carries a path separator (`/`, or `\` — a Windows-ish separator is tolerated)
+//     OR ends in a known code/document extension (so a bare `derive.ts:12` counts, while a bare
+//     `Makefile:12` does not: a bare word before a colon is prose, e.g. «Not: 12»);
+//   - optionally wrapped in backticks (the wrap is markup, never part of the token);
+//   - URLs (http/https) are stripped before the scan — a link target is never a working-tree claim;
+//   - bare `:digits` and clock-like `12:30` words have no path-like prefix and are dropped;
+//   - duplicates collapse; document order is preserved.
+const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
+  'bash', 'c', 'cc', 'clj', 'cpp', 'cs', 'css', 'dart', 'erl', 'ex', 'exs', 'go', 'gradle', 'groovy',
+  'h', 'hpp', 'hs', 'htm', 'html', 'ini', 'java', 'js', 'json', 'jsx', 'kt', 'kts', 'less', 'lua',
+  'm', 'md', 'mdx', 'mm', 'php', 'pl', 'ps1', 'py', 'r', 'rb', 'rs', 'svelte', 'scala', 'scss', 'sh',
+  'sql', 'swift', 'toml', 'ts', 'tsx', 'vue', 'xml', 'yaml', 'yml', 'zsh',
+]);
+
+// The token shape: an optional leading `./` | `../` | `/` | drive prefix, then `/`- or `\`-separated
+// components, then `:digits`. Kept verbatim — `./` normalization and absolute handling are the
+// resolver's business (the adapter), not the extractor's.
+const POINTER_TOKEN = /((?:\.\.?[\\/]|[A-Za-z]:[\\/]?|[\\/])?(?:[A-Za-z0-9._-]+[\\/])*[A-Za-z0-9._-]+):(\d+)/g;
+
+export function extractPointers(body: string): string[] {
+  const pointers: string[] = [];
+  const seen = new Set<string>();
+  const withoutUrls = body.replace(/https?:\/\/\S+/g, ' ');
+  for (const m of withoutUrls.matchAll(POINTER_TOKEN)) {
+    const path = m[1]!;
+    const dot = path.lastIndexOf('.');
+    const ext = dot >= 0 ? path.slice(dot + 1).toLowerCase() : '';
+    if (!(path.includes('/') || path.includes('\\') || CODE_EXTENSIONS.has(ext))) continue;
+    const pointer = `${path}:${m[2]}`;
+    if (!seen.has(pointer)) {
+      seen.add(pointer);
+      pointers.push(pointer);
+    }
+  }
+  return pointers;
 }
 
 // Per-work-order cost, DERIVED from the WO's session list (ADR-0010 rule 2 — the same lesson as

@@ -47,8 +47,13 @@ export interface CiCheck {
   conclusion: 'success' | 'failure' | 'pending';
 }
 
+// WO-0069: the run arm gains `unknown` — the OBSERVED-NOTHING state (ADR-0010: "we could not
+// look" is not "we looked and it failed"). The store hydrates it from the forge scan's degraded
+// meta; `reason` carries that scan's verbatim degradation reason beside it (rides the existing
+// ci_blob JSON — no schema change). Unknown never passes a gate (deriveTrackMerge keeps
+// `ci_not_green`) and never renders as a failure (the UI's dim informative line).
 export type Ci =
-  | { kind: 'run'; state: 'running' | 'success' | 'failed'; checks: CiCheck[] }
+  | { kind: 'run'; state: 'running' | 'success' | 'failed' | 'unknown'; checks: CiCheck[]; reason?: string }
   | { kind: 'exempt'; reason: string };
 
 // --- Merge post-state: presence = merged; absence = not yet. (The merge ACTION is derived.) ---
@@ -371,7 +376,10 @@ export interface StageRailStep {
 
 // AC12 (7cdeea1): evidence is three-valued. Exempt is a decision someone made — shown with its
 // reason, and it does NOT block the gate. (The same boolean-modelling bug fixed on Ci, one layer up.)
-export type EvidenceStatus = 'satisfied' | 'unsatisfied' | 'exempt';
+// WO-0069 adds the fourth value: `unknown` — the gate input was never observed (no verifier report
+// recorded, a degraded forge scan). An unknown never passes a gate and never renders as a failure
+// (ADR-0010); it is a dim informative line, not an error.
+export type EvidenceStatus = 'satisfied' | 'unsatisfied' | 'exempt' | 'unknown';
 
 export interface EvidenceItem {
   kind: EvidenceKind;

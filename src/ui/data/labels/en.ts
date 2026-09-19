@@ -397,6 +397,9 @@ export const UI = {
   evidence: 'Evidence',
   evdPlanApproval: 'awaiting plan approval',
   evdVerification: 'no verifier report',
+  // WO-0069: a RECORDED report whose pointers missed is not an absence — this arm says the report
+  // exists but its file pointers did not resolve; nothing recorded at all speaks evidenceUnknown.
+  evdVerificationMiss: 'verifier report pointers did not resolve',
   evdClosure: 'docs not updated',
   evdPrMissing: (repo: string) => `no PR open · ${repo}`,
   evdCiRed: (repo?: string) => (repo ? `CI not green · ${repo}` : 'CI not green'),
@@ -406,6 +409,10 @@ export const UI = {
   evdMerged: (repo?: string) => (repo ? `✓ Merged · ${repo}` : '✓ Merged'),
   sources: 'Sources',
   ciExempt: 'CI exempt',
+  // WO-0069 — the unknown arms: "we could not look" is information, never an error tone (ADR-0010) —
+  // a dim line; the CI reason renders verbatim from the degraded scan.
+  evidenceUnknown: 'unverified — could not be checked',
+  ciUnknown: 'CI state unknown',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   loading: 'Loading…',

@@ -29,6 +29,7 @@ import {
   deriveTrackMerge,
   deriveTrackStage,
   deriveWorkOrderCost,
+  extractPointers,
   limitInEffect,
   nextManuelAction,
   overlayLiveDrive,
@@ -439,13 +440,16 @@ describe('six-state coverage — every derivation (AC10)', () => {
   describe('deriveEvidence — six states (kind × status sequence)', () => {
     type Pair = { kind: EvidenceKind; status: EvidenceStatus };
     const e = (kind: EvidenceKind, status: EvidenceStatus): Pair => ({ kind, status });
+    // WO-0069: every fixture but WO-1004 carries no verifier report — the gate input is undefined,
+    // which is the new `unknown` arm ("we could not look"), not a miss. WO-1004's recorded claim
+    // keeps its satisfied.
     const cases: Record<string, Pair[]> = {
-      'WO-1001': [e('plan_approval', 'satisfied'), e('verification', 'unsatisfied'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
-      'WO-1002': [e('plan_approval', 'satisfied'), e('verification', 'unsatisfied'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'unsatisfied')],
-      'WO-1003': [e('plan_approval', 'unsatisfied'), e('verification', 'unsatisfied'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
+      'WO-1001': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
+      'WO-1002': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'unsatisfied')],
+      'WO-1003': [e('plan_approval', 'unsatisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
       'WO-1004': [e('plan_approval', 'satisfied'), e('verification', 'satisfied'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'satisfied')],
-      'WO-1005': [e('plan_approval', 'satisfied'), e('verification', 'unsatisfied'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
-      'WO-1006': [e('plan_approval', 'satisfied'), e('verification', 'unsatisfied'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'exempt')],
+      'WO-1005': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
+      'WO-1006': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'exempt')],
     };
     it.each(IDS)('%s', (id) => {
       const items = deriveEvidence(wo(id)).map(({ kind, status }) => ({ kind, status }));
@@ -899,5 +903,134 @@ describe('appbarDriveTier (WO-0060)', () => {
   });
   it('a warn signal without a running drive → none (amber rides the live fold; no fold, no amber)', () => {
     expect(appbarDriveTier({ running: false, warn: true }, NOW)).toBe('none');
+  });
+});
+
+// ===== WO-0069 — the gates observe: the unknown arms + the pointer extractor =====
+
+// ADR-0010's two sentences, pinned per arm: an unknown never passes a gate, and it never renders
+// (derives) as a failure — "we could not look" is its own state, not a miss.
+describe('WO-0069 — the verification gate carries unknown', () => {
+  const evidenceOf = (w: WorkOrder, kind: EvidenceKind): EvidenceStatus =>
+    deriveEvidence(w).find((x) => x.kind === kind)!.status;
+
+  it('no recorded verifier report → unknown (nothing was claimed)', () => {
+    expect(evidenceOf(aWorkOrder({ gateInputs: { planApproved: true } }), 'verification')).toBe('unknown');
+  });
+
+  it('a recorded UNRESOLVABLE claim → unsatisfied (we looked and it missed) — byte-stable', () => {
+    const w = aWorkOrder({ gateInputs: { planApproved: true, verifierReport: { resolvablePointers: false } } });
+    expect(evidenceOf(w, 'verification')).toBe('unsatisfied');
+  });
+
+  it('a recorded RESOLVABLE claim → satisfied — byte-stable', () => {
+    const w = aWorkOrder({ gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true } } });
+    expect(evidenceOf(w, 'verification')).toBe('satisfied');
+  });
+
+  it('an unknown verification keeps the rail locked and naming its need', () => {
+    const w = aWorkOrder({ stage: 'verification', gateInputs: { planApproved: true } });
+    const step = deriveRail(w).find((s) => s.stage === 'verification')!;
+    expect(step.status).toBe('locked');
+    expect(step.needs).toEqual(['verification']);
+  });
+
+  it('a gate NEVER passes on unknown — deriveStage stays off closure', () => {
+    const merged = aTrack({ id: 't1', repo: 'app', merge: { at: 'now' } });
+    expect(deriveStage(aWorkOrder({ gateInputs: { planApproved: true }, tracks: [merged] }))).toBe('implementation');
+    expect(
+      deriveStage(aWorkOrder({ gateInputs: { planApproved: true, verifierReport: { resolvablePointers: false } }, tracks: [merged] })),
+    ).toBe('implementation');
+  });
+
+  it('the primary action stays absent (verifier_report_missing) on unknown — unknown is not an available gate', () => {
+    const w = aWorkOrder({ stage: 'verification', gateInputs: { planApproved: true } });
+    expect(derivePrimaryAction(w)).toEqual({ kind: 'absent', reason: 'verifier_report_missing' });
+  });
+});
+
+describe('WO-0069 — the track CI unknown arm (the degraded-scan hydration)', () => {
+  const unknownCi = { kind: 'run' as const, state: 'unknown' as const, checks: [], reason: 'gh: Could not resolve to a Repository' };
+
+  it('ci run-state unknown → ci_green unknown, and unknown is NOT an exemption', () => {
+    const w = aWorkOrder({ tracks: [aTrack({ id: 't1', repo: 'app', ci: unknownCi })] });
+    const item = deriveEvidence(w).find((x) => x.kind === 'ci_green')!;
+    expect(item.status).toBe('unknown');
+    expect(item.exemption).toBeUndefined();
+  });
+
+  it('a merge never passes on unknown CI — absent with ci_not_green', () => {
+    const w = aWorkOrder({ tracks: [aTrack({ id: 't1', repo: 'app', pr: { url: 'u', headSha: 's' }, ci: unknownCi })] });
+    expect(deriveTrackMerge(w, w.tracks[0]!)).toEqual({ kind: 'absent', reason: 'ci_not_green' });
+  });
+
+  it('unknown is neither a failure (your_turn via ci) nor an active run (external)', () => {
+    const w = aWorkOrder({
+      tracks: [aTrack({ id: 't1', repo: 'app', pr: { url: 'u', headSha: 's' }, ci: unknownCi })],
+    });
+    expect(whoseTurn(w)).toBe('your_turn'); // the gate still awaits an answer, not an error
+    expect(deriveCardReason(w).kind).toBe('awaiting_next_session'); // never ci_failed
+  });
+});
+
+// The pure half of the computed verification gate. The STORE resolves what this extracts against
+// the WO's repo roots; the shapes pinned here are the contract between the two.
+describe('extractPointers — the `path:line` token extractor (WO-0069)', () => {
+  it('a plain separated path extracts', () => {
+    expect(extractPointers('the mapping lives in src/core/derive.ts:116')).toEqual(['src/core/derive.ts:116']);
+  });
+
+  it('a backticked pointer unwraps — the wrap is markup, never part of the token', () => {
+    expect(extractPointers('see `src/index.css:12` for the hover tokens')).toEqual(['src/index.css:12']);
+  });
+
+  it('a bare code file with a known extension counts, separator or not', () => {
+    expect(extractPointers('the ladder lives in derive.ts:99 and notes in README.MD:2')).toEqual(['derive.ts:99', 'README.MD:2']);
+  });
+
+  it('multiple pointers preserve document order', () => {
+    expect(extractPointers('a.md:1 first, then b/c.yaml:22')).toEqual(['a.md:1', 'b/c.yaml:22']);
+  });
+
+  it('duplicates collapse; the first position wins', () => {
+    expect(extractPointers('src/a.ts:3 then again src/a.ts:3')).toEqual(['src/a.ts:3']);
+  });
+
+  it('URLs never extract, even when they carry :digits; a scheme-less host:port is prose', () => {
+    expect(extractPointers('diff at https://github.com/o/r/blob/main/src/a.ts:12 served from localhost:3000')).toEqual([]);
+  });
+
+  it('a bare :digits and clock-like words have no path-like prefix — dropped', () => {
+    expect(extractPointers('step 3: 42, the window 12:30, and see :7')).toEqual([]);
+  });
+
+  it('a path WITHOUT :line is not a pointer (the extractor claims nothing else)', () => {
+    expect(extractPointers('the file src/core/derive.ts alone, or derive.ts without a line')).toEqual([]);
+  });
+
+  it('a Windows-ish backslash separator is tolerated (decided: yes, pinned)', () => {
+    expect(extractPointers('see src\\core\\derive.ts:116')).toEqual(['src\\core\\derive.ts:116']);
+  });
+
+  it('a bare word before a colon is prose — Makefile:12 (no extension) rejects', () => {
+    expect(extractPointers('Not: 12, Makefile:12, v1.2:3')).toEqual([]);
+  });
+
+  it('an absolute pointer extracts verbatim (the store checks it as itself)', () => {
+    expect(extractPointers('/usr/local/lib/app.ts:8')).toEqual(['/usr/local/lib/app.ts:8']);
+  });
+
+  it('a ./-relative pointer extracts verbatim (the store normalizes the prefix away)', () => {
+    expect(extractPointers('created in ./src/a.ts:4')).toEqual(['./src/a.ts:4']);
+  });
+
+  it('markdown noise around the pointer does not block it; a :line:column tail trims to :line', () => {
+    expect(
+      extractPointers('- [x] `docs/work-orders/WO-0069-m3-kuyrugu/order.md:14` — kapatıldı; also derive.ts:116:8'),
+    ).toEqual(['docs/work-orders/WO-0069-m3-kuyrugu/order.md:14', 'derive.ts:116']);
+  });
+
+  it('an empty body extracts nothing', () => {
+    expect(extractPointers('')).toEqual([]);
   });
 });
