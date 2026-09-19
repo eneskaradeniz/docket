@@ -309,7 +309,15 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       free; one token reads docket + the antreo-app org. Findings + the vendor-neutral port
       sketch: `docs/work-orders/WO-0062-forge-probe/report.md` — the Forge WO's Context, five
       open design questions carried there.
-- [ ] `Forge` interface, GitHub implementation over `gh`
+- [x] **WO-0063** — Forge port (PR #68, merge `9e2e433`, 2026-09-19): the probe-frozen read
+      surface — the vendor-neutral `Forge` port in core (`health` / `pullRequests` /
+      `pullRequestForSha` / `checks`; `ForgeError` as the shaped unknown) + the adapter over
+      `gh` in `src/adapters/forge/`, edge-only normalization, fixture tests fed the probe's
+      observed outputs (25 pins). The five design answers frozen in the order
+      (`docs/work-orders/WO-0063-forge-port/order.md`); one refinement recorded:
+      `reviewDecision` optional — the sha→PR path carries no review fact (absence, never a
+      guess). No consumer yet — health / reconciliation / ingestion are the chain's next WOs.
+- [x] `Forge` interface, GitHub implementation over `gh` (WO-0063)
 - [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
       run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
 - [ ] **Reconciliation** — re-read git and the forge on open, focus, after actions, on manual refresh and on

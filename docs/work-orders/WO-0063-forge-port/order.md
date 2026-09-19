@@ -2,7 +2,7 @@
 id: WO-0063
 title: "Forge port — the probe-frozen read surface: the `Forge` interface in core + the GitHub adapter over `gh`"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -116,13 +116,22 @@ Out of scope:
 
 ## Evidence required
 
-- plan_approval: mode `plan` — the architect plan round runs against this order; the probe
-  report is the surface truth the plan builds on.
-- probe_permissions: CARRIED — every gh call the adapter makes was allow-listed in the WO-0062
-  read-only matrix; the implementation adds no new call shape.
+- plan_approval: RESOLVED — the order IS the approved plan (the operator reviewed the drafted
+  order and delegated the posture choice, 2026-09-19: port-only scope + mode `plan`, the house
+  convention; the probe report was the surface truth it built on).
+- probe_permissions: RESOLVED — CARRIED as planned: ZERO live calls; the verification is the
+  fixture tests fed the WO-0062 report's observed outputs (the M0 loop closed at the fixtures,
+  not on the wire).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — a
   port with no consumer has no manual scenario; its tour rides the first consumer WO's.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **958 unit tests**
+  (+25 forge pins: core shapes + adapter normalization/degraded paths/remote parse), build,
+  `check:boundaries` 8/8 clean.
+- pr_open / closure: RESOLVED — PR #68 (`https://github.com/eneskaradeniz/docket/pull/68`),
+  head `35a9c60`, merged `9e2e433`; closed at this commit.
+- Closure residue: TD-061 records the port's unsampled surfaces (StatusContext-only repos,
+  ssh/enterprise remotes, the history-view scan policy) as revisit conditions for the consumer
+  WOs.
 
 ## Stop-and-ask gates
 
