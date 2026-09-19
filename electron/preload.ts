@@ -122,6 +122,25 @@ contextBridge.exposeInMainWorld('docket', {
     systemHealth: (): Promise<import('../src/core/health').SystemHealth | undefined> =>
       ipcRenderer.invoke('docket:health:system'),
   },
+  // WO-0068: the operator's console (ADR-0018) — the Değişiklikler reads + the four one-click
+  // writes. The group rides under `changes` (a `console` key would collide with the DOM global in
+  // the renderer's type view); the channel names stay `docket:console:*`. Every write resolves the
+  // honest two-arm result ({ ok, … } / { ok: false, error }) — never a silent success — and every
+  // target is jailed main-side; merge confirms in the UI, never here.
+  changes: {
+    changesFor: (workOrderId: WorkOrderId): Promise<import('../src/core/console').RepoChanges[]> =>
+      ipcRenderer.invoke('docket:console:status', workOrderId),
+    diffFor: (workOrderId: WorkOrderId, repoPath: string, file: string): Promise<import('../src/core/diff').LineDiff | null> =>
+      ipcRenderer.invoke('docket:console:diff', workOrderId, repoPath, file),
+    commit: (workOrderId: WorkOrderId, repoPath: string, message: string): Promise<import('../src/core/console').CommitResult> =>
+      ipcRenderer.invoke('docket:console:commit', workOrderId, repoPath, message),
+    push: (workOrderId: WorkOrderId, repoPath: string): Promise<import('../src/core/console').PushResult> =>
+      ipcRenderer.invoke('docket:console:push', workOrderId, repoPath),
+    createPr: (workOrderId: WorkOrderId, repoPath: string, summary: string): Promise<import('../src/core/console').CreatePrResult> =>
+      ipcRenderer.invoke('docket:console:create-pr', workOrderId, repoPath, summary),
+    merge: (workOrderId: WorkOrderId, repoPath: string, prNumber: number): Promise<import('../src/core/console').MergeResult> =>
+      ipcRenderer.invoke('docket:console:merge', workOrderId, repoPath, prNumber),
+  },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
   // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ForgeError } from '../../core/forge';
+import { ForgeError, type Forge } from '../../core/forge';
 import { GitHubForge, ghProcessRunner, parseRepoRemote, type GhResult, type GhRunner } from './github';
 
 // WO-0063 — the adapter against the PROBE'S OBSERVED OUTPUTS (docs/work-orders/
@@ -299,5 +299,60 @@ describe('searchPullRequests (WO-0065 — measured live)', () => {
   it('non-zero exit → ForgeError with the stderr line (the search is a read like the rest)', async () => {
     const f = forgeWith(() => fail('gh: search failed'));
     await expect(f.searchPullRequests(ref, 'WO-0062')).rejects.toThrow('gh: search failed');
+  });
+});
+
+// ===== WO-0068 / ADR-0018 — the OPERATOR'S console writes (adapter-extra methods, never on the
+// Forge port; only the composition root's console channels reach them) =====
+
+describe('console writes (WO-0068, ADR-0018)', () => {
+  it('createPr: one call with the head/title/body vector; the PR url parsed from stdout', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual([
+        'pr', 'create', '--repo', 'eneskaradeniz/docket', '--head', 'wo-0068-degisiklikler-konsolu',
+        '--title', 'WO-0068 — değişiklikler konsolu', '--body', 'operatörün özeti',
+      ]);
+      return ok('Creating pull request for wo-0068-degisiklikler-konsolu:\nhttps://github.com/eneskaradeniz/docket/pull/72\n');
+    });
+    expect(
+      await f.createPr(ref, { head: 'wo-0068-degisiklikler-konsolu', title: 'WO-0068 — değişiklikler konsolu', body: 'operatörün özeti' }),
+    ).toBe('https://github.com/eneskaradeniz/docket/pull/72');
+  });
+
+  it('createPr: non-zero exit → ForgeError carrying the stderr line', async () => {
+    const f = forgeWith(() => fail('gh: pull request creation failed for head branch'));
+    await expect(f.createPr(ref, { head: 'x', title: 't', body: 'b' })).rejects.toThrow(ForgeError);
+    await expect(f.createPr(ref, { head: 'x', title: 't', body: 'b' })).rejects.toThrow('gh: pull request creation failed for head branch');
+  });
+
+  it('createPr: a success stdout without a url is a ForgeError — never a silent no-op', async () => {
+    const f = forgeWith(() => ok('nothing recognizable'));
+    await expect(f.createPr(ref, { head: 'x', title: 't', body: 'b' })).rejects.toThrow('pr create returned no pull-request url');
+  });
+
+  it('mergePr: one call with the number and the merge-commit kind', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual(['pr', 'merge', '72', '--repo', 'eneskaradeniz/docket', '--merge']);
+      return ok('✓ Merged pull request #72');
+    });
+    await expect(f.mergePr(ref, 72)).resolves.toBeUndefined();
+  });
+
+  it('mergePr: non-zero exit → ForgeError carrying the stderr line', async () => {
+    const f = forgeWith(() => fail('gh: Pull request is not mergeable'));
+    await expect(f.mergePr(ref, 72)).rejects.toThrow(ForgeError);
+    await expect(f.mergePr(ref, 72)).rejects.toThrow('gh: Pull request is not mergeable');
+  });
+
+  it('the Forge PORT carries no write method — the compile-level fact (ADR-0018 decision 4)', () => {
+    const port: Forge = new GitHubForge((() => Promise.resolve(ok(''))) as GhRunner);
+    expect(typeof (port as GitHubForge).createPr).toBe('function'); // the ADAPTER has it
+    expect(typeof (port as GitHubForge).mergePr).toBe('function');
+    // The canary: the port's TYPE cannot name the console write. Adding createPr to `Forge` makes
+    // this line typecheck — and this test fails the boundary again.
+    // @ts-expect-error — createPr exists on GitHubForge, never on the Forge port
+    void port.createPr;
+    // @ts-expect-error — same for mergePr
+    void port.mergePr;
   });
 });

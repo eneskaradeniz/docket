@@ -236,4 +236,29 @@ export class GitHubForge implements Forge {
       return check;
     });
   }
+
+  // ===== ADR-0018 (WO-0068): the OPERATOR'S console writes — adapter-extra methods, NOT on the
+  // Forge port. Only the composition root's console channels call these; the drive pipeline holds
+  // no reference, so the agent path stays structurally write-free. Same fail() error contract as
+  // the reads above: non-zero exit → ForgeError carrying the displayable line.
+
+  /** `gh pr create --repo o/n --head H --title T --body B` — the PR url parsed from stdout
+   *  (the forge's own pointer; the caller scopes this session's merge to it). A success stdout
+   *  without a url is a ForgeError, never a silent no-op. */
+  async createPr(repo: RepoRef, input: { head: string; title: string; body: string }): Promise<string> {
+    const r = await this.run([
+      'pr', 'create', '--repo', `${repo.owner}/${repo.name}`, '--head', input.head,
+      '--title', input.title, '--body', input.body,
+    ]);
+    if (r.exit !== 0) throw fail(r);
+    const url = /https:\/\/github\.com\/\S+\/pull\/\d+/.exec(r.stdout)?.[0];
+    if (!url) throw new ForgeError('pr create returned no pull-request url');
+    return url;
+  }
+
+  /** `gh pr merge N --repo o/n --merge` — the merge-commit kind the closure evidence reads. */
+  async mergePr(repo: RepoRef, number: number): Promise<void> {
+    const r = await this.run(['pr', 'merge', String(number), '--repo', `${repo.owner}/${repo.name}`, '--merge']);
+    if (r.exit !== 0) throw fail(r);
+  }
 }

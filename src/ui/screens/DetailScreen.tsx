@@ -1,6 +1,7 @@
 import type { StepRole, WorkOrderDetailView } from '../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../core/source';
 import type { WorkspaceBudgetView } from '../../core/budget';
+import type { ChangesBridge } from '../components/detail/ChangesSection';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 
 // The console FRAME (WO-0031c / v4 → WO-0039 rail-free): the detail fills the viewport below the
@@ -29,6 +30,7 @@ export function DetailScreen({
   onRetractSteerNote,
   autoRequestPlan,
   taskChip,
+  changes,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -58,6 +60,8 @@ export function DetailScreen({
   autoRequestPlan?: boolean;
   /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight through. */
   taskChip?: { fazId: string; taskTitle: string } | 'missing';
+  /** WO-0068: the operator's console bridge (the optional `changes` group), straight through. */
+  changes?: ChangesBridge;
 }) {
   return (
     <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1160px] flex-col overflow-hidden px-5 pb-3.5 pt-2.5">
@@ -84,6 +88,7 @@ export function DetailScreen({
         onDelete={onDelete}
         onRetractSteerNote={onRetractSteerNote}
         taskChip={taskChip}
+        changes={changes}
       />
     </main>
   );

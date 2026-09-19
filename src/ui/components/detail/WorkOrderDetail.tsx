@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, limitCrossing, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
@@ -8,12 +8,14 @@ import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-ste
 import { parseOrderMd } from '../../../core/order-md';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import type { WorkspaceBudgetView } from '../../../core/budget';
+import type { RepoChanges } from '../../../core/console';
 import { useLabels } from '../../data/locale';
 import { Button, Dialog, Input, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { EnterMark } from '../EnterMark';
 import { ActionCard } from './ActionCard';
 import { buildRecordSections, RecordStack } from './DetailSections';
+import type { ChangesBridge } from './ChangesSection';
 import { DetailStrip } from './DetailStrip';
 import { BudgetRefusalCard } from './BudgetRefusalCard';
 import { LimitCard } from './LimitCard';
@@ -83,6 +85,7 @@ export function WorkOrderDetail({
   autoRequestPlan,
   onRetractSteerNote,
   taskChip,
+  changes: changesBridge,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -111,6 +114,9 @@ export function WorkOrderDetail({
   onRetractSteerNote?: (sessionId: string, noteId: string) => Promise<boolean>;
   /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight to the strip. */
   taskChip?: { fazId: string; taskTitle: string } | 'missing';
+  /** WO-0068: the operator's console bridge (the optional `changes` group) — present only when
+   *  the composition root wired the console; the section is absent without it. */
+  changes?: ChangesBridge;
 }) {
   const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
@@ -760,10 +766,45 @@ export function WorkOrderDetail({
   // persisted 'running' row it matches is skipped, so even the mid-run re-entry renders no card
   // for the run in flight. The ONE live surface is the instrument.
   const liveSessionId = running || stopping ? store.sessionId(driveKey) : undefined;
+  // WO-0068 — the Changes look, fetched HERE (the detail effect idiom) so the record builder can
+  // gate the section ABSENT with nothing to show (ADR-0012) — an empty frame never renders. The
+  // read re-runs on every detail reload and on the section's own Yenile; a failed look degrades to
+  // [] (absent) and the next reload re-reads. The bridge is optional: no composition-root console,
+  // no section.
+  const [changesRepos, setChangesRepos] = useState<RepoChanges[] | undefined>(undefined);
+  const [changesNonce, setChangesNonce] = useState(0);
+  const refreshChanges = useCallback(() => setChangesNonce((n) => n + 1), []);
+  useEffect(() => {
+    if (!changesBridge) {
+      setChangesRepos(undefined);
+      return;
+    }
+    let cancelled = false;
+    changesBridge
+      .changesFor(detail.id)
+      .then((repos) => {
+        if (!cancelled) setChangesRepos(repos);
+      })
+      .catch(() => {
+        if (!cancelled) setChangesRepos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [changesBridge, detail, changesNonce]);
   const recordSections = useMemo(
-    () => buildRecordSections({ detail, docs, UI, ...(liveSessionId ? { liveSessionId } : {}) }),
+    () =>
+      buildRecordSections({
+        detail,
+        docs,
+        UI,
+        ...(liveSessionId ? { liveSessionId } : {}),
+        ...(changesBridge && changesRepos && changesRepos.length > 0
+          ? { changes: { bridge: changesBridge, repos: changesRepos, onRefresh: refreshChanges } }
+          : {}),
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [detail, docs, UI, liveSessionId],
+    [detail, docs, UI, liveSessionId, changesBridge, changesRepos, refreshChanges],
   );
   // The report toggle (WO-0031f R1): one report open at a time — clicking its row flips it.
   const toggleReport = (step: StepView): void => {

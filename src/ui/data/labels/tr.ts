@@ -718,6 +718,26 @@ export const UI = {
   // durumdur»). İlk-koşu kapısı ADR-0001'in yokluk dilini konuşur: eylem yok + neden satırı.
   healthTitle: 'Sağlık',
   healthCreateWaits: 'Gerekli araçlar hazır olunca «çalışma alanı oluştur» burada belirir',
+  // WO-0068 — Değişiklikler bölümü (ADR-0018): operatörün konsolu. Her yazım açık bir tıklamadır;
+  // birleştirme sayılı onay ister; bozuk bir eylem git'in kendi satırıyla konuşur, sessizlik yok.
+  secChanges: 'Değişiklikler',
+  changesCommit: 'İşle',
+  changesCommitMessage: 'commit iletisi',
+  changesPush: 'Gönder',
+  changesPushInfo: 'ilk gönderim uzak dalı oluşturur',
+  changesCreatePr: 'PR aç',
+  changesMerge: 'Birleştir',
+  changesMergeConfirm: (n: number) => `PR #${n} birleştirilecek — birleşme geri alınamaz.`,
+  changesBranch: (b: string) => `dal ${b}`,
+  changesAhead: (n: number) => `${n} ilerde`,
+  changesEmpty: 'çalışma ağacı temiz',
+  changesRefresh: 'Yenile',
+  changesNewFile: 'yeni dosya',
+  changesCommitDone: 'işlendi',
+  changesSent: 'gönderildi',
+  changesMerged: 'birleştirildi',
+  changesPrOpened: (n: number) => `PR #${n} açıldı`,
+  changesFailed: 'işlem başarısız',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
