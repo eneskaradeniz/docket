@@ -2,7 +2,7 @@
 id: WO-0064
 title: "Forge observation — the port's first consumer: the observed forge cache + ADR-0010 reconciliation + the board's Depo section"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -113,11 +113,17 @@ Out of scope:
 
 ## Evidence required
 
-- plan_approval: mode `plan` — this order IS the approved session plan (the operator's
-  continuing BUILD-FIRST delegation; the explore map of 2026-09-19 is the ground truth).
+- plan_approval: RESOLVED — the order IS the approved session plan (the operator's continuing
+  BUILD-FIRST delegation, 2026-09-19; the explore map of the same day is the ground truth it
+  froze).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — the
-  board section joins the deferred tour list.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+  Depo section joins the deferred tour list (a live scan scenario: connect the docket repo,
+  watch the section populate, Durdur a scan's network to see the degraded reason).
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **969 unit tests** (+11:
+  6 reconcile pins, 5 store cache pins), build, `check:boundaries` 8/8 clean. E2E untouched by
+  design (a live-forge spec would be environment-flaky).
+- pr_open / closure: RESOLVED — PR #69 (`https://github.com/eneskaradeniz/docket/pull/69`),
+  head `7701ebb`, merged `717b828`; closed at this commit.
 
 ## Stop-and-ask gates
 

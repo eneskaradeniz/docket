@@ -317,6 +317,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       (`docs/work-orders/WO-0063-forge-port/order.md`); one refinement recorded:
       `reviewDecision` optional — the sha→PR path carries no review fact (absence, never a
       guess). No consumer yet — health / reconciliation / ingestion are the chain's next WOs.
+- [x] **WO-0064** — Forge observation (PR #69, merge `717b828`, 2026-09-19): the port's first
+      consumer — the observed forge cache (`forge_scan`/`forge_pr`/`forge_check`, discardable,
+      `observed_at` on every row), the core reconciler (per-repo isolation, a degraded scan
+      never wipes, replace-on-scan, checks for open heads only), the composition-root wiring
+      (`docket:forge:*`, in-flight guard) and the board's **Depo** section — health + open PRs +
+      «son gözlem», triggered on open/focus/after-action/manual/the 60 s tick. The git half of
+      reconciliation (the yaml scanner) and the closure-gate upgrade stay open.
 - [x] `Forge` interface, GitHub implementation over `gh` (WO-0063)
 - [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
       run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
@@ -324,7 +331,7 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       a background interval. Observation wins over what Docket last showed. Merged-outside-Docket is normal
 - [ ] `stage` derived from observed facts rather than stored (TD-008); `EvidenceStatus` gains `unknown`
 - [ ] A defined home in the decision store for architect verdicts and verifier reports (TD-009)
-- [ ] PR / head sha / check-run ingestion
+- [x] PR / head sha / check-run ingestion (WO-0064)
 - [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
 - [ ] Gate engine: transitions absent, not disabled, when evidence is missing
 - [ ] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
