@@ -12,6 +12,7 @@ import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { roadmapTaskOf, type RoadmapView } from '../../core/roadmap';
 import { DEFAULT_DOCS_ROOT } from '../../core/roadmap-md';
 import type { WorkspaceUsageView } from '../../core/usage';
+import type { WorkspaceOverview } from '../../core/overview';
 import { useLabels } from '../data/locale';
 import { AppShell, type AppbarActivity, type Surface } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
@@ -22,6 +23,7 @@ import { HealthStrip } from '../components/board/HealthStrip';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RoadmapScreen } from '../screens/RoadmapScreen';
 import { UsageScreen } from '../screens/UsageScreen';
+import { OverviewScreen } from '../screens/OverviewScreen';
 import { InviteHero } from '../components/InviteHero';
 import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 import { createDriveStore, DriveStoreContext, useActiveDrive, useDriveActivity } from '../components/session/drive-store';
@@ -436,6 +438,28 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   useEffect(() => {
     if (surface === 'usage') refreshUsage();
   }, [surface, refreshUsage]);
+  // WO-0072: the workspace overview — the projection is derived per read (never cached), so the
+  // read-once-per-mount/switch cadence is the whole contract: workspace entry + surface entry,
+  // exactly the usage read's shape. The drive hooks deliberately do NOT refresh it (the roadmap
+  // nonce interplay is not needed either): re-entering the surface re-reads, and a stale glance
+  // until then is the TD-055 read-once stance.
+  const [overview, setOverview] = useState<WorkspaceOverview | undefined>(undefined);
+  const refreshOverview = useCallback(() => {
+    if (!workspaceId) {
+      setOverview(undefined);
+      return;
+    }
+    void source
+      .workspaceOverview(workspaceId)
+      .then(setOverview)
+      .catch(() => setOverview(undefined));
+  }, [source, workspaceId]);
+  useEffect(() => {
+    refreshOverview();
+  }, [refreshOverview]);
+  useEffect(() => {
+    if (surface === 'overview') refreshOverview();
+  }, [surface, refreshOverview]);
   // The refusal card's RAISE action (WO-0047): a PERMANENT settings write (the operator's ruling —
   // no one-month override); the warn ratio keeps the stored value, defaulting to 80.
   const handleRaiseBudget = useCallback(
@@ -585,6 +609,11 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         workspace={currentWorkspace}
         woIds={workOrders.filter((w) => w.workspace === workspaceId).map((w) => w.id)}
       />
+    ) : null;
+  } else if (surface === 'overview') {
+    // WO-0072: the fourth surface — the read-only projection, keyed by workspace like its siblings.
+    main = currentWorkspace ? (
+      <OverviewScreen key={workspaceId ?? 'none'} view={overview} onSelect={setSelectedId} />
     ) : null;
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state

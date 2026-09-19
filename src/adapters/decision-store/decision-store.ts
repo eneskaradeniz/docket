@@ -282,6 +282,18 @@ export function writeRoadmapMd(structureRoot: string, body: string): string {
   return path;
 }
 
+// Read the workspace's tech-debt.md at the structure root (WO-0072 — the debt ledger the closure
+// gate updates). '' when absent — the derived parse turns that into an empty (honest) debt list,
+// never an error. Working-tree read at view time (ADR-0010 — document text lives in git, never in
+// the DB); the readRoadmapMd idiom.
+export function readTechDebtMd(structureRoot: string): string {
+  try {
+    return readFileSync(join(structureRoot, 'tech-debt.md'), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 // The view-time task-link join (WO-0048, ADR-0016 — the cost is TD-055): one readdir of
 // <structureRoot>/work-orders plus one order.md read per work order, parsing each front-matter's
 // `task:` key. Returns {woId → taskRef}; WOs without the key (or without order.md) are absent —

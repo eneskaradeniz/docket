@@ -2826,3 +2826,96 @@ describe('WO-0071 — the briefing bundle (stepPromptFor carries the dependency 
     expect(got!.prompt).not.toContain('Briefing');
   });
 });
+
+describe('WO-0072 — the workspace overview: whose turn, the debt match, ready tasks', () => {
+  // One workspace, one decision store, the four debt shapes the projection must tell apart: a
+  // debt on an OPEN work order (linked, branded), one on a CLOSED work order (dropped — a closed
+  // WO's debts are not open borçlar), an unlinked one (kept, chipless), and a ragged row (a named
+  // diagnostic the projection does not carry). The roadmap supplies the ready tasks: a planli task
+  // in an unblocked faz, a kosuyor task (its linked WO is open), and a planli task behind a
+  // blocked faz. Written with the freshRoot + writeFileSync idiom (the WO-0048 block's shape).
+  const overviewWorld = async () => {
+    const root = freshRoot();
+    for (const r of ['docs', 'api']) mkdirSync(join(root, r), { recursive: true });
+    const store = createStore(freshDb());
+    const ws = await store.createWorkspace({
+      label: 'genel',
+      repos: [{ path: join(root, 'docs') }, { path: join(root, 'api') }],
+      decisionStorePath: join(root, 'docs'),
+    });
+    const openWo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Açık iş', description: 'x', trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [],
+    });
+    const closedWo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Kapalı iş', description: 'x', trackRepos: [rid('api')], reviewMode: 'gates', contextFiles: [],
+    });
+    // The closure chain is deriveStage's own rule: an approved plan + a merged track + a
+    // resolvable verifier report + the closure sha (the WO-0047 direct-row idiom — observed
+    // facts, written as the store writes them).
+    store.db.prepare('UPDATE track SET merged_at = ? WHERE id = ?').run('2026-09-01T00:00:00Z', `${closedWo.id as string}-api`);
+    store.db.prepare('UPDATE work_order SET gate_plan_approved = 1, gate_verifier_resolvable = 1, gate_closure_docs_sha = ? WHERE id = ?').run('sha-closed', closedWo.id);
+    // The EFFECTIVE structure root: <decision store> + the docs_root setting (default `docs`) —
+    // the same doubling the WO-0048 block's `docs/docs` assertions pin. The debt ledger lives there.
+    writeFileSync(
+      join(root, 'docs', 'docs', 'tech-debt.md'),
+      [
+        '| id | opened by | description | risk | status |',
+        '| --- | --- | --- | --- | --- |',
+        `| TD-201 | ${closedWo.id as string} | **Kapalı işin borcu.** Uzun açıklama. | low | open |`,
+        `| TD-202 | ${openWo.id as string} rev 2 | **Açık işin borcu.** Uzun açıklama. | medium | open |`,
+        '| TD-203 | design | **Bağlantısız borç.** Uzun açıklama. | low | open |',
+        `| TD-204 | ${openWo.id as string} | **Eksik satır.** |`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    // f0-t2 rides the OPEN work order through order.md's `task:` key — document text, never a column.
+    await store.updateWorkOrder(openWo.id, { taskRef: 'f0-t2' });
+    await store.saveRoadmap(ws.id, buildRoadmapMd({
+      workspaceSlug: ws.id as string,
+      title: 'Genel',
+      fazlar: [
+        { id: 'f0', title: 'Birinci faz', blockedBy: [], tasks: [{ id: 'f0-t1', title: 'Hazır görev' }, { id: 'f0-t2', title: 'Koşan görev' }] },
+        { id: 'f1', title: 'İkinci faz', blockedBy: ['f0'], tasks: [{ id: 'f1-t1', title: 'Bloke görev' }] },
+      ],
+    }));
+    return { store, ws, openWo, closedWo, root };
+  };
+
+  it('assembles the projection: the turn group, the debt match, the ready tasks', async () => {
+    const { store, ws, openWo, closedWo } = await overviewWorld();
+    const v = await store.workspaceOverview(ws.id);
+    // Sıra: the open WO sits at 'written' → the operator's turn; the closed WO is nobody's.
+    expect(v.turns).toEqual([{ turn: 'operator', wos: [{ id: openWo.id, title: 'Açık iş', stage: 'written' }] }]);
+    expect(JSON.stringify(v)).not.toContain(closedWo.id as string);
+    // Borçlar: open → linked (branded); closed → GONE; unlinked → kept chipless; ragged → gone.
+    expect(v.debts).toEqual([
+      { id: 'TD-202', title: 'Açık işin borcu', wo: openWo.id },
+      { id: 'TD-203', title: 'Bağlantısız borç' },
+    ]);
+    // Hazır: the untouched written WO + the planli task in the unblocked faz (f0-t2 kosuyor,
+    // f1-t1 behind the blocked faz).
+    expect(v.ready.wos).toEqual([{ id: openWo.id, title: 'Açık iş', why: 'no_blockers' }]);
+    expect(v.ready.tasks).toEqual([{ id: 'f0-t1', title: 'Hazır görev' }]);
+  });
+
+  it('a missing tech-debt.md is the empty-honest debt face, never a throw', async () => {
+    const root = freshRoot();
+    const store = createStore(freshDb());
+    const ws = await store.createWorkspace({ label: 'boscuk', repos: [{ path: root }], decisionStorePath: root });
+    await store.createWorkOrder({ workspaceId: ws.id, title: 'Tek iş', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+    const v = await store.workspaceOverview(ws.id);
+    expect(v.debts).toEqual([]);
+    expect(v.turns.map((g) => g.turn)).toEqual(['operator']);
+  });
+
+  it('the plan-gate fact rides: an approved plan leaves ready — and the operator turn', async () => {
+    const { store, ws, openWo } = await overviewWorld();
+    store.db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(openWo.id);
+    const v = await store.workspaceOverview(ws.id);
+    expect(v.ready.wos).toEqual([]);
+    // deriveStage moved (approved plan, no session yet → implementation) and the turn map followed.
+    expect(v.turns.map((g) => g.turn)).toEqual(['implementer']);
+    expect(v.turns[0]!.wos[0]!.stage).toBe('implementation');
+  });
+});

@@ -7,6 +7,7 @@
 import type { RepoId, SessionRef, StepRole, StepView, WoEvent, Workspace, WorkOrder, WorkOrderId, WorkspaceId } from './types';
 import type { RoadmapView } from './roadmap';
 import type { WorkspaceUsageView } from './usage';
+import type { WorkspaceOverview } from './overview';
 import type { DraftSourceSummary } from './roadmap-draft';
 import type { ClosureEvidence } from './forge';
 
@@ -138,6 +139,14 @@ export interface WorkOrderSource {
   // the honesty qualifiers (pre-WO-0052 vintages / rows whose owner is gone), and the ✦ draft
   // rows (work_order_id NULL) surface under `draft` — the ledger's one workspace-scoped read.
   workspaceUsage(id: WorkspaceId): Promise<WorkspaceUsageView>;
+  // The workspace OVERVIEW, derived (WO-0072): the third consumer of the gate model, after the
+  // board and the detail — ONE read-only projection over the facts the workspace already carries
+  // (ADR-0008's derived-read discipline). The store assembles: open work orders through the
+  // hydrate path (stage facts + gate inputs), the roadmap view through getRoadmap's own
+  // derivation, and tech-debt.md parsed at the structure root (the DEBT MATCH is store-side: a
+  // line whose WO column resolves to a CLOSED work order never arrives; one naming nothing
+  // resolvable arrives unlinked). Derived per read — never stored, never cached (TD-055's shape).
+  workspaceOverview(id: WorkspaceId): Promise<WorkspaceOverview>;
   // Move a repo's local path (WO-0033): rewrites connection.local_path ONLY — the RepoId, the
   // definition row and the remote stay. Throws (changing nothing) when the new path's basename
   // differs from the RepoId — identity is the basename; a different name is a different repo.
