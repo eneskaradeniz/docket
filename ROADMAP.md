@@ -427,8 +427,8 @@ gate model, after the board and the detail view.
       Derived per mount, read-only, rows navigate. Subagent-implemented, independently
       verified. Order: `docs/work-orders/WO-0072-genel-bakis/order.md`.
 
-- [x] **WO-0073** — GUI-only: the CLI removed (2026-09-20 operator ruling; faz-1 inventory → operator
-      approval → removal): `src/cli/` (8 files, 1653 lines — WO-0024's second composition root, 11
+- [x] **WO-0073** — GUI-only: the CLI removed (PR #78, merge `954e2f0`, 2026-09-20; operator ruling;
+      faz-1 inventory → operator approval → removal): `src/cli/` (8 files, 1653 lines — WO-0024's second composition root, 11
       commands) + the `cli` script + both tsconfig entries + `COMPOSITION_ROOTS`' CLI arm (the ONE root is
       `electron/main.ts`; checks' meaning unchanged, 10/10 clean) + `usageRowsFor`/`usageRowsForWo` (the
       concrete-only CLI `show` read; `hydrateUsageRow` and the WO-0054 facts read stay — persistence

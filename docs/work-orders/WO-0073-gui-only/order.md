@@ -73,8 +73,19 @@ Out of scope:
 - plan_approval: mode `direct` — the operator's faz plan IS the plan; Faz 1's inventory was the
   approval gate and the operator approved it (2026-09-20), including the two named exceptions.
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19).
-- ci_green: see the closing entry — ladder + E2E counts recorded there.
-- pr_open / closure: recorded in ROADMAP.md at the closing commit.
+- ci_green: RESOLVED — green, 2026-09-20: typecheck (both tsconfigs), **1056 unit tests**, build,
+  `check:boundaries` 10/10 — re-run green after each faz. E2E HONEST BASELINE: the suite is
+  **60/98 red on `main` itself** (the E2E-untested queue WOs' selector/assertion rot — the
+  switchWs cascade, the WO-0065/0069/0072 surface changes); this branch's failure set is
+  **IDENTICAL** (0 new, 0 gone; the 2 deleted CLI specs had been green). That red suite is the
+  deferred operator test phase's opening inventory.
+- pr_open / closure: RESOLVED — PR #78 (`https://github.com/eneskaradeniz/docket/pull/78`),
+  head `f4a9ac6`, merged `954e2f0`; closed at this commit.
+- faz_3: RESOLVED in the same PR (`f4a9ac6`) — the operator-approved 12 deletions
+  (`DecisionStoreUnavailable`, the 10 dead label entries in both bundles, the CSS-ruleless `arr`
+  token; −203 lines). KEPT and recorded: `reseedObserved` (the ADR-0010 contract's test pin), the
+  ~44 unexport candidates (port/contract vocabulary, zero behavior win), the health.ts
+  git-console duplicates (a working duplication — TD note if ever wanted), the test-only exports.
 
 ## Stop-and-ask gates
 
