@@ -94,6 +94,15 @@ describe('locale bundles (WO-0035)', () => {
     expect(en.UI.roadmapDraftIdentity).toBe('ARCHITECT — DRAFT');
   });
 
+  it('the unknown arms stay informative — never an error-toned word (WO-0069)', () => {
+    expect(tr.UI.evidenceUnknown).toBe('doğrulanamadı — bakılamadı');
+    expect(tr.UI.ciUnknown).toBe('CI durumu bilinmiyor');
+    expect(tr.UI.evdVerificationMiss).toContain('çözülemedi');
+    expect(en.UI.evidenceUnknown).toContain('could not');
+    expect(en.UI.ciUnknown).toBe('CI state unknown');
+    expect(en.UI.evdVerificationMiss).toContain('did not resolve');
+  });
+
   it('the ✦ source-channel block pins the rev-3 words — one block, one row language, names first (WO-0051)', () => {
     // The store line — borderless, one number; the exception doubles it (rev 3 karar 2).
     expect(tr.UI.roadmapDraftStoreLine('docs', 9, 9)).toBe('docs/ · 9 belge — tümü dahil');

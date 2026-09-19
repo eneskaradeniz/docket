@@ -524,11 +524,17 @@ describe('closeWorkOrder — operator-attested closure (WO-0025 / P1-2)', () => 
 
   it('closes: order.md gains ## Closure, gates + merged_at set, stage closed, key settings round-trip', async () => {
     const store = createStore(freshDb());
-    const { ws } = await wsInRoot(store);
+    const { ws, root } = await wsInRoot(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Close me', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    // WO-0069: the plan carries the verifier leg and its report lands BEFORE closure — the
+    // verification gate is the record-time computation now, so an honest close flow has one.
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```');
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'a.ts'), 'export {};\n');
     store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
     store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    store.recordStepReport(wo.id, 2, 'verifier', 'checked `src/a.ts:1`');
+    store.recordStepVerdict(wo.id, 2, 'proceed', 'ok');
 
     await store.closeWorkOrder(wo.id, 'deneme kapanis');
 
@@ -536,7 +542,7 @@ describe('closeWorkOrder — operator-attested closure (WO-0025 / P1-2)', () => 
     expect(docs.order).toContain('## Closure');
     expect(docs.order).toContain('deneme kapanis');
     const row = store.db.prepare('SELECT gate_verifier_resolvable AS v, gate_closure_docs_sha AS s FROM work_order WHERE id = ?').get(wo.id) as { v: number; s: string };
-    expect(row.v).toBe(1);
+    expect(row.v).toBe(1); // WO-0069: the RECORD-time computation wrote this — closure no longer attests it
     expect(row.s).toBeTruthy(); // 'uncommitted' in a non-git tmp root, a real sha in a git repo
     const merged = store.db.prepare('SELECT COUNT(*) AS n FROM track WHERE work_order_id = ? AND merged_at IS NOT NULL').get(wo.id) as { n: number };
     expect(merged.n).toBeGreaterThan(0);
@@ -651,11 +657,17 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
   });
   it('a revise verdict blocks close until overridden (B19)', async () => {
     const store = createStore(freshDb());
-    const { ws } = await wsInRoot4(store);
+    const { ws, root } = await wsInRoot4(store);
     const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Revise', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
-    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    // WO-0069: the plan carries the verifier leg — closure derives `closed` only over a computed
+    // verification gate, so the honest flow records the verifier report before the close attempts.
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```');
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'a.ts'), 'export {};\n');
     store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
     store.recordStepVerdict(wo.id, 1, 'revise', 'eksik');
+    store.recordStepReport(wo.id, 2, 'verifier', 'checked src/a.ts:1');
+    store.recordStepVerdict(wo.id, 2, 'proceed', 'ok');
     await expect(store.closeWorkOrder(wo.id, 'n')).rejects.toThrow('step_not_resolved');
     await store.overrideStepVerdict(wo.id, 1);
     await store.closeWorkOrder(wo.id, 'n'); // now closes
@@ -2388,5 +2400,140 @@ describe('WO-0067 — recordForgeScan writes the observed track link', () => {
     store.recordForgeScan(ws.id, remote, scanWith(`${wo.id} — reopened? no: the WO is closed`));
     const track = store.db.prepare('SELECT pr_url FROM track WHERE work_order_id = ?').get(wo.id) as { pr_url: string };
     expect(track.pr_url).toBe('https://github.com/o/r/pull/5'); // the closed WO's link keeps its last observation
+  });
+});
+
+// ===== WO-0069 — the gates observe: computed verification + the track CI unknown =====
+describe('WO-0069 — the verification gate is COMPUTED at record time (no closure attestation)', () => {
+  // A root whose src/a.ts EXISTS, so a `src/a.ts:NN` pointer resolves against the WO's repo root.
+  const resolvableRoot = (): string => {
+    const root = freshRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'a.ts'), 'export {};\n');
+    return root;
+  };
+  const observedWo = async (store: ReturnType<typeof createStore>) => {
+    const root = resolvableRoot();
+    const ws = await store.createWorkspace({ label: 'Observe', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Observe', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"verifier","aim":"v","scope":"all"}]\n```');
+    return { ws, wo };
+  };
+  const columnOf = (store: ReturnType<typeof createStore>, woId: WorkOrderId): number | null =>
+    (store.db.prepare('SELECT gate_verifier_resolvable AS v FROM work_order WHERE id = ?').get(woId) as { v: number | null }).v;
+
+  it('a verifier report whose pointers all resolve writes 1 at RECORD time (hydrates satisfied)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await observedWo(store);
+    store.recordStepReport(wo.id, 1, 'verifier', 'read `src/a.ts:1` then src/a.ts:2 — both hold');
+    expect(columnOf(store, wo.id)).toBe(1);
+    expect((await store.getWorkOrder(wo.id))!.gateInputs.verifierReport).toEqual({ resolvablePointers: true });
+  });
+
+  it('any UNRESOLVABLE pointer writes 0 (we looked and it missed — unsatisfied, not unknown)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await observedWo(store);
+    store.recordStepReport(wo.id, 1, 'verifier', 'src/a.ts:1 holds; src/missing.ts:9 does not');
+    expect(columnOf(store, wo.id)).toBe(0);
+    expect((await store.getWorkOrder(wo.id))!.gateInputs.verifierReport).toEqual({ resolvablePointers: false });
+  });
+
+  it('a verifier report with NOTHING extractable leaves the column untouched — NULL stays the unknown', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await observedWo(store);
+    store.recordStepReport(wo.id, 1, 'verifier', 'all good, no file references in this prose: 12:30, step 3: 4');
+    expect(columnOf(store, wo.id)).toBeNull();
+    expect((await store.getWorkOrder(wo.id))!.gateInputs.verifierReport).toBeUndefined();
+  });
+
+  it('a non-verifier report never speaks for the gate', async () => {
+    const store = createStore(freshDb());
+    const root = resolvableRoot();
+    const ws = await store.createWorkspace({ label: 'Not verifier', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'NV', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"i","scope":"all"}]\n```');
+    store.recordStepReport(wo.id, 1, 'implementer', 'touched src/a.ts:1');
+    expect(columnOf(store, wo.id)).toBeNull();
+  });
+
+  it('closeWorkOrder no longer attests the gate: a computed 0 KEEPS 0 through closure, and closure does not derive closed over it', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await observedWo(store);
+    store.recordStepReport(wo.id, 1, 'verifier', 'src/missing.ts:9 is gone');
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    await store.closeWorkOrder(wo.id, 'n');
+    expect(columnOf(store, wo.id)).toBe(0); // the = 1 write is gone — the computation owns the column
+    expect((await store.getWorkOrder(wo.id))!.gateInputs.closureDocsSha).toBeTruthy(); // closure still writes ITS fact
+    expect((await store.getWorkOrder(wo.id))!.stage).toBe('implementation'); // a gate never passes on a failed look
+  });
+
+  it('a LEGACY row keeps its stored value through hydration and reads — no backfill, either direction', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Legacy', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Legacy', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    store.db.prepare('UPDATE work_order SET gate_plan_approved = 1, gate_verifier_resolvable = 0, gate_closure_docs_sha = ? WHERE id = ?').run('legacy-sha', wo.id);
+    store.db.prepare('UPDATE track SET merged_at = ? WHERE work_order_id = ?').run('2026-09-01T00:00:00Z', wo.id);
+    const hydrated = await store.getWorkOrder(wo.id);
+    expect(hydrated!.gateInputs.verifierReport).toEqual({ resolvablePointers: false });
+    expect(hydrated!.stage).toBe('implementation'); // a legacy 0 is a legacy 0 — closure never derives closed over it
+    void store.getWorkOrders; // reads never rewrite the column
+    expect(columnOf(store, wo.id)).toBe(0);
+  });
+});
+
+describe('WO-0069 — the track CI learns unknown from the forge scan degraded meta', () => {
+  const observedWo = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Scan', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Scan', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    // createWorkspace in a non-git tmp dir stores the basename as the remote fallback (WO-0064 fixture idiom)
+    const remote = (store.db.prepare('SELECT repo_remote FROM connection WHERE workspace_id = ?').get(ws.id) as { repo_remote: string }).repo_remote;
+    return { ws, wo, remote };
+  };
+
+  it('a DEGRADED scan for the track repo hydrates run/unknown with the scan reason verbatim', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo, remote } = await observedWo(store);
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [] });
+    store.recordForgeDegraded(ws.id, remote, '2026-09-19T14:00:00Z', 'gh: Could not resolve to a Repository');
+    const track = (await store.getWorkOrder(wo.id))!.tracks[0]!;
+    expect(track.ci).toEqual({ kind: 'run', state: 'unknown', checks: [], reason: 'gh: Could not resolve to a Repository' });
+  });
+
+  it('an ok or missing scan stays byte-stable (the seeded blob, no override)', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo, remote } = await observedWo(store);
+    const before = (await store.getWorkOrder(wo.id))!.tracks[0]!.ci;
+    expect(before).toEqual({ kind: 'run', state: 'running', checks: [] }); // never scanned
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T15:00:00Z', prs: [], checks: [] });
+    expect((await store.getWorkOrder(wo.id))!.tracks[0]!.ci).toEqual({ kind: 'run', state: 'running', checks: [] }); // ok
+  });
+
+  it('a degraded scan AFTER an ok one still overrides — the last look is the one that failed', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo, remote } = await observedWo(store);
+    store.db.prepare('UPDATE track SET ci_blob = ? WHERE work_order_id = ?').run(JSON.stringify({ state: 'success', checks: [{ name: 'build', conclusion: 'success' }] }), wo.id);
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [] });
+    const afterOk = (await store.getWorkOrder(wo.id))!.tracks[0]!.ci;
+    expect(afterOk.kind === 'run' && afterOk.state).toBe('success'); // ok scan: the blob speaks
+    store.recordForgeDegraded(ws.id, remote, '2026-09-19T16:00:00Z', 'gh: rate limited');
+    const afterDegraded = (await store.getWorkOrder(wo.id))!.tracks[0]!.ci;
+    expect(afterDegraded.kind === 'run' && afterDegraded.state).toBe('unknown'); // degraded: we could not look
+  });
+
+  it('an exempt track stays exempt under a degraded scan — an exemption is a decision, not an observation', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo, remote } = await observedWo(store);
+    store.db.prepare('UPDATE track SET ci_kind = ?, ci_blob = ? WHERE work_order_id = ?').run('exempt', JSON.stringify({ reason: 'No CI configured' }), wo.id);
+    store.recordForgeDegraded(ws.id, remote, '2026-09-19T16:00:00Z', 'gh: rate limited');
+    expect((await store.getWorkOrder(wo.id))!.tracks[0]!.ci).toEqual({ kind: 'exempt', reason: 'No CI configured' });
+  });
+
+  it('a degraded scan carrying no reason hydrates unknown WITHOUT one — never invented', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo, remote } = await observedWo(store);
+    store.recordForgeDegraded(ws.id, remote, '2026-09-19T16:00:00Z', '');
+    expect((await store.getWorkOrder(wo.id))!.tracks[0]!.ci).toEqual({ kind: 'run', state: 'unknown', checks: [] });
   });
 });

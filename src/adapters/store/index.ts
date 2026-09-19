@@ -14,10 +14,11 @@
 // store.test.ts (WO-0043 took it out of the production module). M3 replaces the seed with live
 // git/forge observation.
 import { DatabaseSync } from 'node:sqlite';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, canClose, type ObservedStep } from '../../core/derive';
+import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, type ObservedStep } from '../../core/derive';
 import type { Locale, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
@@ -172,7 +173,31 @@ type SessionRow = {
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
+
+// WO-0069: the forge scan's degraded meta for ONE workspace, keyed by the repos' basename (the
+// RepoId invariant, WO-0033 — the track's repo joins its connection by basename, the connection's
+// remote joins the scan). Only degraded scans land here; an ok or never-scanned repo is absent,
+// which is exactly the byte-stable hydration arm.
+function degradedScansByRepo(db: DatabaseSync, workspaceId: string | undefined): Map<string, string> {
+  const degraded = new Map<string, string>();
+  if (!workspaceId) return degraded;
+  const connections = db
+    .prepare('SELECT repo_remote, local_path FROM connection WHERE workspace_id = ?')
+    .all(workspaceId) as { repo_remote: string; local_path: string }[];
+  for (const c of connections) {
+    const scan = db
+      .prepare('SELECT status, reason FROM forge_scan WHERE workspace_id = ? AND repo_remote = ?')
+      .get(workspaceId, c.repo_remote) as { status: string; reason: string | null } | undefined;
+    if (scan?.status === 'degraded') degraded.set(repoBase(c.local_path), scan.reason ?? '');
+  }
+  return degraded;
+}
+
 function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): Track[] {
+  const wsId = (db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(woId) as
+    | { workspace_id: string }
+    | undefined)?.workspace_id;
+  const degraded = degradedScansByRepo(db, wsId);
   const rows = db.prepare('SELECT * FROM track WHERE work_order_id = ?').all(woId) as TrackRow[];
   return rows.map((r): Track => {
     const ci = JSON.parse(r.ci_blob) as { state?: 'running' | 'success' | 'failed'; checks?: CiCheck[]; reason?: string };
@@ -181,10 +206,18 @@ function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): 
         depends_on_track_id: string;
       }[]
     ).map((x) => tid(x.depends_on_track_id));
+    // WO-0069: a DEGRADED scan for this track's repo means the last forge look failed — the CI
+    // state hydrates `unknown` (checks empty: nothing observed), the scan's verbatim reason riding
+    // the run arm. Ok or missing scan → today's blob, byte-stable. An exempt stays exempt: an
+    // exemption is a decision, not an observation (no schema change — the ci_blob JSON is untouched;
+    // the override is a hydration-time read of the forge_scan row).
+    const scanReason = degraded.get(r.repo);
     const trackCi: Ci =
       r.ci_kind === 'exempt'
         ? { kind: 'exempt', reason: ci.reason ?? '' }
-        : { kind: 'run', state: ci.state ?? 'running', checks: ci.checks ?? [] };
+        : scanReason !== undefined
+          ? { kind: 'run', state: 'unknown', checks: [], ...(scanReason ? { reason: scanReason } : {}) }
+          : { kind: 'run', state: ci.state ?? 'running', checks: ci.checks ?? [] };
     const pr = r.pr_url ? { url: r.pr_url, headSha: r.pr_head_sha ?? '' } : undefined;
     const merge = r.merged_at ? { at: r.merged_at } : undefined;
     const hasActiveSession = sessions.some((s) => s.scope === tid(r.id) && s.status !== 'none');
@@ -1497,6 +1530,16 @@ function resetStepRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: number): 
   db.prepare('DELETE FROM work_order_step WHERE work_order_id = ? AND idx = ?').run(workOrderId, idx);
 }
 
+// WO-0069: one extracted pointer RESOLVES when its path (the `:line` suffix stripped) exists under
+// ANY of the work order's repo roots at record time — the working tree the report was just written
+// against (the v1 cut: recorded-sha resolution needs a per-report sha and stays out, WO-0069 Notes).
+// An absolute pointer is checked as itself; a `./`-prefixed one is normalized away.
+function pointerResolvable(pointer: string, roots: string[]): boolean {
+  const path = pointer.replace(/:\d+$/, '').replace(/^\.\//, '');
+  const candidates = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? [path] : roots.map((r) => join(r, path));
+  return candidates.some((c) => existsSync(c));
+}
+
 // Write a step's report to the decision store (reports/step-NN-<role>.md) and mark the step done with the
 // pointer. Mirrors approvePlan: path resolution + the working-tree write stay store-internal (ADR-0001), and
 // the agent never writes its own report. Throws if the WO dir is missing (order.md must exist first).
@@ -1505,6 +1548,17 @@ function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: nu
   if (!dir) throw new Error(`recordStepReport: no decision-store dir for ${workOrderId}`);
   const reportPath = writeStepReport(dir, workOrderId, idx, role, body);
   recordStepRow(db, workOrderId, idx, { status: 'done', reportPath });
+  // WO-0069: the verification gate is a COMPUTATION at record time, not a closure-time `= 1`
+  // attestation. The verifier report's `path:line` pointers are extracted (core's extractPointers)
+  // and resolved against the WO's repo roots: every pointer resolvable → 1, any miss → 0.
+  // Nothing extractable leaves the column UNTOUCHED — NULL stays the honest unknown ("nothing was
+  // claimed"). A non-verifier report never speaks for this gate.
+  if (role !== 'verifier') return;
+  const pointers = extractPointers(body);
+  if (pointers.length === 0) return;
+  const roots = woRepoPaths(db, workOrderId);
+  const resolvable = pointers.every((p) => pointerResolvable(p, roots));
+  db.prepare('UPDATE work_order SET gate_verifier_resolvable = ? WHERE id = ?').run(resolvable ? 1 : 0, workOrderId);
 }
 
 // The per-WO cascade, shared by deleteWorkOrder and deleteWorkspace (WO-0032): children-first DB
@@ -1591,7 +1645,8 @@ function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id
   for (const repo of input.trackRepos) {
     const repoSlug = repo as string;
     // ci run/running/[] mirrors the fixture convention for an unobserved track (M3 forge observation
-    // replaces it; the Ci type has no 'unknown' state yet — TD-008). Inert at stage 'written'.
+    // replaces it; WO-0069 gives the type its 'unknown' state — hydrated from a degraded scan, which
+    // is why the SEED stays the inert running placeholder rather than a claim of its own).
     db.prepare(
       `INSERT INTO track (id, work_order_id, repo, pr_url, pr_head_sha, ci_kind, ci_blob, merged_at, observed_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -1987,7 +2042,10 @@ export function createStore(dbPath: string): Store {
       writeOrderMdById(dir, workOrderId, withClosure);
       const now = closedAt;
       db.prepare('UPDATE track SET merged_at = ? WHERE work_order_id = ?').run(now, workOrderId);
-      db.prepare('UPDATE work_order SET gate_verifier_resolvable = 1, gate_closure_docs_sha = ? WHERE id = ?').run(sha, workOrderId);
+      // WO-0069: the `= 1` attestation is GONE — gate_verifier_resolvable is the record-time
+      // computation's (recordStepReportRow); closure writes only the docs sha. A legacy row keeps
+      // whatever value it closed with — no backfill, either direction.
+      db.prepare('UPDATE work_order SET gate_closure_docs_sha = ? WHERE id = ?').run(sha, workOrderId);
       appendEvent(db, workOrderId as string, 'closed', sha);
       // WO-0065: the closure's OBSERVED fact — what the forge SAW, handed in by the composition
       // root (the only place that owns the forge). Absent input = the legacy attested close

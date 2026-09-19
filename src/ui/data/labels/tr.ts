@@ -431,6 +431,10 @@ export const UI = {
   // Tur-2 D2/D3 — Kanıt chip dili: yokluk cümleleri (ADR-0001 ruhu — sebepsiz 'eksik' yok) + iz konumu.
   evdPlanApproval: 'plan onayı bekliyor',
   evdVerification: 'doğrulayıcı raporu yok',
+  // WO-0069: kayıtlı bir raporun göstergeleri çözülmediğinde yokluk cümlesi yalan olur — bu kol
+  // «rapor var, ama dosya izleri tutmadı» der; hiç kayıt yoksa evdVerification değil
+  // evidenceUnknown konuşur.
+  evdVerificationMiss: 'doğrulayıcı raporundaki dosya izleri çözülemedi',
   evdClosure: 'belgeler güncellenmedi',
   evdPrMissing: (repo: string) => `PR açılmadı · ${repo}`,
   evdCiRed: (repo?: string) => (repo ? `CI yeşil değil · ${repo}` : 'CI yeşil değil'),
@@ -440,6 +444,10 @@ export const UI = {
   evdMerged: (repo?: string) => (repo ? `✓ Depoda · ${repo}` : '✓ Depoda'),
   sources: 'Kaynaklar',
   ciExempt: 'CI muaf',
+  // WO-0069 — bilinmeyen kolları: «bakamadık» bir hata değil, bilgidir (ADR-0010) — soluk satır,
+  // asla hata tonu; CI'nın gerekçesi taramadan aynen yazılır.
+  evidenceUnknown: 'doğrulanamadı — bakılamadı',
+  ciUnknown: 'CI durumu bilinmiyor',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   loading: 'Yükleniyor…',
