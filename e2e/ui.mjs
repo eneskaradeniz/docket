@@ -2363,28 +2363,6 @@ await spec('WO-0050 bütçe: taslak kapıyı görür → ret kartı, pane yok; y
   await page.getByRole('button', { name: 'Pano' }).click();
 });
 
-await spec('WO-0050 CLI: roadmap draft --docs --fake → bekleyen satır; approve yazar; show hazır', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'docket-cli-'));
-  const repoC = join(root, 'repo');
-  mkdirSync(join(repoC, 'docs'), { recursive: true });
-  const db = join(root, 'c.db');
-  const cli = (args) => execFileSync('npx', ['tsx', 'src/cli/index.ts', ...args, '--db', db], { cwd: ROOT, encoding: 'utf8' });
-  cli(['create-workspace', '--label', 'Demo', '--repo', repoC]);
-  const script = join(root, 's.json');
-  writeFileSync(script, JSON.stringify([
-    { kind: 'started', sessionId: 'cli-draft-1' },
-    { kind: 'plan_ready', planText: DRAFT_MD('demo', 'CLI Taslağı', 'CLI fazı') },
-    { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 5, usd: 0.02 } },
-  ]));
-  const out = cli(['roadmap', 'draft', '--workspace', 'demo', '--note', 'cli içe aktarma', '--docs', '/tmp/a.md,/tmp/b.md', '--fake', script]);
-  assert.ok(out.includes('draft pending'), `no pending line: ${out}`);
-  assert.ok(out.includes('1 faz'), `no figures: ${out}`);
-  assert.ok(cli(['roadmap', 'show', '--workspace', 'demo']).includes('nothing planned yet'), 'the row wrote the file before approval');
-  const approveOut = cli(['roadmap', 'approve', '--workspace', 'demo']);
-  assert.ok(approveOut.includes('draft approved'), `approve refused: ${approveOut}`);
-  assert.ok(cli(['roadmap', 'show', '--workspace', 'demo']).includes('CLI fazı'), 'the approved file did not render');
-});
-
 // ===== WO-0051 — ✦ belge kaynağı: depo taraması · grup dışla · ek belgeler · serbest keşif · döküm çipi =====
 // The 'taslak-depo' world carries a FULL structure root (2 root docs + adr/×2 + notlar/×1 = 5 .md,
 // grouped; 3 groups) and an EXTERNAL candidate at the repo root (outside docs/ — the scan never
@@ -2536,24 +2514,6 @@ await spec('WO-0051 düz kök (review f6): dosya satırları kaplı + tümü-dah
   await page.screenshot({ path: join(SHOTS, 'draft-duz-flat@980.png') });
   await page.getByRole('button', { name: 'Vazgeç', exact: true }).first().click();
   await page.getByRole('button', { name: 'Pano' }).click();
-});
-
-await spec('WO-0051 CLI: roadmap draft --explore --fake → bekleyen satır (keşif bayrağı akar)', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'docket-cli-'));
-  const repoX = join(root, 'repo');
-  mkdirSync(join(repoX, 'docs'), { recursive: true });
-  const db = join(root, 'x.db');
-  const cli = (args) => execFileSync('npx', ['tsx', 'src/cli/index.ts', ...args, '--db', db], { cwd: ROOT, encoding: 'utf8' });
-  cli(['create-workspace', '--label', 'Kesif', '--repo', repoX]);
-  const script = join(root, 's.json');
-  writeFileSync(script, JSON.stringify([
-    { kind: 'started', sessionId: 'cli-draft-x' },
-    { kind: 'plan_ready', planText: DRAFT_MD('kesif', 'Keşif Taslağı', 'Keşif fazı') },
-    { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 5, usd: 0.02 } },
-  ]));
-  const out = cli(['roadmap', 'draft', '--workspace', 'kesif', '--note', 'keşif turu', '--explore', '--fake', script]);
-  assert.ok(out.includes('draft pending'), `no pending line: ${out}`);
-  assert.ok(out.includes('1 faz'), `no figures: ${out}`);
 });
 
 // ===== WO-0053 — the limit screen (mockup frames 01–04; static past/future stamps, no clock seam) =====

@@ -67,10 +67,6 @@ import type {
 export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, ForgeObservations {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
-  /** The per-turn usage rows of ONE work order, insertion-ordered (WO-0052). CONCRETE-ONLY — the
-   *  CLI `show` tail's read; the UI read port is the usage-screen WO's decision. Draft rows
-   *  (work_order_id NULL) never appear here. */
-  usageRowsFor(workOrderId: WorkOrderId): SessionUsageRow[];
   /** The work order's REPO ROOT PATHS (its tracks' connected local paths, decision store included) —
    *  the jail the diff-peek read stays inside (WO-0031c: the root is the WO's repos, never cwd). */
   woRepoPaths(workOrderId: WorkOrderId): string[];
@@ -577,9 +573,10 @@ type SessionUsageRowRaw = {
   model_usage: string | null;
 };
 
-// The row hydrator (WO-0054 extracted it from usageRowsForWo — behavior byte-identical; the CLI
-// `show` tail is the regression witness): NULL rich fields hydrate ABSENT, never zeros, and a
-// corrupt model_usage blob fails open (the pending_notes precedent) instead of bricking the read.
+// The row hydrator (minted by WO-0052, carried over byte-identical): NULL rich fields hydrate
+// ABSENT, never zeros, and a corrupt model_usage blob fails open (the pending_notes precedent)
+// instead of bricking the read. The usage facts read below is its only consumer; the persistence
+// semantics stay witnessed column-level in store.test.ts.
 function hydrateUsageRow(r: SessionUsageRowRaw): SessionUsageRow {
   return {
     providerSessionId: r.provider_session_id,
@@ -603,11 +600,6 @@ function hydrateUsageRow(r: SessionUsageRowRaw): SessionUsageRow {
       }
     })(),
   };
-}
-
-function usageRowsForWo(db: DatabaseSync, woId: WorkOrderId): SessionUsageRow[] {
-  const rows = db.prepare('SELECT * FROM session_usage WHERE work_order_id = ? ORDER BY id').all(woId) as SessionUsageRowRaw[];
-  return rows.map(hydrateUsageRow);
 }
 
 // WO-0054: the workspace's month-windowed usage FACTS for the pure derivation (core/usage.ts) —
@@ -1932,7 +1924,6 @@ export function createStore(dbPath: string): Store {
     recordSession: (input: RecordSessionInput) => recordSessionRow(db, input),
     recordTurnUsage: (owner: SessionOwner, providerSessionId: string, row: { at: string; delta: CostSummary; usage?: TurnUsage }) =>
       recordTurnUsageRow(db, owner, providerSessionId, row),
-    usageRowsFor: (workOrderId: WorkOrderId) => usageRowsForWo(db, workOrderId),
     // WO-0050 — the draft drive's gate + prompt + pending row (D3–D6). The budget method is the
     // draft arm of the unconditional gate; the prompt row feeds core's ONE-mechanism builder;
     // the draft row is plan_ready's landing. WO-0051: freeExplore rides the prompt, the

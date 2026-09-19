@@ -15,9 +15,7 @@
 //   anything reaches the operator: out-of-scope writes deny with no prompt.
 // - plan approval is resume + a move off plan mode (findings Q2/Q3); cost is read
 //   from the result message (findings Q1).
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { query, startup } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -852,25 +850,6 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
 // ===== Provider surface (WO-0025 / B1) — the vendor vocabulary lives HERE ONLY (c1 / ADR-0006) =====
 // Core speaks ProviderErrorCode/ProviderStatus; this module classifies the provider's raw strings and
 // can run a token-free handshake check. Everything crossing the boundary is neutral.
-
-/** The provider's API-key env var name. Only this module (and hosts wiring env) may spell it.
- *  WO-0059 rev 4: no host composes a key env anymore (the stored key retired); the name survives
- *  only as quickProviderCheck's env-presence probe. */
-const PROVIDER_KEY_ENV = 'ANTHROPIC_API_KEY';
-/** The provider CLI's login directory (auth present when it exists). */
-const PROVIDER_LOGIN_DIR = '.claude';
-
-/** A cheap, spawn-free readiness hint: the key env var is set, or the provider CLI's login dir exists.
- *  Unknown ('unknown', never a guess) otherwise — the same honesty rule as M3 health checks. */
-export function quickProviderCheck(env: NodeJS.ProcessEnv = process.env): 'env' | 'login' | 'unknown' {
-  if (env[PROVIDER_KEY_ENV]) return 'env';
-  try {
-    if (existsSync(join(homedir(), PROVIDER_LOGIN_DIR))) return 'login';
-  } catch {
-    // fall through
-  }
-  return 'unknown';
-}
 
 /** WO-0059 rev 4 — the preset model ALIAS TIERS the settings picker offers, ordered worst→best
  *  (Default is the picker's own first cell, "leave it to the setup", minted UI-side). The tier

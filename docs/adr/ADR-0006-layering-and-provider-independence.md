@@ -110,3 +110,15 @@ governs CODE: no vendor or model name becomes a constant, a branch, or a copy li
 `src/adapters/`. A model id in a metrics row is an observation, the same class as a tool-target
 path in `wo_event.detail` (the Records rule, CLAUDE.md 2026-08-26); a model id in a predicate is
 the vendor reaching past the adapter — that stays forbidden.
+
+## Addendum (WO-0073) — the composition root is ONE again
+
+The CLI host (`src/cli/index.ts`, WO-0024's second composition root) is removed; Docket is GUI-only
+(operator ruling 2026-09-20). The decision above is unchanged in substance — nothing imports an
+adapter except a composition root — and the root is now only the Electron main process. WO-0024's
+widening and this narrowing are both history, kept here rather than rewritten into the decision
+text. What the CLI carried — a headless way to drive the pipeline without a browser or a human at
+the keyboard — lives on in the test estate only: the core port fakes and the E2E spec's in-app e2e
+bridge. The layering rationale (the product's rules testable without a browser, a repo, or an
+agent) is untouched: `core` stays pure, the ports stay in `core`, and the provider/forge adapters
+stay single-per-vendor behind them.
