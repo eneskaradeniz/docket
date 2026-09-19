@@ -25,6 +25,7 @@ const PR_LIST = JSON.stringify([
   {
     number: 66,
     state: 'MERGED',
+    title: 'impl(WO-0061): NULL-fix — the usage screen known-spend basis',
     headRefOid: 'b26a663',
     headRefName: 'wo-0061-null-fix',
     baseRefName: 'main',
@@ -39,7 +40,7 @@ const PR_LIST = JSON.stringify([
 const REST_PULL = JSON.stringify([
   {
     number: 65,
-    title: 'WO-0060 — appbar drive/limit chip',
+    title: 'impl(WO-0060): appbar drive/limit chip — the account health in one glance',
     state: 'closed',
     merged_at: '2026-09-18T22:42:28Z',
     html_url: 'https://github.com/eneskaradeniz/docket/pull/65',
@@ -92,7 +93,7 @@ describe('pullRequests (report §3)', () => {
     const f = forgeWith((args) => {
       expect(args).toEqual([
         'pr', 'list', '--repo', 'eneskaradeniz/docket', '--state', 'open', '--json',
-        'number,state,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit',
+        'number,state,title,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit',
       ]);
       return ok(PR_LIST);
     });
@@ -100,6 +101,7 @@ describe('pullRequests (report §3)', () => {
       {
         number: 66,
         state: 'merged',
+        title: 'impl(WO-0061): NULL-fix — the usage screen known-spend basis',
         headSha: 'b26a663',
         headBranch: 'wo-0061-null-fix',
         baseBranch: 'main',
@@ -146,6 +148,7 @@ describe('pullRequestForSha (report §5, §8)', () => {
     expect(await f.pullRequestForSha(ref, '9f0e9fa')).toEqual({
       number: 65,
       state: 'merged',
+      title: 'impl(WO-0060): appbar drive/limit chip — the account health in one glance',
       headSha: 'f5d9299',
       headBranch: 'wo-0060-appbar-cipi',
       baseBranch: 'main',

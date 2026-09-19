@@ -80,6 +80,7 @@ export function parseRepoRemote(
 interface PrListRow {
   number: number;
   state: string; // 'OPEN' | 'CLOSED' | 'MERGED'
+  title: string;
   headRefOid: string;
   headRefName: string;
   baseRefName: string;
@@ -92,6 +93,7 @@ interface PrListRow {
 interface RestPull {
   number: number;
   state: string; // 'open' | 'closed' (REST whisper-case; 'merged' rides merged_at)
+  title: string;
   merged_at: string | null;
   html_url: string;
   head: { ref: string; sha: string };
@@ -108,7 +110,7 @@ interface AuthStatusBody {
   hosts: Record<string, { state: string; active: boolean }[]>;
 }
 
-const PR_FIELDS = 'number,state,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit';
+const PR_FIELDS = 'number,state,title,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit';
 const GITHUB_HOST = 'github.com';
 
 function firstStderrLine(r: GhResult): string | undefined {
@@ -177,6 +179,7 @@ export class GitHubForge implements Forge {
         baseBranch: row.baseRefName,
         url: row.url,
       };
+      if (row.title !== '') pr.title = row.title;
       // '' → 'none' at the edge (the frozen mapping); absence (null OR a missing key) stays absence
       if (row.reviewDecision != null) pr.reviewDecision = row.reviewDecision === '' ? 'none' : row.reviewDecision;
       if (row.mergedAt != null) pr.mergedAt = row.mergedAt;
@@ -201,6 +204,7 @@ export class GitHubForge implements Forge {
       baseBranch: pull.base.ref,
       url: pull.html_url,
     }; // no review fact on this path — reviewDecision stays ABSENT (never invented)
+    if (pull.title !== '') pr.title = pull.title;
     if (pull.merged_at != null) pr.mergedAt = pull.merged_at;
     if (pull.merge_commit_sha != null) pr.mergeSha = pull.merge_commit_sha;
     return pr;

@@ -693,6 +693,14 @@ export const UI = {
   sessionSummaryProceed: 'Mimar: proceed — adım onaylandı',
   sessionSummaryRevise: 'Mimar: revise — yeniden çalışma istendi',
   secSources: 'Kaynaklar',
+  // WO-0064 — panonun Depo bölümü: forge gözleminin görünür kanıtı (ADR-0010'un son-bakış
+  // sözlüğü). Bağlantısı olmayan çalışma alanında bölümün tamamı yok; bozuk taramanın nedeni
+  // aynen satır olarak konuşur («bir gözlem asla tahmin değildir»).
+  forgeSectionTitle: 'Depo',
+  forgeRefresh: 'Yenile',
+  forgeOpenCount: (n: number) => `${n} açık PR`,
+  forgeLastScan: (time: string) => `son gözlem ${time}`,
+  FORGE_PR_STATE: { open: 'açık', merged: 'birleşti', closed: 'kapalı' },
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',

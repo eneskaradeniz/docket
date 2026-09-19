@@ -148,6 +148,45 @@ CREATE TABLE IF NOT EXISTS connection (
   local_path TEXT NOT NULL,
   PRIMARY KEY (workspace_id, repo_remote)
 );
+-- The OBSERVED forge cache (WO-0064, ADR-0010's forge half): one scan row per connected repo
+-- (health + the last-looked stamp), the scan's open-PR page (REPLACED each ok scan — a PR fallen
+-- off the open page is absent: observation wins), and the open heads' check runs. A DEGRADED scan
+-- touches forge_scan ONLY — prior facts stay (the wipe would be the lie). Discardable: dropping
+-- all three and re-scanning loses nothing but time (OBSERVED_TABLES).
+CREATE TABLE IF NOT EXISTS forge_scan (
+  workspace_id TEXT NOT NULL,
+  repo_remote TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ok','degraded')),
+  reason TEXT,                -- the degraded reason verbatim (stderr line / JSON message); NULL on ok
+  observed_at TEXT NOT NULL,  -- the LAST attempt, ok or degraded — the «son gözlem» stamp
+  PRIMARY KEY (workspace_id, repo_remote)
+);
+CREATE TABLE IF NOT EXISTS forge_pr (
+  workspace_id TEXT NOT NULL,
+  repo_remote TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('open','closed','merged')),
+  title TEXT,
+  head_sha TEXT NOT NULL,
+  head_branch TEXT NOT NULL,
+  base_branch TEXT NOT NULL,
+  review_decision TEXT,
+  merged_at TEXT,
+  merge_sha TEXT,
+  url TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, repo_remote, number)
+);
+CREATE TABLE IF NOT EXISTS forge_check (
+  workspace_id TEXT NOT NULL,
+  repo_remote TEXT NOT NULL,
+  sha TEXT NOT NULL,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  conclusion TEXT,            -- NULL while the run has no conclusion yet (honest absent)
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, repo_remote, sha, name)
+);
 -- Operator app preferences (WO-0025): a third ADR-0010 category — neither a git-observed fact nor a
 -- decision about work; machine-local app configuration (e.g. the provider API key). Key-value rows.
 -- WO lifecycle event log (WO-0030 / İstek 8): append-only audit of the operator/system actions —
@@ -186,6 +225,9 @@ CREATE TABLE IF NOT EXISTS roadmap_draft (
 // Drop order respects dependencies (children first). Foreign keys are documented, not
 // enforced (SQLite default), so this is belt-and-braces.
 export const OBSERVED_TABLES = [
+  'forge_check',
+  'forge_pr',
+  'forge_scan',
   'track_depends_on',
   'track',
   'work_order_source',
