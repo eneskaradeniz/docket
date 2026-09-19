@@ -30,6 +30,7 @@ const SENSITIVE_BASENAME = [/^\.env(\..+)?$/i, /\.pem$/i, /key$/i, /^credentials
  *  case-blind — a shouted NPM INSTALL is the same risk as a lowercase one, WO-0031d). */
 const RISKY_COMMAND_PATTERNS: RegExp[] = [
   /\bgit\s+push\b/i,
+  /\bgh\s+pr\s+(create|merge)\b/i, // ADR-0017: the forge's world-writes sit beside push — witnessed
   /\bgit\s+remote\s+(set-url|add|remove|rename)\b/i,
   /\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b/i,
   /\bcargo\s+add\b/i,

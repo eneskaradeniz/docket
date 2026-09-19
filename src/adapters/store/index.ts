@@ -25,6 +25,7 @@ import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, rea
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
+import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
@@ -971,6 +972,27 @@ function recordForgeScanRow(db: DatabaseSync, workspaceId: WorkspaceId, repoRemo
     );
     for (const { sha, check } of scan.checks) {
       insCheck.run(workspaceId, repoRemote, sha, check.name, check.status, check.conclusion ?? null, scan.at);
+    }
+    // ADR-0017: the OBSERVED WO→PR link — the scanned open PRs matched to the workspace's OPEN
+    // work orders by the title rule (titleCarriesWoId). Latest-wins: this scan's match
+    // overwrites; no hit keeps the prior link (the last observation stands — a page replace is
+    // not a wipe of what was last seen true).
+    const conn = db
+      .prepare('SELECT local_path FROM connection WHERE workspace_id = ? AND repo_remote = ?')
+      .get(workspaceId, repoRemote) as { local_path: string } | undefined;
+    if (conn !== undefined && scan.prs.length > 0) {
+      const repo = repoBase(conn.local_path);
+      const openWos = db
+        .prepare('SELECT id FROM work_order WHERE workspace_id = ? AND gate_closure_docs_sha IS NULL')
+        .all(workspaceId) as { id: string }[];
+      for (const { id } of openWos) {
+        const pr = scan.prs.find((p) => p.title !== undefined && titleCarriesWoId(p.title, id));
+        if (pr) {
+          db.prepare('UPDATE track SET pr_url = ?, pr_head_sha = ?, observed_at = ? WHERE work_order_id = ? AND repo = ?').run(
+            pr.url, pr.headSha, scan.at, id, repo,
+          );
+        }
+      }
     }
     db.exec('COMMIT');
   } catch (e) {

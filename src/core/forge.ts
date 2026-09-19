@@ -158,6 +158,12 @@ export type ClosureEvidence =
   | { basis: 'absent' }
   | { basis: 'unknown'; reason: string };
 
+/** The ADR-0017 title rule: a PR title carries the WO id as a WORD — WO-006 must not match a
+ *  WO-0067 title (the boundary between the 6 and the 7 is no word boundary for nothing). */
+export function titleCarriesWoId(title: string, woId: string): boolean {
+  return new RegExp(`\\b${woId}\\b`).test(title);
+}
+
 /** The closure-time look (WO-0065): ONE search per connected repo whose remote parses, the
  *  merged rows only (latest `mergedAt` wins), first hit wins across repos. NEVER throws — the
  *  worst case is an `unknown` carrying the last error's reason. An unparseable remote is not a

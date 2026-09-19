@@ -129,3 +129,17 @@ describe('isRiskyPermission — case-blindness (WO-0031d)', () => {
     expect(write('src/ENV-loader.ts')).toBe(false); // "env" substring, not an .env* basename
   });
 });
+
+// ===== WO-0067 / ADR-0017 — the world-write surface: push + PR-create/merge, always witnessed =====
+describe('isRiskyPermission — the ADR-0017 world-writes', () => {
+  it('git push and gh pr create/merge are risky (asked under every rule but full_auto)', () => {
+    expect(bash('git push origin wo-0067')).toBe(true);
+    expect(bash('gh pr create --title "WO-0067 — x"')).toBe(true);
+    expect(bash('gh pr merge 70 --merge')).toBe(true);
+  });
+  it('git commit and gh reads are NOT risky (commit rides the rule; reads never were)', () => {
+    expect(bash('git commit -m "step 1"')).toBe(false);
+    expect(bash('gh pr list --state open')).toBe(false);
+    expect(bash('gh auth status')).toBe(false);
+  });
+});

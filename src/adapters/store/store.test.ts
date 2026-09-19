@@ -2347,3 +2347,46 @@ describe('WO-0065 — closeWorkOrder records the forge_merge evidence', () => {
     expect(row.detail).toBe('sha');
   });
 });
+
+// ===== WO-0067 — the observed WO→PR link (ADR-0017's title rule) =====
+describe('WO-0067 — recordForgeScan writes the observed track link', () => {
+  const setup = async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Link', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Link me', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const remote = (store.db.prepare('SELECT repo_remote FROM connection WHERE workspace_id = ?').get(ws.id) as { repo_remote: string }).repo_remote;
+    return { store, ws, wo, remote };
+  };
+  const scanWith = (title: string) => ({
+    at: '2026-09-19T12:00:00Z',
+    prs: [{ number: 5, state: 'open' as const, title, headSha: 'sha-abc', headBranch: 'b', baseBranch: 'main', url: 'https://github.com/o/r/pull/5' }],
+    checks: [],
+  });
+
+  it('a scanned PR titled with the WO id fills that WO track row (url + head sha + stamp)', async () => {
+    const { store, ws, wo, remote } = await setup();
+    store.recordForgeScan(ws.id, remote, scanWith(`${wo.id} — the real link`));
+    const track = store.db.prepare('SELECT pr_url, pr_head_sha, observed_at FROM track WHERE work_order_id = ?').get(wo.id) as { pr_url: string; pr_head_sha: string; observed_at: string };
+    expect(track.pr_url).toBe('https://github.com/o/r/pull/5');
+    expect(track.pr_head_sha).toBe('sha-abc');
+    expect(track.observed_at).toBe('2026-09-19T12:00:00Z');
+  });
+
+  it('the word boundary holds: another WO id that is a SUBSTRING does not match', async () => {
+    const { store, ws, wo, remote } = await setup();
+    const longer = `${wo.id}7`; // e.g. WO-00017 contains WO-0001 as a substring — not as a word
+    store.recordForgeScan(ws.id, remote, scanWith(`${longer} — someone else's PR`));
+    const track = store.db.prepare('SELECT pr_url FROM track WHERE work_order_id = ?').get(wo.id) as { pr_url: string | null };
+    expect(track.pr_url).toBeNull();
+  });
+
+  it('a closed work order never matches; a no-hit scan keeps the prior link (latest-wins)', async () => {
+    const { store, ws, wo, remote } = await setup();
+    store.recordForgeScan(ws.id, remote, scanWith(`${wo.id} — first link`));
+    store.db.prepare('UPDATE work_order SET gate_closure_docs_sha = ? WHERE id = ?').run('closed-sha', wo.id);
+    store.recordForgeScan(ws.id, remote, scanWith(`${wo.id} — reopened? no: the WO is closed`));
+    const track = store.db.prepare('SELECT pr_url FROM track WHERE work_order_id = ?').get(wo.id) as { pr_url: string };
+    expect(track.pr_url).toBe('https://github.com/o/r/pull/5'); // the closed WO's link keeps its last observation
+  });
+});

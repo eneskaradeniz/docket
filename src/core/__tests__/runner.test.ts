@@ -820,3 +820,26 @@ describe('foldSessionEvent — the result-message limit death (WO-0053 review fi
     expect(s.lastErrorCode).toBe('rate_limited'); // and the degrade tier on this
   });
 });
+
+// ===== WO-0067 / ADR-0017 — the forge CLI's dispatch: create/merge are WRITES (witnessed) =====
+describe('classifyCommandLine — the gh dispatch (ADR-0017)', () => {
+  const cl = classifyCommandLine;
+  it('gh pr create is a WRITE — the fence asks, the risky set keeps it witnessed', () => {
+    expect(cl('gh pr create --title "WO-0067 — x"').isWrite).toBe(true);
+  });
+  it('gh pr merge is a WRITE', () => {
+    expect(cl('gh pr merge 70 --merge')).toMatchObject({ isWrite: true });
+  });
+  it('gh repo delete is a WRITE', () => {
+    expect(cl('gh repo delete o/r')).toMatchObject({ isWrite: true });
+  });
+  it('gh reads stay ambiguous-non-write (the pre-WO-0067 behavior for lists/status)', () => {
+    expect(cl('gh pr list --state open')).toMatchObject({ isWrite: false, ambiguous: true });
+    expect(cl('gh auth status')).toMatchObject({ isWrite: false, ambiguous: true });
+    expect(cl('gh api repos/o/r/commits/x/pulls')).toMatchObject({ isWrite: false, ambiguous: true });
+  });
+  it('the git side is unchanged: commit is a write, push is a write', () => {
+    expect(cl('git commit -m "x"').isWrite).toBe(true);
+    expect(cl('git push origin wo-0067-agent-git-actions').isWrite).toBe(true);
+  });
+});

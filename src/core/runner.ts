@@ -404,6 +404,14 @@ const GIT_READ_SUBS = new Set([
   'shortlog', 'reflog', 'ls-tree', 'grep', 'fsck', 'count-objects', 'remote', 'annotate',
 ]);
 
+// The forge CLI's WRITE-shaped actions (ADR-0017): `gh pr create/merge` are the world-write
+// surface alongside `git push` — the fence rules them writes (the risky set makes them asked
+// under every rule but full_auto; core/risky.ts carries the patterns). `gh` is a dispatcher like
+// `git`: the noun (pr/repo/issue/auth/api/…) is tokens[1], the action tokens[2].
+const GH_WRITE_ACTIONS = new Set([
+  'create', 'merge', 'close', 'reopen', 'edit', 'delete', 'comment', 'label', 'pin', 'unpin', 'transfer', 'lock', 'unlock', 'auto-merge',
+]);
+
 // Strip single/double-quoted spans so a `>` inside an argument isn't seen as a shell redirect.
 function stripQuoted(s: string): string {
   let out = '';
@@ -464,6 +472,15 @@ export function classifyCommandLine(command: string): ShellCommandClassification
     if (GIT_WRITE_SUBS.has(sub)) return { isWrite: true, command: trimmed };
     if (GIT_READ_SUBS.has(sub)) return { isWrite: false, command: trimmed }; // known git read
     return { isWrite: false, command: trimmed, ambiguous: true };             // unmapped git sub — safe side
+  }
+  // 3b) the forge CLI's dispatch (ADR-0017): write-shaped actions gate; everything else stays
+  // ambiguous (the pre-WO-0067 behavior for `gh pr list`/`auth status` — reads, silently
+  // allowed for the writing roles, asked for the verifier).
+  if (verb === 'gh') {
+    const parts = trimmed.split(/\s+/);
+    const action = parts[2] ?? '';
+    if (GH_WRITE_ACTIONS.has(action)) return { isWrite: true, command: trimmed };
+    return { isWrite: false, command: trimmed, ambiguous: true };
   }
   // 4) Known read verb?
   if (READ_VERBS.has(verb)) return { isWrite: false, command: trimmed };
