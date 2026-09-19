@@ -2,7 +2,7 @@
 id: WO-0068
 title: "Değişiklikler konsolu — the work-order Changes surface: repo-jailed status/diff with one-click commit / PR / merge (ADR-0018)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -94,7 +94,15 @@ Out of scope:
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) —
   joins the deferred tour: edit a file in a WO repo, watch the section fill, commit + push +
   open the PR from the cards, merge with the confirm.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **1028 unit tests** (+29:
+  4 core shape pins, 19 git-console pins, 6 forge write-op pins), build, `check:boundaries`
+  8/8 clean. Subagent-implemented (the operator's delegation), independently verified: the
+  port canaries, the jail on all six channels, the absent-grammar check.
+- pr_open / closure: RESOLVED — PR #73 (`https://github.com/eneskaradeniz/docket/pull/73`),
+  head `01d1a82`, merged `8fb16fd`; closed at this commit.
+- Known edge for the deferred tour: `git diff -- <file>` shows unstaged-vs-index, so a
+  staged-only change expands as «Değişiklik yok» while listing in porcelain — revisit if the
+  operator hits it.
 
 ## Stop-and-ask gates
 

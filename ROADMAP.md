@@ -356,8 +356,14 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 - [x] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
       the operator-commits ruling (the decision-store adapter's design note) — needs an ADR and a
       fence/risky review (commit/PR are writes) (WO-0067, ADR-0017)
-- [ ] **Operator git console** — the diff-peek idiom grown into a work-order Changes surface
-      (repo-jailed) with one-click commit / PR / merge
+- [x] **WO-0068** — Değişiklikler konsolu (PR #73, merge `8fb16fd`, 2026-09-19; **ADR-0018**):
+      the Changes surface — per-repo branch/porcelain/diff cards in the WO detail's record
+      stack, one-click commit/push/PR/merge (counted confirm), all six `docket:console:*`
+      channels repo-jailed; the `Forge` port stays read-only (`@ts-expect-error` canaries).
+      Subagent-implemented, independently verified. Order:
+      `docs/work-orders/WO-0068-degisiklikler-konsolu/order.md`.
+- [x] **Operator git console** — the diff-peek idiom grown into a work-order Changes surface
+      (repo-jailed) with one-click commit / PR / merge (WO-0068)
 
 ## M3.5 — Shell foundations
 
