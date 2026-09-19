@@ -393,12 +393,15 @@ WO-0002 routed all copy through `labels.ts`.
   as WO-0040 (2026-08-24): Sistem/Açık/Karanlık in Settings, dark re-tuned to layered black, light
   pure white, renderer-local localStorage per the standing app-settings ruling (ADR-0007's
   2026-08-24 addendum reverses the 2026-08-21 dark-only note).
-- [ ] Lint rule against hardcoded strings and literal colours in components — WO-0035's share
-  (compiler-driven bundle completeness) landed; the grep itself remains open.
-- [ ] **Prompt overrides** — the role/plan prompt templates (architect / implementer / verifier /
+- [x] Lint rule against hardcoded strings and literal colours in components — WO-0035's share
+  (compiler-driven bundle completeness) landed; the grep itself remains open. **Landed with
+  WO-0070** (PR #75, 2026-09-19): c7 literal colours + c8 non-ASCII display copy, both
+  demonstrated failing before landing.
+- [x] **Prompt overrides** — the role/plan prompt templates (architect / implementer / verifier /
   review, today compile-time constants in `src/core/order-md.ts`) editable in Settings: the
   AppSettings port → `app_setting` rows → IPC → a modal section; prompt assembly falls back to
-  the built-ins when an override is absent.
+  the built-ins when an override is absent. **Landed with WO-0070** (PR #75): five whole-text
+  templates, one JSON row, override-first assembly, the built-in byte-identical when absent.
 
 ## M4 — Second workspace
 

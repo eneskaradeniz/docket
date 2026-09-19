@@ -2,7 +2,7 @@
 id: WO-0070
 title: "M3.5 artıkları — the string/colour grep lands + prompt overrides (the Settings-driven, app_setting-backed template seam)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -101,7 +101,11 @@ Out of scope:
 - plan_approval: mode `plan` — this order IS the approved session plan (the "tüm işleri
   bitir" delegation, 2026-09-19).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19).
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **1073 unit tests**
+  (+10), build, `check:boundaries` **10/10** clean (the two new checks demonstrated failing on
+  deliberate violations before landing; the tree was clean on first pass — zero fixes needed).
+- pr_open / closure: RESOLVED — PR #75 (`https://github.com/eneskaradeniz/docket/pull/75`),
+  head `25dbe77`, merged `24bfd51`; closed at this commit.
 
 ## Stop-and-ask gates
 
