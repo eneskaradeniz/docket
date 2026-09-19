@@ -2,7 +2,7 @@
 id: WO-0069
 title: "M3'nin kuyruğu — the gates observe: EvidenceStatus gains unknown, the verification gate is computed from resolvable pointers, TD-009's line settles"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -95,7 +95,13 @@ Out of scope:
 - plan_approval: mode `plan` — this order IS the approved session plan (the operator's
   "tüm işleri bitir" delegation, 2026-09-19; the gap map of the same day is the ground).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19).
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **1063 unit tests**
+  (+35), build, `check:boundaries` 8/8 clean. Subagent-implemented, independently verified.
+- pr_open / closure: RESOLVED — PR #74 (`https://github.com/eneskaradeniz/docket/pull/74`),
+  head `a193614`, merged `64d8c35`; closed at this commit.
+- Behavior change (flagged in the PR): a WO closing without a recorded, fully-resolvable
+  verifier report no longer derives stage `closed` — the honest face of the unknown arm. The
+  deferred tour should close a WO through the full step+verify flow.
 
 ## Stop-and-ask gates
 

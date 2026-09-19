@@ -348,11 +348,25 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       Order: `docs/work-orders/WO-0067-agent-git-actions/order.md`.
 - [ ] **Reconciliation** — re-read git and the forge on open, focus, after actions, on manual refresh and on
       a background interval. Observation wins over what Docket last showed. Merged-outside-Docket is normal
-- [ ] `stage` derived from observed facts rather than stored (TD-008); `EvidenceStatus` gains `unknown`
-- [ ] A defined home in the decision store for architect verdicts and verifier reports (TD-009)
+- [x] **WO-0069** — M3'nin kuyruğu (PR #74, merge `64d8c35`, 2026-09-19): `EvidenceStatus` gains
+      `unknown` (+ every consumer; a gate never satisfies on unknown); the verification gate is
+      COMPUTED — `extractPointers` + record-time path resolution replace the closure-time `= 1`
+      attestation (a WO closing without a resolvable verifier report stays honest at
+      `implementation`); track CI learns unknown from the scan's degraded meta. Subagent-
+      implemented, independently verified. Order:
+      `docs/work-orders/WO-0069-m3-kuyrugu/order.md`.
+- [ ] `stage` refined from OBSERVED forge facts (TD-008's remaining half — the unknown half
+      landed with WO-0069; plan-approval-from-sha stays TD-005's line)
+- [x] A defined home in the decision store for architect verdicts and verifier reports (TD-009)
+      — delivered since WO-0020 (reports/ + verdicts/; tech-debt closed it); the derivation
+      residue landed with WO-0069
 - [x] PR / head sha / check-run ingestion (WO-0064)
-- [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
-- [ ] Gate engine: transitions absent, not disabled, when evidence is missing
+- [x] Pointer resolution — the v1 cut landed with WO-0069 (record-time working-tree
+      resolution; sha-level resolution is the named follow-up, the `unknown` arm keeps the
+      door shaped right)
+- [x] Gate engine: transitions absent, not disabled, when evidence is missing — the grammar
+      delivered with WO-0031e (the mechanical disabled-ban), the unknown-evidence arms with
+      WO-0069
 - [x] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
       the operator-commits ruling (the decision-store adapter's design note) — needs an ADR and a
       fence/risky review (commit/PR are writes) (WO-0067, ADR-0017)
