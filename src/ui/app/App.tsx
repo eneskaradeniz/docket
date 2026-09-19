@@ -3,6 +3,7 @@ import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '.
 import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import type { ForgeView, ForgeWatch } from '../../core/forge';
+import type { SystemHealth, SystemHealthWatch } from '../../core/health';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
 import { limitInEffect, overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
@@ -16,6 +17,7 @@ import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
+import { HealthStrip } from '../components/board/HealthStrip';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RoadmapScreen } from '../screens/RoadmapScreen';
 import { UsageScreen } from '../screens/UsageScreen';
@@ -31,8 +33,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 // an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
 // on mount, the selected work order + its docs load on selection, each with a state for the
 // in-flight/failed case. The runner is provided via context for the session pane.
-export function App({ source, settings, runner, forge: forgeWatch }: { source: WorkOrderSource;
-  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch }) {
+export function App({ source, settings, runner, forge: forgeWatch, health: healthWatch }: { source: WorkOrderSource;
+  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch; health?: SystemHealthWatch }) {
   const { UI, woIdLabel } = useLabels();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -215,6 +217,29 @@ export function App({ source, settings, runner, forge: forgeWatch }: { source: W
     source.getWorkOrders().then(setWorkOrders);
     refreshForgeRef.current(); // "after any action it takes" — the board's action funnel (WO-0064)
   }, [source]);
+
+  // WO-0066 — the health look, ADR-0010's cadence (mount + focus + the slow tick; view-only).
+  // A failed look resolves undefined and the LAST observation stays — the strip never flickers
+  // into nothing, and the first-run gate blocks on OBSERVED degradation only.
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | undefined>(undefined);
+  const refreshHealth = useCallback(() => {
+    healthWatch?.systemHealth().then((h) => { if (h) setSystemHealth(h); }).catch(() => {});
+  }, [healthWatch]);
+  const refreshHealthRef = useRef(refreshHealth);
+  refreshHealthRef.current = refreshHealth;
+  useEffect(() => {
+    refreshHealth();
+  }, [refreshHealth]); // mount
+  useEffect(() => {
+    if (!healthWatch) return;
+    const tick = (): void => refreshHealthRef.current();
+    window.addEventListener('focus', tick);
+    const t = setInterval(tick, 60_000);
+    return () => {
+      window.removeEventListener('focus', tick);
+      clearInterval(t);
+    };
+  }, [healthWatch]);
 
   // Re-load the selected work order + its docs (WO-0016): bumping the nonce re-runs the detail effect,
   // so the detail view reflects a plan approval (stage advanced, plan.md rendered) without re-selection.
@@ -470,7 +495,23 @@ export function App({ source, settings, runner, forge: forgeWatch }: { source: W
   } else if (workspaces.length === 0) {
     // Empty database (ADR-0009 + ADR-0012 r2): the appbar above is the real one; the body is the
     // invitation — one line, one CTA (create the first workspace; the first work order follows).
-    main = <InviteHero line={UI.inviteFirstWs} cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />;
+    // WO-0066 — the FIRST-RUN gate: while git or the agent identity is OBSERVED degraded, the
+    // create action is ABSENT with the reason lines (ADR-0001 — never disabled); a failed look
+    // hides only itself, and the gate never fires again once any workspace exists.
+    const byTool = (t: 'git' | 'agent') => systemHealth?.checks.find((c) => c.tool === t);
+    const gateDegraded = [byTool('git'), byTool('agent')].some((c) => c && c.state !== 'ok');
+    main = (
+      <main className="mx-auto w-full max-w-[840px] px-5 py-5">
+        {systemHealth && <HealthStrip health={systemHealth} />}
+        {gateDegraded ? (
+          <div className="flex min-h-[55vh] flex-col items-center justify-center gap-3 px-6">
+            <p className="font-mono text-[11px] text-inkdim">{UI.healthCreateWaits}</p>
+          </div>
+        ) : (
+          <InviteHero line={UI.inviteFirstWs} cta={UI.wsCreate} onCta={() => setWsCreateOpen(true)} />
+        )}
+      </main>
+    );
   } else if (selectedId) {
     main = detailError ? (
       <div className="px-6 py-8">
@@ -551,6 +592,7 @@ export function App({ source, settings, runner, forge: forgeWatch }: { source: W
         key={workspaceId ?? 'none'}
         cards={cards}
         budget={budget}
+        health={systemHealth}
         forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
         onRefreshForge={refreshForge}
         onSelect={setSelectedId}

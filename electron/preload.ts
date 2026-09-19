@@ -116,6 +116,12 @@ contextBridge.exposeInMainWorld('docket', {
     view: (workspaceId: WorkspaceId): Promise<import('../src/core/forge').ForgeView> =>
       ipcRenderer.invoke('docket:forge:view', workspaceId),
   },
+  // WO-0066: the three dependencies, one look — the composition root's SystemHealthWatch. A
+  // failed look resolves undefined (the renderer renders nothing, never bricks).
+  health: {
+    systemHealth: (): Promise<import('../src/core/health').SystemHealth | undefined> =>
+      ipcRenderer.invoke('docket:health:system'),
+  },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
   // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-

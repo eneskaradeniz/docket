@@ -31,6 +31,9 @@ declare global {
       /** WO-0064: the forge observation watch (core's `ForgeWatch`) — reconcile triggers + the
        *  observed cache view; the composition root implements it over the forge adapter. */
       forge?: import('../core/forge').ForgeWatch;
+      /** WO-0066: the three dependencies, one look (core's `SystemHealthWatch` — a failed look
+       *  resolves undefined; the renderer renders nothing, never bricks). */
+      health?: import('../core/health').SystemHealthWatch;
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;
       /** WO-0051 / D3: the ✦ dialog's DEPO scan — { docsRoot, files }, structure-root-relative

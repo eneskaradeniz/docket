@@ -20,7 +20,7 @@ if (root) {
         <ThemeProvider>
           <ErrorBoundary>
             <TooltipProvider>
-              <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} forge={window.docket.forge} />
+              <App source={window.docket.source} settings={window.docket.settings} runner={createRunnerPort(window.docket.runner)} forge={window.docket.forge} health={window.docket.health} />
             </TooltipProvider>
           </ErrorBoundary>
         </ThemeProvider>

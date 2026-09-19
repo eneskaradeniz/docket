@@ -20,5 +20,5 @@
     "noEmit": true
   },
   "include": ["src", "vite.config.ts", "vitest.config.ts"],
-  "exclude": ["src/adapters/runner", "src/adapters/store", "src/adapters/forge", "src/cli"]
+  "exclude": ["src/adapters/runner", "src/adapters/store", "src/adapters/forge", "src/adapters/health.ts", "src/cli"]
 }
