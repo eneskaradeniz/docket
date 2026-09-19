@@ -17,7 +17,7 @@ export function ClosedToggle({ count, children }: { count: number; children: Rea
         onClick={() => setOpen((o) => !o)}
         className="closedtoggle"
       >
-        <span className="arr" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
         <span className="n">{count}</span> {UI.closedToggleWord}
       </button>
       {open ? <div className="mt-2 flex flex-col gap-2">{children}</div> : null}

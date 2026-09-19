@@ -19,7 +19,6 @@ import type {
   CostSummary,
   StageId,
   WorkOrderId,
-  WoEventKind,
   TranscriptLine,
 } from '../../../core/types';
 import type { LiveSessionStatus } from '../../../core/runner';
@@ -246,26 +245,10 @@ export function transcriptLineText(line: TranscriptLine): string {
   }
 }
 
-/** The SADE tail's one-line projection (WO-0037): an assistant turn collapses to its first
- *  non-empty line (the bubble body is markdown; the tail is a teaser), everything else is the flat
- *  transcript line. `split`, never `.replace(` — the CI ban holds here too. */
-export function transcriptTailText(line: TranscriptLine): string {
-  if (line.speaker === 'assistant') {
-    const first = line.text.split('\n').find((l) => l.trim().length > 0);
-    return first ?? '';
-  }
-  return transcriptLineText(line);
-}
-
 export function permissionPrompt(tool: string, detail: string): string {
   const label = toolLabel(tool);
   return detail ? `${label} — ${detail}` : label;
 }
-
-export const MODE_LABELS: Record<'plan' | 'direct', string> = {
-  plan: 'Plan',
-  direct: 'Direkt',
-};
 
 export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   adr: 'ADR',
@@ -273,14 +256,6 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   roadmap: 'ROADMAP',
   contract: 'sözleşme',
 };
-
-export function modeText(mode: 'plan' | 'direct'): string {
-  return `${MODE_LABELS[mode]} modu`;
-}
-
-export function stoppedAtGate(gate: string): string {
-  return `durdu · ${gate}`;
-}
 
 // tr-TR ondalık ayraç (virgül) — mock'taki "$0,94" ile uyumlu. en.ts 'en-US' ister (nokta).
 export function formatUsd(usd: number): string {
@@ -325,75 +300,6 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   executable_missing: 'Sağlayıcı çalıştırılabilirı bulunamadı — kurulumu kontrol et.',
   rate_limited: 'Sağlayıcı kullanım limiti doldu — sıfırlanma saati bilinmiyor.', // WO-0053: damgasız degradasyon katmanı (mockup kare 04)
 };
-
-// Yaşam döngüsü olay günlüğü (WO-0030 / İstek 8; WO-0031c düzenleme/izin türleri eklendi)
-export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
-  created: 'Oluşturuldu',
-  plan_saved: 'Plan önerildi (pending)',
-  plan_save_refused: 'Bozuk plan önerisi reddedildi',
-  plan_approved: 'Plan onaylandı',
-  step_started: 'Adım başladı',
-  step_done: 'Adım tamamlandı',
-  step_verdict: 'Mimar kararı',
-  verdict_overridden: 'Karar geçersiz kılındı (operatör)',
-  closed: 'Kapatıldı',
-  wo_edited: 'İş emri düzenlendi',
-  rule_changed: 'Kural değişti',
-  permission_decision: 'İzin kararı',
-  steer_queued: 'Yönlendirme kuyruğa girdi',
-  steer_delivered: 'Yönlendirme iletildi',
-  steer_retracted: 'Yönlendirme geri çekildi',
-  flow_mode_changed: 'Akış modu değişti',
-  forge_merge: 'Forge birleşmesi',
-};
-
-/** The STRUCTURAL event detail → display (WO-0031c): the store writes machine detail (`edited:3`,
- *  `allowed · check.yml`, `full_auto`); this is the one place it becomes Turkish. */
-export function eventDetailText(kind: WoEventKind, detail: string): string {
-  if (!detail) return '';
-  switch (kind) {
-    case 'plan_saved':
-      // "Bitti = kaydet" (2026-08-23): the operator's editor save rides the same event kind the
-      // architect's proposal does — the detail says WHO proposed.
-      if (detail === 'operator-edit') return 'operatör düzenlemesi';
-      if (detail === 'restored-original') return 'ajanın ilk önerisine dönüldü';
-      return detail;
-    case 'plan_approved': {
-      const m = /^edited:(\d+)$/.exec(detail);
-      return m ? `düzenlenmiş onay · ${m[1]} değişiklik` : detail;
-    }
-    case 'flow_mode_changed':
-      // The machine carries the internal value ('manual'/'auto'); the timeline speaks the chip's word.
-      return detail === 'manual' ? 'manuel' : 'otomatik';
-    case 'steer_queued':
-    case 'steer_delivered':
-      // The detail is 'not: <the operator's own words, 48 chars>' — the prefix is machine grammar.
-      return detail.startsWith('not: ') ? detail.slice(5) : detail;
-    case 'permission_decision': {
-      const sep = detail.indexOf(' · ');
-      const head = sep >= 0 ? detail.slice(0, sep) : detail;
-      const rest = sep >= 0 ? detail.slice(sep + 3) : '';
-      const verdict = head === 'allowed' ? 'izin verildi' : head === 'denied' ? 'reddedildi' : head;
-      return rest ? `${verdict} · ${rest}` : verdict;
-    }
-    case 'rule_changed':
-      return PERMISSION_RULE_LABELS[detail as PermissionRule] ?? detail;
-    case 'forge_merge': {
-      // WO-0065: the closure's observed fact — the JSON ClosureEvidence becomes Turkish. A
-      // non-JSON detail (a future vintage) falls back to the raw text, never a crash.
-      try {
-        const ev = JSON.parse(detail) as { basis: string; prNumber?: number; reason?: string };
-        if (ev.basis === 'observed') return `#${ev.prNumber} birleşti · gözlemlendi`;
-        if (ev.basis === 'unknown') return `forge'a bakılamadı: ${ev.reason ?? ''}`;
-        return 'PR bulunamadı — beyanla kapandı';
-      } catch {
-        return detail;
-      }
-    }
-    default:
-      return detail;
-  }
-}
 
 // Per-WO izin kuralı (WO-0031c) — değerler → görüntü.
 export const PERMISSION_RULE_LABELS: Record<PermissionRule, string> = {
@@ -1275,10 +1181,8 @@ const tr = {
   AGENT_TASK_RUNNING_WORD,
   TOOL_LABELS,
   TOOL_VERBS,
-  MODE_LABELS,
   SOURCE_KIND_LABELS,
   PROVIDER_ERROR_LABELS,
-  WO_EVENT_LABELS,
   PERMISSION_RULE_LABELS,
   PERMISSION_RULE_SHORT,
   PERMISSION_RULE_TINY,
@@ -1289,15 +1193,11 @@ const tr = {
   toolLabel,
   toolVerb,
   transcriptLineText,
-  transcriptTailText,
   permissionPrompt,
-  modeText,
-  stoppedAtGate,
   formatUsd,
   formatTokens,
   formatCost,
   woIdLabel,
-  eventDetailText,
   formatDateTime,
   phaseLabelText,
   fazLabel,

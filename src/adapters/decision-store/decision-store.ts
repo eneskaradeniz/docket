@@ -16,14 +16,6 @@ import { parseOrderMd } from '../../core/order-md';
 // these helpers' first argument — the helpers never know the split.
 const WORK_ORDERS_DIR = ['work-orders'];
 
-/** Raised when the decision-store path is not set and cannot be resolved. */
-export class DecisionStoreUnavailable extends Error {
-  constructor(public readonly workspaceId: string) {
-    super(`No decision-store path for workspace ${workspaceId}`);
-    this.name = 'DecisionStoreUnavailable';
-  }
-}
-
 // Locate a work order's directory by id prefix (e.g. 'WO-0016') without storing a slug. Scans the
 // work-orders dir for `${id}-*` directories — the same pattern nextWorkOrderNumber uses. First match
 // wins (single-operator desktop; a duplicate prefix is the operator's authoring error).

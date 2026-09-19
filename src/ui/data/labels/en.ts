@@ -19,7 +19,6 @@ import type {
   CostSummary,
   StageId,
   WorkOrderId,
-  WoEventKind,
   TranscriptLine,
 } from '../../../core/types';
 import type { LiveSessionStatus } from '../../../core/runner';
@@ -227,25 +226,10 @@ export function transcriptLineText(line: TranscriptLine): string {
   }
 }
 
-/** Mirrors tr's one-line projection (WO-0037): an assistant turn collapses to its first
- *  non-empty line; everything else is the flat transcript line. */
-export function transcriptTailText(line: TranscriptLine): string {
-  if (line.speaker === 'assistant') {
-    const first = line.text.split('\n').find((l) => l.trim().length > 0);
-    return first ?? '';
-  }
-  return transcriptLineText(line);
-}
-
 export function permissionPrompt(tool: string, detail: string): string {
   const label = toolLabel(tool);
   return detail ? `${label} — ${detail}` : label;
 }
-
-export const MODE_LABELS: Record<'plan' | 'direct', string> = {
-  plan: 'Plan',
-  direct: 'Direct',
-};
 
 export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   adr: 'ADR',
@@ -253,14 +237,6 @@ export const SOURCE_KIND_LABELS: Record<SourceKind, string> = {
   roadmap: 'ROADMAP',
   contract: 'contract',
 };
-
-export function modeText(mode: 'plan' | 'direct'): string {
-  return `${MODE_LABELS[mode]} mode`;
-}
-
-export function stoppedAtGate(gate: string): string {
-  return `stopped · ${gate}`;
-}
 
 // en-US decimal point — the mirror of tr's tr-TR comma ("$6.27" vs "$6,27" on the same data).
 export function formatUsd(usd: number): string {
@@ -299,70 +275,6 @@ export const PROVIDER_ERROR_LABELS: Record<ProviderErrorCode, string> = {
   executable_missing: 'The provider executable was not found — check the installation.',
   rate_limited: 'The provider usage limit is full — the reset time is unknown.', // WO-0053: the stamp-less degradation tier
 };
-
-export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
-  created: 'Created',
-  plan_saved: 'Plan proposed (pending)',
-  plan_save_refused: 'Degenerate plan proposal refused',
-  plan_approved: 'Plan approved',
-  step_started: 'Step started',
-  step_done: 'Step completed',
-  step_verdict: 'Architect decision',
-  verdict_overridden: 'Verdict overridden (operator)',
-  closed: 'Closed',
-  wo_edited: 'Work order edited',
-  rule_changed: 'Rule changed',
-  permission_decision: 'Permission decision',
-  steer_queued: 'Steer note queued',
-  steer_delivered: 'Steer note delivered',
-  steer_retracted: 'Steer note retracted',
-  flow_mode_changed: 'Flow mode changed',
-  forge_merge: 'Forge merge',
-};
-
-/** Mirrors tr's structural detail → display; the machine tokens ('allowed'/'denied') are already
- *  English, so they pass through where tr translates them. */
-export function eventDetailText(kind: WoEventKind, detail: string): string {
-  if (!detail) return '';
-  switch (kind) {
-    case 'plan_saved':
-      // 2026-08-23 ("Bitti = kaydet"): the operator's editor save rides the proposal event kind.
-      if (detail === 'operator-edit') return 'operator edit';
-      if (detail === 'restored-original') return "restored the agent's original proposal";
-      return detail;
-    case 'plan_approved': {
-      const m = /^edited:(\d+)$/.exec(detail);
-      return m ? `edited approval · ${m[1]} changes` : detail;
-    }
-    case 'flow_mode_changed':
-      return detail; // 'manual'/'auto' are already the en words
-    case 'steer_queued':
-    case 'steer_delivered':
-      return detail.startsWith('not: ') ? detail.slice(5) : detail;
-    case 'permission_decision': {
-      const sep = detail.indexOf(' · ');
-      const head = sep >= 0 ? detail.slice(0, sep) : detail;
-      const rest = sep >= 0 ? detail.slice(sep + 3) : '';
-      return rest ? `${head} · ${rest}` : head;
-    }
-    case 'rule_changed':
-      return PERMISSION_RULE_LABELS[detail as PermissionRule] ?? detail;
-    case 'forge_merge': {
-      // WO-0065: the closure's observed fact — the JSON ClosureEvidence becomes English. A
-      // non-JSON detail (a future vintage) falls back to the raw text, never a crash.
-      try {
-        const ev = JSON.parse(detail) as { basis: string; prNumber?: number; reason?: string };
-        if (ev.basis === 'observed') return `#${ev.prNumber} merged · observed`;
-        if (ev.basis === 'unknown') return `could not look at the forge: ${ev.reason ?? ''}`;
-        return 'no PR found — closed on attestation';
-      } catch {
-        return detail;
-      }
-    }
-    default:
-      return detail;
-  }
-}
 
 export const PERMISSION_RULE_LABELS: Record<PermissionRule, string> = {
   ask_every: 'Ask every time',
@@ -1112,10 +1024,8 @@ const en: Labels = {
   AGENT_TASK_RUNNING_WORD,
   TOOL_LABELS,
   TOOL_VERBS,
-  MODE_LABELS,
   SOURCE_KIND_LABELS,
   PROVIDER_ERROR_LABELS,
-  WO_EVENT_LABELS,
   PERMISSION_RULE_LABELS,
   PERMISSION_RULE_SHORT,
   PERMISSION_RULE_TINY,
@@ -1126,15 +1036,11 @@ const en: Labels = {
   toolLabel,
   toolVerb,
   transcriptLineText,
-  transcriptTailText,
   permissionPrompt,
-  modeText,
-  stoppedAtGate,
   formatUsd,
   formatTokens,
   formatCost,
   woIdLabel,
-  eventDetailText,
   formatDateTime,
   phaseLabelText,
   fazLabel,
