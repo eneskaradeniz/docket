@@ -2,7 +2,7 @@
 id: WO-0067
 title: "Agent git actions — the implementer commits, pushes and opens the PR (ADR-0017); the observed track link"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -99,7 +99,15 @@ Out of scope:
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — the
   scenario joins the deferred tour: run a step on a scratch repo, watch the agent's push ask,
   approve, see the PR appear in the Depo section at the next scan.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **999 unit tests** (+12:
+  5 gh-dispatch pins, 2 risky pins, 2 prompt pins, 3 store link pins incl. the word-boundary
+  negative), build, `check:boundaries` 8/8 clean.
+- pr_open / closure: RESOLVED — PR #72 (`https://github.com/eneskaradeniz/docket/pull/72`),
+  head `98e6209`, merged `e511e4f`; closed at this commit.
+- Closure residue: the ADR-0017 order text initially claimed `gh pr create` "classified
+  ambiguous (ask)" — the review disproved it (silent allow for the implementer) and BOTH the
+  ADR and the fence moved before the merge; the record of that correction lives in this file's
+  Context and the ADR's decision 3.
 
 ## Stop-and-ask gates
 

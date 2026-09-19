@@ -339,6 +339,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       ABSENT with reasons (ADR-0001; the forge is visible-only; a failed look never gates; the
       gate never fires again once a workspace exists). Order:
       `docs/work-orders/WO-0066-saglik-yuzeyi/order.md`.
+- [x] **WO-0067** — Agent git actions (PR #72, merge `e511e4f`, 2026-09-19; **ADR-0017**): the
+      implementer commits on a `wo-NNNN-*` branch, pushes and opens the PR — the world-writes
+      (push, `gh pr create|merge`) witnessed under every rule but full_auto. The fence review's
+      yield: `gh pr create` was SILENTLY allowed (no `gh` dispatch) — the classifier's gh branch
+      + the risky patterns close it. The observed link: the scan fills `track.pr_url`/
+      `pr_head_sha` by the word-boundary title rule — NULL since the fixture era, now real.
+      Order: `docs/work-orders/WO-0067-agent-git-actions/order.md`.
 - [ ] **Reconciliation** — re-read git and the forge on open, focus, after actions, on manual refresh and on
       a background interval. Observation wins over what Docket last showed. Merged-outside-Docket is normal
 - [ ] `stage` derived from observed facts rather than stored (TD-008); `EvidenceStatus` gains `unknown`
@@ -346,9 +353,9 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
 - [x] PR / head sha / check-run ingestion (WO-0064)
 - [ ] Pointer resolution: every `path:line` claim must resolve at the recorded sha
 - [ ] Gate engine: transitions absent, not disabled, when evidence is missing
-- [ ] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
+- [x] **Agent git actions** — implementer sessions commit their own work and open the PR; revises
       the operator-commits ruling (the decision-store adapter's design note) — needs an ADR and a
-      fence/risky review (commit/PR are writes)
+      fence/risky review (commit/PR are writes) (WO-0067, ADR-0017)
 - [ ] **Operator git console** — the diff-peek idiom grown into a work-order Changes surface
       (repo-jailed) with one-click commit / PR / merge
 
