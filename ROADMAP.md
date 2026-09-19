@@ -406,7 +406,12 @@ WO-0002 routed all copy through `labels.ts`.
 ## M4 — Second workspace
 
 - [ ] DateApp onboarded (multi-repo, dedicated decision store, cross-repo tracks with `depends_on`)
-- [ ] Briefing bundle assembly, including cross-repo contracts
+      — the machinery below is DONE; the onboarding itself is the operator's deferred-tour act
+- [x] Briefing bundle assembly, including cross-repo contracts — **WO-0071** (PR #76, merge
+      `f5f8816`, 2026-09-19): `track_depends_on`'s first runtime write path (validate-first,
+      refusal writes nothing), the order.md `tracks:` fence round-trips `depends_on:`, and a
+      dependent implementer's prompt carries each dependency's latest report PATH (paths, never
+      contents; byte-identical without). Order: `docs/work-orders/WO-0071-m4-makine/order.md`.
 - [x] Workspace switcher — delivered with the WO-0014 management UI (the appbar WorkspaceSwitcher
       + the WsListModal add entry; marked 2026-09-19)
 

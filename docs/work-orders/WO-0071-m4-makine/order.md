@@ -2,7 +2,7 @@
 id: WO-0071
 title: "M4 makinesi — the cross-repo machinery: track depends_on input + the briefing bundle (DateApp onboards on it)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -91,7 +91,13 @@ Out of scope:
   bitir" delegation, 2026-09-19).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) —
   the DateApp onboarding IS the deferred tour's M4 act.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **1098 unit tests**
+  (+25), build, `check:boundaries` 10/10 clean. Subagent-implemented, independently verified.
+- pr_open / closure: RESOLVED — PR #76 (`https://github.com/eneskaradeniz/docket/pull/76`),
+  head `d7a3dc4`, merged `f5f8816`; closed at this commit.
+- Deviation record: the validator lives in derive.ts (source.ts is declaration-only); the
+  briefing rides the IMPLEMENTER prompt only (the verifier template stays path-free); the
+  agent's own fallback-proof test caught a real WO-dir-relative path bug before the merge.
 
 ## Stop-and-ask gates
 
