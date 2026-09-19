@@ -613,6 +613,11 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} open PR${n === 1 ? '' : 's'}`,
   forgeLastScan: (time: string) => `last checked ${time}`,
   FORGE_PR_STATE: { open: 'open', merged: 'merged', closed: 'closed' },
+  // WO-0066 — the health strip: three dependencies, one row (ADR-0010 «health is a first-class,
+  // visible state»). The first-run gate speaks ADR-0001's absence grammar: action absent + the
+  // reason line, never a disabled control.
+  healthTitle: 'Health',
+  healthCreateWaits: '“Create workspace” appears here once the required tools are ready',
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
     detail?: string,

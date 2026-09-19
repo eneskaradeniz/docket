@@ -9,10 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
+import { gitHealth } from '../src/adapters/health';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget } from '../src/core/forge';
+import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
@@ -168,6 +170,26 @@ async function reconcileForge(workspaceId: WorkspaceId): Promise<void> {
 }
 ipcMain.handle('docket:forge:reconcile', (_e, id: WorkspaceId) => reconcileForge(id));
 ipcMain.handle('docket:forge:view', (_e, id: WorkspaceId) => store.forgeView(id));
+
+// WO-0066 — the three dependencies, one look: git spawn + the forge's health() + the runner
+// adapter's provider check, composed HERE (the only place all three live). Never throws — a
+// failed look resolves to undefined-ish checks is the bridge's contract; the renderer renders
+// nothing rather than brick (the gate blocks on observed degradation only).
+ipcMain.handle('docket:health:system', async (): Promise<SystemHealth | undefined> => {
+  try {
+    const [git, forgeHealth, provider] = await Promise.all([gitHealth(), forge.health(), checkProvider()]);
+    return {
+      at: new Date().toISOString(),
+      checks: [
+        git,
+        { tool: 'forge', state: forgeHealth === 'ok' ? 'ok' : { degraded: forgeHealth.degraded } },
+        provider.ok ? { tool: 'agent', state: 'ok' } : { tool: 'agent', state: { degraded: provider.message } },
+      ],
+    };
+  } catch {
+    return undefined; // a failed look renders nothing — it never bricks first run
+  }
+});
 // WO-0047: the workspace's calendar-month observed spend (the warn line's figure).
 ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
 // WO-0054: the workspace's usage month, derived — the pure view over the usage ledger.

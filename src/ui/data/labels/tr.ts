@@ -714,6 +714,10 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} açık PR`,
   forgeLastScan: (time: string) => `son gözlem ${time}`,
   FORGE_PR_STATE: { open: 'açık', merged: 'birleşti', closed: 'kapalı' },
+  // WO-0066 — sağlık yüzeyi: üç bağımlılık tek şerit (ADR-0010 «sağlık birinci sınıf görünür
+  // durumdur»). İlk-koşu kapısı ADR-0001'in yokluk dilini konuşur: eylem yok + neden satırı.
+  healthTitle: 'Sağlık',
+  healthCreateWaits: 'Gerekli araçlar hazır olunca «çalışma alanı oluştur» burada belirir',
   // Terminal notları (TranscriptNoteKind → görüntü; core'a noteFor olarak enjekte edilir).
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
