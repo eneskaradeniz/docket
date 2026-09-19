@@ -29,6 +29,8 @@ const source: WorkOrderSource = {
   workspaceMonthSpend: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-month-spend', id),
   // The workspace's usage month, derived (WO-0054) — the pure view over the usage ledger.
   workspaceUsage: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-usage', id),
+  // The workspace overview, derived (WO-0072) — the read-only projection over the same facts.
+  workspaceOverview: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:workspace-overview', id),
   getRoadmap: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap', id),
   getRoadmapMd: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:get-roadmap-md', id),
   saveRoadmap: (id: WorkspaceId, md: string) => ipcRenderer.invoke('docket:source:save-roadmap', id, md),

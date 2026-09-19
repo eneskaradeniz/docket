@@ -196,6 +196,8 @@ ipcMain.handle('docket:health:system', async (): Promise<SystemHealth | undefine
 ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
 // WO-0054: the workspace's usage month, derived — the pure view over the usage ledger.
 ipcMain.handle('docket:source:workspace-usage', (_e, id: WorkspaceId) => store.workspaceUsage(id));
+// WO-0072: the workspace overview, derived — the read-only projection (turns / debts / ready).
+ipcMain.handle('docket:source:workspace-overview', (_e, id: WorkspaceId) => store.workspaceOverview(id));
 // WO-0048 — the roadmap layer's spine channels (the screen itself is WO-0049's; these exist so it
 // wires UI-only). getRoadmap derives the whole view store-side; saveRoadmap's parse guard throws.
 ipcMain.handle('docket:source:get-roadmap', (_e, id: WorkspaceId) => store.getRoadmap(id));

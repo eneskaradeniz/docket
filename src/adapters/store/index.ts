@@ -22,7 +22,7 @@ import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extrac
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
@@ -30,6 +30,7 @@ import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
+import { deriveOverview, parseTechDebt, type DebtLine, type WorkspaceOverview } from '../../core/overview';
 import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSessionFact, type WorkspaceUsageView } from '../../core/usage';
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
 import { isDraftDrive } from '../../core/runner';
@@ -685,6 +686,89 @@ function workspaceUsageRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceUsageV
     rows: usageFactRowsForWs(db, wsId, win),
     sessions: usageSessionFacts(db, wsId),
     orders: usageOrderFacts(db, wsId),
+  });
+}
+
+// The roadmap view's assembly, lifted OUT of the getRoadmap port method (WO-0072) so the overview
+// read reuses it verbatim — reuse, never a second derivation to keep honest. Same facts, same
+// order: roadmap.md from the working tree, the per-WO facts from ONE query (closed ⇔ closure sha —
+// deriveStage's own rule; cost summed from session rows — work_order.cost_* is inert, TD-023), the
+// task link by re-parsing each order.md's `task:` key AT VIEW TIME (no DB column — ADR-0010 rule 1;
+// the N-file scan is TD-055). '' file → absent; parse error or any error diagnostic → invalid.
+function roadmapViewRow(db: DatabaseSync, wsId: WorkspaceId): RoadmapView {
+  const root = structureRoot(db, wsId);
+  const md = readRoadmapMd(root);
+  if (md === '') return { kind: 'absent' };
+  const knownRepos = (
+    db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ?').all(wsId) as { repo_id: string }[]
+  ).map((r) => r.repo_id);
+  const rows = db
+    .prepare(
+      `SELECT w.id AS id, w.gate_closure_docs_sha AS closedSha,
+              (SELECT COALESCE(SUM(s.cost_usd), 0) FROM session s WHERE s.work_order_id = w.id) AS usd,
+              (SELECT COUNT(*) FROM session s WHERE s.work_order_id = w.id AND s.cost_usd IS NULL) AS unknownCount
+       FROM work_order w WHERE w.workspace_id = ?`,
+    )
+    .all(wsId) as Array<{ id: string; closedSha: string | null; usd: number; unknownCount: number }>;
+  const taskRefs = scanTaskRefs(root);
+  return deriveRoadmapView({
+    roadmapMd: md,
+    workspaceSlug: wsId as string,
+    knownRepos,
+    orders: rows.map((r) => ({
+      id: r.id as WorkOrderId, // the adapter is the one place a row id re-brands (ADR-0003)
+      closed: r.closedSha != null,
+      costUsd: r.usd,
+      ...(r.unknownCount > 0 ? { costUnknown: true } : {}),
+      ...(taskRefs.get(r.id) !== undefined ? { taskRef: taskRefs.get(r.id)! } : {}),
+    })),
+  });
+}
+
+// WO-0072: the workspace overview — the third consumer of the gate model (after the board and the
+// detail), assembled read-side from the facts the workspace already carries (ADR-0008's
+// derived-read discipline), never stored, never cached. The work orders ride the EXISTING hydrate
+// path (stage/closeable/gate inputs — the same rows getWorkOrders lifts; a lighter projection
+// would be a second hydrate to keep honest), the roadmap view rides roadmapViewRow, and
+// tech-debt.md is read at the structure root (missing file → empty parse, never a throw). The
+// DEBT MATCH lives here, store-side: a line whose WO column resolves to an OPEN work order stays
+// linked (branded here — core never constructs an identity, ADR-0003); one that resolves to a
+// CLOSED work order is DROPPED (a closed WO's debts are not open borçlar — the order's stop-and-ask
+// gate); one naming nothing resolvable in this workspace keeps UNLINKED (the debt is still open in
+// the file; only the chip is honestly absent). Core only carries.
+function workspaceOverviewRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceOverview {
+  const ids = db.prepare('SELECT id FROM work_order WHERE workspace_id = ?').all(wsId) as { id: string }[];
+  const wos = ids.flatMap(({ id }) => {
+    const w = hydrateWorkOrder(db, id);
+    return w ? [w] : [];
+  });
+  const open = wos.filter((w) => w.stage !== 'closed');
+  const view = roadmapViewRow(db, wsId);
+  const roadmapTasks =
+    view.kind === 'ready'
+      ? view.fazlar.flatMap((f) =>
+          f.tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, fazBlocked: f.status === 'bekliyor' })),
+        )
+      : [];
+  const parsed = parseTechDebt(readTechDebtMd(structureRoot(db, wsId)));
+  const openById = new Map(open.map((w) => [w.id as string, w]));
+  const debts = parsed.lines.flatMap((line): DebtLine[] => {
+    if (line.wo === undefined) return [{ id: line.id, title: line.title }];
+    const target = openById.get(line.wo);
+    if (target !== undefined) return [{ id: line.id, title: line.title, wo: target.id }];
+    return wos.some((w) => (w.id as string) === line.wo) ? [] : [{ id: line.id, title: line.title }];
+  });
+  return deriveOverview({
+    wos: open.map((w) => ({
+      id: w.id,
+      title: w.title,
+      stage: w.stage,
+      ...(w.closeable !== undefined ? { closeable: w.closeable } : {}),
+      gatePlanApproved: w.gateInputs.planApproved,
+      ...(w.gateInputs.closureDocsSha != null ? { docsSha: w.gateInputs.closureDocsSha } : {}),
+    })),
+    debts,
+    roadmapTasks,
   });
 }
 
@@ -1808,43 +1892,12 @@ export function createStore(dbPath: string): Store {
       const dir = structureRoot(db, wid(wo.workspace_id));
       return Promise.resolve(readWoDocs(dir, id));
     },
-    // The roadmap layer (WO-0048, ADR-0016). The view is DERIVED per read: roadmap.md from the
-    // working tree, per-WO facts from ONE query (closed ⇔ closure sha — deriveStage's own rule;
-    // cost summed from session rows — work_order.cost_* is inert, TD-023), and the task link by
-    // re-parsing each order.md's `task:` key AT VIEW TIME — no DB column (ADR-0010 rule 1; the
-    // N-file scan is TD-055). '' file → absent; parse error or any error diagnostic → invalid
-    // carrying the named reasons — never a silent empty (the order's stop-and-ask gate).
-    getRoadmap: (id: WorkspaceId): Promise<RoadmapView> => {
-      const root = structureRoot(db, id);
-      const md = readRoadmapMd(root);
-      if (md === '') return Promise.resolve({ kind: 'absent' });
-      const knownRepos = (
-        db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ?').all(id) as { repo_id: string }[]
-      ).map((r) => r.repo_id);
-      const rows = db
-        .prepare(
-          `SELECT w.id AS id, w.gate_closure_docs_sha AS closedSha,
-                  (SELECT COALESCE(SUM(s.cost_usd), 0) FROM session s WHERE s.work_order_id = w.id) AS usd,
-                  (SELECT COUNT(*) FROM session s WHERE s.work_order_id = w.id AND s.cost_usd IS NULL) AS unknownCount
-           FROM work_order w WHERE w.workspace_id = ?`,
-        )
-        .all(id) as Array<{ id: string; closedSha: string | null; usd: number; unknownCount: number }>;
-      const taskRefs = scanTaskRefs(root);
-      return Promise.resolve(
-        deriveRoadmapView({
-          roadmapMd: md,
-          workspaceSlug: id as string,
-          knownRepos,
-          orders: rows.map((r) => ({
-            id: r.id as WorkOrderId, // the adapter is the one place a row id re-brands (ADR-0003)
-            closed: r.closedSha != null,
-            costUsd: r.usd,
-            ...(r.unknownCount > 0 ? { costUnknown: true } : {}),
-            ...(taskRefs.get(r.id) !== undefined ? { taskRef: taskRefs.get(r.id)! } : {}),
-          })),
-        }),
-      );
-    },
+    // The roadmap layer (WO-0048, ADR-0016). The view is DERIVED per read — the assembly lives in
+    // roadmapViewRow (lifted there in WO-0072 so the overview read reuses it verbatim): roadmap.md
+    // from the working tree, per-WO facts from ONE query, the task link re-parsed from order.md at
+    // view time. '' file → absent; parse error or any error diagnostic → invalid carrying the
+    // named reasons — never a silent empty (the order's stop-and-ask gate).
+    getRoadmap: (id: WorkspaceId): Promise<RoadmapView> => Promise.resolve(roadmapViewRow(db, id)),
     getRoadmapMd: (id: WorkspaceId) => Promise.resolve(readRoadmapMd(structureRoot(db, id))),
     // Write roadmap.md under the structure root (creating the root). The guard is the point: a
     // document that fails to parse is refused BEFORE any byte is written — Docket's write path
@@ -1994,6 +2047,9 @@ export function createStore(dbPath: string): Store {
     workspaceMonthSpend: (id: WorkspaceId) => Promise.resolve(monthSpendRow(db, id)),
     // WO-0054: the usage month — the pure derivation over the flat readers (workspaceUsageRow).
     workspaceUsage: (id: WorkspaceId) => Promise.resolve(workspaceUsageRow(db, id)),
+    // WO-0072: the workspace overview — the projection assembled over the hydrate path, the
+    // roadmap view and the parsed debt ledger (workspaceOverviewRow).
+    workspaceOverview: (id: WorkspaceId) => Promise.resolve(workspaceOverviewRow(db, id)),
     updateRepoPath: async (id: WorkspaceId, repoId: RepoId, newPath: string) => {
       updateRepoPathRow(db, id, repoId, newPath);
     },

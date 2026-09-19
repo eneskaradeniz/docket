@@ -127,4 +127,21 @@ describe('locale bundles (WO-0035)', () => {
     expect(en.UI.roadmapDraftExploreChip).toBe('Free exploration');
     expect(en.UI.roadmapDraftSourceCompose(11, 1, false)).toBe('source: 11 document(s) · 1 added');
   });
+
+  it('the overview surface pins the turn words + the unlinked reason (WO-0072)', () => {
+    expect(tr.UI.overviewTitle).toBe('Genel bakış');
+    expect(tr.UI.overviewTurnArchitect).toBe('Mimarın sırası');
+    expect(tr.UI.overviewTurnOperator).toBe('Senin sıran');
+    expect(tr.UI.overviewTurnImplementer).toBe('Uygulayıcının sırası');
+    expect(tr.UI.overviewTurnVerifier).toBe('Doğrulayıcının sırası');
+    expect(tr.UI.overviewDebtsTitle).toBe('Açık borçlar');
+    expect(tr.UI.overviewReadyTitle).toBe('Başlamaya hazır');
+    expect(tr.UI.overviewDebtUnlinked).toBe('bağlı iş emri yok');
+    expect(tr.debtIdLabel('TD-016')).toBe('TD-016');
+    expect(en.UI.overviewTitle).toBe('Overview');
+    expect(en.UI.overviewTurnOperator).toBe('Your turn');
+    expect(en.UI.overviewTurnVerifier).toBe("The verifier's turn");
+    expect(en.UI.overviewDebtUnlinked).toBe('no linked work order');
+    expect(en.debtIdLabel('TD-016')).toBe('TD-016');
+  });
 });

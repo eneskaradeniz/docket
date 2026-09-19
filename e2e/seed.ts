@@ -690,4 +690,72 @@ store.recordSession({
 store.recordTurnUsage({ kind: 'wo', workOrderId: woUyum.id }, 'e2e-u1', { at: monthDay(8, 9), delta: { tokensIn: 5_000, tokensOut: 500, usd: 0.5 } });
 console.log(`USAGE=${JSON.stringify({ kullanim: String(wsKullanim.id), bos: String(wsBos.id), uyum: String(wsUyum.id) })}`);
 
+// 19) WO-0072 — the overview world. 'genel': one OPEN work order (written), one CLOSED one (the
+//     real WO-0025 closure chain), a tech-debt.md carrying the three debt shapes (open+linked,
+//     open+UNlinked, open-but-on-the-closed-WO — the drop), and a roadmap whose planli task sits
+//     in an unblocked faz while the other two arms (kosuyor / blocked faz) must stay out. Its own
+//     decision store — so the global-PK collision (TD-035) is dodged by PRE-SEEDING a directory
+//     (WO-0090) that pushes this root's numbering past every existing id. ('bos' doubles as the
+//     all-empty face: no WOs, no roadmap, no debt ledger.)
+const repoGenel = join(root, 'repo-genel');
+mkdirSync(join(repoGenel, 'docs', 'work-orders', 'WO-0090-tohum'), { recursive: true });
+const wsGenel = await store.createWorkspace({
+  label: 'genel',
+  repos: [{ path: repoGenel, remote: 'e2e-genel' }],
+  decisionStorePath: repoGenel,
+});
+const woGOpen = await store.createWorkOrder({
+  workspaceId: wsGenel.id, title: 'Genel açık iş', description: 'E2E: the overview projection.', trackRepos: wsGenel.repos, reviewMode: 'gates', contextFiles: [],
+});
+const woGClosed = await store.createWorkOrder({
+  workspaceId: wsGenel.id, title: 'Genel kapalı iş', description: 'E2E: closed is nobody\'s turn.', trackRepos: wsGenel.repos, reviewMode: 'gates', contextFiles: [],
+});
+// The roadmap FIRST — the verifier gate is a record-time computation over resolvable
+// `path:line` pointers (WO-0069), and the pointer below names this workspace's roadmap.md.
+await store.updateWorkOrder(woGOpen.id, { taskRef: 'f0-t2' });
+await store.saveRoadmap(
+  wsGenel.id,
+  [
+    '---',
+    'workspace: genel',
+    'title: Genel yol haritası',
+    '---',
+    '',
+    '# Genel yol haritası',
+    '',
+    '```fazlar',
+    JSON.stringify([
+      { id: 'f0', title: 'Birinci faz', blockedBy: [], tasks: [
+        { id: 'f0-t1', title: 'Genel hazır görev', repo: 'repo-genel' },
+        { id: 'f0-t2', title: 'Genel koşan görev', repo: 'repo-genel' },
+      ] }],
+    ),
+    '```',
+    '',
+  ].join('\n'),
+);
+// The FULL WO-0025 closure chain, exactly as the pipeline records it: an implementer step, a
+// VERIFIER step whose report's pointers resolve (the gate is the computation, not an `= 1`
+// attestation — WO-0069), every verdict proceed, then the attested close.
+await store.approvePlan(woGClosed.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n');
+store.recordStepReport(woGClosed.id, 1, 'implementer', '# uygulandı');
+store.recordStepVerdict(woGClosed.id, 1, 'proceed', 'ok');
+store.recordStepReport(woGClosed.id, 2, 'verifier', '# Rapor\n\n`docs/roadmap.md:1` doğrulandı.\n');
+store.recordStepVerdict(woGClosed.id, 2, 'proceed', 'ok');
+await store.closeWorkOrder(woGClosed.id, 'E2E: kapandı.');
+writeFileSync(
+  join(repoGenel, 'docs', 'tech-debt.md'),
+  [
+    '| id | opened by | description | risk | status |',
+    '| --- | --- | --- | --- | --- |',
+    `| TD-901 | ${String(woGClosed.id)} | **Kapalı işin borcu.** Görünmemeli. | low | open |`,
+    `| TD-902 | ${String(woGOpen.id)} | **Açık işin borcu.** Çipi detayı açar. | medium | open |`,
+    '| TD-903 | design | **Bağlantısız borç.** Çipsiz satır, gerekçesi satır. | low | open |',
+    `| TD-904 | ${String(woGOpen.id)} | **Eksik satır.** |`,
+    '',
+  ].join('\n'),
+  'utf8',
+);
+console.log(`GENEL=${JSON.stringify({ genel: String(wsGenel.id) })}`);
+
 console.log(`DB=${join(root, 'e2e.db')}`);

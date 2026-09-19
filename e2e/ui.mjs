@@ -3143,6 +3143,51 @@ await spec('WO-0060 çip 06: reload — kırmızı çip SATIRDAN yeniden türer;
   assert.equal(await chip.count(), 0, 'a chip survived the final clean leg');
 });
 
+// ===== WO-0072 — genel bakış: üç izdüşüm (Sıra · Borçlar · Hazır), satır gezinmesi, boş yüz =====
+const genelLine = seedOut.trim().split('\n').find((l) => l.startsWith('GENEL='));
+if (!genelLine) throw new Error('seed failed: no GENEL= line');
+const openOverview = async () => {
+  await page.getByRole('button', { name: 'Genel bakış', exact: true }).first().click();
+  await page.waitForTimeout(600); // the read-once-per-entry refresh
+};
+
+await spec('WO-0072 dolu yüz: Sıra grupları, borç eşleşmesi (kapalı düşer, bağlantısız gerekçeli), hazır listesi, satır detayı açar', async () => {
+  await switchWs('e2e', 'genel');
+  await openOverview();
+  const screen = await page.locator('[data-overview-screen]').innerText();
+  // Sıra: the open WO reads as the operator's turn; the CLOSED work order is nowhere
+  assert.ok(screen.includes('Senin sıran') && screen.includes('WO-0091') && screen.includes('Genel açık iş'), `turns: ${screen.slice(0, 400)}`);
+  assert.ok(!screen.includes('WO-0092'), 'a CLOSED work order leaked into the projection');
+  // Borçlar: the open WO's debt stays linked, the closed WO's debt is GONE, the unlinked one
+  // keeps its reason line
+  assert.ok(screen.includes('Açık borçlar') && screen.includes('Açık işin borcu'), `debts: ${screen.slice(0, 900)}`);
+  assert.ok(!screen.includes('Kapalı işin borcu'), 'a closed WO debt leaked into the projection');
+  assert.ok(screen.includes('Bağlantısız borç') && screen.includes('bağlı iş emri yok'), 'the unlinked debt row lost its reason line');
+  // Hazır: the untouched written WO + the planli task in the unblocked faz only
+  assert.ok(screen.includes('Başlamaya hazır') && screen.includes('Genel hazır görev'), `ready: ${screen.slice(0, 1200)}`);
+  assert.ok(!screen.includes('Bloke görev'), 'a blocked-faz task leaked into ready');
+  assert.ok(!screen.includes('Genel koşan görev'), 'a kosuyor task leaked into ready');
+  await page.screenshot({ path: join(SHOTS, 'overview-full@980.png') });
+  // the debt chip NAVIGATES: the linked WO's detail opens over the surface; Escape reveals it again
+  await page.locator('[data-overview-debts] button', { hasText: 'WO-0091' }).first().click();
+  await page.waitForTimeout(700);
+  assert.equal(await page.locator('[data-overview-screen]').count(), 0, 'the detail did not open over the surface');
+  assert.ok(((await page.locator('main').first().textContent()) ?? '').includes('Genel açık iş'), 'the wrong detail opened');
+  await backToBoard();
+  assert.equal(await page.locator('[data-overview-screen]').count(), 1, 'the overview did not come back after the detail');
+  await openBoard();
+});
+
+await spec('WO-0072 boş yüz: iş emri, görev ve borcu olmayan çalışma alanı tek davet satırıdır', async () => {
+  await switchWs('genel', 'bos');
+  await openOverview();
+  assert.equal(await page.locator('[data-overview-empty]').count(), 1, 'not the empty face');
+  const screen = await page.locator('[data-overview-screen]').innerText();
+  assert.ok(screen.includes('Gösterilecek bir şey yok'), `not the invitation: ${screen}`);
+  assert.ok(!screen.includes('Başlamaya hazır') && !screen.includes('Açık borçlar'), 'an empty section framed itself');
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

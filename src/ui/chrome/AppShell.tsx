@@ -17,8 +17,9 @@ import { WsSettingsModal } from './WsSettingsModal';
 import { WsListModal } from './WsListModal';
 
 /** WO-0049: the sibling surfaces — the board and the roadmap (ADR-0016 karar 4); WO-0054 adds
- *  the third, the usage month (`Kullanım`). */
-export type Surface = 'board' | 'roadmap' | 'usage';
+ *  the third, the usage month (`Kullanım`); WO-0072 adds the fourth, the workspace overview
+ *  (`Genel bakış` — its label key is `overviewTitle`, the WO's own pinned vocabulary). */
+export type Surface = 'board' | 'roadmap' | 'usage' | 'overview';
 
 /** WO-0060: the drive/limit chip's input — ACCOUNT health at a glance. `running` is the drive
  *  count (the architecture runs one at a time; 0/1); `limitResetAt` is the account-wide in-effect
@@ -117,6 +118,7 @@ export function AppShell({
                   { value: 'board', label: UI.surfaceBoard },
                   { value: 'roadmap', label: UI.surfaceRoadmap },
                   { value: 'usage', label: UI.surfaceUsage },
+                  { value: 'overview', label: UI.overviewTitle },
                 ]}
               />
               <Button variant="primary" size="sm" onClick={onNewWorkOrder}>

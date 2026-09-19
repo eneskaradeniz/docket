@@ -824,6 +824,21 @@ export const UI = {
   usageSessionTurns: (n: number) => `${n} result${n === 1 ? '' : 's'}`,
   usageUnledgeredLine: (n: number) => `${n} session${n === 1 ? '' : 's'} without a detail record — their cost counts toward the month total only.`,
   usageRoleUnknown: (n: number) => `${n} session${n === 1 ? '' : 's'} with an unclear role.`,
+  // ===== WO-0072 — the overview surface (three projections: turns / debts / ready; ADR-0008's
+  // derived read). The turn group head carries the role word in its role hue (ADR-0013's KİM — ROL
+  // idiom); OPERATOR is no session role, so it stays un-hued — the word carries it. An unlinked
+  // debt row SAYS its reason (ADR-0001: absent + a line); an empty section does not render; a
+  // workspace with nothing degrades to the one invitation line.
+  overviewTitle: 'Overview',
+  loadOverview: 'Reading the workspace overview…',
+  overviewEmpty: 'Nothing to show — no open work orders, tasks, or open debts.',
+  overviewTurnArchitect: "The architect's turn",
+  overviewTurnOperator: 'Your turn',
+  overviewTurnImplementer: "The implementer's turn",
+  overviewTurnVerifier: "The verifier's turn",
+  overviewDebtsTitle: 'Open debts',
+  overviewDebtUnlinked: 'no linked work order',
+  overviewReadyTitle: 'Ready to start',
   // ===== WO-0049 — the roadmap surface (mockup frames 01/02/03/06/07; 04/05 are WO-0050's) =====
   surfaceBoard: 'Board',
   surfaceRoadmap: 'Roadmap',
@@ -1060,6 +1075,11 @@ export function fazIdLabel(id: string): string {
   return id;
 }
 
+// WO-0072 — the tech-debt id (`TD-016`): the debt ledger's ticket identity, the woIdLabel class.
+export function debtIdLabel(id: string): string {
+  return id;
+}
+
 // WO-0049 — the invalid surface's named reasons (roadmapDiagnostics' 11 codes).
 export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
   no_fence: () => 'no fazlar fence',
@@ -1119,5 +1139,6 @@ const en: Labels = {
   phaseLabelText,
   fazLabel,
   fazIdLabel,
+  debtIdLabel,
 };
 export default en;

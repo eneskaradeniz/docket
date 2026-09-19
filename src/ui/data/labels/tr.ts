@@ -933,6 +933,20 @@ export const UI = {
   usageSessionTurns: (n: number) => `${n} sonuç`,
   usageUnledgeredLine: (n: number) => `${n} oturumun ayrıntı kaydı yok — maliyetleri yalnız ay toplamına sayılır.`,
   usageRoleUnknown: (n: number) => `${n} oturumun rolü belirsiz.`,
+  // ===== WO-0072 — genel bakış yüzeyi (üç izdüşüm: Sıra · Borçlar · Hazır; ADR-0008 türetilmiş okuma) =====
+  // Sıra grup başı rol sözcüğünü rol rengiyle taşır (ADR-0013'ün KİM — ROL düzeni); OPERATÖR oturum
+  // rolü değildir, rensizdir — sözcük yeter. Bağlantısız borç satırı gerekçesini SÖYLER (ADR-0001:
+  // yok + satır); bölüm boşsa bölüm çizilmez, yüzeyde hiçbir şey yoksa tek davet satırı kalır.
+  overviewTitle: 'Genel bakış',
+  loadOverview: 'Genel bakış okunuyor…',
+  overviewEmpty: 'Gösterilecek bir şey yok — açık iş emri, görev ya da açık borç yok.',
+  overviewTurnArchitect: 'Mimarın sırası',
+  overviewTurnOperator: 'Senin sıran',
+  overviewTurnImplementer: 'Uygulayıcının sırası',
+  overviewTurnVerifier: 'Doğrulayıcının sırası',
+  overviewDebtsTitle: 'Açık borçlar',
+  overviewDebtUnlinked: 'bağlı iş emri yok',
+  overviewReadyTitle: 'Başlamaya hazır',
   // ===== WO-0049 — yol haritası yüzeyi (mockup kare 01/02/03/06/07; 04/05 WO-0050'nin) =====
   // Appbar geçişi (kardeş ekran — pano ve detay dokunulmaz) + üç yüzey hâlinin satırları.
   // Davet yüzeyi eylemsizdir: ✦ Üret/İçe aktar WO-0050'nin; bilgi satırı dosyanın yerini söyler.
@@ -1219,6 +1233,12 @@ export function fazIdLabel(id: string): string {
   return id;
 }
 
+// WO-0072 — the tech-debt id (`TD-016`): the debt ledger's ticket identity, the woIdLabel class
+// again (the operator authored it; the Borçlar row renders it dim, through this seam, never raw).
+export function debtIdLabel(id: string): string {
+  return id;
+}
+
 // WO-0049 — tanı adlı eller: invalid yüzeyin sebep satırları (roadmapDiagnostics'ın 11 kodu).
 // Detail tanıdan gelir (kimlik/öğe no); ham kod asla görüntülenmez.
 export const ROADMAP_DIAGNOSTIC_LABELS: Record<RoadmapDiagnosticCode, (detail: string) => string> = {
@@ -1282,6 +1302,7 @@ const tr = {
   phaseLabelText,
   fazLabel,
   fazIdLabel,
+  debtIdLabel,
 };
 export type Labels = typeof tr;
 export default tr;
