@@ -2,7 +2,7 @@
 id: WO-0072
 title: "Genel bakış — the workspace overview: whose turn, the tech-debt links, ready-to-start (M5's read-only projections)"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -93,7 +93,13 @@ Out of scope:
   bitir" delegation, 2026-09-19).
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) —
   the overview joins the deferred tour.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **1124 unit tests**
+  (+26), build, `check:boundaries` 10/10 clean. Subagent-implemented, independently verified;
+  the agent's live headless check against a seeded DB caught the WO-0069 interaction (an
+  attested close derives `closed` only with resolved verifier pointers) and fixed the seed.
+- pr_open / closure: RESOLVED — PR #77 (`https://github.com/eneskaradeniz/docket/pull/77`),
+  head `0e0af50`, merged `be0a566`; closed at this commit. THE LAST BUILD WORK ORDER — the
+  build queue ends here; what remains is the operator's single test phase.
 
 ## Stop-and-ask gates
 

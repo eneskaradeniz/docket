@@ -420,12 +420,19 @@ WO-0002 routed all copy through `labels.ts`.
 A read-only projection of the decision store, not a planning surface (ADR-0008). Third consumer of the same
 gate model, after the board and the detail view.
 
+- [x] **WO-0072** — Genel bakış (PR #77, merge `be0a566`, 2026-09-19): the fourth AppShell
+      surface — Sıra (open WOs grouped by whose turn; every open stage mapped and pinned),
+      Borçlar (tech-debt.md parsed at view time, TD rows linked to OPEN WOs, ragged rows →
+      named diagnostics), Hazır (startable WOs + planli tasks with clear faz blockers).
+      Derived per mount, read-only, rows navigate. Subagent-implemented, independently
+      verified. Order: `docs/work-orders/WO-0072-genel-bakis/order.md`.
+
 - [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)
-- [ ] Open work orders grouped by whose turn it is
-- [ ] Open tech debt linked to the work orders that opened it
-- [ ] "Ready to start" computed from closed dependencies and unsatisfied gates
+- [x] Open work orders grouped by whose turn it is (WO-0072)
+- [x] Open tech debt linked to the work orders that opened it (WO-0072)
+- [x] "Ready to start" computed from closed dependencies and unsatisfied gates (WO-0072)
 - [x] WO-0037 — okunur akış: xterm retired; the Ray chat column (role-barred turns, collapsible tool blocks, colored code) everywhere transcripts live (2026-08-22)
 - [x] base-mobile deneme düzeltmeleri — sıra-durumu önceliği (derive), boot penceresi bayrağı, canlı kart overlay'i; WO-0037/0038 PR'ının içinde (2026-08-22)
 - [x] WO-0038 — DOSYA: the single-view dossier — SADE/DETAY, tabs/rack, substrip, plan cards, the audit table and the standing evidence showcase died; header band + one scroll + session cards with artifact-headline özet + an honest plan editor + the pipeline-level plan-approval guard (2026-08-22)
