@@ -332,8 +332,13 @@ Claude Code's surface. Only the session pane does, and it is isolated for that r
       all three bases. `canClose` untouched — evidence, not precondition. Order:
       `docs/work-orders/WO-0065-kapanis-kaniti/order.md`.
 - [x] `Forge` interface, GitHub implementation over `gh` (WO-0063)
-- [ ] **Health checks** — `git`, `gh auth status`, the agent CLI: presence, version, auth. Blocking on first
-      run, visible and non-blocking afterwards; a degraded dependency yields `unknown`, never a guess
+- [x] **WO-0066** — Sağlık yüzeyi (PR #71, merge `b4f5631`, 2026-09-19): the health-check line —
+      `gitHealth` (new, seam-injected) + the forge's `health()` + `checkProvider` composed as the
+      `SystemHealthWatch`; the board's health strip (tool · ✓ · version, degraded reasons
+      verbatim); the first-run gate — an observed git/agent degradation makes the create action
+      ABSENT with reasons (ADR-0001; the forge is visible-only; a failed look never gates; the
+      gate never fires again once a workspace exists). Order:
+      `docs/work-orders/WO-0066-saglik-yuzeyi/order.md`.
 - [ ] **Reconciliation** — re-read git and the forge on open, focus, after actions, on manual refresh and on
       a background interval. Observation wins over what Docket last showed. Merged-outside-Docket is normal
 - [ ] `stage` derived from observed facts rather than stored (TD-008); `EvidenceStatus` gains `unknown`

@@ -2,7 +2,7 @@
 id: WO-0066
 title: "Sağlık yüzeyi — the three dependencies become a first-class state: git + forge + agent, blocking on first run, visible afterwards"
 workspace: docket
-status: open
+status: closed
 mode: plan
 review: light
 review_mode: gates
@@ -98,7 +98,11 @@ Out of scope:
 - operator_checkpoint: DEFERRED to the end-of-build test phase (BUILD-FIRST, 2026-09-19) — the
   scenario joins the deferred tour: an empty DB's onboarding shows the health rows; rename git
   off PATH, relaunch, read the gate.
-- ci_green: PENDING — the ladder at the working tree, recorded at PR time.
+- ci_green: RESOLVED — green, 2026-09-19: typecheck (both tsconfigs), **987 unit tests** (+7:
+  5 gitHealth pins over the degradation classes, 2 shape pins), build, `check:boundaries` 8/8
+  clean (the disabled-check stays clean — the gate is absence + reason).
+- pr_open / closure: RESOLVED — PR #71 (`https://github.com/eneskaradeniz/docket/pull/71`),
+  head `8a01c29`, merged `b4f5631`; closed at this commit.
 
 ## Stop-and-ask gates
 
