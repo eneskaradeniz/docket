@@ -1,7 +1,8 @@
 // AppSettingsModal — WO-0059 rev 4 (the from-scratch round; the operator's 2026-09-09 rulings,
 // four mockup tours docs/ui-mockups/ayarlar-sold-menu.html rev 5→8): a LEFT MENU + right content
-// pane in an xl (880px) dialog. Two menu items — Modeller · Genel — bare single-line names
-// (sentence case; the rev-6 mono readouts under them died at tour 4: "title yeterli").
+// pane in an xl (880px) dialog. Three menu items — Modeller · İstem şablonları · Genel — bare
+// single-line names (sentence case; the rev-6 mono readouts under them died at tour 4: "title
+// yeterli").
 //
 // Sağlayıcı DIED with the stored API key (the port methods, the env injection, the row — swept at
 // open): its successor is ONE line in Genel — the provider's presence, `Hazır` / `Bulunamadı` +
@@ -11,21 +12,34 @@
 // The model preference is PER-ROLE SEGMENTS (Default · haiku · sonnet · opus — worst→best,
 // adapter-minted alias tiers rendered verbatim as DATA) that write INSTANTLY: a closed enum
 // commits on click (the dil/tema segment behavior) — the modal holds NO text field at all.
-// ÇALIŞMA ALANI moved to the workspace's Düzenle dialog (per-workspace facts, global settings
-// stay global). Copy is plain Turkish — no internal jargon renders.
+// WO-0070 broke that "no text field" state deliberately: the prompt-template overrides are
+// WHOLE-TEXT edits of five named templates, so İstem şablonları is a DRAFTED section — local
+// state per textarea, Kaydet persists the whole map at once (an emptied field = the built-in
+// stands), Vazgeç resets to the stored row, and a per-key «Varsayılana dön» (present only when
+// that key HAS an override) drops the key. The template bodies are DATA, not UI copy — they ride
+// the textarea verbatim and are never parsed here. ÇALIŞMA ALANI moved to the workspace's
+// Düzenle dialog (per-workspace facts, global settings stay global). Copy is plain Turkish — no
+// internal jargon renders.
 import { useEffect, useRef, useState } from 'react';
-import type { AppSettings, ProviderStatus, RoleModels } from '../../core/app-settings';
+import type { AppSettings, PromptKey, PromptOverrides, ProviderStatus, RoleModels } from '../../core/app-settings';
 import type { PermissionRule } from '../../core/source';
 import { useLabels, useLocale } from '../data/locale';
 import { useTheme } from '../data/theme';
 import { VERSION } from '../data/version';
-import { Button, Dialog, Segmented, Spinner } from '../kit';
+import { Button, Dialog, Segmented, Spinner, Textarea } from '../kit';
 import { toast } from './ToastHost';
 
 const MODEL_ROLES = ['architect', 'implementer', 'verifier'] as const;
 type ModelRole = (typeof MODEL_ROLES)[number];
 const ROLE_HUE: Record<ModelRole, string> = { architect: 'text-signal', implementer: 'text-info', verifier: 'text-proceed' };
-type Section = 'models' | 'general';
+type Section = 'models' | 'prompts' | 'general';
+
+// WO-0070: the five whole-text template fields, in the pipeline's own order (plan → step → review;
+// the ✦ draft last — the RoleModels map's shape, a PromptKey absent = the built-in stands).
+const PROMPT_KEYS: readonly PromptKey[] = ['architect', 'implementer', 'verifier', 'architectReview', 'roadmapDraft'];
+const EMPTY_DRAFT: Record<PromptKey, string> = { architect: '', implementer: '', verifier: '', architectReview: '', roadmapDraft: '' };
+const draftOf = (m: PromptOverrides | undefined): Record<PromptKey, string> =>
+  Object.fromEntries(PROMPT_KEYS.map((k) => [k, m?.[k] ?? ''])) as Record<PromptKey, string>;
 
 /** One menu item — a bare single-line name (rev 8: no sub-readout; the title is enough). */
 function MenuItem({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -62,10 +76,16 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
   // The MOUNT check is in flight too — the line starts neutral (spinner), never a premature
   // «Bulunamadı» (review f5: the two-state word is for RESULTS, not for the loading window).
   const [verifying, setVerifying] = useState(true);
+  // WO-0070 — İstem şablonları: the stored map of record lives in the REF (the modelsRef
+  // discipline — a write must not build from a stale map), the DRAFT is what the textareas show.
+  const [prompts, setPrompts] = useState<PromptOverrides | undefined>(undefined);
+  const promptsRef = useRef<PromptOverrides | undefined>(undefined);
+  const [promptDraft, setPromptDraft] = useState<Record<PromptKey, string>>(EMPTY_DRAFT);
 
   useEffect(() => {
     void settings.getPermissionRule().then((r) => setRule(r ?? 'risky_excluded'));
     void settings.getModels().then((m) => { modelsRef.current = m; setModels(m); }).catch(() => setModels(undefined));
+    void settings.getPromptOverrides().then((m) => { promptsRef.current = m; setPrompts(m); setPromptDraft(draftOf(m)); }).catch(() => setPromptDraft(EMPTY_DRAFT));
     void settings.modelOptions().then(setPresets).catch(() => setPresets([]));
     void settings.providerName().then(setProviderName).catch(() => setProviderName(undefined));
     void settings.checkProvider().then((s) => { setStatus(s); setVerifying(false); }).catch(() => { setStatus(undefined); setVerifying(false); });
@@ -104,6 +124,65 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
   const statusWord = status?.ok ? UI.providerStatusOk : UI.providerStatusMissing;
   const statusTone = status?.ok ? 'text-proceed' : 'text-error';
 
+  // WO-0070 — the five template words through the bundle (a raw PromptKey never renders).
+  const promptWord = (key: PromptKey): string =>
+    key === 'architect' ? UI.settingsPromptArchitect
+    : key === 'implementer' ? UI.settingsPromptImplementer
+    : key === 'verifier' ? UI.settingsPromptVerifier
+    : key === 'architectReview' ? UI.settingsPromptArchitectReview
+    : UI.settingsPromptRoadmapDraft;
+
+  // Kaydet — the WHOLE map in one write (an emptied field = the built-in stands; a whitespace-only
+  // body counts as emptied). The row is then the one truth: re-read and re-draft from it. A failed
+  // write toasts hata and leaves the draft untouched (ADR-0012: the failure is not footer copy).
+  const savePrompts = async (): Promise<void> => {
+    const next: PromptOverrides = {};
+    for (const k of PROMPT_KEYS) {
+      const v = promptDraft[k];
+      if (v.trim() !== '') next[k] = v; // verbatim body — only shape is normalized
+    }
+    try {
+      await settings.setPromptOverrides(Object.keys(next).length > 0 ? next : undefined);
+      const stored = await settings.getPromptOverrides();
+      promptsRef.current = stored;
+      setPrompts(stored);
+      setPromptDraft(draftOf(stored));
+      toast.push({ kind: 'confirm', title: UI.toastPromptsSaved });
+    } catch {
+      toast.push({ kind: 'error', title: UI.saveFailed });
+    }
+  };
+
+  // «Varsayılana dön» — the per-key clear = send the map MINUS the key (the taskRef set/drop
+  // idiom). Present ONLY when that key has an override (absent, never disabled — ADR-0001).
+  const resetPromptKey = (key: PromptKey): void => {
+    const next: PromptOverrides = { ...(promptsRef.current ?? {}) };
+    delete next[key];
+    settings.setPromptOverrides(Object.keys(next).length > 0 ? next : undefined)
+      .then(() => settings.getPromptOverrides())
+      .then((stored) => { promptsRef.current = stored; setPrompts(stored); setPromptDraft(draftOf(stored)); })
+      .catch(() => toast.push({ kind: 'error', title: UI.saveFailed }));
+  };
+
+  const promptRow = (key: PromptKey) => (
+    <div key={key} data-prompt-row={key} className="flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[12.5px] font-medium tracking-tight text-ink">{promptWord(key)}</span>
+        {prompts?.[key] !== undefined ? (
+          <button type="button" onClick={() => resetPromptKey(key)} className="alink ml-auto text-[11px]">
+            {UI.settingsPromptReset}
+          </button>
+        ) : null}
+      </div>
+      <Textarea
+        rows={4}
+        value={promptDraft[key]}
+        aria-label={promptWord(key)}
+        onChange={(e) => setPromptDraft({ ...promptDraft, [key]: e.target.value })}
+      />
+    </div>
+  );
+
   const roleRow = (role: ModelRole) => (
     <div className="flex items-center gap-2.5 py-0.5">
       <span aria-hidden="true" className={`rlamp rlamp-${role}`} />
@@ -139,9 +218,10 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
       }
     >
       <div className="flex min-h-[360px] gap-0">
-        {/* ===== the sunken menu rail: two bare names; the rail's well is the only divider ===== */}
+        {/* ===== the sunken menu rail: three bare names; the rail's well is the only divider ===== */}
         <nav data-settings-menu="" aria-label={UI.settings} className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-bg/60 p-2">
           <MenuItem label={UI.modelSectionLabel} active={section === 'models'} onClick={() => setSection('models')} />
+          <MenuItem label={UI.settingsPromptsTitle} active={section === 'prompts'} onClick={() => setSection('prompts')} />
           <MenuItem label={UI.settingsTabGeneral} active={section === 'general'} onClick={() => setSection('general')} />
         </nav>
 
@@ -155,6 +235,23 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
                 {MODEL_ROLES.map(roleRow)}
               </div>
               <p className="text-[11px] text-inkdim">{UI.modelDraftLine(ROLE_LABELS.architect)}</p>
+            </section>
+          ) : section === 'prompts' ? (
+            /* ===== İSTEM ŞABLONLARI (WO-0070) — five whole-text template fields, drafted ===== */
+            <section data-prompts-section="" className="flex flex-col gap-2.5">
+              <h2 className="text-[13px] font-semibold tracking-tight text-ink">{UI.settingsPromptsTitle}</h2>
+              <p className="text-[11px] leading-relaxed text-inkdim">{UI.settingsPromptsHint}</p>
+              <div data-prompt-rows="" className="mt-1 flex flex-col gap-3">
+                {PROMPT_KEYS.map(promptRow)}
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <Button variant="primary" size="sm" onClick={() => void savePrompts()}>
+                  {UI.settingsPromptSave}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setPromptDraft(draftOf(promptsRef.current))}>
+                  {UI.cancel}
+                </Button>
+              </div>
             </section>
           ) : (
             /* ===== GENEL — the provider's presence line + the console's voice, face, cadence ===== */

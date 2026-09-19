@@ -540,6 +540,19 @@ export const UI = {
   modelMatrixAria: 'Model tier per role',
   modelTierLine: 'Tier names resolve to whatever your setup maps them to.',
   modelDraftLine: (role: string): string => `✦ the draft drive follows the ${role} row.`,
+  // Prompt templates (WO-0070 — whole-text overrides for the five templates; Kaydet persists the
+  // map in one write, an emptied field = the built-in stands). The key names are core DATA
+  // (PromptKey); the bundle carries only the human word. Template bodies are DATA, not UI copy.
+  settingsPromptsTitle: 'Prompt templates',
+  settingsPromptsHint: 'Empty = the built-in template',
+  settingsPromptArchitect: 'Architect',
+  settingsPromptImplementer: 'Implementer',
+  settingsPromptVerifier: 'Verifier',
+  settingsPromptArchitectReview: 'Architect review',
+  settingsPromptRoadmapDraft: 'Roadmap draft',
+  settingsPromptSave: 'Save',
+  settingsPromptReset: 'Reset to default',
+  toastPromptsSaved: 'Prompt templates saved',
   reviewHeader: 'Architect review',
   reviewHint: "The architect is reviewing this step's report…",
   verdictCardProceedTitle: 'The architect said proceed',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt } from '../order-md';
+import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt, withOverride } from '../order-md';
 import type { StepSpec } from '../types';
 
 // Mirrors the document WO-0015's buildOrderMd produces (front matter + Objective section).
@@ -280,5 +280,35 @@ describe('implementerPrompt — the git discipline (ADR-0017)', () => {
     const v = verifierPrompt({ objective: 'o', step: implStep, planText: '# p', orderMdPath: '/r/o.md' });
     expect(v).not.toContain('Git discipline');
     expect(v).toContain('read-only');
+  });
+});
+
+// ===== WO-0070 — the override-first seam =====
+// The store's assembly fns wrap every template constant through withOverride: the built-in stands
+// unless the operator stored a whole-text replacement. When no override exists the output must be
+// BYTE-IDENTICAL to the built-in — the existing prompt tests above are the fallback proof.
+describe('withOverride (WO-0070)', () => {
+  const builtin = implementerPrompt({ objective: 'Fix the crash.', step: implStep, planText: '# Plan', orderMdPath: '/r/o.md' });
+
+  it('absent override → the built-in byte-identical', () => {
+    expect(withOverride(builtin, undefined)).toBe(builtin);
+  });
+
+  it('an override replaces the WHOLE template verbatim — never a merge into the built-in', () => {
+    const override = 'You are the implementer. Follow the operator note exactly and stop at red.';
+    expect(withOverride(builtin, override)).toBe(override);
+  });
+
+  it('a whitespace-only override is no override', () => {
+    expect(withOverride(builtin, '   \n\t  ')).toBe(builtin);
+  });
+
+  it('holds for every template constant (architect / verifier / review)', () => {
+    const a = architectPrompt({ objective: 'x', reviewMode: 'gates', orderMdPath: '/p/order.md' });
+    const v = verifierPrompt({ objective: 'x', step: implStep, planText: '', orderMdPath: '/r/o.md' });
+    const r = architectReviewPrompt({ objective: 'x', step: implStep, reportBody: 'rep', planText: '', orderMdPath: '/r/o.md', reportPath: 'reports/step-02-implementer.md' });
+    expect(withOverride(a, undefined)).toBe(a);
+    expect(withOverride(v, 'V')).toBe('V');
+    expect(withOverride(r, undefined)).toBe(r);
   });
 });

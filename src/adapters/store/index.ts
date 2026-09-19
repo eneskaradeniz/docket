@@ -19,11 +19,11 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, type ObservedStep } from '../../core/derive';
-import type { Locale, RoleModels } from '../../core/app-settings';
+import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
-import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
+import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
@@ -112,6 +112,11 @@ export interface AppSettingsData {
    *  value (ADR-0006: ids are data). undefined = nothing stored. */
   getModels(): Promise<RoleModels | undefined>;
   setModels(models: RoleModels | undefined): Promise<void>;
+  /** The whole-text prompt-template overrides (WO-0070) — the AppSettings port's methods; the
+   *  shape + semantics live on the port (src/core/app-settings.ts). ONE JSON row
+   *  `prompt_overrides` (the models row's posture); the ASSEMBLY fns below read it. */
+  getPromptOverrides(): Promise<PromptOverrides | undefined>;
+  setPromptOverrides(overrides: PromptOverrides | undefined): Promise<void>;
   /** The workspace's month-spend threshold (WO-0047) — the AppSettings port's scoped half; the
    *  shape + semantics live on the port (src/core/app-settings.ts). */
   getBudget(workspaceId: WorkspaceId): Promise<BudgetThreshold | undefined>;
@@ -1204,6 +1209,29 @@ function settingModels(db: DatabaseSync): RoleModels | undefined {
   }
 }
 
+// The whole-text prompt-template overrides (WO-0070): ONE JSON row `prompt_overrides` (the
+// models row's posture). The store normalizes SHAPE only — unknown keys and whitespace-only
+// values drop; a map with no usable key is nothing. Bodies ride VERBATIM (the operator's text is
+// the operator's text — the assembly fns decide whether it is used). Garbage reads undefined
+// (the settingModels posture): a corrupt row falls back to every built-in, never a crash.
+const PROMPT_OVERRIDE_KEYS: ReadonlySet<string> = new Set(['architect', 'implementer', 'verifier', 'architectReview', 'roadmapDraft']);
+function settingPromptOverrides(db: DatabaseSync): PromptOverrides | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('prompt_overrides') as { value: string } | undefined)?.value;
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const out: PromptOverrides = {};
+    for (const [key, body] of Object.entries(parsed)) {
+      if (!PROMPT_OVERRIDE_KEYS.has(key) || typeof body !== 'string') continue;
+      if (body.trim() === '') continue;
+      out[key as keyof PromptOverrides] = body;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The workspace's structure root setting (WO-0048, ADR-0016): a RAW string row `docs_root:<wsId>`
 // (no JSON — one value). The read FAILS OPEN (the settingBudget posture): an absent or invalid row
 // reads as the `docs` default — a corrupt row must not hide the workspace's documents. The WRITE
@@ -1399,14 +1427,19 @@ function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote:
   const knownRepos = (
     db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ?').all(wsId) as { repo_id: string }[]
   ).map((r) => r.repo_id);
-  return roadmapDraftPrompt({
-    goalNote,
-    docPaths,
-    workspaceSlug: wsId as string,
-    knownRepos,
-    roadmapMdPath: join(structureRoot(db, wsId), 'roadmap.md'),
-    ...(freeExplore === true ? { freeExplore: true } : {}),
-  });
+  // WO-0070: the override is consulted FIRST, once per assembly call; absent → the built-in.
+  const overrides = settingPromptOverrides(db);
+  return withOverride(
+    roadmapDraftPrompt({
+      goalNote,
+      docPaths,
+      workspaceSlug: wsId as string,
+      knownRepos,
+      roadmapMdPath: join(structureRoot(db, wsId), 'roadmap.md'),
+      ...(freeExplore === true ? { freeExplore: true } : {}),
+    }),
+    overrides?.roadmapDraft,
+  );
 }
 
 // ===== The cwd fix from the connection table (WO-0050 / D8) =====
@@ -1609,7 +1642,12 @@ function buildStepPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): { prom
   const woDirOnDisk = findWorkOrderDir(dir, id);
   const orderMdPath = woDirOnDisk ? `${woDirOnDisk}/order.md` : '';
   const input = { objective: parsed.objective, step: spec, planText: plan, orderMdPath };
-  const prompt = spec.role === 'verifier' ? verifierPrompt(input) : implementerPrompt(input);
+  // WO-0070: the override is read ONCE per assembly call, keyed to the step's role; absent → built-in.
+  const overrides = settingPromptOverrides(db);
+  const prompt = withOverride(
+    spec.role === 'verifier' ? verifierPrompt(input) : implementerPrompt(input),
+    spec.role === 'verifier' ? overrides?.verifier : overrides?.implementer,
+  );
   const out: { prompt: string; scope?: TrackId } = { prompt };
   if (scope) out.scope = scope;
   return out;
@@ -1630,7 +1668,12 @@ function buildStepReviewPrompt(db: DatabaseSync, id: WorkOrderId, idx: number): 
   const reportPath = `reports/step-${String(idx).padStart(2, '0')}-${spec.role}.md`;
   const woDirOnDisk = findWorkOrderDir(dir, id);
   const orderMdPath = woDirOnDisk ? `${woDirOnDisk}/order.md` : '';
-  return architectReviewPrompt({ objective: parsed.objective, step: spec, reportBody, planText: plan, orderMdPath, reportPath });
+  // WO-0070: the override is consulted FIRST, once per assembly call; absent → the built-in.
+  const overrides = settingPromptOverrides(db);
+  return withOverride(
+    architectReviewPrompt({ objective: parsed.objective, step: spec, reportBody, planText: plan, orderMdPath, reportPath }),
+    overrides?.architectReview,
+  );
 }
 
 function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id: string }): WorkOrder {
@@ -1846,7 +1889,9 @@ export function createStore(dbPath: string): Store {
       const parsed = parseOrderMd(order);
       const woDir = findWorkOrderDir(dir, workOrderId);
       const orderMdPath = woDir ? `${woDir}/order.md` : '';
-      return architectPrompt({ ...parsed, orderMdPath });
+      // WO-0070: the override is consulted FIRST, once per assembly call; absent → the built-in.
+      const overrides = settingPromptOverrides(db);
+      return withOverride(architectPrompt({ ...parsed, orderMdPath }), overrides?.architect);
     },
     // WO-0033: async so the duplicate-basename refusal REJECTS (the deleteWorkspace/addRepoConnection
     // ruling — a sync escape is not a promise the caller can await).
@@ -2111,6 +2156,23 @@ export function createStore(dbPath: string): Store {
       }
       if (Object.keys(clean).length === 0) db.prepare('DELETE FROM app_setting WHERE key = ?').run('models');
       else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('models', JSON.stringify(clean));
+      return Promise.resolve();
+    },
+    // WO-0070: the whole-text prompt overrides — ONE atomic JSON row (the models posture); a map
+    // with no usable key clears the row entirely, undefined clears all, a per-key clear sends the
+    // object minus that key. Bodies ride verbatim; only shape is normalized.
+    getPromptOverrides: () => Promise.resolve(settingPromptOverrides(db)),
+    setPromptOverrides: (overrides: PromptOverrides | undefined) => {
+      const clean: PromptOverrides = {};
+      if (overrides) {
+        for (const [key, body] of Object.entries(overrides)) {
+          if (!PROMPT_OVERRIDE_KEYS.has(key) || typeof body !== 'string') continue;
+          if (body.trim() === '') continue;
+          clean[key as keyof PromptOverrides] = body;
+        }
+      }
+      if (Object.keys(clean).length === 0) db.prepare('DELETE FROM app_setting WHERE key = ?').run('prompt_overrides');
+      else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('prompt_overrides', JSON.stringify(clean));
       return Promise.resolve();
     },
     // The workspace's month-spend threshold (WO-0047): one atomic JSON pair per workspace; a

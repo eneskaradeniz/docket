@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { AppSettings, Locale, RoleModels } from '../src/core/app-settings';
+import type { AppSettings, Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 
 const source: WorkOrderSource = {
@@ -74,6 +74,11 @@ const settings: AppSettings = {
   // checkProvider pattern — the handler lives main-side, composed from the runner adapter).
   getModels: (): Promise<RoleModels | undefined> => ipcRenderer.invoke('docket:settings:get-models'),
   setModels: (models: RoleModels | undefined): Promise<void> => ipcRenderer.invoke('docket:settings:set-models', models),
+  // WO-0070: the whole-text prompt-template overrides — undefined clears all; a per-key clear is
+  // the object minus that key. Read main-side at prompt-assembly time (the store's fns).
+  getPromptOverrides: (): Promise<PromptOverrides | undefined> => ipcRenderer.invoke('docket:settings:get-prompt-overrides'),
+  setPromptOverrides: (overrides: PromptOverrides | undefined): Promise<void> =>
+    ipcRenderer.invoke('docket:settings:set-prompt-overrides', overrides),
   modelOptions: (): Promise<string[]> => ipcRenderer.invoke('docket:settings:model-options'),
   // The workspace's month-spend threshold (WO-0047): undefined clears it (raise = permanent write).
   getDocsRoot: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-docs-root', workspaceId),
