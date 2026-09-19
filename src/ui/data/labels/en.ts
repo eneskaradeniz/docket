@@ -317,6 +317,7 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   steer_delivered: 'Steer note delivered',
   steer_retracted: 'Steer note retracted',
   flow_mode_changed: 'Flow mode changed',
+  forge_merge: 'Forge merge',
 };
 
 /** Mirrors tr's structural detail → display; the machine tokens ('allowed'/'denied') are already
@@ -346,6 +347,18 @@ export function eventDetailText(kind: WoEventKind, detail: string): string {
     }
     case 'rule_changed':
       return PERMISSION_RULE_LABELS[detail as PermissionRule] ?? detail;
+    case 'forge_merge': {
+      // WO-0065: the closure's observed fact — the JSON ClosureEvidence becomes English. A
+      // non-JSON detail (a future vintage) falls back to the raw text, never a crash.
+      try {
+        const ev = JSON.parse(detail) as { basis: string; prNumber?: number; reason?: string };
+        if (ev.basis === 'observed') return `#${ev.prNumber} merged · observed`;
+        if (ev.basis === 'unknown') return `could not look at the forge: ${ev.reason ?? ''}`;
+        return 'no PR found — closed on attestation';
+      } catch {
+        return detail;
+      }
+    }
     default:
       return detail;
   }

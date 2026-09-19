@@ -248,3 +248,56 @@ describe('the production runner', () => {
     expect(typeof ghProcessRunner()).toBe('function');
   });
 });
+
+// ===== WO-0065 — the closure-candidate search (measured 2026-09-19, the order carries the probe) =====
+const SEARCH_HIT = JSON.stringify([
+  {
+    number: 67,
+    state: 'MERGED',
+    title: 'WO-0062 — forge surface probe: the read surface measured, the Forge port sketched',
+    headRefOid: '6c6ba3a673fada7181917756a3fe16b41a32de0f',
+    headRefName: 'wo-0062-forge-probe',
+    baseRefName: 'main',
+    reviewDecision: '',
+    mergedAt: '2026-09-18T23:50:45Z',
+    url: 'https://github.com/eneskaradeniz/docket/pull/67',
+    mergeCommit: { oid: 'd61ea1f7bbbaa8350618a8ab259a4a471befb486' },
+  },
+]);
+
+describe('searchPullRequests (WO-0065 — measured live)', () => {
+  it('one call: the closed page + in-title search, normalized by the shared mapper', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual([
+        'pr', 'list', '--repo', 'eneskaradeniz/docket', '--state', 'closed',
+        '--search', 'WO-0062 in:title', '--json',
+        'number,state,title,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit',
+      ]);
+      return ok(SEARCH_HIT);
+    });
+    expect(await f.searchPullRequests(ref, 'WO-0062')).toEqual([
+      {
+        number: 67,
+        state: 'merged',
+        title: 'WO-0062 — forge surface probe: the read surface measured, the Forge port sketched',
+        headSha: '6c6ba3a673fada7181917756a3fe16b41a32de0f',
+        headBranch: 'wo-0062-forge-probe',
+        baseBranch: 'main',
+        reviewDecision: 'none',
+        mergedAt: '2026-09-18T23:50:45Z',
+        url: 'https://github.com/eneskaradeniz/docket/pull/67',
+        mergeSha: 'd61ea1f7bbbaa8350618a8ab259a4a471befb486',
+      },
+    ]);
+  });
+
+  it('the no-match shape (the probe’s other observation) is an empty page, not an error', async () => {
+    const f = forgeWith(() => ok('[]'));
+    expect(await f.searchPullRequests(ref, 'WO-9999')).toEqual([]);
+  });
+
+  it('non-zero exit → ForgeError with the stderr line (the search is a read like the rest)', async () => {
+    const f = forgeWith(() => fail('gh: search failed'));
+    await expect(f.searchPullRequests(ref, 'WO-0062')).rejects.toThrow('gh: search failed');
+  });
+});

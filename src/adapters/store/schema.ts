@@ -192,11 +192,12 @@ CREATE TABLE IF NOT EXISTS forge_check (
 -- WO lifecycle event log (WO-0030 / İstek 8): append-only audit of the operator/system actions —
 -- created/plan/step/verdict/closure + the WO-0031c edit/permission kinds (wo_edited, rule_changed,
 -- permission_decision). OWNED: it is Docket's own record of its decisions (ADR-0010), never mutated,
--- never derived. M3's forge events (pr/ci/merge) join this table.
+-- never derived. M3's forge events (pr/ci/merge) join this table: forge_merge (WO-0065) records
+-- what the closure SAW on the forge — the observed merge, the honest absence, or the unknown.
 CREATE TABLE IF NOT EXISTS wo_event (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_order_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision','steer_queued','steer_delivered','steer_retracted','flow_mode_changed')),
+  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision','steer_queued','steer_delivered','steer_retracted','flow_mode_changed','forge_merge')),
   detail TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL
 );

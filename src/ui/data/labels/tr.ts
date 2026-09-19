@@ -344,6 +344,7 @@ export const WO_EVENT_LABELS: Record<WoEventKind, string> = {
   steer_delivered: 'Yönlendirme iletildi',
   steer_retracted: 'Yönlendirme geri çekildi',
   flow_mode_changed: 'Akış modu değişti',
+  forge_merge: 'Forge birleşmesi',
 };
 
 /** The STRUCTURAL event detail → display (WO-0031c): the store writes machine detail (`edited:3`,
@@ -377,6 +378,18 @@ export function eventDetailText(kind: WoEventKind, detail: string): string {
     }
     case 'rule_changed':
       return PERMISSION_RULE_LABELS[detail as PermissionRule] ?? detail;
+    case 'forge_merge': {
+      // WO-0065: the closure's observed fact — the JSON ClosureEvidence becomes Turkish. A
+      // non-JSON detail (a future vintage) falls back to the raw text, never a crash.
+      try {
+        const ev = JSON.parse(detail) as { basis: string; prNumber?: number; reason?: string };
+        if (ev.basis === 'observed') return `#${ev.prNumber} birleşti · gözlemlendi`;
+        if (ev.basis === 'unknown') return `forge'a bakılamadı: ${ev.reason ?? ''}`;
+        return 'PR bulunamadı — beyanla kapandı';
+      } catch {
+        return detail;
+      }
+    }
     default:
       return detail;
   }

@@ -2288,3 +2288,62 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     expect(store.forgeView(ws).repos).toHaveLength(1); // a re-scan rebuilds it
   });
 });
+
+// ===== WO-0065 — the closure's observed fact (forge_merge) =====
+describe('WO-0065 — closeWorkOrder records the forge_merge evidence', () => {
+  const closeableWo = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Evidence close', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Evidence', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    await store.approvePlan(wo.id, '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```');
+    store.recordStep(wo.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+    store.recordStepVerdict(wo.id, 1, 'proceed', 'ok');
+    return wo;
+  };
+
+  it('a close WITH evidence appends exactly one forge_merge event carrying the JSON basis', async () => {
+    const store = createStore(freshDb());
+    const wo = await closeableWo(store);
+    await store.closeWorkOrder(wo.id, 'kapandı', { basis: 'observed', prNumber: 69, mergeSha: 'merge-sha', url: 'https://github.com/o/pull/69', mergedAt: '2026-09-19T12:00:00Z' });
+    const events = await store.getWorkOrderEvents(wo.id);
+    const merges = events.filter((e) => e.kind === 'forge_merge');
+    expect(merges).toHaveLength(1);
+    expect(JSON.parse(merges[0]!.detail)).toMatchObject({ basis: 'observed', prNumber: 69, mergeSha: 'merge-sha' });
+    const closed = events.find((e) => e.kind === 'closed');
+    expect(closed).toBeTruthy(); // the legacy closed event is untouched
+  });
+
+  it('the unknown basis records the reason; the legacy two-arg close writes NO forge_merge', async () => {
+    const store = createStore(freshDb());
+    const wo = await closeableWo(store);
+    await store.closeWorkOrder(wo.id, 'kapandı', { basis: 'unknown', reason: 'gh: Not logged in' });
+    expect(JSON.parse((await store.getWorkOrderEvents(wo.id)).find((e) => e.kind === 'forge_merge')!.detail)).toEqual({
+      basis: 'unknown', reason: 'gh: Not logged in',
+    });
+
+    const store2 = createStore(freshDb());
+    const wo2 = await closeableWo(store2);
+    await store2.closeWorkOrder(wo2.id, 'kapandı'); // the CLI/test path — byte-for-byte the old floor
+    expect((await store2.getWorkOrderEvents(wo2.id)).some((e) => e.kind === 'forge_merge')).toBe(false);
+  });
+
+  it('the CHECK migration upgrades a pre-forge_merge wo_event table in place (rows preserved)', () => {
+    const p = freshDb();
+    // Hand-build the legacy vintage: a wo_event whose CHECK predates forge_merge, with one row.
+    const raw = new DatabaseSync(p);
+    raw.exec(
+      "CREATE TABLE wo_event (id INTEGER PRIMARY KEY AUTOINCREMENT, work_order_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('created','closed')), detail TEXT NOT NULL DEFAULT '', at TEXT NOT NULL)",
+    );
+    raw
+      .prepare("INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES ('WO-1', 'closed', 'sha', '2026-09-19T00:00:00Z')")
+      .run();
+    raw.close();
+
+    const store = createStore(p); // the widened SCHEMA_SQL + the transactional rebuild in migrate()
+    const sql = (store.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='wo_event'").get() as { sql: string }).sql;
+    expect(sql).toContain("'forge_merge'");
+    const row = store.db.prepare("SELECT * FROM wo_event WHERE kind = 'closed'").get() as { work_order_id: string; detail: string };
+    expect(row.work_order_id).toBe('WO-1'); // the audit survives the rebuild, append order intact
+    expect(row.detail).toBe('sha');
+  });
+});

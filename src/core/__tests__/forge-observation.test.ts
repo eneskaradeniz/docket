@@ -8,7 +8,7 @@ import type {
   ForgeTarget,
   RepoRef,
 } from '../forge';
-import type { WorkspaceId } from '../types';
+import type { WorkOrderId, WorkspaceId } from '../types';
 
 // WO-0064 — the reconciliation's pins. A fake Forge + an in-memory observation sink: per-repo
 // isolation, the degraded-never-wipes rule, the replace-on-scan rule, checks read for open
@@ -41,6 +41,7 @@ const fakeForge = (impl: {
     if (impl.failChecksSha === sha) throw new ForgeError(`checks died for ${sha}`);
     return (await impl.checks?.(r, sha)) ?? [];
   },
+  searchPullRequests: () => Promise.resolve([]),
 });
 
 interface Recorded {
@@ -168,5 +169,84 @@ describe('reconcileWorkspaceForge (WO-0064)', () => {
     expect(rec.degraded).toEqual([]);
     expect(rec.scans[0]!.scan.prs).toEqual([]);
     expect(rec.scans[0]!.scan.checks).toEqual([]);
+  });
+});
+
+// ===== WO-0065 — the closure evidence look =====
+import { observeClosureEvidence } from '../forge';
+
+const forgedPr = (over: { number: number; state: 'open' | 'closed' | 'merged'; mergedAt?: string; mergeSha?: string }) => ({
+  number: over.number,
+  state: over.state,
+  title: `impl(WO-0065): ${over.number}`,
+  headSha: `head-${over.number}`,
+  headBranch: `b-${over.number}`,
+  baseBranch: 'main',
+  url: `https://example.test/o/pull/${over.number}`,
+  ...(over.mergedAt !== undefined ? { mergedAt: over.mergedAt } : {}),
+  ...(over.mergeSha !== undefined ? { mergeSha: over.mergeSha } : {}),
+});
+
+describe('observeClosureEvidence (WO-0065)', () => {
+  const look = (forge: ReturnType<typeof fakeForge>, targets: ForgeTarget[]) =>
+    observeClosureEvidence({ forge: forge as never, targets, woId: 'WO-0065' as WorkOrderId });
+
+  it('a merged title hit is the observed basis — number, merge sha, url, mergedAt', async () => {
+    const forge = fakeForge({});
+    (forge as { searchPullRequests: (r: RepoRef, t: string) => Promise<unknown> }).searchPullRequests = (_r, t) => {
+      expect(t).toBe('WO-0065');
+      return Promise.resolve([
+        forgedPr({ number: 69, state: 'merged', mergedAt: '2026-09-19T12:00:00Z', mergeSha: 'merge-sha' }),
+      ]);
+    };
+    expect(await look(forge, [target('https://github.com/o/r1.git', ref('r1'))])).toEqual({
+      basis: 'observed',
+      prNumber: 69,
+      url: 'https://example.test/o/pull/69',
+      mergeSha: 'merge-sha',
+      mergedAt: '2026-09-19T12:00:00Z',
+    });
+  });
+
+  it('a closed-unmerged hit is NOT evidence; a true merged row wins and latest-mergedAt wins ties', async () => {
+    const forge = fakeForge({});
+    (forge as { searchPullRequests: (r: RepoRef, t: string) => Promise<unknown> }).searchPullRequests = () =>
+      Promise.resolve([
+        forgedPr({ number: 70, state: 'closed', mergedAt: '2026-09-19T09:00:00Z' }),
+        forgedPr({ number: 68, state: 'merged', mergedAt: '2026-09-19T08:00:00Z', mergeSha: 'older' }),
+        forgedPr({ number: 69, state: 'merged', mergedAt: '2026-09-19T11:00:00Z', mergeSha: 'newer' }),
+      ]);
+    const seen = await look(forge, [target('https://github.com/o/r1.git', ref('r1'))]);
+    expect(seen).toMatchObject({ basis: 'observed', prNumber: 69, mergeSha: 'newer' });
+  });
+
+  it('a successful look with no merged hit is absent — «beyanla kapandı», not an unknown', async () => {
+    const forge = fakeForge({});
+    (forge as { searchPullRequests: (r: RepoRef, t: string) => Promise<unknown> }).searchPullRequests = () =>
+      Promise.resolve([forgedPr({ number: 1, state: 'open' })]);
+    expect(await look(forge, [target('https://github.com/o/r1.git', ref('r1'))])).toEqual({ basis: 'absent' });
+  });
+
+  it('every repo failing is unknown with the last reason — closure is never blocked by it', async () => {
+    const forge = fakeForge({});
+    (forge as { searchPullRequests: (r: RepoRef, t: string) => Promise<unknown> }).searchPullRequests = (r) =>
+      r.name === 'dead' ? Promise.reject(new ForgeError('gh: no auth')) : Promise.reject(new ForgeError('gh: rate limited'));
+    expect(
+      await look(forge, [target('https://github.com/o/dead.git', ref('dead')), target('https://github.com/o/dead2.git', ref('dead2'))]),
+    ).toEqual({ basis: 'unknown', reason: 'gh: rate limited' });
+  });
+
+  it('one repo succeeding keeps the result honest even if another errored; an unparseable remote is not a look', async () => {
+    const forge = fakeForge({});
+    (forge as { searchPullRequests: (r: RepoRef, t: string) => Promise<unknown> }).searchPullRequests = (r) =>
+      r.name === 'dead' ? Promise.reject(new ForgeError('gh: dead')) : Promise.resolve([]);
+    expect(
+      await look(forge, [
+        { repoRemote: 'git@github.com:o/x.git' },
+        target('https://github.com/o/dead.git', ref('dead')),
+        target('https://github.com/o/live.git', ref('live')),
+      ]),
+    ).toEqual({ basis: 'absent' });
+    expect(await look(forge, [{ repoRemote: 'git@github.com:o/x.git' }])).toEqual({ basis: 'absent' });
   });
 });
