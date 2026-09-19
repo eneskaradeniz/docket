@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
+import type { ForgeView, ForgeWatch } from '../../core/forge';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, workspaceBudgetView } from '../../core/budget';
 import { limitInEffect, overlayLiveDrive, toCardView, toDetailView } from '../../core/derive';
@@ -30,8 +31,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 // an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
 // on mount, the selected work order + its docs load on selection, each with a state for the
 // in-flight/failed case. The runner is provided via context for the session pane.
-export function App({ source, settings, runner }: { source: WorkOrderSource;
-  settings: AppSettings; runner: SessionRunner }) {
+export function App({ source, settings, runner, forge: forgeWatch }: { source: WorkOrderSource;
+  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch }) {
   const { UI, woIdLabel } = useLabels();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -176,9 +177,43 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
     });
   }, [source]);
 
+  // WO-0064 — the forge observation loop, ADR-0010's cadence: open/switch (the workspace effect
+  // below), window focus, a 60 s background tick, after board-affecting actions (riding
+  // refreshWorkOrders), and the section's own Yenile. A failed trigger degrades silently — the
+  // next trigger re-reads, and the view keeps the last scan's facts. The view is keyed to the
+  // workspace it scanned: a switch shows NO forge section until the new workspace's own view
+  // lands (the old one never bleeds across). The watch is optional: present only when the
+  // composition root wired the forge (the bridge group).
+  const [forge, setForge] = useState<{ ws: WorkspaceId; view: ForgeView } | undefined>(undefined);
+  const refreshForge = useCallback(() => {
+    if (!forgeWatch || !workspaceId) return;
+    forgeWatch
+      .reconcile(workspaceId)
+      .catch(() => {})
+      .then(() => forgeWatch.view(workspaceId))
+      .then((v) => setForge({ ws: workspaceId, view: v }))
+      .catch(() => {});
+  }, [forgeWatch, workspaceId]);
+  const refreshForgeRef = useRef<() => void>(() => {});
+  refreshForgeRef.current = refreshForge;
+  useEffect(() => {
+    refreshForge();
+  }, [refreshForge]); // open + workspace switch
+  useEffect(() => {
+    if (!forgeWatch) return;
+    const tick = (): void => refreshForgeRef.current();
+    window.addEventListener('focus', tick);
+    const t = setInterval(tick, 60_000); // the slow background interval (ADR-0010)
+    return () => {
+      window.removeEventListener('focus', tick);
+      clearInterval(t);
+    };
+  }, [forgeWatch]);
+
   // After creating a work order, re-fetch the list (mirrors refreshWorkspaces) so the new card appears.
   const refreshWorkOrders = useCallback(() => {
     source.getWorkOrders().then(setWorkOrders);
+    refreshForgeRef.current(); // "after any action it takes" — the board's action funnel (WO-0064)
   }, [source]);
 
   // Re-load the selected work order + its docs (WO-0016): bumping the nonce re-runs the detail effect,
@@ -516,6 +551,8 @@ export function App({ source, settings, runner }: { source: WorkOrderSource;
         key={workspaceId ?? 'none'}
         cards={cards}
         budget={budget}
+        forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
+        onRefreshForge={refreshForge}
         onSelect={setSelectedId}
         onNewWorkOrder={() => setWoCreateOpen(true)}
       />

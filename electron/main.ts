@@ -8,9 +8,11 @@ import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
+import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { createStore } from '../src/adapters/store';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
+import { reconcileWorkspaceForge, type ForgeTarget } from '../src/core/forge';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
@@ -134,6 +136,38 @@ ipcMain.handle('docket:source:remove-repo-connection', (_e, id: WorkspaceId, pat
 // WO-0033: the ledger read + the path move. Full paths never leave the store except through these.
 ipcMain.handle('docket:source:repo-connections', (_e, id: WorkspaceId) => store.repoConnections(id));
 ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: RepoId, newPath: string) => store.updateRepoPath(id, repoId, newPath));
+
+// WO-0064 — the forge observation watch: the composition root composes the core reconciler with
+// the forge adapter (this file is the one place it may be imported) and the store's observation
+// cache. One in-flight cycle per workspace — a trigger that overlaps a running one is a no-op
+// (the loop is idempotent; the next trigger reads what landed). The adapter-side RepoRef parse
+// happens HERE, at read time, over the persisted connection remotes (the WO-0063 answer 1).
+const forge = new GitHubForge();
+const forgeInFlight = new Set<string>();
+async function reconcileForge(workspaceId: WorkspaceId): Promise<void> {
+  const key = workspaceId as string;
+  if (forgeInFlight.has(key)) return;
+  forgeInFlight.add(key);
+  try {
+    const targets: ForgeTarget[] = store.forgeScanTargets(workspaceId).map((t) => {
+      const parsed = parseRepoRemote(t.repoRemote);
+      return parsed.kind === 'ok'
+        ? { repoRemote: t.repoRemote, ref: parsed.ref }
+        : { repoRemote: t.repoRemote, unknownReason: parsed.reason };
+    });
+    await reconcileWorkspaceForge({
+      forge,
+      observations: store,
+      workspaceId,
+      targets,
+      at: new Date().toISOString(),
+    });
+  } finally {
+    forgeInFlight.delete(key);
+  }
+}
+ipcMain.handle('docket:forge:reconcile', (_e, id: WorkspaceId) => reconcileForge(id));
+ipcMain.handle('docket:forge:view', (_e, id: WorkspaceId) => store.forgeView(id));
 // WO-0047: the workspace's calendar-month observed spend (the warn line's figure).
 ipcMain.handle('docket:source:workspace-month-spend', (_e, id: WorkspaceId) => store.workspaceMonthSpend(id));
 // WO-0054: the workspace's usage month, derived — the pure view over the usage ledger.

@@ -24,6 +24,7 @@ import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
+import type { ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
@@ -59,7 +60,7 @@ import type {
 // `SessionStore` port (src/core/session-store.ts); `Store` implements it. The drive loop (src/core/pipeline.ts)
 // depends on that port, not on this adapter (WO-0023).
 
-export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
+export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, ForgeObservations {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
   /** The per-turn usage rows of ONE work order, insertion-ordered (WO-0052). CONCRETE-ONLY — the
@@ -85,6 +86,10 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData {
   decisionStoreRootFor(input: DriveInput): string | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
+  /** The connection rows' raw (repo_remote, local_path) pairs (WO-0064) — the composition
+   *  root's scan input. The adapter-side `RepoRef` parse happens THERE (main owns the forge
+   *  adapter); the store never names the forge product. */
+  forgeScanTargets(id: WorkspaceId): { repoRemote: string; path: string }[];
 }
 
 /** The DB-backed half of the AppSettings port (WO-0025). WO-0059 rev 4: the stored provider key
@@ -924,6 +929,122 @@ function updateRepoPathRow(db: DatabaseSync, id: WorkspaceId, repoId: RepoId, ne
   );
 }
 
+// --- The observed forge cache (WO-0064, ADR-0010's forge half) ---
+// Written by the reconciler (core/forge.ts) through the composition root; a successful scan is
+// ONE transaction that REPLACES the repo's PR page + checks (observation wins — a PR fallen off
+// the open page is absent after the scan); a degraded record touches forge_scan ONLY (prior
+// facts stay — the wipe would be the lie). Discardable with the rest of OBSERVED_TABLES.
+
+function forgeScanTargetsRow(db: DatabaseSync, id: WorkspaceId): { repoRemote: string; path: string }[] {
+  return (
+    db.prepare('SELECT repo_remote, local_path FROM connection WHERE workspace_id = ? ORDER BY rowid').all(id) as {
+      repo_remote: string;
+      local_path: string;
+    }[]
+  ).map((r) => ({ repoRemote: r.repo_remote, path: r.local_path }));
+}
+
+function recordForgeScanRow(db: DatabaseSync, workspaceId: WorkspaceId, repoRemote: string, scan: ForgeScan): void {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(
+      `INSERT INTO forge_scan (workspace_id, repo_remote, status, reason, observed_at) VALUES (?,?,'ok',NULL,?)
+       ON CONFLICT(workspace_id, repo_remote) DO UPDATE SET status='ok', reason=NULL, observed_at=excluded.observed_at`,
+    ).run(workspaceId, repoRemote, scan.at);
+    db.prepare('DELETE FROM forge_pr WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
+    db.prepare('DELETE FROM forge_check WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
+    const insPr = db.prepare(
+      `INSERT INTO forge_pr (workspace_id, repo_remote, number, state, title, head_sha, head_branch, base_branch,
+       review_decision, merged_at, merge_sha, url, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    );
+    for (const pr of scan.prs) {
+      insPr.run(
+        workspaceId, repoRemote, pr.number, pr.state, pr.title ?? null, pr.headSha, pr.headBranch, pr.baseBranch,
+        pr.reviewDecision ?? null, pr.mergedAt ?? null, pr.mergeSha ?? null, pr.url, scan.at,
+      );
+    }
+    const insCheck = db.prepare(
+      'INSERT INTO forge_check (workspace_id, repo_remote, sha, name, status, conclusion, observed_at) VALUES (?,?,?,?,?,?,?)',
+    );
+    for (const { sha, check } of scan.checks) {
+      insCheck.run(workspaceId, repoRemote, sha, check.name, check.status, check.conclusion ?? null, scan.at);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+function recordForgeDegradedRow(
+  db: DatabaseSync, workspaceId: WorkspaceId, repoRemote: string, at: string, reason: string,
+): void {
+  db.prepare(
+    `INSERT INTO forge_scan (workspace_id, repo_remote, status, reason, observed_at) VALUES (?,?,'degraded',?,?)
+     ON CONFLICT(workspace_id, repo_remote) DO UPDATE SET status='degraded', reason=excluded.reason, observed_at=excluded.observed_at`,
+  ).run(workspaceId, repoRemote, reason, at);
+}
+
+function forgeViewRow(db: DatabaseSync, id: WorkspaceId): ForgeView {
+  const connections = db
+    .prepare('SELECT repo_remote, local_path FROM connection WHERE workspace_id = ? ORDER BY rowid')
+    .all(id) as { repo_remote: string; local_path: string }[];
+  const repos: ForgeRepoView[] = [];
+  for (const conn of connections) {
+    const scan = db
+      .prepare('SELECT status, reason, observed_at FROM forge_scan WHERE workspace_id = ? AND repo_remote = ?')
+      .get(id, conn.repo_remote) as { status: string; reason: string | null; observed_at: string } | undefined;
+    if (!scan) continue; // never scanned — absent from the view (the section's absent grammar)
+    const prRows = db
+      .prepare(
+        'SELECT number, state, title, head_sha, head_branch, base_branch, review_decision, merged_at, merge_sha, url FROM forge_pr WHERE workspace_id = ? AND repo_remote = ? ORDER BY number',
+      )
+      .all(id, conn.repo_remote) as {
+      number: number;
+      state: string;
+      title: string | null;
+      head_sha: string;
+      head_branch: string;
+      base_branch: string;
+      review_decision: string | null;
+      merged_at: string | null;
+      merge_sha: string | null;
+      url: string;
+    }[];
+    const checkRows = db
+      .prepare('SELECT sha, name, status, conclusion FROM forge_check WHERE workspace_id = ? AND repo_remote = ? ORDER BY name')
+      .all(id, conn.repo_remote) as { sha: string; name: string; status: string; conclusion: string | null }[];
+    repos.push({
+      repoRemote: conn.repo_remote,
+      path: conn.local_path,
+      scannedAt: scan.observed_at,
+      health: scan.status === 'ok' ? 'ok' : { degraded: scan.reason ?? 'unknown failure' },
+      prs: prRows.map((pr) => {
+        const row: ForgePrRow = {
+          number: pr.number,
+          state: pr.state as ForgePr['state'],
+          headSha: pr.head_sha,
+          headBranch: pr.head_branch,
+          baseBranch: pr.base_branch,
+          url: pr.url,
+          checks: checkRows
+            .filter((c) => c.sha === pr.head_sha)
+            .map((c) => {
+              const check = { name: c.name, status: c.status };
+              return c.conclusion != null ? { ...check, conclusion: c.conclusion } : check;
+            }),
+        };
+        if (pr.title != null) row.title = pr.title;
+        if (pr.review_decision != null) row.reviewDecision = pr.review_decision;
+        if (pr.merged_at != null) row.mergedAt = pr.merged_at;
+        if (pr.merge_sha != null) row.mergeSha = pr.merge_sha;
+        return row;
+      }),
+    });
+  }
+  return { repos };
+}
+
 // --- Work-order creation (WO-0015) ---
 // The workspace's STRUCTURE ROOT resolved STRICTLY from its connection rows (WO-0032 + WO-0048):
 // the connected decision-store path plus the workspace's docs_root setting. Undefined when no
@@ -1665,6 +1786,13 @@ export function createStore(dbPath: string): Store {
     removeRepoConnection: (id: WorkspaceId, path: string) =>
       Promise.resolve(removeRepoConnectionRow(db, id, path)),
     repoConnections: (id: WorkspaceId) => Promise.resolve(repoConnectionsRow(db, id)),
+    // The observed forge cache (WO-0064): sync writes/reads like the SessionStore half — quick
+    // SQLite, no I/O beyond it; the forge itself is reached by the composition root's reconciler.
+    recordForgeScan: (workspaceId, repoRemote, scan) => recordForgeScanRow(db, workspaceId, repoRemote, scan),
+    recordForgeDegraded: (workspaceId, repoRemote, at, reason) =>
+      recordForgeDegradedRow(db, workspaceId, repoRemote, at, reason),
+    forgeView: (workspaceId) => forgeViewRow(db, workspaceId),
+    forgeScanTargets: (workspaceId) => forgeScanTargetsRow(db, workspaceId),
     // The workspace's calendar-month observed spend (WO-0047) — the board/band warn line's and
     // the settings readout's figure, from the same row the gate reads.
     workspaceMonthSpend: (id: WorkspaceId) => Promise.resolve(monthSpendRow(db, id)),

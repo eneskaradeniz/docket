@@ -108,6 +108,14 @@ contextBridge.exposeInMainWorld('docket', {
   source,
   settings,
   runner,
+  // WO-0064: the forge observation watch — reconcile triggers + the cache view. The composition
+  // root implements the port (it owns the forge adapter); the renderer triggers it on ADR-0010's
+  // cadence (open / focus / after actions / manual / the slow tick).
+  forge: {
+    reconcile: (workspaceId: WorkspaceId): Promise<void> => ipcRenderer.invoke('docket:forge:reconcile', workspaceId),
+    view: (workspaceId: WorkspaceId): Promise<import('../src/core/forge').ForgeView> =>
+      ipcRenderer.invoke('docket:forge:view', workspaceId),
+  },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
   // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-

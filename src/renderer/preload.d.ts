@@ -28,6 +28,9 @@ declare global {
       source: WorkOrderSource;
     settings: AppSettings;
       runner: RunnerBridge;
+      /** WO-0064: the forge observation watch (core's `ForgeWatch`) — reconcile triggers + the
+       *  observed cache view; the composition root implements it over the forge adapter. */
+      forge?: import('../core/forge').ForgeWatch;
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;
       /** WO-0051 / D3: the ✦ dialog's DEPO scan — { docsRoot, files }, structure-root-relative

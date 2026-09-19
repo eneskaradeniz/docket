@@ -592,6 +592,14 @@ export const UI = {
   sessionSummaryProceed: 'Architect: proceed — step approved',
   sessionSummaryRevise: 'Architect: revise — re-run requested',
   secSources: 'Sources',
+  // WO-0064 — the board's Depo section: the forge observation's visible proof (ADR-0010's
+  // last-looked vocabulary). Absent outright with no connections; a degraded scan's reason
+  // speaks verbatim as its row.
+  forgeSectionTitle: 'Repos',
+  forgeRefresh: 'Refresh',
+  forgeOpenCount: (n: number) => `${n} open PR${n === 1 ? '' : 's'}`,
+  forgeLastScan: (time: string) => `last checked ${time}`,
+  FORGE_PR_STATE: { open: 'open', merged: 'merged', closed: 'closed' },
   noteFor: (
     kind: 'interrupt_sent' | 'session_closed' | 'force_killed' | 'interrupted' | 'session_started' | 'session_done',
     detail?: string,

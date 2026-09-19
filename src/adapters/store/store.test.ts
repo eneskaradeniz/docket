@@ -10,7 +10,7 @@ import { workOrders } from '../fixtures';
 import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
 import { monthWindow } from '../../core/budget';
-import { rid, woid } from '../ids';
+import { rid, wid, woid } from '../ids';
 import type { RepoId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 
@@ -2197,5 +2197,94 @@ describe('WO-0055 — agent rows persist through the transcript round-trip', () 
     store.recordSession({ providerSessionId: 's-agent', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'stopped', transcript: [{ speaker: 'note', kind: 'interrupted' }] });
     const hydrated = await store.getWorkOrder(wo.id);
     expect(hydrated!.sessions[0]!.transcript).toEqual([...agentRows]);
+  });
+});
+
+// ===== WO-0064 — the observed forge cache (ADR-0010's forge half) =====
+describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins', () => {
+  const remote = 'https://github.com/eneskaradeniz/docket.git';
+  const other = 'https://github.com/antreo-app/api.git';
+  const at = '2026-09-19T12:00:00Z';
+  const pr = (n: number, sha: string) => ({
+    number: n,
+    state: 'open' as const,
+    title: `PR ${n}`,
+    headSha: sha,
+    headBranch: `b-${n}`,
+    baseBranch: 'main',
+    url: `https://github.com/eneskaradeniz/docket/pull/${n}`,
+  });
+
+  it('an ok scan records meta + the PR page + checks in one transaction; repeat is idempotent', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-forge-1');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
+    const scan = { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-1', check: { name: 'check', status: 'completed', conclusion: 'success' } }, { sha: 'sha-2', check: { name: 'typecheck', status: 'completed' } }] };
+    store.recordForgeScan(ws, remote, scan);
+    store.recordForgeScan(ws, remote, scan); // the reconciler fires repeatedly — no duplicate rows
+    const view = store.forgeView(ws);
+    expect(view.repos).toHaveLength(1);
+    const repo = view.repos[0]!;
+    expect(repo.repoRemote).toBe(remote);
+    expect(repo.path).toBe('/tmp/r1');
+    expect(repo.health).toBe('ok');
+    expect(repo.scannedAt).toBe(at);
+    expect(repo.prs).toHaveLength(2);
+    expect(repo.prs[0]!.checks).toEqual([{ name: 'check', status: 'completed', conclusion: 'success' }]);
+    expect(repo.prs[1]!.checks).toEqual([{ name: 'typecheck', status: 'completed' }]); // conclusion absent, not null
+  });
+
+  it('the replace rule: a PR fallen off the open page (and its checks) is absent after the next scan', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-forge-2');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-2', check: { name: 'check', status: 'completed', conclusion: 'success' } }] });
+    store.recordForgeScan(ws, remote, { at: '2026-09-19T13:00:00Z', prs: [pr(1, 'sha-1')], checks: [] });
+    const repo = store.forgeView(ws).repos[0]!;
+    expect(repo.prs.map((p) => p.number)).toEqual([1]);
+    expect(repo.prs[0]!.checks).toEqual([]); // the fallen PR's checks went with it
+    expect(repo.scannedAt).toBe('2026-09-19T13:00:00Z');
+  });
+
+  it('a degraded record touches the meta ONLY — prior facts stay, and the reason renders', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-forge-3');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeDegraded(ws, remote, '2026-09-19T14:00:00Z', 'gh: Could not resolve to a Repository');
+    const repo = store.forgeView(ws).repos[0]!;
+    expect(repo.health).toEqual({ degraded: 'gh: Could not resolve to a Repository' });
+    expect(repo.scannedAt).toBe('2026-09-19T14:00:00Z'); // the «son gözlem» stamp is the LAST attempt
+    expect(repo.prs).toHaveLength(1); // the wipe would be the lie
+  });
+
+  it('per-workspace and per-repo isolation; never-scanned connections are absent from the view', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-forge-4');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, other, '/tmp/r2');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(wid('ws-forge-5'), remote, '/tmp/r3');
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    const view = store.forgeView(ws);
+    expect(view.repos.map((r) => r.repoRemote)).toEqual([remote]); // the unscanned sibling is absent
+    expect(store.forgeView(wid('ws-forge-5')).repos).toEqual([]); // another workspace never leaks
+    expect(store.forgeScanTargets(ws)).toEqual([
+      { repoRemote: remote, path: '/tmp/r1' },
+      { repoRemote: other, path: '/tmp/r2' },
+    ]);
+  });
+
+  it('the tables are OBSERVED: reseedObserved drops them and a re-scan rebuilds', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-forge-6');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    expect(OBSERVED_TABLES).toContain('forge_scan');
+    expect(OBSERVED_TABLES).toContain('forge_pr');
+    expect(OBSERVED_TABLES).toContain('forge_check');
+    store.reseedObserved();
+    expect(store.forgeView(ws).repos).toEqual([]); // discardable by definition — nothing owned lost
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    expect(store.forgeView(ws).repos).toHaveLength(1); // a re-scan rebuilds it
   });
 });
