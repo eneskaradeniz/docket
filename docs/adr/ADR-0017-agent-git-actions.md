@@ -24,11 +24,13 @@ the flip must land inside the permission machinery that already exists instead o
    after its work order (the id order.md already carries). `main` is the operator's: the agent
    never checks out, pushes to, or merges into it.
 3. **Push and PR-create stay operator-witnessed.** `git push` is already in the risky set (core/
-   risky.ts) — it asks under every rule except explicit full_auto. `gh pr create` classifies
-   ambiguous (ask). This ADR pins that classification as the RULING, not an implementation
-   accident: the world-write surface is exactly push + PR-create, and the default posture sees
-   both. Docket itself never pushes and never opens PRs — it has no forge write surface
-   (WO-0062's read-only freeze stands).
+   risky.ts) — it asks under every rule except explicit full_auto. `gh pr create` and `gh pr
+   merge` did NOT start there: the fence review found them classifying ambiguous-non-write for
+   the implementer (silently allowed — the pre-WO-0067 behavior was an accident of the gh
+   dispatch's absence). This ADR rules it: the classifier gains the `gh` dispatch (create/merge
+   are writes), and both commands join the risky set — so the world-write surface is exactly
+   push + PR-create/merge, and the default posture SEES all of it. Docket itself never pushes
+   and never opens PRs — it has no forge write surface (WO-0062's read-only freeze stands).
 4. **The PR title carries the WO number** — `WO-NNNN — …`. What was convention (measured,
    WO-0065) becomes the RULE, because the link below depends on it.
 5. **The link is observed, never claimed.** Docket stores no agent-asserted PR url. The

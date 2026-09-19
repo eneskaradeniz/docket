@@ -28,11 +28,12 @@ machinery already governs the acts; the fence review pins them.
 - **ADR-0017 (this branch) supersedes the operator-commits floor** (ADR-0009's M2 addendum) on
   the WORK repos only; the decision store stays operator-committed, and ADR-0010's ownership
   table stands: git owns the record, the forge owns PR existence, Docket owns pointers.
-- **The machinery is already shaped right (verified in the fence review):**
-  `classifyCommandLine` rules `git commit`/`add`/`branch`/`checkout` as writes (GIT_WRITE_SUBS);
-  `git push` is in the risky set (core/risky.ts) — asked under every rule but full_auto;
-  `gh pr create` is ambiguous → ask. The ADR pins this classification AS THE RULING. The
-  review's job here is tests, not fence surgery.
+- **The fence review found ONE real gap:** `git commit`/`add`/`branch`/`checkout` classify as
+  writes (GIT_WRITE_SUBS) and `git push` is already risky — but `gh` had NO dispatch: for the
+  implementer `gh pr create` classified ambiguous-non-write and the fence silently ALLOWED it
+  (fenceDecision's non-read-only ambiguity arm). The fix is the classifier's `gh` branch
+  (create/merge/delete-shaped actions → write; everything else stays ambiguous) plus the risky
+  patterns for `gh pr create|merge` — the ADR's witnessed surface, regression-tested.
 - **The columns waited since the fixture era:** `track.pr_url` / `pr_head_sha` are written NULL
   at creation and never filled (store/index.ts:1445-1452). The scan (WO-0064) already holds the
   open PR page per connected repo — matching by title closes the loop with zero new surfaces.
@@ -52,9 +53,12 @@ In scope:
   on `wo-NNNN-<slug>` derived from the WO id in order.md; commit the step's work; push; open
   the PR titled `WO-NNNN — …` if none is open; never touch `main`. Verifier/architect prompts
   stay read-only (unchanged, pinned by their existing tests' assertions).
-- **Fence review (tests):** pin `classifyCommandLine` for `git commit`/`git push`/`gh pr create`
-  (write+in-scope / risky write / ambiguous) and `isRisky` for the same three — the ADR's
-  classification as regression-tested fact.
+- **Fence (core, test-first):** the `gh` dispatch in `classifyCommandLine` — write-shaped gh
+  actions (`pr create/merge/close/reopen/edit`, `repo create/delete`, issue/comment/label
+  writes) classify isWrite; gh reads (`pr list/view/status`, `auth status`, `api`) stay
+  ambiguous-non-write; `gh pr create|merge` join the risky patterns. Pins for
+  `git commit`/`git push`/the gh cases through both `classifyCommandLine` and the risky
+  classifier — the ADR's classification as regression-tested fact.
 - **The observed link (store, test-first):** `recordForgeScan` (the WO-0064 transaction) also
   matches the scanned open PRs against the workspace's OPEN work orders (title contains the WO
   id) and updates the matching track rows' `pr_url` / `pr_head_sha` / `observed_at`; a PR that
@@ -77,7 +81,9 @@ Out of scope:
 ## Acceptance criteria
 
 1. ADR-0017 accepted in `docs/adr/`; its classification claims are pinned by the new fence tests
-   (commit/push/gh-create through both `classifyCommandLine` and `isRisky`).
+   (commit/push/gh-create through both `classifyCommandLine` and the risky classifier) — and the
+   found gap is closed: `gh pr create` can no longer reach the world silently under any rule
+   except full_auto.
 2. `implementerPrompt` carries the discipline (branch, commit, push, PR-create, title rule,
    never-main); the verifier/architect prompts assert unchanged.
 3. The scan writes the observed link: a scanned PR titled with an open WO's id fills that WO's

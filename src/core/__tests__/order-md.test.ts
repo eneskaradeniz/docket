@@ -267,3 +267,18 @@ describe('task (WO-0048 — the roadmap link lives only in order.md front-matter
     expect(parseOrderMd(md).taskRef).toBe('f9-t9');
   });
 });
+
+// ===== WO-0067 / ADR-0017 — the implementer's git discipline rides the prompt =====
+describe('implementerPrompt — the git discipline (ADR-0017)', () => {
+  const p = implementerPrompt({ objective: 'Fix the crash.', step: implStep, planText: '# Plan', orderMdPath: '/r/o.md' });
+  it('carries branch/commit/push/PR discipline and the title rule', () => {
+    expect(p).toContain('wo-<NNNN>-<short-slug>');
+    expect(p).toContain('never work on, push to, or merge into main');
+    expect(p).toContain('starts EXACTLY with this work order');
+  });
+  it('the verifier prompt stays read-only — no git discipline ever enters it', () => {
+    const v = verifierPrompt({ objective: 'o', step: implStep, planText: '# p', orderMdPath: '/r/o.md' });
+    expect(v).not.toContain('Git discipline');
+    expect(v).toContain('read-only');
+  });
+});
