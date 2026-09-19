@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Boundary checks — mechanical enforcement of the layering and identity rules (ADR-0006/0003/0001/0007).
 // Origin WO-0005; extended by WO-0007 to cover the Electron shell (electron/ + src/renderer/); extended by
-// WO-0006 (branded-type cast ban, all Node builtins, disabled object-key/data-disabled forms). Each
-// violation names the rule and its ADR. Runs in CI and locally (`npm run check:boundaries`). See
-// CLAUDE.md and ADR-0011.
+// WO-0006 (branded-type cast ban, all Node builtins, disabled object-key/data-disabled forms); extended by
+// WO-0070 (c7 literal colours in src/ui, c8 non-ASCII display copy in src/ui — the ADR-0007 border checks
+// over the labels allowlist). Each violation names the rule and its ADR. Runs in CI and locally
+// (`npm run check:boundaries`). See CLAUDE.md and ADR-0011.
 //
 // The checks are deliberately name-independent where the rule must outlive a data-source change: the
 // workspace-identity check matches the branded-identity *constructors* and a fixed historical literal, never a
@@ -159,6 +160,62 @@ for (const f of files) {
   });
 }
 
+// WO-0070 — the two display-vocabulary BORDER checks (ADR-0007, WO-0035). Both scan src/ui ONLY and
+// exempt `src/ui/data/` (the labels/marks home — the check guards the border, not the dictionary) and
+// test files. Both are proxies in the c5/c6 shape: greppable, deterministic, no JSX parser.
+const uiOnly = files.filter((f) => rel(f).startsWith('src/ui/') && !rel(f).startsWith('src/ui/data/') && !isTest(rel(f)));
+
+// 7 — no literal COLOUR in src/ui (ADR-0007): the palette lives in CSS tokens (`var(--…)`); a
+//    #hex / rgb( / hsl( literal is a colour the tokens do not know. Tailwind arbitrary-value tokens
+//    (`text-[var(--x)]`) do not match; `#fff` inside a className does. Comment lines are skipped.
+const c7 = [];
+const COLOUR_RE = /(#[0-9A-Fa-f]{3,8}\b|rgba?\(|hsla?\()/;
+for (const f of uiOnly) {
+  read(f).forEach((ln, i) => {
+    if (isComment(ln)) return;
+    const m = COLOUR_RE.exec(ln);
+    if (m) c7.push([f, i + 1, `literal colour "${m[1]}" in src/ui — the palette is CSS tokens, var(--…) (ADR-0007)`]);
+  });
+}
+
+// 8 — no NON-ASCII display copy in src/ui (ADR-0007): Turkish copy lives in src/ui/data/labels/ —
+//    the cheap deterministic proxy for "a word a human reads" is a Latin-letter outside ASCII
+//    (À-ɏ Latin-1 supplement + Latin extended — ı ğ ş ç ö ü are all inside — plus
+//    ؀-ۿ); the local-independent glyphs (· — → ✓ ✦ ⏎) sit above U+024F and pass.
+//    Whole-line comments AND comment tails / JSX `{/* … */}` blocks are stripped first (a comment is
+//    never display copy); a per-line stripper keeps it deterministic without a JSX parser.
+const c8 = [];
+const NON_ASCII_RE = /[À-ɏ؀-ۿ]/;
+// Stateful across a file's lines: a `/*` opened on one line stays open until its `*/`.
+const commentStripper = () => {
+  let inBlock = false;
+  return (line) => {
+    let out = '';
+    let i = 0;
+    while (i < line.length) {
+      if (inBlock) {
+        const end = line.indexOf('*/', i);
+        if (end === -1) { i = line.length; } else { inBlock = false; i = end + 2; }
+        continue;
+      }
+      const open = line.indexOf('/*', i);
+      const lineC = line.indexOf('//', i);
+      if (lineC !== -1 && (open === -1 || lineC < open)) return out; // the rest is a line comment
+      if (open !== -1) { out += line.slice(i, open); inBlock = true; i = open + 2; continue; }
+      out += line.slice(i);
+      break;
+    }
+    return out;
+  };
+};
+for (const f of uiOnly) {
+  const strip = commentStripper();
+  read(f).forEach((ln, i) => {
+    const m = NON_ASCII_RE.exec(strip(ln));
+    if (m) c8.push([f, i + 1, `non-ASCII character "${m[0]}" (U+${m[0].codePointAt(0).toString(16).toUpperCase()}) in src/ui — display copy lives in src/ui/data/labels/ (ADR-0007)`]);
+  });
+}
+
 const checks = [
   ['agent-vendor names (ADR-0006)', c1],
   ['branded-identity constructors (ADR-0003)', c2a],
@@ -168,6 +225,8 @@ const checks = [
   ['adapter imports (ADR-0006)', c4],
   ['disabled / aria-disabled / data-disabled (ADR-0001)', c5],
   ['.replace( proxy (ADR-0007)', c6],
+  ['literal colours in src/ui (ADR-0007)', c7],
+  ['non-ASCII display copy in src/ui (ADR-0007)', c8],
 ];
 
 console.log('\nwo-0005 boundary checks');

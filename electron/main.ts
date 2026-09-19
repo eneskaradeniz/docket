@@ -20,7 +20,7 @@ import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { Locale, RoleModels } from '../src/core/app-settings';
+import type { Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
@@ -453,6 +453,9 @@ ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLo
 // checkProvider pattern: the id vocabulary lives in the runner adapter, main only composes the channel.
 ipcMain.handle('docket:settings:get-models', () => store.getModels());
 ipcMain.handle('docket:settings:set-models', (_e, models: RoleModels | undefined) => store.setModels(models));
+// WO-0070: the whole-text prompt-template overrides — undefined (no row / clear-all) survives the clone.
+ipcMain.handle('docket:settings:get-prompt-overrides', () => store.getPromptOverrides());
+ipcMain.handle('docket:settings:set-prompt-overrides', (_e, overrides: PromptOverrides | undefined) => store.setPromptOverrides(overrides));
 ipcMain.handle('docket:settings:model-options', () => modelOptions());
 // WO-0059 rev 4: the status line's subject name — provider vocabulary crosses as DATA (c1).
 ipcMain.handle('docket:settings:provider-name', () => providerDisplayName());

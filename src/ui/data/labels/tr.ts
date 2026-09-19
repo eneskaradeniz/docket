@@ -600,6 +600,19 @@ export const UI = {
   modelMatrixAria: 'Rol başına model kademesi',
   modelTierLine: 'Kademe adları kurulumundaki modellere eşlenir.',
   modelDraftLine: (role: string): string => `✦ taslak sürüşü ${role} satırını izler.`,
+  // İstem şablonları (WO-0070 — beş şablonun bütün-metin geçersiz kılması; Kaydet haritayı bir
+  // yazıda saklar, boş alan = yerleşik şablon). Anahtar adları core verisidir (PromptKey); paket
+  // yalnız insan kelimesini taşır. Şablon metinleri VERİDİR — arayüz metni değil.
+  settingsPromptsTitle: 'İstem şablonları',
+  settingsPromptsHint: 'Boş = yerleşik şablon',
+  settingsPromptArchitect: 'Mimar',
+  settingsPromptImplementer: 'Uygulayıcı',
+  settingsPromptVerifier: 'Doğrulayıcı',
+  settingsPromptArchitectReview: 'Mimar incelemesi',
+  settingsPromptRoadmapDraft: 'Yol haritası taslağı',
+  settingsPromptSave: 'Kaydet',
+  settingsPromptReset: 'Varsayılana dön',
+  toastPromptsSaved: 'İstem şablonları kaydedildi',
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',

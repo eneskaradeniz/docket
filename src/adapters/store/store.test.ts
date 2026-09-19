@@ -10,6 +10,7 @@ import { workOrders } from '../fixtures';
 import { antreoRoadmapMd } from '../../core/__tests__/antreo-roadmap';
 import { buildRoadmapMd } from '../../core/roadmap-md';
 import { monthWindow } from '../../core/budget';
+import type { PromptOverrides } from '../../core/app-settings';
 import { rid, wid, woid } from '../ids';
 import type { RepoId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
@@ -2535,5 +2536,95 @@ describe('WO-0069 — the track CI learns unknown from the forge scan degraded m
     const { ws, wo, remote } = await observedWo(store);
     store.recordForgeDegraded(ws.id, remote, '2026-09-19T16:00:00Z', '');
     expect((await store.getWorkOrder(wo.id))!.tracks[0]!.ci).toEqual({ kind: 'run', state: 'unknown', checks: [] });
+  });
+});
+
+// ===== WO-0070 — prompt overrides: ONE app_setting row + the override-first assembly =====
+// An override flows: Settings → setPromptOverrides → the `prompt_overrides` row → read at
+// prompt-ASSEMBLY time in the four assembly fns → the agent. Absent → byte-identical built-in
+// (the existing prompt tests are the fallback proof; the EXISTING tests are unmodified).
+describe('WO-0070 — prompt overrides (row round-trip + override-first assembly)', () => {
+  const wsWithWo = async (store: ReturnType<typeof createStore>) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'İstem WS', repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'İstem', description: 'amaç metni', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    return { ws, wo };
+  };
+  const plan = '# p\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```';
+  const IMPL_OVERRIDE = 'You are the implementer. Follow the operator note EXACTLY: run the ladder, stop at red.';
+
+  it('the row round-trips; unknown keys and whitespace-only values never persist; garbage JSON reads undefined; clear leaves no row', async () => {
+    const store = createStore(freshDb());
+    expect(await store.getPromptOverrides()).toBeUndefined(); // no row → nothing stored
+    await store.setPromptOverrides({ implementer: 'A', roadmapDraft: 'B' });
+    expect(await store.getPromptOverrides()).toEqual({ implementer: 'A', roadmapDraft: 'B' });
+    // shape only — unknown keys and whitespace-only values drop; a body rides verbatim
+    await store.setPromptOverrides({ implementer: '  kept verbatim  ', ghost: 'x' } as unknown as PromptOverrides);
+    expect(await store.getPromptOverrides()).toEqual({ implementer: '  kept verbatim  ' });
+    // a garbage row reads undefined (the settingModels posture): a corrupt map never blocks a drive
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('prompt_overrides', 'not-json')").run();
+    expect(await store.getPromptOverrides()).toBeUndefined();
+    // undefined clears ALL; no row survives
+    await store.setPromptOverrides({ implementer: 'A' });
+    await store.setPromptOverrides(undefined);
+    expect(await store.getPromptOverrides()).toBeUndefined();
+    expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'prompt_overrides'").get()).toEqual({ n: 0 });
+  });
+
+  it('a per-key clear = the object MINUS the key; the other keys survive', async () => {
+    const store = createStore(freshDb());
+    await store.setPromptOverrides({ implementer: 'A', architect: 'B' });
+    await store.setPromptOverrides({ architect: 'B' }); // the modal sends the map minus implementer
+    expect(await store.getPromptOverrides()).toEqual({ architect: 'B' });
+  });
+
+  it('assembly is override-first: an overridden implementer prompt carries the override VERBATIM', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsWithWo(store);
+    await store.approvePlan(wo.id, plan);
+    const before = await store.stepPromptFor(wo.id, 1);
+    expect(before?.prompt).toContain('You are the implementer for step 1'); // the built-in, pre-override
+    await store.setPromptOverrides({ implementer: IMPL_OVERRIDE });
+    expect((await store.stepPromptFor(wo.id, 1))?.prompt).toBe(IMPL_OVERRIDE); // whole template, no merge
+    // the verifier leg rides ITS key — untouched by the implementer override
+    expect((await store.stepPromptFor(wo.id, 2))?.prompt).toContain('You are the verifier for step 2');
+  });
+
+  it('clear → byte-identical built-in for architect, step and review assembly (the fallback proof)', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsWithWo(store);
+    await store.approvePlan(wo.id, plan);
+    const architectBefore = await store.architectPromptFor(wo.id);
+    const stepBefore = await store.stepPromptFor(wo.id, 1);
+    const reviewBefore = await store.stepReviewPromptFor(wo.id, 1);
+    await store.setPromptOverrides({ architect: 'OA', implementer: 'OI', architectReview: 'OR' });
+    expect(await store.architectPromptFor(wo.id)).toBe('OA');
+    expect((await store.stepPromptFor(wo.id, 1))?.prompt).toBe('OI');
+    expect(await store.stepReviewPromptFor(wo.id, 1)).toBe('OR');
+    await store.setPromptOverrides(undefined);
+    expect(await store.architectPromptFor(wo.id)).toBe(architectBefore);
+    expect(await store.stepPromptFor(wo.id, 1)).toEqual(stepBefore);
+    expect(await store.stepReviewPromptFor(wo.id, 1)).toBe(reviewBefore);
+  });
+
+  it('the ✦ draft prompt is override-first too (roadmapDraftPromptForRow)', async () => {
+    const store = createStore(freshDb());
+    const ws = await store.createWorkspace({ label: 'Taslak WS', repos: [{ path: freshRoot() }] });
+    const before = store.roadmapDraftPromptFor(ws.id, 'not', []);
+    expect(before).toContain('roadmap.md'); // the built-in composes from the workspace facts
+    await store.setPromptOverrides({ roadmapDraft: 'DRAFT OVERRIDE' });
+    expect(store.roadmapDraftPromptFor(ws.id, 'not', [])).toBe('DRAFT OVERRIDE');
+    await store.setPromptOverrides(undefined);
+    expect(store.roadmapDraftPromptFor(ws.id, 'not', [])).toBe(before);
+  });
+
+  it('a whitespace-only override is ignored at assembly — the built-in stands', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsWithWo(store);
+    await store.approvePlan(wo.id, plan);
+    const before = await store.stepPromptFor(wo.id, 1);
+    await store.setPromptOverrides({ implementer: '   \n\t  ' });
+    expect(await store.getPromptOverrides()).toBeUndefined(); // the write normalized it away
+    expect((await store.stepPromptFor(wo.id, 1))?.prompt).toBe(before?.prompt);
   });
 });

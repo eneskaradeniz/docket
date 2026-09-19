@@ -162,6 +162,14 @@ export function stripUnfilledSections(md: string): string {
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+/** WO-0070: the override-first seam. The built-in template stands unless the operator stored a
+ *  whole-text replacement; a whitespace-only override is no override. Pure — the store's four
+ *  assembly fns wrap their constant call through this, and when no override exists the output is
+ *  byte-identical to the built-in (the existing prompt tests are the fallback proof). */
+export function withOverride(builtin: string, override: string | undefined): string {
+  return override !== undefined && override.trim() !== '' ? override : builtin;
+}
+
 export function architectPrompt(input: { objective: string; reviewMode: ReviewMode; orderMdPath: string }): string {
   const cadence =
     input.reviewMode === 'every-step'

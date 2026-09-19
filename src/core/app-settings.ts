@@ -27,6 +27,18 @@ export type RoleModels = Partial<Record<SessionRole, string>>;
  *  per-locale bundles in src/ui/data/labels/, keyed by this type. */
 export type Locale = 'tr' | 'en';
 
+/** WO-0070: the FIVE prompt templates an operator may override wholesale. Four are the role
+ *  templates assembled in core (order-md.ts: architect / implementer / verifier / architectReview),
+ *  the fifth is the ✦ draft drive's (roadmap-draft.ts). The key names the TEMPLATE, not the text —
+ *  the built-in bodies stay core constants (prompt texts are data, not UI copy). */
+export type PromptKey = 'architect' | 'implementer' | 'verifier' | 'architectReview' | 'roadmapDraft';
+
+/** WO-0070: the WHOLE-TEXT override map — the operator edits the full text of one named prompt, never
+ *  micro-edits into the built-in. A key absent from the map = the built-in stands. An override reaching
+ *  an agent goes through the store's assembly fns ONLY (the WO-0070 stop-and-ask gate); core never
+ *  validates the content (the operator's text is the operator's text). */
+export type PromptOverrides = Partial<Record<PromptKey, string>>;
+
 export interface AppSettings {
   /** The DEFAULT permission rule (WO-0031c): Settings holds only the default — each work order carries
    *  its own rule (order.md front-matter; changeable from the ask card). 'ask'/'auto' legacy values map
@@ -47,6 +59,14 @@ export interface AppSettings {
   /** Store (or clear, on undefined/empty) the per-role preference. The ids ride verbatim; the
    *  store normalizes shape (unknown role keys and blanks dropped), never values. */
   setModels(models: RoleModels | undefined): Promise<void>;
+  /** The whole-text prompt-template overrides (WO-0070): one map over the five PromptKeys, an absent
+   *  key = the built-in stands. undefined = nothing stored. Read at PROMPT-ASSEMBLY time in the
+   *  store's assembly fns, so a change hits the next drive, never a running one (the models posture). */
+  getPromptOverrides(): Promise<PromptOverrides | undefined>;
+  /** Store (or clear) the override map. undefined CLEARS ALL (the budget-threshold idiom); a
+   *  per-key clear sends the object minus that key. The store normalizes shape (unknown keys and
+   *  whitespace-only values dropped), never content. */
+  setPromptOverrides(overrides: PromptOverrides | undefined): Promise<void>;
   /** The preset model ids the ADAPTER offers (the checkProvider pattern — provider vocabulary is
    *  minted adapter-side and crosses as DATA; ADR-0006 names the provider adapter as the one
    *  place). [] → the UI's preset chips render ABSENT (ADR-0001); the free-text field is
