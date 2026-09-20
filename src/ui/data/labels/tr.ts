@@ -650,7 +650,7 @@ export const UI = {
   DEGRADED_LINES: {
     'unparseable-remote': 'Depo adresi okunamadı — uzak bağlantı beklenen biçimde değil',
     'not-git': 'Git deposu değil — değişiklik izlenmez',
-    'tool-missing': 'Git bulunamadı — bu makinede kurulu değil',
+    'tool-missing': 'Gerekli araç bulunamadı — bu makinede kurulu değil',
     unknown: 'İzlenemedi',
   },
   // WO-0066 — sağlık yüzeyi: üç bağımlılık tek şerit (ADR-0010 «sağlık birinci sınıf görünür

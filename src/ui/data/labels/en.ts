@@ -553,7 +553,7 @@ export const UI = {
   DEGRADED_LINES: {
     'unparseable-remote': 'Repo URL does not read as the expected remote format',
     'not-git': 'Not a git repository — changes are not tracked',
-    'tool-missing': 'Git not found on this machine',
+    'tool-missing': 'A required tool is not installed on this machine',
     unknown: 'Could not be observed',
   },
   // WO-0066 — the health strip: three dependencies, one row (ADR-0010 «health is a first-class,
