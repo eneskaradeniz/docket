@@ -463,6 +463,16 @@ gate model, after the board and the detail view.
       E2E 96/96 green · 1056 unit · typecheck ×2 · build · boundaries. Order:
       `docs/work-orders/WO-0074-e2e-curume-onarimi/order.md`.
 
+- [x] **WO-0075** — the app home is `~/.docket` (2026-09-20; the operator's "~/.claude gibi"
+      proposal, split in the discussion: the DECISION STORE stays in the repo — project knowledge,
+      the evidence chain stands on it; the RUNTIME STATE moves to the dotdir home): the pure
+      `resolveDbPath` resolver (override verbatim, never migrates; fresh machine → `~/.docket/
+      docket.db`; a legacy Electron-userData db is mkdir+RENAMED into place exactly once, never
+      copied; un-migratable legacy is fail-safe back to the legacy file), wired in the composition
+      root — its only caller since WO-0073. +6 resolver tests; E2E untouched by construction (the
+      harness's explicit `DOCKET_DB_PATH` never migrates). CLAUDE.md's app-home line.
+      Order: `docs/work-orders/WO-0075-docket-evi/order.md`.
+
 - [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)
