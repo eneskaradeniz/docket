@@ -1,0 +1,24 @@
+=== milestones: antreo-app/api ===
+count: 8
+{'number': 1, 'title': 'Faz 0 — Kullanıcı Altyapısı', 'state': 'open', 'open_issues': 0, 'closed_issues': 8, 'due_on': None, 'created_at': '2026-08-12T09:19:53Z', 'description': 'Şifresiz giriş, roller, KVKK, doğrulama sistemi.\n   Tam dokümantasyon: antrenor-danisan-platform reposu, docs/ klasörü'}
+{'number': 2, 'title': 'Faz 1 — Antrenör Profil Sistemi', 'state': 'open', 'open_issues': 0, 'closed_issues': 9, 'due_on': None, 'created_at': '2026-08-18T07:55:15Z', 'description': ''}
+{'number': 3, 'title': 'Faz 3 — Arama & Keşif', 'state': 'open', 'open_issues': 0, 'closed_issues': 5, 'due_on': None, 'created_at': '2026-08-25T09:28:59Z', 'description': ''}
+{'number': 4, 'title': 'Faz 4 — Rezervasyon & Takvim Sistemi', 'state': 'open', 'open_issues': 0, 'closed_issues': 8, 'due_on': None, 'created_at': '2026-08-26T06:17:25Z', 'description': ''}
+{'number': 5, 'title': 'Faz 5 — Mesajlaşma', 'state': 'open', 'open_issues': 0, 'closed_issues': 9, 'due_on': None, 'created_at': '2026-08-28T08:53:50Z', 'description': ''}
+{'number': 6, 'title': 'Faz 2 — Değerlendirme Sistemi', 'state': 'open', 'open_issues': 0, 'closed_issues': 9, 'due_on': None, 'created_at': '2026-08-31T06:46:10Z', 'description': None}
+{'number': 7, 'title': 'Faz 6 — Ödeme Entegrasyonu & İş Modeli', 'state': 'open', 'open_issues': 0, 'closed_issues': 7, 'due_on': None, 'created_at': '2026-08-31T13:56:14Z', 'description': None}
+{'number': 8, 'title': 'Faz 7 — Admin Panel & Moderasyon', 'state': 'closed', 'open_issues': 0, 'closed_issues': 11, 'due_on': None, 'created_at': '2026-09-14T06:31:26Z', 'description': 'Admin panel: kimlik doğrulama (Cloudflare Access), personel/rol/izin, denetim kaydı, şikayet/doğrulama/ihtilaf/yorum moderasyon kuyrukları, kayıt yönetimi, teklif/rezervasyon gözetimi, ödeme izleme, ayarlar, genel bakış dashboard. Görev 1-11 (api#145-155), retroaktif oluşturuldu.'}
+=== milestones: antreo-app/docs ===
+count: 7
+{'number': 1, 'title': 'Faz 0 — Kullanıcı Altyapısı', 'state': 'open', 'open_issues': 0, 'closed_issues': 28, 'due_on': None, 'created_at': '2026-08-05T08:45:09Z', 'description': 'Kullanıcı rolleri, kayıt/giriş (telefon+SMS, Google, Apple), KVKK onayı, \ndoğrulama sistemi ve temel platform altyapısı.\n\nReferans dokümanlar:\n- Faz 0-8 Proje Dokümantasyonu (madde 0.1–0.17)\n- Faz 0 Güncelleme Notu (şifresiz giriş modeli)\n- Veri Modeli — Kimlik & Roller grubu (USER, AUTH_CODE, TRAINER_PROFILE, \n  CONSUMER_PROFILE, LINKED_PROFILE)\n- Wireframe Kataloğu — Onboarding grubu (8 ekran)\n\nBu faz tamamlanmadan diğer fazlar (özellikle Faz 1 antrenör profili) \nbaşlatılamaz çünkü tüm roller ve kimlik doğrulama buna bağlı.'}
+{'number': 2, 'title': 'Faz 1 — Antrenör Profil Sistemi', 'state': 'open', 'open_issues': 1, 'closed_issues': 7, 'due_on': None, 'created_at': '2026-08-18T07:54:57Z', 'description': ''}
+{'number': 3, 'title': 'Faz 3 — Arama & Keşif', 'state': 'open', 'open_issues': 0, 'closed_issues': 5, 'due_on': None, 'created_at': '2026-08-25T09:28:21Z', 'description': ''}
+{'number': 4, 'title': 'Faz 4 — Rezervasyon & Takvim Sistemi', 'state': 'open', 'open_issues': 0, 'closed_issues': 8, 'due_on': None, 'created_at': '2026-08-26T06:15:19Z', 'description': ''}
+{'number': 5, 'title': 'Faz 5 — Mesajlaşma', 'state': 'open', 'open_issues': 0, 'closed_issues': 9, 'due_on': None, 'created_at': '2026-08-28T08:52:12Z', 'description': ''}
+{'number': 6, 'title': 'Faz 2 — Değerlendirme Sistemi', 'state': 'open', 'open_issues': 0, 'closed_issues': 9, 'due_on': None, 'created_at': '2026-08-31T06:46:10Z', 'description': None}
+{'number': 7, 'title': 'Faz 6 — Ödeme Entegrasyonu & İş Modeli', 'state': 'open', 'open_issues': 0, 'closed_issues': 7, 'due_on': None, 'created_at': '2026-08-31T13:56:15Z', 'description': None}
+=== milestones: antreo-app/mobile ===
+count: 1
+{'number': 1, 'title': 'Faz 0 — Kullanıcı Altyapısı', 'state': 'open', 'open_issues': 0, 'closed_issues': 8, 'due_on': None, 'created_at': '2026-08-12T09:22:14Z', 'description': ''}
+=== milestones: antreo-app/admin-web ===
+count: 0
