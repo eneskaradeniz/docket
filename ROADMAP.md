@@ -498,6 +498,19 @@ gate model, after the board and the detail view.
       untouched); radio groups are useId-scoped (parallel cards). 1100/1100 unit (+39: the
       probe's verbatim payloads + 4 adapter settle pins with red→green proof) · E2E 98/98
       (+2 scripted structured-ask specs). Order: `docs/work-orders/WO-0077-askq-card/order.md`.
+
+- [x] **WO-0081** — probe: the gh issue surface (PR #83, merge `db6369e`, 2026-09-21; subagent-run,
+      orchestrator-verified): the antreo bridge's contract, measured READ-ONLY. The org reality —
+      `antreo-app` carries 6 repos (4 with issue activity: api ~333 / mobile ~263 / docs ~101 /
+      admin-web ~70; org-wide open 38); milestones ARE the operator's Faz layer (api 8, docs 7,
+      all due_on null) and a second collaborator exists. `gh issue list` takes 27 json fields
+      (body/comments accepted but ~10x heavier); REST names differ (user/html_url, comments a
+      count) and paginates by cursor. THE HONEST SURPRISE: the cross-repo issue chain lives in
+      TITLE TEXT (`🔒 api#330` tokens — every structured link field empty) and the tokens are
+      first-class search terms; search is the scarce budget (30/min vs core 5000/h). report.md
+      freezes WO-0082's contract: the 3-call read surface, `issue:` front-matter primary + search
+      secondary, one-page scan policy, NO milestone port (the roadmap fazlar stay the planning
+      truth). Order: `docs/work-orders/WO-0081-issue-probe/order.md`.
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)
 - [x] Open work orders grouped by whose turn it is (WO-0072)

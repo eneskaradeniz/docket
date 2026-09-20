@@ -67,3 +67,12 @@ In scope: the probe script, raw logs, report.md. Out of scope: ANY src/ or elect
 
 - The other WO-0082 numbering decision: issues-port work follows as WO-0082 (probe → port).
 - Real repos touched READ-ONLY; the operator authorized the subagent pipeline (2026-09-20).
+
+## Closure (2026-09-21)
+
+- All 7 measured questions answered with verbatim log quotes (21 raw logs under
+  `docs/probes/forge-issue/raw/`); the script re-runnable, READ-ONLY verified by grep.
+- READ-ONLY upheld end-to-end: zero mutation flags in `probe-issue.sh`, no antreo repo touched.
+- PR #83 (`https://github.com/eneskaradeniz/docket/pull/83`), head `e3a98b5`, merged `db6369e`
+  (the subagent-pipeline flow); closed at the commit carrying this line.
+- WO-0082's contract: frozen in report.md §"WO-0082 design consequences".
