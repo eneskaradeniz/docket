@@ -694,6 +694,13 @@ export const UI = {
   permRuleQuestion: 'İzin kuralı — ajan sizden ne zaman izin istesin',
   askRiskyTag: 'riskli yazım',
   askAlwaysAuto: 'Bu iş emri için hep otomatik',
+  // WO-0077 — yapılandırılmış soru kartının SABİT kromu. Soru/seçenek metinleri MODEL VERİSİDİR:
+  // props'tan aynen geçer, paket anahtarı değildir (ADR-0007 sınırı — WO-0077'in 5. maddesi).
+  askAnswer: 'Cevapla',
+  askSkip: 'Boş geç',
+  askRecommended: 'önerilen',
+  askOther: 'Diğer',
+  askOtherPlaceholder: 'Kendi yanıtını yaz…',
   // WO satır içi düzenleme + inceleme modu rozeti. WO-0044: "Kapılarda" kendi başına jargondu
   // (neyin kapıları?) — çip denetim cadence'ini ADIYLA söyler; öğreten cümle tooltip'te zaten.
   reviewModeLabel: 'İnceleme',

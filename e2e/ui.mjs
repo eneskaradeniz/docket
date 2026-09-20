@@ -477,6 +477,123 @@ await spec('risky ask: riskli yazım tag + İzin ver resolves + the timeline rec
   await backToBoard();
 });
 
+// ===== WO-0077 — the structured ask (AskUserQuestion renders as the question) =====
+// Each spec creates a THROWAWAY work order (no rule → the safe ask_every default, so the emitted
+// ask surfaces instead of auto-resolving), drives it through the structured card on the risky-ask
+// spec's emit channel, and deletes it — the shared seeded WOs keep their rules and states.
+
+const emitAsk = (requestId, multiSelect) => page.evaluate(([rid, multi]) => window.docket.e2e?.emit({
+  kind: 'permission_request',
+  requestId: rid,
+  tool: 'AskUserQuestion',
+  input: {
+    questions: [{
+      question: 'Which persistence layer should the new service use?',
+      header: 'Storage',
+      options: [
+        { label: 'SQLite (Recommended)', description: 'Embedded, zero-ops, fits a single machine' },
+        { label: 'Postgres', description: 'Full server database, ops burden' },
+        { label: 'JSON files', description: 'Flat files on disk, no query layer' },
+      ],
+      multiSelect: multi,
+    }],
+  },
+}), [requestId, multiSelect]);
+
+const openThrowaway = async (title) => {
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill(title);
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(800); // create NAVIGATES to the new WO's detail (App.tsx setSelectedId)
+  await page.getByRole('button', { name: 'Plan iste', exact: true }).click();
+  await page.waitForTimeout(500);
+};
+
+const deleteThrowaway = async (title) => {
+  await page.getByRole('button', { name: 'Sil', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: title }).count(), 0, 'the throwaway work order did not delete');
+  await backToBoard();
+};
+
+await spec('structured ask: radio options + önerilen badge + Cevapla folds the picked label; the drive continues', async () => {
+  const title = 'WO-0077 soru turu A';
+  await openThrowaway(title);
+  await emitAsk('r-e2e-askq', false);
+  await page.waitForTimeout(400);
+  assert.ok((await page.getByText('Which persistence layer should the new service use?').count()) >= 1, 'no structured question head');
+  assert.equal(await page.getByRole('radio').count(), 3, 'the options did not render as radios');
+  assert.ok((await page.getByText('önerilen', { exact: true }).count()) >= 1, 'no recommended badge');
+  // the suffix is parsed OFF for display — the label reads SQLite, never the raw "SQLite (Recommended)"
+  // (exact match would still hit: the badge shares the row's label span)
+  assert.ok((await page.getByText(/^SQLite/).count()) >= 1, 'the display label lost its suffix');
+  assert.equal(await page.getByText('SQLite (Recommended)').count(), 0, 'the raw suffix rendered');
+  assert.equal(await page.getByRole('button', { name: 'Cevapla', exact: true }).count(), 0, 'Cevapla exists with no answer given');
+  await page.getByRole('radio', { name: /SQLite/ }).check();
+  await page.waitForTimeout(200);
+  await page.getByRole('button', { name: 'Cevapla', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.getByRole('radio').count(), 0, 'the structured card did not resolve');
+  // the drive CONTINUES — no restart, the pane's turn state flips back to running
+  assert.ok((await page.locator('[aria-live="polite"]').getByText('Çalışıyor', { exact: true }).count()) >= 1, 'the drive did not resume after the answer');
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(600);
+  const evs = await page.evaluate(async (t) => {
+    const wos = await window.docket.source.getWorkOrders();
+    const wo = wos.find((w) => w.title === t);
+    return window.docket.source.getWorkOrderEvents(wo.id);
+  }, title);
+  assert.ok(
+    evs.some((e) => e.kind === 'permission_decision' && (e.detail ?? '').includes('Storage: SQLite (Recommended)')),
+    `the folded answer did not reach the record: ${JSON.stringify(evs.filter((e) => e.kind === 'permission_decision'))}`,
+  );
+  await deleteThrowaway(title);
+});
+
+await spec('structured ask: multiSelect joins, Diğer wins, Boş geç dismisses (the other measured arms)', async () => {
+  const title = 'WO-0077 soru turu B';
+  await openThrowaway(title);
+  // multiSelect: checkboxes; two picks fold as ONE ", "-joined string
+  await emitAsk('r-e2e-askq-multi', true);
+  await page.waitForTimeout(400);
+  assert.equal(await page.getByRole('checkbox').count(), 3, 'the options did not render as checkboxes');
+  await page.getByRole('checkbox', { name: /SQLite/ }).check();
+  await page.getByRole('checkbox', { name: /Postgres/ }).check();
+  await page.waitForTimeout(200);
+  await page.getByRole('button', { name: 'Cevapla', exact: true }).click();
+  await page.waitForTimeout(500);
+  // Diğer: the free text IS the answer — typing it retires the selections (exclusive, v1)
+  await emitAsk('r-e2e-askq-other', false);
+  await page.waitForTimeout(400);
+  await page.getByRole('radio', { name: /SQLite/ }).check();
+  await page.getByLabel('Diğer', { exact: true }).fill('Plain markdown files');
+  await page.waitForTimeout(200);
+  assert.equal(await page.getByRole('radio', { name: /SQLite/ }).isChecked(), false, 'the free text did not retire the selection');
+  await page.getByRole('button', { name: 'Cevapla', exact: true }).click();
+  await page.waitForTimeout(500);
+  // dismissed: Boş geç sends the bare allow and the card resolves
+  await emitAsk('r-e2e-askq-skip', false);
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Boş geç', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.getByRole('radio').count(), 0, 'the dismissed card did not resolve');
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(600);
+  const details = await page.evaluate(async (t) => {
+    const wos = await window.docket.source.getWorkOrders();
+    const wo = wos.find((w) => w.title === t);
+    const evs = await window.docket.source.getWorkOrderEvents(wo.id);
+    return evs.filter((e) => e.kind === 'permission_decision').map((e) => e.detail ?? '');
+  }, title);
+  assert.ok(details.some((d) => d.includes('Storage: SQLite (Recommended), Postgres')), `the multi join did not land: ${JSON.stringify(details)}`);
+  assert.ok(details.some((d) => d.includes('Storage: Plain markdown files')), `the Diğer free text did not land: ${JSON.stringify(details)}`);
+  assert.ok(details.some((d) => d.includes('Which persistence layer should the new service use?')), `the dismissed arm did not land: ${JSON.stringify(details)}`);
+  await deleteThrowaway(title);
+});
+
 await spec('board live: answering an ask flips the card to Çalışıyor mid-drive; no flip-back at end', async () => {
   const title = 'Yeni iş emri örneği';
   const bucket = (name) => page.locator('section').filter({ has: page.locator('h2', { hasText: name }) });

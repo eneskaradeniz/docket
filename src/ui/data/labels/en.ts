@@ -596,6 +596,13 @@ export const UI = {
   permRuleQuestion: 'Permission rule — when should the agent ask you',
   askRiskyTag: 'risky write',
   askAlwaysAuto: 'Always automatic for this work order',
+  // WO-0077 — the structured ask card's FIXED chrome. The question/options text is MODEL DATA:
+  // it rides props verbatim, never a bundle key (the ADR-0007 border — WO-0077 contract 5).
+  askAnswer: 'Answer',
+  askSkip: 'Skip',
+  askRecommended: 'recommended',
+  askOther: 'Other',
+  askOtherPlaceholder: 'Write your own answer…',
   reviewModeLabel: 'Review',
   // WO-0044: the chip names the cadence itself — "At gates" alone begged "whose gates?".
   reviewModeGatesShort: 'Review: at gates',
