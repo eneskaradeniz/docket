@@ -1,0 +1,6 @@
+333	OPEN	[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı		2026-09-20T18:37:15Z
+332	OPEN	[API] IEmailSender tek gerçek implementasyonu SES'e bağlı — sağlayıcıdan bağımsız SmtpEmailSender + dev/staging için Mailpit		2026-09-20T18:37:13Z
+331	OPEN	[API] CodecSmsService doğrulanmamış bir sözleşmeye yazılmış — Netgsm REST v2 OTP adaptörüyle değiştir		2026-09-20T18:39:59Z
+330	OPEN	[API] OTP SMS'i şablonsuz — mesaj gövdesi çıplak 6 hane; otomatik doldurma çalışmıyor, gönderen belirsiz		2026-09-20T18:39:58Z
+329	OPEN	[API] Telefon sözleşmesinin sunucu yarısı hiç yazılmamış — ülke allowlist'i ve mobil-hat kontrolü yok, Netgsm bu numaralara gönderemiyor		2026-09-20T18:40:01Z
+328	OPEN	Sosyal giriş (Google/Apple) kayıtsız kimlikle hesap açabilsin — api#178'in sosyal yolu esnetilmeli (ürün kararı 2026-09-20)		2026-09-20T11:35:56Z

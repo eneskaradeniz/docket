@@ -1,0 +1,11 @@
+### gh issue list --search "Netgsm in:title"
+[{"number":331,"state":"OPEN","title":"[API] CodecSmsService doğrulanmamış bir sözleşmeye yazılmış — Netgsm REST v2 OTP adaptörüyle değiştir"},{"number":333,"state":"OPEN","title":"[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı"},{"number":329,"state":"OPEN","title":"[API] Telefon sözleşmesinin sunucu yarısı hiç yazılmamış — ülke allowlist'i ve mobil-hat kontrolü yok, Netgsm bu numaralara gönderemiyor"}]
+exit=0
+
+### gh api search/issues?q=Netgsm+in:title+repo:antreo-app/api
+total_count: 3 | incomplete_results: False
+{'number': 331, 'title': '[API] CodecSmsService doğrulanmamış bir sözleşmeye yazılmış — Netgsm REST v2 OTP adaptörüyle değiştir', 'state': 'open', 'html_url': 'https://github.com/antreo-app/api/issues/331'}
+{'number': 333, 'title': '[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı', 'state': 'open', 'html_url': 'https://github.com/antreo-app/api/issues/333'}
+{'number': 329, 'title': "[API] Telefon sözleşmesinin sunucu yarısı hiç yazılmamış — ülke allowlist'i ve mobil-hat kontrolü yok, Netgsm bu numaralara gönderemiyor", 'state': 'open', 'html_url': 'https://github.com/antreo-app/api/issues/329'}
+item keys: ['active_lock_reason', 'assignee', 'assignees', 'author_association', 'body', 'closed_at', 'comments', 'comments_url', 'created_at', 'events_url', 'html_url', 'id', 'issue_dependencies_summary', 'issue_field_values', 'labels', 'labels_url', 'locked', 'milestone', 'node_id', 'number', 'performed_via_github_app', 'pinned_comment', 'reactions', 'repository_url', 'score', 'state', 'state_reason', 'sub_issues_summary', 'timeline_url', 'title', 'type', 'updated_at', 'url', 'user']
+exit=0

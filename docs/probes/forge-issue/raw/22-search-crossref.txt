@@ -1,0 +1,10 @@
+### cross-repo ref search: gh issue list -R antreo-app/mobile --search "api#330 in:title"
+[{"number":263,"state":"OPEN","title":"[Flutter] Android'de OTP otomatik doldurma çalışmıyor — SMS User Consent API (Retriever DEĞİL: operatör B021 eki hash'i bozuyor) (🔒 api#330)"}]
+exit=0
+
+### org-wide REST search: Netgsm across antreo-app
+total_count: 3
+antreo-app/api #331 open
+antreo-app/api #333 open
+antreo-app/api #329 open
+exit=0
