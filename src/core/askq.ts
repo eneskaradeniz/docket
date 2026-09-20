@@ -52,32 +52,35 @@ function str(v: unknown): v is string {
 /**
  * Parse the fence input into the card's question. Strict: `questions` ≥1, the first question's
  * `question` a non-empty string (THE ANSWER KEY), `header` a string, `options` ≥2 each with a
- * non-empty `label` string + a `description` string, `multiSelect` a boolean. Anything else —
- * or a hostile input that throws on read — is undefined. Refuses every tool but ASK_TOOL: the
- * shape is not the point, the ask tool is.
+ * non-empty `label` string + a `description` string, `multiSelect` a boolean. Refuses every tool
+ * but ASK_TOOL: the shape is not the point, the ask tool is.
+ *
+ * Fail-open END TO END: the whole body is one guard — a hostile getter ANYWHERE in the payload (a
+ * Proxy over an array passes Array.isArray; a nested option getter throws during the walk) degrades
+ * to undefined, never a throw past this file. The card renders the binary form instead (the
+ * WO-0077 gate: a malformed payload must never break the permission flow — not even by crashing).
  */
 export function parseAskRequest(tool: string, input: Record<string, unknown>): AskQuestion | undefined {
   if (tool !== ASK_TOOL) return undefined;
-  let raw: unknown;
   try {
-    raw = input.questions; // a hostile getter throws — caught, undefined (never a throw past this file)
+    const raw: unknown = input.questions;
+    if (!Array.isArray(raw) || raw.length < 1) return undefined;
+    const q = raw[0];
+    if (!isRecord(q)) return undefined;
+    const { question, header, options, multiSelect } = q;
+    if (!str(question) || question === '' || !str(header) || !Array.isArray(options) || options.length < 2) return undefined;
+    if (typeof multiSelect !== 'boolean') return undefined;
+    const parsed: AskOption[] = [];
+    for (const o of options) {
+      if (!isRecord(o)) return undefined;
+      const { label, description } = o;
+      if (!str(label) || label === '' || !str(description)) return undefined;
+      parsed.push({ label, description }); // field-picked: unknown extras (preview) are not Docket's to read
+    }
+    return { question, header, options: parsed, multiSelect };
   } catch {
-    return undefined;
+    return undefined; // a hostile getter anywhere in the walk — undefined, never a throw
   }
-  if (!Array.isArray(raw) || raw.length < 1) return undefined;
-  const q = raw[0];
-  if (!isRecord(q)) return undefined;
-  const { question, header, options, multiSelect } = q;
-  if (!str(question) || question === '' || !str(header) || !Array.isArray(options) || options.length < 2) return undefined;
-  if (typeof multiSelect !== 'boolean') return undefined;
-  const parsed: AskOption[] = [];
-  for (const o of options) {
-    if (!isRecord(o)) return undefined;
-    const { label, description } = o;
-    if (!str(label) || label === '' || !str(description)) return undefined;
-    parsed.push({ label, description }); // field-picked: unknown extras (preview) are not Docket's to read
-  }
-  return { question, header, options: parsed, multiSelect };
 }
 
 /** Does the option label carry the recommendation marker? Display-only — never stored, never a field. */

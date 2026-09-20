@@ -22,8 +22,9 @@ import {
   neutralLimitStatus,
   usageOf,
 } from './index';
+import { ASK_TOOL, askDecision } from '../../core/askq';
 import type { CostSummary } from '../../core/types';
-import type { DriveInput, RunnerEvent, SessionRunner } from '../../core/runner';
+import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../../core/runner';
 import { woid } from '../ids';
 
 // The scripted-SDK mock. `setScript` installs the message stream; a `gate()` sentinel INSIDE the
@@ -581,5 +582,114 @@ describe('model selection — input id → Options.model (WO-0059)', () => {
 
   it('modelOptions() names the ALIAS TIERS worst→best — data for the picker (WO-0059 rev 4)', () => {
     expect(modelOptions()).toEqual(['haiku', 'sonnet', 'opus']);
+  });
+});
+
+// ===== WO-0077 — the settle pin: the structured ask crosses canUseTool → decide VERBATIM =====
+// The E2E suite rides the scripted e2e-runner (electron/e2e-runner.ts), whose decide() IGNORES the
+// decision payload — an adapter dropping `updatedInput` would pass that whole suite while
+// regressing production to always-dismissed (the probe's a5 arm). These tests drive the REAL
+// runner's fence: the canUseTool is pulled off the recorded spawn options (the same callback the
+// SDK invokes), held, then answered with decide(). The gate keeps the stream open — the drive's
+// finally drops pending asks (index.ts `pending.clear()`), so the answer must land mid-drive.
+
+type SettledPermission = { behavior: string; updatedInput?: Record<string, unknown>; message?: string };
+type CanUseToolShim = (
+  toolName: string,
+  input: Record<string, unknown>,
+  o: { requestId: string; title?: string; decisionReason?: string },
+) => Promise<SettledPermission>;
+
+const askqInput = {
+  questions: [
+    {
+      question: 'Which persistence layer should the new service use?',
+      header: 'Storage',
+      options: [
+        { label: 'SQLite (Recommended)', description: 'Embedded, zero-ops, fits a single machine' },
+        { label: 'Postgres', description: 'Full server database, ops burden' },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
+
+async function driveWithHeldAsk(): Promise<{
+  canUseTool: CanUseToolShim;
+  runner: SessionRunner;
+  events: RunnerEvent[];
+  done: Promise<void>;
+  release: () => void;
+}> {
+  const gate = sdkMock.gate();
+  sdkMock.setScript([initMsg, { __gate: gate.promise }, resultMsg()]);
+  const runner = createRunner();
+  const events: RunnerEvent[] = [];
+  const done = (async () => {
+    for await (const ev of runner.drive(stepInput)) events.push(ev);
+  })();
+  await vi.waitFor(() => expect(sdkMock.lastOptions()?.canUseTool).toBeDefined());
+  return {
+    canUseTool: sdkMock.lastOptions()?.canUseTool as unknown as CanUseToolShim,
+    runner,
+    events,
+    done,
+    release: gate.release,
+  };
+}
+
+describe('WO-0077 — the settle pin: canUseTool → decide carries the measured arms', () => {
+  it('the fence SURFACES the question as an ask (the write-scope fence alone would auto-allow it)', async () => {
+    const h = await driveWithHeldAsk();
+    const held = h.canUseTool(ASK_TOOL, askqInput, { requestId: 'r-wo-0077-a' });
+    await vi.waitFor(() =>
+      expect(h.events.some((e) => e.kind === 'permission_request' && e.tool === ASK_TOOL)).toBe(true),
+    );
+    // the full lifecycle: the answer resolves the held callback and the drive runs to its result
+    await h.runner.decide('r-wo-0077-a', { allow: true });
+    expect(await held).toEqual({ behavior: 'allow' });
+    h.release();
+    await h.done;
+  });
+
+  it('selection: the fold settles as { behavior: "allow", updatedInput } — answers keyed by the question string, ", "-joined', async () => {
+    const h = await driveWithHeldAsk();
+    const held = h.canUseTool(ASK_TOOL, askqInput, { requestId: 'r-wo-0077-b' });
+    const decision = askDecision(askqInput, 'Which persistence layer should the new service use?', {
+      kind: 'selection',
+      labels: ['SQLite (Recommended)', 'Postgres'],
+    });
+    await h.runner.decide('r-wo-0077-b', decision);
+    expect(await held).toEqual({
+      behavior: 'allow',
+      updatedInput: {
+        questions: askqInput.questions,
+        answers: { 'Which persistence layer should the new service use?': 'SQLite (Recommended), Postgres' },
+      },
+    });
+    h.release();
+    await h.done;
+  });
+
+  it('dismissed: the BARE allow — the updatedInput KEY is absent, not merely undefined', async () => {
+    const h = await driveWithHeldAsk();
+    const held = h.canUseTool(ASK_TOOL, askqInput, { requestId: 'r-wo-0077-c' });
+    const decision: PermissionDecision = { allow: true };
+    await h.runner.decide('r-wo-0077-c', decision);
+    const settled = await held;
+    expect(settled).toEqual({ behavior: 'allow' });
+    expect('updatedInput' in settled).toBe(false);
+    h.release();
+    await h.done;
+  });
+
+  it('declined: the deny with the message, verbatim', async () => {
+    const h = await driveWithHeldAsk();
+    const held = h.canUseTool(ASK_TOOL, askqInput, { requestId: 'r-wo-0077-d' });
+    const decision: PermissionDecision = { allow: false, reason: 'the operator declined to answer this question' };
+    await h.runner.decide('r-wo-0077-d', decision);
+    expect(await held).toEqual({ behavior: 'deny', message: 'the operator declined to answer this question' });
+    h.release();
+    await h.done;
   });
 });

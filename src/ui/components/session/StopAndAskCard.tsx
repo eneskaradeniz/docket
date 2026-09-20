@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { FilePen, SquareTerminal } from 'lucide-react';
 import { summarizeToolInput } from '../../../core/runner';
 import { isRiskyPermission } from '../../../core/risky';
@@ -91,6 +91,10 @@ function AskQuestionCard({
   const { UI } = useLabels();
   const [picked, setPicked] = useState<string[]>([]);
   const [otherText, setOtherText] = useState('');
+  // WO-0077 review (major 1): radio groups are DOCUMENT-wide by name, and parallel ask cards are a
+  // supported state (WorkOrderDetail maps every pending ask to a card). A shared name let card B's
+  // picks deselect card A's DOM check while React's state diverged — each card owns its group.
+  const groupId = useId();
   const other = otherText.trim();
   const answered: AskAnswer | undefined =
     other !== ''
@@ -117,11 +121,11 @@ function AskQuestionCard({
           <p className="text-sm text-ink">{ask.question}</p>
         </div>
         <div className="mt-1.5 flex flex-col">
-          {ask.options.map((o) => (
-            <label key={o.label} className="irow flex items-start gap-2 rounded-md px-1.5 py-1">
+          {ask.options.map((o, i) => (
+            <label key={`${i}-${o.label}`} className="irow flex items-start gap-2 rounded-md px-1.5 py-1">
               <input
                 type={ask.multiSelect ? 'checkbox' : 'radio'}
-                name="askq"
+                name={groupId}
                 checked={picked.includes(o.label)}
                 onChange={() => pick(o.label)}
                 className="mt-1 accent-signal"

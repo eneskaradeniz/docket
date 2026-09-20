@@ -37,6 +37,7 @@ declare module '@anthropic-ai/claude-agent-sdk' {
 }
 import type { PermissionAsk, ProviderErrorCode } from '../../core/runner';
 import type { ProviderStatus } from '../../core/app-settings';
+import { ASK_TOOL } from '../../core/askq';
 import {
   PLAN_EXIT_WITHOUT_RESULT,
   classifyCommandLine,
@@ -407,7 +408,7 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         // the operator is an ask under every role: it surfaces (the pipeline's policy still gates
         // the cadence), the card parses it, and an unparseable payload still surfaces as the binary
         // form — the WO-0077 fail-open gate.
-        const verdict = toolName === 'AskUserQuestion' ? 'ask' : fenceDecision(scope, attempt);
+        const verdict = toolName === ASK_TOOL ? 'ask' : fenceDecision(scope, attempt);
         if (verdict === 'allow') return settle({ behavior: 'allow' });
         if (verdict === 'deny') {
           return settle({ behavior: 'deny', message: `fence: ${input.role} may not write there (ADR-0002)` });
