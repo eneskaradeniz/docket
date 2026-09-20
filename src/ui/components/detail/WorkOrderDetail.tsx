@@ -1388,7 +1388,7 @@ export function WorkOrderDetail({
         />
       </div>
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="flex min-w-0 flex-col gap-3.5">
+        <div className="flex min-w-0 flex-col gap-3">
           <div {...entrance(1)}>{decision}</div>
           {instrument ? <div {...entrance(2)}>{instrument}</div> : null}
           {spine ? <div {...entrance(3)}>{spine}</div> : null}

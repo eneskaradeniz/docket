@@ -38,7 +38,10 @@ export interface WorkspaceOverview {
   turns: TurnGroup[]; // architect → operator → implementer → verifier; empty groups ABSENT
   debts: DebtLine[]; // id-sorted; matched store-side (a closed WO's debts never arrive here)
   ready: {
-    wos: Array<{ id: WorkOrderId; title: string; why: 'no_blockers' | 'gates_satisfiable' }>;
+    // WO-0080: WOs have NO arm here — structurally every open stage maps to a turn group, so a
+    // candidate's startability is ALREADY the operator turn's content; listing it twice read as
+    // a second, emptier board (the atelier's 2026-09-20 finding). The section is the planli
+    // tasks' alone.
     tasks: Array<{ id: string; title: string }>; // navigate nowhere in v1 — the title speaks
   };
 }
@@ -48,9 +51,6 @@ export interface DeriveOverviewInput {
     id: WorkOrderId;
     title: string;
     stage: StageId;
-    closeable?: boolean; // true = awaiting the close act — past ready, never "ready to start"
-    gatePlanApproved?: boolean; // the plan gate's observed flip
-    docsSha?: string; // present ⇒ closed (deriveStage's own rule)
   }>;
   debts: DebtLine[];
   roadmapTasks: Array<{ id: string; title: string; status: TaskStatus; fazBlocked: boolean }>;
@@ -85,22 +85,20 @@ const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompar
 
 /**
  * Compose the projection. The turn map above is the grouping's whole law: one pass, one group per
- * turn, WOs sorted by id inside the group, groups in TURN_ORDER, empty groups absent. The ready
- * rule is pinned SIMPLE — this is a projection, not a new gate engine:
- *   candidate = open WO + plan gate unsatisfied + no closure sha (startable work);
- *   excluded  = `closeable` (awaiting close is past ready — unreachable while the plan gate is
- *               unsatisfied, carried so the rule reads whole);
- *   why       = 'no_blockers' when nothing has ever touched the WO (stage `written`: no session
- *               has run, so the first move is available with nothing in flight);
- *               'gates_satisfiable' when a plan flow already did (any other open stage: the plan
- *               gate is the only unsatisfied one — satisfying it resumes the flow).
+ * turn, WOs sorted by id inside the group, groups in TURN_ORDER, empty groups absent.
+ *
+ * WO-0080: the ready arm carries NO work orders — structurally, every open stage maps to a turn
+ * group, so a candidate's startability is already the operator turn's content; listing it twice
+ * read as a second, emptier board (the atelier's 2026-09-20 finding). BAŞLAMAYA HAZIR is the
+ * planli tasks' surface alone; a WO's startability rides its turn group (TD-008's no-stage-column
+ * stance untouched).
+ *
  * Tasks ride ADR-0016's derivation as fed: planli + an unblocked faz (a kosuyor faz does not
  * block its planli tasks — spawnActionOf's own rule). Debts pass through matched — the store does
  * the matching; core only sorts by id.
  */
 export function deriveOverview(input: DeriveOverviewInput): WorkspaceOverview {
   const groups = new Map<Turn, TurnGroup>();
-  const readyWos: WorkspaceOverview['ready']['wos'] = [];
   for (const wo of input.wos) {
     if (wo.stage === 'closed') continue; // pinned: an archive is nobody's turn
     const turn = TURN_OF[wo.stage];
@@ -111,9 +109,6 @@ export function deriveOverview(input: DeriveOverviewInput): WorkspaceOverview {
       groups.set(turn, group);
     }
     group.wos.push({ id: wo.id, title: wo.title, stage: wo.stage });
-    if (wo.docsSha == null && wo.gatePlanApproved !== true && wo.closeable !== true) {
-      readyWos.push({ id: wo.id, title: wo.title, why: wo.stage === 'written' ? 'no_blockers' : 'gates_satisfiable' });
-    }
   }
   return {
     turns: TURN_ORDER.filter((t) => groups.has(t)).map((t) => {
@@ -122,7 +117,6 @@ export function deriveOverview(input: DeriveOverviewInput): WorkspaceOverview {
     }),
     debts: [...input.debts].sort(byId),
     ready: {
-      wos: [...readyWos].sort(byId),
       tasks: input.roadmapTasks
         .filter((t) => t.status === 'planli' && !t.fazBlocked)
         .map(({ id, title }) => ({ id, title }))

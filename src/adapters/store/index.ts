@@ -751,14 +751,8 @@ function workspaceOverviewRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceOve
     return wos.some((w) => (w.id as string) === line.wo) ? [] : [{ id: line.id, title: line.title }];
   });
   return deriveOverview({
-    wos: open.map((w) => ({
-      id: w.id,
-      title: w.title,
-      stage: w.stage,
-      ...(w.closeable !== undefined ? { closeable: w.closeable } : {}),
-      gatePlanApproved: w.gateInputs.planApproved,
-      ...(w.gateInputs.closureDocsSha != null ? { docsSha: w.gateInputs.closureDocsSha } : {}),
-    })),
+    // WO-0080: the WO rows feed only the turn grouping now — the ready arm is the tasks' alone.
+    wos: open.map((w) => ({ id: w.id, title: w.title, stage: w.stage })),
     debts,
     roadmapTasks,
   });

@@ -376,7 +376,7 @@ export const UI = {
   wsListCreate: '▸ New workspace',
   wsAll: 'See all',
   cardJustWritten: 'Work order written — start by requesting a plan',
-  newWorkOrder: '▸ New work order',
+  newWorkOrder: 'New work order',
   woCreate: 'New work order',
   woTitleLabel: 'Title',
   woTitlePlaceholder: 'e.g. Error while uploading the user profile avatar',
@@ -528,7 +528,7 @@ export const UI = {
   // (the consequence hints died with the 2026-08-23 fourth pass — see tr.)
   closeHint: 'It goes to the archive — you can leave a note.',
   askHint: 'The session stopped — cost is not accruing.',
-  driveResume: '▶ Resume',
+  driveResume: '▸ Resume',
   driveStopping: 'Stopping…',
   driveRetry: 'Retry',
   secDocs: 'Documents',
@@ -548,11 +548,24 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} open PR${n === 1 ? '' : 's'}`,
   forgeLastScan: (time: string) => `last checked ${time}`,
   FORGE_PR_STATE: { open: 'open', merged: 'merged', closed: 'closed' },
+  // WO-0078 — raw diagnostics never reach the surface (atelier ruling, 2026-09-20): the degraded
+  // reason stays verbatim in the records; the face speaks operator words, the raw rides the tooltip.
+  DEGRADED_LINES: {
+    'unparseable-remote': 'Repo URL does not read as the expected remote format',
+    'not-git': 'Not a git repository — changes are not tracked',
+    'tool-missing': 'A required tool is not installed on this machine',
+    unknown: 'Could not be observed',
+  },
   // WO-0066 — the health strip: three dependencies, one row (ADR-0010 «health is a first-class,
   // visible state»). The first-run gate speaks ADR-0001's absence grammar: action absent + the
   // reason line, never a disabled control.
   healthTitle: 'Health',
   healthCreateWaits: '“Create workspace” appears here once the required tools are ready',
+  // WO-0083 — health lives on the overview, in the section grammar: the internal tool names speak
+  // operator words; collapsed when healthy, speaking when degraded.
+  HEALTH_TOOLS: { git: 'Git', forge: 'Connection', agent: 'Provider' },
+  healthReadyCount: (n: number) => `${n}/3 ready`,
+  healthIssueCount: (n: number) => (n === 1 ? '1 issue' : `${n} issues`),
   // WO-0068 — the Changes section (ADR-0018): the operator's console. Every write is an explicit
   // click; merge takes the counted confirm; a failed act speaks git's own line, never silence.
   secChanges: 'Changes',

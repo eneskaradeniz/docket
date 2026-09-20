@@ -52,6 +52,10 @@ rule restated with its reasons in two places is the duplication this repository 
   save failures toast top-right (hata) — a dialog footer carries no error copy; validity never locks a submit.
   Required-ness is marked the minority way — `aria-required` + an "(isteğe bağlı)" suffix — never asterisks
   or a legend (WO-0036 + its review round).
+- Vertical rhythm is the 4px grid — gaps 4/8/12/16; 2px only inside chip/icon clusters; 10/14 never vertical.
+  The dispatch card carries ONE right anchor: cost·duration sits beside the ▸ action on the reason row
+  (WO-0079, ADR-0012's 2026-09-20 addendum). Adapter diagnostics never render raw — the surface speaks
+  operator words, the verbatim reason rides the tooltip/record (WO-0078).
 
 ## Single view — ADR-0013
 - The work-order detail screen is ONE scroll at every width (DOSYA): a merged header band (turn lamp

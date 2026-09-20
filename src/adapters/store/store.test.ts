@@ -2881,10 +2881,9 @@ describe('WO-0072 — the workspace overview: whose turn, the debt match, ready 
       { id: 'TD-202', title: 'Açık işin borcu', wo: openWo.id },
       { id: 'TD-203', title: 'Bağlantısız borç' },
     ]);
-    // Hazır: the untouched written WO + the planli task in the unblocked faz (f0-t2 kosuyor,
-    // f1-t1 behind the blocked faz).
-    expect(v.ready.wos).toEqual([{ id: openWo.id, title: 'Açık iş', why: 'no_blockers' }]);
-    expect(v.ready.tasks).toEqual([{ id: 'f0-t1', title: 'Hazır görev' }]);
+    // Hazır (WO-0080): the planli task in the unblocked faz ONLY — the written WO's startability
+    // is its turn group's content; the WO arm is gone (f0-t2 kosuyor, f1-t1 behind the blocked faz).
+    expect(v.ready).toEqual({ tasks: [{ id: 'f0-t1', title: 'Hazır görev' }] });
   });
 
   it('a missing tech-debt.md is the empty-honest debt face, never a throw', async () => {
@@ -2897,11 +2896,10 @@ describe('WO-0072 — the workspace overview: whose turn, the debt match, ready 
     expect(v.turns.map((g) => g.turn)).toEqual(['operator']);
   });
 
-  it('the plan-gate fact rides: an approved plan leaves ready — and the operator turn', async () => {
+  it('the plan-gate fact rides: an approved plan moves the turn to the implementer', async () => {
     const { store, ws, openWo } = await overviewWorld();
     store.db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(openWo.id);
     const v = await store.workspaceOverview(ws.id);
-    expect(v.ready.wos).toEqual([]);
     // deriveStage moved (approved plan, no session yet → implementation) and the turn map followed.
     expect(v.turns.map((g) => g.turn)).toEqual(['implementer']);
     expect(v.turns[0]!.wos[0]!.stage).toBe('implementation');

@@ -19,7 +19,7 @@ import type { AppSettings } from '../../core/app-settings';
 import { WoCreateModal } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
 import { BoardScreen } from '../screens/BoardScreen';
-import { HealthStrip } from '../components/board/HealthStrip';
+import { HealthSection } from '../components/HealthSection';
 import { DetailScreen } from '../screens/DetailScreen';
 import { RoadmapScreen } from '../screens/RoadmapScreen';
 import { UsageScreen } from '../screens/UsageScreen';
@@ -533,7 +533,7 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     const gateDegraded = [byTool('git'), byTool('agent')].some((c) => c && c.state !== 'ok');
     main = (
       <main className="mx-auto w-full max-w-[840px] px-5 py-5">
-        {systemHealth && <HealthStrip health={systemHealth} />}
+        {systemHealth && <HealthSection health={systemHealth} />}
         {gateDegraded ? (
           <div className="flex min-h-[55vh] flex-col items-center justify-center gap-3 px-6">
             <p className="font-mono text-[11px] text-inkdim">{UI.healthCreateWaits}</p>
@@ -619,7 +619,7 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   } else if (surface === 'overview') {
     // WO-0072: the fourth surface — the read-only projection, keyed by workspace like its siblings.
     main = currentWorkspace ? (
-      <OverviewScreen key={workspaceId ?? 'none'} view={overview} onSelect={setSelectedId} />
+      <OverviewScreen key={workspaceId ?? 'none'} view={overview} health={systemHealth} onSelect={setSelectedId} />
     ) : null;
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
@@ -629,7 +629,6 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         key={workspaceId ?? 'none'}
         cards={cards}
         budget={budget}
-        health={systemHealth}
         forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
         onRefreshForge={refreshForge}
         onSelect={setSelectedId}

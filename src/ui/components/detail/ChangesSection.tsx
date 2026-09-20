@@ -4,9 +4,8 @@
 // operator's explicit click fired through the composition root's console channels — nothing here
 // runs on its own (never a timer, never a side effect); commit and PR carry the operator's typed
 // words (an empty field does not fire), merge sits behind the counted confirm, and a failed act
-// speaks git's own line as a toast — never a silent success. The section node itself is the
-// caller's record-section body: the RecordStack heading carries the section's name, the Yenile
-// chip here refreshes the look.
+// speaks git's own line as a toast — never a silent success. WO-0082: the Yenile chip lives in
+// the RecordStack heading row (the section's `action` slot); this body is the repo cards alone.
 import { useState, type ReactNode } from 'react';
 import type { CommitResult, CreatePrResult, MergeResult, PushResult, RepoChanges } from '../../../core/console';
 import type { LineDiff } from '../../../core/diff';
@@ -14,6 +13,7 @@ import type { WorkOrderId } from '../../../core/types';
 import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
 import { Button, Dialog, Input, cn } from '../../kit';
+import { DegradedLine } from '../DegradedLine';
 
 /** The renderer-side console bridge — the optional `changes` group of window.docket, passed down
  *  as a prop (the forge/health seam; the renderer never touches window.docket for this). The reads
@@ -41,14 +41,10 @@ export function ChangesSection({
   bridge: ChangesBridge;
   onRefresh: () => void;
 }) {
-  const { UI } = useLabels();
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex justify-end">
-        <button type="button" className="ichip rounded px-2 py-0.5 font-mono text-[10.5px]" onClick={onRefresh}>
-          {UI.changesRefresh}
-        </button>
-      </div>
+    // WO-0082: the section's refresh chip moved up into the RecordStack heading row; the callback
+    // still flows down — each repo card re-looks after its own operator action.
+    <div className="flex flex-col gap-2">
       {repos.map((repo) => (
         <ChangesRepoCard key={repo.path} woId={woId} repo={repo} bridge={bridge} onRefresh={onRefresh} />
       ))}
@@ -79,12 +75,13 @@ function ChangesRepoCard({
   const [prNumber, setPrNumber] = useState<number | undefined>(undefined);
   const [confirmMerge, setConfirmMerge] = useState(false);
 
-  // A degraded look speaks its reason and offers nothing — there is no tree here to act on.
+  // A degraded look speaks the operator words of WO-0078 and offers nothing — there is no tree
+  // here to act on; the verbatim reason stays in the record and rides the tooltip.
   if (repo.degraded !== undefined) {
     return (
       <div className="rcard rounded-md bg-surface px-2.5 py-1.5">
         <span className="text-[12.5px] font-semibold text-ink">{repo.repo}</span>
-        <div className="mt-0.5 font-mono text-[10.5px] text-[var(--color-error)]">{repo.degraded}</div>
+        <DegradedLine reason={repo.degraded} />
       </div>
     );
   }

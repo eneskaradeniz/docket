@@ -18,7 +18,7 @@ export function UsageBreakdownCard({ view }: { view: WorkspaceUsageView }) {
         <span className="ml-auto font-mono text-[11px] text-inkdim">{UI.usageBreakdownMeta}</span>
       </div>
 
-      <p className="readout mt-2.5 text-inkdim">{UI.usageRolesTitle}</p>
+      <p className="readout mt-2 text-inkdim">{UI.usageRolesTitle}</p>
       <div className="mt-0.5">
         {view.byRole.map((b) => (
           <div key={b.role} className="grid grid-cols-[1fr_auto] items-baseline gap-x-4 py-0.5">
@@ -31,7 +31,7 @@ export function UsageBreakdownCard({ view }: { view: WorkspaceUsageView }) {
         ))}
       </div>
 
-      <p className="readout mt-2.5 text-inkdim">{UI.usageModelsTitle}</p>
+      <p className="readout mt-2 text-inkdim">{UI.usageModelsTitle}</p>
       <div className="mt-0.5">
         {view.byModel.map((b) => (
           <div key={b.model ?? 'unknown'} className="grid grid-cols-[1fr_auto] items-baseline gap-x-4 py-0.5">
@@ -59,7 +59,7 @@ export function UsageBreakdownCard({ view }: { view: WorkspaceUsageView }) {
 
       {view.cache.hasCacheFigures ? (
         <>
-          <p className="readout mt-2.5 text-inkdim">{UI.usageCacheTitle}</p>
+          <p className="readout mt-2 text-inkdim">{UI.usageCacheTitle}</p>
           <p className="mt-0.5 font-mono text-[11.5px] text-inkdim">
             {UI.usageCacheLine(view.cache.freshIn, view.cache.cacheRead, view.cache.cacheCreation)}
           </p>

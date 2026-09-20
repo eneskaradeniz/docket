@@ -90,7 +90,7 @@ export function StepList({
   }, [steps]);
 
   return (
-    <ul className={`steps flex flex-col gap-1.5${reportStep ? ' dimmed' : ''}`} data-steps={steps.length}>
+    <ul className={`steps flex flex-col gap-2${reportStep ? ' dimmed' : ''}`} data-steps={steps.length}>
       {steps.map((s) => {
         const hasReport = s.status === 'done' && !!s.reportPath;
         const open = reportStep?.idx === s.idx;

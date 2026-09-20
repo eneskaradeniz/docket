@@ -157,7 +157,7 @@ function AskQuestionCard({
           </label>
         </div>
         {reason ? <p className="mt-1 text-xs text-inkdim">{reason}</p> : null}
-        <div className="mt-2.5 flex flex-wrap justify-end gap-2">
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={() => onAnswer(ask, { kind: 'dismissed' })}>{UI.askSkip}</Button>
           <Button variant="ghost" size="sm" onClick={() => onAnswer(ask, { kind: 'declined', message: 'the operator declined to answer this question' })}>{UI.deny}</Button>
           {answered ? (
@@ -255,7 +255,7 @@ function BinaryAskCard({
             {peek.truncated > 0 ? <span className="block text-inkdim">{UI.diffTruncated(peek.truncated)}</span> : null}
           </pre>
         ) : null}
-        <div className="mt-2.5 flex flex-wrap justify-end gap-2">
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
           {onAlwaysAuto ? (
             <Button variant="ghost" size="sm" busy={alwaysAutoBusy} locked={alwaysAutoBusy} className="mr-auto" onClick={onAlwaysAuto}>
               {UI.askAlwaysAuto}

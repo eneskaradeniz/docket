@@ -214,7 +214,7 @@ export function WoCreateModal({
           <section>
             <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.createDependsTitle}</span>
             <span className="mb-2 block text-[11px] text-inkdim">{UI.createDependsHint}</span>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               {selectedTracks.map((t) => (
                 <div key={t as string} className="flex flex-wrap items-center gap-1.5">
                   <span className="min-w-[88px] font-mono text-[11px]">{t as string}</span>

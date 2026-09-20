@@ -71,52 +71,27 @@ describe('deriveOverview — the stage→turn map (WO-0072, pinned)', () => {
     expect(deriveOverview({ wos: [], debts: [], roadmapTasks: [] })).toEqual({
       turns: [],
       debts: [],
-      ready: { wos: [], tasks: [] },
+      ready: { tasks: [] },
     });
   });
 });
 
-describe('deriveOverview — the ready composition (pinned simple: a projection, not a gate engine)', () => {
-  it('a written WO is ready with why no_blockers (nothing has ever touched it)', () => {
-    const view = deriveOverview({ wos: [oneWo('WO-0001', 'written', { gatePlanApproved: false })], debts: [], roadmapTasks: [] });
-    expect(view.ready.wos).toEqual([{ id: wo('WO-0001'), title: 'title WO-0001', why: 'no_blockers' }]);
-  });
-
-  it('a mid-plan WO is ready with why gates_satisfiable (the plan gate is the only unsatisfied one)', () => {
-    const view = deriveOverview({ wos: [oneWo('WO-0002', 'architect_approval', { gatePlanApproved: false })], debts: [], roadmapTasks: [] });
-    expect(view.ready.wos).toEqual([{ id: wo('WO-0002'), title: 'title WO-0002', why: 'gates_satisfiable' }]);
-  });
-
-  it('an approved plan is NOT ready (the work is in flight or waiting on its own flow)', () => {
+describe('deriveOverview — the ready arm is TASKS-ONLY (WO-0080: the turn groups own WO startability)', () => {
+  it('no WO ever lists in ready — every open stage is a turn group\'s content already', () => {
     const view = deriveOverview({
-      wos: [oneWo('WO-0003', 'implementation', { gatePlanApproved: true }), oneWo('WO-0004', 'architect_approval', { gatePlanApproved: true })],
+      wos: [
+        oneWo('WO-0001', 'written'), // the operator's move — SENİN SIRAN says it
+        oneWo('WO-0002', 'plan_requested'), // the architect's move — its group says it
+        oneWo('WO-0003', 'implementation'), // in flight — nobody "starts" it
+        oneWo('WO-0004', 'closure'), // awaiting the close act — the board's closable bucket says it
+      ],
       debts: [],
       roadmapTasks: [],
     });
-    expect(view.ready.wos).toEqual([]);
-  });
-
-  it('a closure sha is NOT ready (present means closed — the deriveStage rule)', () => {
-    const view = deriveOverview({ wos: [oneWo('WO-0005', 'written', { docsSha: 'sha-closed' })], debts: [], roadmapTasks: [] });
-    expect(view.ready.wos).toEqual([]);
-  });
-
-  it('a closeable WO is NOT ready (awaiting close is past ready)', () => {
-    const view = deriveOverview({ wos: [oneWo('WO-0006', 'implementation', { gatePlanApproved: true, closeable: true })], debts: [], roadmapTasks: [] });
-    expect(view.ready.wos).toEqual([]);
-    // and the closeable fact alone cannot make an unapproved WO ready
-    const armed = deriveOverview({ wos: [oneWo('WO-0007', 'closure', { closeable: true })], debts: [], roadmapTasks: [] });
-    expect(armed.ready.wos).toEqual([]);
-  });
-
-  it('ready WOs sort by id and carry no stage word', () => {
-    const view = deriveOverview({
-      wos: [oneWo('WO-0004', 'written'), oneWo('WO-0001', 'architect_approval'), oneWo('WO-0002', 'verification', { gatePlanApproved: true })],
-      debts: [],
-      roadmapTasks: [],
-    });
-    expect(view.ready.wos.map((w) => w.id)).toEqual([wo('WO-0001'), wo('WO-0004')]);
-    expect(Object.keys(view.ready.wos[0]!).sort()).toEqual(['id', 'title', 'why']);
+    expect(view.ready).toEqual({ tasks: [] });
+    // and the turn groups DID carry every one of them — the surface lost no name
+    const listed = view.turns.flatMap((g) => g.wos.map((w) => w.id));
+    expect(listed).toHaveLength(4);
   });
 
   it('ready tasks: planli in an unblocked faz only — kosuyor and blocked-faz tasks stay out; sorted by id', () => {

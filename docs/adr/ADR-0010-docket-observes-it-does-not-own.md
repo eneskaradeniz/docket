@@ -145,3 +145,14 @@ latest-wins checkpoints (undefined input keeps the prior — the `pending_notes`
 honest pre-WO-0052 vintage and hydrates as absent everywhere, never zero. Aggregate cost columns
 and `monthSpendRow` keep their exact accumulation semantics — the floor adds resolution, never
 re-derives the budget's basis.
+
+## Addendum — health's home and its volume (WO-0083, 2026-09-21)
+
+«First-class, visible» said nothing about WHERE or HOW LOUD. Twenty days of the board strip
+(`Sağlık ✓ git 2.55.0 ✓ forge ✓ agent`) answered both: the operator moved it — the strip lives on
+the OVERVIEW (the facts screen), in the section grammar, with the internal names translated
+(forge → Bağlantı, agent → Sağlayıcı) and the version stamp in the tooltip. Volume: collapsed
+when healthy (one summary row behind göster/gizle), open and speaking when degraded — a degraded
+tool is the one state the section never hides, even on an otherwise-empty workspace. The board
+keeps only the empty face's create door, which reads the same look. Health stays a LOOK, never a
+watchdog (this ADR's own rule, unchanged).
