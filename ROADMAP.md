@@ -444,6 +444,24 @@ gate model, after the board and the detail view.
       the 2 deleted CLI specs had been green). The red suite is the deferred operator test phase's
       opening inventory. Order: `docs/work-orders/WO-0073-gui-only/order.md`.
 
+- [x] **WO-0074** — E2E rot repair: the baseline's 60 red specs → **all green** (2026-09-20; operator
+      approved the approach + the one app fix). MEASURED root cause (live probes + the store tests'
+      own recipe, never guesswork): ONE primary + its cascade. WO-0069's tightened `closed`
+      derivation (a RECORDED verifier report with resolvable pointers) left the seed's closed
+      fixtures deriving `implementation` — the app was honest, the seed stale; the first failed
+      spec abandoned the app mid-flow and every later spec's positional/`switchWs` navigation
+      inherited the lie (byte-identical failure sets proved the determinism). Fix: the seed's
+      closed fixtures ('Kapandı', 'Eski iş') + the closable fixtures ('Raf işi') + the NEW
+      'Tamamlanmış iş' carry the honest two-leg plan + `recordStepReport` (the store tests' own
+      recipe); the WO-0069 wording re-anchored where the contract legitimately moved
+      (EvidencePanel's `unknown` chip, `.readout`'s uppercase innerText, WO-0068's `sec-changes`
+      record section, WO-0070's third settings item). PLUS the one REAL app bug the repair exposed,
+      stop-and-ask honored, operator-approved: a workspace switch kept the previous workspace's
+      detail open under the new header (`onSwitch` never cleared the open detail — the WO-0032
+      delete flow's guard was its missing twin); the switch now lands on the new workspace's board.
+      E2E 96/96 green · 1056 unit · typecheck ×2 · build · boundaries. Order:
+      `docs/work-orders/WO-0074-e2e-curume-onarimi/order.md`.
+
 - [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)

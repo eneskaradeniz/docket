@@ -1081,11 +1081,17 @@ await spec('DOSYA record: Belgeler rows + Oturum dökümü cards — evidence is
   assert.ok((await page.getByText('Tüm adımlar tamam').count()) >= 1, 'no allStepsDone close card');
   assert.ok((await page.getByText('✓ plan onayı', { exact: true }).count()) >= 1, 'no satisfied plan-approval chip in the close card');
   assert.ok((await page.getByText('henüz PR yok', { exact: true }).count()) >= 1, 'no track position chip in the close card');
-  assert.ok((await page.getByText('doğrulayıcı raporu yok', { exact: true }).count()) >= 1, 'no verification absence sentence in the close card');
+  // WO-0074 (WO-0069): NO verifier leg was ever recorded → the honest chip is the UNKNOWN form
+  // ('doğrulanamadı — bakılamadı'), never the absence sentence (nothing is missing; nothing was
+  // observed either) and never the resolve-miss line (no report exists to miss).
+  assert.ok((await page.getByText('doğrulanamadı — bakılamadı', { exact: true }).count()) >= 1, 'no unknown-verification chip in the close card');
   assert.equal(await page.getByText('eksik', { exact: true }).count(), 0, 'a reasonless eksik leaked');
   // WO-0038 order: Belgeler → (Kaynaklar on presence) → Oturum dökümü — the one scroll's sections
   const ids = await page.evaluate(() => [...document.querySelectorAll('.flow-scroll section[id]')].map((s) => s.id));
-  assert.deepEqual(ids, ['sec-docs', 'sec-audit'], `the record sections are wrong: ${ids.join(',')}`);
+  // WO-0074: WO-0068 added the Değişiklikler record section (working trees + the operator's
+  // console) between Belgeler and Oturum dökümü — on this seed it speaks deterministically (the
+  // non-git repo's degraded look IS content, the section's own gate).
+  assert.deepEqual(ids, ['sec-docs', 'sec-changes', 'sec-audit'], `the record sections are wrong: ${ids.join(',')}`);
   // Belgeler: ONE COLLAPSED ROW per doc — human word + dim filename pointer + the section count
   const docs = page.locator('section#sec-docs');
   const orderRow = docs.locator('button').filter({ hasText: 'order.md' });
@@ -1119,7 +1125,7 @@ await spec('DOSYA record: Belgeler rows + Oturum dökümü cards — evidence is
 
 await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals once', async () => {
   await backToBoard(); // defensive: the previous spec may have died mid-detail
-  await openDetail('Uygulama sürüyor'); // one step done + proceed → allStepsDone, closable
+  await openDetail('Tamamlanmış iş'); // WO-0074: the two-leg fixture — the honest close COMPLETES (glow, Kapandı)
   await stopAllDrives();
   await page.waitForTimeout(400);
   await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).first().click();
@@ -1138,7 +1144,7 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   assert.ok((await page.locator('[data-closure-card]').count()) >= 1, 'no results card on the closed WO');
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on the results card');
   assert.ok((await page.getByText('Kapandı', { exact: true }).count()) >= 1, 'no Kapandı readout');
-  assert.ok((await page.getByText('1/1 adım').count()) >= 1, 'no 1/1 adım stat');
+  assert.ok((await page.getByText('2/2 adım').count()) >= 1, 'no 2/2 adım stat');
   // H-1: money never celebrates — the stats line carries no animation of its own
   const statsAnim = await page.evaluate(() => {
     const card = document.querySelector('[data-closure-card]');
@@ -1149,7 +1155,7 @@ await spec('Kapat is a dialog with NO ⏎ path; the closure results card seals o
   await page.screenshot({ path: join(SHOTS, 'closure-results@980.png') });
   // reopening an already-closed WO is CALM — the seal renders without the animation class
   await backToBoard();
-  await openDetail('Uygulama sürüyor');
+  await openDetail('Tamamlanmış iş'); // WO-0074: the reopen re-anchors to the fixture that closed
   assert.ok((await page.locator('[data-seal]').count()) >= 1, 'no seal on reopen');
   assert.equal(await page.locator('[data-seal].sealpop').count(), 0, 'the seal re-animated on reopen');
   // WO-0031f K1 (operator review amendment): the closed strip's pencil stays IN PLACE — no standing
@@ -2895,12 +2901,13 @@ await spec('WO-0055: the archived card re-nests identically (seeded agent rows)'
 
 // ===== WO-0059 rev 4 — the from-scratch settings: a LEFT MENU (Modeller · Genel), per-role tier
 // segments that write INSTANTLY, the provider's presence line (the stored key retired) =====
-await spec('WO-0059 rev 4 ayarlar: sol menü iki öğe, rol kademe segmentleri (anlık yazım + kalıcılık), varlık satırı, sürüşte taşınır', async () => {
+await spec('WO-0059 rev 4 ayarlar: sol menü üç öğe (WO-0070 İstem şablonları eklendi), rol kademe segmentleri (anlık yazım + kalıcılık), varlık satırı, sürüşte taşınır', async () => {
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(450);
   const dlg = page.locator('[role="dialog"]');
-  // the menu: exactly TWO bare items — no provider section, no workspace section anywhere
-  assert.equal(await dlg.locator('[data-settings-item]').count(), 2, 'the menu does not carry exactly two items');
+  // the menu: exactly THREE bare items (WO-0070 added İstem şablonları) — still no provider
+  // section, no workspace section anywhere
+  assert.equal(await dlg.locator('[data-settings-item]').count(), 3, 'the menu does not carry exactly three items');
   assert.equal(await dlg.locator('[data-model-section]').count(), 1, 'the model section is missing');
   assert.equal(await dlg.locator('[data-general-section]').count(), 0, 'the general section leaked into the models pane');
   assert.ok(((await dlg.locator('[data-model-section]').innerText()) ?? '').includes('Mimar'), 'the role rows are missing');
@@ -3115,16 +3122,18 @@ await spec('WO-0072 dolu yüz: Sıra grupları, borç eşleşmesi (kapalı düş
   await switchWs('e2e', 'genel');
   await openOverview();
   const screen = await page.locator('[data-overview-screen]').innerText();
-  // Sıra: the open WO reads as the operator's turn; the CLOSED work order is nowhere
-  assert.ok(screen.includes('Senin sıran') && screen.includes('WO-0091') && screen.includes('Genel açık iş'), `turns: ${screen.slice(0, 400)}`);
+  // Sıra: the open WO reads as the operator's turn; the CLOSED work order is nowhere.
+  // WO-0074: the section/group labels ride `.readout` (text-transform: uppercase) — innerText
+  // returns the RENDERED form, so the pins speak the rendered case, never the bundle's.
+  assert.ok(screen.includes('SENİN SIRAN') && screen.includes('WO-0091') && screen.includes('Genel açık iş'), `turns: ${screen.slice(0, 400)}`);
   assert.ok(!screen.includes('WO-0092'), 'a CLOSED work order leaked into the projection');
   // Borçlar: the open WO's debt stays linked, the closed WO's debt is GONE, the unlinked one
   // keeps its reason line
-  assert.ok(screen.includes('Açık borçlar') && screen.includes('Açık işin borcu'), `debts: ${screen.slice(0, 900)}`);
+  assert.ok(screen.includes('AÇIK BORÇLAR') && screen.includes('Açık işin borcu'), `debts: ${screen.slice(0, 900)}`);
   assert.ok(!screen.includes('Kapalı işin borcu'), 'a closed WO debt leaked into the projection');
   assert.ok(screen.includes('Bağlantısız borç') && screen.includes('bağlı iş emri yok'), 'the unlinked debt row lost its reason line');
   // Hazır: the untouched written WO + the planli task in the unblocked faz only
-  assert.ok(screen.includes('Başlamaya hazır') && screen.includes('Genel hazır görev'), `ready: ${screen.slice(0, 1200)}`);
+  assert.ok(screen.includes('BAŞLAMAYA HAZIR') && screen.includes('Genel hazır görev'), `ready: ${screen.slice(0, 1200)}`);
   assert.ok(!screen.includes('Bloke görev'), 'a blocked-faz task leaked into ready');
   assert.ok(!screen.includes('Genel koşan görev'), 'a kosuyor task leaked into ready');
   await page.screenshot({ path: join(SHOTS, 'overview-full@980.png') });

@@ -7,6 +7,10 @@ import { join } from 'node:path';
 const root = mkdtempSync(join(tmpdir(), 'docket-e2e-'));
 const repo = join(root, 'repo');
 mkdirSync(join(repo, 'docs', 'work-orders'), { recursive: true });
+// WO-0074 (WO-0069's tightened derivation): a resolvable verifier pointer needs a real file —
+// the closed fixtures' reports point here.
+mkdirSync(join(repo, 'src'), { recursive: true });
+writeFileSync(join(repo, 'src', 'a.ts'), 'export {};\n');
 
 const { createStore } = await import('../src/adapters/store/index.ts');
 const store = createStore(join(root, 'e2e.db'));
@@ -67,9 +71,13 @@ store.recordSession({
 
 // 4) closed — the drawer (+ the three-session ledger the archive table renders by default)
 const wo4 = await mk('Kapandı', 'E2E: a closed work order.');
-await store.approvePlan(wo4.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+// WO-0074 (WO-0069): `closed` derives only over a RECORDED verifier report whose file pointers
+// resolve — the plan carries the verifier leg and the report lands before the close attempts.
+await store.approvePlan(wo4.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n');
 store.recordStep(wo4.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo4.id, 1, 'proceed', 'ok');
+store.recordStepReport(wo4.id, 2, 'verifier', 'checked `src/a.ts:1`');
+store.recordStepVerdict(wo4.id, 2, 'proceed', 'ok');
 store.recordSession({
   providerSessionId: 'e2e-wo4-plan',
   owner: { kind: 'wo', workOrderId: wo4.id },
@@ -145,6 +153,40 @@ store.recordSession({
   endedAt: new Date('2026-08-30T10:02:00Z').toISOString(),
 });
 
+// 4c) WO-0074 (WO-0069): a FULLY-verified closable WO — the Kapat-dialog spec closes this one and
+//     the honest derivation completes (merged_at stamped at close + the record-time verification
+//     gate + the docs sha) → the green glow, the Kapandı readout, the seal. Two-leg plan on
+//     purpose: the single-leg fixture ('Uygulama sürüyor') stays the unknown-verification chip's
+//     pin (the DOSYA-record spec's assert).
+const woDone = await mk('Tamamlanmış iş', 'E2E: closable with the verifier leg satisfied — the dialog-close completes.');
+await store.approvePlan(woDone.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"tamamlanma turu","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n');
+store.recordStep(woDone.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
+store.recordStepVerdict(woDone.id, 1, 'proceed', 'ok');
+store.recordStepReport(woDone.id, 2, 'verifier', 'checked `src/a.ts:1`');
+store.recordStepVerdict(woDone.id, 2, 'proceed', 'ok');
+store.recordSession({
+  providerSessionId: 'e2e-wo-done-run',
+  owner: { kind: 'wo', workOrderId: woDone.id },
+  role: 'implementer',
+  status: 'idle',
+  stepIdx: 1,
+  transcript: [],
+  cost: { tokensIn: 15_000, tokensOut: 3_000, usd: 1.2 },
+  startedAt: new Date('2026-08-16T17:00:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T17:06:00Z').toISOString(),
+});
+store.recordSession({
+  providerSessionId: 'e2e-wo-done-verify',
+  owner: { kind: 'wo', workOrderId: woDone.id },
+  role: 'verifier',
+  status: 'idle',
+  stepIdx: 2,
+  transcript: [],
+  cost: { tokensIn: 8_000, tokensOut: 1_500, usd: 0.42 },
+  startedAt: new Date('2026-08-16T17:07:00Z').toISOString(),
+  endedAt: new Date('2026-08-16T17:09:00Z').toISOString(),
+});
+
 // 5) stopped_asking (WO-0031c) — an implementation WO paused on a permission ask: the amber moment
 //    (ask card + `Sıra sende` substrip + glow-signal) rendered statically from the persisted session.
 //    WO-0031f: the step aim is distinctive — the H-4 band-focus spec reads it back.
@@ -178,9 +220,13 @@ const wo6 = await store.createWorkOrder({
   reviewMode: 'gates',
   contextFiles: [],
 });
-await store.approvePlan(wo6.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+// WO-0074 (WO-0069): the same honest verifier leg — the all-done platform exists only when the
+// sole WO truly derives `closed`.
+await store.approvePlan(wo6.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n');
 store.recordStep(wo6.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo6.id, 1, 'proceed', 'ok');
+store.recordStepReport(wo6.id, 2, 'verifier', 'checked `src/a.ts:1`');
+store.recordStepVerdict(wo6.id, 2, 'proceed', 'ok');
 await store.closeWorkOrder(wo6.id, 'e2e closed long ago');
 
 // 7) WO-0031e tur-3: a third workspace whose only work order is CLOSABLE but not closed — the
@@ -210,9 +256,13 @@ const wo7 = await store.createWorkOrder({
   reviewMode: 'gates',
   contextFiles: [],
 });
-await store.approvePlan(wo7.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"}]\n```\n');
+// WO-0074 (WO-0069): the awaiting-close platform's live close must COMPLETE the honest
+// derivation (awaiting → all-done) — the two-leg plan + the resolvable verifier report.
+await store.approvePlan(wo7.id, '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n');
 store.recordStep(wo7.id, 1, { status: 'done', reportPath: 'reports/step-01-implementer.md' });
 store.recordStepVerdict(wo7.id, 1, 'proceed', 'ok');
+store.recordStepReport(wo7.id, 2, 'verifier', 'checked `src/a.ts:1`');
+store.recordStepVerdict(wo7.id, 2, 'proceed', 'ok');
 store.recordSession({
   providerSessionId: 'e2e-wo7-run',
   owner: { kind: 'wo', workOrderId: wo7.id },
