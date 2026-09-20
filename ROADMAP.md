@@ -444,8 +444,9 @@ gate model, after the board and the detail view.
       the 2 deleted CLI specs had been green). The red suite is the deferred operator test phase's
       opening inventory. Order: `docs/work-orders/WO-0073-gui-only/order.md`.
 
-- [x] **WO-0074** — E2E rot repair: the baseline's 60 red specs → **all green** (2026-09-20; operator
-      approved the approach + the one app fix). MEASURED root cause (live probes + the store tests'
+- [x] **WO-0074** — E2E rot repair: the baseline's 60 red specs → **all green** (PR #79, merge
+      `b2931ac`, 2026-09-20; operator approved the approach + the one app fix). MEASURED root cause
+      (live probes + the store tests'
       own recipe, never guesswork): ONE primary + its cascade. WO-0069's tightened `closed`
       derivation (a RECORDED verifier report with resolvable pointers) left the seed's closed
       fixtures deriving `implementation` — the app was honest, the seed stale; the first failed

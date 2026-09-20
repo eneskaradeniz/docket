@@ -62,7 +62,10 @@ protected") belonged to that WO; this WO IS the spec repair.
 - plan_approval: mode `direct` — the operator approved the repair approach (2026-09-20,
   "önerinle e2e çürüme onarımına bakalım").
 - operator_checkpoint: the suite's own green IS the checkpoint here (BUILD-FIRST).
-- pr_open / closure: recorded in ROADMAP.md at the closing commit.
+- ci_green: RESOLVED — green, 2026-09-20: **E2E 96/96 ("all UI specs green", exit 0 — from the
+  60-red baseline)**, 1056 unit tests, typecheck (both tsconfigs), build, `check:boundaries`.
+- pr_open / closure: RESOLVED — PR #79 (`https://github.com/eneskaradeniz/docket/pull/79`),
+  head `a5fc903`, merged `b2931ac` (operator merge order); closed at this commit.
 
 ## Stop-and-ask gates
 
