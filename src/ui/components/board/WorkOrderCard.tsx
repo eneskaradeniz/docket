@@ -45,26 +45,29 @@ export function WorkOrderCard({
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] text-inkdim">{woIdLabel(card.id)}</span>
           <Badge tone={STAGE_TONE[card.bucket]}>{STAGE_LABELS[card.stage]}</Badge>
-          <span className="ml-auto font-mono text-[11px] text-inkdim">
-            {/* WO-0031f T3 — Süre is the finished-session sum, drawn beside the cost only when > 0
-                (a never-run card draws neither; a live-only card draws cost but no Süre).
-                2026-08-24: the COST draws only when some session actually carried one — a summed
-                $0.00 over zero observed rows is a claim (an interrupted drive spent real money the
-                abort could not record; TD-030's honesty rule, now on the card too). */}
-            {card.costKnown ? formatCost(card.cost) : null}
-            {card.durationMs > 0 ? ` · ${UI.formatDuration(card.durationMs)}` : null}
-          </span>
         </div>
         <h3 className={cn('mt-0.5 truncate text-[13.5px] font-semibold tracking-tight', quiet ? 'text-inkdim' : 'text-ink')}>
           {card.title}
         </h3>
-        <div className="mt-0.5 flex items-end justify-between gap-3">
+        <div className="mt-0.5 flex items-baseline justify-between gap-3">
           <p className="truncate text-[12px] text-inkdim">{cardReasonText(card.reason)}</p>
-          {card.action ? (
-            <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-info">
-              ▸ {cardActionText(card.action)}
+          <span className="ml-auto flex shrink-0 items-baseline gap-2.5">
+            <span className="font-mono text-[11px] text-inkdim">
+              {/* WO-0031f T3 — Süre is the finished-session sum, drawn beside the cost only when > 0
+                  (a never-run card draws neither; a live-only card draws cost but no Süre).
+                  2026-08-24: the COST draws only when some session actually carried one — a summed
+                  $0.00 over zero observed rows is a claim (an interrupted drive spent real money the
+                  abort could not record; TD-030's honesty rule, now on the card too).
+                  WO-0079: the meta moved DOWN beside the CTA — one right anchor; row 1 is id + stage. */}
+              {card.costKnown ? formatCost(card.cost) : null}
+              {card.durationMs > 0 ? ` · ${UI.formatDuration(card.durationMs)}` : null}
             </span>
-          ) : null}
+            {card.action ? (
+              <span className="font-mono text-[11px] uppercase tracking-wider text-info">
+                ▸ {cardActionText(card.action)}
+              </span>
+            ) : null}
+          </span>
         </div>
         {budget && budget.status !== 'ok' ? (
           <p data-budget-line className="mt-1 truncate font-mono text-[11px] text-inkdim">

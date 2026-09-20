@@ -23,6 +23,9 @@ export interface DetailSection {
   id: string;
   title: string;
   aside?: string;
+  /** WO-0082: a section-head action (the refresh chip) rides the heading ROW — never a lone
+   *  button hanging under it (the board's Depo section was the correct pattern all along). */
+  action?: ReactNode;
   node: ReactNode;
 }
 
@@ -101,7 +104,7 @@ export function buildRecordSections({
       id: 'docs',
       title: UI.secDocs,
       node: (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           {/* 2026-08-23 (operator ruling): the ORDER view drops the creation template's unfilled
               skeleton sections (Context placeholder, bare Scope lists, empty Acceptance) — the
               document shows what exists. The count follows the view text, so it stays honest. */}
@@ -126,6 +129,12 @@ export function buildRecordSections({
       sections.push({
         id: 'changes',
         title: UI.secChanges,
+        // WO-0082: the refresh chip lives IN the heading row (the board Depo section's pairing).
+        action: (
+          <button type="button" className="ichip rounded px-2 py-0.5 font-mono text-[10.5px]" onClick={changes.onRefresh}>
+            {UI.changesRefresh}
+          </button>
+        ),
         node: <ChangesSection woId={detail.id} repos={changes.repos} bridge={changes.bridge} onRefresh={changes.onRefresh} />,
       });
     }
@@ -152,12 +161,13 @@ export function buildRecordSections({
  *  (scroll-margin clears the pinned chrome). */
 export function RecordStack({ sections }: { sections: DetailSection[] }) {
   return (
-    <div className="flex min-w-0 flex-col gap-3.5">
+    <div className="flex min-w-0 flex-col gap-3">
       {sections.map((s) => (
         <section key={s.id} id={`sec-${s.id}`}>
           <h2 className="readout mb-2 flex items-baseline gap-2">
             {s.title}
             {s.aside ? <span className="font-mono text-inkdim/60">{s.aside}</span> : null}
+            {s.action ? <span className="ml-auto">{s.action}</span> : null}
           </h2>
           {s.node}
         </section>

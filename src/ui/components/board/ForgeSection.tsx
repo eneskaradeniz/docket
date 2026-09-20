@@ -1,13 +1,14 @@
 import type { ForgeRepoView, ForgeView } from '../../../core/forge';
 import { useLabels } from '../../data/locale';
+import { DegradedLine } from '../DegradedLine';
 
 // The board's Depo section (WO-0064): the forge observation's VISIBLE proof. Per connected repo
 // one row — the repo's name, the open-PR count, and the «son gözlem» stamp (ADR-0010: a screen
 // that cannot say when it last looked is claiming more than it knows) — with the open PR page
-// beneath it as read-only fact rows. A degraded scan's reason speaks verbatim as its own line
-// («we could not look» ≠ «we looked and it failed»); the cached facts stay. The whole section is
-// ABSENT with no scanned repos (the caller gates it; ADR-0001/0012). No click-through in v1 —
-// rows are facts, not links.
+// beneath it as read-only fact rows. A degraded scan speaks the operator words of WO-0078 (the
+// verbatim reason stays in the record and rides the tooltip — «we could not look» ≠ «we looked
+// and it failed»); the cached facts stay. The whole section is ABSENT with no scanned repos (the
+// caller gates it; ADR-0001/0012). No click-through in v1 — rows are facts, not links.
 export function ForgeSection({ view, onRefresh }: { view: ForgeView; onRefresh: () => void }) {
   const { UI } = useLabels();
   return (
@@ -18,7 +19,7 @@ export function ForgeSection({ view, onRefresh }: { view: ForgeView; onRefresh: 
           {UI.forgeRefresh}
         </button>
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {view.repos.map((repo) => (
           <ForgeRepoRow key={repo.repoRemote} repo={repo} />
         ))}
@@ -45,9 +46,7 @@ function ForgeRepoRow({ repo }: { repo: ForgeRepoView }) {
           <span className="font-mono text-[10.5px] text-inkdim">{UI.forgeLastScan(formatDateTime(repo.scannedAt))}</span>
         )}
       </div>
-      {typeof repo.health !== 'string' && (
-        <div className="mt-0.5 font-mono text-[10.5px] text-[var(--color-error)]">{repo.health.degraded}</div>
-      )}
+      {typeof repo.health !== 'string' && <DegradedLine reason={repo.health.degraded} />}
       {repo.prs.length > 0 && (
         <div className="mt-1 border-t border-[var(--bord)] pt-1">
           {repo.prs.map((pr) => (

@@ -278,7 +278,7 @@ export function PlanSection({
       </div>
       {(() => {
         const list = (
-          <ul className="flex min-w-0 flex-col gap-1.5">
+          <ul className="flex min-w-0 flex-col gap-2">
             {steps.map((s, i) =>
               editing ? (
                 <EditorStepRow

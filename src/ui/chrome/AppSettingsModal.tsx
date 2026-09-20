@@ -231,7 +231,7 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
             <section data-model-section="" className="flex flex-col gap-2.5">
               <h2 className="text-[13px] font-semibold tracking-tight text-ink">{UI.modelSectionLabel}</h2>
               <p className="text-[11px] leading-relaxed text-inkdim">{UI.modelTierLine}</p>
-              <div data-model-rows="" role="group" aria-label={UI.modelMatrixAria} className="mt-1 flex flex-col gap-1.5">
+              <div data-model-rows="" role="group" aria-label={UI.modelMatrixAria} className="mt-1 flex flex-col gap-2">
                 {MODEL_ROLES.map(roleRow)}
               </div>
               <p className="text-[11px] text-inkdim">{UI.modelDraftLine(ROLE_LABELS.architect)}</p>

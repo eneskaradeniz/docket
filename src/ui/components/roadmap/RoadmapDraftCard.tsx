@@ -248,7 +248,7 @@ export function RoadmapDraftCard({
             {editFazlar.map((f, i) => {
               const others = editFazlar.filter((_, j) => j !== i);
               return (
-                <div key={f.id} className="flex flex-col gap-1.5 rounded-md border border-hairline bg-raised/30 px-2.5 py-2">
+                <div key={f.id} className="flex flex-col gap-2 rounded-md border border-hairline bg-raised/30 px-2.5 py-2">
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-inkdim">{fazLabel(f.id)}</span>
                     <Input
@@ -319,7 +319,7 @@ export function RoadmapDraftCard({
                 : UI.roadmapDraftCardSummary(summary.fazCount, summary.taskCount, summary.chainCount, docsRoot)}
             </p>
             {!invalid && parsed.fazlar.length > 0 ? (
-              <div className="mt-2.5 flex flex-col gap-1" data-draft-faz-list>
+              <div className="mt-2 flex flex-col gap-1" data-draft-faz-list>
                 {parsed.fazlar.map((f) => {
                   const repos = [...new Set(f.tasks.map((t) => t.repo).filter((r): r is string => r !== undefined))].join(' ');
                   return (
@@ -353,7 +353,7 @@ export function RoadmapDraftCard({
           </>
         )}
         {objectOpen ? (
-          <div className="mt-2.5 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-2">
             <Textarea
               autoFocus
               rows={2}
@@ -376,7 +376,7 @@ export function RoadmapDraftCard({
         {!editOpen ? (
           // the operator's seats (dogfood 2026-08-29): LEFT-aligned, not right — the action row
           // reads with the card, not against it
-          <div className="mt-2.5 flex items-center justify-start gap-2">
+          <div className="mt-2 flex items-center justify-start gap-2">
             {!invalid ? (
               <>
                 <Button variant="ghost" size="sm" onClick={() => { setObjectOpen((v) => !v); setObjectBusy(false); }}>{UI.object}</Button>

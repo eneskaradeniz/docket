@@ -270,7 +270,7 @@ export function PaneSteerBar({
     });
   };
   return (
-    <div className="mt-2 flex flex-col gap-1.5" data-steer-bar="">
+    <div className="mt-2 flex flex-col gap-1" data-steer-bar="">
       {live ? (
         <Input
           aria-label={UI.steerPlaceholder}

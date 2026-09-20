@@ -418,7 +418,7 @@ export const UI = {
   // Kart sebebi — yeni yazılmış iş emri (WO-0015)
   cardJustWritten: 'İş emri yazıldı — bir plan isteyerek başla',
   // İş emri oluşturma (WO-0015)
-  newWorkOrder: '▸ Yeni iş emri',
+  newWorkOrder: 'Yeni iş emri',
   woCreate: 'Yeni iş emri',
   woTitleLabel: 'Başlık',
   woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
@@ -615,7 +615,7 @@ export const UI = {
   // reason (an empty aim) is the only line the row carries; the staged count lives in the record.)
   closeHint: 'Arşive gider — istersen not bırakabilirsin.',
   askHint: 'Oturum durdu — maliyet işlemez.',
-  driveResume: '▶ Sürdür',
+  driveResume: '▸ Sürdür',
   driveStopping: 'Durduruluyor…',
   driveRetry: 'Yeniden dene',
   // Plan onayı: kart yüzü ("Mimar N adım önerdi").
@@ -644,10 +644,24 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} açık PR`,
   forgeLastScan: (time: string) => `son gözlem ${time}`,
   FORGE_PR_STATE: { open: 'açık', merged: 'birleşti', closed: 'kapalı' },
+  // WO-0078 — ham tanı yüzeye çıkmaz (atölye kararı 2026-09-20): bozuk taramanın nedeni kayıtta
+  // aynen yaşar; yüzeyde operatör sözcükleri konuşur, ham metin ipucunda (tooltip) taşınır.
+  // «Görüşemedik» ≠ «baktı ve başarısız oldu» ayrımı sözcüklerde korunur.
+  DEGRADED_LINES: {
+    'unparseable-remote': 'Depo adresi okunamadı — uzak bağlantı beklenen biçimde değil',
+    'not-git': 'Git deposu değil — değişiklik izlenmez',
+    'tool-missing': 'Git bulunamadı — bu makinede kurulu değil',
+    unknown: 'İzlenemedi',
+  },
   // WO-0066 — sağlık yüzeyi: üç bağımlılık tek şerit (ADR-0010 «sağlık birinci sınıf görünür
   // durumdur»). İlk-koşu kapısı ADR-0001'in yokluk dilini konuşur: eylem yok + neden satırı.
   healthTitle: 'Sağlık',
   healthCreateWaits: 'Gerekli araçlar hazır olunca «çalışma alanı oluştur» burada belirir',
+  // WO-0082 — sağlık Genel Bakış'ta, bölüm gramerinde: iç sözcükler operatör diline döndü
+  // (forge → Bağlantı, agent → Sağlayıcı); sağlıklıyken katlanır, bozuklukta konuşur.
+  HEALTH_TOOLS: { git: 'Git', forge: 'Bağlantı', agent: 'Sağlayıcı' },
+  healthReadyCount: (n: number) => `${n}/3 hazır`,
+  healthIssueCount: (n: number) => `${n} sorun`,
   // WO-0068 — Değişiklikler bölümü (ADR-0018): operatörün konsolu. Her yazım açık bir tıklamadır;
   // birleştirme sayılı onay ister; bozuk bir eylem git'in kendi satırıyla konuşur, sessizlik yok.
   secChanges: 'Değişiklikler',

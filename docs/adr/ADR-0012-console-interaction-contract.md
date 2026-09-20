@@ -189,3 +189,14 @@ not motion). It is gated on the fold's 'running', never the handle's (an ask hel
 at stopped_asking and the asking verb names why it waits — a staleness accusation there would
 blame the operator); the plan-closing moment keeps precedence; a stopped/errored drive keeps its
 frozen words. It informs, never acts — no watchdog, no snooze (out of scope by the order).
+
+## Addendum — the 4px vertical rhythm and the card's one right anchor (WO-0079, 2026-09-20)
+
+The atelier's measured audit (`e2e/inspect-design.mjs`) found vertical gaps mixing 2/6/8/10/12/14
+across surfaces with no rule behind them. The rule, from this date: vertical rhythm is the 4px
+grid — gaps are 4/8/12/16; a 2px step is legal only INSIDE a cluster (icon-to-label, chip
+interiors), never between blocks or sections; 10 and 14 do not appear as vertical gaps. Horizontal
+baseline gaps between a label and its value are exempt — the rule is a VERTICAL one. The dispatch
+card carries ONE right anchor: the cost·duration meta sits beside the ▸ action on the reason row;
+row 1 is id + stage alone. (The audit's first pass misread the usage screen's horizontal baseline
+gaps as vertical — the correction is part of this addendum's record.)

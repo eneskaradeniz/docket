@@ -487,7 +487,7 @@ export function WsSettingsModal({
               border + bg-bg + px-3 py-2, 13px name, mono-11 dim path — never a boxed ledger list.
               The decision store is picked with an EXPLICIT button beside ✎ (operator review r3 —
               the row itself is not a click target); the ● label marks the pick. */}
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             {rows.map((row) => {
               const guard = guardOf(row);
               const selected = row.name === effectiveDs;

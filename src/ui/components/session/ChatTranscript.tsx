@@ -96,8 +96,8 @@ type ChatGroup =
 /** Top margin per group kind — the spacing rhythm that makes turns read as turns (Gestalt
  *  proximity): turn 10px · tool block 8px · orphan result 2px · sys 8px. First group: none. */
 const GROUP_TOP: Record<ChatGroup['kind'], string> = {
-  turn: 'mt-2.5',
-  operator: 'mt-2.5', // the operator line reads as a TURN of its own — the same rhythm as the roles
+  turn: 'mt-2',
+  operator: 'mt-2', // the operator line reads as a TURN of its own — the same rhythm as the roles
   tool: 'mt-2',
   agent: 'mt-2', // the standalone agent block rides the tool rhythm (it IS a delegation block)
   result: 'mt-0.5',

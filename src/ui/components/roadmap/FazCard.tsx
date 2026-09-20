@@ -50,7 +50,7 @@ export function FazCard({
       className="flex w-full items-stretch overflow-hidden rounded-md border border-hairline bg-surface text-left shadow-sm"
     >
       <div className={`lamp ${LAMP[faz.status]}`} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] text-inkdim">{fazLabel(faz.id)}</span>
           <span className="truncate text-[13.5px] font-semibold tracking-tight text-ink" title={faz.title}>

@@ -222,7 +222,7 @@ export function RoadmapDraftDialog({
           </Button>
         </div>
         <div className="flex flex-col gap-4 px-4 py-4">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <label className="text-[12px] font-medium text-ink" htmlFor="roadmap-draft-note">
               {UI.roadmapDraftNoteLabel}
             </label>
@@ -240,7 +240,7 @@ export function RoadmapDraftDialog({
               <p role="alert" className="text-[12px] text-error">{noteInvalid}</p>
             ) : null}
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <div className="text-[12px] font-medium text-ink">{UI.roadmapDraftDocsLabel}</div>
             {scan.status === 'loading' ? (
               // The scan's one honest line (rev 3): root + verb, no box, no silence.

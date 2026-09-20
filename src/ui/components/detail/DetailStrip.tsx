@@ -139,7 +139,7 @@ export function DetailStrip({
   const onDialogOpenAutoFocus = (e: Event): void => e.preventDefault();
 
   return (
-    <header className="relative flex flex-col gap-1.5 pb-2 pl-3.5">
+    <header className="relative flex flex-col gap-1 pb-2 pl-3.5">
       {/* The band spine — the ONE ambient lamp the substrip used to carry, now the band's own edge. */}
       <div
         className={cn('absolute bottom-2 left-0 top-0 w-[3px] rounded-br rounded-tr', lampClass(TURN_LAMP[turn], turn === 'yours'))}

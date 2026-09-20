@@ -105,9 +105,6 @@ export function AppShell({
           </div>
         ) : null}
         <div className="ml-auto flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          {/* WO-0060: first child of the no-drag cluster, outside the workspace guard — a chip in the
-              drag half would swallow window drags; the account fact outlives workspaces. */}
-          <AppbarDriveChip activity={driveActivity} />
           {workspaceId !== null ? (
             <>
               <Segmented
@@ -137,6 +134,10 @@ export function AppShell({
               <Settings2 className="h-4 w-4" aria-hidden="true" />
             </button>
           </Tooltip>
+          {/* WO-0060: outside the workspace guard — the account fact outlives workspaces; inside the
+              no-drag cluster — a chip in the drag half would swallow window drags. WO-0084: and at
+              the cluster's END — a status badge never leads the navigation row (tray position). */}
+          <AppbarDriveChip activity={driveActivity} />
         </div>
       </header>
       {settingsOpen ? (
