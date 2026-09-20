@@ -77,6 +77,16 @@ truth — read it first, never guess a field.**
 - implementer: subagent (test-first; commits on this branch); reviewer: a SEPARATE reviewer
   subagent over the diff before the PR; orchestrator runs the ladder + E2E and merges.
 - operator_checkpoint: DEFERRED (BUILD-FIRST) — joins the deferred tours.
+- ci_green: RESOLVED — green, 2026-09-20: typecheck (both tsconfigs), **1100 unit tests** (+39:
+  35 core parse/fold pins over the probe's verbatim payloads, 4 adapter settle pins with red→green
+  proof), build, `check:boundaries`, **E2E 98/98** ("all UI specs green", +2 scripted
+  structured-ask specs).
+- review: RESOLVED — a separate reviewer subagent returned REVISE (0 blocker / 2 major: the
+  useId radio-group collision across parallel ask cards; the unpinned adapter settle crossing);
+  both folded with red→green proof (`3cef1e8`), minors included.
+- pr_open / closure: RESOLVED — PR #82 (`https://github.com/eneskaradeniz/docket/pull/82`),
+  head `3cef1e8`, merged `d81a696` (the operator's subagent-pipeline merge order); closed at the
+  commit carrying this line.
 
 ## Stop-and-ask gates
 

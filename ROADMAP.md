@@ -474,6 +474,30 @@ gate model, after the board and the detail view.
       Order: `docs/work-orders/WO-0075-docket-evi/order.md`.
 
 - [ ] Milestone progress from work-order `milestone` front matter — superseded by M6/ADR-0016 (the
+- [x] **WO-0076** — probe: AskUserQuestion through the SDK (PR #81, merge `a1da146`, 2026-09-20;
+      subagent-run, orchestrator-verified against the raw logs): the structured-question surface is
+      REAL and host-answerable on 0.3.221 — the model calls it in a plain session; the fence sees
+      `{questions:[{question,header,options:[{label,description}],multiSelect}]}` verbatim (the
+      recommendation is ONLY a `"(Recommended)"` label suffix — no field); the host answers by
+      folding into the permission response (`updatedInput.answers` keyed by the exact question
+      string; multi-select comma-joined) — all four arms measured end-to-end: option pick, free-text
+      "Other" (the CLI flips to a follow-what-they-say template), dismissed (bare allow), denied
+      (deny+message → `is_error` result). Six real sessions, $2.16. Zero production code — the
+      report freezes WO-0077's shapes. Order: `docs/work-orders/WO-0076-askq-probe/order.md`.
+
+- [x] **WO-0077** — the structured ask card (PR #82, merge `d81a696`, 2026-09-20; the subagent
+      pipeline: implementer → reviewer → orchestrator ladder/E2E): when an agent calls
+      AskUserQuestion the ask card renders the question STRUCTURED — radio (single-select) /
+      checkbox (multiSelect) options with descriptions, a free-text "Diğer" answer, and an
+      "önerilen" badge on the option carrying the "(Recommended)" marker — and the answer folds
+      back through the permission fence (the four WO-0076-measured arms: selection ", "-joined,
+      Other, dismissed bare-allow, declined deny). Core `askq.ts` pure + strict-parse fail-open
+      (any malformed payload → the binary card byte-for-byte); the fence classifies the tool as
+      'ask' (the review's catch: unclassified it self-resolved before any operator saw it);
+      `PermissionDecision` gains optional `updatedInput` (the minimal seam — pipeline/IPC
+      untouched); radio groups are useId-scoped (parallel cards). 1100/1100 unit (+39: the
+      probe's verbatim payloads + 4 adapter settle pins with red→green proof) · E2E 98/98
+      (+2 scripted structured-ask specs). Order: `docs/work-orders/WO-0077-askq-card/order.md`.
       roadmap layer replaces the milestone front-matter idea; ADR-0008's derived-read discipline
       carries over)
 - [x] Open work orders grouped by whose turn it is (WO-0072)
