@@ -141,6 +141,9 @@ rule restated with its reasons in two places is the duplication this repository 
 - GUI-only (operator rulings 2026-09-09 "sadece senin için kalsın" → 2026-09-20 removal): there is no CLI
   surface — `src/cli/` and `npm run cli` are gone (WO-0073); the headless role they played is carried by the
   E2E spec's e2e bridge and the core port fakes.
+- App home (runtime state): `~/.docket/docket.db` — the SQLite store, one path on every platform
+  (WO-0075); `DOCKET_DB_PATH` overrides verbatim and never migrates. The decision store is the
+  repo's — this file is the machine-local cache, never project truth.
 - Work orders: `docs/work-orders/WO-NNNN-*/`. Decisions: `docs/adr/ADR-NNNN-*.md`. Debt: `docs/tech-debt.md`.
   Roadmap: `ROADMAP.md`. Closure requires the roadmap and tech-debt updated, proven by a commit sha.
 - Workspace roadmap (the faz/task planning layer, ADR-0016): `<structure root>/roadmap.md` (default

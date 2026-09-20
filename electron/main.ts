@@ -5,6 +5,7 @@
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
@@ -12,6 +13,7 @@ import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
 import { createStore } from '../src/adapters/store';
+import { resolveDbPath } from '../src/adapters/store/db-path';
 import { woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
 import { ForgeError, observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget, type RepoRef } from '../src/core/forge';
@@ -28,10 +30,14 @@ import { createE2eRunner, type E2eRunner } from './e2e-runner';
 const here = dirname(fileURLToPath(import.meta.url));
 
 // The state store. node:sqlite (built into Electron's Node); seeded from fixtures on first
-// run. The DB lives in the user-data dir — a machine-local, reconstructible cache (ADR-0010).
-// DOCKET_DB_PATH (WO-0031): the E2E driver points the app at a seeded temp db without touching the
-// operator's real one.
-const store = createStore(process.env.DOCKET_DB_PATH ?? join(app.getPath('userData'), 'docket.db'));
+// run. A machine-local, reconstructible cache (ADR-0010). DOCKET_DB_PATH (WO-0031): the E2E
+// driver points the app at a seeded temp db without touching the operator's real one — the
+// override wins verbatim, no migration logic ever runs on it. WO-0075: the real one lives in
+// ~/.docket/ (the dotdir home of this tool's peers — one path, every platform); a pre-WO-0075
+// db in the Electron userData location is renamed into place once, fail-safe back to the
+// legacy file when the rename cannot.
+const { dbPath } = resolveDbPath(process.env, homedir(), process.platform);
+const store = createStore(dbPath);
 
 // WO-0031: window state persistence — remember size/position across runs (the "çok büyük açılıyor"
 // complaint: 1280×800 fixed default). Restored clamped into a visible display; DOCKET_E2E skips restore
