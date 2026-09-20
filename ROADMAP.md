@@ -463,7 +463,7 @@ gate model, after the board and the detail view.
       E2E 96/96 green · 1056 unit · typecheck ×2 · build · boundaries. Order:
       `docs/work-orders/WO-0074-e2e-curume-onarimi/order.md`.
 
-- [x] **WO-0075** — the app home is `~/.docket` (2026-09-20; the operator's "~/.claude gibi"
+- [x] **WO-0075** — the app home is `~/.docket` (PR #80, merge `ea9b9c7`, 2026-09-20; the operator's "~/.claude gibi"
       proposal, split in the discussion: the DECISION STORE stays in the repo — project knowledge,
       the evidence chain stands on it; the RUNTIME STATE moves to the dotdir home): the pure
       `resolveDbPath` resolver (override verbatim, never migrates; fresh machine → `~/.docket/

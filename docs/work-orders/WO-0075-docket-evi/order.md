@@ -56,7 +56,10 @@ each half got its own answer:
   2026-09-20 ("önerinle sırayla gidelim").
 - operator_checkpoint: DEFERRED (BUILD-FIRST) — and the visible moment is the operator's next
   `npm run dev`: their real db renames into ~/.docket losslessly on first launch.
-- ci_green / pr_open: recorded in ROADMAP.md at the closing commit.
+- ci_green: RESOLVED — green, 2026-09-20: typecheck (both tsconfigs), **1062 unit tests** (+6
+  resolver), build, `check:boundaries`.
+- pr_open / closure: RESOLVED — PR #80 (`https://github.com/eneskaradeniz/docket/pull/80`),
+  head `98beae9`, merged `ea9b9c7` (operator merge order); closed at this commit.
 
 ## Stop-and-ask gates
 
