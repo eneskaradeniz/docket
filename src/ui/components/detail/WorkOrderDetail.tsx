@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, limitCrossing, seedLiveState, summarizeToolInput } from '../../../core/runner';
+import { type AskAnswer, type AskQuestion, askDecision } from '../../../core/askq';
 import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
 import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } from '../../../core/derive';
@@ -437,6 +438,21 @@ export function WorkOrderDetail({
   };
   const allowAsk = (a: PermissionAsk): void => answerAsk(a, true);
   const denyAsk = (a: PermissionAsk): void => answerAsk(a, false);
+  // WO-0077 — the structured ask's answer: the fold (core/askq.askDecision) rides decide() and
+  // reaches the runner's held callback as the measured permission response (WO-0076 Q3). The
+  // record names the resolution itself — header + the folded value — the target a question has none.
+  const answerStructuredAsk = (a: PermissionAsk, question: AskQuestion, answer: AskAnswer): void => {
+    const decision = askDecision(a.input, question.question, answer);
+    void store.decide(a.requestId, decision);
+    void onRecordPermissionDecision({
+      allowed: decision.allow,
+      tool: a.tool,
+      target:
+        answer.kind === 'selection' || answer.kind === 'other'
+          ? `${question.header}: ${answer.kind === 'selection' ? answer.labels.join(', ') : answer.text}`
+          : question.question,
+    });
+  };
   // "Bu iş emri için hep otomatik": lift the WO to full_auto AND allow the current ask — one promise,
   // both facts land (rule_changed + permission_decision on the timeline; the strip badge flips).
   const alwaysAuto = async (a: PermissionAsk): Promise<void> => {
@@ -832,6 +848,7 @@ export function WorkOrderDetail({
           planContext={planStage}
           onAllow={() => allowAsk(a)}
           onDeny={() => denyAsk(a)}
+          onAnswer={(question, answer) => answerStructuredAsk(a, question, answer)}
           {...(permissionRule === 'full_auto' ? {} : { onAlwaysAuto: () => void alwaysAuto(a), alwaysAutoBusy: liftingRule })}
           diffPeek={(filePath, newContent) => window.docket.diffPeek(detail.id, filePath, newContent)}
         />

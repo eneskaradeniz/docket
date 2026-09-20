@@ -401,7 +401,13 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           });
         }
         const attempt = classifyAttempt(toolName, toolInput, cwd);
-        const verdict = fenceDecision(scope, attempt);
+        // WO-0077: AskUserQuestion writes to nothing, so the write-scope fence would return 'allow'
+        // (classifyAttempt: not a write tool → allow) and the question would answer ITSELF as "did
+        // not answer" (the dismissed arm, WO-0076 a5) before any operator sees it. A question TO
+        // the operator is an ask under every role: it surfaces (the pipeline's policy still gates
+        // the cadence), the card parses it, and an unparseable payload still surfaces as the binary
+        // form — the WO-0077 fail-open gate.
+        const verdict = toolName === 'AskUserQuestion' ? 'ask' : fenceDecision(scope, attempt);
         if (verdict === 'allow') return settle({ behavior: 'allow' });
         if (verdict === 'deny') {
           return settle({ behavior: 'deny', message: `fence: ${input.role} may not write there (ADR-0002)` });
@@ -789,9 +795,14 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       if (!settle) return;
       pending.delete(requestId);
       askDetails.delete(requestId);
+      // WO-0077: the structured ask's fold (core/askq.askDecision) rides `updatedInput` and crosses
+      // to the held callback VERBATIM (WO-0076 Q3 — `{ behavior: 'allow', updatedInput }`); a
+      // decision without it stays the bare allow (the dismissed arm, a5).
       settle(
         decision.allow
-          ? { behavior: 'allow' }
+          ? decision.updatedInput !== undefined
+            ? { behavior: 'allow', updatedInput: decision.updatedInput }
+            : { behavior: 'allow' }
           : { behavior: 'deny', message: decision.reason || 'denied by operator' },
       );
       // WO-0027 / Bulgu 10: with PARALLEL asks nothing else identifies which held ask was answered —

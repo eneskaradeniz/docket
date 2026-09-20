@@ -131,7 +131,11 @@ export type ProviderErrorCode =
   | 'rate_limited';
 
 // The operator's answer to a surfaced `permission_request` (the stop-and-ask).
-export type PermissionDecision = { allow: true } | { allow: false; reason: string };
+// WO-0077: an allow MAY carry `updatedInput` — the structured ask's fold (core/askq.askDecision)
+// crosses the port and reaches the runner's held permission callback as `{ behavior: 'allow',
+// updatedInput }` verbatim (WO-0076 Q3's measured contract). Its ABSENCE stays the bare allow
+// (the dismissed arm); the deny `reason` is the deny message.
+export type PermissionDecision = { allow: true; updatedInput?: Record<string, unknown> } | { allow: false; reason: string };
 
 // WO-0050 / D1: the drive input is a DISCRIMINATED union — a drive belongs to exactly one
 // owner, a work order or a workspace. The `workOrderId?: never` / `workspaceId?: never`
