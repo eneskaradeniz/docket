@@ -481,7 +481,13 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     <AppShell
       workspaces={workspaces}
       workspaceId={workspaceId}
-      onSwitch={setWorkspaceId}
+      onSwitch={(id) => {
+        // WO-0074 (the WO-0032 precedent): a workspace switch lands on the new workspace's BOARD —
+        // the open detail belonged to the previous workspace, and keeping it rendered a foreign WO
+        // under a foreign header. A same-workspace re-pick keeps the open detail.
+        setWorkspaceId(id);
+        setSelectedId((prev) => (prev && detail?.wo.workspace === id ? prev : null));
+      }}
       settings={settings}
       source={source}
       onWorkspacesChanged={refreshWorkspaces}
