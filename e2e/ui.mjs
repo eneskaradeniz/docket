@@ -3113,7 +3113,7 @@ await spec('WO-0060 çip 02: sürüş YEŞİL sayaç — 1 sürüyor; Durdur ine
   await page.waitForTimeout(500);
   assert.equal(await chip.count(), 1, 'a running drive lit no chip');
   assert.equal(await chipTier(), 'running', 'the running drive is not the green tier');
-  assert.ok(((await chip.textContent()) ?? '').includes('1 sürüyor'), 'the green chip lost its count copy');
+  assert.ok(((await chip.textContent()) ?? '').includes('1'), 'the green chip lost its count copy');
   await page.screenshot({ path: join(SHOTS, 'appbar-chip-running@980.png') });
   const durdur = page.getByRole('button', { name: 'Durdur', exact: true });
   if ((await durdur.count()) === 0) {
@@ -3122,7 +3122,8 @@ await spec('WO-0060 çip 02: sürüş YEŞİL sayaç — 1 sürüyor; Durdur ine
   }
   await durdur.first().click();
   await page.waitForTimeout(700);
-  assert.equal(await chip.count(), 0, 'the chip survived Durdur');
+  assert.equal(await chip.count(), 1, 'the LED vanished (WO-0085: always present)');
+  assert.equal(await chipTier(), 'idle', 'Durdur did not rest the chip at idle');
   await backToBoard();
 });
 
@@ -3136,8 +3137,8 @@ await spec('WO-0060 çip 03: sağlayıcının warning\'i AMBER — gövde figure
   assert.equal(await chip.count(), 1, 'the warning lit a second chip');
   assert.equal(await chipTier(), 'warn', 'the provider warning did not take the chip');
   const body = (await chip.textContent()) ?? '';
-  assert.ok(body.includes('limit yaklaşıyor'), `the amber body is missing: ${body}`);
-  assert.ok(!body.includes('86'), `the amber body leaked the utilization figure: ${body}`);
+  assert.ok(body.includes('▲') && body.includes('86%'), `the amber body is missing: ${body}`);
+  // WO-0085: the COMPACT body carries the figure now — the sentence (window + % + clock) is tooltip-only.
   await chip.hover();
   await page.waitForTimeout(700); // Radix delayDuration 350
   const tip = (await page.locator('[role="tooltip"]').textContent()) ?? '';
@@ -3150,7 +3151,8 @@ await spec('WO-0060 çip 03: sağlayıcının warning\'i AMBER — gövde figure
   assert.equal(await chipTier(), 'running', 'the chip stayed amber after the all-clear');
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 2, usd: 0.01 } }));
   await page.waitForTimeout(700);
-  assert.equal(await chip.count(), 0, 'the chip survived the clean end');
+  assert.equal(await chip.count(), 1, 'the LED vanished (WO-0085: always present)');
+  assert.equal(await chipTier(), 'idle', 'the clean end did not rest the chip at idle');
   await backToBoard();
 });
 
@@ -3173,13 +3175,14 @@ await spec('WO-0060 çip 04: KIRMIZI amber\'i ezer; geri sayım tikler; gerçek 
   await page.screenshot({ path: join(SHOTS, 'appbar-chip-limit@980.png') });
   // the SHORT stamp crossed for real: the chip unmounts ITSELF (the ticker's own gate)
   await page.waitForTimeout(8_500);
-  assert.equal(await chip.count(), 0, 'the chip survived its own crossing');
+  assert.equal(await chip.count(), 1, 'the LED vanished after its own crossing (WO-0085)');
+  assert.equal(await chipTier(), 'idle', 'the crossing did not rest the chip at idle');
   // cleanup: the crossed row stamp re-seeds the card — the clean leg clears it for the whole suite
   await page.locator('button', { hasText: 'Sürdür' }).first().click();
   await page.waitForTimeout(500);
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 10, tokensOut: 2, usd: 0.01 } }));
   await page.waitForTimeout(800);
-  assert.equal(await chip.count(), 0, 'a chip came back on the cleanup leg');
+  assert.equal(await chipTier(), 'idle', 'a running chip came back on the cleanup leg');
   await backToBoard();
 });
 
@@ -3191,13 +3194,13 @@ await spec('WO-0060 çip 05: ✦ TASLAK sayar — WO\'suz erişicinin kanıtı; 
   await page.waitForTimeout(400);
   assert.equal(await chip.count(), 1, 'the draft drive lit no chip (the WO-less arm is dead)');
   assert.equal(await chipTier(), 'running', 'the draft drive is not the green tier');
-  assert.ok(((await chip.textContent()) ?? '').includes('1 sürüyor'), 'the draft chip lost its count copy');
+  assert.ok(((await chip.textContent()) ?? '').includes('1'), 'the draft chip lost its count copy');
   await draftEmit({ kind: 'limit_windows', windows: [{ window: 'five_hour', utilization: 55, resetAt: futureStamp() }], status: 'warning' });
   await page.waitForTimeout(400);
   assert.equal(await chipTier(), 'warn', 'the draft warning did not take (the WO-less arm)');
   await draftEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1200, tokensOut: 300, usd: 0.12 } });
   await page.waitForTimeout(700);
-  assert.equal(await chip.count(), 0, 'the chip survived the draft end');
+  assert.equal(await chipTier(), 'idle', 'the draft end did not rest the chip at idle');
   await stopAllDrives();
 });
 
@@ -3216,7 +3219,8 @@ await spec('WO-0060 çip 06: reload — kırmızı çip SATIRDAN yeniden türer;
   assert.equal(await chip.count(), 1, 'the chip did not re-derive from the row after the reload');
   assert.equal(await chipTier(), 'limit', 'the re-derived chip is not red');
   await page.waitForTimeout(31_000); // the real crossing, rows only
-  assert.equal(await chip.count(), 0, 'the re-derived chip survived its crossing');
+  assert.equal(await chip.count(), 1, 'the re-derived LED vanished after its crossing (WO-0085)');
+  assert.equal(await chipTier(), 'idle', 'the re-derived chip did not rest at idle');
   // the app reloaded onto the seed's first workspace — read the switcher's own label to get back
   const from = ((await page.locator('header button').first().textContent()) ?? '').trim();
   await switchWs(from, 'e2e');
@@ -3224,7 +3228,8 @@ await spec('WO-0060 çip 06: reload — kırmızı çip SATIRDAN yeniden türer;
   await openDetail('Model kanıt');
   // the crossed stamp is INERT (a past stamp is excluded by limitInEffect; the board line is
   // history, wiped by the next run's seed) — the resume-after-reload leg is not worth its risk
-  assert.equal(await chip.count(), 0, 'a chip survived the final clean leg');
+  assert.equal(await chip.count(), 1, 'the LED vanished on the final clean leg (WO-0085)');
+  assert.equal(await chipTier(), 'idle', 'the final clean leg did not rest the chip at idle');
 });
 
 // ===== WO-0072 — genel bakış: üç izdüşüm (Sıra · Borçlar · Hazır), satır gezinmesi, boş yüz =====

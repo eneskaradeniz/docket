@@ -118,12 +118,23 @@ export function AppShell({
                   { value: 'overview', label: UI.overviewTitle },
                 ]}
               />
-              <Button variant="primary" size="sm" onClick={onNewWorkOrder}>
+              {/* WO-0085 review (operator: the white block read heavy): the CTA wears the amber
+                  signal language in OUTLINE — primary weight, no light slab. */}
+              <Button
+                variant="primary"
+                size="sm"
+                className="border border-signal/50 bg-signal/10 text-signal hover:bg-signal/20"
+                onClick={onNewWorkOrder}
+              >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 {UI.newWorkOrder}
               </Button>
             </>
           ) : null}
+          {/* WO-0085 review (operator: settings belong at the edge): the chip sits WITH the
+              controls; ⚙ is the rightmost control. WO-0060's two constraints stand — outside the
+              workspace guard (the account fact outlives workspaces), inside the no-drag cluster. */}
+          <AppbarDriveChip activity={driveActivity} />
           <Tooltip label={UI.settings}>
             <button
               type="button"
@@ -134,10 +145,6 @@ export function AppShell({
               <Settings2 className="h-4 w-4" aria-hidden="true" />
             </button>
           </Tooltip>
-          {/* WO-0060: outside the workspace guard — the account fact outlives workspaces; inside the
-              no-drag cluster — a chip in the drag half would swallow window drags. WO-0084: and at
-              the cluster's END — a status badge never leads the navigation row (tray position). */}
-          <AppbarDriveChip activity={driveActivity} />
         </div>
       </header>
       {settingsOpen ? (
