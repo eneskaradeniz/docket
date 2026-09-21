@@ -1,12 +1,12 @@
-// OverviewScreen (WO-0072) — the FOURTH surface: the workspace's own facts projected (ADR-0008's
-// derived-read discipline — the third consumer of the gate model, after the board and the detail).
-// ONE 840px scroll, three sections in fixed order — Sıra (open work orders grouped by whose turn
-// the stage model says it is), Borçlar (the open tech-debt lines and the work orders that opened
-// them), Hazır (the work orders and roadmap tasks whose gates are satisfiable) — every section
-// ABSENT when it has nothing (ADR-0012: empty groups render absent), and the all-empty workspace
-// degrading to ONE invitation line. Read-only: a row NAVIGATES (the board card's select), it never
-// acts; there is no stage column anywhere (TD-008's stance) and no cached projection (the read is
-// once per mount/workspace switch — the usage screen's cadence).
+// OverviewScreen (WO-0072) — the FOURTH surface: the FACTS screen (WO-0086's ruling — environment
+// facts live here, the board is work-only). ONE 840px scroll: Sıra (open work orders grouped by
+// whose turn the stage model says it is), Borçlar (the open tech-debt lines and the work orders
+// that opened them), Hazır (the planli roadmap tasks), Sağlık (the machine tools, WO-0083) and
+// Depo (the repo connections + open PRs, WO-0086 — content-INDEPENDENT: a workless workspace's
+// connections belong here all the same). Every section ABSENT when it has nothing (ADR-0012), and
+// a workspace with none of it degrading to ONE invitation line. Read-only: a row NAVIGATES (the
+// board card's select), it never acts; there is no stage column anywhere (TD-008's stance) and no
+// cached projection (the read is once per mount/workspace switch — the usage screen's cadence).
 //
 // The turn group head carries the role word in its role hue (ADR-0013's KİM — ROL idiom, the
 // SessionCards mapping); OPERATOR is no session role, so its word stays un-hued — the word carries
@@ -59,14 +59,18 @@ export function OverviewScreen({
   const hasTurns = view !== undefined && view.turns.length > 0;
   const hasDebts = view !== undefined && view.debts.length > 0;
   const hasContent = hasTurns || hasDebts || hasReady;
+  // WO-0086 fix: Depo is CONTENT-INDEPENDENT — a workless workspace still has connected repos,
+  // and their facts are exactly what its overview should show (the operator's live finding).
+  const forgeLanded = forge !== undefined && forge.repos.length > 0;
 
-  // WO-0083: a degraded tool must speak even on an otherwise-empty workspace — the pure empty
-  // face (one invitation line, no sections) holds only while every tool is ok.
+  // WO-0083 + WO-0086 fix: the pure empty face (one invitation line, no sections) holds only while
+  // every tool is ok AND no forge look is pending/landed — a degraded tool or connected repos
+  // speak even here.
   const degradedCount = health?.checks.filter((c) => c.state !== 'ok').length ?? 0;
   let body;
   if (view === undefined) {
     body = <p className="loadline px-1 py-8">{UI.loadOverview}</p>;
-  } else if (!hasContent && degradedCount === 0) {
+  } else if (!hasContent && degradedCount === 0 && !forgeLanded && !forgePending) {
     // The absent grammar: a workspace with neither open work orders nor tasks nor debts is ONE line.
     body = (
       <div data-overview-empty className="rounded-md border border-dashed border-hairline px-3 py-2.5">
@@ -150,15 +154,15 @@ export function OverviewScreen({
           </section>
         ) : null}
         {health !== undefined ? <HealthSection health={health} /> : null}
-        {/* WO-0086: Depo lives HERE (the facts screen). In flight → the scan skeleton; landed →
-            the section; the pure-empty face stays pure (no connections story on an invitation). */}
-        {hasContent && forgePending ? (
+        {/* WO-0086 fix: Depo is content-independent — a workless workspace's overview is exactly
+            where its connections belong; the skeleton rides the pending look. */}
+        {forgePending ? (
           <section className="rounded-md border border-hairline bg-surface px-3 py-2.5 shadow-sm" data-forge-skeleton>
             <p className="loadline">{UI.forgeScanning}</p>
             <div className="scanline mt-1"><div /></div>
           </section>
         ) : null}
-        {hasContent && forge !== undefined && forge.repos.length > 0 ? (
+        {forgeLanded ? (
           <ForgeSection view={forge} onRefresh={onRefreshForge ?? (() => {})} />
         ) : null}
       </div>
