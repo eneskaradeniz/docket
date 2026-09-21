@@ -652,6 +652,14 @@ export const UI = {
   forgeFoldMore: (n: number) => `▸ ${n} daha`,
   forgeScanning: 'Depo taranıyor…',
   forgeBoardLine: (repos: number, prs: number) => `${repos} depo bağlı · ${prs} açık PR — Genel Bakış'ta`,
+  // WO-0087 — PR detayının kromu: etiketler satıcı-adı YASAK (ADR-0006 sınırı) — 'Tarayıcıda aç'
+  // nötrdür; adres veriden gelir. Hata insan sözcüğü, ham neden tooltip'te (WO-0078).
+  forgePrDetailBrowser: '↗ Tarayıcıda aç',
+  forgePrDetailDiff: '▸ Farkı görüntüle',
+  forgePrDetailDiffHide: '▸ Farkı gizle',
+  forgePrDetailFiles: (n: number) => `${n} dosya`,
+  forgePrDetailLoadFailed: 'Ayrıntı yüklenemedi',
+  forgePrDiffTruncated: (n: number) => `İlk ${n} satır gösteriliyor`,
   // WO-0078 — ham tanı yüzeye çıkmaz (atölye kararı 2026-09-20): bozuk taramanın nedeni kayıtta
   // aynen yaşar; yüzeyde operatör sözcükleri konuşur, ham metin ipucunda (tooltip) taşınır.
   // «Görüşemedik» ≠ «baktı ve başarısız oldu» ayrımı sözcüklerde korunur.

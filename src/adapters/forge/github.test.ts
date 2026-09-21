@@ -356,3 +356,73 @@ describe('console writes (WO-0068, ADR-0018)', () => {
     void port.mergePr;
   });
 });
+
+// ===== WO-0087 — the depo row's lazy detail (prDetail + prDiff) =====
+describe('prDetail + prDiff — the depo row\'s lazy detail (WO-0087)', () => {
+  const antreo = { owner: 'antreo-app', name: 'mobile' };
+  const PR_VIEW = JSON.stringify({
+    number: 269,
+    title: 'fix(#267): ana sayfa cihaz-turu düzeltmeleri — misafir davet metni, Keşfet başlık+nav, konum çipi header\'da',
+    body: 'Misafir akışındaki davet metni güncellendi; Keşfet başlığı ve alt navigasyon hizaya alındı.',
+    author: { login: 'eneskaradeniz' },
+    headRefName: 'feature/267-home-tur',
+    baseRefName: 'main',
+    additions: 142,
+    deletions: 38,
+    changedFiles: 6,
+    url: 'https://github.com/antreo-app/mobile/pull/269',
+  });
+
+  it('prDetail: the wire maps verbatim — author login, the branch pair, the forge\'s own counts', async () => {
+    let seen: string[] = [];
+    const f = forgeWith((args) => {
+      seen = args;
+      return ok(PR_VIEW);
+    });
+    const d = await f.prDetail(antreo, 269);
+    expect(seen.slice(0, 4)).toEqual(['pr', 'view', '269', '--repo']);
+    expect(d).toEqual({
+      number: 269,
+      headBranch: 'feature/267-home-tur',
+      baseBranch: 'main',
+      url: 'https://github.com/antreo-app/mobile/pull/269',
+      title: 'fix(#267): ana sayfa cihaz-turu düzeltmeleri — misafir davet metni, Keşfet başlık+nav, konum çipi header\'da',
+      body: 'Misafir akışındaki davet metni güncellendi; Keşfet başlığı ve alt navigasyon hizaya alındı.',
+      author: 'eneskaradeniz',
+      additions: 142,
+      deletions: 38,
+      changedFiles: 6,
+    });
+  });
+
+  it('empty title/body/author stay ABSENT (never empty strings)', async () => {
+    const f = forgeWith(() =>
+      ok(JSON.stringify({ number: 5, title: '', body: '', author: { login: '' }, headRefName: 'a', baseRefName: 'b', additions: 0, deletions: 0, changedFiles: 0, url: 'https://github.com/o/r/pull/5' })),
+    );
+    const d = await f.prDetail(antreo, 5);
+    expect(d.title).toBeUndefined();
+    expect(d.body).toBeUndefined();
+    expect(d.author).toBeUndefined();
+    expect(d.additions).toBe(0); // a real zero: the forge computed it
+  });
+
+  it('failure → the shaped ForgeError with the wire message', async () => {
+    const f = forgeWith(() => fail('pull request 269 not found'));
+    await expect(f.prDetail(antreo, 269)).rejects.toThrow('pull request 269 not found');
+  });
+
+  it('prDiff: the unified diff passes through VERBATIM — never trimmed at the edge', async () => {
+    const DIFF = 'diff --git a/src/a.ts b/src/a.ts\nindex 000..111 100644\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-x\n+y\n';
+    const f = forgeWith((args) => {
+      expect(args[0]).toBe('pr');
+      expect(args[1]).toBe('diff');
+      return ok(DIFF);
+    });
+    expect(await f.prDiff(antreo, 269)).toBe(DIFF);
+  });
+
+  it('prDiff failure → ForgeError', async () => {
+    const f = forgeWith(() => fail('unknown PR'));
+    await expect(f.prDiff(antreo, 269)).rejects.toThrow();
+  });
+});

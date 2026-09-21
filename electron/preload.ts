@@ -122,6 +122,15 @@ contextBridge.exposeInMainWorld('docket', {
     reconcile: (workspaceId: WorkspaceId): Promise<void> => ipcRenderer.invoke('docket:forge:reconcile', workspaceId),
     view: (workspaceId: WorkspaceId): Promise<import('../src/core/forge').ForgeView> =>
       ipcRenderer.invoke('docket:forge:view', workspaceId),
+    // WO-0087: the depo row's lazy detail + the unified diff, fetched live (one call each).
+    prDetail: (workspaceId: WorkspaceId, repoRemote: string, number: number): Promise<import('../src/core/forge').ForgePrDetail> =>
+      ipcRenderer.invoke('docket:forge:prDetail', workspaceId, repoRemote, number),
+    prDiff: (workspaceId: WorkspaceId, repoRemote: string, number: number): Promise<string> =>
+      ipcRenderer.invoke('docket:forge:prDiff', workspaceId, repoRemote, number),
+  },
+  // WO-0087: the depo row's browser chip — https-allowlisted main-side (shell.openExternal).
+  shell: {
+    openExternal: (url: string): Promise<void> => ipcRenderer.invoke('docket:shell:openExternal', url),
   },
   // WO-0066: the three dependencies, one look — the composition root's SystemHealthWatch. A
   // failed look resolves undefined (the renderer renders nothing, never bricks).

@@ -626,6 +626,17 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
         forgePending={forgeWatch !== undefined && !(forge !== undefined && forge.ws === workspaceId)}
         onRefreshForge={refreshForge}
+        onPrDetail={
+          workspaceId !== null && forgeWatch
+            ? (repoRemote: string, number: number) => forgeWatch.prDetail(workspaceId, repoRemote, number)
+            : undefined
+        }
+        onPrDiff={
+          workspaceId !== null && forgeWatch
+            ? (repoRemote: string, number: number) => forgeWatch.prDiff(workspaceId, repoRemote, number)
+            : undefined
+        }
+        onOpenExternal={(url: string) => void window.docket.shell?.openExternal(url)}
         onSelect={setSelectedId}
       />
     ) : null;

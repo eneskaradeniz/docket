@@ -3,7 +3,7 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session, shell } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -178,6 +178,25 @@ async function reconcileForge(workspaceId: WorkspaceId): Promise<void> {
 }
 ipcMain.handle('docket:forge:reconcile', (_e, id: WorkspaceId) => reconcileForge(id));
 ipcMain.handle('docket:forge:view', (_e, id: WorkspaceId) => store.forgeView(id));
+// WO-0087 — the depo row's lazy detail + diff: the renderer asks per (workspace, repoRemote, PR
+// number); the repoRemote resolves HERE (the composition root owns the parse — WO-0063 answer 1);
+// an unparseable remote or a failed call rejects with the displayable reason.
+function forgeRefFromRemote(repoRemote: string): RepoRef {
+  const parsed = parseRepoRemote(repoRemote);
+  if (parsed.kind !== 'ok') throw new ForgeError(parsed.reason);
+  return parsed.ref;
+}
+ipcMain.handle('docket:forge:prDetail', (_e, _id: WorkspaceId, repoRemote: string, number: number) =>
+  forge.prDetail(forgeRefFromRemote(repoRemote), number),
+);
+ipcMain.handle('docket:forge:prDiff', (_e, _id: WorkspaceId, repoRemote: string, number: number) =>
+  forge.prDiff(forgeRefFromRemote(repoRemote), number),
+);
+// WO-0087 — the browser chip: ONLY https urls open externally (never file://, never schemes).
+ipcMain.handle('docket:shell:openExternal', (_e, url: string) => {
+  if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('only https urls open externally');
+  return shell.openExternal(url);
+});
 
 // WO-0066 — the three dependencies, one look: git spawn + the forge's health() + the runner
 // adapter's provider check, composed HERE (the only place all three live). Never throws — a

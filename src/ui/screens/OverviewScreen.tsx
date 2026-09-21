@@ -13,7 +13,7 @@
 // it, never color alone. WO-0080: the ready arm is the planli tasks' ALONE — every open WO's
 // startability is already its turn group's content, and listing it twice read as a second,
 // emptier board (the atelier's 2026-09-20 finding).
-import type { ForgeView } from '../../core/forge';
+import type { ForgePrDetail, ForgeView } from '../../core/forge';
 import type { SystemHealth } from '../../core/health';
 import type { Turn, WorkspaceOverview } from '../../core/overview';
 import type { WorkOrderId } from '../../core/types';
@@ -37,6 +37,9 @@ export function OverviewScreen({
   forge,
   forgePending,
   onRefreshForge,
+  onPrDetail,
+  onPrDiff,
+  onOpenExternal,
   onSelect,
 }: {
   view: WorkspaceOverview | undefined; // undefined = the read is in flight
@@ -46,6 +49,11 @@ export function OverviewScreen({
    *  only legitimate moment (no watch → no skeleton, the section is simply never fed). */
   forgePending?: boolean;
   onRefreshForge?: () => void;
+  /** WO-0087: the depo row's lazy detail + diff, fetched live; the browser chip rides
+   *  shell.openExternal. All three optional — absent = the rows render without toggles. */
+  onPrDetail?: (repoRemote: string, number: number) => Promise<ForgePrDetail>;
+  onPrDiff?: (repoRemote: string, number: number) => Promise<string>;
+  onOpenExternal?: (url: string) => void;
   onSelect: (id: WorkOrderId) => void;
 }) {
   const { UI, woIdLabel, debtIdLabel } = useLabels();
@@ -163,7 +171,13 @@ export function OverviewScreen({
           </section>
         ) : null}
         {forgeLanded ? (
-          <ForgeSection view={forge} onRefresh={onRefreshForge ?? (() => {})} />
+          <ForgeSection
+            view={forge}
+            onRefresh={onRefreshForge ?? (() => {})}
+            onPrDetail={onPrDetail}
+            onPrDiff={onPrDiff}
+            onOpenExternal={onOpenExternal}
+          />
         ) : null}
       </div>
     );

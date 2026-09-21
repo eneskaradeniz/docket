@@ -29,8 +29,11 @@ declare global {
     settings: AppSettings;
       runner: RunnerBridge;
       /** WO-0064: the forge observation watch (core's `ForgeWatch`) — reconcile triggers + the
-       *  observed cache view; the composition root implements it over the forge adapter. */
+       *  observed cache view; the composition root implements it over the forge adapter.
+       *  WO-0087: + the depo row's lazy prDetail/prDiff, fetched live. */
       forge?: import('../core/forge').ForgeWatch;
+      /** WO-0087: the browser chip — https-allowlisted main-side (shell.openExternal). */
+      shell?: { openExternal: (url: string) => Promise<void> };
       /** WO-0066: the three dependencies, one look (core's `SystemHealthWatch` — a failed look
        *  resolves undefined; the renderer renders nothing, never bricks). */
       health?: import('../core/health').SystemHealthWatch;
