@@ -506,6 +506,26 @@
 
   /* TD-037 (WO-0031f): the named load lines — one line + a static 5px dot, no skeletons; static by
      construction, so reduced-motion needs no entry here. */
+
+  /* WO-0086: the forge scan's in-flight skeleton — ONE sweeping 2px line (the hairline's motion
+     twin). The one reduced-motion entry below stills it for motion-sensitive operators. */
+  .scanline {
+    background: var(--color-hairline);
+    border-radius: 1px;
+    height: 2px;
+    overflow: hidden;
+  }
+  .scanline > div {
+    height: 100%;
+    width: 30%;
+    background: var(--color-inkdim);
+    animation: scan 1.4s ease-in-out infinite;
+  }
+  @keyframes scan {
+    0% { margin-left: -30%; }
+    100% { margin-left: 100%; }
+  }
+
   .loadline {
     display: flex;
     align-items: center;
@@ -788,6 +808,7 @@
   .lamp-run,
   .fseg-kosuyor,
   .dot-run,
+  .scanline > div,
   .rise,
   .flash,
   .flash-err,

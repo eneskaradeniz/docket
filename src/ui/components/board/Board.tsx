@@ -25,13 +25,10 @@ export function Board({
   cards,
   budget,
   onSelect,
-  onNewWorkOrder,
 }: {
   cards: WorkOrderCardView[];
   budget?: WorkspaceBudgetView; // WO-0047: workspace-scope — every card carries the same warn line
   onSelect: (id: WorkOrderCardView['id']) => void;
-  /** T2: opens the create modal from the all-done platform line (absent elsewhere). */
-  onNewWorkOrder: () => void;
 }) {
   const { BUCKET_LABELS, UI } = useLabels();
   const up = cards.filter((c) => c.bucket === 'up').sort((a, b) => a.actionRank - b.actionRank);
@@ -83,11 +80,8 @@ export function Board({
           <div key={pulse} className={`flex items-center gap-2${pulse > 0 ? ' pulse-once' : ''}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-proceed" aria-hidden="true" />
             <p className="readout text-proceed">{UI.boardAllDone}</p>
-            {/* T2 (the r2 amendment's named case): a finished surface may carry one invitation CTA
-                beside its state line — the board's appbar CTA is not enough when the day is done. */}
-            <Button variant="secondary" size="sm" className="ml-2" onClick={onNewWorkOrder}>
-              {UI.newWorkOrder}
-            </Button>
+            {/* WO-0086 (operator): the platform line is the SENTENCE alone — creation's single owner
+                is the appbar's global ＋ CTA; the line's own button was a second owner. */}
           </div>
           <ClosedToggle count={closed.length}>
             {closed.map((c) => (

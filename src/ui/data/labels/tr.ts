@@ -644,6 +644,14 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} açık PR`,
   forgeLastScan: (time: string) => `son gözlem ${time}`,
   FORGE_PR_STATE: { open: 'açık', merged: 'birleşti', closed: 'kapalı' },
+  // WO-0086 — Depo düzeni (atölye onaylı V1+V2 hibriti): PR'sız depo tek led satırı; PR'lı depo
+  // kartında son 3 PR + ▸ N daha; başlık özeti; pano tek satır özete indi; iskelet tarama sürerken
+  // konuşur (loadline + scanline). URL ve zaman damgası tooltip'e indi.
+  forgeSummary: (repos: number, prs: number) => `${repos} repo · ${prs} açık PR`,
+  forgeNoPrs: 'PR yok',
+  forgeFoldMore: (n: number) => `▸ ${n} daha`,
+  forgeScanning: 'Depo taranıyor…',
+  forgeBoardLine: (repos: number, prs: number) => `${repos} depo bağlı · ${prs} açık PR — Genel Bakış'ta`,
   // WO-0078 — ham tanı yüzeye çıkmaz (atölye kararı 2026-09-20): bozuk taramanın nedeni kayıtta
   // aynen yaşar; yüzeyde operatör sözcükleri konuşur, ham metin ipucunda (tooltip) taşınır.
   // «Görüşemedik» ≠ «baktı ve başarısız oldu» ayrımı sözcüklerde korunur.
