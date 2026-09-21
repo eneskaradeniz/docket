@@ -619,7 +619,15 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   } else if (surface === 'overview') {
     // WO-0072: the fourth surface — the read-only projection, keyed by workspace like its siblings.
     main = currentWorkspace ? (
-      <OverviewScreen key={workspaceId ?? 'none'} view={overview} health={systemHealth} onSelect={setSelectedId} />
+      <OverviewScreen
+        key={workspaceId ?? 'none'}
+        view={overview}
+        health={systemHealth}
+        forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
+        forgePending={forgeWatch !== undefined && !(forge !== undefined && forge.ws === workspaceId)}
+        onRefreshForge={refreshForge}
+        onSelect={setSelectedId}
+      />
     ) : null;
   } else {
     // keyed by workspace (WO-0031f H-1): switching workspaces is a fresh surface, not a state
@@ -630,7 +638,6 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         cards={cards}
         budget={budget}
         forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
-        onRefreshForge={refreshForge}
         onSelect={setSelectedId}
         onNewWorkOrder={() => setWoCreateOpen(true)}
       />

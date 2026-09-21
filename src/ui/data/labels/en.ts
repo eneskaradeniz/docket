@@ -548,6 +548,14 @@ export const UI = {
   forgeOpenCount: (n: number) => `${n} open PR${n === 1 ? '' : 's'}`,
   forgeLastScan: (time: string) => `last checked ${time}`,
   FORGE_PR_STATE: { open: 'open', merged: 'merged', closed: 'closed' },
+  // WO-0086 — the depo layout (atelier-approved V1+V2 hybrid): a PR-less repo is ONE led line; a
+  // PR-holding repo is a card with the newest 3 PRs + ▸ N more; the head carries the summary; the
+  // board keeps one dim summary line; the in-flight skeleton speaks (loadline + scanline).
+  forgeSummary: (repos: number, prs: number) => `${repos} repos · ${prs} open PRs`,
+  forgeNoPrs: 'no open PRs',
+  forgeFoldMore: (n: number) => `▸ ${n} more`,
+  forgeScanning: 'Scanning repos…',
+  forgeBoardLine: (repos: number, prs: number) => `${repos} repos connected · ${prs} open PRs — see the Overview`,
   // WO-0078 — raw diagnostics never reach the surface (atelier ruling, 2026-09-20): the degraded
   // reason stays verbatim in the records; the face speaks operator words, the raw rides the tooltip.
   DEGRADED_LINES: {

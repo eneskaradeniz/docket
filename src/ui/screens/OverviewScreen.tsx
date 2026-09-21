@@ -13,11 +13,13 @@
 // it, never color alone. WO-0080: the ready arm is the planli tasks' ALONE — every open WO's
 // startability is already its turn group's content, and listing it twice read as a second,
 // emptier board (the atelier's 2026-09-20 finding).
+import type { ForgeView } from '../../core/forge';
 import type { SystemHealth } from '../../core/health';
 import type { Turn, WorkspaceOverview } from '../../core/overview';
 import type { WorkOrderId } from '../../core/types';
 import { useLabels } from '../data/locale';
 import { cn } from '../kit';
+import { ForgeSection } from '../components/board/ForgeSection';
 import { HealthSection } from '../components/HealthSection';
 
 // The role word hue — SessionCards' ROLE_WORD_CLASS, the three agent turns verbatim; the operator
@@ -32,10 +34,18 @@ const TURN_WORD_CLASS: Record<Turn, string> = {
 export function OverviewScreen({
   view,
   health,
+  forge,
+  forgePending,
+  onRefreshForge,
   onSelect,
 }: {
   view: WorkspaceOverview | undefined; // undefined = the read is in flight
   health?: SystemHealth; // WO-0083: the machine tools' state — the section speaks only when needed
+  forge?: ForgeView; // WO-0086: the workspace's repo connections + open PRs (moved off the board)
+  /** WO-0086: true = a forge watch exists but THIS workspace's look has not landed — the skeleton's
+   *  only legitimate moment (no watch → no skeleton, the section is simply never fed). */
+  forgePending?: boolean;
+  onRefreshForge?: () => void;
   onSelect: (id: WorkOrderId) => void;
 }) {
   const { UI, woIdLabel, debtIdLabel } = useLabels();
@@ -48,6 +58,7 @@ export function OverviewScreen({
   const hasReady = view !== undefined && view.ready.tasks.length > 0;
   const hasTurns = view !== undefined && view.turns.length > 0;
   const hasDebts = view !== undefined && view.debts.length > 0;
+  const hasContent = hasTurns || hasDebts || hasReady;
 
   // WO-0083: a degraded tool must speak even on an otherwise-empty workspace — the pure empty
   // face (one invitation line, no sections) holds only while every tool is ok.
@@ -55,7 +66,7 @@ export function OverviewScreen({
   let body;
   if (view === undefined) {
     body = <p className="loadline px-1 py-8">{UI.loadOverview}</p>;
-  } else if (!hasTurns && !hasDebts && !hasReady && degradedCount === 0) {
+  } else if (!hasContent && degradedCount === 0) {
     // The absent grammar: a workspace with neither open work orders nor tasks nor debts is ONE line.
     body = (
       <div data-overview-empty className="rounded-md border border-dashed border-hairline px-3 py-2.5">
@@ -139,6 +150,17 @@ export function OverviewScreen({
           </section>
         ) : null}
         {health !== undefined ? <HealthSection health={health} /> : null}
+        {/* WO-0086: Depo lives HERE (the facts screen). In flight → the scan skeleton; landed →
+            the section; the pure-empty face stays pure (no connections story on an invitation). */}
+        {hasContent && forgePending ? (
+          <section className="rounded-md border border-hairline bg-surface px-3 py-2.5 shadow-sm" data-forge-skeleton>
+            <p className="loadline">{UI.forgeScanning}</p>
+            <div className="scanline mt-1"><div /></div>
+          </section>
+        ) : null}
+        {hasContent && forge !== undefined && forge.repos.length > 0 ? (
+          <ForgeSection view={forge} onRefresh={onRefreshForge ?? (() => {})} />
+        ) : null}
       </div>
     );
   }
