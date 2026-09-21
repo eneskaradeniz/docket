@@ -794,15 +794,21 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
     async decide(requestId, decision): Promise<void> {
       const settle = pending.get(requestId);
       if (!settle) return;
+      const detail = askDetails.get(requestId);
       pending.delete(requestId);
       askDetails.delete(requestId);
       // WO-0077: the structured ask's fold (core/askq.askDecision) rides `updatedInput` and crosses
       // to the held callback VERBATIM (WO-0076 Q3 — `{ behavior: 'allow', updatedInput }`); a
       // decision without it stays the bare allow (the dismissed arm, a5).
+      // WO-0085: the fold crosses ONLY for the ask tool — a mutated allow may never reach a WRITE
+      // ask whose arguments the fence scope-checked un-mutated (the review's finding; the held
+      // detail carries the tool, so the check rides the read taken before the delete).
+      const carriedInput =
+        decision.allow && detail?.tool === ASK_TOOL ? decision.updatedInput : undefined;
       settle(
         decision.allow
-          ? decision.updatedInput !== undefined
-            ? { behavior: 'allow', updatedInput: decision.updatedInput }
+          ? carriedInput !== undefined
+            ? { behavior: 'allow', updatedInput: carriedInput }
             : { behavior: 'allow' }
           : { behavior: 'deny', message: decision.reason || 'denied by operator' },
       );

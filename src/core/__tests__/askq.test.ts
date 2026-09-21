@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ASK_TOOL,
   type AskAnswer,
-  askDecision,
   type AskQuestion,
+  askDecision,
+  askDecisionAll,
   askOptionDisplayLabel,
   askOptionIsRecommended,
   parseAskRequest,
@@ -49,35 +50,39 @@ const multiInput = {
 
 describe('parseAskRequest — the measured payloads', () => {
   it('parses the probe a1 payload (single-select, 3 options)', () => {
-    expect(parseAskRequest(ASK_TOOL, a1Input)).toEqual({
-      question: QUESTION_KEY,
-      header: 'Storage',
-      options: [
-        { label: 'SQLite (Recommended)', description: 'Embedded, zero-ops, fits a single machine' },
-        { label: 'Postgres', description: 'Full server database, ops burden' },
-        { label: 'JSON files', description: 'Flat files on disk, no query layer' },
-      ],
-      multiSelect: false,
-    } satisfies AskQuestion);
+    expect(parseAskRequest(ASK_TOOL, a1Input)).toEqual([
+      {
+        question: QUESTION_KEY,
+        header: 'Storage',
+        options: [
+          { label: 'SQLite (Recommended)', description: 'Embedded, zero-ops, fits a single machine' },
+          { label: 'Postgres', description: 'Full server database, ops burden' },
+          { label: 'JSON files', description: 'Flat files on disk, no query layer' },
+        ],
+        multiSelect: false,
+      } satisfies AskQuestion,
+    ]);
   });
 
   it('parses the probe a2 payload (multiSelect: true)', () => {
     const parsed = parseAskRequest(ASK_TOOL, multiInput);
-    expect(parsed?.multiSelect).toBe(true);
+    expect(parsed?.[0]?.multiSelect).toBe(true);
   });
 
-  it('renders the FIRST question of a multi-question payload (v1 scope, pinned)', () => {
+  it('parses EVERY question of a multi-question payload (WO-0085: the old first-only scope half-answered)', () => {
     const parsed = parseAskRequest(ASK_TOOL, {
       questions: [a1Input.questions[0], { ...multiInput.questions[0] }],
     });
-    expect(parsed?.question).toBe(QUESTION_KEY);
+    expect(parsed).toHaveLength(2);
+    expect(parsed?.[0]?.question).toBe(QUESTION_KEY);
+    expect(parsed?.[1]?.question).toBe('Which export formats should be enabled at launch?');
   });
 
   it('ignores unknown extra fields (the optional preview shape is not Docket\'s to read)', () => {
     const input = {
       questions: [{ ...a1Input.questions[0], options: a1Input.questions[0]!.options.map((o) => ({ ...o, preview: 'md' })) }],
     };
-    expect(parseAskRequest(ASK_TOOL, input)?.options[0]).toEqual({
+    expect(parseAskRequest(ASK_TOOL, input)?.[0].options[0]).toEqual({
       label: 'SQLite (Recommended)',
       description: 'Embedded, zero-ops, fits a single machine',
     });
@@ -201,5 +206,51 @@ describe('askDecision — the four measured arms (WO-0076 Q3)', () => {
     const input = { questions: a1Input.questions, extra: { nested: true } };
     const d = askDecision(input, QUESTION_KEY, { kind: 'selection', labels: ['SQLite (Recommended)'] });
     expect(d.allow && d.updatedInput).toEqual({ questions: a1Input.questions, extra: { nested: true }, answers: { [QUESTION_KEY]: 'SQLite (Recommended)' } });
+  });
+
+  it('WO-0085: the fold MERGES into answers the input already carries — never replaces the map', () => {
+    const input = { questions: a1Input.questions, answers: { 'önceki soru': 'önceki cevap' } };
+    const d = askDecision(input, QUESTION_KEY, { kind: 'selection', labels: ['SQLite (Recommended)'] });
+    expect(d.allow && d.updatedInput).toEqual({
+      questions: a1Input.questions,
+      answers: { 'önceki soru': 'önceki cevap', [QUESTION_KEY]: 'SQLite (Recommended)' },
+    });
+  });
+});
+
+describe('askDecisionAll — the multi-question fold (WO-0085)', () => {
+  const q2Input = { questions: [a1Input.questions[0], multiInput.questions[0]] };
+  const q1 = a1Input.questions[0] as AskQuestion;
+  const q2 = multiInput.questions[0] as AskQuestion;
+
+  it('merges every answered question under its own key — siblings survive', () => {
+    const d = askDecisionAll(q2Input, [
+      { question: q1, answer: { kind: 'selection', labels: ['SQLite (Recommended)'] } },
+      { question: q2, answer: { kind: 'other', text: 'yalnız JSON' } },
+    ]);
+    expect(d.allow && d.updatedInput).toEqual({
+      questions: q2Input.questions,
+      answers: { [QUESTION_KEY]: 'SQLite (Recommended)', 'Which export formats should be enabled at launch?': 'yalnız JSON' },
+    });
+  });
+
+  it('an unanswered question is OMITTED — its absence is the per-question dismissed arm', () => {
+    const d = askDecisionAll(q2Input, [{ question: q1, answer: { kind: 'selection', labels: ['SQLite (Recommended)'] } }]);
+    const answers = (d.allow && d.updatedInput !== undefined ? (d.updatedInput as Record<string, unknown>).answers : undefined) as Record<string, unknown>;
+    expect(Object.keys(answers)).toEqual([QUESTION_KEY]);
+  });
+
+  it('an all-skipped payload is the BARE allow (no updatedInput key)', () => {
+    const d = askDecisionAll(q2Input, []);
+    expect(d).toEqual({ allow: true });
+    expect(Object.keys(d)).toEqual(['allow']);
+  });
+
+  it('a declined arm denies the WHOLE call with its message', () => {
+    const d = askDecisionAll(q2Input, [
+      { question: q1, answer: { kind: 'selection', labels: ['SQLite (Recommended)'] } },
+      { question: q2, answer: { kind: 'declined', message: 'hayır' } },
+    ]);
+    expect(d).toEqual({ allow: false, reason: 'hayır' });
   });
 });

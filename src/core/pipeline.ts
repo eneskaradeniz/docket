@@ -14,6 +14,7 @@
 // unchanged; the persistence side-effects ride alongside, exactly as main.ts used to do.
 
 import type { CostSummary, SessionRef, SteerNote, TurnUsage } from './types';
+import { ASK_TOOL } from './askq';
 import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
 import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from './runner';
 import type { SessionOwner, SessionStore } from './session-store';
@@ -90,13 +91,20 @@ export function askOperatorPolicy(): PermissionPolicy {
 }
 
 /** "Riskli hariç" (WO-0031c): auto-approve every in-scope ask EXCEPT the risky set — those still surface
- *  to the operator. The classifier is injected so tests can script it; production uses core/risky. */
+ *  to the operator. The classifier is injected so tests can script it; production uses core/risky.
+ *  WO-0085: the ask tool is the OPERATOR'S VOICE — a question is not a mutation, so it is never in
+ *  the auto-approve scope; it defers under every rule (the review's finding: risky_excluded resolved
+ *  it with a bare allow and the model answered itself). */
 export function riskyExcludedPolicy(
   isRisky: (tool: string, input: Record<string, unknown>) => boolean,
 ): PermissionPolicy {
   return {
     onAsk: (req) =>
-      isRisky(req.tool, req.input) ? { kind: 'defer' } : { kind: 'resolve', decision: { allow: true } },
+      req.tool === ASK_TOOL
+        ? { kind: 'defer' }
+        : isRisky(req.tool, req.input)
+          ? { kind: 'defer' }
+          : { kind: 'resolve', decision: { allow: true } },
   };
 }
 
