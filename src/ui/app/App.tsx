@@ -637,7 +637,6 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         key={workspaceId ?? 'none'}
         cards={cards}
         budget={budget}
-        forge={forge && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined}
         onSelect={setSelectedId}
         onNewWorkOrder={() => setWoCreateOpen(true)}
       />
