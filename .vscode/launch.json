@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Docket · build & run (paketli)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "docket: build",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}\\node_modules\\.bin\\electron.cmd"
+      },
+      "runtimeArgs": ["."],
+      "console": "internalConsole",
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "name": "Docket · dev (vite + HMR)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "windows": {
+        "runtimeExecutable": "npm.cmd"
+      },
+      "runtimeArgs": ["run", "dev"],
+      "skipFiles": ["<node_internals>/**"],
+      "console": "internalConsole"
+    }
+  ]
+}
