@@ -24,6 +24,7 @@ import {
   type ForgeCheck,
   type ForgeHealth,
   type ForgePr,
+  type ForgePrDetail,
   type ForgePrStateFilter,
   type RepoRef,
 } from '../../core/forge';
@@ -104,6 +105,20 @@ interface RestPull {
 interface CheckRunsBody {
   total_count: number;
   check_runs: { name: string; status: string; conclusion: string | null }[];
+}
+
+// WO-0087 — `gh pr view N --json …` (the detail read's wire shape; the author rides an object)
+interface PrViewWire {
+  number: number;
+  title: string;
+  body: string;
+  author: { login: string } | null;
+  headRefName: string;
+  baseRefName: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  url: string;
 }
 
 interface AuthStatusBody {
@@ -224,6 +239,42 @@ export class GitHubForge implements Forge {
     if (pull.merged_at != null) pr.mergedAt = pull.merged_at;
     if (pull.merge_commit_sha != null) pr.mergeSha = pull.merge_commit_sha;
     return pr;
+  }
+
+  // ===== WO-0087 — the depo row's lazy detail (a READ: lives with the port's reads above) =====
+
+  /** `gh pr view N --json …` — ONE call. Absence discipline at the edge: empty title/body/author
+   *  stay ABSENT (never empty strings); the counts are the forge's own computed numbers (a real
+   *  zero is a real zero — the forge computed them, unlike an unobserved cost). */
+  async prDetail(repo: RepoRef, number: number): Promise<ForgePrDetail> {
+    const r = await this.run([
+      'pr', 'view', String(number), '--repo', `${repo.owner}/${repo.name}`, '--json',
+      'number,title,body,author,headRefName,baseRefName,additions,deletions,changedFiles,url',
+    ]);
+    if (r.exit !== 0) throw fail(r);
+    const w = parseJson<PrViewWire>(r);
+    const d: ForgePrDetail = {
+      number: w.number,
+      headBranch: w.headRefName,
+      baseBranch: w.baseRefName,
+      url: w.url,
+      additions: w.additions,
+      deletions: w.deletions,
+      changedFiles: w.changedFiles,
+    };
+    if (w.title !== '') d.title = w.title;
+    if (w.body !== '') d.body = w.body;
+    if (w.author !== null && typeof w.author.login === 'string' && w.author.login !== '')
+      d.author = w.author.login;
+    return d;
+  }
+
+  /** `gh pr diff N` — the unified diff VERBATIM; the renderer caps and frames the display, the
+   *  adapter never trims the wire. */
+  async prDiff(repo: RepoRef, number: number): Promise<string> {
+    const r = await this.run(['pr', 'diff', String(number), '--repo', `${repo.owner}/${repo.name}`]);
+    if (r.exit !== 0) throw fail(r);
+    return r.stdout;
   }
 
   async checks(repo: RepoRef, sha: string): Promise<ForgeCheck[]> {

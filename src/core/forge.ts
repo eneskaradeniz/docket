@@ -138,12 +138,35 @@ export interface ForgeView {
 
 /** The composition-root-wired watch port (WO-0064): the renderer's ONLY reach into the
  *  reconciliation. Implemented in the composition root (which owns the forge adapter and the
- *  observation store); exposed over the preload bridge as the `forge` group. */
+ *  observation store); exposed over the preload bridge as the `forge` group.
+ *  WO-0087 adds the depo row's lazy detail: ONE pull request's own view fields + the unified
+ *  diff, fetched LIVE (one call each) — never cached, never part of the observation. */
 export interface ForgeWatch {
   /** One reconcile cycle over the workspace's connected repos. Idempotent; a trigger that
    *  overlaps a running cycle is a no-op. */
   reconcile(id: WorkspaceId): Promise<void>;
   view(id: WorkspaceId): Promise<ForgeView>;
+  /** ONE pull request's detail (the depo row's ▸ detay). Throws ForgeError with a displayable
+   *  reason when the repoRemote is unparseable or the call fails. */
+  prDetail(id: WorkspaceId, repoRemote: string, number: number): Promise<ForgePrDetail>;
+  /** The PR's unified diff, VERBATIM — the renderer caps and frames the display. */
+  prDiff(id: WorkspaceId, repoRemote: string, number: number): Promise<string>;
+}
+
+/** WO-0087 — ONE pull request's detail, the depo row's ▸ detay. The wire's own view fields,
+ *  normalized at the adapter edge; absence discipline: no body, no author → ABSENT (never empty
+ *  strings). The counts are the forge's own computed numbers (real zeros are real). */
+export interface ForgePrDetail {
+  number: number;
+  headBranch: string;
+  baseBranch: string;
+  url: string;
+  title?: string;
+  body?: string;
+  author?: string; // the forge's own login
+  additions: number; // the forge's own computed numbers — a real zero is a real zero
+  deletions: number;
+  changedFiles: number;
 }
 
 // ===== The closure evidence (WO-0065): the M2 attestation gains its observed counterpart =====

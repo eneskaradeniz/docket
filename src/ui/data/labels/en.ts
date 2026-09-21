@@ -556,6 +556,14 @@ export const UI = {
   forgeFoldMore: (n: number) => `▸ ${n} more`,
   forgeScanning: 'Scanning repos…',
   forgeBoardLine: (repos: number, prs: number) => `${repos} repos connected · ${prs} open PRs — see the Overview`,
+  // WO-0087 — the PR detail's chrome: vendor-neutral labels (ADR-0006 boundary), the raw failure
+  // reason rides the tooltip (WO-0078).
+  forgePrDetailBrowser: '↗ Open in browser',
+  forgePrDetailDiff: '▸ View diff',
+  forgePrDetailDiffHide: '▸ Hide diff',
+  forgePrDetailFiles: (n: number) => `${n} files`,
+  forgePrDetailLoadFailed: 'Could not load the details',
+  forgePrDiffTruncated: (n: number) => `First ${n} lines shown`,
   // WO-0078 — raw diagnostics never reach the surface (atelier ruling, 2026-09-20): the degraded
   // reason stays verbatim in the records; the face speaks operator words, the raw rides the tooltip.
   DEGRADED_LINES: {
