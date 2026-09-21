@@ -24,9 +24,9 @@ export interface AskOption {
   description: string;
 }
 
-/** One question of a structured ask payload (1-4 per call). Docket v1 renders the FIRST question
- *  of a multi-question payload (honest + scoped — the WO-0077 order's implementer choice, pinned
- *  in the tests). */
+/** One question of a structured ask payload (1-4 per call). WO-0085: every question of a payload
+ *  is parsed and rendered — the old first-question-only scope half-answered multi-question calls
+ *  (the review's finding; the fold now merges, so nothing is lost). */
 export interface AskQuestion {
   question: string; // THE ANSWER KEY — the fold keys the answer under this exact string
   header: string; // the chip label (≤12 chars by convention — enforced by the model's schema, not re-checked here)
@@ -50,34 +50,38 @@ function str(v: unknown): v is string {
 }
 
 /**
- * Parse the fence input into the card's question. Strict: `questions` ≥1, the first question's
+ * Parse the fence input into the card's questions. Strict: `questions` ≥1, EVERY question's
  * `question` a non-empty string (THE ANSWER KEY), `header` a string, `options` ≥2 each with a
  * non-empty `label` string + a `description` string, `multiSelect` a boolean. Refuses every tool
- * but ASK_TOOL: the shape is not the point, the ask tool is.
+ * but ASK_TOOL: the shape is not the point, the ask tool is. All-or-nothing per payload — one
+ * malformed question degrades the WHOLE payload to the binary card (the fail-open gate's shape).
  *
  * Fail-open END TO END: the whole body is one guard — a hostile getter ANYWHERE in the payload (a
  * Proxy over an array passes Array.isArray; a nested option getter throws during the walk) degrades
  * to undefined, never a throw past this file. The card renders the binary form instead (the
  * WO-0077 gate: a malformed payload must never break the permission flow — not even by crashing).
  */
-export function parseAskRequest(tool: string, input: Record<string, unknown>): AskQuestion | undefined {
+export function parseAskRequest(tool: string, input: Record<string, unknown>): AskQuestion[] | undefined {
   if (tool !== ASK_TOOL) return undefined;
   try {
     const raw: unknown = input.questions;
     if (!Array.isArray(raw) || raw.length < 1) return undefined;
-    const q = raw[0];
-    if (!isRecord(q)) return undefined;
-    const { question, header, options, multiSelect } = q;
-    if (!str(question) || question === '' || !str(header) || !Array.isArray(options) || options.length < 2) return undefined;
-    if (typeof multiSelect !== 'boolean') return undefined;
-    const parsed: AskOption[] = [];
-    for (const o of options) {
-      if (!isRecord(o)) return undefined;
-      const { label, description } = o;
-      if (!str(label) || label === '' || !str(description)) return undefined;
-      parsed.push({ label, description }); // field-picked: unknown extras (preview) are not Docket's to read
+    const questions: AskQuestion[] = [];
+    for (const q of raw) {
+      if (!isRecord(q)) return undefined;
+      const { question, header, options, multiSelect } = q;
+      if (!str(question) || question === '' || !str(header) || !Array.isArray(options) || options.length < 2) return undefined;
+      if (typeof multiSelect !== 'boolean') return undefined;
+      const parsed: AskOption[] = [];
+      for (const o of options) {
+        if (!isRecord(o)) return undefined;
+        const { label, description } = o;
+        if (!str(label) || label === '' || !str(description)) return undefined;
+        parsed.push({ label, description }); // field-picked: unknown extras (preview) are not Docket's to read
+      }
+      questions.push({ question, header, options: parsed, multiSelect });
     }
-    return { question, header, options: parsed, multiSelect };
+    return questions;
   } catch {
     return undefined; // a hostile getter anywhere in the walk — undefined, never a throw
   }
@@ -98,20 +102,55 @@ export function askOptionDisplayLabel(label: string): string {
 /**
  * Build the permission decision the UI sends for a structured ask — the four measured arms
  * (WO-0076 Q3), carried on `PermissionDecision`:
- *   selection/other → allow + the fold `{ ...input, answers: { [question]: value } }` (multi-select
- *                     labels ", "-joined into ONE string — the CLI's comma-separated contract);
+ *   selection/other → allow + the fold `{ ...input, answers: MERGED }` (multi-select labels
+ *                     ", "-joined into ONE string — the CLI's comma-separated contract);
  *   dismissed       → the BARE allow (no updatedInput key at all — not an undefined-carrying one);
  *   declined        → the deny + message (the adapter maps `reason` → the deny message verbatim).
+ *
+ * WO-0085: the fold MERGES into any `answers` the input already carries — replacing the map
+ * wholesale was the review's half-answer finding (a multi-question payload's sibling questions
+ * must survive one question's answer).
  */
 export function askDecision(input: Record<string, unknown>, question: string, answer: AskAnswer): PermissionDecision {
   switch (answer.kind) {
     case 'selection':
-      return { allow: true, updatedInput: { ...input, answers: { [question]: answer.labels.join(', ') } } };
-    case 'other':
-      return { allow: true, updatedInput: { ...input, answers: { [question]: answer.text } } };
+    case 'other': {
+      const existing = isRecord(input.answers) ? input.answers : {};
+      const value = answer.kind === 'selection' ? answer.labels.join(', ') : answer.text;
+      return { allow: true, updatedInput: { ...input, answers: { ...existing, [question]: value } } };
+    }
     case 'dismissed':
       return { allow: true };
     case 'declined':
       return { allow: false, reason: answer.message };
   }
+}
+
+/**
+ * WO-0085 — the multi-question fold: every ANSWERED question merges its key; a question left
+ * unanswered is OMITTED (the SDK reads its absence exactly as the dismissed arm — 'did not
+ * answer' for that question alone, which the card's per-question skip offers explicitly). Any
+ * declined arm denies the WHOLE call; an all-skipped payload is the bare allow.
+ */
+export function askDecisionAll(
+  input: Record<string, unknown>,
+  answered: Array<{ question: AskQuestion; answer: AskAnswer }>,
+): PermissionDecision {
+  for (const { answer } of answered) {
+    if (answer.kind === 'declined') return { allow: false, reason: answer.message };
+  }
+  const existing = isRecord(input.answers) ? input.answers : {};
+  const merged: Record<string, unknown> = { ...existing };
+  let any = false;
+  for (const { question, answer } of answered) {
+    if (answer.kind === 'selection') {
+      merged[question.question] = answer.labels.join(', ');
+      any = true;
+    } else if (answer.kind === 'other') {
+      merged[question.question] = answer.text;
+      any = true;
+    }
+  }
+  if (!any) return { allow: true }; // nothing answered — the bare allow (the dismissed arm)
+  return { allow: true, updatedInput: { ...input, answers: merged } };
 }

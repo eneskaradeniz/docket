@@ -12,6 +12,7 @@
 // derived question card → the TASLAK decision card. The pane unmounts with the surface; the
 // drive lives in the app-level store and the head meta says `taslak sürüyor` while it runs.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { askDecisionAll } from '../../core/askq';
 import { initialSessionState, limitCrossing, seedLiveState } from '../../core/runner';
 import { draftSummaryOf } from '../../core/roadmap-draft';
 import type { WorkOrderId, Workspace } from '../../core/types';
@@ -123,6 +124,11 @@ export function RoadmapScreen({
             planContext
             onAllow={() => allow(ask.requestId)}
             onDeny={() => deny(ask.requestId)}
+            onAnswer={(answered) =>
+              // WO-0085: the structured ask FOLDS here — the question renders as the question and the
+              // answered pairs ride askDecisionAll (an opaque binary card answered by a guess is gone).
+              void driveStore.decide(ask.requestId, askDecisionAll(ask.input, answered))
+            }
           />
         ))}
       </div>

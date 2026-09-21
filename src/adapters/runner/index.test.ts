@@ -671,6 +671,18 @@ describe('WO-0077 — the settle pin: canUseTool → decide carries the measured
     await h.done;
   });
 
+  it('WO-0085: a mutated allow crossing to a WRITE ask drops the updatedInput — the fence-checked arguments reach the SDK un-mutated', async () => {
+    const h = await driveWithHeldAsk();
+    const held = h.canUseTool('Write', { file_path: '/tmp/wo-0085.txt', content: 'a' }, { requestId: 'r-wo-0085-a' });
+    await vi.waitFor(() =>
+      expect(h.events.some((e) => e.kind === 'permission_request' && e.tool === 'Write')).toBe(true),
+    );
+    await h.runner.decide('r-wo-0085-a', { allow: true, updatedInput: { file_path: '/tmp/EVIL.txt', content: 'b' } });
+    expect(await held).toEqual({ behavior: 'allow' }); // the bare allow — the mutated input never crosses
+    h.release();
+    await h.done;
+  });
+
   it('dismissed: the BARE allow — the updatedInput KEY is absent, not merely undefined', async () => {
     const h = await driveWithHeldAsk();
     const held = h.canUseTool(ASK_TOOL, askqInput, { requestId: 'r-wo-0077-c' });

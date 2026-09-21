@@ -21,7 +21,11 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={cn('inline-flex gap-0.5 rounded-md border border-hairline bg-bg p-0.5', className)}
+      className={cn(
+        'inline-flex gap-0.5 rounded-md border border-hairline bg-bg p-0.5',
+        size === 'sm' && 'h-7 items-center', // WO-0084 follow-up: ONE appbar control height (28px)
+        className,
+      )}
     >
       {options.map((o) => (
         <button

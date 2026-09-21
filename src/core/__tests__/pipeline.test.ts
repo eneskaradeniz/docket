@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askOperatorPolicy, autoAllowPolicy, createPipeline, prepareDriveInput } from '../pipeline';
+import { askOperatorPolicy, autoAllowPolicy, createPipeline, policyForRule, prepareDriveInput, riskyExcludedPolicy } from '../pipeline';
 import { PLAN_EXIT_WITHOUT_RESULT } from '../runner';
 import type { SessionStore } from '../session-store';
 import type { DraftDriveInput, DriveInput, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from '../runner';
@@ -1238,5 +1238,24 @@ describe('createPipeline — the agent-task edges (WO-0055)', () => {
     expect(last.transcript).toEqual(
       expect.arrayContaining([expect.objectContaining({ speaker: 'agent_task', phase: 'started', taskId: 'a5ce' })]),
     );
+  });
+});
+
+// WO-0085 — the ask tool is the operator's voice: a question is not a mutation, so risky_excluded
+// (and every surfacing rule) must DEFER it — the review's finding was the bare-allow auto-answer.
+describe('riskyExcludedPolicy — the ask tool is never in the auto-approve scope', () => {
+  const never = (): boolean => false;
+  const ask = { requestId: 'r-1', tool: 'AskUserQuestion', input: {} };
+
+  it('defers the ask tool even when the classifier calls it not risky', () => {
+    expect(riskyExcludedPolicy(never).onAsk(ask).kind).toBe('defer');
+  });
+
+  it('still auto-resolves a non-ask, non-risky ask (the rule keeps its meaning)', () => {
+    expect(riskyExcludedPolicy(never).onAsk({ ...ask, tool: 'Read' }).kind).toBe('resolve');
+  });
+
+  it('policyForRule wires the same deferral for risky_excluded', () => {
+    expect(policyForRule('risky_excluded', never).onAsk(ask).kind).toBe('defer');
   });
 });

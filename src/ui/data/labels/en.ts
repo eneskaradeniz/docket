@@ -613,6 +613,9 @@ export const UI = {
   // it rides props verbatim, never a bundle key (the ADR-0007 border — WO-0077 contract 5).
   askAnswer: 'Answer',
   askSkip: 'Skip',
+  // WO-0085: the decline's recorded message — the model reads it as the deny reason (bundle copy:
+  // ADR-0007; the review caught the hardcoded English sentence).
+  askDeclinedReason: 'The operator declined to answer this question',
   askRecommended: 'recommended',
   askOther: 'Other',
   askOtherPlaceholder: 'Write your own answer…',
@@ -706,6 +709,10 @@ export const UI = {
   },
   appbarLimitWarn: 'limit approaching',
   appbarLimitAria: (time: string) => `Usage limit reached — resets at ${time}`,
+  // WO-0085 operator ruling: the chip is ALWAYS present (a status LED) — idle is ○0 dim, running
+  // the bare count; the sentences ride the tooltips.
+  appbarIdleTip: 'Idle — no drives',
+  appbarRunningTip: (n: number) => (n === 1 ? '1 drive running' : `${n} drives running`),
   // ===== WO-0054 — the usage screen (mockup rev 1; month head · live quota · breakdown · list) =====
   // The month head speaks the EXISTING budget view (WO-0047's math/copy — never re-derived here);
   // the quota panel reads the provider's own signal only (the WO-0053 rule); a model id is row

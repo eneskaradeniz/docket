@@ -712,6 +712,9 @@ export const UI = {
   // props'tan aynen geçer, paket anahtarı değildir (ADR-0007 sınırı — WO-0077'in 5. maddesi).
   askAnswer: 'Cevapla',
   askSkip: 'Boş geç',
+  // WO-0085: the decline's recorded message — the model reads it as the deny reason (bundle copy:
+  // ADR-0007; the review caught the hardcoded English sentence).
+  askDeclinedReason: 'Operatör bu soruyu yanıtlamadı',
   askRecommended: 'önerilen',
   askOther: 'Diğer',
   askOtherPlaceholder: 'Kendi yanıtını yaz…',
@@ -812,6 +815,11 @@ export const UI = {
   },
   appbarLimitWarn: 'limit yaklaşıyor',
   appbarLimitAria: (time: string) => `Kullanım limiti doldu — ${time}'de sıfırlanır`,
+  // WO-0085 operator ruling: the chip is ALWAYS present (a status LED) — idle is ○0 dim, running
+  // the bare count; the sentences ride the tooltips (the bar edge never jumps, the glance question
+  // is answered even at zero).
+  appbarIdleTip: 'Boşta — sürüş yok',
+  appbarRunningTip: (n: number) => (n === 1 ? '1 iş sürüyor' : `${n} iş sürüyor`),
   // ===== WO-0054 — kullanım ekranı (mockup rev 1; ay başlığı · canlı kota · döküm · liste) =====
   // Ay başlığı MEVCUT bütçe görünümünü konuşur (WO-0047'nin matematiği/kopyası — burada yeniden
   // türetilmez); kota paneli yalnız sağlayıcının kendi sinyalini okur (WO-0053 kuralı); model
