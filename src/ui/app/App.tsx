@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { RepoId, StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
-import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
+import type { BriefingCheck, PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
 import type { ForgeIssueRow, ForgeView, ForgeWatch } from '../../core/forge';
 import type { SystemHealth, SystemHealthWatch } from '../../core/health';
@@ -136,6 +136,30 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     () => parseOrderMd(detail?.docs.order ?? ''),
     [detail],
   );
+
+  // WO-0090 — the briefing check: order.md's pointers resolved read-at-sha (each repo at its HEAD,
+  // the sha a fresh drive starts from), read at detail open + every reload — the PRE-DRIVE moment.
+  // Its own effect + resilient catch: a failed read (an adapter throw) degrades to undefined —
+  // "could not look", never a failure, and never a broken detail load.
+  const [briefingCheck, setBriefingCheck] = useState<BriefingCheck | undefined>(undefined);
+  useEffect(() => {
+    if (!selectedId) {
+      setBriefingCheck(undefined);
+      return;
+    }
+    let cancelled = false;
+    source
+      .briefingCheck(selectedId)
+      .then((check) => {
+        if (!cancelled) setBriefingCheck(check);
+      })
+      .catch(() => {
+        if (!cancelled) setBriefingCheck(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source, selectedId, detailNonce]);
 
   // WO-0049 (kare 07): the detail band's task chip. A `task:` ref resolves against the ready view;
   // an orphan ref (or a read roadmap that is absent/invalid) degrades to the qualifier — never a
@@ -806,6 +830,7 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         issueChip={detailIssueChip}
         onOpenIssueExternal={(url: string) => void window.docket.shell?.openExternal(url)}
         changes={changesBridge}
+        briefingCheck={briefingCheck}
       />
     ) : (
       <p className="loadline px-4 py-8">{UI.loadSteps}</p>
