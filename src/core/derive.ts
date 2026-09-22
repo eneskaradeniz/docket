@@ -16,6 +16,7 @@ import type {
   EvidenceItem,
   EvidenceKind,
   EvidenceStatus,
+  LocalGate,
   PrimaryAction,
   RepoId,
   SessionRef,
@@ -111,6 +112,35 @@ function trackCiStatus(t: Track): EvidenceStatus {
   return t.ci.state === 'success' ? 'satisfied' : 'unsatisfied';
 }
 
+// ===== WO-0089 — the local gate's derivation =====
+//
+// Three-valued like Ci (the verdict.ts rule): unknown never passes and never renders as a
+// failure. `undefined` (the Track field's absence) is the UNDECLARED arm — the exempt face on a
+// CI-exempt track; on a CI-run track it produces no evidence item at all (a workspace declaring
+// nothing behaves exactly as today).
+
+/** The local gate's evidence status. Measured-and-failed ('unsatisfied') is distinct from
+ *  not-run / could-not-run / unreadable-declaration ('unknown'); only every-command-measured-
+ *  and-passed is 'satisfied'. */
+export function localGateStatus(lg: LocalGate | undefined): EvidenceStatus {
+  if (lg === undefined) return 'exempt'; // undeclared — the exempt arm (only faces an exempt-CI track)
+  if (lg.kind === 'pending' || lg.kind === 'invalid') return 'unknown';
+  if (lg.results.some((r) => r.exit !== null && r.exit !== r.expectExit)) return 'unsatisfied';
+  return lg.results.some((r) => r.exit === null) ? 'unknown' : 'satisfied';
+}
+
+/** The whole gate measured and passed — the only state that satisfies the substitute rule. */
+export function localGateSatisfied(lg: LocalGate | undefined): boolean {
+  return localGateStatus(lg) === 'satisfied';
+}
+
+/** WO-0089's core rule — the MECHANICAL EVIDENCE of a track: a CI-run track owns its evidence in
+ *  CI (local_gate never blocks it — CI keeps its role); a CI-exempt track needs the SUBSTITUTE:
+ *  a local_gate measured-and-passed. Both-exempt is a refusal, never a pass. */
+export function trackMechanicallyEvidenced(t: Pick<Track, 'ci' | 'localGate'>): boolean {
+  return t.ci.kind !== 'exempt' || localGateSatisfied(t.localGate);
+}
+
 function allTracksMerged(wo: WorkOrder): boolean {
   return wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
 }
@@ -129,7 +159,10 @@ export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks' | 'sessi
   const allMerged = wo.tracks.length > 0 && wo.tracks.every((t) => t.merge != null);
   // WO-0069: verification-unknown (`verifierReport` undefined — "we could not look") is NOT
   // satisfied here: the optional chain reads falsy, so a gate never passes on unknown (ADR-0010).
-  if (allMerged && wo.gateInputs.verifierReport?.resolvablePointers) {
+  // WO-0089: the verification gate is unreachable while a track's MECHANICAL evidence is open —
+  // a CI-exempt track with local_gate unsatisfied/unknown/exempt cannot pass it, even when the
+  // merge happened on the forge outside Docket's own merge action (deriveTrackMerge's twin).
+  if (allMerged && wo.tracks.every(trackMechanicallyEvidenced) && wo.gateInputs.verifierReport?.resolvablePointers) {
     return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
   }
   return 'implementation';
@@ -375,6 +408,13 @@ export function deriveEvidence(wo: WorkOrder): EvidenceItem[] {
         ? { kind: 'ci_green', status: 'exempt', exemption: { reason: t.ci.reason }, scope: t.id }
         : { kind: 'ci_green', status: trackCiStatus(t), scope: t.id };
     items.push(ciItem);
+    // WO-0089: the local gate sits BESIDE ci_green — on every track whose gate is declared
+    // (pending/invalid/declared all render their honest face) and on every CI-exempt track
+    // (whose undeclared arm renders exempt: the substitute that was never declared). A CI-run
+    // track with nothing declared carries NO item — today's shape, byte-identical.
+    if (t.localGate !== undefined || t.ci.kind === 'exempt') {
+      items.push({ kind: 'local_gate', status: localGateStatus(t.localGate), scope: t.id });
+    }
   }
   return items;
 }
@@ -399,6 +439,14 @@ export function deriveTrackMerge(wo: WorkOrder, track: Track): TrackMergeAction 
   if (!track.pr) return { kind: 'absent', reason: 'pr_not_open' };
   if (track.ci.kind === 'run' && track.ci.state !== 'success') {
     return { kind: 'absent', reason: 'ci_not_green' };
+  }
+  // WO-0089: the exempt arm's amendment — an exemption needs a substitute. A CI-exempt track
+  // merges only with local_gate measured-and-passed; unsatisfied (measured-fail), unknown
+  // (not-run / could-not-run / unreadable) and exempt (nothing declared) all refuse — the
+  // both-exempt hole this work order closes. A CI-run track is untouched above: CI keeps its
+  // role as that track's mechanical evidence.
+  if (track.ci.kind === 'exempt' && !trackMechanicallyEvidenced(track)) {
+    return { kind: 'absent', reason: 'local_gate_open' };
   }
   return { kind: 'available' };
 }

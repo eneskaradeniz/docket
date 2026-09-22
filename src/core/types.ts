@@ -35,7 +35,11 @@ export type StageId =
 // Per-track lane stages — pr / ci / merge live ONLY here.
 export type TrackStage = 'not_started' | 'implementation' | 'pr_opened' | 'ci' | 'merged';
 
-export type EvidenceKind = 'plan_approval' | 'pr_open' | 'ci_green' | 'verification' | 'closure';
+// WO-0089 adds `local_gate` — the second OBSERVED evidence kind (beside ci_green): Docket runs
+// the workspace's declared gate commands itself (never the session — independence is the point)
+// and records what it measured. A CI-exempt track must satisfy it (exempt-needs-substitute);
+// both-exempt is a refusal state, never a pass (derive.ts).
+export type EvidenceKind = 'plan_approval' | 'pr_open' | 'ci_green' | 'local_gate' | 'verification' | 'closure';
 export type BoardColumn = 'your_turn' | 'running' | 'external';
 // The approved redesign's two-bucket board + a collapsed "closed" drawer (WO-0013). Derived from
 // column + stage: 'external' (forge/CI work without you) folds into 'working'.
@@ -55,6 +59,29 @@ export interface CiCheck {
 export type Ci =
   | { kind: 'run'; state: 'running' | 'success' | 'failed' | 'unknown'; checks: CiCheck[]; reason?: string }
   | { kind: 'exempt'; reason: string };
+
+// --- WO-0089 — the local gate. The workspace declares gate commands in the decision store's
+//     `.workflow/workspace.yaml` (`gate.commands`, core/gate-config.ts); Docket — never the
+//     session — runs them in the drive cwd and records what it measured. Three-valued like Ci
+//     (the verdict.ts rule): unknown (not-run / could-not-run / an unreadable declaration)
+//     NEVER passes a gate and is distinct from measured-and-failed. ---
+/** One declared command's measured result. `exit === null` = could not run (spawn failure,
+ *  timeout) — the unknown arm; `tail` is the bounded captured output, operator-readable
+ *  evidence, never parsed in v1. */
+export interface GateCommandResult {
+  command: string;
+  exit: number | null;
+  expectExit: number;
+  tail: string;
+}
+
+/** A track's local-gate state. ABSENT on the Track = undeclared (the workspace declared no
+ *  gate commands — the every-workspace-today default, kept as honest absence so nothing
+ *  changes for it: no evidence item, no new blocking). */
+export type LocalGate =
+  | { kind: 'declared'; sha: string; at: string; results: GateCommandResult[] } // measured at a sha
+  | { kind: 'pending' } // declared, never run — unknown, never a pass
+  | { kind: 'invalid'; reason: string }; // declared but unreadable — unknown, never a pass, never exempt
 
 // --- Merge post-state: presence = merged; absence = not yet. (The merge ACTION is derived.) ---
 export interface Merged {
@@ -209,6 +236,9 @@ export interface Track {
   stage: TrackStage;
   pr?: PrRef; // absent until pr_open satisfied
   ci: Ci; // always present: run | exempt (never silent)
+  // WO-0089: the local gate's state on this track. Absent = undeclared (the workspace declared
+  // no gate commands) — the exempt arm, distinct from 'pending' (declared, never run).
+  localGate?: LocalGate;
   merge?: Merged; // post-merge state only; absent until merged
 }
 
@@ -276,10 +306,13 @@ export type PrimaryAction =
   | { kind: 'absent'; reason: AbsentReason };
 
 // --- Per-track merge action: absent (never disabled) when dependsOn is open (state 5).
-//     An exempt CI satisfies the ci requirement — exempt does not block (AC12). ---
+//     An exempt CI satisfies the ci requirement — exempt does not block (AC12). WO-0089 amends
+//     the exempt arm: the exemption needs a SUBSTITUTE — a CI-exempt track also merges absent
+//     `local_gate` satisfied (measured-and-passed at a recorded sha); both-exempt is a refusal
+//     state, not a pass. ---
 export type TrackMergeAction =
   | { kind: 'available' }
-  | { kind: 'absent'; reason: 'depends_on_open' | 'ci_not_green' | 'pr_not_open' | 'already_merged' };
+  | { kind: 'absent'; reason: 'depends_on_open' | 'ci_not_green' | 'local_gate_open' | 'pr_not_open' | 'already_merged' };
 
 // --- Referenced docs: links only (ccd463e ownership ruling). ---
 export type SourceKind = 'adr' | 'tech_debt' | 'roadmap' | 'contract';
