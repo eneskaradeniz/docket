@@ -10,6 +10,7 @@ import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoCo
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { AppSettings, Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import type { ChromeNavigate } from '../src/core/tray-menu';
 
 const source: WorkOrderSource = {
   getWorkspaces: () => ipcRenderer.invoke('docket:source:get-workspaces'),
@@ -120,10 +121,36 @@ const runner = {
   retractSteerDrive: (owner: string, noteId: string): Promise<boolean> => ipcRenderer.invoke('docket:runner:steer-retract', owner, noteId),
 };
 
+// WO-0100: the native chrome's one push (`docket:chrome:navigate` — the tray rows, `Pano'ya dön`,
+// the menu's `Ayarlar…`). Registered ONCE at preload load, before React exists, with a one-slot
+// buffer: on the closed-window path main opens a fresh window and sends as soon as it loads, which
+// can land before the renderer's effect subscribes — ipcRenderer would drop it otherwise. The last
+// unconsumed request wins; a subscriber drains it on subscribe.
+let pendingNav: ChromeNavigate | undefined;
+let navCb: ((p: ChromeNavigate) => void) | undefined;
+ipcRenderer.on('docket:chrome:navigate', (_e, p: ChromeNavigate) => {
+  if (navCb) navCb(p);
+  else pendingNav = p;
+});
+const chrome = {
+  onNavigate: (cb: (p: ChromeNavigate) => void): (() => void) => {
+    navCb = cb;
+    if (pendingNav !== undefined) {
+      const p = pendingNav;
+      pendingNav = undefined;
+      cb(p);
+    }
+    return () => {
+      if (navCb === cb) navCb = undefined;
+    };
+  },
+};
+
 contextBridge.exposeInMainWorld('docket', {
   source,
   settings,
   runner,
+  chrome,
   // WO-0064: the forge observation watch — reconcile triggers + the cache view. The composition
   // root implements the port (it owns the forge adapter); the renderer triggers it on ADR-0010's
   // cadence (open / focus / after actions / manual / the slow tick).
@@ -189,6 +216,8 @@ contextBridge.exposeInMainWorld('docket', {
           // WO-0092 fix round (m3): stage the create-failure window (skip, count).
           failCreates: (skip: number, count: number): Promise<void> => ipcRenderer.invoke('docket:e2e:fail-creates', skip, count),
           lastDriveInput: (): Promise<DriveInput | undefined> => ipcRenderer.invoke('docket:e2e:last-drive-input'),
+          // WO-0100: the chrome guard — { tray, name, appId } (the tray must be OFF under E2E).
+          chrome: (): Promise<{ tray: boolean; name: string; appId: string }> => ipcRenderer.invoke('docket:e2e:chrome'),
         },
       }
     : {}),

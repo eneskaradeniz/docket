@@ -7,6 +7,15 @@ import type { PermissionAsk } from '../core/runner';
 import type { AppSettings } from '../core/app-settings';
 import type { WorkOrderSource } from '../core/source';
 import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner';
+import type { ChromeNavigate } from '../core/tray-menu';
+
+/** WO-0100: the native chrome's navigate push (tray rows, `Pano'ya dön`, the menu's `Ayarlar…`),
+ *  buffered preload-side so a request sent before the renderer subscribes is not lost. The payload
+ *  carries BRANDED ids (ADR-0003's first line) — main fills them from its owner entries. */
+export type ChromeBridge = {
+  /** Subscribe (one subscriber; a buffered request is delivered on subscribe); returns the unsubscribe. */
+  onNavigate: (cb: (p: ChromeNavigate) => void) => () => void;
+};
 
 /** The runner as exposed across the contextBridge: callback `drive`, not AsyncIterable. */
 export type RunnerBridge = {
@@ -35,6 +44,8 @@ declare global {
       source: WorkOrderSource;
     settings: AppSettings;
       runner: RunnerBridge;
+      /** WO-0100: the native chrome's navigate push — optional, so tests and fakes need nothing. */
+      chrome?: ChromeBridge;
       /** WO-0064: the forge observation watch (core's `ForgeWatch`) — reconcile triggers + the
        *  observed cache view; the composition root implements it over the forge adapter.
        *  WO-0087: + the depo row's lazy prDetail/prDiff, fetched live. */
@@ -69,7 +80,9 @@ declare global {
        *  pickFiles stages the next native-pick answer. */
       /** WO-0088: emit targets ONE drive by owner tag, or — the legacy bare-event form — the most
        *  recently started drive. */
-      e2e?: { emit: (ev: RunnerEvent | { owner: string; ev: RunnerEvent }) => Promise<void>; pickFiles: (paths: string[] | null) => Promise<void>; lastDriveInput: () => Promise<DriveInput | undefined> };
+      e2e?: { emit: (ev: RunnerEvent | { owner: string; ev: RunnerEvent }) => Promise<void>; pickFiles: (paths: string[] | null) => Promise<void>; lastDriveInput: () => Promise<DriveInput | undefined>;
+        /** WO-0100: the chrome guard — the tray is OFF under E2E, the name is Docket, appId = build.appId. */
+        chrome: () => Promise<{ tray: boolean; name: string; appId: string }> };
     };
   }
 }

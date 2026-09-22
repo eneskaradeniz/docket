@@ -2,7 +2,7 @@
 // macOS traffic lights live in it via hiddenInset); the wordmark, a compact workspace switcher, the one
 // primary action (+ Yeni iş emri) and the settings gear. All copy via the locale bundles (ADR-0007);
 // the theme selector lives in Settings (WO-0040) — no header toggle.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Settings2 } from 'lucide-react';
 import type { Workspace, WorkspaceId } from '../../core/types';
 import type { WorkOrderSource } from '../../core/source';
@@ -48,6 +48,7 @@ export function AppShell({
   surface,
   onSurfaceChange,
   driveActivity,
+  settingsRequest,
 }: {
   workspaces: Workspace[];
   /** null on an empty database — the brand + gear stay; the workspace-dependent parts are absent. */
@@ -73,9 +74,15 @@ export function AppShell({
   /** WO-0060: the drive/limit chip's facts — account-wide, so it renders OUTSIDE the
    *  `workspaceId !== null` guard: an account fact is not workspace-scoped. */
   driveActivity: AppbarActivity;
+  /** WO-0100: the native chrome's `Ayarlar…` (menu) — a counter App bumps per request; a change to a
+   *  non-zero value opens the same settings modal the gear opens. Optional: absent = never asked. */
+  settingsRequest?: number;
 }) {
   const { UI } = useLabels();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (settingsRequest) setSettingsOpen(true);
+  }, [settingsRequest]);
   // WO-0032: 'delete' is the confirm that renders OVER 'edit' (the WO dialogs' pattern — the
   // invoker stays mounted, Vazgeç returns to it with edits intact); only a successful delete
   // closes both, so a deleted workspace's settings modal never reappears.

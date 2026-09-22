@@ -8,7 +8,7 @@
 // captures, and every spec that shoots the board navigates back to it first — filenames never lie.
 // Run: npm run test:ui  (builds first). Exit code = failing spec count.
 import { strict as assert } from 'node:assert';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -106,6 +106,18 @@ await spec('window opens at the compact default (980×620, content)', async () =
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getContentSize());
   assert.equal(size[0], 980);
   assert.equal(size[1], 620);
+});
+
+// WO-0100: the app's own face, guarded — the tray is OFF under DOCKET_E2E (it cannot exist in CI),
+// the name is Docket (app.setName; userData pinned, so this run's state did not move), and the
+// Windows AppUserModelID constant equals package.json build.appId (the one-identity parity).
+await spec('WO-0100 chrome guard: no tray under E2E, name Docket, APP_ID = build.appId', async () => {
+  const chrome = await page.evaluate(() => window.docket.e2e?.chrome());
+  assert.ok(chrome, 'the e2e chrome channel is missing');
+  assert.equal(chrome.tray, false, 'a tray was created under DOCKET_E2E');
+  assert.equal(chrome.name, 'Docket');
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(chrome.appId, pkg.build?.appId, 'APP_ID drifted from package.json build.appId');
 });
 
 await spec('board renders the seeded work orders', async () => {

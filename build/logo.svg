@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- WO-0100 direction C "Kuyruk" (operator re-pick 2026-09-23): the board itself — three work rows, the
+       middle one carrying the amber lamp (the running work). The app tile (macOS grid; Windows/Linux reuse
+       it at 48 px and up). -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#0a0a0a" stroke="#262626" stroke-width="4"/>
+  <rect x="296" y="318" width="432" height="96" rx="48" fill="#f2f2f2"/>
+  <rect x="296" y="464" width="432" height="96" rx="48" fill="#f2f2f2"/>
+  <circle cx="344" cy="512" r="30" fill="#f5b544"/>
+  <rect x="296" y="610" width="300" height="96" rx="48" fill="#8f8f8f"/>
+</svg>

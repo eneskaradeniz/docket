@@ -8,6 +8,7 @@
 - [Consequences](#consequences)
 - [Alternatives rejected](#alternatives-rejected)
 - [Addendum — 2026-08-24 (WO-0040: theming revived)](#addendum--2026-08-24-wo-0040-theming-revived)
+- [Addendum — 2026-09-23 (WO-0100: native chrome vocabulary)](#addendum--2026-09-23-wo-0100-native-chrome-vocabulary)
 
 - Status: accepted
 - Date: 2026-08-03
@@ -123,3 +124,24 @@ earlier note stands as history.
   one `:root[data-theme='light']` block in `@layer base` is the whole light theme; `src/ui`
   keeps zero colour literals. ADR-0012's interaction/motion contract is theme-agnostic and
   untouched by this revival.
+
+## Addendum — 2026-09-23 (WO-0100: native chrome vocabulary)
+
+WO-0100 gives the app a native menu and a tray. Both are host chrome: the OS draws them from the main
+process, and no component renders them. Two rulings follow, both operator-approved on 2026-09-23 (the
+WO-0100 plan, §3 and §14):
+
+- **Native chrome words live in `electron/chrome-words.ts`, fixed in Turkish.** The per-locale bundles
+  (`src/ui/data/labels/`, read through `useLabels()`) stay the COMPONENT display surface this ADR
+  governs. The native vocabulary is about 25 words: the menu labels, the tray's header, quiet line,
+  row and secondary words, and the log lines of the honest degrade. It sits in one frozen
+  `CHROME_WORDS` table outside `src/ui`, because importing `src/ui/**` from `electron/` would make
+  the host depend on the UI layer (ADR-0006). The table does not follow the UI locale. That is a named
+  follow-up (TD-062): an `en` table beside it, rebuilt from the set-locale handler. The
+  "components carry no display copy" rule is untouched, because the table is not a component and
+  `src/core/tray-menu.ts` emits structure only.
+- **Native chrome renders the WO number verbatim.** A tray row reads `WO-0093 · <title>`: the id
+  comes straight from main's owner entry, not through `woIdLabel`. This is a second, host-side
+  carve-out beside the component one above. It changes nothing today, since `woIdLabel` is the
+  identity in both bundles. When chrome follows the locale (TD-062), the row goes through the same
+  formatter `woIdLabel` uses, so the two surfaces cannot drift.

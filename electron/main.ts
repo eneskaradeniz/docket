@@ -3,7 +3,7 @@
 // SDK runner (sessions) and serves both to the renderer over IPC, through the ports
 // declared in src/core. WO-0009: the data path is async over SQLite (the throwaway sync
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, session, shell } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -25,10 +25,27 @@ import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from 
 import type { Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
+import { trayAllowed, type ChromeNavigate, type RunningOwner } from '../src/core/tray-menu';
+import { APP_ID, buildAppMenu, createTrayController, type TrayController } from './chrome';
+import { CHROME_WORDS } from './chrome-words';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
 import { e2eGhRunner } from './e2e-forge';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// WO-0100: the app's own name. `app.setName` would move the userData directory (it derives from the
+// name), so the path is read FIRST and pinned back — window-state.json and localStorage never move.
+// There is no top-level `productName` in package.json for the same reason (packaging names the
+// bundle through `build.productName`).
+const userDataPath = app.getPath('userData');
+app.setName(CHROME_WORDS.appName);
+app.setPath('userData', userDataPath);
+
+// WO-0100: the icon assets (build/). A packaged app carries them as extraResources beside app.asar;
+// a dev run reads the repository's build/ directly.
+function chromeAssetDir(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'build') : resolve(here, '..', 'build');
+}
 
 // The state store. node:sqlite (built into Electron's Node); seeded from fixtures on first
 // run. A machine-local, reconstructible cache (ADR-0010). DOCKET_DB_PATH (WO-0031): the E2E
@@ -98,7 +115,10 @@ function persistWindowState(win: BrowserWindow): void {
   win.on('close', save);
 }
 
-function createWindow() {
+// WO-0100: the one window the native chrome (menu, tray) targets — cleared on `closed`.
+let mainWindow: BrowserWindow | null = null;
+
+function createWindow(): BrowserWindow {
   const state = restoreWindowState();
   const win = new BrowserWindow({
     width: state.width,
@@ -111,8 +131,12 @@ function createWindow() {
     // renderer-local (localStorage) and not visible here — accepted residue, noted in tech-debt.
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
     useContentSize: true,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 16 },
+    // WO-0100: the inset traffic lights are macOS options; elsewhere a non-default titleBarStyle
+    // hides the native title bar and with it the menu bar — Windows and Linux keep a normal frame.
+    // The window icon matters only there (macOS ignores it; the Dock tile is set separately).
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 16 } }
+      : { icon: resolve(chromeAssetDir(), process.platform === 'win32' ? 'icon.ico' : 'icon.png') }),
     webPreferences: {
       preload: resolve(here, 'preload.cjs'),
       contextIsolation: true,
@@ -121,6 +145,10 @@ function createWindow() {
     },
   });
   persistWindowState(win);
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
 
   // The plugin sets ELECTRON_RENDERER_URL to the Vite dev server in dev; in the built
   // app the renderer is a static file under dist/.
@@ -130,6 +158,27 @@ function createWindow() {
   } else {
     void win.loadFile(resolve(here, '..', 'dist', 'index.html'));
   }
+  return win;
+}
+
+// WO-0100: bring the window forward — restore, show, focus — or open a new one when the app runs
+// windowless (macOS keeps it alive after the last close). Resolves once the page has loaded; a push
+// sent right after may still beat React's subscription, which the preload's one-slot buffer covers.
+function showAndFocus(): Promise<BrowserWindow> {
+  const win = mainWindow !== null && !mainWindow.isDestroyed() ? mainWindow : createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (!win.webContents.isLoading()) return Promise.resolve(win);
+  return new Promise((done) => win.webContents.once('did-finish-load', () => done(win)));
+}
+
+// WO-0100: the one main → renderer push (`docket:chrome:navigate`) — the tray rows, `Pano'ya dön`
+// and the menu's `Ayarlar…` all land here.
+function chromeNavigate(p: ChromeNavigate): void {
+  void showAndFocus().then((win) => {
+    if (!win.isDestroyed()) win.webContents.send('docket:chrome:navigate', p);
+  });
 }
 
 // --- Data port (async; TD-017's sync sendSync bridge is gone). One invoke per method. ---
@@ -578,6 +627,12 @@ const pipeline = createPipeline({
 // across ALL live runners (requestIds are globally unique).
 const activeDrives = new Map<string, AsyncIterable<RunnerEvent> & { return?: (v: unknown) => Promise<unknown> }>();
 const liveRunnerInstances = new Map<string, SessionRunner>();
+// WO-0100: the tray's owner snapshot — PARALLEL to activeDrives, set and deleted at exactly its
+// mutation sites (never liveRunnerInstances, which the abort path leaves behind). Keyed by the same
+// owner tag the renderer's appbar chip counts, so the tray and the chip speak one owner set.
+const driveOwners = new Map<string, RunningOwner>();
+let trayController: TrayController | null = null;
+const notifyDrivesChanged = (): void => trayController?.refresh();
 let lastStartedTag: string | undefined; // the untagged e2e emit's target (the legacy one-drive shape)
 // WO-0059 (E2E): the last resolved drive input this process spawned — read via the gated
 // docket:e2e:last-drive-input channel; production never registers it.
@@ -635,6 +690,27 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   lastStartedTag = tag;
   const iterator = pipeline.drive(driveInput);
   activeDrives.set(tag, iterator);
+  // WO-0100: the tray's owner entry. A WO title is looked up once; it lands only if THIS entry is
+  // still the live one (a finished/aborted drive is never revived, a successor never overwritten).
+  if (isDraftDrive(driveInput)) {
+    driveOwners.set(tag, { kind: 'draft', workspaceId: driveInput.workspaceId });
+  } else {
+    const entry: RunningOwner = { kind: 'wo', woId: driveInput.workOrderId, title: undefined };
+    driveOwners.set(tag, entry);
+    const woId = driveInput.workOrderId;
+    void Promise.resolve()
+      .then(() => store.getWorkOrder(woId))
+      .then((wo) => {
+        if (wo && driveOwners.get(tag) === entry) {
+          driveOwners.set(tag, { ...entry, title: wo.title });
+          notifyDrivesChanged();
+        }
+      })
+      .catch(() => {
+        // the row keeps the id alone — a title is a courtesy
+      });
+  }
+  notifyDrivesChanged();
   try {
     for await (const ev of iterator) {
       event.sender.send('docket:runner:event', tag, ev);
@@ -648,6 +724,8 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
     if (activeDrives.get(tag) === iterator) {
       activeDrives.delete(tag);
       liveRunnerInstances.delete(tag);
+      driveOwners.delete(tag);
+      notifyDrivesChanged();
     }
   }
 });
@@ -690,6 +768,8 @@ ipcMain.handle('docket:runner:abort', async (_event, owner?: string) => {
   const iterator = activeDrives.get(tag);
   if (iterator?.return) {
     activeDrives.delete(tag);
+    driveOwners.delete(tag);
+    notifyDrivesChanged();
     await iterator.return(undefined);
   }
 });
@@ -724,15 +804,57 @@ if (process.env.DOCKET_E2E) {
     e2eFailCreates = { skip, count };
   });
   ipcMain.handle('docket:e2e:last-drive-input', () => lastResolvedDriveInput);
+  // WO-0100: the chrome guard — the tray must be OFF under E2E, the name must be Docket, and the
+  // AppUserModelID constant must equal package.json build.appId (the spec reads both sides).
+  ipcMain.handle('docket:e2e:chrome', () => ({ tray: trayController !== null, name: app.getName(), appId: APP_ID }));
 }
 
 app.whenReady().then(() => {
+  // WO-0100: on Windows the AppUserModelID ties the taskbar button, shortcuts and toasts to one
+  // identity; a dev run groups with electron.exe (its own path), a packaged one uses APP_ID.
+  if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? APP_ID : process.execPath);
+  app.setAboutPanelOptions({ applicationName: CHROME_WORDS.appName, applicationVersion: app.getVersion() });
+  Menu.setApplicationMenu(
+    buildAppMenu(CHROME_WORDS, process.platform, { openSettings: () => chromeNavigate({ kind: 'settings' }) }),
+  );
   // WO-0031c: the notification contract — the renderer's Notification() (OS toast on background asks)
   // is denied by default on file:// origins; allow it explicitly.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'notifications');
   });
   createWindow();
+  // WO-0100: the tray and the macOS dev Dock tile — OFF under DOCKET_E2E and on a headless Linux
+  // (one pure predicate, core's trayAllowed). Where a tray cannot exist it degrades with a log line.
+  if (
+    trayAllowed({
+      e2e: !!process.env.DOCKET_E2E,
+      platform: process.platform,
+      display: !!process.env.DISPLAY,
+      wayland: !!process.env.WAYLAND_DISPLAY,
+    })
+  ) {
+    const assets = chromeAssetDir();
+    trayController = createTrayController({
+      iconPath: resolve(
+        assets,
+        process.platform === 'darwin' ? 'trayTemplate.png' : process.platform === 'win32' ? 'tray.ico' : 'tray.png',
+      ),
+      platform: process.platform,
+      desktop: process.env.XDG_CURRENT_DESKTOP,
+      words: CHROME_WORDS,
+      owners: () => [...driveOwners.values()],
+      handlers: { navigate: chromeNavigate, quit: () => app.quit() },
+      log: (line) => console.warn(line),
+    });
+    // A packaged .app carries icon.icns; a dev run shows Electron's tile unless the running one is set.
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      try {
+        app.dock?.setIcon(resolve(assets, 'icon.png'));
+      } catch (e) {
+        console.warn(CHROME_WORDS.logDockUnavailable((e as Error)?.message ?? String(e)));
+      }
+    }
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
