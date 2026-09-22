@@ -91,6 +91,18 @@ describe('buildOrderMd — order.md from creation input', () => {
     const md = buildOrderMd({ ...input, reviewMode: 'every-step' });
     expect(md).toContain('review_mode: every-step');
   });
+
+  // WO-0093 — the worktree enablement: emitted ONLY when ON (silence IS disabled — a disabled
+  // or pre-WO-0093 order's front-matter never grows the key).
+  it('checkout ON emits checkout: true into the front matter', () => {
+    const md = buildOrderMd({ ...input, checkout: true });
+    expect(md).toContain('checkout: true');
+  });
+
+  it('checkout OFF/absent emits nothing (silence IS disabled)', () => {
+    expect(buildOrderMd(input)).not.toContain('checkout');
+    expect(buildOrderMd({ ...input, checkout: false })).not.toContain('checkout');
+  });
 });
 
 describe('writeOrderMd — writes into the working tree, no git', () => {

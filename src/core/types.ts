@@ -400,6 +400,10 @@ export interface WorkOrder {
   closeable?: boolean;
   // WO-0099: pending findings parsed from step reports.
   pendingFindings?: PendingFinding[];
+  // WO-0093: the OBSERVED working copy — the derived worktree path, set only when the order is
+  // worktree-enabled AND the copy exists on disk at hydrate time (never stored; the detail read
+  // pays the one lookup, the board never does). The delete confirm names it; the meta line shows it.
+  worktreePath?: string;
 }
 
 // ===== DERIVED VIEWS (pure functions in core; structured data, no display strings) =====
@@ -503,4 +507,7 @@ export interface WorkOrderDetailView {
   sources: SourceLink[];
   cost: CostSummary;
   pendingFindings?: PendingFinding[];
+  /** WO-0093: the observed working copy (the derived worktree path) — absent when the order is
+   *  not worktree-enabled or the copy is not on disk. "Nothing new" on every other order. */
+  worktreePath?: string;
 }

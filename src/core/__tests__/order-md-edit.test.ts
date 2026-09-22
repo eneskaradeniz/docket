@@ -147,3 +147,46 @@ describe('applyOrderMdEdits — the cwd key (WO-0088)', () => {
     expect(applyOrderMdEdits(linked, {})).toBe(linked);
   });
 });
+
+
+// ===== WO-0093 — the worktree enablement rides the same set/drop idiom: true sets, false/null drops =====
+describe('parseOrderMd — the checkout key (WO-0093)', () => {
+  it('checkout: true parses enabled; checkout: false parses disabled; absence is undefined', () => {
+    const on = parseOrderMd(doc(['id: WO-0005', 'title: T', 'checkout: true'].join('\n'), 'Body.'));
+    const off = parseOrderMd(doc(['id: WO-0005', 'title: T', 'checkout: false'].join('\n'), 'Body.'));
+    const silent = parseOrderMd(doc(['id: WO-0005', 'title: T'].join('\n'), 'Body.'));
+    expect(on.checkout).toBe(true);
+    expect(off.checkout).toBe(false);
+    expect(silent.checkout).toBeUndefined();
+  });
+
+  it('garbage values are undefined — never a coerced truth', () => {
+    const g = parseOrderMd(doc(['id: WO-0005', 'title: T', 'checkout: maybe'].join('\n'), 'Body.'));
+    expect(g.checkout).toBeUndefined();
+  });
+});
+
+describe('applyOrderMdEdits — the checkout key (WO-0093)', () => {
+  it('true sets checkout: true into the front-matter', () => {
+    const out = applyOrderMdEdits(doc(['id: WO-0005', 'title: Old title'].join('\n'), 'Body.'), { checkout: true });
+    expect(parseOrderMd(out).checkout).toBe(true);
+    expect(out).toContain('Body.');
+  });
+
+  it('false DROPS the key (silence IS disabled — the pre-WO-0093 orders keep their bytes)', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'checkout: true'].join('\n'), 'Body.');
+    const out = applyOrderMdEdits(linked, { checkout: false });
+    expect(parseOrderMd(out).checkout).toBeUndefined();
+    expect(out).not.toContain('checkout:');
+  });
+
+  it('null DROPS the key the same way', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'checkout: true'].join('\n'), 'Body.');
+    expect(applyOrderMdEdits(linked, { checkout: null })).not.toContain('checkout:');
+  });
+
+  it('undefined = untouched', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'checkout: true'].join('\n'), 'Body.');
+    expect(applyOrderMdEdits(linked, {})).toBe(linked);
+  });
+});

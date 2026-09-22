@@ -750,6 +750,7 @@ export function toDetailView(
     sources: wo.sources,
     cost: wo.cost,
     ...(wo.pendingFindings ? { pendingFindings: wo.pendingFindings } : {}),
+    ...(wo.worktreePath !== undefined ? { worktreePath: wo.worktreePath } : {}),
   };
 }
 

@@ -15,7 +15,7 @@
 // git/forge observation.
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, resolvePointers, validateTrackDependencies, type ObservedStep } from '../../core/derive';
@@ -37,6 +37,7 @@ import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSess
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
 import { isDraftDrive } from '../../core/runner';
 import { roadmapDraftPrompt, type DraftSourceSummary } from '../../core/roadmap-draft';
+import { worktreeName, worktreePathUnder } from '../../core/worktree';
 import { rid, tid, wid, woid } from '../ids';
 import { workspaces } from '../fixtures';
 import type {
@@ -97,6 +98,12 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, F
    *  (never the session — independence is the point). Latest-wins per track (INSERT OR REPLACE),
    *  keyed to the sha the run measured at. Throws when no track row matches the repo. */
   recordLocalGateRun(workOrderId: WorkOrderId, repo: RepoId, run: { sha: string; at: string; results: GateCommandResult[] }): void;
+  /** WO-0093: the work order's DERIVED working copy — the prepared git worktree. Undefined when
+   *  the order is not checkout-enabled, when an explicit `cwd:` front-matter wins the precedence,
+   *  or when no connected repo resolves. The PATH is the convention (never stored): the
+   *  composition root prepares it at the start click and removes it on delete/close-clean.
+   *  Concrete-store concern, like driveCwd. */
+  worktreeFor(workOrderId: WorkOrderId): { repoPath: string; path: string; branch: string; base: string } | undefined;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
   /** The connection rows' raw (repo_remote, local_path) pairs (WO-0064) — the composition
@@ -360,7 +367,7 @@ function hydrateSources(db: DatabaseSync, woId: string): SourceLink[] {
   return rows.map((r) => ({ kind: r.kind as SourceLink['kind'], label: r.label, ref: r.ref }));
 }
 
-function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
+function hydrateWorkOrder(db: DatabaseSync, id: string, dbHome?: string): WorkOrder | undefined {
   const r = db.prepare('SELECT * FROM work_order WHERE id = ?').get(id) as WoRow | undefined;
   if (!r) return undefined;
   const sessions = hydrateSessions(db, id);
@@ -402,6 +409,13 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     sources: hydrateSources(db, id),
     ...(closeable ? { closeable: true } : {}),
     pendingFindings: db.prepare('SELECT id, repo, pointer, problem, source_session_id as sourceSessionId, created_at as createdAt FROM pending_finding WHERE work_order_id = ? ORDER BY id ASC').all(id) as unknown as PendingFinding[],
+    // WO-0093: the OBSERVED working copy on the DETAIL read only (dbHome passed) — the derived
+    // path shows when the order is checkout-enabled AND the copy exists on disk; the board's
+    // hydrate never pays the lookup ("nothing new" on every other order).
+    ...(dbHome !== undefined && (() => {
+      const wt = woWorktreeSpec(db, dbHome, woid(r.id));
+      return wt && existsSync(wt.path) ? { worktreePath: wt.path } : {};
+    })()),
   };
 }
 
@@ -1676,6 +1690,41 @@ function roadmapDraftPromptForRow(db: DatabaseSync, wsId: WorkspaceId, goalNote:
 
 // ===== The cwd fix from the connection table (WO-0050 / D8) =====
 
+// ===== The prepared working copy (WO-0093) =====
+
+// The work order's DERIVED worktree spec — undefined when the order is not checkout-enabled
+// (front-matter `checkout: true`), when an explicit `cwd:` front-matter wins the precedence
+// (the WO-0088 contract intact: the operator's own path outranks the automation), or when no
+// connected repo resolves. The path is the CONVENTION (core/worktree.ts) anchored on this
+// store's app home — DOCKET_DB_PATH's directory (WO-0075), never process.cwd(). Never stored:
+// every read re-derives from order.md at view time (the effectivePermissionRule pattern).
+function woWorktreeSpec(db: DatabaseSync, dbHome: string, id: WorkOrderId): { repoPath: string; path: string; branch: string; base: string } | undefined {
+  const wo = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(id) as { workspace_id: string } | undefined;
+  if (!wo) return undefined;
+  const wsId = wid(wo.workspace_id);
+  const dir = woDir(db, id);
+  if (!dir) return undefined;
+  const { order } = readWoDocs(dir, id);
+  if (!order) return undefined;
+  const parsed = parseOrderMd(order);
+  if (parsed.checkout !== true) return undefined;
+  // An explicit cwd: wins the precedence — the worktree would be prepared but never used, so
+  // there IS no working copy of the automation's here.
+  if (parsed.cwd !== undefined) return undefined;
+  // The slug comes from the ACTUAL dir name (WO-NNNN-<slug>) — the same words the branch and
+  // the path carry, never recomputed from the title (an edit would not rename the dir).
+  const woDirOnDisk = findWorkOrderDir(dir, id);
+  if (!woDirOnDisk) return undefined;
+  const slug = basename(woDirOnDisk).slice(id.length + 1);
+  // The base repo: the workspace's first CODE track's connected path; the decision-store repo
+  // is the trackless fall-back (the single-repo fixture worlds). The store repo itself is
+  // skipped first so a multi-repo workspace worktrees its code, not its documents.
+  const ds = decisionStoreRepoPath(db, wsId);
+  const repoPath = woRepoPaths(db, id).find((p) => p !== ds) ?? ds;
+  if (!repoPath) return undefined;
+  return { repoPath, path: worktreePathUnder(dbHome, wsId as string, id as string, slug), branch: worktreeName(id as string, slug), base: 'main' };
+}
+
 // The decision-store repo's connected local path — connectedStructureRoot minus the docs suffix.
 function decisionStoreRepoPath(db: DatabaseSync, wsId: WorkspaceId): string | undefined {
   const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(wsId) as { decision_store: string } | undefined;
@@ -1696,7 +1745,7 @@ function decisionStoreRepoPath(db: DatabaseSync, wsId: WorkspaceId): string | un
 // the decision-store repo rather than cwd — strictly safer than the old blanket process.cwd()
 // (the write fence stays inside a workspace-owned repo), and the case is unreachable while the
 // GUI only scopes drives to tracks of connected workspaces.
-function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
+function driveCwdRow(db: DatabaseSync, dbHome: string, input: DriveInput): string {
   if (isDraftDrive(input)) return decisionStoreRepoPath(db, input.workspaceId) ?? process.cwd();
   const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;
   if (!wo) return process.cwd();
@@ -1713,6 +1762,13 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
       if (override) return override;
     }
   }
+  // WO-0093: the prepared working copy wins over the connection table when checkout is enabled
+  // (the wave's per-WO isolation, automated). woWorktreeSpec already yields undefined when an
+  // explicit `cwd:` above won — the precedence lives in ONE place. The start click has prepared
+  // the copy BEFORE any drive resolves its cwd (main.ts's prep precedes the pipeline); a drive
+  // aimed at a not-yet-prepared copy is the prep-refusal's job, never this read's guess.
+  const wt = woWorktreeSpec(db, dbHome, input.workOrderId);
+  if (wt) return wt.path;
   if (input.scope !== undefined) {
     const t = db
       .prepare('SELECT repo FROM track WHERE id = ? AND work_order_id = ?')
@@ -2090,6 +2146,9 @@ function createWorkOrderRow(db: DatabaseSync, input: CreateWorkOrderInput & { id
 
 export function createStore(dbPath: string): Store {
   const db = new DatabaseSync(dbPath);
+  // WO-0093: the app HOME — the worktree root's anchor is the DB path's directory (`~/.docket`,
+  // or DOCKET_DB_PATH's dirname verbatim — the resolveDbPath override semantics), never cwd.
+  const dbHome = dirname(dbPath);
   db.exec(SCHEMA_SQL);
   migrate(db);
   // WO-0059 rev 4: the stored provider key RETIRED — a leftover row would be an invisible stale
@@ -2114,7 +2173,7 @@ export function createStore(dbPath: string): Store {
       }
       return out;
     },
-    getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id)),
+    getWorkOrder: (id: WorkOrderId) => Promise.resolve(hydrateWorkOrder(db, id, dbHome)),
     // Real working-tree reads (WO-0016): resolve the WO's decision-store path and read order.md/plan.md
     // from disk at view time (ADR-0010 — no document text cached in the DB). Missing dir/file → ''.
     getWorkOrderDocs: (id: WorkOrderId) => {
@@ -2205,7 +2264,9 @@ export function createStore(dbPath: string): Store {
     // WO-0050 / D8 — the cwd fix: the composition root fills DriveInput.cwd from the connection
     // table through this one call (process.cwd() only when nothing matches). WO-0051 / D9: the
     // same root fills the fence's decision-store root (TD-056's alignment).
-    driveCwd: (input: DriveInput) => driveCwdRow(db, input),
+    driveCwd: (input: DriveInput) => driveCwdRow(db, dbHome, input),
+    // WO-0093: the derived working copy — the composition root's prep + removal read it here.
+    worktreeFor: (id: WorkOrderId) => woWorktreeSpec(db, dbHome, id),
     decisionStoreRootFor: (input: DriveInput) => decisionStoreRootRow(db, input),
     // WO-0045 — the flow-mode gate's read (order.md front-matter at spawn time; 'auto' for absent
     // docs/keys — behavior never jumps because the app learned about tempo).
@@ -2352,6 +2413,7 @@ export function createStore(dbPath: string): Store {
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
           ...(input.issueRef ? { issueRef: input.issueRef } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
+          ...(input.checkout ? { checkout: true } : {}),
           ...(input.trackDependencies
             ? {
                 trackDependencies: input.trackDependencies.map((d) => ({
@@ -2465,6 +2527,7 @@ export function createStore(dbPath: string): Store {
         patch.flowMode !== undefined ? 'flow_mode' : null,
         patch.taskRef !== undefined ? 'task' : null,
         patch.cwd !== undefined ? 'cwd' : null,
+        patch.checkout !== undefined ? 'checkout' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
@@ -2525,6 +2588,9 @@ export function createStore(dbPath: string): Store {
       // (the CLI/test path): no event, nothing claimed. The detail carries targets and
       // messages only — never auth output (the Records line).
       if (evidence) appendEvent(db, workOrderId as string, 'forge_merge', JSON.stringify(evidence));
+      // WO-0093: the store closes the RECORD only — the working copy's removal is the
+      // composition root's hand (the git seam), which reports the kept case on this result.
+      return {};
     },
 
     // WO-0065: the composition root's closure-look input — the WO's workspace connection rows
