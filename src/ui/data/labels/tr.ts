@@ -359,6 +359,22 @@ export const UI = {
   // asla hata tonu; CI'nın gerekçesi taramadan aynen yazılır.
   evidenceUnknown: 'doğrulanamadı — bakılamadı',
   ciUnknown: 'CI durumu bilinmiyor',
+  // WO-0089 — yerel kapı yüzleri: Docket'in KENDİ ölçümü konuşur (oturumun raporu değil).
+  // Ölçülmüş başarısızlık (yeşil değil) ile ölçülmemişlik (ölçülmedi/ilan edilmedi) ayrı yüzler;
+  // sha + komut başına sonuç + döküm tooltip'te/izinde taşınır.
+  gateGreenShort: 'yerel kapı yeşil',
+  gateRedShort: 'yerel kapı yeşil değil',
+  gateUnknown: 'yerel kapı ölçülmedi',
+  gateUndeclared: 'yerel kapı ilan edilmedi',
+  gateRunButton: 'Kapıyı çalıştır',
+  gateRunBusy: 'kapı çalışıyor…',
+  gateRunPending: 'yerel kapı çalıştırılmadı',
+  gateRunPassed: (ok: number, n: number, sha: string) => `yerel kapı ${ok}/${n} geçti · ${sha}`,
+  gateRunFailed: (ok: number, n: number, sha: string) => `yerel kapı ${ok}/${n} — başarısız · ${sha}`,
+  gateRunUnmeasured: 'yerel kapı ölçülemedi',
+  gateToastPassed: 'Yerel kapı geçti',
+  gateToastFailed: 'Yerel kapı başarısız — dökümü kartta oku',
+  gateMergeBlocked: 'CI muaf — yerel kapı karşılanmadan birleştirilemez',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   loading: 'Yükleniyor…',

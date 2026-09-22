@@ -329,6 +329,22 @@ export const UI = {
   // a dim line; the CI reason renders verbatim from the degraded scan.
   evidenceUnknown: 'unverified — could not be checked',
   ciUnknown: 'CI state unknown',
+  // WO-0089 — the local gate faces: DOCKET'S OWN measurement speaks (never the session's report).
+  // Measured-failure (not green) and not-measured (not run / not declared) are distinct faces;
+  // the sha + per-command results + tail ride the tooltip/record.
+  gateGreenShort: 'local gate green',
+  gateRedShort: 'local gate not green',
+  gateUnknown: 'local gate not run',
+  gateUndeclared: 'local gate not declared',
+  gateRunButton: 'Run gate',
+  gateRunBusy: 'gate running…',
+  gateRunPending: 'local gate has not run',
+  gateRunPassed: (ok: number, n: number, sha: string) => `local gate ${ok}/${n} passed · ${sha}`,
+  gateRunFailed: (ok: number, n: number, sha: string) => `local gate ${ok}/${n} — failed · ${sha}`,
+  gateRunUnmeasured: 'local gate could not be measured',
+  gateToastPassed: 'Local gate passed',
+  gateToastFailed: 'Local gate failed — read the tail on the card',
+  gateMergeBlocked: 'CI exempt — the local gate must pass before merge',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   loading: 'Loading…',
