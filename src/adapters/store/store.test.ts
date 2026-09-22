@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { strict as assert } from 'node:assert';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -2458,8 +2458,19 @@ describe('M1 — a disconnected decision store refuses writes; it can no longer 
     const root = freshRoot();
     const ws = await store.createWorkspace({ label: 'Fixture world', repos: [{ path: root }] });
     store.db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(ws.id);
-    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Fikstür işi', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
-    expect(wo.title).toBe('Fikstür işi');
+    // The fallback writes under process.cwd() — pointed at an ISOLATED relative root (the store
+    // refuses absolute docs roots) so the pin never touches the real decision store, and the
+    // test removes its own artifact.
+    const isolatedRoot = 'fixture-fallback-docs';
+    await store.setDocsRoot(ws.id, isolatedRoot);
+    rmSync(join(process.cwd(), isolatedRoot), { recursive: true, force: true });
+    try {
+      const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Fikstür işi', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+      expect(wo.title).toBe('Fikstür işi');
+      expect(readdirSync(join(process.cwd(), isolatedRoot, 'work-orders'))[0]).toContain('WO-0001');
+    } finally {
+      rmSync(join(process.cwd(), isolatedRoot), { recursive: true, force: true });
+    }
   });
 
   it('removing the decision-store connection is refused — re-point first; rows stay', async () => {
