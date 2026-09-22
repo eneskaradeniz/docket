@@ -138,6 +138,15 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   return `---\n${nextFront}\n---\n${nextBody}`;
 }
 
+/** WO-0088 rev: the cwd override's SHAPE gate — a working copy must be a REAL absolute path.
+ *  Pure (core imports no Node path module): a leading `/` is the whole check. A relative path or a
+ *  `~` shorthand is refused — node never expands `~`, so a shorthand would silently resolve
+ *  relative and aim the drive (and its write fence) at the wrong root. The EXISTENCE check is the
+ *  store's (it owns fs); the dialogs reuse this helper for the under-field form error. */
+export function cwdOverrideIsAbsolute(cwd: string): boolean {
+  return cwd.startsWith('/');
+}
+
 /** The ORDER DOCUMENT VIEW: drop `##` sections whose body is only the creation template's
  *  skeleton markers — the bare `-` list line, the `- _(added during planning)_` placeholder, the
  *  bare `1.` numbering, the `In scope:` / `Out of scope:` sub-labels (2026-08-23 operator ruling:

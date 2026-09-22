@@ -96,5 +96,7 @@ WO; per-workspace prompt overrides.
   may ask at once — the concurrent-card UX question above covers it.
 - The workspace budget gate is workspace-keyed and spawn-time already (`budgetBlockFor`) —
   a parallel wave is refused per-drive correctly; nothing to change.
-- Sequenced after this WO (operator-approved queue, 2026-09-21): the `agy` stream-json probe
-  → the issue bridge (the WO-0081 contract) → the second adapter if the probe passes.
+- Sequenced after this WO (operator ruling 2026-09-22: the implementation round's three
+  findings kept 0089-0091 — the WO-0082 precedent, the number goes to whoever lands): the
+  `agy` stream-json probe (WO-0092) → the issue bridge (WO-0093, the WO-0081 contract) →
+  the second adapter (WO-0094) if the probe passes.

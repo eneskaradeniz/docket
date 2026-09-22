@@ -23,7 +23,7 @@ import type { Locale, PromptOverrides, RoleModels } from '../../core/app-setting
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
-import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
+import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
@@ -1566,6 +1566,16 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
   return decisionStoreRepoPath(db, wsId) ?? process.cwd();
 }
 
+// WO-0088 rev: the cwd override's SAFE gate — a working copy must be an absolute path that EXISTS,
+// or the drive (and its write fence) would aim at the wrong root or a nonexistent dir. The dialogs
+// pre-check the shape (core's cwdOverrideIsAbsolute) for the under-field error; the store is the
+// second layer and refuses the write. `null` (the drop) is always legal.
+function cwdOverrideRefusal(cwd: string): string | undefined {
+  if (!cwdOverrideIsAbsolute(cwd)) return 'cwd override must be an absolute path';
+  if (!existsSync(cwd)) return 'cwd override path does not exist';
+  return undefined;
+}
+
 // WO-0051 / D9 (TD-056): the architect write fence's decision-store ROOT, aligned with the
 // workspace's docs_root setting — the composition root fills DriveInput.decisionStoreRoot from
 // this one call (the renderer never carries a path), and the adapter's fence then lands exactly
@@ -2059,6 +2069,12 @@ export function createStore(dbPath: string): Store {
       // (the createWorkOrder throw style; the full list stays the validator's).
       const problems = validateTrackDependencies(input.trackDependencies, input.trackRepos);
       if (problems.length > 0) throw new Error(`createWorkOrder: ${problems[0]}`);
+      // WO-0088 rev: the cwd override is refused BEFORE any write — a bad path must not author an
+      // order.md pointing the drive (and its fence) at nothing.
+      if (input.cwd !== undefined) {
+        const why = cwdOverrideRefusal(input.cwd);
+        if (why) throw new Error(`createWorkOrder: ${why}`);
+      }
       const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
       const slug = slugify(input.title);
@@ -2167,6 +2183,11 @@ export function createStore(dbPath: string): Store {
       const dir = structureRoot(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);
+      // WO-0088 rev: the same safe gate on the edit path — a string sets (validated), null drops.
+      if (typeof patch.cwd === 'string') {
+        const why = cwdOverrideRefusal(patch.cwd);
+        if (why) throw new Error(`updateWorkOrder: ${why}`);
+      }
       const next = applyOrderMdEdits(order, patch);
       if (next !== order) writeOrderMdById(dir, workOrderId, next);
       if (patch.title !== undefined) db.prepare('UPDATE work_order SET title = ? WHERE id = ?').run(patch.title, workOrderId);

@@ -166,6 +166,25 @@ describe('drive-store — the parallel spine (WO-0088)', () => {
     expect(fake.calls.filter((c) => c.method === 'steerDrive')).toHaveLength(1);
   });
 
+  it('M1: a keyed port + a DEAD key refuses — the call never falls through to the unkeyed sibling stop', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    store.start('WO-B:free', woFree(WO_B));
+    await fake.settle();
+    fake.push(tagA, doneEv()); // A's fold ends — its store registration dies with the finally
+    await fake.settle();
+    // A is now DEAD: a stale render frame's Durdur/Zorla kes must NOT reach A's tag and must NOT
+    // fall through to the unkeyed form (which main would route at the last-started drive — B).
+    await store.interrupt('WO-A:free');
+    await store.abort('WO-A:free');
+    const methods = fake.calls.map((c) => c.method);
+    expect(methods).not.toContain('interruptDrive');
+    expect(methods).not.toContain('abortDrive');
+    expect(methods).not.toContain('interrupt');
+    expect(methods).not.toContain('abort');
+  });
+
   it('a draft counts in the activity chip (running count) but never in activeSnapshots', async () => {
     const fake = fakePort();
     const store = createDriveStore(fake.runner);

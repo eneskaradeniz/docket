@@ -2944,3 +2944,42 @@ describe('WO-0088 — driveCwd honors the order.md cwd override (the wave worktr
     expect(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(rootApi);
   });
 });
+
+// ===== WO-0088 rev — the cwd override's store-side refusal (absolute + real) =====
+describe('WO-0088 rev — the store refuses a cwd override that cannot be a working copy', () => {
+  it('createWorkOrder: a relative path and a nonexistent absolute path both throw, nothing lands', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Cwd Guard WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const base = { workspaceId: ws.id, title: 'Koruma işi', description: 'x', trackRepos: [rid(apiSlug)], reviewMode: 'gates' as const, contextFiles: [] };
+    await assert.rejects(() => store.createWorkOrder({ ...base, cwd: 'relative/path' }), /absolute/);
+    await assert.rejects(() => store.createWorkOrder({ ...base, cwd: '/docket-e2e-bu-yol-yok' }), /exist|yok|does not/);
+    const orders = await store.getWorkOrders();
+    assert.equal(orders.find((o) => o.title === 'Koruma işi'), undefined, 'a refused cwd still authored the work order');
+  });
+
+  it('updateWorkOrder: the same refusal applies to the edit patch; null (drop) stays legal', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Cwd Edit WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const worktree = freshRoot();
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Düzenlenen', description: 'x', trackRepos: [rid(apiSlug)], reviewMode: 'gates', contextFiles: [], cwd: worktree });
+    await assert.rejects(() => store.updateWorkOrder(wo.id, { cwd: 'relative/path' }), /absolute/);
+    await assert.rejects(() => store.updateWorkOrder(wo.id, { cwd: '/docket-e2e-bu-yol-yok' }), /exist|yok|does not/);
+    await store.updateWorkOrder(wo.id, { cwd: null }); // the drop stays legal
+    const docs = await store.getWorkOrderDocs(wo.id);
+    assert.equal(docs.order.includes('cwd:'), false, 'the drop did not clean the front-matter');
+  });
+});

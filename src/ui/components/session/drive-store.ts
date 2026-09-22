@@ -9,10 +9,11 @@
 // - `useDrive(key, seed)` binds a pane to a drive with useSyncExternalStore — a remounted pane re-renders
 //   the LIVE state instantly (the stream never stopped), falling back to the persisted seed when the key
 //   has no active/recent drive.
-// - `useActiveDrive(store)` binds the App to the ONE active drive (the board overlay's source) — the
-//   snapshot is identity-stable between real transitions (see activeSnapshot).
-// - One drive at a time (the runner's event channel is a broadcast — see audit F10); a second start while
-//   one runs is rejected, exactly like the panes' old `running` guard.
+// - `useActiveDrives(store)` binds the App to the RUNNING drives (WO-0088: N at once, ONE per owner) —
+//   the snapshots array is identity-stable between real transitions (see activeSnapshots).
+// - ONE drive per OWNER, N owners in parallel (WO-0088's frozen scope): a second key on an owner that
+//   already runs is refused — a work order's step sequencing stays serial. The event channel is a
+//   broadcast; the renderer port filters by owner tag before events reach this store.
 // - `onEnd` is registered by the App: a completion refreshes the WO wherever the operator is (the board's
 //   cost/stage too), not just the open detail.
 import { createContext, useContext, useSyncExternalStore } from 'react';
@@ -154,8 +155,9 @@ export function createDriveStore(runner: SessionRunner) {
   function activitySnapshot(): DriveActivity | undefined {
     if (!actDirty) return act;
     actDirty = false;
-    const newest = [...activeKeys][activeKeys.size - 1];
-    const key = newest ?? lastActive;
+    // The limit voice reads the most recently TOUCHED drive (start OR end — `lastActive` is
+    // stamped at both), exactly what the comment above promises; `running` is the live count.
+    const key = lastActive;
     const h = key === undefined ? undefined : drives.get(key);
     if (!key || !h) {
       if (act !== undefined) act = undefined;
@@ -247,10 +249,16 @@ export function createDriveStore(runner: SessionRunner) {
 
   const decide = (requestId: string, decision: PermissionDecision): Promise<void> =>
     runner.decide(requestId, decision);
-  /** WO-0045/WO-0088: stop ONE drive — the keyed port when the transport offers it (the GUI's),
-   *  the unkeyed fallback otherwise (single-drive realizations, tests). */
+  /** WO-0045/WO-0088: stop ONE drive. With a KEYED port the key must be LIVE — a dead key (folded
+   *  owner, stale render frame) refuses instead of falling through, because the unkeyed form over
+   *  IPC would land on main's last-started drive and stop a SIBLING (the M1 cross-talk). The
+   *  unkeyed fallback is for unkeyed realizations only (single-drive hosts, tests). */
   const interrupt = (key: string): Promise<void> =>
-    keyOwner.has(key) && runner.interruptDrive ? runner.interruptDrive(keyOwner.get(key)!) : runner.interrupt();
+    runner.interruptDrive
+      ? keyOwner.has(key)
+        ? runner.interruptDrive(keyOwner.get(key)!)
+        : Promise.resolve()
+      : runner.interrupt();
   const sessionId = (key: string): string | undefined => sessionIds.get(key);
   /** WO-0047: re-issue a key's LAST drive input verbatim — the budget refusal's raise-and-re-run.
    *  Seeds from the key's current fold (a refused drive's fold carries no transcript; the re-run's
@@ -299,10 +307,15 @@ export function createDriveStore(runner: SessionRunner) {
     drives.set(key, { ...cur, state: { ...cur.state, entries: [...cur.state.entries, line] } });
     notify();
   }
-  /** WO-0031c/WO-0088: Zorla kes — the 5s-stuck escape hatch, keyed to ONE drive (the port's forced
-   *  stop on exactly that owner; the unkeyed fallback for single-drive realizations). */
+  /** WO-0031c/WO-0088: Zorla kes — the 5s-stuck escape hatch, keyed to ONE drive. The M1 rule:
+   *  a keyed port refuses a DEAD key (never the unkeyed sibling stop); the unkeyed fallback is
+   *  for unkeyed realizations only. */
   const abort = (key: string): Promise<void> =>
-    keyOwner.has(key) && runner.abortDrive ? runner.abortDrive(keyOwner.get(key)!) : runner.abort();
+    runner.abortDrive
+      ? keyOwner.has(key)
+        ? runner.abortDrive(keyOwner.get(key)!)
+        : Promise.resolve()
+      : runner.abort();
   /** WO-0045: queue an operator note into the RUNNING drive (WO-0088: keyed — exactly that key's
    *  drive). The count arrives via the folded steer_queued event (the noteId rides it — the pending
    *  list's retract handle). False when this key's drive is not live or the transport refused

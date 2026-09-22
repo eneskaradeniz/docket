@@ -3350,7 +3350,9 @@ await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; ola
   await taggedEmit(`wo:${woB}`, { kind: 'permission_request', requestId: 'par-b', tool: 'Bash', input: { command: 'git push origin wo-par-b' } });
   await page.waitForTimeout(500);
   assert.ok((await page.getByText('git push origin wo-par-a').count()) >= 1, 'A\'s ask card did not surface');
-  assert.ok((await page.locator('main').first().innerText()).includes(woA), 'A\'s ask card does not name its work order');
+  // m7: the CARD's own subject chip names the work order — element-level, not whole-page text
+  // (the strip already carries the id, so a page-level assert could never fail).
+  assert.equal(await page.locator('[data-ask-subject]').first().innerText(), woA, 'A\'s ask-card subject chip does not name its work order');
   await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
   await page.waitForTimeout(700); // decide → A's runner releases + ask_resolved streams
   assert.equal(await page.getByText('git push origin wo-par-a').count(), 0, 'A\'s answered ask card survived');
@@ -3361,7 +3363,7 @@ await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; ola
   await page.waitForTimeout(400);
   const bText = await page.locator('main').first().innerText();
   assert.ok(bText.includes('git push origin wo-par-b'), 'B\'s held ask vanished when A\'s was answered');
-  assert.ok(bText.includes(woB), `B\'s ask card does not name its work order (${woB})`);
+  assert.equal(await page.locator('[data-ask-subject]').first().innerText(), woB, `B\'s ask-card subject chip does not name its work order (${woB})`);
   assert.ok(bText.includes('B paralel satırı') && !bText.includes('A paralel satırı'), 'B\'s transcript crossed with A\'s');
   // --- resume B (answer its held ask), then Durdur stops EXACTLY B while A keeps running to completion ---
   await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();

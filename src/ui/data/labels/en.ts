@@ -385,6 +385,7 @@ export const UI = {
   // WO-0088: the work order's own working copy (the wave worktree) — the cwd override field
   woCwdLabel: 'Working copy (optional)',
   woCwdPlaceholder: 'e.g. /wave/wt/WO-0088 — drives run in this folder.',
+  woCwdErr: 'Must be an absolute path (starts with /)',
   woTracksLabel: 'Repos',
   woContextLabel: 'Context files',
   woContextAdd: '▸ Add file',

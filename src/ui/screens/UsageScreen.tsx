@@ -44,9 +44,10 @@ export function UsageScreen({
   const driveStore = useDriveStore();
   const actives = useActiveDrives(driveStore);
   const draftKey = `${workspace.id}:draft`;
-  // WO-0088: the WO arm picks THIS workspace's newest running drive from the keyed snapshots
-  // (activeSnapshots only builds entries for WO-keyed drives). The explicit narrowing is the
-  // ADR-0003 discipline (no ui-side cast).
+  // WO-0088: the WO arm picks THIS workspace's FIRST live drive from the keyed snapshots
+  // (find = insertion order: the earliest still-running drive wins). activeSnapshots only builds
+  // entries for WO-keyed drives. The explicit narrowing is the ADR-0003 discipline (no ui-side
+  // cast).
   const woArm = actives.find((s) => s.running && s.woId !== undefined && woIds.includes(s.woId));
   // The draft arm's liveness read is a SUBSCRIPTION (the review round's fix): a plain
   // `driveStore.get(draftKey)?.running` during render is non-reactive — a future

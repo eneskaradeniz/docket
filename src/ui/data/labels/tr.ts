@@ -427,6 +427,7 @@ export const UI = {
   // WO-0088: the work order's own working copy (the wave worktree) — the cwd override field
   woCwdLabel: 'Çalışma kopyası (isteğe bağlı)',
   woCwdPlaceholder: 'Örn. /wave/wt/WO-0088 — sürüşler bu klasörde koşar.',
+  woCwdErr: 'Mutlak bir yol olmalı (/ ile başlamalı)',
   woTracksLabel: 'Depolar',
   woContextLabel: 'Bağlam dosyaları',
   woContextAdd: '▸ Dosya ekle',

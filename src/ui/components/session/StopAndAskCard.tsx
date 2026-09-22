@@ -131,7 +131,7 @@ function AskQuestionCard({
         <p className="readout flex flex-wrap items-center gap-1.5 text-signal">
           <FilePen className="h-3.5 w-3.5" aria-hidden="true" />
           {planContext ? UI.architectRequest : UI.permissionRequested}
-          {subject ? <span className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
+          {subject ? <span data-ask-subject className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
         </p>
         {questions.map((q, i) => (
           <QuestionBlock
@@ -300,7 +300,7 @@ function BinaryAskCard({
             <FilePen className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {planContext ? UI.architectRequest : UI.permissionRequested}
-          {subject ? <span className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
+          {subject ? <span data-ask-subject className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
           {risky ? <span className="rounded border border-signal/50 px-1.5 py-px text-[10px]">{UI.askRiskyTag}</span> : null}
           {canPeek ? (
             <button type="button" className="irow ml-auto px-1.5 text-[10px] normal-case tracking-normal" onClick={() => void togglePeek()}>
