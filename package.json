@@ -21,7 +21,8 @@
     "test:ui": "npm run build && node e2e/ui.mjs",
     "icons": "node scripts/icons.mjs",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test:e2e-lock": "node --test e2e/lock.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.221",
