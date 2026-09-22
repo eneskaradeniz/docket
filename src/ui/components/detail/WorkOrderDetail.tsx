@@ -840,7 +840,8 @@ export function WorkOrderDetail({
                 gateByRepo: new Map(
                   detail.tracks.map((ln) => [
                     ln.track.repo as string,
-                    { localGate: ln.track.localGate, required: ln.track.ci.kind === 'exempt' },
+                    // Review M2: the freshness reference — the track's forge-observed PR head.
+                    { localGate: ln.track.localGate, required: ln.track.ci.kind === 'exempt', headSha: ln.track.pr?.headSha },
                   ]),
                 ),
                 onGateRan: () => {

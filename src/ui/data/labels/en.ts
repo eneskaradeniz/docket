@@ -335,6 +335,11 @@ export const UI = {
   gateGreenShort: 'local gate green',
   gateRedShort: 'local gate not green',
   gateUnknown: 'local gate not run',
+  // Review M2 (WO-0089): a passing measurement at a SUPERSEDED sha does not satisfy the merge —
+  // the antreo twin's lesson. The short chip + the card line both name the two shas.
+  gateStaleShort: 'local gate stale',
+  gateRunStale: (ok: number, n: number, sha: string, headSha: string): string =>
+    `local gate ${ok}/${n} passed · ${sha} — branch moved to ${headSha}, re-run`,
   gateUndeclared: 'local gate not declared',
   gateRunButton: 'Run gate',
   gateRunBusy: 'gate running…',

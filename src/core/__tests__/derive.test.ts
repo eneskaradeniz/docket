@@ -32,6 +32,7 @@ import {
   deriveWorkOrderCost,
   extractPointers,
   limitInEffect,
+  localGateSatisfiedAt,
   nextManuelAction,
   overlayLiveDrive,
   sessionForTrack,
@@ -1133,7 +1134,7 @@ describe('validateTrackDependencies (WO-0071)', () => {
 // precedent): not-run and could-not-run are one non-passing state, distinct from measured-fail.
 describe('the local gate (WO-0089)', () => {
   type LocalGate = import('../types').LocalGate;
-  const gate = (results: Array<{ command: string; exit: number | null; expectExit?: number }>): LocalGate => ({
+  const gate = (results: Array<{ command: string; exit: number | null; expectExit?: number }>): Extract<LocalGate, { kind: 'declared' }> => ({
     kind: 'declared',
     sha: 'deadbee',
     at: '2026-09-22T00:00:00Z',
@@ -1259,5 +1260,89 @@ describe('the local gate (WO-0089)', () => {
     const items = deriveEvidence(aWorkOrder({ tracks: [exemptTrack({ kind: 'invalid', reason: 'gate.commands: empty' })] }));
     const lg = items.find((e) => e.kind === 'local_gate')!;
     expect(lg.status).toBe('unknown');
+  });
+
+  // ===== Review round M2 — the substitute must be FRESH (measured at the repo's CURRENT HEAD) =====
+  //
+  // A gate measured at another sha never satisfies the merge: the measurement speaks for code
+  // that is no longer the repo's HEAD (the antreo twin — numbers that describe a different run).
+  describe('localGateSatisfiedAt — freshness (review M2)', () => {
+    it('measured-pass at X with HEAD X satisfies', () => {
+      const lg = gate([{ command: 'npm test', exit: 0 }]);
+      expect(localGateSatisfiedAt(lg, 'deadbee')).toBe(true);
+    });
+
+    it('measured-pass at X but HEAD moved to Y → REFUSED (stale — a re-run is forced)', () => {
+      const lg = gate([{ command: 'npm test', exit: 0 }]);
+      expect(localGateSatisfiedAt(lg, 'cafef00d')).toBe(false);
+    });
+
+    it('a measurement with an empty sha (git could not read the cwd) never satisfies', () => {
+      const lg: LocalGate = { ...gate([{ command: 'npm test', exit: 0 }]), sha: '' };
+      expect(localGateSatisfiedAt(lg, 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt(lg, '')).toBe(false);
+    });
+
+    it('a failed or unrun gate is refused regardless of the head (the unmet rule first)', () => {
+      expect(localGateSatisfiedAt(gate([{ command: 'npm test', exit: 1 }]), 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt({ kind: 'pending' }, 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt(undefined, 'deadbee')).toBe(false);
+    });
+
+    it('a CI-run track is fresh-eligible through CI alone — freshness never gates it', () => {
+      // The CI-run arm passes deriveTrackMerge before local_gate is ever consulted (its own
+      // `ci.kind === 'exempt'` guard) — a stale local_gate beside a green CI never blocks.
+      const track = aTrack({
+        id: 'c2',
+        repo: 'r',
+        ci: { kind: 'run', state: 'success', checks: [] },
+        pr: { url: 'https://example/pull/9', headSha: 'cafef00d' },
+        dependsOn: [],
+        localGate: gate([{ command: 'npm test', exit: 0 }]), // sha 'deadbee' — stale vs the PR's 'cafef00d'
+      });
+      const w = aWorkOrder({ tracks: [track] });
+      expect(deriveTrackMerge(w, track)).toEqual({ kind: 'available' });
+    });
+  });
+
+  // ===== deriveTrackMerge / deriveStage wired to freshness (review M2) =====
+  describe('the merge + closure gates refuse a STALE substitute (review M2)', () => {
+    // exemptTrack()'s PR headSha defaults to 'deadbee', matching gate()'s default measured sha —
+    // every OTHER test above stays fresh by construction; these two override the PR's headSha to
+    // prove the mismatch actually bites.
+    it('deriveTrackMerge refuses a measured-and-passed gate whose sha is not the PR head', () => {
+      const stale = aTrack({
+        id: 'e2',
+        repo: 'r',
+        ci: { kind: 'exempt', reason: 'no CI configured' },
+        pr: { url: 'https://example/pull/2', headSha: 'cafef00d' }, // the branch moved past 'deadbee'
+        dependsOn: [],
+        localGate: gate([{ command: 'npm test', exit: 0 }]),
+      });
+      const w = aWorkOrder({ tracks: [stale] });
+      expect(deriveTrackMerge(w, stale)).toEqual({ kind: 'absent', reason: 'local_gate_open' });
+      // the SAME track at its own measured sha (the operator has not pushed since) satisfies —
+      // the rule bites staleness, not the measurement itself.
+      const fresh = { ...stale, pr: { url: stale.pr!.url, headSha: 'deadbee' } };
+      expect(deriveTrackMerge({ ...w, tracks: [fresh] }, fresh)).toEqual({ kind: 'available' });
+    });
+
+    it('the live path to closure stays at implementation while the substitute is stale — a re-run, not a re-open, clears it', () => {
+      const stale = aWorkOrder({
+        tracks: [{ ...exemptTrack(gate([{ command: 'npm test', exit: 0 }])), pr: { url: 'https://example/pull/1', headSha: 'cafef00d' }, merge: { at: '2026-09-22T01:00:00Z' } }],
+        gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true } },
+      });
+      expect(deriveStage(stale)).toBe('implementation');
+    });
+
+    it('an already-CLOSED archive is untouched by staleness too — the path rule, never a rewrite of history', () => {
+      const staleButClosed = {
+        ...aWorkOrder({
+          tracks: [{ ...exemptTrack(gate([{ command: 'npm test', exit: 0 }])), pr: { url: 'https://example/pull/1', headSha: 'cafef00d' }, merge: { at: '2026-09-22T01:00:00Z' } }],
+        }),
+        gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' },
+      };
+      expect(deriveStage(staleButClosed)).toBe('closed');
+    });
   });
 });

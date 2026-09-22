@@ -365,6 +365,11 @@ export const UI = {
   gateGreenShort: 'yerel kapı yeşil',
   gateRedShort: 'yerel kapı yeşil değil',
   gateUnknown: 'yerel kapı ölçülmedi',
+  // Review M2 (WO-0089): bir üst sha'da (dal ilerlemiş) ölçülen geçmiş sonuç birleştirmeyi
+  // KARŞILAMAZ — antreo ikizinin ders çıkardığı kural. Kısa çip + kart satırı iki sha'yı da adlandırır.
+  gateStaleShort: 'yerel kapı bayat',
+  gateRunStale: (ok: number, n: number, sha: string, headSha: string): string =>
+    `yerel kapı ${ok}/${n} geçti · ${sha} — dal ${headSha}'e ilerledi, yeniden çalıştır`,
   gateUndeclared: 'yerel kapı ilan edilmedi',
   gateRunButton: 'Kapıyı çalıştır',
   gateRunBusy: 'kapı çalışıyor…',

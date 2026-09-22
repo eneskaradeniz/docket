@@ -11,7 +11,7 @@
 import { useState, type ReactNode } from 'react';
 import type { CommitResult, CreatePrResult, GateRunResult, MergeResult, PushResult, RepoChanges } from '../../../core/console';
 import type { LineDiff } from '../../../core/diff';
-import { localGateStatus } from '../../../core/derive';
+import { localGateSatisfiedAt, localGateStatus } from '../../../core/derive';
 import type { LocalGate, WorkOrderId } from '../../../core/types';
 import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
@@ -38,6 +38,10 @@ export interface ChangesBridge {
 export interface RepoGateFace {
   localGate?: LocalGate; // undefined = undeclared (the workspace declared no gate commands)
   required: boolean; // the track's CI is exempt — the substitute is REQUIRED before merge
+  // Review M2 — the track's forge-observed PR head sha: freshness reference for the measured
+  // gate (a passing measurement at another sha does not satisfy the merge — the antreo twin).
+  // Undefined when no PR is open (the merge is absent for `pr_not_open` before this ever reads).
+  headSha?: string;
 }
 
 type Act = 'commit' | 'push' | 'pr' | 'merge' | 'gate';
@@ -209,7 +213,11 @@ function ChangesRepoCard({
   // rule); the merge refusal keys off the same derivation, never a local re-invention.
   const gateLg = gate?.localGate;
   const gateStatus = gateLg !== undefined || gate?.required ? localGateStatus(gateLg) : undefined;
-  const gateBlocksMerge = gate?.required === true && gateStatus !== 'satisfied';
+  // Review M2 — a passing measurement at a superseded sha does not satisfy the merge either
+  // (core's trackMechanicallyEvidenced rule, mirrored here so Birleştir never shows available
+  // while the real channel would refuse it).
+  const gateFresh = gateStatus !== 'satisfied' || localGateSatisfiedAt(gateLg, gate?.headSha ?? '');
+  const gateBlocksMerge = gate?.required === true && !gateFresh;
 
   const fileDiffNode = (file: RepoChanges['files'][number]): ReactNode => {
     if (file.status === '??') {
@@ -279,16 +287,22 @@ function ChangesRepoCard({
               const ok = declared ? declared.results.filter((r) => r.exit !== null && r.exit === r.expectExit).length : 0;
               const n = declared?.results.length ?? 0;
               const sha = declared && declared.sha !== '' ? declared.sha.slice(0, 7) : '—';
+              const headSha = gate?.headSha !== undefined && gate.headSha !== '' ? gate.headSha.slice(0, 7) : '—';
               const hasTails = declared !== undefined && declared.results.some((r) => r.tail !== '');
+              // Review M2 — a satisfied-but-stale measurement gets its OWN line (names both
+              // shas, the fix is a re-run) — never the plain "✓ passed" the merge would then
+              // contradict.
               const line =
-                gateStatus === 'satisfied' ? `✓ ${UI.gateRunPassed(ok, n, sha)}`
+                gateStatus === 'satisfied' && !gateFresh ? UI.gateRunStale(ok, n, sha, headSha)
+                : gateStatus === 'satisfied' ? `✓ ${UI.gateRunPassed(ok, n, sha)}`
                 : gateStatus === 'unsatisfied' ? UI.gateRunFailed(ok, n, sha)
                 : gateStatus === 'exempt' ? UI.gateUndeclared
                 : declared !== undefined ? UI.gateRunUnmeasured
                 : gateLg?.kind === 'invalid' ? UI.gateRunUnmeasured
                 : UI.gateRunPending;
               const tone =
-                gateStatus === 'satisfied' ? 'text-proceed'
+                gateStatus === 'satisfied' && !gateFresh ? 'text-inkdim'
+                : gateStatus === 'satisfied' ? 'text-proceed'
                 : gateStatus === 'unsatisfied' ? 'text-[var(--color-error)]'
                 : 'text-inkdim';
               const node = <span className={`font-mono text-[10.5px] ${tone} ${acting === 'gate' ? 'opacity-60' : ''}`}>{acting === 'gate' ? UI.gateRunBusy : line}</span>;

@@ -134,11 +134,27 @@ export function localGateSatisfied(lg: LocalGate | undefined): boolean {
   return localGateStatus(lg) === 'satisfied';
 }
 
+/** Review M2 — the substitute must be FRESH: measured-and-passed at the repo's CURRENT HEAD.
+ *  A measurement at another sha speaks for code that is no longer HEAD (the antreo twin —
+ *  numbers that describe a different run), so it never satisfies the MERGE; the face names the
+ *  two shas and a re-run clears it. An empty measurement sha (git could not read the cwd) never
+ *  satisfies either. Core never knows HEAD — the observer (the merge channel / the console
+ *  look) hands it in; the ci-run arm passes before this is ever asked of it. */
+export function localGateSatisfiedAt(lg: LocalGate | undefined, headSha: string): boolean {
+  if (lg === undefined || lg.kind !== 'declared') return false;
+  return localGateStatus(lg) === 'satisfied' && lg.sha !== '' && lg.sha === headSha;
+}
+
 /** WO-0089's core rule — the MECHANICAL EVIDENCE of a track: a CI-run track owns its evidence in
  *  CI (local_gate never blocks it — CI keeps its role); a CI-exempt track needs the SUBSTITUTE:
- *  a local_gate measured-and-passed. Both-exempt is a refusal, never a pass. */
-export function trackMechanicallyEvidenced(t: Pick<Track, 'ci' | 'localGate'>): boolean {
-  return t.ci.kind !== 'exempt' || localGateSatisfied(t.localGate);
+ *  a local_gate measured-and-passed AT THE TRACK'S CURRENT HEAD (review M2 — a measurement at a
+ *  superseded sha is not evidence for what is about to merge; the antreo twin). The forge-
+ *  observed `pr.headSha` IS that head (the merge channel and deriveTrackMerge both call this
+ *  against a hydrated Track that already carries it — core never runs git itself). No open PR
+ *  yet → headSha `''`, which `localGateSatisfiedAt` never matches (deriveTrackMerge's own
+ *  `pr_not_open` reason fires first in practice). Both-exempt is a refusal, never a pass. */
+export function trackMechanicallyEvidenced(t: Pick<Track, 'ci' | 'localGate' | 'pr'>): boolean {
+  return t.ci.kind !== 'exempt' || localGateSatisfiedAt(t.localGate, t.pr?.headSha ?? '');
 }
 
 function allTracksMerged(wo: WorkOrder): boolean {

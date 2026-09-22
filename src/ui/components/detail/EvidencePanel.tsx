@@ -7,7 +7,7 @@
 // controls → no hover (ADR-0012 r1 scopes the contract to controls).
 // WO-0089: a track with a declared local gate (or an exempt CI facing its missing substitute) carries
 // a SECOND chip beside the CI one — Docket's own measurement, its sha + per-command exits in the title.
-import { localGateStatus } from '../../../core/derive';
+import { localGateSatisfiedAt, localGateStatus } from '../../../core/derive';
 import type { EvidenceItem, TrackId, TrackLaneView } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 
@@ -122,7 +122,13 @@ export function EvidencePanel({
             : lg?.kind === 'invalid'
               ? lg.reason
               : undefined;
-        if (status === 'satisfied') {
+        // Review M2 — measured-and-passed still needs to be FRESH (at the track's current head,
+        // the forge-observed PR sha): a superseded measurement reads as its own chip, dim like
+        // unsatisfied (it does not satisfy the merge either), never the green checkmark that
+        // would tell the close card's own reader the substitute stands when it does not.
+        if (status === 'satisfied' && !localGateSatisfiedAt(lg, ln.track.pr?.headSha ?? '')) {
+          chips.push({ key: `gate-${ln.track.id}`, text: UI.gateStaleShort, tone: 'dim', ...(title ? { title } : {}) });
+        } else if (status === 'satisfied') {
           chips.push({ key: `gate-${ln.track.id}`, text: `✓ ${UI.gateGreenShort}`, tone: 'proceed', ...(title ? { title } : {}) });
         } else if (status === 'unsatisfied') {
           chips.push({ key: `gate-${ln.track.id}`, text: UI.gateRedShort, tone: 'dim', ...(title ? { title } : {}) });
