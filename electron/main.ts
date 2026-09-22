@@ -12,12 +12,14 @@ import { checkProvider, createRunner, modelOptions, providerDisplayName } from '
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
+import { createGateLock, runLocalGate, shellGateSpawner } from '../src/adapters/gate-runner';
 import { createStore } from '../src/adapters/store';
 import { resolveDbPath } from '../src/adapters/store/db-path';
-import { woid } from '../src/adapters/ids';
+import { rid, woid } from '../src/adapters/ids';
 import { askOperatorPolicy, createPipeline } from '../src/core/pipeline';
+import { trackMechanicallyEvidenced } from '../src/core/derive';
 import { ForgeError, observeClosureEvidence, reconcileWorkspaceForge, type ForgeTarget, type RepoRef } from '../src/core/forge';
-import type { ChangesWatch, CommitResult, CreatePrResult, MergeResult, PushResult, RepoChanges } from '../src/core/console';
+import type { ChangesWatch, CommitResult, CreatePrResult, GateRunResult, MergeResult, PushResult, RepoChanges } from '../src/core/console';
 import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { driveOwnerTag, isDraftDrive } from '../src/core/runner';
@@ -429,6 +431,10 @@ ipcMain.handle(
       const url = await forge.createPr(ref, { head: status.branch, title: `${id} — ${summary.trim()}`, body: summary.trim() });
       const number = Number(/pull\/(\d+)/.exec(url)?.[1]);
       if (!Number.isInteger(number)) return { ok: false, error: 'pr created, but its url carries no number' };
+      // WO-0089: the PR-open moment fires the gate run BEST-EFFORT — under the lock, not awaited
+      // by this channel (the PR stands on its own; the measurement lands in the row and the next
+      // look shows it). A workspace declaring nothing no-ops here.
+      void runGateFor(id, root);
       return { ok: true, number, url };
     } catch (e) {
       return { ok: false, error: e instanceof ForgeError ? e.message : ((e as Error)?.message ?? String(e)) };
@@ -440,6 +446,15 @@ ipcMain.handle('docket:console:merge', async (_e, id: WorkOrderId, repoPath: str
   try {
     const root = consoleJail(id, repoPath);
     if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+    // WO-0089: a CI-exempt track's merge needs the SUBSTITUTE — the same rule deriveTrackMerge
+    // pins in core, enforced here against the hydrated track (never the renderer's word). A
+    // measured-and-passed local gate carries the exemption; anything else refuses: an exemption
+    // without a substitute is a hole, not a pass.
+    const wo = await store.getWorkOrder(id);
+    const track = wo?.tracks.find((t) => (t.repo as string) === basename(root));
+    if (track !== undefined && !trackMechanicallyEvidenced(track)) {
+      return { ok: false, error: 'local gate unmet — a CI exemption needs a substitute: run the local gate first' };
+    }
     // NO confirm here — the counted confirm is the UI's (ADR-0018 decision 3); this channel only
     // refuses what is outside the jail.
     const ref = forgeRefFor(id, root);
@@ -450,6 +465,28 @@ ipcMain.handle('docket:console:merge', async (_e, id: WorkOrderId, repoPath: str
     return { ok: false, error: e instanceof ForgeError ? e.message : ((e as Error)?.message ?? String(e)) };
   }
 });
+
+// --- WO-0089 — the LOCAL GATE channel. Docket (never the session) runs the workspace's declared
+//   gate commands in the jailed repo cwd, under the ONE host-wide lock (the antreo RAM case:
+//   N parallel drives must never run suites simultaneously), and records what it measured into
+//   the store's local_gate_run row. Fired on demand from the console card and best-effort at PR
+//   open (the evidence exists by the time anyone looks at the merge). ---
+const gateLock = createGateLock(); // the ONE instance — the composition root is its only home
+const gateSpawner = shellGateSpawner();
+const runGateFor = async (id: WorkOrderId, repoPath: string): Promise<GateRunResult> => {
+  try {
+    const root = consoleJail(id, repoPath);
+    if (root === undefined) return { ok: false, error: 'repo is not part of this work order' };
+    const commands = store.gateCommandsFor(id);
+    if (commands.length === 0) return { ok: false, error: 'no gate commands declared in workspace.yaml' };
+    const run = await runLocalGate({ spawner: gateSpawner, lock: gateLock, gitRun, cwd: root, commands });
+    store.recordLocalGateRun(id, rid(basename(root)), run);
+    return { ok: true, passed: run.results.every((r) => r.exit !== null && r.exit === r.expectExit), sha: run.sha };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+};
+ipcMain.handle('docket:gate:run', (_e, id: WorkOrderId, repoPath: string): Promise<GateRunResult> => runGateFor(id, repoPath));
 
 // --- Plan approval (WO-0016). Writes plan.md into the working tree (no commit) + flips the
 //   plan_approval gate. Path resolution stays server-side (ADR-0001). ---
