@@ -3399,6 +3399,68 @@ await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; ola
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Paralel A' }).count(), 0, 'the throwaway parallel WO survived');
 });
 
+// ===== WO-0091 — the stall gate: a live drive that stops making progress is the operator's turn =====
+// The verdict is derived from STAMPS, never wall-clock waiting: the events below carry `at`
+// stamps minted minutes in the past, so the fold crosses the threshold the moment they land.
+// TWO drives run in parallel (WO-0088's spine): one silent (the observed 1h11m · 205-token shape),
+// one slow-but-advancing — the board must tell them apart.
+await spec('WO-0091 durgunluk kapısı: sessizleşen sürüşün kartı sana döner; ilerleyen ve körü kalmış sürüş asla takıldı demez', async () => {
+  await stopAllDrives();
+  await backToBoard();
+  const readWoId = (title) => page.evaluate((t) => window.docket.source.getWorkOrders().then((os) => os.find((o) => o.title === t)?.id ?? null), title);
+  const stageAndDrive = async (title) => {
+    await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+    await page.waitForTimeout(350);
+    await page.locator('[role="dialog"] input').first().fill(title);
+    await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+    await page.waitForTimeout(1400);
+    await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+    await page.waitForTimeout(600); // the drive boots
+    await backToBoard();
+    const id = await readWoId(title);
+    assert.ok(id, `the stall WO did not resolve: ${title}`);
+    return id;
+  };
+  const woSilent = await stageAndDrive('Durgun sessiz');
+  const woSlow = await stageAndDrive('Durgun yavaş');
+  const bucketOf = (name) => page.locator('section').filter({ has: page.locator('h2', { hasText: name }) });
+  const cardIn = async (name, title) => (await bucketOf(name).locator('[data-wo-id]', { hasText: title }).count()) >= 1;
+  const old = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const ctx = (used, min) => ({ kind: 'context_usage', usedTokens: used, maxTokens: 200000, percentage: used / 200000, at: old(min) });
+  // --- the SILENT drive: feed live, count FROZEN, no tool event for half an hour ---
+  await taggedEmit(`wo:${woSilent}`, { kind: 'started', sessionId: 'stall-silent', at: old(30) });
+  await taggedEmit(`wo:${woSilent}`, ctx(1000, 30)); // feed goes LIVE (the first reading claims no movement)
+  await taggedEmit(`wo:${woSilent}`, ctx(1000, 1)); // alive (fresh) but frozen — the observed shape
+  // --- the SLOW drive: 25 minutes old, but the count keeps CLIMBING (5 min since the last move) ---
+  await taggedEmit(`wo:${woSlow}`, { kind: 'started', sessionId: 'stall-slow', at: old(25) });
+  await taggedEmit(`wo:${woSlow}`, ctx(1000, 25));
+  await taggedEmit(`wo:${woSlow}`, ctx(1180, 15)); // moved
+  await taggedEmit(`wo:${woSlow}`, ctx(1330, 5)); // moved again — the anchor reads the NEWEST movement
+  await page.waitForTimeout(500);
+  const stallText = await page.locator('[data-wo-id]', { hasText: 'Durgun sessiz' }).first().innerText();
+  assert.ok(stallText.includes("dk'dır ilerleme yok"), `the stall line missing: ${stallText}`);
+  assert.ok(await cardIn('Sıra sende', 'Durgun sessiz'), 'the stalled card never returned to the operator');
+  assert.ok(await cardIn('Çalışıyor', 'Durgun yavaş'), 'an advancing drive tripped the gate');
+  // --- a LOST feed is cannot-tell — the claim lifts, the card keeps working honestly ---
+  await taggedEmit(`wo:${woSilent}`, { kind: 'context_feed_lost', at: old(1) });
+  await page.waitForTimeout(400);
+  assert.ok(await cardIn('Çalışıyor', 'Durgun sessiz'), 'a feed-lost drive must read working (cannot-tell), never stalled');
+  // --- cleanup: end both drives, then the throwaway work orders leave the way they came ---
+  for (const id of [woSilent, woSlow]) {
+    await taggedEmit(`wo:${id}`, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 60, tokensOut: 20, usd: 0.01 } });
+  }
+  await page.waitForTimeout(800);
+  for (const title of ['Durgun sessiz', 'Durgun yavaş']) {
+    await page.locator('[data-wo-id]', { hasText: title }).first().click();
+    await page.waitForTimeout(450);
+    await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+    await page.waitForTimeout(300);
+    await page.getByText('Evet, sil').click();
+    await page.waitForTimeout(800);
+  }
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Durgun' }).count(), 0, 'a throwaway stall WO survived');
+});
+
 // ===== WO-0092 — the issue bridge: see the issues → spawn work orders =====
 // The 'sorun' world's connection parses to the fixture forge repo; under DOCKET_E2E the
 // composition root swaps the gh binary for the scripted e2e-forge runner — REAL adapter parsing,

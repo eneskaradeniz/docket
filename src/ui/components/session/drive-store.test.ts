@@ -196,6 +196,95 @@ describe('drive-store — the parallel spine (WO-0088)', () => {
     expect(store.activeSnapshots().map((s) => s.woId)).toEqual([WO_A, WO_B]);
   });
 
+  // WO-0091 — the stall snapshot: activeSnapshots derives the three-valued verdict against the
+  // wall clock; only the VERDICT enters the content compare, so a progress event never re-renders
+  // the App and a silent drive still crosses when stallTick re-notifies.
+  // Stamps are minted against the real clock but read IMMEDIATELY — no timer waits anywhere; the
+  // derivation is pure and these only fabricate OLD anchors.
+  const iso = (minAgo: number): string => new Date(Date.now() - minAgo * 60000).toISOString();
+  const ctx = (used: number, minAgo: number): RunnerEvent => ({
+    kind: 'context_usage',
+    usedTokens: used,
+    maxTokens: 200000,
+    percentage: used / 200000,
+    at: iso(minAgo),
+  });
+
+  it('WO-0091: a silent drive with a LIVE feed crosses into stall — the snapshot carries the named minutes', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(30) });
+    fake.push(tagA, { kind: 'tool_use', callId: 'c1', tool: 'Read', input: {}, at: iso(30) });
+    fake.push(tagA, ctx(1000, 25)); // feed live; first reading claims no movement
+    fake.push(tagA, ctx(1000, 1)); // alive (fresh) but FROZEN — the observed 1h/205-token shape
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toEqual({ minutes: 30 }); // anchored at the last tool event
+  });
+
+  it('WO-0091: slow but advancing never trips — a MOVING count keeps the verdict clear', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(25) });
+    fake.push(tagA, ctx(1000, 25));
+    fake.push(tagA, ctx(1180, 15)); // moved
+    fake.push(tagA, ctx(1330, 5)); // moved again — the anchor reads the NEWEST movement
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toBeUndefined();
+  });
+
+  it('WO-0091: a LOST feed reports cannot-tell — the snapshot never claims stall on unreadable silence', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(30) });
+    fake.push(tagA, ctx(1000, 25));
+    fake.push(tagA, { kind: 'context_feed_lost', at: iso(24) });
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toBeUndefined();
+  });
+
+  it('WO-0091: a feed that never delivered stays honest too (the boot-quiet drive claims nothing)', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(30) });
+    fake.push(tagA, { kind: 'tool_use', callId: 'c1', tool: 'Read', input: {}, at: iso(30) });
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toBeUndefined();
+  });
+
+  it('WO-0091: the verdict lifts the moment progress resumes — and ends with the drive', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(30) });
+    fake.push(tagA, ctx(1000, 25));
+    fake.push(tagA, ctx(1000, 1));
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toBeDefined();
+    fake.push(tagA, { kind: 'tool_use', callId: 'c2', tool: 'Bash', input: {}, at: iso(0) }); // it moves again
+    await fake.settle();
+    expect(store.activeSnapshots()[0]?.stall).toBeUndefined();
+    fake.push(tagA, doneEv());
+    await fake.settle();
+    expect(store.activeSnapshots()).toEqual([]); // the ended drive overlays nothing
+  });
+
+  it('WO-0091: stallTick re-derives against the wall clock — content-equal ticks keep the array identity', async () => {
+    const fake = fakePort();
+    const store = createDriveStore(fake.runner);
+    store.start('WO-A:free', woFree(WO_A));
+    fake.push(tagA, { kind: 'started', sessionId: 's1', at: iso(9) });
+    fake.push(tagA, ctx(1000, 9));
+    await fake.settle();
+    const before = store.activeSnapshots();
+    store.stallTick(); // inside the threshold: content-equal → the SAME array identity
+    expect(store.activeSnapshots()).toBe(before);
+    expect(before[0]?.stall).toBeUndefined();
+  });
+
   it('events fold into their own key only (per-key folds, per-key sessions)', async () => {
     const fake = fakePort();
     const store = createDriveStore(fake.runner);

@@ -109,6 +109,10 @@ export function cardReasonText(r: CardReason): string {
     case 'limit_stopped':
       // WO-0053: pano kartının satırı — neden + saat, saat-sız (çekirdek türetmesi Date bilmez).
       return `Kullanım limiti doldu — sıfırlanma ${UI.limitClock(r.resetAt)}`;
+    case 'stalled':
+      // WO-0091: durgunluk kapısı — sürüş hâlâ sürüyor (dürüst), ama gözlemlenen ilerleme yok.
+      // Operatör kelimesiyle: ne öldü denir ne de "çalışıyor" iddiası sürer.
+      return `Hâlâ sürüyor — ${r.minutes} dk'dır ilerleme yok`;
     case 'awaiting_plan_commit':
       // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Plan commiti
       // bekleniyor" twin is dead (one state, one sentence; "commit" never reaches the operator).

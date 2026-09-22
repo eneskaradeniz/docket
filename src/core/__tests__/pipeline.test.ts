@@ -1178,6 +1178,20 @@ describe('WO-0053 — the limit stamp routing', () => {
     expect(recordsOf(fs.calls)).toHaveLength(2); // started + turn terminal — the feed wrote nothing
   });
 
+  it('context_feed_lost forwards to the host fold and writes NOTHING — feed state, not a record (WO-0091)', async () => {
+    const fr = fakeRunner([
+      started(),
+      { kind: 'context_usage', usedTokens: 900, maxTokens: 200000, percentage: 0.45, at: '2026-09-22T10:00:00Z' },
+      { kind: 'context_feed_lost', at: '2026-09-22T10:01:00Z' },
+      done(),
+    ]);
+    const fs = fakeStore({ step: { prompt: 'p' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, stepDrive());
+    expect(events.some((e) => e.kind === 'context_feed_lost')).toBe(true);
+    expect(recordsOf(fs.calls)).toHaveLength(2); // started + turn terminal — the feed's death wrote nothing
+  });
+
   it('the DRAFT arm stamps under the draft owner (the taslak drive dies on the limit like any other)', async () => {
     const fr = fakeRunner([started('s-d'), limitError(), done()]);
     const fs = fakeStore({}, true, { draftPrompt: 'taslak promptu' });

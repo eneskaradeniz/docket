@@ -97,6 +97,13 @@ export type RunnerEvent =
       summary?: string; // ended — the provider's closing digest
       at?: string;
     }
+  // WO-0091 stall gate — the context feed's DEATH notice. The adapter disables the feed after one
+  // rejected read (the WO-0046 rule, previously invisible to the fold); this event surfaces that
+  // internal flip so feed-liveness becomes FACT, not inference: a dead feed means token movement
+  // is unobservable, and the stall derivation must answer cannot-tell, never stalled (WO-0053's
+  // absent-is-not-zero). No transcript line, no status change, no liveness claim — the feed's
+  // death says nothing about the drive itself; card/pane state only.
+  | { kind: 'context_feed_lost'; at?: string }
   // `code` is the vendor-neutral classification of a provider/config failure (WO-0025 / B1) — the adapter
   // classifies the provider's raw message (the vendor vocabulary never leaves the adapter, ADR-0006) so the
   // UI can render Turkish copy instead of a raw English string.
@@ -584,6 +591,15 @@ export interface LiveSessionState {
    *  entry-only concept: probe c1 showed a long-thinking model streams no transcript entries for
    *  minutes while the drive is healthy, so liveness is what honesty requires. */
   lastLifeAt?: string;
+  /** ISO moment the drive last made OBSERVABLE PROGRESS (WO-0091): a tool event, an entry, an
+   *  answered ask, an observed result — or a context reading whose usedTokens MOVED. Deliberately
+   *  stricter than `lastLifeAt` (which any fresh reading refreshes): a repeated frozen reading
+   *  proves the drive alive but not advancing, and only movement may reset the stall clock. */
+  lastProgressAt?: string;
+  /** The context feed's state (WO-0091): 'live' once a reading arrived, 'dead' after the adapter
+   *  reported the feed lost. Absent until either — no reading yet means token movement is simply
+   *  unknown (the honest-absent rule; never a fabricated 'live'). */
+  contextFeed?: 'live' | 'dead';
   lastError?: string;
   /** The vendor-neutral classification of `lastError`, when the adapter could classify it (WO-0025). */
   lastErrorCode?: ProviderErrorCode;
@@ -639,6 +655,8 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // A new/resumed drive supersedes a pending plan (e.g. after approval) and any stale asks.
       // The drive's OPENING rides the transcript as a clocked note — a resumed session accumulates
       // one per run, so the döküm reads as the multi-run timeline it is (2026-08-24).
+      // WO-0091: the feed state dies with the prior leg (the adapter-side flag is per-runDrive);
+      // the opening itself is the first progress anchor.
       return {
         ...state,
         status: 'running',
@@ -647,15 +665,16 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         pendingAsks: [],
         lastRefusal: undefined,
         lastLimit: undefined,
+        contextFeed: undefined,
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'assistant_text':
       return {
         ...state,
         status: state.status === 'idle' ? 'running' : state.status,
         entries: [...state.entries, { speaker: 'assistant', text: event.text, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'tool_use':
       // callId rides the entry (2026-08-23 §5): the transcript pairs a result to ITS call —
@@ -663,7 +682,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       return {
         ...state,
         entries: [...state.entries, { speaker: 'tool_use', tool: event.tool, detail: summarizeToolInput(event.input), callId: event.callId, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'tool_result':
       // NOTE: a tool_result does NOT clear asks — with parallel asks we cannot know WHICH ask it answers
@@ -671,7 +690,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       return {
         ...state,
         entries: [...state.entries, { speaker: 'tool_result', summary: event.summary, isError: event.isError, callId: event.callId, ...(event.parentToolUseId ? { parentToolUseId: event.parentToolUseId } : {}) }],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'permission_request':
       if (state.pendingAsks.some((a) => a.requestId === event.requestId)) return state; // dedupe on resume replays
@@ -685,11 +704,12 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // WO-0046 (review f1): the stamp refreshes the liveness anchor — the drive was parked on the
       // OPERATOR, and an anchor left at the pre-ask entry would flash the staleness line the instant
       // the answer resumes the fold, blaming the drive for the operator's own wait.
+      // WO-0091: the progress anchor follows the same rule — the operator's wait is not a stall.
       return {
         ...state,
         pendingAsks: state.pendingAsks.filter((a) => a.requestId !== event.requestId),
         status: state.pendingAsks.length > 1 ? 'stopped_asking' : state.status === 'stopped_asking' ? 'running' : state.status,
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'plan_ready':
       return { ...state, status: 'plan_ready', pendingPlan: event.planText };
@@ -712,10 +732,12 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // steer_queued precedent), no status change, and NEVER a cost touch: the pane costline
       // belongs to the accumulated terminal `turn_complete` (and the context_usage ride-along);
       // writing the per-turn delta here would double-count both.
+      // WO-0091: an OBSERVED provider result (incl. a steered drive's held intermediate) is
+      // progress — the anchor moves even though no transcript line appears.
       return {
         ...state,
         ...(event.usage ? { lastUsage: event.usage } : {}),
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'interrupted':
       // An intentional stop: terminal and calm. The asks die with the abort (the runner's finally
@@ -741,24 +763,38 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
       // The note applied at the boundary — the operator line is first-class session content (not a
       // `note`: those are live-only Docket commentary). Delivery is authoritative even for an id the
       // fold never saw queued (a re-queue raced a remount).
+      // WO-0091: the drive ACTING on the note is progress — the anchor moves with the delivery.
       return {
         ...state,
         pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId),
         entries: [...state.entries, { speaker: 'operator', text: event.text, noteId: event.noteId }],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     case 'steer_retracted':
       return { ...state, pendingNotes: state.pendingNotes.filter((n) => n.id !== event.noteId) };
-    case 'context_usage':
+    case 'context_usage': {
       // No transcript line (the steer_queued precedent) — the reading is pane state. `cost` is the
       // drive-so-far spend (D3 folds one terminal turn_complete; this is the only mid-drive token
       // source) and `at` refreshes the staleness anchor: a fresh reading is a liveness proof.
+      // WO-0091: the reading also marks the feed LIVE, and stamps PROGRESS only when usedTokens
+      // MOVED against the prior reading — the first reading has no baseline and claims nothing
+      // (absent is not zero); a frozen count refreshes liveness but never the stall clock.
+      const moved = state.context !== undefined && event.usedTokens !== state.context.usedTokens;
       return {
         ...state,
         context: { usedTokens: event.usedTokens, maxTokens: event.maxTokens, percentage: event.percentage },
+        contextFeed: 'live',
         ...(event.cost ? { cost: event.cost } : {}),
         ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(moved && event.at ? { lastProgressAt: event.at } : {}),
       };
+    }
+    case 'context_feed_lost':
+      // WO-0091: the adapter disabled the context feed (one rejected read — the WO-0046 rule,
+      // surfaced as an event so the fold holds feed-liveness as fact). Card/pane state only: no
+      // transcript line, no status change, no liveness claim — the feed's death says nothing about
+      // the drive itself.
+      return { ...state, contextFeed: 'dead' };
     case 'limit_windows':
       // WO-0053: a windows reading — pane state only (the context_usage precedent). No transcript
       // line, no status change, never a cost touch. A status-less (pull) reading carries the
@@ -801,7 +837,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
               ...(event.at ? { at: event.at } : {}),
             },
           ],
-          ...(event.at ? { lastLifeAt: event.at } : {}),
+          ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
         };
       }
       if (!open) return state; // no OPEN task behind this end — dropped (no orphan wall)
@@ -818,7 +854,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
             ...(event.at ? { at: event.at } : {}),
           },
         ],
-        ...(event.at ? { lastLifeAt: event.at } : {}),
+        ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
     }
     case 'error':
@@ -878,6 +914,55 @@ export function staleMinutes(state: Pick<LiveSessionState, 'status' | 'lastLifeA
   const then = Date.parse(state.lastLifeAt);
   if (Number.isNaN(then)) return undefined;
   return Math.max(0, Math.floor((nowMs - then) / 60000));
+}
+
+// ===== WO-0091 — the stall gate: a live drive that stops making progress is the operator's turn =====
+//
+// The twin of the staleness line with a strictly stronger claim: staleness (WO-0046) says "quiet"
+// (no liveness proof for STALE_AFTER_MIN); stall says "quiet AND not advancing" — no token
+// MOVEMENT and no tool events past STALL_AFTER_MIN, with the context feed live so the silence is
+// actually observable. The gate SURFACES, it never kills (the order's frozen rule): the drive
+// keeps running underneath; only the board card's claim changes.
+
+/** The stall threshold (WO-0091, operator ruling 2026-09-22): one constant to start, named and
+ *  test-pinned; per-role tuning is explicitly deferred until there is data (a verifier reading a
+ *  diff is quieter than an implementer writing — the order says tune once, not guess twice).
+ *  Deliberately above STALE_AFTER_MIN (3): a long build legitimately clears the staleness line
+ *  while the stall gate still needs the fuller, movement-free silence. */
+export const STALL_AFTER_MIN = 10;
+
+/** The three-valued verdict. 'stalled' carries the whole stalled minutes (the card reason's
+ *  payload); 'cannot-tell' is the honest no-claim — the derivation never guesses. */
+export type StallStatus = { kind: 'progressing' } | { kind: 'stalled'; minutes: number } | { kind: 'cannot-tell' };
+
+/** Derive the stall verdict — PURE, clock injected (tests pass `nowMs`; the drive store passes
+ *  Date.now() at snapshot recompute — the caller owns the clock, the staleMinutes discipline).
+ *  Never 'stalled' unless EVERY input agrees:
+ *  - the fold must be 'running' (an asking/stopped/errored drive keeps its own words — the
+ *    asking surface already says why it waits);
+ *  - the drive must not be WAITING on the host-wide gate lock (WO-0089's seam: a lock wait is
+ *    orchestration, not paralysis; the composition layer feeds the flag);
+ *  - the context feed must be LIVE (WO-0053's absent-is-not-zero: a dead or never-delivered
+ *    feed makes token movement unobservable — cannot-tell, never stalled);
+ *  - a progress anchor must exist and parse (the boot window claims nothing).
+ *  Long is not stuck (the frozen rule): the elapsed clock alone stalls nothing — it only times
+ *  how long the OBSERVED silence has lasted. */
+export function stallVerdict(input: {
+  status: LiveSessionStatus;
+  lastProgressAt?: string;
+  contextFeed?: 'live' | 'dead';
+  /** WO-0089: the drive waits on the host-wide gate lock — waiting is not stalling. */
+  waitingOnGateLock?: boolean;
+  nowMs: number;
+}): StallStatus {
+  if (input.status !== 'running') return { kind: 'cannot-tell' };
+  if (input.waitingOnGateLock === true) return { kind: 'cannot-tell' };
+  if (input.contextFeed !== 'live') return { kind: 'cannot-tell' };
+  if (input.lastProgressAt === undefined) return { kind: 'cannot-tell' };
+  const then = Date.parse(input.lastProgressAt);
+  if (Number.isNaN(then)) return { kind: 'cannot-tell' };
+  const minutes = Math.max(0, Math.floor((input.nowMs - then) / 60000));
+  return minutes >= STALL_AFTER_MIN ? { kind: 'stalled', minutes } : { kind: 'progressing' };
 }
 
 /** The limit card's ONE decision (WO-0053): has the stamped reset moment passed? Pure, clock

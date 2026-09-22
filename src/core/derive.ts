@@ -532,12 +532,31 @@ export interface LiveDriveFact {
   running: boolean; // the drive handle is live (booting or streaming)
   booting: boolean; // started, no first event folded yet — the subprocess spawn window
   status: LiveSessionStatus; // the fold's status
+  /** WO-0091: the stall verdict crossed (stallVerdict's 'stalled' arm, derived store-side against
+   *  the wall clock so the snapshot cache stays identity-stable per streamed line). Present ONLY
+   *  when every input agreed — a live context feed, a parsed progress anchor, no gate-lock wait. */
+  stall?: { minutes: number };
 }
 
 export function overlayLiveDrive(view: WorkOrderCardView, live: LiveDriveFact | undefined): WorkOrderCardView {
   if (!live || !live.running) return view;
-  if (!(live.booting || live.status === 'running')) return view;
   if (view.bucket === 'closed') return view;
+  if (!(live.booting || live.status === 'running')) return view;
+  // WO-0091 — the stall gate: a drive that stopped making progress is the OPERATOR's turn. The
+  // card flips to the up bucket with the named reason (attention rank 0, beside the unanswered
+  // asks) while the drive itself keeps running underneath — the gate surfaces, it never kills
+  // (the frozen rule: aborting stays the operator's act, in the live pane's DriveControls). No ▸
+  // glyph: the card itself is the act — open it and decide.
+  if (!live.booting && live.stall) {
+    return {
+      ...view,
+      column: 'your_turn',
+      bucket: 'up',
+      reason: { kind: 'stalled', minutes: live.stall.minutes },
+      action: undefined,
+      actionRank: 0,
+    };
+  }
   return {
     ...view,
     column: 'running',

@@ -520,9 +520,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             record('running');
             yield ev;
             break;
-          default: // tool_use, a runner-emitted error, the WO-0046/WO-0053 live feeds — forward as-is
-            // (context_usage and limit_windows are pane state: yielded to the host fold, never a
-            // store call — the drive is alive; the row's checkpoints ride the records above.)
+          default: // tool_use, a runner-emitted error, the WO-0046/WO-0053/WO-0091 live feeds — forward as-is
+            // (context_usage, limit_windows and context_feed_lost are pane state: yielded to the
+            // host fold, never a store call — the drive is alive; the row's checkpoints ride the
+            // records above.)
             yield ev;
             break;
         }

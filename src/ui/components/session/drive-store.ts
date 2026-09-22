@@ -18,7 +18,7 @@
 //   cost/stage too), not just the open detail.
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { DriveInput, LiveSessionState, PermissionDecision, TranscriptLine } from '../../../core/runner';
-import { driveOwnerTag, foldSessionEvent, initialSessionState, isDraftDrive } from '../../../core/runner';
+import { driveOwnerTag, foldSessionEvent, initialSessionState, isDraftDrive, stallVerdict } from '../../../core/runner';
 import type { SessionRunner } from '../../../core/runner';
 import type { LimitWindow } from '../../../core/types';
 
@@ -39,6 +39,11 @@ export interface ActiveDriveSnapshot {
   running: boolean;
   booting: boolean;
   status: LiveSessionState['status'];
+  /** WO-0091: the stall verdict crossed — core's stallVerdict returned 'stalled' against the wall
+   *  clock (derived in activeSnapshots; only the VERDICT enters the content compare so a streamed
+   *  line never re-renders the App). Absent for progressing/cannot-tell alike — the card claims
+   *  nothing it cannot back. */
+  stall?: { minutes: number };
 }
 
 /** WO-0060: the appbar chip's facts — the same ONE active drive, read for ACCOUNT health instead of
@@ -124,7 +129,12 @@ export function createDriveStore(runner: SessionRunner) {
    *  overlays N cards; the ✦ draft never overlays a board card, the locked ruling). CACHED WITH
    *  CONTENT COMPARISON: notify() fires on every folded transcript line, and useSyncExternalStore
    *  re-renders on identity change — the ARRAY identity holds until a member's facts actually
-   *  change (start, a status transition, the end), so the App never re-renders per streamed line. */
+   *  change (start, a status transition, the end, a stall crossing), so the App never re-renders
+   *  per streamed line.
+   *  WO-0091: the stall verdict is derived HERE against the wall clock — a drive going silent
+   *  fires no event, so time-only transitions land via stallTick()'s re-notify (the App's slow
+   *  interval). Only the VERDICT enters the compare; the raw anchors move per streamed line and
+   *  must not. */
   function activeSnapshots(): ActiveDriveSnapshot[] {
     if (!snapDirty) return snaps;
     snapDirty = false;
@@ -133,16 +143,41 @@ export function createDriveStore(runner: SessionRunner) {
       const h = drives.get(key);
       const woId = keyWo.get(key);
       if (!h || woId === undefined) continue; // the draft arm never enters the board overlay
-      next.push({ key, woId, running: h.running, booting: h.booting, status: h.state.status });
+      const verdict = stallVerdict({
+        status: h.state.status,
+        lastProgressAt: h.state.lastProgressAt,
+        contextFeed: h.state.contextFeed,
+        // WO-0089 seam: the host-wide gate lock feeds a WAITING flag here when it lands — a drive
+        // parked on the lock is orchestration, not paralysis, and must never read as stalled.
+        // Nothing feeds it yet (the sibling PR owns the lock); the pure derivation + its test pin
+        // the contract today, the wiring joins at merge time.
+        nowMs: Date.now(),
+      });
+      next.push({
+        key,
+        woId,
+        running: h.running,
+        booting: h.booting,
+        status: h.state.status,
+        ...(verdict.kind === 'stalled' ? { stall: { minutes: verdict.minutes } } : {}),
+      });
     }
     if (snaps.length === next.length && snaps.every((s, i) => {
       const n = next[i]!;
-      return s.key === n.key && s.woId === n.woId && s.running === n.running && s.booting === n.booting && s.status === n.status;
+      return s.key === n.key && s.woId === n.woId && s.running === n.running && s.booting === n.booting && s.status === n.status && s.stall?.minutes === n.stall?.minutes;
     })) {
       return snaps;
     }
     snaps = next;
     return snaps;
+  }
+
+  /** WO-0091: the stall clock's tick. A drive going silent fires NO event, so time-only
+   *  transitions (progressing → stalled, the minute count on the line) would never re-derive —
+   *  the App calls this on a slow interval while any drive runs, and the snapshot content-compare
+   *  keeps every tick between crossings free. */
+  function stallTick(): void {
+    notify();
   }
 
   /** WO-0060: the appbar chip's snapshot — `activeSnapshots`' content-compare discipline, keyed off
@@ -348,6 +383,7 @@ export function createDriveStore(runner: SessionRunner) {
     snapshot,
     activeSnapshots,
     activitySnapshot,
+    stallTick,
     start,
     restart,
     decide,

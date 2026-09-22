@@ -106,6 +106,9 @@ export function cardReasonText(r: CardReason): string {
     case 'limit_stopped':
       // WO-0053: the board card's line — the reason + the clock, clock-free (core derives no Date).
       return `Usage limit reached — resets ${UI.limitClock(r.resetAt)}`;
+    case 'stalled':
+      // WO-0091: the stall gate — honest that it still runs, plain that nothing moves.
+      return `Still running — no progress for ${r.minutes} min`;
     case 'awaiting_plan_commit':
       // WO-0039: the board reads the SAME value as the detail's ActionCard — the "Awaiting plan
       // commit" twin is dead (one state, one sentence; "commit" never reaches the operator).
