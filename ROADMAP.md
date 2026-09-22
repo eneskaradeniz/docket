@@ -731,6 +731,9 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
       (the operator, 2026-09-22: "claude, agy, codex... abonelik ve api istek ücreti ayrılıyor");
       the two feeds already exist (WO-0053's `limit_windows` + `cost_usd`) — the WO names the axis
       on every cost surface and re-anchors the budget gate's meaning per metering kind.
+- [ ] **WO-0100** — the app's own face: name, Kuyruk icons, native menu, running-work tray;
+      packager config (signing/notarization/auto-update stay on Later). Order:
+      `docs/work-orders/WO-0100-uygulama-kimligi/order.md`.
 - [ ] merge-time rebase of the remaining wave branches (operator's DEVIR.md discipline, unnumbered
       until the pieces above land).
 

@@ -12,6 +12,7 @@ import { orderMdCarriesRule, parseOrderMd } from '../../core/order-md';
 import { roadmapTaskOf, type RoadmapView } from '../../core/roadmap';
 import { DEFAULT_DOCS_ROOT } from '../../core/roadmap-md';
 import type { WorkspaceUsageView } from '../../core/usage';
+import type { ChromeNavigate } from '../../core/tray-menu';
 import type { WorkspaceOverview } from '../../core/overview';
 import { useLabels } from '../data/locale';
 import { AppShell, type AppbarActivity, type Surface } from '../chrome/AppShell';
@@ -37,8 +38,10 @@ type LoadState = 'loading' | 'ready' | 'error';
 // an adapter. The data port is async (WO-0009 — SQLite); workspaces + work orders load once
 // on mount, the selected work order + its docs load on selection, each with a state for the
 // in-flight/failed case. The runner is provided via context for the session pane.
-export function App({ source, settings, runner, forge: forgeWatch, health: healthWatch, changes: changesBridge }: { source: WorkOrderSource;
-  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch; health?: SystemHealthWatch; changes?: ChangesBridge }) {
+export function App({ source, settings, runner, forge: forgeWatch, health: healthWatch, changes: changesBridge, chromeNav }: { source: WorkOrderSource;
+  settings: AppSettings; runner: SessionRunner; forge?: ForgeWatch; health?: SystemHealthWatch; changes?: ChangesBridge;
+  /** WO-0100: the native chrome's navigate push (tray rows, Pano'ya dön, the menu's Ayarlar…). */
+  chromeNav?: { onNavigate: (cb: (p: ChromeNavigate) => void) => () => void } }) {
   const { UI, woIdLabel } = useLabels();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -55,6 +58,8 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // selectedId reveals the last one, so the roadmap → WO chip → detail → back round-trip needs no
   // second state.
   const [surface, setSurface] = useState<Surface>('board');
+  // WO-0100: the native menu's `Ayarlar…` — a request counter the shell turns into the settings modal.
+  const [settingsRequest, setSettingsRequest] = useState(0);
   // WO-0049: the roadmap view (undefined = loading) + the effective structure root. Read once per
   // mount/entry (WO-0048 R2) + at the moments the facts move (drive ends, a WO's task link changes,
   // a save, a root switch) — never on a timer.
@@ -610,8 +615,64 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
       surface={surface}
       onSurfaceChange={setSurface}
       driveActivity={appbarActivity}
+      settingsRequest={settingsRequest}
     />
   ) : null;
+
+  // WO-0100 — the native chrome's navigate push. The latest request is held until the board data is
+  // ready; a WO the list does not know yet triggers ONE list refresh, then a retry — still unknown
+  // is a silent no-op. No new surface: the same state moves the in-app routes already make.
+  const chromeNavRef = useRef<ChromeNavigate | null>(null);
+  const chromeNavRetryRef = useRef<WorkOrder[] | null>(null); // the list the refresh was asked over
+  const [chromeNavNonce, setChromeNavNonce] = useState(0);
+  useEffect(() => {
+    if (chromeNav === undefined) return;
+    return chromeNav.onNavigate((p) => {
+      chromeNavRef.current = p;
+      chromeNavRetryRef.current = null;
+      setChromeNavNonce((n) => n + 1);
+    });
+  }, [chromeNav]);
+  useEffect(() => {
+    const p = chromeNavRef.current;
+    if (p === null || load === 'loading') return;
+    // Settings needs only the mounted shell (AppShell renders for any load but 'loading', the
+    // error card included); the board-bound requests wait for the data.
+    if (p.kind !== 'settings' && load !== 'ready') return;
+    const done = (): void => {
+      chromeNavRef.current = null;
+      chromeNavRetryRef.current = null;
+    };
+    if (p.kind === 'wo') {
+      const wo = workOrders.find((w) => w.id === p.id);
+      if (wo === undefined) {
+        if (chromeNavRetryRef.current === null) {
+          chromeNavRetryRef.current = workOrders;
+          refreshWorkOrders();
+        } else if (chromeNavRetryRef.current !== workOrders) {
+          done(); // refreshed and still unknown
+        }
+        return;
+      }
+      done();
+      // the WO-0074 rule: the detail belongs to its own workspace
+      setWorkspaceId(wo.workspace);
+      setSelectedId(wo.id);
+    } else if (p.kind === 'draft') {
+      done();
+      if (!workspaces.some((w) => w.id === p.workspaceId)) return;
+      setWorkspaceId(p.workspaceId);
+      setSelectedId(null);
+      setSurface('roadmap');
+    } else if (p.kind === 'board') {
+      done();
+      setSelectedId(null);
+      setSurface('board');
+    } else {
+      done();
+      setSettingsRequest((n) => n + 1);
+    }
+  }, [chromeNavNonce, load, workOrders, workspaces, refreshWorkOrders]);
 
   // The active workspace — needed by the main chain below (the roadmap screen takes it as a prop).
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);

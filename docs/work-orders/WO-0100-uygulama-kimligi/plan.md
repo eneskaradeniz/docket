@@ -425,3 +425,21 @@ The operator approved the plan in the terminal ("önerinle en iyi şekilde yap")
 7. Merge order: WO-0100 lands after WO-0098 and WO-0099.
 
 Electron pin to exactly `43.3.0` is approved; it matches the version the lockfile already resolves, so it changes nothing installed today.
+
+## 15. Implementation deviations (2026-09-23, appended — §1-14 stand as approved)
+
+1. **§3 macOS Pencere gains `Kapat` (role `close`, ⌘W)** between `zoom` and the separator. The replaced default menu carried ⌘W through its `fileMenu` role; the §3 template has no Dosya menu, and `windowMenu` with an explicit submenu drops the role's defaults. Without it ⌘W dies and §11 step 6 cannot be run.
+2. **§2 gains a fifth source, `build/tile-small16.svg`.** Every colored 16 px raster (`icons/16x16.png`, the 16 px frames of `icon.ico` and `tray.ico`, the .icns `icon_16x16`) comes from it: a 0.5× downscale of `tile-small.svg` puts its 1.5 px strokes on half pixels, the 16-box geometry keeps them whole. The rule reads: 16 px → `tile-small16.svg`; 17-32 px → `tile-small.svg`; ≥ 48 px → `logo.svg`.
+3. **Tray titles escape `&`** (`menuLabelLiteral` in `src/core/tray-menu.ts`): a native menu reads a lone `&` as a mnemonic marker, so an operator title like "Build & deploy" would lose it. Applied after the 60-character trim.
+4. **`Ayarlar…` from the native menu is delivered while the board load failed** (the error card still mounts AppShell and its gear); `wo` / `draft` / `board` requests still wait for `ready`.
+
+## 16. Logo re-pick (operator, 2026-09-23)
+
+After seeing direction B (D-lamp) in the running app, the operator rejected it ("logo beğenmedim"). Five fresh directions were shown side by side (Fiş, Şiş, Kuyruk, küçük d, Amber fiş), and the operator picked **Kuyruk**, which this section records as direction C. §2's direction B stays as the record of the first pick. This section supersedes it for the shipped assets.
+
+- **Kuyruk** is the board itself: three work rows on the `#0a0a0a` tile. The middle row carries the amber `#f5b544` lamp (the running work), and the third row is shorter and dim `#8f8f8f`.
+- **1024 tile** (`build/logo.svg`): the §2 tile rect (x/y 100, 824 square, rx 185, `#262626` hairline). Rows are x 296, height 96, rx 48: at y 318 (w 432, ink), y 464 (w 432, ink) and y 610 (w 300, dim). The lamp is a circle at cx 344, cy 512, r 30.
+- **17-32 px** (`tile-small.svg`): full-bleed rx 7. Rows are 4 px tall on whole pixels (x 7; y 8/14/20; widths 18/18/12). The lamp is a 2x2 amber block at (8,15).
+- **16 px** (`tile-small16.svg`): rows are 2 px tall (x 3; y 4/7/10; widths 10/10/7). The lamp is a 2x2 amber block at the start of the middle row.
+- **Menubar template** (`tray.svg` @2x, `tray16.svg` @1x): black + alpha only. A template cannot be amber, so the lamp becomes a separate block ahead of the middle row (bullet + line). All edges sit on whole pixels.
+- The pipeline, tools and output set are unchanged (§2, §15.2's size rule). `npm run icons` regenerated every output. The 256/32/16 px tiles and both templates were inspected upscaled and read crisply.

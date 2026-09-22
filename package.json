@@ -2,6 +2,11 @@
   "name": "docket",
   "private": true,
   "version": "0.0.0",
+  "description": "Docket — work-order console",
+  "author": {
+    "name": "Enes Karadeniz",
+    "email": "eneskrdnz28@gmail.com"
+  },
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -13,7 +18,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "test:ui": "npm run build && node e2e/ui.mjs"
+    "test:ui": "npm run build && node e2e/ui.mjs",
+    "icons": "node scripts/icons.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.221",
@@ -36,18 +44,73 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
-    "electron": "^43.3.0",
+    "electron": "43.3.0",
+    "electron-builder": "26.15.3",
     "playwright-core": "^1.62.1",
+    "png-to-ico": "3.0.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.8.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.0",
     "vite-plugin-electron": "^1.1.1",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "dev.docket.app",
+    "productName": "Docket",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk/**",
+      "node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build",
+        "to": "build",
+        "filter": [
+          "icon.png",
+          "icon.ico",
+          "tray*.png",
+          "tray.ico"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "Development",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "Enes Karadeniz <eneskrdnz28@gmail.com>"
+    }
   }
 }

@@ -21,3 +21,7 @@ docs/work-orders/*/screenshots/
 
 .history/
 .remember/
+# WO-0100: electron-builder output (npm run pack / dist).
+release/
+# WO-0100: the icns intermediate scripts/icons.mjs builds and deletes.
+build/icon.iconset/
