@@ -697,8 +697,9 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
       `docket:runner:event`, keyed steer/interrupt/decide in the pipeline, the renderer drive-store
       a Map of active keys. Per-WO cwd override: order.md front-matter `cwd:` (validated; the fence
       jails to that root). The ask card names its WO. The review round's M1 (a dead-key Durdur
-      falling through to the last-started sibling) closed red→green in-PR. 1141 unit · E2E 105/105
-      incl. the multi-drive spec. Order:
+      falling through to the last-started sibling) closed red→green in-PR. 1141 unit · E2E green
+      incl. the multi-drive spec — the count figure in #93's body was wrong; the true count at
+      merge was 99 specs (corrected at WO-0092's review). Order:
       `docs/work-orders/WO-0088-paralel-omurga/order.md`.
 - [ ] **WO-0089** — the local gate: a CI exemption needs a substitute, not a hole — Docket runs the
       repo's gate commands and records what it measured (drafted by the WO-0088 round; tracking
@@ -708,9 +709,15 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
 - [ ] **WO-0091** — the stall gate: a live drive that stops making progress becomes the operator's
       turn (drafted by the WO-0088 round; touches WO-0046's informs-never-acts line — ADR round owed;
       tracking issue #92).
-- [ ] **WO-0092** — the issue bridge: the WO-0081 report's frozen 3-call read + spawn a work order
-      from an issue (`issue:` front-matter, body via one drill-down) — the wave entry: see the
-      issues, turn them into work orders.
+- [x] **WO-0092** — the issue bridge (PR #94, merge `2f1ebe2`, 2026-09-22): the frozen 3-call
+      read as adapter-extra methods (probe-log fixtures), the observed `forge_issue` cache
+      (never a body; issue reads isolated per-repo — a failed look never wipes), the Depo
+      issues fold, and the spawn: ▸ İş emri aç (title/body via one drill-down, `issue:`
+      front-matter, batch with one counted confirm, retry-honest) + the two-way link. The
+      review round closed the seed-incident hazard at BOTH ends — writes refuse on a
+      disconnected decision store (fail-fast, operator words) and the state is unreachable
+      from the UI (remove/re-point refuses). 1173 unit · E2E 103/103 (the true count; #93's
+      "105" corrected). Order: `docs/work-orders/WO-0092-issue-koprusu/order.md`.
 - [ ] **WO-0093** — worktree automation: "Başlat" prepares the working copy, closure removes it —
       amends WO-0088's operator-worktree ruling (operator: "setup.sh olmasın, repoyu kirletmesin").
 - [ ] **WO-0094** — agent issue creation: `gh issue create` joins the risky set (the WO-0088 round

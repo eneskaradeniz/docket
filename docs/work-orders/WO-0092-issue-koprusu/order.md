@@ -2,7 +2,7 @@
 id: WO-0092
 title: "The issue bridge — the forge's issues visible, work orders spawned from them"
 workspace: docket
-status: open
+status: closed
 mode: direct # plan | direct
 review: full # light | full
 review_mode: gates
@@ -113,3 +113,34 @@ line (WO-0095/0096).
   (+ the fence gap), WO-0095 the agy probe (incl. the group-based quota windows the
   operator's panel showed — a `limit_windows` mapping candidate), WO-0096 the second
   adapter. Then: auto-rebase of remaining wave branches after a merge.
+
+## Closure (2026-09-22)
+
+- The frozen 3-call read landed as adapter-extra methods with the probe's raw logs as
+  fixtures (the WO-0063 pattern); the observed `forge_issue` cache carries no bodies, ever
+  (the list argv is test-pinned; the drill-down is the only body path and it lands only in
+  the order.md the operator saves). The Depo fold renders the issues; ▸ İş emri aç spawns
+  single or batch (counted confirm, retry-honest) with `issue:` front-matter round-tripping
+  and the two-way link.
+- The review round's MAJOR closed red-first at BOTH ends: a workspace whose decision store
+  cannot resolve REFUSES every write (fail-fast, operator words — create/update/approve/
+  plan/save/close/roadmap/draft-approve), and the state is unreachable from the UI
+  (removing the decision-store connection refuses "re-point first"; re-pointing to a
+  connection-less slug refuses; the settings modal saves the effective selection). The
+  E2E seed incident's product teeth — writes falling through to the process.cwd() fallback —
+  are gone; deletes were already hardened, writes now match.
+- Minors folded: the issue look isolates per-repo (`issueError` — a failed look never wipes
+  the PR/checks cache, the fold speaks the reason), the batch create phase skips
+  already-created refs on retry, the issue-spawn track seed applies and resolves through the
+  connection row.
+- The implementer's first E2E seed resolved the cwd fallback and wrote 10 stray WO dirs into
+  this repo (WO-0093..0102, `workspace: sorun`) — removed the same day; the M1 guard above is
+  the product fix. The WO-0057/0058 deletions the round was falsely suspected of predate the
+  implementer's first call (origin unknown, likely this shared checkout's other session);
+  restored, nothing lost.
+- Ladder at merge: typecheck ×2 · unit 1173/1173 · boundaries · build · E2E 103/103 (true
+  count — PR #93's body said 105/105 and that figure was never true; main had 99 specs at
+  its merge, verified; the ROADMAP WO-0088 line carries the correction).
+- PR #94 (https://github.com/eneskaradeniz/docket/pull/94), head `e65265f`, merged `2f1ebe2`;
+  closed at the commit carrying this line.
+- The operator's manual tour is deferred to the standing test phase (BUILD-FIRST, 2026-09-19).
