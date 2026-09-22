@@ -99,7 +99,7 @@ export interface SessionStore {
   /** Append a steer-lifecycle audit event to the WO timeline (WO-0045). Detail may quote the note —
    *  the operator's own words — never an environment value (CLAUDE.md 2026-08-26). WO-only by design
    *  (D15): a draft has no wo_event home and needs none — the roadmap file + git is the record. */
-  recordAuditEvent(workOrderId: WorkOrderId, kind: 'steer_queued' | 'steer_delivered' | 'steer_retracted', detail: string): void;
+  recordAuditEvent(workOrderId: WorkOrderId, kind: 'steer_queued' | 'steer_delivered' | 'steer_retracted' | 'finding_dismissed', detail: string): void;
   /** The roadmap DRAFT drive's first prompt (WO-0050 / D5), assembled from the workspace's facts:
    *  the slug, the known repo slugs, the roadmap file's path — core's `roadmapDraftPrompt` builds
    *  the text (paths-not-contents; ONE mechanism). undefined when the workspace does not resolve
@@ -119,4 +119,23 @@ export interface SessionStore {
    *  2026-08-27: supersede — re-opening ✦ already decided the old proposal is dead). An İtiraz
    *  resume never clears; only this call and `approveRoadmapDraft` do. */
   clearRoadmapDraft(workspaceId: WorkspaceId): void;
+  
+  /** 
+   * Retrieve all pending findings for a work order (WO-0099). 
+   */
+  pendingFindingsFor(workOrderId: WorkOrderId): PendingFinding[];
+  
+  /** 
+   * Consume or dismiss a pending finding by ID (WO-0099). 
+   */
+  deletePendingFinding(id: number): void;
+}
+
+export interface PendingFinding {
+  id: number;
+  repo: string;
+  pointer: string;
+  problem: string;
+  sourceSessionId: number;
+  createdAt: string;
 }

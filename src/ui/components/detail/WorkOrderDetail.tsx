@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveSessionState, PermissionAsk } from '../../../core/runner';
 import { initialSessionState, limitCrossing, seedLiveState, summarizeToolInput } from '../../../core/runner';
 import { type AskAnswer, type AskQuestion, askDecisionAll, parseAskRequest } from '../../../core/askq';
-import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView } from '../../../core/types';
+import type { StepRole, StepSpec, StepView, TrackId, WorkOrderDetailView, Workspace } from '../../../core/types';
 import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } from '../../../core/derive';
 import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
-import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../../core/source';
 import type { WorkspaceBudgetView } from '../../../core/budget';
 import type { RepoChanges } from '../../../core/console';
 import { useLabels } from '../../data/locale';
@@ -24,6 +24,7 @@ import { LimitCard } from './LimitCard';
 import { EvidencePanel } from './EvidencePanel';
 import { PlanSection } from './PlanSection';
 import { StepList } from './StepList';
+import { FindingsStack } from './FindingsStack';
 import { useDetailKeys } from './useDetailKeys';
 import { VerdictCard } from './VerdictCard';
 import { DriveControls, type DriveState } from '../session/DriveControls';
@@ -67,6 +68,8 @@ function turnGlowClass(turn: TurnState, phaseDone: boolean): string {
 export function WorkOrderDetail({
   detail,
   docs,
+  source,
+  workspace,
   permissionRule,
   onBack,
   onApprovePlan,
@@ -94,6 +97,8 @@ export function WorkOrderDetail({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
+  source: WorkOrderSource;
+  workspace: Workspace;
   permissionRule: PermissionRule;
   onBack: () => void;
   onApprovePlan: (planText: string, opts?: { editedCount?: number }) => Promise<void>;
@@ -1058,6 +1063,15 @@ export function WorkOrderDetail({
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).
   const decision = (
     <div className="flex flex-col gap-3">
+      {detail.pendingFindings && detail.pendingFindings.length > 0 && (
+        <FindingsStack
+          findings={detail.pendingFindings}
+          source={source}
+          workspace={workspace}
+          workOrder={detail}
+          onUpdate={reloadDetail}
+        />
+      )}
       {askCards}
       {refusalCard}
       {limitCard}

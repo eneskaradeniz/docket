@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS forge_issue (
 CREATE TABLE IF NOT EXISTS wo_event (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   work_order_id TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision','steer_queued','steer_delivered','steer_retracted','flow_mode_changed','forge_merge')),
+  kind TEXT NOT NULL CHECK (kind IN ('created','plan_saved','plan_save_refused','plan_approved','step_started','step_done','step_verdict','verdict_overridden','closed','wo_edited','rule_changed','permission_decision','steer_queued','steer_delivered','steer_retracted','flow_mode_changed','forge_merge','finding_dismissed')),
   detail TEXT NOT NULL DEFAULT '',
   at TEXT NOT NULL
 );
@@ -256,6 +256,19 @@ CREATE TABLE IF NOT EXISTS roadmap_draft (
   source_summary TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+-- WO-0099: Findings parsed from step reports (the bulgular fence). Consumed (into WOs) or
+-- dismissed rows die. The pointer is the path:line pair. The source is the session ID that
+-- reported it. The uniqueness constraint prevents proposing the SAME finding twice across re-runs.
+CREATE TABLE IF NOT EXISTS pending_finding (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  work_order_id TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  pointer TEXT NOT NULL,
+  problem TEXT NOT NULL,
+  source_session_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (work_order_id, repo, pointer)
 );
 `;
 

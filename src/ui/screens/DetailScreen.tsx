@@ -1,5 +1,5 @@
-import type { StepRole, WorkOrderDetailView } from '../../core/types';
-import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput } from '../../core/source';
+import type { StepRole, WorkOrderDetailView, Workspace } from '../../core/types';
+import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import type { ChangesBridge } from '../components/detail/ChangesSection';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
@@ -10,6 +10,8 @@ import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
 export function DetailScreen({
   detail,
   docs,
+  source,
+  workspace,
   permissionRule,
   onBack,
   onApprovePlan,
@@ -37,6 +39,8 @@ export function DetailScreen({
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
+  source: WorkOrderSource;
+  workspace: Workspace;
   /** WO-0031c: the effective permission rule (the WO's own, else the Settings default). */
   permissionRule: PermissionRule;
   onBack: () => void;
@@ -77,6 +81,8 @@ export function DetailScreen({
       <WorkOrderDetail
         detail={detail}
         docs={docs}
+        source={source}
+        workspace={workspace}
         onBack={onBack}
         onApprovePlan={onApprovePlan}
         onSavePlanDraft={onSavePlanDraft}
