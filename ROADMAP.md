@@ -731,8 +731,14 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
       (the operator, 2026-09-22: "claude, agy, codex... abonelik ve api istek ücreti ayrılıyor");
       the two feeds already exist (WO-0053's `limit_windows` + `cost_usd`) — the WO names the axis
       on every cost surface and re-anchors the budget gate's meaning per metering kind.
-- [ ] **WO-0100** — the app's own face: name, Kuyruk icons, native menu, running-work tray;
-      packager config (signing/notarization/auto-update stay on Later). Order:
+- [x] **WO-0100** — the app's own face (PR #101, merge `e4a52a7`, 2026-09-23): the name Docket
+      (userData pinned), the Kuyruk icon set (operator re-pick over D-lamp; SVG sources +
+      `npm run icons`), the fixed-Turkish native menu (⌘, → Ayarlar, ⌘W kept), and the tray listing
+      the running work from the same drive map as the appbar chip (click → that detail). Built as a
+      pure core derivation plus one ui listener; electron-builder config for three OSes, Electron
+      pinned 43.3.0 (signing/notarization/auto-update stay on Later). macOS dev keeps the bold title
+      "Electron" (the dev plist); win/linux are UNVERIFIED (Route R, TD-064). 1222 unit · E2E 105/105.
+      Merged ahead of WO-0098/0099 by operator ruling; they rebase onto it. Order:
       `docs/work-orders/WO-0100-uygulama-kimligi/order.md`.
 - [ ] merge-time rebase of the remaining wave branches (operator's DEVIR.md discipline, unnumbered
       until the pieces above land).

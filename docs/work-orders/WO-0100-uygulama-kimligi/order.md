@@ -2,7 +2,7 @@
 id: WO-0100
 title: "The app's own face — Docket, not Electron: name, logo, native menu, and a tray that shows the running work"
 workspace: docket
-status: open
+status: closed
 mode: plan # the operator ruled 2026-09-22: this one is PLANNED in the Claude Max terminal before it is built
 review: full # light | full
 review_mode: gates
@@ -105,3 +105,33 @@ settings modal); Linux distribution formats beyond the builder config.
   instructs the plan-first flow.
 - Queue neighbors unaffected: 0098/0099 ride the create seam; this one touches electron/ +
   package.json + assets only — merge-order friendly.
+
+## Closure (2026-09-23)
+
+- The plan round came first: plan.md (a483326) decided every open question. Two adversarial
+  critique passes were folded in (§13), and the operator's ruling is in §14. The
+  implementation follows it, with the deviations named in §15 (⌘W kept through Pencere →
+  Kapat, a 16 px whole-pixel icon source, `&` escaped in tray titles, Ayarlar… delivered even
+  when the board load failed).
+- The logo changed after the operator saw B (D-lamp) in the running app. Five fresh
+  directions were compared side by side, and the operator picked **C "Kuyruk"** (§16). Every
+  asset was regenerated from the new SVG sources.
+- Acceptance 1 holds as reworded in §6. The macOS dev bold title and Dock hover name read
+  "Electron" (the dev bundle's plist; no patch). The packaged .app carries Docket. The operator
+  saw the dev limit live and declined a pack run this round.
+- Acceptance 2-3 are reduced by Route R. Windows/Linux config and code paths exist and
+  typecheck; every win/linux cell is UNVERIFIED and carried by TD-064 (plus the appbar's macOS
+  inset / drag region on framed windows). Follow-ups: TD-062 (locale-following chrome) and
+  TD-063 (keep-running-in-tray, the destroyed-sender fix, a packaged-only single-instance lock).
+- The order's "no core/ui change" gave way to one pure core module (`src/core/tray-menu.ts`,
+  test-first) and one ui navigate listener, with no new visual surface. The plan stated this
+  up front (§5).
+- Merge order: the operator ruled this lands ahead of WO-0098/0099 (overriding §14.7); both
+  rebase onto it (shared: `electron/main.ts`, `electron/preload.ts`, `src/ui/app/App.tsx`,
+  `e2e/ui.mjs`).
+- Ladder at merge (rebased on 1132750): typecheck ×2 · unit 1222/1222 · boundaries · build ·
+  E2E 105/105 (one run, load ~25, no other suite) · CI green.
+- PR #101 (https://github.com/eneskaradeniz/docket/pull/101), head `6f12fff`, merged
+  `e4a52a7`; closed at the commit carrying this line.
+- Manual tour: the operator ran `npm run dev` for the name and logo checks. The rest of §11
+  was delegated.
