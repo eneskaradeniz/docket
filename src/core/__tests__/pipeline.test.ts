@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { askOperatorPolicy, autoAllowPolicy, createPipeline, policyForRule, prepareDriveInput, riskyExcludedPolicy } from '../pipeline';
-import { PLAN_EXIT_WITHOUT_RESULT } from '../runner';
-import type { SessionStore } from '../session-store';
+import { PLAN_EXIT_WITHOUT_RESULT, driveOwnerTag } from '../runner';
+import type { SessionOwner, SessionStore } from '../session-store';
 import type { DraftDriveInput, DriveInput, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from '../runner';
 import type { CostSummary, WorkOrderId, WorkspaceId } from '../types';
 
@@ -37,6 +37,8 @@ function fakeRunner(script: RunnerEvent[]) {
   const retractCalls: string[] = [];
   const pending = new Map<string, () => void>();
   const resolved: string[] = []; // WO-0027: ask_resolved is emitted back into the stream, like the real adapter
+  let interrupts = 0; // WO-0088: the keyed-interrupt probe (which drive's runner was interrupted)
+  let aborted = false; // WO-0088: an interrupt ENDS the held stream (the subprocess kill's shape)
   const drive = async function* (input: DriveInput): AsyncIterable<RunnerEvent> {
     drivenInputs.push(input);
     const seen = new Set<string>();
@@ -48,6 +50,7 @@ function fakeRunner(script: RunnerEvent[]) {
         const latch = new Promise<void>((resolve) => pending.set(ev.requestId, resolve));
         yield ev;
         await latch;
+        if (aborted) return; // the interrupt tore the stream down before any echo
         yield { kind: 'ask_resolved', requestId: ev.requestId };
         continue;
       }
@@ -68,7 +71,11 @@ function fakeRunner(script: RunnerEvent[]) {
       resolved.push(requestId);
     },
     pendingAsks: async () => [],
-    async interrupt() {},
+    async interrupt() {
+      interrupts++;
+      aborted = true;
+      for (const r of [...pending.values()]) r(); // release the held stream — the abort's teardown
+    },
     async abort() {},
     // WO-0045: records the transport calls; the scripted events (steer_queued etc.) drive the fold.
     async steer(note: string, opts?: { noteId: string; emit?: boolean }) {
@@ -80,7 +87,7 @@ function fakeRunner(script: RunnerEvent[]) {
       return true;
     },
   } as SessionRunner;
-  return { runner, decideCalls, drivenInputs, steerCalls, retractCalls };
+  return { runner, decideCalls, drivenInputs, steerCalls, retractCalls, interrupts: () => interrupts };
 }
 
 /** A runner whose drive throws — for the catch-path test. */
@@ -403,7 +410,7 @@ describe('draft drive — prompt assembly, gate, plan_ready, supersede (WO-0050)
     const fs = fakeStore({}, true, { draftPrompt: 'taslak' });
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
     await collect(p, draftDrive());
-    expect(await p.steer('ara not')).toBeUndefined();
+    expect(await p.steer(driveOwnerTag(draftDrive()), 'ara not')).toBeUndefined();
     expect(fs.calls.find((c) => c.method === 'steer_queued')).toBeUndefined();
   });
 });
@@ -917,11 +924,12 @@ describe('steer mirror + lifecycle (WO-0045)', () => {
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: askOperatorPolicy() });
     const collectPromise = collect(p, stepDrive());
     await new Promise((r) => setTimeout(r, 10)); // let the drive reach the held ask
-    const noteId1 = await p.steer('bir not');
+    const woTag = driveOwnerTag(stepDrive());
+    const noteId1 = await p.steer(woTag, 'bir not');
     expect(noteId1).toBeTruthy();
     expect(fr.steerCalls.some(([note, o]) => note === 'bir not' && o?.noteId === noteId1 && o?.emit !== false)).toBe(true);
-    await p.steer('ikinci not');
-    expect(await p.retractSteer(noteId1!)).toBe(true);
+    await p.steer(woTag, 'ikinci not');
+    expect(await p.retractSteer(woTag, noteId1!)).toBe(true);
     expect(fr.retractCalls).toContain(noteId1);
     await p.decide('r1', { allow: true });
     const events = await collectPromise;
@@ -939,9 +947,9 @@ describe('steer mirror + lifecycle (WO-0045)', () => {
     const fr = fakeRunner([started(), done()]);
     const fs = fakeStore({});
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
-    expect(await p.steer('erken')).toBeUndefined();
+    expect(await p.steer(driveOwnerTag(stepDrive()), 'erken')).toBeUndefined();
     await collect(p, stepDrive());
-    expect(await p.steer('geç')).toBeUndefined();
+    expect(await p.steer(driveOwnerTag(stepDrive()), 'geç')).toBeUndefined();
     expect(fr.steerCalls).toHaveLength(0);
   });
 
@@ -1257,5 +1265,160 @@ describe('riskyExcludedPolicy — the ask tool is never in the auto-approve scop
 
   it('policyForRule wires the same deferral for risky_excluded', () => {
     expect(policyForRule('risky_excluded', never).onAsk(ask).kind).toBe('defer');
+  });
+});
+
+// ===== WO-0088 — the parallel spine: N owners at once, keyed control, per-drive completion =====
+// One active drive PER OWNER (work order / draft); the pipeline's steer/interrupt surface and the
+// runner instances key by the owner tag (driveOwnerTag). A WO's own step sequencing stays serial —
+// that guard lives in the composition root + renderer store, never here. The `runners` factory is
+// the per-drive runner seam; its absence keeps the pre-WO-0088 single-runner shape (every test
+// above is the fallback proof).
+
+const WO_A = 'WO-A' as WorkOrderId;
+const WO_B = 'WO-B' as WorkOrderId;
+
+/** A runner factory: each owner tag gets its OWN fakeRunner (the per-drive instance seam). */
+function perOwnerRunners(scripts: Record<string, RunnerEvent[]>) {
+  const instances = new Map<string, ReturnType<typeof fakeRunner>>();
+  const factory = (owner: SessionOwner): SessionRunner => {
+    const tag = owner.kind === 'draft' ? `ws:${owner.workspaceId}` : `wo:${owner.workOrderId}`;
+    const made = fakeRunner(scripts[tag] ?? []);
+    instances.set(tag, made);
+    return made.runner;
+  };
+  return { factory, instances };
+}
+
+/** Poll until the predicate holds (two concurrent generators interleave on the microtask queue). */
+async function until(pred: () => boolean): Promise<void> {
+  for (let i = 0; i < 400 && !pred(); i++) await new Promise((r) => setTimeout(r, 5));
+  expect(pred()).toBe(true);
+}
+
+const rowArgs = (calls: FakeStoreCalls[]) =>
+  calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { providerSessionId: string; owner: unknown; status: string; cost?: CostSummary; transcript?: unknown[] });
+
+describe('WO-0088 — the parallel spine', () => {
+  const driveA = (): DriveInput => planDrive({ workOrderId: WO_A });
+  const driveB = (): DriveInput => planDrive({ workOrderId: WO_B });
+
+  function twoDrivePipeline(scripts: Record<string, RunnerEvent[]>, storeOpts: Parameters<typeof fakeStore>[2] = {}) {
+    const { factory, instances } = perOwnerRunners(scripts);
+    const fs = fakeStore({}, true, storeOpts);
+    const p = createPipeline({ runner: undefined as unknown as SessionRunner, runners: factory, store: fs.store, permission: askOperatorPolicy() });
+    return { p, instances, fs };
+  }
+
+  it('two owners drive concurrently; keyed steer targets exactly the addressed drive', async () => {
+    const { p, instances, fs } = twoDrivePipeline({
+      'wo:WO-A': [started('sess-a'), txt('A-satırı'), perm('askA'), done('report-a')],
+      'wo:WO-B': [started('sess-b'), txt('B-satırı'), perm('askB'), done('report-b')],
+    });
+    const sinkA: RunnerEvent[] = [];
+    const sinkB: RunnerEvent[] = [];
+    const gA = p.drive(driveA());
+    const gB = p.drive(driveB());
+    const endA = (async () => { for await (const ev of gA) sinkA.push(ev); })();
+    const endB = (async () => { for await (const ev of gB) sinkB.push(ev); })();
+    await until(() => sinkA.some((e) => e.kind === 'permission_request') && sinkB.some((e) => e.kind === 'permission_request'));
+    // keyed steer: B's note reaches B's runner alone; the audit lands on B's timeline only
+    const noteId = await p.steer(driveOwnerTag(driveB()), 'B-ye not');
+    expect(noteId).toBeTruthy();
+    expect(instances.get('wo:WO-B')!.steerCalls).toHaveLength(1);
+    expect(instances.get('wo:WO-A')!.steerCalls).toHaveLength(0);
+    const audits = fs.calls.filter((c) => c.method === 'recordAuditEvent');
+    expect(audits.length).toBeGreaterThan(0);
+    expect(audits.every((c) => c.args[0] === WO_B)).toBe(true);
+    await p.decide('askA', { allow: true });
+    await p.decide('askB', { allow: true });
+    await Promise.all([endA, endB]);
+    // isolated folds: each stream carries its own words, never the sibling's
+    const textsOf = (sink: RunnerEvent[]) => sink.filter((e) => e.kind === 'assistant_text').map((e) => (e as { text: string }).text);
+    expect(textsOf(sinkA)).toEqual(['A-satırı']);
+    expect(textsOf(sinkB)).toEqual(['B-satırı']);
+    // isolated rows: one row per owner, each under its own provider session id
+    const rows = rowArgs(fs.calls);
+    expect(rows.some((r) => r.providerSessionId === 'sess-a' && r.owner && (r.owner as { workOrderId?: string }).workOrderId === WO_A)).toBe(true);
+    expect(rows.some((r) => r.providerSessionId === 'sess-b' && r.owner && (r.owner as { workOrderId?: string }).workOrderId === WO_B)).toBe(true);
+  });
+
+  it('keyed interrupt + the injected return fold ONE drive honest mid-parallel; the sibling completes untouched', async () => {
+    const { p, instances, fs } = twoDrivePipeline({
+      'wo:WO-A': [started('sess-a'), perm('askA'), done()],
+      'wo:WO-B': [started('sess-b'), perm('askB'), done('b raporu')],
+    });
+    const sinkA: RunnerEvent[] = [];
+    const sinkB: RunnerEvent[] = [];
+    const gA = p.drive(driveA()) as AsyncGenerator<RunnerEvent>;
+    const gB = p.drive(driveB());
+    const endA = (async () => { for await (const ev of gA) sinkA.push(ev); })();
+    const endB = (async () => { for await (const ev of gB) sinkB.push(ev); })();
+    await until(() => sinkA.some((e) => e.kind === 'permission_request') && sinkB.some((e) => e.kind === 'permission_request'));
+    await p.interrupt(driveOwnerTag(driveA()));
+    expect(instances.get('wo:WO-A')!.interrupts()).toBe(1);
+    expect(instances.get('wo:WO-B')!.interrupts()).toBe(0);
+    // Zorla kes's injected return on A: the finally's completion guarantee records it idle —
+    // B's registration and stream are untouched (no clobbered sibling).
+    await gA.return(undefined);
+    await endA;
+    await p.decide('askB', { allow: true });
+    await endB;
+    const rowsA = rowArgs(fs.calls).filter((r) => r.providerSessionId === 'sess-a');
+    expect(rowsA[rowsA.length - 1]!.status).toBe('idle');
+    expect(rowsA[rowsA.length - 1]!.cost).toBeUndefined(); // the honest no-claim on a forced stop
+    const rowsB = rowArgs(fs.calls).filter((r) => r.providerSessionId === 'sess-b');
+    expect(rowsB[rowsB.length - 1]!.status).toBe('idle');
+    expect(rowsB[rowsB.length - 1]!.cost).toBeDefined(); // B ran to its turn_complete
+    expect(sinkB.some((e) => e.kind === 'turn_complete')).toBe(true);
+  });
+
+  it('a ✦ draft drives alongside a work order — separate keys, no steer surface for the draft (D15)', async () => {
+    const { p, fs } = twoDrivePipeline(
+      {
+        'ws:ws-t': [started('sess-d'), txt('taslak satırı'), done()],
+        'wo:WO-A': [started('sess-a'), txt('wo satırı'), done()],
+      },
+      { draftPrompt: 'taslak promptu' }, // an unassembled draft prompt would be the WO-0050 refusal
+    );
+    const sinkD: RunnerEvent[] = [];
+    const sinkW: RunnerEvent[] = [];
+    const gD = p.drive(draftDrive());
+    const gW = p.drive(driveA());
+    await Promise.all([
+      (async () => { for await (const ev of gD) sinkD.push(ev); })(),
+      (async () => { for await (const ev of gW) sinkW.push(ev); })(),
+    ]);
+    expect(sinkD.some((e) => e.kind === 'turn_complete')).toBe(true);
+    expect(sinkW.some((e) => e.kind === 'turn_complete')).toBe(true);
+    const textsOf = (sink: RunnerEvent[]) => sink.filter((e) => e.kind === 'assistant_text').map((e) => (e as { text: string }).text);
+    expect(textsOf(sinkD)).toEqual(['taslak satırı']);
+    expect(textsOf(sinkW)).toEqual(['wo satırı']);
+    const rows = rowArgs(fs.calls);
+    expect(rows.some((r) => r.providerSessionId === 'sess-d' && (r.owner as { kind: string }).kind === 'draft')).toBe(true);
+    expect(rows.some((r) => r.providerSessionId === 'sess-a' && (r.owner as { kind: string }).kind === 'wo')).toBe(true);
+    // both drives ended — the steer surface is gone for the draft tag (it never mounted, D15)
+    expect(await p.steer(driveOwnerTag(draftDrive()), 'not')).toBeUndefined();
+  });
+
+  it('sequential drives on the SAME owner keep working (the serial per-WO rule): the finished drive never tears the next one down', async () => {
+    const { p, instances } = twoDrivePipeline({
+      'wo:WO-A': [started('sess-1'), perm('seq-1'), done()],
+    });
+    // the FIRST drive of the pair runs to its end (its held ask answered)…
+    const sink1: RunnerEvent[] = [];
+    const end1 = (async () => { for await (const ev of p.drive(driveA())) sink1.push(ev); })();
+    await until(() => sink1.some((e) => e.kind === 'permission_request'));
+    await p.decide('seq-1', { allow: true });
+    await end1;
+    // …then a second spawn of the same owner re-registers cleanly — steer reaches the LIVE drive
+    const sink2: RunnerEvent[] = [];
+    const end2 = (async () => { for await (const ev of p.drive(driveA())) sink2.push(ev); })();
+    await until(() => sink2.some((e) => e.kind === 'permission_request'));
+    const noteId = await p.steer(driveOwnerTag(driveA()), 'canlıya not');
+    expect(noteId).toBeTruthy();
+    await p.decide('seq-1', { allow: true }); // the scripted ask id replays on the second drive
+    await end2;
+    expect(instances.get('wo:WO-A')!.steerCalls).toHaveLength(1);
   });
 });

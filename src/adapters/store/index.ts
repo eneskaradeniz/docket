@@ -23,7 +23,7 @@ import type { Locale, PromptOverrides, RoleModels } from '../../core/app-setting
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
-import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
+import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
@@ -1540,6 +1540,18 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
   const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;
   if (!wo) return process.cwd();
   const wsId = wid(wo.ws);
+  // WO-0088: the wave worktree — the WO's OWN working copy wins over the connection table (the
+  // operator aimed this work order at a per-WO checkout; the write fence jails to it because the
+  // adapter's repoRoot IS this cwd). Read from order.md front-matter at spawn time (the
+  // effectivePermissionRule pattern — no cache, no column). Absent → the table below stands.
+  const dir = woDir(db, input.workOrderId);
+  if (dir) {
+    const { order } = readWoDocs(dir, input.workOrderId);
+    if (order) {
+      const override = parseOrderMd(order).cwd;
+      if (override) return override;
+    }
+  }
   if (input.scope !== undefined) {
     const t = db
       .prepare('SELECT repo FROM track WHERE id = ? AND work_order_id = ?')
@@ -1552,6 +1564,16 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
     }
   }
   return decisionStoreRepoPath(db, wsId) ?? process.cwd();
+}
+
+// WO-0088 rev: the cwd override's SAFE gate — a working copy must be an absolute path that EXISTS,
+// or the drive (and its write fence) would aim at the wrong root or a nonexistent dir. The dialogs
+// pre-check the shape (core's cwdOverrideIsAbsolute) for the under-field error; the store is the
+// second layer and refuses the write. `null` (the drop) is always legal.
+function cwdOverrideRefusal(cwd: string): string | undefined {
+  if (!cwdOverrideIsAbsolute(cwd)) return 'cwd override must be an absolute path';
+  if (!existsSync(cwd)) return 'cwd override path does not exist';
+  return undefined;
 }
 
 // WO-0051 / D9 (TD-056): the architect write fence's decision-store ROOT, aligned with the
@@ -2047,6 +2069,12 @@ export function createStore(dbPath: string): Store {
       // (the createWorkOrder throw style; the full list stays the validator's).
       const problems = validateTrackDependencies(input.trackDependencies, input.trackRepos);
       if (problems.length > 0) throw new Error(`createWorkOrder: ${problems[0]}`);
+      // WO-0088 rev: the cwd override is refused BEFORE any write — a bad path must not author an
+      // order.md pointing the drive (and its fence) at nothing.
+      if (input.cwd !== undefined) {
+        const why = cwdOverrideRefusal(input.cwd);
+        if (why) throw new Error(`createWorkOrder: ${why}`);
+      }
       const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
       const slug = slugify(input.title);
@@ -2068,6 +2096,7 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.trackDependencies
             ? {
                 trackDependencies: input.trackDependencies.map((d) => ({
@@ -2154,6 +2183,11 @@ export function createStore(dbPath: string): Store {
       const dir = structureRoot(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);
+      // WO-0088 rev: the same safe gate on the edit path — a string sets (validated), null drops.
+      if (typeof patch.cwd === 'string') {
+        const why = cwdOverrideRefusal(patch.cwd);
+        if (why) throw new Error(`updateWorkOrder: ${why}`);
+      }
       const next = applyOrderMdEdits(order, patch);
       if (next !== order) writeOrderMdById(dir, workOrderId, next);
       if (patch.title !== undefined) db.prepare('UPDATE work_order SET title = ? WHERE id = ?').run(patch.title, workOrderId);
@@ -2163,6 +2197,7 @@ export function createStore(dbPath: string): Store {
         patch.reviewMode !== undefined ? 'review_mode' : null,
         patch.flowMode !== undefined ? 'flow_mode' : null,
         patch.taskRef !== undefined ? 'task' : null,
+        patch.cwd !== undefined ? 'cwd' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);

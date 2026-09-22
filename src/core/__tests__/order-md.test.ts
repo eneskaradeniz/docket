@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { architectPrompt, architectReviewPrompt, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt, withOverride } from '../order-md';
+import { architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt, withOverride } from '../order-md';
 import type { StepSpec } from '../types';
 
 // Mirrors the document WO-0015's buildOrderMd produces (front matter + Objective section).
@@ -310,5 +310,31 @@ describe('withOverride (WO-0070)', () => {
     expect(withOverride(a, undefined)).toBe(a);
     expect(withOverride(v, 'V')).toBe('V');
     expect(withOverride(r, undefined)).toBe(r);
+  });
+});
+
+// ===== WO-0088 — the per-WO cwd override (the wave's worktree seam) =====
+describe('parseOrderMd — the front-matter cwd key (WO-0088)', () => {
+  it('carries cwd when the front-matter names a working copy', () => {
+    const md = ['---', 'id: WO-0088', 'title: Paralel', 'cwd: /wave/wt/WO-0088', '---', '', '# WO-0088'].join('\n');
+    expect(parseOrderMd(md).cwd).toBe('/wave/wt/WO-0088');
+  });
+
+  it('absent → undefined (the connection-table fallback stands)', () => {
+    const md = ['---', 'id: WO-0088', 'title: Paralel', '---', '', '# WO-0088'].join('\n');
+    expect(parseOrderMd(md).cwd).toBeUndefined();
+  });
+});
+
+// WO-0088 rev — the cwd override's SHAPE gate (pure; the existence check is the store's)
+describe('cwdOverrideIsAbsolute — the override must be a real absolute path', () => {
+  it('accepts a leading-slash path', () => {
+    expect(cwdOverrideIsAbsolute('/wave/wt/WO-0088')).toBe(true);
+  });
+
+  it('refuses relative paths and home-relative shorthands (node never expands ~)', () => {
+    expect(cwdOverrideIsAbsolute('wave/wt')).toBe(false);
+    expect(cwdOverrideIsAbsolute('~/worktrees/WO-0088')).toBe(false);
+    expect(cwdOverrideIsAbsolute('')).toBe(false);
   });
 });

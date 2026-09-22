@@ -80,6 +80,9 @@ export interface OrderMdInput {
   // lists (`depends_on: [app]`). Absent = every track emits `depends_on: []` (the pre-WO-0071
   // bytes). A track with no entry — or an explicit empty list — emits `[]` the same way.
   trackDependencies?: Array<{ repo: string; dependsOn: string[] }>;
+  // WO-0088: the work order's own working copy — → front-matter `cwd:`; emitted only when set
+  // (silence IS the connection-table fallback, the flow_mode idiom).
+  cwd?: string;
 }
 
 // Compose the order.md body. Follows docs/work-orders/TEMPLATE.md + the WO-0013/0014 front-matter
@@ -108,7 +111,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}tracks:
+${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}tracks:
 ${tracks}
 ---
 

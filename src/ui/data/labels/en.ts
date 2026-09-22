@@ -382,6 +382,10 @@ export const UI = {
   woTitlePlaceholder: 'e.g. Error while uploading the user profile avatar',
   woDescLabel: 'Description / goal (optional)', // WO-0036: minority marker — the one optional free-text field
   woDescPlaceholder: 'What should this work order achieve? It goes to the architect session as the first prompt.',
+  // WO-0088: the work order's own working copy (the wave worktree) — the cwd override field
+  woCwdLabel: 'Working copy (optional)',
+  woCwdPlaceholder: 'e.g. /wave/wt/WO-0088 — drives run in this folder.',
+  woCwdErr: 'Must be an absolute path (starts with /)',
   woTracksLabel: 'Repos',
   woContextLabel: 'Context files',
   woContextAdd: '▸ Add file',

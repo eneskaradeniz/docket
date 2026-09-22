@@ -9,15 +9,16 @@
 // - `useDrive(key, seed)` binds a pane to a drive with useSyncExternalStore — a remounted pane re-renders
 //   the LIVE state instantly (the stream never stopped), falling back to the persisted seed when the key
 //   has no active/recent drive.
-// - `useActiveDrive(store)` binds the App to the ONE active drive (the board overlay's source) — the
-//   snapshot is identity-stable between real transitions (see activeSnapshot).
-// - One drive at a time (the runner's event channel is a broadcast — see audit F10); a second start while
-//   one runs is rejected, exactly like the panes' old `running` guard.
+// - `useActiveDrives(store)` binds the App to the RUNNING drives (WO-0088: N at once, ONE per owner) —
+//   the snapshots array is identity-stable between real transitions (see activeSnapshots).
+// - ONE drive per OWNER, N owners in parallel (WO-0088's frozen scope): a second key on an owner that
+//   already runs is refused — a work order's step sequencing stays serial. The event channel is a
+//   broadcast; the renderer port filters by owner tag before events reach this store.
 // - `onEnd` is registered by the App: a completion refreshes the WO wherever the operator is (the board's
 //   cost/stage too), not just the open detail.
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { DriveInput, LiveSessionState, PermissionDecision, TranscriptLine } from '../../../core/runner';
-import { foldSessionEvent, initialSessionState, isDraftDrive } from '../../../core/runner';
+import { driveOwnerTag, foldSessionEvent, initialSessionState, isDraftDrive } from '../../../core/runner';
 import type { SessionRunner } from '../../../core/runner';
 import type { LimitWindow } from '../../../core/types';
 
@@ -48,7 +49,8 @@ export interface ActiveDriveSnapshot {
  *  time and would paint a mere warning red), `limitStatus`/`limitSubject` carry the provider's own
  *  warning word and its fullest window (the chip body stays figure-free; the tooltip speaks it). */
 export interface DriveActivity {
-  running: boolean;
+  /** WO-0088: the LIVE DRIVE COUNT (the chip's «(n)») — was the single-drive boolean. */
+  running: number;
   limitStatus?: 'ok' | 'warning' | 'blocked';
   limitResetAt?: string;
   limitSubject?: LimitWindow;
@@ -84,15 +86,19 @@ export function createDriveStore(runner: SessionRunner) {
   // WO-0031c: a drive DIED (a folded error event or the stream itself threw) — the notification
   // contract's error toast. Distinct from onEnd, which fires for every completion.
   let onError: ((key: string) => void) | undefined;
-  let active: string | undefined; // the one running key (one drive at a time)
-  // WO-0060: the drive that ended LAST. `active` clears in the fold loop's finally BEFORE onEnd →
-  // refreshWorkOrders lands the updated rows (a DB read) — keyed on `active` alone, the chip would
-  // drop its red/fold facts for one read and pop them back. The snapshot keys on `active ??
-  // lastActive`; nothing clears it by hand (forgetWo deletes the fold, so a deleted WO self-heals).
+  // WO-0088: the PARALLEL spine — N keys drive at once, ONE per owner (work order / draft).
+  // `keyOwner` captures each key's owner tag (driveOwnerTag) at start; the guard refuses a second
+  // key on an owner that already runs (a WO's step sequencing stays serial — the frozen scope).
+  const activeKeys = new Set<string>();
+  const keyOwner = new Map<string, string>();
+  // WO-0060: the drive that ended LAST. The active keys clear in the fold loop's finally BEFORE
+  // onEnd → refreshWorkOrders lands the updated rows (a DB read) — the chip's limit facts key on
+  // `lastTouched` (the most recent start OR end); nothing clears it by hand (forgetWo deletes the
+  // fold, so a deleted WO self-heals).
   let lastActive: string | undefined;
-  // The active-drive snapshot cache (identity-stable — see activeSnapshot).
+  // The active-drive snapshot cache (identity-stable — see activeSnapshots).
   let snapDirty = true;
-  let snap: ActiveDriveSnapshot | undefined;
+  let snaps: ActiveDriveSnapshot[] = [];
   // The activity snapshot cache (WO-0060 — same discipline, own flag: both caches recompute on
   // notify, and a shared flag would let the first accessor's recompute hide the second's).
   let actDirty = true;
@@ -114,45 +120,44 @@ export function createDriveStore(runner: SessionRunner) {
     return drives.get(key);
   }
 
-  /** The active drive's card-level facts. CACHED WITH CONTENT COMPARISON: notify() fires on every
-   *  folded transcript line, and useSyncExternalStore re-renders on identity change — a fresh object
-   *  per call would re-render the App per streamed line. The snapshot object is replaced only when
-   *  {key, woId, running, booting, status} actually change (start, a status transition, the end). */
-  function activeSnapshot(): ActiveDriveSnapshot | undefined {
-    if (!snapDirty) return snap;
+  /** The RUNNING drives' card-level facts — ONE entry per WO-keyed drive (WO-0088: the board
+   *  overlays N cards; the ✦ draft never overlays a board card, the locked ruling). CACHED WITH
+   *  CONTENT COMPARISON: notify() fires on every folded transcript line, and useSyncExternalStore
+   *  re-renders on identity change — the ARRAY identity holds until a member's facts actually
+   *  change (start, a status transition, the end), so the App never re-renders per streamed line. */
+  function activeSnapshots(): ActiveDriveSnapshot[] {
+    if (!snapDirty) return snaps;
     snapDirty = false;
-    const key = active;
-    const h = key === undefined ? undefined : drives.get(key);
-    const woId = key === undefined ? undefined : keyWo.get(key);
-    if (!key || !h || woId === undefined) {
-      snap = undefined;
-      return snap;
+    const next: ActiveDriveSnapshot[] = [];
+    for (const key of activeKeys) {
+      const h = drives.get(key);
+      const woId = keyWo.get(key);
+      if (!h || woId === undefined) continue; // the draft arm never enters the board overlay
+      next.push({ key, woId, running: h.running, booting: h.booting, status: h.state.status });
     }
-    const next: ActiveDriveSnapshot = { key, woId, running: h.running, booting: h.booting, status: h.state.status };
-    if (
-      snap &&
-      snap.key === next.key &&
-      snap.woId === next.woId &&
-      snap.running === next.running &&
-      snap.booting === next.booting &&
-      snap.status === next.status
-    ) {
-      return snap;
+    if (snaps.length === next.length && snaps.every((s, i) => {
+      const n = next[i]!;
+      return s.key === n.key && s.woId === n.woId && s.running === n.running && s.booting === n.booting && s.status === n.status;
+    })) {
+      return snaps;
     }
-    snap = next;
-    return snap;
+    snaps = next;
+    return snaps;
   }
 
-  /** WO-0060: the appbar chip's snapshot — `activeSnapshot`'s content-compare discipline, keyed off
-   *  `active ?? lastActive` (see the `lastActive` note: no end-of-drive blink), WO-less by design
-   *  (the ✦ draft counts). Compares PRIMITIVES only — the windows array's identity changes on every
-   *  ~30s pull emit, and the header must not re-render for that. `limitSubject` is the fullest
-   *  window by PaneWarnline's own sort (pane-chrome.tsx — one ranking, two voices); the UI never
-   *  sorts. */
+  /** WO-0060: the appbar chip's snapshot — `activeSnapshots`' content-compare discipline, keyed off
+   *  the most recently TOUCHED drive (`lastActive` — no end-of-drive blink), WO-less by design
+   *  (the ✦ draft counts). WO-0088: `running` is the COUNT of live drives (the chip's «(n)»), the
+   *  limit facts stay the last-touched drive's. Compares PRIMITIVES only — the windows array's
+   *  identity changes on every ~30s pull emit, and the header must not re-render for that.
+   *  `limitSubject` is the fullest window by PaneWarnline's own sort (pane-chrome.tsx — one
+   *  ranking, two voices); the UI never sorts. */
   function activitySnapshot(): DriveActivity | undefined {
     if (!actDirty) return act;
     actDirty = false;
-    const key = active ?? lastActive;
+    // The limit voice reads the most recently TOUCHED drive (start OR end — `lastActive` is
+    // stamped at both), exactly what the comment above promises; `running` is the live count.
+    const key = lastActive;
     const h = key === undefined ? undefined : drives.get(key);
     if (!key || !h) {
       if (act !== undefined) act = undefined;
@@ -162,7 +167,7 @@ export function createDriveStore(runner: SessionRunner) {
     const windows = st.limitWindows?.windows;
     const subject = windows?.slice().sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))[0];
     const next: DriveActivity = {
-      running: h.running,
+      running: activeKeys.size,
       ...(st.limitWindows?.status !== undefined ? { limitStatus: st.limitWindows.status } : {}),
       ...(st.lastLimit?.resetAt !== undefined ? { limitResetAt: st.lastLimit.resetAt } : {}),
       ...(subject !== undefined ? { limitSubject: subject } : {}),
@@ -186,11 +191,18 @@ export function createDriveStore(runner: SessionRunner) {
     return drives.get(key)?.state ?? seed();
   }
 
-  /** Begin a drive. Returns false when another drive is running (caller surfaces it) or this key already
-   *  runs. `seed` seeds the fold for a resumed session so the stream APPENDS to prior lines (F14). */
+  /** Begin a drive. Returns false when this key's OWNER already runs another drive (WO-0088: one
+   *  drive per owner, N owners in parallel — the caller surfaces it) or... this key itself already
+   *  runs (no-op true). `seed` seeds the fold for a resumed session so the stream APPENDS to prior
+   *  lines (F14). */
   function start(key: string, input: DriveInput, seed: LiveSessionState = initialSessionState): boolean {
-    if (active !== undefined) return active === key; // already running this key → no-op true; another → false
-    active = key;
+    const tag = driveOwnerTag(input);
+    for (const k of activeKeys) {
+      if (keyOwner.get(k) === tag) return k === key; // this key running → no-op true; a sibling key on the same owner → false
+    }
+    activeKeys.add(key);
+    keyOwner.set(key, tag);
+    lastActive = key; // WO-0060: the chip's limit facts read the most recently touched drive
     // WO-0050: the owner capture is arm-aware — a draft keys keyWs (and never keyWs+keyWo both).
     if (isDraftDrive(input)) keyWs.set(key, input.workspaceId);
     else keyWo.set(key, input.workOrderId);
@@ -225,7 +237,8 @@ export function createDriveStore(runner: SessionRunner) {
       } finally {
         const cur = drives.get(key);
         if (cur) drives.set(key, { ...cur, running: false });
-        if (active === key) active = undefined;
+        activeKeys.delete(key);
+        keyOwner.delete(key);
         lastActive = key; // WO-0060: the chip keeps reading this fold until the rows refresh
         notify();
         onEnd?.(key);
@@ -236,7 +249,16 @@ export function createDriveStore(runner: SessionRunner) {
 
   const decide = (requestId: string, decision: PermissionDecision): Promise<void> =>
     runner.decide(requestId, decision);
-  const interrupt = (): Promise<void> => runner.interrupt();
+  /** WO-0045/WO-0088: stop ONE drive. With a KEYED port the key must be LIVE — a dead key (folded
+   *  owner, stale render frame) refuses instead of falling through, because the unkeyed form over
+   *  IPC would land on main's last-started drive and stop a SIBLING (the M1 cross-talk). The
+   *  unkeyed fallback is for unkeyed realizations only (single-drive hosts, tests). */
+  const interrupt = (key: string): Promise<void> =>
+    runner.interruptDrive
+      ? keyOwner.has(key)
+        ? runner.interruptDrive(keyOwner.get(key)!)
+        : Promise.resolve()
+      : runner.interrupt();
   const sessionId = (key: string): string | undefined => sessionIds.get(key);
   /** WO-0047: re-issue a key's LAST drive input verbatim — the budget refusal's raise-and-re-run.
    *  Seeds from the key's current fold (a refused drive's fold carries no transcript; the re-run's
@@ -272,6 +294,8 @@ export function createDriveStore(runner: SessionRunner) {
       drives.delete(key);
       keyWo.delete(key);
       sessionIds.delete(key);
+      keyOwner.delete(key); // WO-0088: the capture dies with the fold (a live key never reaches here)
+      activeKeys.delete(key);
     }
     notify();
   }
@@ -283,19 +307,29 @@ export function createDriveStore(runner: SessionRunner) {
     drives.set(key, { ...cur, state: { ...cur.state, entries: [...cur.state.entries, line] } });
     notify();
   }
-  /** WO-0031c: Zorla kes — the 5s-stuck escape hatch (forwards the port's forced stop). */
-  const abort = (): Promise<void> => runner.abort();
-  /** WO-0045: queue an operator note into the RUNNING drive. The count arrives via the folded
-   *  steer_queued event (the noteId rides it — the pending list's retract handle). False when no
-   *  drive is live or the transport refused (CLI without msg_lifecycle_v1). */
+  /** WO-0031c/WO-0088: Zorla kes — the 5s-stuck escape hatch, keyed to ONE drive. The M1 rule:
+   *  a keyed port refuses a DEAD key (never the unkeyed sibling stop); the unkeyed fallback is
+   *  for unkeyed realizations only. */
+  const abort = (key: string): Promise<void> =>
+    runner.abortDrive
+      ? keyOwner.has(key)
+        ? runner.abortDrive(keyOwner.get(key)!)
+        : Promise.resolve()
+      : runner.abort();
+  /** WO-0045: queue an operator note into the RUNNING drive (WO-0088: keyed — exactly that key's
+   *  drive). The count arrives via the folded steer_queued event (the noteId rides it — the pending
+   *  list's retract handle). False when this key's drive is not live or the transport refused
+   *  (CLI without msg_lifecycle_v1). */
   const steer = (key: string, note: string): Promise<boolean> => {
-    if (active !== key) return Promise.resolve(false);
+    if (!activeKeys.has(key)) return Promise.resolve(false);
+    if (runner.steerDrive) return runner.steerDrive(keyOwner.get(key) ?? '', note).then((id) => id !== null);
     return runner.steer?.(note) ?? Promise.resolve(false);
   };
   /** WO-0045: pull a queued note back (live drive — best-effort; stopped drive — the mirror route
    *  through the data port, see retractNote below). */
   const retract = (key: string, noteId: string): Promise<boolean> => {
-    if (active !== key) return Promise.resolve(false);
+    if (!activeKeys.has(key)) return Promise.resolve(false);
+    if (runner.retractSteerDrive) return runner.retractSteerDrive(keyOwner.get(key) ?? '', noteId);
     return runner.retractSteer?.(noteId) ?? Promise.resolve(false);
   };
   /** WO-0045: drop a note from a STOPPED drive's fold — pairs the data port's row rewrite (the store
@@ -312,7 +346,7 @@ export function createDriveStore(runner: SessionRunner) {
     subscribe,
     get,
     snapshot,
-    activeSnapshot,
+    activeSnapshots,
     activitySnapshot,
     start,
     restart,
@@ -368,20 +402,21 @@ export function useDrive(store: DriveStore, key: string, seed: () => LiveSession
   );
 }
 
-/** Bind the App to the ONE active drive (the board overlay's source). The snapshot's identity is
- *  stable between real transitions (see activeSnapshot), so this re-renders only on drive start,
- *  status transitions and the end — never per streamed transcript line. */
-export function useActiveDrive(store: DriveStore): ActiveDriveSnapshot | undefined {
+/** Bind the App to the RUNNING drives (the board overlay's source — WO-0088: N at once, one entry
+ *  per WO-keyed drive). The array's identity is stable between real transitions (see
+ *  activeSnapshots), so this re-renders only on drive start, status transitions and the end —
+ *  never per streamed transcript line. */
+export function useActiveDrives(store: DriveStore): ActiveDriveSnapshot[] {
   return useSyncExternalStore(
     (l) => store.subscribe(l),
-    () => store.activeSnapshot(),
-    () => store.activeSnapshot(),
+    () => store.activeSnapshots(),
+    () => store.activeSnapshots(),
   );
 }
 
-/** WO-0060: bind the App to the active drive's limit/running facts for the appbar chip — the same
- *  identity-stable discipline as useActiveDrive (activitySnapshot's primitive content-compare owns
- *  it: never a re-render per streamed line, never per windows-pull emit). */
+/** WO-0060: bind the App to the live drive's limit/running facts for the appbar chip — the same
+ *  identity-stable discipline as useActiveDrives (activitySnapshot's primitive content-compare
+ *  owns it: never a re-render per streamed line, never per windows-pull emit). */
 export function useDriveActivity(store: DriveStore): DriveActivity | undefined {
   return useSyncExternalStore(
     (l) => store.subscribe(l),

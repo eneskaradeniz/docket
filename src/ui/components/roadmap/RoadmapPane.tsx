@@ -59,10 +59,10 @@ export function RoadmapPane({
   const stop = (): void => {
     setStopping(true);
     store.note(driveKey, { speaker: 'note', kind: 'interrupt_sent' });
-    void store.interrupt();
+    void store.interrupt(driveKey);
   };
   const forceKill = (): void => {
-    void store.abort();
+    void store.abort(driveKey);
     store.note(driveKey, { speaker: 'note', kind: 'force_killed' });
     setStopping(false);
     setForceArmed(false);

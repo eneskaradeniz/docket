@@ -21,7 +21,7 @@ import { initialSessionState } from '../../core/runner';
 import type { WorkspaceUsageView } from '../../core/usage';
 import type { WorkOrderId, Workspace } from '../../core/types';
 import { useLabels } from '../data/locale';
-import { useActiveDrive, useDrive, useDriveStore } from '../components/session/drive-store';
+import { useActiveDrives, useDrive, useDriveStore } from '../components/session/drive-store';
 import { UsageHeadCard } from '../components/usage/UsageHeadCard';
 import { UsageLimitPanel } from '../components/usage/UsageLimitPanel';
 import { UsageBreakdownCard } from '../components/usage/UsageBreakdownCard';
@@ -42,14 +42,13 @@ export function UsageScreen({
 }) {
   const { UI, ROLE_LABELS, woIdLabel } = useLabels();
   const driveStore = useDriveStore();
-  const active = useActiveDrive(driveStore);
+  const actives = useActiveDrives(driveStore);
   const draftKey = `${workspace.id}:draft`;
-  // activeSnapshot only builds a snapshot for a WO-keyed drive, but the TYPE carries
-  // `woId?: WorkOrderId` — the explicit narrowing is the ADR-0003 discipline (no ui-side cast).
-  const woArm =
-    active !== undefined && active.running && active.woId !== undefined && woIds.includes(active.woId)
-      ? active
-      : undefined;
+  // WO-0088: the WO arm picks THIS workspace's FIRST live drive from the keyed snapshots
+  // (find = insertion order: the earliest still-running drive wins). activeSnapshots only builds
+  // entries for WO-keyed drives. The explicit narrowing is the ADR-0003 discipline (no ui-side
+  // cast).
+  const woArm = actives.find((s) => s.running && s.woId !== undefined && woIds.includes(s.woId));
   // The draft arm's liveness read is a SUBSCRIPTION (the review round's fix): a plain
   // `driveStore.get(draftKey)?.running` during render is non-reactive — a future
   // "start a draft from elsewhere" would leave the panel absent until an unrelated re-render.

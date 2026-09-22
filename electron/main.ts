@@ -20,8 +20,8 @@ import { ForgeError, observeClosureEvidence, reconcileWorkspaceForge, type Forge
 import type { ChangesWatch, CommitResult, CreatePrResult, MergeResult, PushResult, RepoChanges } from '../src/core/console';
 import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
-import { isDraftDrive } from '../src/core/runner';
-import type { DriveInput, PermissionDecision, RunnerEvent } from '../src/core/runner';
+import { driveOwnerTag, isDraftDrive } from '../src/core/runner';
+import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../src/core/runner';
 import type { Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
@@ -533,14 +533,32 @@ ipcMain.handle('docket:list-decision-docs', (_e, workspaceId: WorkspaceId) => st
 // environment (the SDK's login files / the setup's own mapping are the identity).
 // Under DOCKET_E2E the scripted fake runner replaces the SDK entirely (WO-0031c): same port, same
 // pipeline, zero tokens — the E2E driver pushes events through `docket:e2e:emit`.
-const runner: E2eRunner | ReturnType<typeof createRunner> = process.env.DOCKET_E2E
-  ? createE2eRunner()
-  : createRunner();
+// WO-0088: ONE runner INSTANCE per drive (the adapter's per-instance singleton state holds exactly
+// one drive; N instances = N concurrent drives; the SessionRunner port is unchanged — ADR-0014).
+const makeRunner = (): E2eRunner | ReturnType<typeof createRunner> => (process.env.DOCKET_E2E ? createE2eRunner() : createRunner());
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
-const pipeline = createPipeline({ runner, store, permission: askOperatorPolicy() });
-// The one active drive's generator — Zorla kes (docket:runner:abort) closes it via injected return.
-let activeDrive: AsyncIterable<RunnerEvent> & { return?: (v: unknown) => Promise<unknown> } | undefined;
+// WO-0088: the pipeline drives a FRESH runner per owner (the factory below) and keys its steer/
+// interrupt surface by the owner tag — N owners drive in parallel, one drive per owner.
+const pipeline = createPipeline({
+  // The factory is the ONE birthplace of a drive's runner — it registers the instance under the
+  // owner tag as it mints it, so the E2E emit routing and the pending-asks aggregate see exactly
+  // the instance the pipeline drives (a second creation site would orphan the stream).
+  runners: (owner) => {
+    const tag = owner.kind === 'draft' ? `ws:${owner.workspaceId}` : `wo:${owner.workOrderId}`;
+    const r = makeRunner();
+    liveRunnerInstances.set(tag, r);
+    return r;
+  },
+  store,
+  permission: askOperatorPolicy(),
+});
+// The keyed live surface: owner tag → the drive's generator + its runner instance. Zorla kes
+// (docket:runner:abort) closes ITS generator via injected return; pending-asks and decide route
+// across ALL live runners (requestIds are globally unique).
+const activeDrives = new Map<string, AsyncIterable<RunnerEvent> & { return?: (v: unknown) => Promise<unknown> }>();
+const liveRunnerInstances = new Map<string, SessionRunner>();
+let lastStartedTag: string | undefined; // the untagged e2e emit's target (the legacy one-drive shape)
 // WO-0059 (E2E): the last resolved drive input this process spawned — read via the gated
 // docket:e2e:last-drive-input channel; production never registers it.
 let lastResolvedDriveInput: DriveInput | undefined;
@@ -560,7 +578,8 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // WO-0050 / D8 — the cwd fix: the drive's working directory resolves from the connection table
   // (a scoped WO drive runs in its track repo; a draft or unscoped WO drive in the decision-store
   // repo; process.cwd() only when nothing matches). An explicit cwd (the CLI's --cwd, a resume
-  // re-issue) always wins.
+  // re-issue) always wins. WO-0088: the WO's order.md `cwd:` override is read INSIDE store.driveCwd
+  // (before the table) — the wave worktree is the operator's front-matter act, never a renderer arg.
   // WO-0051 / D9 (TD-056): an architect drive's write fence lands on the workspace's structure
   // root (docs_root-aligned) instead of the cwd-relative default. The fill OVERWRITES
   // unconditionally (review f1): a renderer-supplied decisionStoreRoot is never honored — the
@@ -581,18 +600,35 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
     permissionRule,
     ...(model ? { model } : {}),
   };
+  // WO-0088: the frozen concurrency scope — ONE drive per owner at a time (a WO's step sequencing
+  // stays serial). The renderer store guards too; this is the host-side second layer. The refusal
+  // is the pipeline's error-event shape.
+  const tag = driveOwnerTag(driveInput);
+  if (activeDrives.has(tag)) {
+    event.sender.send('docket:runner:event', tag, {
+      kind: 'error',
+      message: `drive refused: ${tag} already has a running drive (one drive per owner)`,
+    });
+    return;
+  }
   lastResolvedDriveInput = driveInput;
+  lastStartedTag = tag;
   const iterator = pipeline.drive(driveInput);
-  activeDrive = iterator;
+  activeDrives.set(tag, iterator);
   try {
     for await (const ev of iterator) {
-      event.sender.send('docket:runner:event', ev);
+      event.sender.send('docket:runner:event', tag, ev);
     }
   } catch (e) {
     // The pipeline catches drive errors itself; this is a last-resort guard for an IPC/send failure.
-    event.sender.send('docket:runner:event', { kind: 'error', message: (e as Error)?.message ?? String(e) });
+    event.sender.send('docket:runner:event', tag, { kind: 'error', message: (e as Error)?.message ?? String(e) });
   } finally {
-    if (activeDrive === iterator) activeDrive = undefined;
+    // The concurrent same-tag drive is refused (the guard above), so this plain delete can never
+    // evict a successor's registration — the wind-down window has no same-tag spawn.
+    if (activeDrives.get(tag) === iterator) {
+      activeDrives.delete(tag);
+      liveRunnerInstances.delete(tag);
+    }
   }
 });
 
@@ -600,20 +636,23 @@ ipcMain.handle('docket:runner:decide', async (_event, requestId: string, decisio
   await pipeline.decide(requestId, decision);
 });
 
-ipcMain.handle('docket:runner:interrupt', async () => {
-  await pipeline.interrupt();
+ipcMain.handle('docket:runner:interrupt', async (_event, owner?: string) => {
+  await (owner !== undefined ? pipeline.interrupt(owner) : pipeline.interrupt(lastStartedTag ?? ''));
 });
 
 // WO-0045 operator tempo: queue a steering note into the RUNNING drive (boundary-only, never an
 // interrupt). Resolves the minted noteId (the UI's retract handle), or null when no drive is live.
-ipcMain.handle('docket:runner:steer', async (_event, note: string) => {
-  return (await pipeline.steer(note)) ?? null;
+// WO-0088: the owner tag names WHICH drive (the GUI always sends it).
+ipcMain.handle('docket:runner:steer', async (_event, ownerOrNote: string, note?: string) => {
+  if (note !== undefined) return (await pipeline.steer(ownerOrNote, note)) ?? null;
+  return (await pipeline.steer(lastStartedTag ?? '', ownerOrNote)) ?? null;
 });
 
 // WO-0045: pull a queued note back before delivery. Best-effort (probe raw/s5-cancel.log): false =
 // the note already left the SDK's cancel window and WILL run.
-ipcMain.handle('docket:runner:steer-retract', async (_event, noteId: string) => {
-  return pipeline.retractSteer(noteId);
+ipcMain.handle('docket:runner:steer-retract', async (_event, ownerOrNoteId: string, noteId?: string) => {
+  if (noteId !== undefined) return pipeline.retractSteer(ownerOrNoteId, noteId);
+  return pipeline.retractSteer(lastStartedTag ?? '', ownerOrNoteId);
 });
 
 // WO-0045: retract from a STOPPED drive's mirror — the row is the only queue then (the SDK queue died
@@ -624,25 +663,37 @@ ipcMain.handle('docket:source:retract-steer-note', async (_event, workOrderId: s
 
 // WO-0031c: Zorla kes — the 5s-stuck stop's escape hatch. A generator's injected return runs its
 // `finally` (the pipeline's completion guarantee records the session idle), unlike a hard process kill.
-ipcMain.handle('docket:runner:abort', async () => {
-  if (activeDrive?.return) {
-    const ret = activeDrive.return;
-    activeDrive = undefined;
-    await ret(undefined);
+// WO-0088: exactly the TARGETED drive folds; the other live drives are untouched.
+ipcMain.handle('docket:runner:abort', async (_event, owner?: string) => {
+  const tag = owner ?? lastStartedTag;
+  if (tag === undefined) return;
+  const iterator = activeDrives.get(tag);
+  if (iterator?.return) {
+    activeDrives.delete(tag);
+    await iterator.return(undefined);
   }
 });
 
-// WO-0027 / Bulgu 9: a remounted pane re-attaches to the asks this runner still holds — the resolvers are
-// alive in the runner, so decide() on these ids works immediately. The pipeline forwards to the runner.
-ipcMain.handle('docket:runner:pending-asks', () => runner.pendingAsks());
+// WO-0027 / Bulgu 9: a remounted pane re-attaches to the asks the runners still hold — the resolvers are
+// alive in the runners, so decide() on these ids works immediately. WO-0088: the aggregate over every
+// LIVE runner (the renderer's folds key their own asks; this is the re-attach surface).
+ipcMain.handle('docket:runner:pending-asks', async () => {
+  const all = await Promise.all([...liveRunnerInstances.values()].map((r) => r.pendingAsks()));
+  return all.flat();
+});
 
 // E2E-only scripting channel (WO-0031c): push a scripted RunnerEvent into the active fake drive.
 // WO-0051 / D7: stage the next pick-files answer (null = a cancelled dialog).
 // WO-0059: read back the last RESOLVED drive input — the main-side fills (cwd, permissionRule,
 // decisionStoreRoot, the model preference) become assertable without a real provider run.
+// WO-0088: a bare event routes to the most recently STARTED drive (the legacy one-drive shape the
+// whole suite speaks); { owner, ev } targets ONE drive by tag — the multi-drive scenarios' form.
 if (process.env.DOCKET_E2E) {
-  ipcMain.handle('docket:e2e:emit', (_e, ev: RunnerEvent) => {
-    (runner as E2eRunner).emit(ev);
+  ipcMain.handle('docket:e2e:emit', (_e, payload: RunnerEvent | { owner: string; ev: RunnerEvent }) => {
+    const target = 'owner' in payload && 'ev' in payload ? payload.owner : lastStartedTag;
+    const ev = 'owner' in payload && 'ev' in payload ? payload.ev : (payload as RunnerEvent);
+    const runner = target !== undefined ? (liveRunnerInstances.get(target) as E2eRunner | undefined) : undefined;
+    runner?.emit(ev);
   });
   ipcMain.handle('docket:e2e:pick-files', (_e, paths: string[] | null) => {
     stagedPickFiles = paths;

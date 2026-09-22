@@ -14,6 +14,7 @@ import type { TurnState, WoPhase } from '../../../core/derive';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import type { WorkspaceBudgetView } from '../../../core/budget';
+import { cwdOverrideIsAbsolute } from '../../../core/order-md';
 import { Badge, Button, Dialog, Field, Input, Textarea, Tooltip, cn } from '../../kit';
 import { toast } from '../../chrome/ToastHost';
 import { useLabels } from '../../data/locale';
@@ -44,6 +45,7 @@ const TURN_LAMP: Record<TurnState, LampTone> = {
 export function DetailStrip({
   detail,
   objective,
+  cwdOverride,
   phase,
   turn,
   duration,
@@ -59,6 +61,8 @@ export function DetailStrip({
   detail: WorkOrderDetailView;
   /** The parsed order.md Objective — the description editor's starting text (WO-0031c). */
   objective: string;
+  /** WO-0088: the parsed order.md `cwd:` — the working-copy field's prefill; undefined = empty. */
+  cwdOverride?: string;
   phase: WoPhase;
   /** The console's turn state — the band spine's lamp (WO-0038, the substrip's survivor). */
   turn: TurnState;
@@ -100,6 +104,9 @@ export function DetailStrip({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(detail.title);
   const [description, setDescription] = useState(objective);
+  // WO-0088: the working-copy draft — the taskRef idiom, difference-based save (cleared = drop).
+  const [cwd, setCwd] = useState(cwdOverride ?? '');
+  const [cwdErr, setCwdErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // WO-0036: the WsSettingsModal form contract — errors under their field; save failures toast
   // top-right (operator review round 2026-08-21; the footer carries no error copy).
@@ -110,7 +117,9 @@ export function DetailStrip({
     setEditing(false);
     setTitle(detail.title);
     setDescription(objective);
+    setCwd(cwdOverride ?? '');
     setTitleErr(null);
+    setCwdErr(null);
   };
   const save = async (): Promise<void> => {
     if (!title.trim()) {
@@ -118,6 +127,12 @@ export function DetailStrip({
       titleRef.current?.focus();
       return;
     }
+    // WO-0088 rev (m6): the SHAPE gate under the field (the store refuses existence — toast).
+    if (cwd.trim() !== '' && !cwdOverrideIsAbsolute(cwd.trim())) {
+      setCwdErr(UI.woCwdErr);
+      return;
+    }
+    setCwdErr(null);
     setSaving(true);
     try {
       // Difference-based: a CLEARED description saves empty (WO-0036 — the old non-empty guard silently
@@ -125,6 +140,8 @@ export function DetailStrip({
       await onUpdateWorkOrder({
         ...(title.trim() !== detail.title ? { title: title.trim() } : {}),
         ...(description.trim() !== objective ? { description: description.trim() } : {}),
+        // WO-0088: the taskRef idiom — a non-empty string sets the override, a clear DROPS the key.
+        ...(cwd.trim() !== (cwdOverride ?? '') ? { cwd: cwd.trim() === '' ? null : cwd.trim() } : {}),
       });
       setEditing(false);
       setTitleErr(null);
@@ -345,6 +362,15 @@ export function DetailStrip({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={UI.woDescPlaceholder}
                 className="font-sans text-[12.5px]"
+              />
+            </Field>
+            <Field label={UI.woCwdLabel} error={cwdErr}>
+              <Input
+                id="wo-edit-cwd"
+                value={cwd}
+                onChange={(e) => { setCwd(e.target.value); setCwdErr(null); }}
+                placeholder={UI.woCwdPlaceholder}
+                className="font-mono text-[12px]"
               />
             </Field>
           </div>

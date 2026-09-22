@@ -26,7 +26,7 @@ import { UsageScreen } from '../screens/UsageScreen';
 import { OverviewScreen } from '../screens/OverviewScreen';
 import { InviteHero } from '../components/InviteHero';
 import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
-import { createDriveStore, DriveStoreContext, useActiveDrive, useDriveActivity } from '../components/session/drive-store';
+import { createDriveStore, DriveStoreContext, useActiveDrives, useDriveActivity } from '../components/session/drive-store';
 import { ToastHost, toast } from '../chrome/ToastHost';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -137,22 +137,24 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. Created before
   // the cards memo because the board reads its live snapshot (base-mobile trial).
   const driveStore = useMemo(() => createDriveStore(runner), [runner]);
-  // base-mobile trial: the ONE active drive's facts (identity-stable between transitions — it does
-  // NOT re-render per transcript line). One subscription feeds the board overlay, the Sil gate and
-  // the title counter, so all three agree with the detail screen.
-  const activeDrive = useActiveDrive(driveStore);
+  // WO-0088: the RUNNING drives' facts — ONE entry per live WO drive (N at once; identity-stable
+  // between transitions — it does NOT re-render per transcript line). One subscription feeds the
+  // board overlays, the Sil gate and the title counter, so all three agree with the detail screen.
+  const activeDrives = useActiveDrives(driveStore);
   // WO-0060: the appbar chip's facts — a SECOND subscription on the same store; activitySnapshot's
   // primitive content-compare keeps it silent per streamed line and per ~30s windows-pull emit.
   const driveActivity = useDriveActivity(driveStore);
 
+  // WO-0088: each card overlays ITS OWN live drive — the snapshot whose woId matches (the draft
+  // never overlays a board card, the locked ruling).
   const cards = useMemo(
     () =>
       workOrders
         .filter((w) => w.workspace === workspaceId)
         .map((wo) =>
-          overlayLiveDrive(toCardView(wo), activeDrive !== undefined && activeDrive.woId === wo.id ? activeDrive : undefined),
+          overlayLiveDrive(toCardView(wo), activeDrives.find((s) => s.woId === wo.id)),
         ),
-    [workOrders, workspaceId, activeDrive],
+    [workOrders, workspaceId, activeDrives],
   );
 
   // WO-0060: the chip's input. The limit is an ACCOUNT fact → every WO's rows flatten into
@@ -161,15 +163,15 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // fold's status word. Date.now() in a memo is deliberate: stamps move only when these deps move;
   // the chip's own ticker owns every subsequent second.
   const appbarActivity = useMemo<AppbarActivity>(() => {
-    const running = driveActivity?.running === true;
+    const running = driveActivity?.running ?? 0;
     return {
-      running: running ? 1 : 0,
+      running,
       limitResetAt: limitInEffect(
         workOrders.flatMap((w) => w.sessions),
         driveActivity?.limitResetAt,
         Date.now(),
       ),
-      ...(running && driveActivity?.limitStatus === 'warning' && driveActivity.limitSubject
+      ...(running > 0 && driveActivity?.limitStatus === 'warning' && driveActivity.limitSubject
         ? { limitWarn: driveActivity.limitSubject }
         : {}),
     };
@@ -362,11 +364,13 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     (id: WorkspaceId) => {
       // Rows carry a started drive; the LIVE fact closes the boot window, where no row exists yet
       // (the store-side guard cannot see a pre-row drive either — this UI gate is the practical
-      // close; base-mobile trial).
-      const liveWs = activeDrive !== undefined ? workOrders.find((w) => w.id === activeDrive.woId)?.workspace : undefined;
-      return workOrders.some((w) => w.workspace === id && w.sessions.some((s) => s.status === 'running')) || liveWs === id;
+      // close; base-mobile trial). WO-0088: ANY live drive of the workspace counts.
+      const liveWsIds = new Set(
+        activeDrives.map((s) => workOrders.find((w) => w.id === s.woId)?.workspace).filter((ws) => ws !== undefined),
+      );
+      return workOrders.some((w) => w.workspace === id && w.sessions.some((s) => s.status === 'running')) || liveWsIds.has(id);
     },
-    [workOrders, activeDrive],
+    [workOrders, activeDrives],
   );
 
   // WO-0047: the workspace's budget view — threshold + the month's observed spend + status, read
@@ -776,10 +780,15 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     () => driveStore.get(`${workspaceId ?? ''}:draft`)?.state.pendingAsks.length ?? 0,
   );
   useEffect(() => {
-    const staleActive = activeDrive !== undefined && activeDrive.status !== 'stopped_asking' ? activeDrive.woId : undefined;
-    const waiting = workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking') && w.id !== staleActive).length + draftAsks;
+    // WO-0088: a live drive that is NOT parked on an ask hides its row's stale stopped_asking
+    // state — now a SET (N drives run at once).
+    const staleActives = new Set(
+      activeDrives.filter((s) => s.status !== 'stopped_asking').map((s) => s.woId),
+    );
+    const waiting =
+      workOrders.filter((w) => w.sessions.some((s) => s.status === 'stopped_asking') && !staleActives.has(w.id)).length + draftAsks;
     document.title = waiting > 0 ? UI.titlePending(waiting) : UI.productName;
-  }, [workOrders, activeDrive, draftAsks, UI]);
+  }, [workOrders, activeDrives, draftAsks, UI]);
 
   return (
     <DriveStoreContext.Provider value={driveStore}>

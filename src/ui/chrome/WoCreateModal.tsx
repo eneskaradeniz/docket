@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
+import { cwdOverrideIsAbsolute } from '../../core/order-md';
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
 import { toast } from './ToastHost';
@@ -63,6 +64,9 @@ export function WoCreateModal({
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
+  // WO-0088: the wave worktree — the WO's own working copy; empty = the connection table resolves.
+  const [cwd, setCwd] = useState('');
+  const [cwdErr, setCwdErr] = useState<string | null>(null);
   const [titleErr, setTitleErr] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -112,6 +116,13 @@ export function WoCreateModal({
       return;
     }
     setTitleErr(null);
+    // WO-0088 rev (m6): the SHAPE gate under the field — a working copy must be absolute (existence
+    // is the store's refusal, surfaced as the toast). ADR-0012: the error lives under its field.
+    if (cwd.trim() !== '' && !cwdOverrideIsAbsolute(cwd.trim())) {
+      setCwdErr(UI.woCwdErr);
+      return;
+    }
+    setCwdErr(null);
     // WO-0071: only tracks WITH ≥1 pick enter the payload; a pick naming a since-deselected track
     // never rides. Empty map → the field stays absent (the pre-WO-0071 call, byte-for-byte).
     const picked = selectedTracks
@@ -129,6 +140,7 @@ export function WoCreateModal({
         // WO-0049: the task→WO link — the task identity, written regardless of the track selection.
         ...(prefill !== undefined ? { taskRef: prefill.taskId } : {}),
         ...(picked.length > 0 ? { trackDependencies: picked } : {}),
+        ...(cwd.trim() !== '' ? { cwd: cwd.trim() } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -257,6 +269,19 @@ export function WoCreateModal({
             <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
             {UI.woContextAdd}
           </Button>
+        </section>
+
+        {/* WO-0088: the per-WO working copy — the wave worktree; absent = the connection table. */}
+        <section>
+          <Field label={UI.woCwdLabel} error={cwdErr}>
+            <Input
+              value={cwd}
+              onChange={(e) => { setCwd(e.target.value); setCwdErr(null); }}
+              placeholder={UI.woCwdPlaceholder}
+              aria-label={UI.woCwdLabel}
+              className="font-mono text-[12px]"
+            />
+          </Field>
         </section>
 
         <section>
