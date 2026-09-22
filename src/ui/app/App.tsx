@@ -169,6 +169,16 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // primitive content-compare keeps it silent per streamed line and per ~30s windows-pull emit.
   const driveActivity = useDriveActivity(driveStore);
 
+  // WO-0091: the stall clock — a drive going silent fires NO event, so the board would never
+  // re-derive the verdict on time alone. This slow tick re-reads the snapshots against the wall
+  // clock while any drive runs (the content-compare keeps every tick between crossings free); the
+  // panes need nothing — their own 1s ticker already re-derives the staleness line.
+  useEffect(() => {
+    if (activeDrives.length === 0) return;
+    const t = setInterval(() => driveStore.stallTick(), 30_000);
+    return () => clearInterval(t);
+  }, [driveStore, activeDrives.length]);
+
   // WO-0088: each card overlays ITS OWN live drive — the snapshot whose woId matches (the draft
   // never overlays a board card, the locked ruling).
   const cards = useMemo(

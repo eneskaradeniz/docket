@@ -226,16 +226,19 @@ describe('createRunner().drive — the turn_usage emission (scripted SDK)', () =
     expect(await runner.steer?.('ekranı daralt', { noteId: 'n1' })).toBe(true); // queues the note → result#1 becomes INTERMEDIATE
     g.release();
     await consumed;
-    expect(out.map((e) => e.kind)).toEqual(['started', 'steer_queued', 'turn_usage', 'steer_delivered', 'turn_usage', 'turn_complete']);
+    // WO-0091: the mock's context control rejects, so the HELD boundary's throttled read reports
+    // the feed's death exactly once — context_feed_lost lands after the escaped turn_usage, while
+    // the drive still runs (the terminal boundary's own read finds the flag already false).
+    expect(out.map((e) => e.kind)).toEqual(['started', 'steer_queued', 'turn_usage', 'context_feed_lost', 'steer_delivered', 'turn_usage', 'turn_complete']);
     const u1 = out[2] as Extract<RunnerEvent, { kind: 'turn_usage' }>;
-    const u2 = out[4] as Extract<RunnerEvent, { kind: 'turn_usage' }>;
+    const u2 = out[5] as Extract<RunnerEvent, { kind: 'turn_usage' }>;
     expect(u1.delta).toEqual({ tokensIn: 27802, tokensOut: 50, usd: 0.17658 });
     expect(u1.usage).toMatchObject({ cacheRead: 91008 }); // the held result's usage escaped TOO
     expect(u2.delta.tokensIn).toBe(44);
     expect(u2.delta.tokensOut).toBe(158);
     expect(u2.delta.usd).toBeCloseTo(0.029322, 6); // the c2 delta, per-leg baseline
     expect('usage' in u2 ? u2.usage : undefined).toBeUndefined(); // result#2 reported no rich fields
-    const done = out[5] as Extract<RunnerEvent, { kind: 'turn_complete' }>;
+    const done = out[6] as Extract<RunnerEvent, { kind: 'turn_complete' }>;
     expect(done.cost).toEqual({ tokensIn: 27802 + 44, tokensOut: 50 + 158, usd: 0.205902 }); // the ACCUMULATED total
   });
 

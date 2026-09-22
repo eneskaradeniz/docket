@@ -641,7 +641,14 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
           });
         })
         .catch(() => {
+          // WO-0091: surface the flip — the fold holds feed-liveness as fact so the stall gate
+          // answers cannot-tell (token movement unobservable) instead of stalling on silence it
+          // can no longer read. Exactly ONCE per drive, and only while it still runs: a rejection
+          // landing after the terminal boundary (or a second failed read) finds the flag already
+          // false and says nothing — the drive's own close owns that moment.
+          if (!contextFeedLive) return;
           contextFeedLive = false;
+          queue.push({ kind: 'context_feed_lost', at: new Date().toISOString() });
         });
     };
     // WO-0053 pull feed: the session's usage control at the emitContext cadence — WINDOWS ONLY,
