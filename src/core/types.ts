@@ -403,6 +403,10 @@ export type CardReason =
   // (the board line names it; clock-free by design — the reason states the stop + reset time, and
   // a later clean leg clears the stamp so the reason reverts).
   | { kind: 'limit_stopped'; resetAt: string }
+  // WO-0091: the stall gate — a LIVE drive whose observable progress went silent past the
+  // threshold. Overlay-only (the live fold's verdict, never a store row): the card becomes the
+  // operator's turn with this named reason while the drive keeps running underneath.
+  | { kind: 'stalled'; minutes: number }
   | { kind: 'awaiting_plan_commit' }
   | { kind: 'docs_not_updated' }
   | { kind: 'awaiting_next_session' };

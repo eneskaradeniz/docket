@@ -269,6 +269,26 @@ describe('overlayLiveDrive — the board is live from the click (base-mobile tri
     expect(v.column).toBe('running');
     expect(v.reason).toEqual({ kind: 'in_progress' });
   });
+
+  it('WO-0091: a stalled drive hands the card to the operator — up bucket, named reason, attention rank, no glyph', () => {
+    const v = overlayLiveDrive(view, { running: true, booting: false, status: 'running', stall: { minutes: 12 } });
+    expect(v.column).toBe('your_turn');
+    expect(v.bucket).toBe('up');
+    expect(v.reason).toEqual({ kind: 'stalled', minutes: 12 });
+    expect(v.action).toBeUndefined(); // the card itself is the act — open it and decide; the gate never kills
+    expect(v.actionRank).toBe(0); // beside the unanswered asks, above everything else
+  });
+
+  it('WO-0091: the boot window keeps the working overlay — a spawn is never a stall claim', () => {
+    const v = overlayLiveDrive(view, { running: true, booting: true, status: 'idle', stall: { minutes: 12 } });
+    expect(v.bucket).toBe('working');
+    expect(v.reason).toEqual({ kind: 'in_progress' });
+  });
+
+  it('WO-0091: a stalled card in a closed archive is terminal — closed is never overlaid', () => {
+    const closed = toCardView(aWorkOrder({ stage: 'closed', sessions: [] }));
+    expect(overlayLiveDrive(closed, { running: true, booting: false, status: 'running', stall: { minutes: 12 } })).toBe(closed);
+  });
 });
 
 describe('named invariant cases (AC10)', () => {

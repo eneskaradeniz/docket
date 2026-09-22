@@ -12,7 +12,9 @@ import {
   seedLiveState,
   shouldSynthesiseTurnComplete,
   staleMinutes,
+  stallVerdict,
   STALE_AFTER_MIN,
+  STALL_AFTER_MIN,
   summarizeToolInput,
   writeScopeFor,
 } from '../runner';
@@ -700,6 +702,112 @@ describe('staleMinutes (WO-0046)', () => {
   });
   it('an unparseable stamp is undefined, never NaN', () => {
     expect(staleMinutes({ status: 'running', lastLifeAt: 'not-a-date' }, at(10))).toBeUndefined();
+  });
+});
+
+// ===== WO-0091 — the stall fold (lastProgressAt, contextFeed) + the three-valued derivation =====
+
+describe('foldSessionEvent — the progress anchor (WO-0091)', () => {
+  it('tool events and entries stamp lastProgressAt; a limit reading proves LIFE but never PROGRESS', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-09-22T10:00:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T10:00:00Z');
+    s = foldSessionEvent(s, { kind: 'tool_use', callId: 'c1', tool: 'Bash', input: {}, at: '2026-09-22T10:01:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T10:01:00Z');
+    s = foldSessionEvent(s, { kind: 'limit_windows', windows: [], at: '2026-09-22T10:05:00Z' });
+    expect(s.lastLifeAt).toBe('2026-09-22T10:05:00Z'); // alive
+    expect(s.lastProgressAt).toBe('2026-09-22T10:01:00Z'); // but NOT advancing
+  });
+  it('a context reading stamps progress ONLY when the count MOVED — the first reading claims nothing', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-09-22T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 1000, maxTokens: 200000, percentage: 0.5, at: '2026-09-22T10:01:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T10:00:00Z'); // no baseline yet — no movement claim
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 1000, maxTokens: 200000, percentage: 0.5, at: '2026-09-22T10:09:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T10:00:00Z'); // frozen count: alive, NOT advancing
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 1042, maxTokens: 200000, percentage: 0.52, at: '2026-09-22T10:09:30Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T10:09:30Z'); // moved
+  });
+  it('an answered ask, a delivered note and an observed result re-anchor — the operator-side wait never reads as a stall', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-09-22T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'permission_request', requestId: 'r1', tool: 'Bash', input: {} });
+    s = foldSessionEvent(s, { kind: 'ask_resolved', requestId: 'r1', at: '2026-09-22T11:00:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T11:00:00Z'); // the ask_resolved precedent (WO-0046 review f1)
+    s = foldSessionEvent(s, { kind: 'steer_queued', noteId: 'n1', note: 'not', at: '2026-09-22T11:01:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T11:00:00Z'); // queueing is the operator's act, no drive progress
+    s = foldSessionEvent(s, { kind: 'steer_delivered', noteId: 'n1', text: 'not', at: '2026-09-22T11:05:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T11:05:00Z');
+    s = foldSessionEvent(s, { kind: 'turn_usage', delta: { tokensIn: 1, tokensOut: 1, usd: 0 }, at: '2026-09-22T11:06:00Z' });
+    expect(s.lastProgressAt).toBe('2026-09-22T11:06:00Z'); // an observed provider result is progress
+  });
+  it('started clears the prior leg\'s feed state — a resume opens a fresh feed', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-09-22T10:00:00Z' });
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 10, maxTokens: 100, percentage: 0.1, at: '2026-09-22T10:01:00Z' });
+    expect(s.contextFeed).toBe('live');
+    s = foldSessionEvent(s, { kind: 'started', sessionId: 'y', at: '2026-09-22T11:00:00Z' });
+    expect(s.contextFeed).toBeUndefined(); // the adapter-side feed flag is per-runDrive
+    expect(s.lastProgressAt).toBe('2026-09-22T11:00:00Z');
+  });
+});
+
+describe('foldSessionEvent — the context feed state (WO-0091)', () => {
+  it('the first reading marks the feed live; context_feed_lost marks it dead, with no liveness claim', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: '2026-09-22T10:00:00Z' });
+    expect(s.contextFeed).toBeUndefined(); // honest-absent until a signal
+    s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: 10, maxTokens: 100, percentage: 0.1, at: '2026-09-22T10:01:00Z' });
+    expect(s.contextFeed).toBe('live');
+    s = foldSessionEvent(s, { kind: 'context_feed_lost', at: '2026-09-22T10:02:00Z' });
+    expect(s.contextFeed).toBe('dead');
+    expect(s.lastLifeAt).toBe('2026-09-22T10:01:00Z'); // the feed's death says nothing about the drive
+    expect(s.status).toBe('running'); // and changes no status, adds no line
+    expect(s.entries).toHaveLength(1); // started's own line only — neither feed event adds one
+  });
+});
+
+describe('stallVerdict (WO-0091)', () => {
+  const anchor = '2026-09-22T10:00:00Z';
+  const at = (min: number) => Date.parse(anchor) + min * 60000;
+  const facts = (over: Partial<Parameters<typeof stallVerdict>[0]> = {}) => ({
+    status: 'running' as const,
+    lastProgressAt: anchor,
+    contextFeed: 'live' as const,
+    nowMs: at(0),
+    ...over,
+  });
+  it('the threshold is ONE named, pinned constant — per-role tuning deferred until there is data', () => {
+    expect(STALL_AFTER_MIN).toBe(10);
+  });
+  it('no movement and no tool events past the threshold → stalled, carrying the whole minutes', () => {
+    expect(stallVerdict(facts({ nowMs: at(STALL_AFTER_MIN) }))).toEqual({ kind: 'stalled', minutes: STALL_AFTER_MIN });
+    expect(stallVerdict(facts({ nowMs: at(STALL_AFTER_MIN - 0.1) })).kind).toBe('progressing');
+    expect(stallVerdict(facts({ nowMs: at(71) }))).toEqual({ kind: 'stalled', minutes: 71 }); // the observed case's scale
+  });
+  it('slow but advancing never trips — a MOVING count inside the window keeps the drive progressing', () => {
+    // readings 25 → 15 → 5 min ago with climbing counts: every movement re-anchors, so the
+    // verdict reads the NEWEST movement (5 min ago), not the drive's age.
+    const then = (minAgo: number) => new Date(Date.now() - minAgo * 60000).toISOString();
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 'x', at: then(25) });
+    for (const [minAgo, used] of [[25, 1000], [15, 1180], [5, 1330]] as const) {
+      s = foldSessionEvent(s, { kind: 'context_usage', usedTokens: used, maxTokens: 200000, percentage: used / 200000, at: then(minAgo) });
+    }
+    expect(stallVerdict({ status: s.status, lastProgressAt: s.lastProgressAt, contextFeed: s.contextFeed, nowMs: Date.now() })).toEqual({ kind: 'progressing' });
+  });
+  it('a DEAD feed reports cannot-tell, never stalled — absent is not zero (WO-0053)', () => {
+    expect(stallVerdict(facts({ contextFeed: 'dead', nowMs: at(30) })).kind).toBe('cannot-tell');
+  });
+  it('a feed that never delivered a reading reports cannot-tell too — token movement is simply unknown', () => {
+    expect(stallVerdict(facts({ contextFeed: undefined, nowMs: at(30) })).kind).toBe('cannot-tell');
+  });
+  it('a drive WAITING on the host-wide gate lock (WO-0089) is never stalled', () => {
+    expect(stallVerdict(facts({ waitingOnGateLock: true, nowMs: at(30) })).kind).toBe('cannot-tell');
+    expect(stallVerdict(facts({ waitingOnGateLock: false, nowMs: at(30) })).kind).toBe('stalled'); // the flag OFF does not shield
+  });
+  it('only a RUNNING fold can stall — asking/stopped/errored drives keep their own words', () => {
+    for (const status of ['stopped_asking', 'stopped', 'error', 'done', 'plan_ready', 'idle'] as const) {
+      expect(stallVerdict(facts({ status, nowMs: at(30) })).kind).toBe('cannot-tell');
+    }
+  });
+  it('no anchor, or a garbage one, claims nothing', () => {
+    expect(stallVerdict(facts({ lastProgressAt: undefined, nowMs: at(30) })).kind).toBe('cannot-tell');
+    expect(stallVerdict(facts({ lastProgressAt: 'not-a-date', nowMs: at(30) })).kind).toBe('cannot-tell');
   });
 });
 
