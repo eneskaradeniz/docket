@@ -6,7 +6,7 @@
 // Lives in src/adapters (not main) so electron/main.ts stays a 1:1 IPC delegate and fs sits beside the
 // store's existing gitRemote/execFileSync side-effect (boundary check permits node:fs in adapters).
 // Brand-clean: no woid/tid here — those stay in the store, which calls these helpers.
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FlowMode, PermissionRule, ReviewMode } from '../../core/source';
 import { parseOrderMd } from '../../core/order-md';
@@ -196,6 +196,17 @@ export function readWoDocs(structureRoot: string, id: string): { order: string; 
     }
   };
   return { order: read('order.md'), plan: read('plan.md') };
+}
+
+// WO-0089 — the local gate's declaration read: `<decision-store-root>/.workflow/workspace.yaml`
+// (ADR-0003/0009's documented versioned config — Docket reads ONLY; it never writes or scaffolds
+// the file). undefined = the file does not exist (the undeclared arm); a READ error propagates so
+// the caller can shape it invalid — a declaration that exists but cannot be read must never
+// silently become "nothing declared".
+export function readWorkspaceYaml(decisionStoreRoot: string): string | undefined {
+  const file = join(decisionStoreRoot, '.workflow', 'workspace.yaml');
+  if (!existsSync(file)) return undefined;
+  return readFileSync(file, 'utf8');
 }
 
 // Write a step's report into the WO's reports/ dir (WO-0017). Docket writes this server-side at turn_complete

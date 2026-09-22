@@ -345,7 +345,12 @@ describe('named invariant cases (AC10)', () => {
 
     const exemptGated = {
       ...exemptNoGate,
-      localGate: { kind: 'declared', sha: 'deadbee', at: '2026-09-22T00:00:00Z', results: [{ command: 'npm test', exit: 0, expectExit: 0, tail: '' }] },
+      localGate: {
+        kind: 'declared',
+        sha: 'deadbee',
+        at: '2026-09-22T00:00:00Z',
+        results: [{ command: 'npm test', exit: 0, expectExit: 0, tail: '' }],
+      } as import('../types').LocalGate,
     };
     const wGate = aWorkOrder({ tracks: [exemptGated] });
     expect(deriveTrackMerge(wGate, exemptGated)).toEqual({ kind: 'available' });

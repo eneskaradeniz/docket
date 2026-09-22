@@ -64,6 +64,7 @@ export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
   plan_approval: 'plan approval',
   pr_open: 'PR open',
   ci_green: 'CI green',
+  local_gate: 'local gate',
   verification: 'verifier report',
   closure: 'closure docs',
 };

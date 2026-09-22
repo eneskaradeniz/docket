@@ -3182,3 +3182,116 @@ describe('WO-0088 rev — the store refuses a cwd override that cannot be a work
     assert.equal(docs.order.includes('cwd:'), false, 'the drop did not clean the front-matter');
   });
 });
+
+// ===== WO-0089 — the local gate's store half =====
+//
+// The declaration lives in the decision store's `.workflow/workspace.yaml` (read at view time,
+// never stored — ADR-0010 rule 1); the MEASUREMENT is an observed table row (latest-wins per
+// track). Hydration composes the two into Track.localGate. Everything runs against throwaway
+// roots — never the real decision store.
+describe('SQLite store — the local gate (WO-0089)', () => {
+  const DECLARED_YAML = ['gate:', '  commands:', '    - command: npm test', '      expect_exit: 0', '    - command: npm run typecheck', ''].join('\n');
+  const wsWithGate = async (store: ReturnType<typeof createStore>, yaml?: string) => {
+    const dsRoot = freshRoot();
+    const codeRoot = freshRoot();
+    if (yaml !== undefined) {
+      mkdirSync(join(dsRoot, '.workflow'), { recursive: true });
+      writeFileSync(join(dsRoot, '.workflow', 'workspace.yaml'), yaml, 'utf8');
+    }
+    const ws = await store.createWorkspace({
+      label: 'Gated',
+      repos: [{ path: dsRoot }, { path: codeRoot }],
+      decisionStorePath: dsRoot,
+    });
+    return { ws, dsRoot, codeRoot, codeSlug: codeRoot.split('/').pop()! };
+  };
+  const gateWo = (store: ReturnType<typeof createStore>, ws: WorkspaceId, codeSlug: string) =>
+    store
+      .createWorkOrder({ workspaceId: ws, title: 'Gate', description: 'x', trackRepos: [rid(codeSlug)], reviewMode: 'gates', contextFiles: [] })
+      .then((wo) => store.getWorkOrder(wo.id));
+
+  it('no workspace.yaml → tracks hydrate with NO localGate (undeclared — today, byte-identical)', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, undefined);
+    const wo = await gateWo(store, ws.id, codeSlug);
+    expect(wo!.tracks[0]!.localGate).toBeUndefined();
+    expect(store.gateCommandsFor(wo!.id)).toEqual([]);
+  });
+
+  it('a declared gate with no run yet → pending (unknown, never a pass)', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, DECLARED_YAML);
+    const wo = await gateWo(store, ws.id, codeSlug);
+    expect(wo!.tracks[0]!.localGate).toEqual({ kind: 'pending' });
+    expect(store.gateCommandsFor(wo!.id)).toEqual([
+      { command: 'npm test', expectExit: 0 },
+      { command: 'npm run typecheck', expectExit: 0 },
+    ]);
+  });
+
+  it('an unreadable declaration → invalid with the parser\'s own reason (never silently undeclared)', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, ['gate:', '  commands: []', ''].join('\n'));
+    const wo = await gateWo(store, ws.id, codeSlug);
+    expect(wo!.tracks[0]!.localGate).toEqual({ kind: 'invalid', reason: expect.stringContaining('empty') });
+  });
+
+  it('recordLocalGateRun + rehydrate → declared with the sha it measured at, results verbatim', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, DECLARED_YAML);
+    let wo = await gateWo(store, ws.id, codeSlug);
+    const trackId = wo!.tracks[0]!.id;
+    store.recordLocalGateRun(wo!.id, rid(codeSlug), {
+      sha: 'deadbee',
+      at: '2026-09-22T00:00:00Z',
+      results: [
+        { command: 'npm test', exit: 0, expectExit: 0, tail: '3311 passed' },
+        { command: 'npm run typecheck', exit: 2, expectExit: 0, tail: 'error TS1234' },
+      ],
+    });
+    wo = await store.getWorkOrder(wo!.id);
+    expect(wo!.tracks[0]!.localGate).toEqual({
+      kind: 'declared',
+      sha: 'deadbee',
+      at: '2026-09-22T00:00:00Z',
+      results: [
+        { command: 'npm test', exit: 0, expectExit: 0, tail: '3311 passed' },
+        { command: 'npm run typecheck', exit: 2, expectExit: 0, tail: 'error TS1234' },
+      ],
+    });
+    expect(wo!.tracks[0]!.id).toBe(trackId);
+  });
+
+  it('a re-run REPLACES the row (latest-wins per track) and survives a reopen', async () => {
+    const p = freshDb();
+    const store = createStore(p);
+    const { ws, codeSlug } = await wsWithGate(store, DECLARED_YAML);
+    const wo = await gateWo(store, ws.id, codeSlug);
+    const run = (sha: string, exit: number) => ({ sha, at: `2026-09-22T00:00:0${exit}Z`, results: [{ command: 'npm test', exit, expectExit: 0, tail: '' }] });
+    store.recordLocalGateRun(wo!.id, rid(codeSlug), run('aaa', 1));
+    store.recordLocalGateRun(wo!.id, rid(codeSlug), run('bbb', 0));
+    const rows = store.db.prepare('SELECT COUNT(*) AS n FROM local_gate_run').get() as { n: number };
+    expect(rows.n).toBe(1); // replaced, never appended
+    const reopened = await createStore(p).getWorkOrder(wo!.id);
+    expect(reopened!.tracks[0]!.localGate).toEqual({ kind: 'declared', sha: 'bbb', at: '2026-09-22T00:00:00Z', results: [{ command: 'npm test', exit: 0, expectExit: 0, tail: '' }] });
+  });
+
+  it('a corrupt results blob hydrates pending (fail-open — a corrupt row never bricks hydration)', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, DECLARED_YAML);
+    const wo = await gateWo(store, ws.id, codeSlug);
+    store.recordLocalGateRun(wo!.id, rid(codeSlug), { sha: 'x', at: '2026-09-22T00:00:00Z', results: [] });
+    store.db.prepare('UPDATE local_gate_run SET results = ? WHERE track_id = ?').run('not json', wo!.tracks[0]!.id);
+    const again = await store.getWorkOrder(wo!.id);
+    expect(again!.tracks[0]!.localGate).toEqual({ kind: 'pending' });
+  });
+
+  it('recordLocalGateRun for an unknown track row throws honestly (never invents a row)', async () => {
+    const store = createStore(freshDb());
+    const { ws, codeSlug } = await wsWithGate(store, DECLARED_YAML);
+    const wo = await gateWo(store, ws.id, codeSlug);
+    expect(() =>
+      store.recordLocalGateRun(wo!.id, rid('no-such-repo'), { sha: 'x', at: '2026-09-22T00:00:00Z', results: [] }),
+    ).toThrow(/no track/);
+  });
+});

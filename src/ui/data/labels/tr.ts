@@ -65,6 +65,7 @@ export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
   plan_approval: 'plan onayı',
   pr_open: 'PR açık',
   ci_green: 'CI yeşil',
+  local_gate: 'yerel kapı',
   verification: 'doğrulama raporu',
   closure: 'kapanış belgeleri',
 };
