@@ -3411,6 +3411,40 @@ await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; ola
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Paralel A' }).count(), 0, 'the throwaway parallel WO survived');
 });
 
+// ===== WO-0090 — the briefing check: the briefing resolves before it ships =====
+// The 'brifing' world's decision store is the suite's only GIT repo — everywhere else the check
+// is honestly undefined ("could not look") and no line renders, so this world owns all three pins.
+// The block switches back to 'e2e': the WO-0092 section below arrives assuming it.
+await spec('WO-0090 bayat brifing: eksik işaret VE bakılan sürüm, sürüşten önce karar yığınında adlanır', async () => {
+  await switchWs('e2e', 'brifing');
+  await openDetail('Brifing bayat');
+  // poll for the line — the check read rides its own IPC beside the detail load
+  await page.waitForSelector('[data-briefing-stale]', { timeout: 8000 });
+  const line = page.locator('[data-briefing-stale]');
+  assert.equal(await line.count(), 1, 'the stale briefing line did not render');
+  const text = (await line.innerText()) ?? '';
+  assert.ok(text.includes('lib/kayip.dart:9'), `the line does not name the missing pointer: ${text}`);
+  assert.ok(!text.includes('src/a.ts'), `the line names a RESOLVING pointer (noise): ${text}`);
+  assert.ok(/@[0-9a-f]{7}\b/.test(text), `the line does not name the checked sha: ${text}`);
+  await page.screenshot({ path: join(SHOTS, 'briefing-stale-line@980.png') });
+  await backToBoard();
+});
+
+await spec('WO-0090 temiz brifing: her işaret çözümlenince YENİ hiçbir şey çizilmez (gürültü pimi)', async () => {
+  await openDetail('Brifing temiz');
+  await page.waitForTimeout(600); // let the check land before asserting its silence
+  assert.equal(await page.locator('[data-briefing-stale]').count(), 0, 'a line rendered over an all-resolving briefing');
+  await backToBoard();
+});
+
+await spec('WO-0090 işaretsiz brifing: sıfır işaret yokluktur — satır yok, hata yok (WO-0053 kuralı)', async () => {
+  await openDetail('Brifing sade');
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('[data-briefing-stale]').count(), 0, 'a zero-pointer briefing rendered a line (absent, never a failure)');
+  await backToBoard();
+  await switchWs('brifing', 'e2e'); // the WO-0092 section below arrives assuming 'e2e'
+});
+
 // ===== WO-0091 — the stall gate: a live drive that stops making progress is the operator's turn =====
 // The verdict is derived from STAMPS, never wall-clock waiting: the events below carry `at`
 // stamps minted minutes in the past, so the fold crosses the threshold the moment they land.

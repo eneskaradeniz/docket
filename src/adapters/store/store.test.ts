@@ -3402,4 +3402,12 @@ describe('WO-0090 — briefingCheck: the briefing resolves before it ships (surf
     const store = createStore(freshDb());
     assert.equal(await store.briefingCheck(woid('WO-9999')), undefined);
   });
+
+  it('the briefing is ORDER.MD only — a bogus pointer in plan.md is not this check\'s claim (TD-003 selection stays out)', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const wo = await briefedWo(store, root, 'Clean order, prose only.');
+    await store.approvePlan(wo.id, '# plan\n\nThe plan says lib/kayip.dart:9 — not checkable here.\n\n```steps\n[]\n```\n');
+    assert.equal(await store.briefingCheck(wo.id), undefined); // zero pointers in the BRIEFING
+  });
 });
