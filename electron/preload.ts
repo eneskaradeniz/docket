@@ -54,6 +54,8 @@ const source: WorkOrderSource = {
   getOriginalPlan: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-original-plan', id) as Promise<string | null>,
   restoreOriginalPlan: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:restore-original-plan', id),
   getWorkOrderSteps: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-steps', id),
+  // WO-0090: the briefing check — order.md pointers resolved at each repo's HEAD sha (surface fact).
+  briefingCheck: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:briefing-check', id),
   getStepReport: (id: WorkOrderId, idx: number, role: StepRole) =>
     ipcRenderer.invoke('docket:source:get-step-report', id, idx, role),
   getStepVerdict: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:get-step-verdict', id, idx),

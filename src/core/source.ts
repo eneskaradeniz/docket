@@ -16,6 +16,17 @@ export interface RepoConnectionInput {
   remote?: string;
 }
 
+/** WO-0090 — the pre-drive briefing check's result: order.md's `path:line` pointers resolved
+ *  READ-AT-SHA (each repo root at its HEAD — the sha a fresh drive starts from), with the
+ *  unresolved subset named for the operator BEFORE the drive. Surface facts only — never a block. */
+export interface BriefingCheck {
+  /** Each repo root the check looked at: its basename + the FULL sha it was checked at. */
+  repos: Array<{ repo: string; sha: string }>;
+  /** Pointers that resolved at no checked sha, document order, verbatim (`:line` intact).
+   *  Empty = every pointer resolved. */
+  unresolved: string[];
+}
+
 /** The workspace's pending roadmap draft (WO-0050) — what the TASLAK card renders. */
 export interface RoadmapDraft {
   md: string;
@@ -251,6 +262,17 @@ export interface WorkOrderSource {
   // observed run state. [] when the plan has no steps fence or isn't approved. Detail-only — the board never
   // asks for steps (ADR-0010: specs are document text, never stored; only the run outcome is persisted).
   getWorkOrderSteps(workOrderId: WorkOrderId): Promise<StepView[]>;
+
+  // WO-0090 — the pre-drive briefing check: the briefing (order.md) is read at view time from the
+  // working tree, its pointers extracted (core's extractPointers — the same tokens the verification
+  // gate extracts from a verifier report), and each resolved READ-AT-SHA against the WO's repo
+  // roots (git cat-file at each root's HEAD — the sha a fresh drive starts from; the gate's
+  // file-exists-under-ANY-root answer, never line-in-range). SURFACE, never a block: a briefing may
+  // legitimately name a file the work will create. undefined = nothing checkable — no order.md,
+  // zero pointers, or no root resolves a git HEAD ("could not look", never a failure — ADR-0010's
+  // unknown, the WO-0053 rule). Read at view time (the pre-drive moment) so the operator sees it
+  // BEFORE dispatching; the returned check names the sha it ran at.
+  briefingCheck(workOrderId: WorkOrderId): Promise<BriefingCheck | undefined>;
 
   // A step's report body, read from the decision store at view time (ADR-0010 — report text is in git, not
   // the DB). Lazy per-step read. '' when the report file is absent (step not yet run).

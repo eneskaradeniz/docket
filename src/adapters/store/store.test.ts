@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { strict as assert } from 'node:assert';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -3293,5 +3294,112 @@ describe('SQLite store — the local gate (WO-0089)', () => {
     expect(() =>
       store.recordLocalGateRun(wo!.id, rid('no-such-repo'), { sha: 'x', at: '2026-09-22T00:00:00Z', results: [] }),
     ).toThrow(/no track/);
+  });
+});
+
+// ===== WO-0090 — the briefing check: order.md pointers resolved at the drive-start sha =====
+//
+// The verification gate resolves a verifier report's pointers against the WORKING tree at record
+// time (pointerResolvable). This is its pre-drive twin over the BRIEFING (order.md), resolved
+// READ-AT-SHA — each of the WO's repo roots at its HEAD, the sha a fresh drive starts from. A real
+// git repo is the only honest fixture: every pin below needs a sha.
+describe('WO-0090 — briefingCheck: the briefing resolves before it ships (surface, never a block)', () => {
+  const git = (root: string, ...args: string[]): string =>
+    execFileSync('git', ['-C', root, ...args], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const gitRepo = (): string => {
+    const root = freshRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'a.ts'), 'export {};\n');
+    git(root, 'init', '-q');
+    git(root, 'add', '-A');
+    git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'seed');
+    return root;
+  };
+  const briefedWo = async (store: ReturnType<typeof createStore>, root: string, description: string) => {
+    const ws = await store.createWorkspace({ label: 'Briefing', repos: [{ path: root }] });
+    return store.createWorkOrder({
+      workspaceId: ws.id,
+      title: 'Briefed',
+      description,
+      trackRepos: ws.repos,
+      reviewMode: 'gates',
+      contextFiles: [],
+    });
+  };
+
+  it('all pointers resolving at HEAD → the empty-unresolved all-clear, and the check NAMES the sha it ran at', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const wo = await briefedWo(store, root, 'The map lives at src/a.ts:1 — brifing buna dayanır.');
+    const check = await store.briefingCheck(wo.id);
+    const head = git(root, 'rev-parse', 'HEAD').trim();
+    assert.deepEqual(check, { repos: [{ repo: root.split('/').pop()!, sha: head }], unresolved: [] });
+  });
+
+  it('an unresolvable pointer is NAMED, verbatim with its :line — before any drive runs', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const wo = await briefedWo(store, root, 'src/a.ts:1 holds, but lib/missing.dart:9 is the rot.');
+    const check = await store.briefingCheck(wo.id);
+    assert.deepEqual(check!.unresolved, ['lib/missing.dart:9']);
+    assert.equal(check!.repos.length, 1);
+  });
+
+  it('a working-tree file the sha does not have does NOT answer — the read is AT the sha, not the tree', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const wo = await briefedWo(store, root, 'lib/fresh.ts:1 was written but never committed.');
+    const check = await store.briefingCheck(wo.id);
+    assert.deepEqual(check!.unresolved, ['lib/fresh.ts:1']); // the sha discipline: uncommitted ≠ resolved
+  });
+
+  it('zero pointers in the briefing → undefined — absent, never a failure (the WO-0053 rule)', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const wo = await briefedWo(store, root, 'Prose only: veri katmanı hazır, dokunma. Saat 12:30.');
+    assert.equal(await store.briefingCheck(wo.id), undefined);
+  });
+
+  it('a root with no git HEAD (not a repo) → undefined — "could not look", never a failure', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot(); // no git init — the fixture idiom
+    const wo = await briefedWo(store, root, 'src/a.ts:1 would resolve if this were a repo.');
+    assert.equal(await store.briefingCheck(wo.id), undefined);
+  });
+
+  it('an ABSOLUTE pointer resolves through its relative remainder under the root; outside maps to nothing', async () => {
+    const store = createStore(freshDb());
+    const root = gitRepo();
+    const inside = join(root, 'src', 'a.ts');
+    const wo = await briefedWo(store, root, `See ${inside}:1 — and /definitely/outside.ts:2 is nowhere.`);
+    const check = await store.briefingCheck(wo.id);
+    assert.deepEqual(check!.unresolved, ['/definitely/outside.ts:2']);
+  });
+
+  it('ANY root may answer — the gate\'s root-set semantics, reused (a dependency repo holds the pointer)', async () => {
+    const store = createStore(freshDb());
+    const rootA = gitRepo();
+    const rootB = gitRepo();
+    mkdirSync(join(rootB, 'lib'), { recursive: true });
+    writeFileSync(join(rootB, 'lib', 'map.dart'), 'void main() {}\n');
+    git(rootB, 'add', '-A');
+    git(rootB, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'lib');
+    const ws = await store.createWorkspace({ label: 'Two roots', repos: [{ path: rootA }, { path: rootB }] });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id,
+      title: 'Deps',
+      description: 'lib/map.dart:4 lives in the OTHER repo; src/a.ts:1 in this one.',
+      trackRepos: ws.repos,
+      reviewMode: 'gates',
+      contextFiles: [],
+    });
+    const check = await store.briefingCheck(wo.id);
+    assert.equal(check!.unresolved.length, 0);
+    assert.equal(check!.repos.length, 2); // both roots named with their own shas
+  });
+
+  it('a missing WO reads undefined — no order.md, nothing checkable', async () => {
+    const store = createStore(freshDb());
+    assert.equal(await store.briefingCheck(woid('WO-9999')), undefined);
   });
 });

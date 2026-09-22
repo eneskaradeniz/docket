@@ -18,9 +18,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
-import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, validateTrackDependencies, type ObservedStep } from '../../core/derive';
+import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, resolvePointers, validateTrackDependencies, type ObservedStep } from '../../core/derive';
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
-import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
+import type { BriefingCheck, CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, readWorkspaceYaml, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
@@ -1825,6 +1825,58 @@ function pointerResolvable(pointer: string, roots: string[]): boolean {
   return candidates.some((c) => existsSync(c));
 }
 
+// WO-0090 — the pre-drive twin of pointerResolvable, READ-AT-SHA: the path's relative remainder
+// under the root (a relative path is itself; an absolute one maps through its prefix; outside maps
+// to nothing) must exist at `sha` in that repo (`git cat-file -e` — the working tree never answers
+// for the sha). Quiet by design: a missing path is the ANSWER (exit ≠ 0 → false), never an error.
+function fileExistsAtSha(root: string, sha: string, path: string): boolean {
+  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
+    const prefix = root.endsWith('/') ? root : `${root}/`;
+    if (!path.startsWith(prefix)) return false; // absolute under no root — resolves at nothing here
+    path = path.slice(prefix.length);
+  }
+  try {
+    execFileSync('git', ['-C', root, 'cat-file', '-e', `${sha}:${path}`], { timeout: 2000, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// WO-0090 — the briefing check (order.md's pointers, resolved at the sha a fresh drive starts
+// from). The pure half (path preprocessing + the unresolved split) is core's resolvePointers; THIS
+// composes the repo facts: every root at its OWN HEAD (a root that resolves no HEAD — not a git
+// repo — is skipped; none left = "could not look" = undefined, never a failure), then feeds the
+// ANY-root predicate. Zero pointers = undefined (absent — the WO-0053 rule). No drive is refused:
+// the result is a surface fact for the operator.
+function briefingCheckRow(db: DatabaseSync, workOrderId: WorkOrderId): BriefingCheck | undefined {
+  const dir = woDir(db, workOrderId);
+  if (!dir) return undefined;
+  const { order } = readWoDocs(dir, workOrderId);
+  if (!order) return undefined;
+  const pointers = extractPointers(order);
+  if (pointers.length === 0) return undefined;
+  const checked: Array<{ root: string; sha: string }> = [];
+  for (const root of woRepoPaths(db, workOrderId)) {
+    try {
+      const sha = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
+        encoding: 'utf-8',
+        timeout: 2000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (sha) checked.push({ root, sha });
+    } catch {
+      // not a git repo (or git missing) — skip the root, never fail the check
+    }
+  }
+  if (checked.length === 0) return undefined;
+  const unresolved = resolvePointers(pointers, (path) => checked.some(({ root, sha }) => fileExistsAtSha(root, sha, path)));
+  return {
+    repos: checked.map(({ root, sha }) => ({ repo: repoBase(root), sha })),
+    unresolved,
+  };
+}
+
 // Write a step's report to the decision store (reports/step-NN-<role>.md) and mark the step done with the
 // pointer. Mirrors approvePlan: path resolution + the working-tree write stay store-internal (ADR-0001), and
 // the agent never writes its own report. Throws if the WO dir is missing (order.md must exist first).
@@ -2451,6 +2503,8 @@ export function createStore(dbPath: string): Store {
     },
     // The plan's steps (WO-0017) — specs parsed from plan.md + zipped with the observed run state. Detail-only.
     getWorkOrderSteps: (id: WorkOrderId) => Promise.resolve(buildWorkOrderSteps(db, id)),
+    // WO-0090 — the briefing check (order.md's pointers at the drive-start sha; surface, never a block).
+    briefingCheck: (id: WorkOrderId) => Promise.resolve(briefingCheckRow(db, id)),
     // A step report body, read from the decision store at view time (ADR-0010). '' when the report is absent.
     getStepReport: (id: WorkOrderId, idx: number, role: StepRole) => {
       const dir = woDir(db, id);
