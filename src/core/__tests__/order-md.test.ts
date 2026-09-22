@@ -312,3 +312,16 @@ describe('withOverride (WO-0070)', () => {
     expect(withOverride(r, undefined)).toBe(r);
   });
 });
+
+// ===== WO-0088 — the per-WO cwd override (the wave's worktree seam) =====
+describe('parseOrderMd — the front-matter cwd key (WO-0088)', () => {
+  it('carries cwd when the front-matter names a working copy', () => {
+    const md = ['---', 'id: WO-0088', 'title: Paralel', 'cwd: /wave/wt/WO-0088', '---', '', '# WO-0088'].join('\n');
+    expect(parseOrderMd(md).cwd).toBe('/wave/wt/WO-0088');
+  });
+
+  it('absent → undefined (the connection-table fallback stands)', () => {
+    const md = ['---', 'id: WO-0088', 'title: Paralel', '---', '', '# WO-0088'].join('\n');
+    expect(parseOrderMd(md).cwd).toBeUndefined();
+  });
+});

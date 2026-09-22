@@ -71,7 +71,8 @@ const backToBoard = async () => {
   await page.waitForTimeout(350);
 };
 // gates cadence chains drives (step → review → verdict → next step…): stop whatever is running
-// until the chain rests, or the one-drive-at-a-time rule blocks the next spec.
+// until the chain rests, so a leftover drive never crosses into the next spec's stage. WO-0088:
+// N drives MAY run at once — the loop presses Durdur until nothing is left.
 const stopAllDrives = async () => {
   for (let i = 0; i < 4; i++) {
     const btn = page.getByRole('button', { name: 'Durdur', exact: true });
@@ -3277,6 +3278,123 @@ await spec('WO-0072 boş yüz: iş emri, görev ve borcu olmayan çalışma alan
   assert.ok(screen.includes('Gösterilecek bir şey yok'), `not the invitation: ${screen}`);
   assert.ok(!screen.includes('Başlamaya hazır') && !screen.includes('Açık borçlar'), 'an empty section framed itself');
   await backToBoard();
+});
+
+// ===== WO-0088 — the parallel spine: N work orders + a draft driving at once =====
+// The scripted fake is per-drive now (the composition root mints ONE runner per owner); the test
+// targets each drive by its owner tag ({ owner, ev } emit) — the legacy bare emit would hit the
+// most recently started drive only.
+const taggedEmit = (owner, ev) => page.evaluate(([o, e]) => window.docket.e2e?.emit({ owner: o, ev: e }), [owner, ev]);
+const wsTagEmit = async (ev) => {
+  const ws = (await page.evaluate(() => window.docket.source.getWorkspaces())).find((w) => w.id === 'taslak');
+  await taggedEmit(`ws:${ws.id}`, ev);
+};
+
+await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; olaylar, masraflar ve sorular karışmaz', async () => {
+  await switchWs('bos', 'e2e'); // the previous spec left the empty workspace; the wave rides 'e2e'
+  await stopAllDrives();
+  await backToBoard();
+  // --- stage two fresh work orders and start BOTH plan drives ---
+  const readWoId = async (title) => page.evaluate((t) => window.docket.source.getWorkOrders().then((os) => os.find((o) => o.title === t)?.id ?? null), title);
+  const openWo = async (title) => {
+    await page.locator('[data-wo-id]', { hasText: title }).first().click();
+    await page.waitForTimeout(450);
+  };
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Paralel A');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(600); // A's drive boots
+  await backToBoard();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Paralel B');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(600); // B's drive boots WHILE A runs — the old singleton refused here
+  const woA = await readWoId('Paralel A');
+  const woB = await readWoId('Paralel B');
+  assert.ok(woA && woB, 'the two parallel work orders did not resolve');
+  // --- a ✦ draft drives alongside both (the 'taslak' ws has a clean roadmap face) ---
+  await backToBoard();
+  await switchWs('e2e', 'taslak');
+  await openRoadmap();
+  await startDraft('E2E: paralel dalga taslağı.');
+  await page.waitForTimeout(400);
+  const pane = page.locator('[data-roadmap-pane]');
+  assert.ok(((await pane.innerText()) || '').includes('MİMAR — TASLAK'), 'no live draft pane');
+  // --- three live streams, each tagged: the words land in THEIR pane only ---
+  await taggedEmit(`wo:${woA}`, { kind: 'assistant_text', text: 'A paralel satırı' });
+  await taggedEmit(`wo:${woB}`, { kind: 'assistant_text', text: 'B paralel satırı' });
+  await wsTagEmit({ kind: 'assistant_text', text: 'taslak paralel satırı' });
+  await page.waitForTimeout(400);
+  // the board carries BOTH running cards (the Çalışıyor bucket hosts them side by side)
+  const bucket = (name) => page.locator('section').filter({ has: page.locator('h2', { hasText: name }) });
+  await switchWs('taslak', 'e2e');
+  await page.getByRole('button', { name: 'Pano' }).click(); // the surface rides the switch — land it
+  await page.waitForTimeout(400);
+  assert.ok((await bucket('Çalışıyor').locator('[data-wo-id]', { hasText: 'Paralel A' }).count()) >= 1, 'A\'s card is not in Çalışıyor');
+  assert.ok((await bucket('Çalışıyor').locator('[data-wo-id]', { hasText: 'Paralel B' }).count()) >= 1, 'B\'s card is not in Çalışıyor');
+  // A's detail shows A's words, never B's (the transcript lives behind the döküm chip)
+  await openWo('Paralel A');
+  await page.getByRole('button', { name: 'Dökümü aç' }).first().click();
+  await page.waitForTimeout(400);
+  const paneA = await page.locator('main').first().innerText();
+  assert.ok(paneA.includes('A paralel satırı'), 'A\'s own line did not stream');
+  assert.ok(!paneA.includes('B paralel satırı'), 'B\'s line leaked into A\'s detail');
+  // --- two asks held at once; each card names ITS work order; answering A leaves B held ---
+  await taggedEmit(`wo:${woA}`, { kind: 'permission_request', requestId: 'par-a', tool: 'Bash', input: { command: 'git push origin wo-par-a' } });
+  await taggedEmit(`wo:${woB}`, { kind: 'permission_request', requestId: 'par-b', tool: 'Bash', input: { command: 'git push origin wo-par-b' } });
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByText('git push origin wo-par-a').count()) >= 1, 'A\'s ask card did not surface');
+  assert.ok((await page.locator('main').first().innerText()).includes(woA), 'A\'s ask card does not name its work order');
+  await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
+  await page.waitForTimeout(700); // decide → A's runner releases + ask_resolved streams
+  assert.equal(await page.getByText('git push origin wo-par-a').count(), 0, 'A\'s answered ask card survived');
+  // B's ask: still held, and the card carries B's id (the WO-0088 subject chip)
+  await backToBoard();
+  await openWo('Paralel B');
+  await page.getByRole('button', { name: 'Dökümü aç' }).first().click();
+  await page.waitForTimeout(400);
+  const bText = await page.locator('main').first().innerText();
+  assert.ok(bText.includes('git push origin wo-par-b'), 'B\'s held ask vanished when A\'s was answered');
+  assert.ok(bText.includes(woB), `B\'s ask card does not name its work order (${woB})`);
+  assert.ok(bText.includes('B paralel satırı') && !bText.includes('A paralel satırı'), 'B\'s transcript crossed with A\'s');
+  // --- resume B (answer its held ask), then Durdur stops EXACTLY B while A keeps running to completion ---
+  await page.getByRole('button', { name: 'İzin ver', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'Durdur', exact: true }).first().click();
+  await page.waitForTimeout(900);
+  const readStatuses = (id) => page.evaluate((wid) => window.docket.source.getWorkOrder(wid).then((w) => w.sessions.map((s) => s.status)), id);
+  assert.ok((await readStatuses(woB)).includes('stopped'), `B\'s drive did not record stopped: ${await readStatuses(woB)}`);
+  await taggedEmit(`wo:${woA}`, { kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 90, tokensOut: 40, usd: 0.02 } });
+  await page.waitForTimeout(700);
+  assert.ok((await readStatuses(woA)).includes('idle'), `A\'s drive did not record its terminal idle: ${await readStatuses(woA)}`);
+  // the record: A's terminal row carries its own cost under its own owner — no clobbered sessions
+  const rows = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w.sessions.map((s) => ({ cost: s.cost?.usd ?? null, status: s.status }))), woA);
+  assert.ok(rows.some((r) => r.cost !== null && Math.abs(r.cost - 0.02) < 1e-9), `A\'s terminal row lost its cost: ${JSON.stringify(rows)}`);
+  // --- the draft finishes alongside (its own owner tag) ---
+  await switchWs('e2e', 'taslak');
+  await openRoadmap();
+  await wsTagEmit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 300, tokensOut: 120, usd: 0.01 } });
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: join(SHOTS, 'parallel-spine@980.png') });
+  // cleanup: the two throwaway work orders leave the way they came
+  await page.getByRole('button', { name: 'Pano' }).click();
+  await switchWs('taslak', 'e2e');
+  await page.getByRole('button', { name: 'Pano' }).click(); // the surface rides the switch — land it
+  await page.waitForTimeout(400);
+  for (const title of ['Paralel A', 'Paralel B']) {
+    await openWo(title);
+    await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+    await page.waitForTimeout(300);
+    await page.getByText('Evet, sil').click();
+    await page.waitForTimeout(800);
+  }
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Paralel A' }).count(), 0, 'the throwaway parallel WO survived');
 });
 
 await spec('zero renderer console errors', async () => {

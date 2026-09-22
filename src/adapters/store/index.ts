@@ -1540,6 +1540,18 @@ function driveCwdRow(db: DatabaseSync, input: DriveInput): string {
   const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(input.workOrderId) as { ws: string } | undefined;
   if (!wo) return process.cwd();
   const wsId = wid(wo.ws);
+  // WO-0088: the wave worktree — the WO's OWN working copy wins over the connection table (the
+  // operator aimed this work order at a per-WO checkout; the write fence jails to it because the
+  // adapter's repoRoot IS this cwd). Read from order.md front-matter at spawn time (the
+  // effectivePermissionRule pattern — no cache, no column). Absent → the table below stands.
+  const dir = woDir(db, input.workOrderId);
+  if (dir) {
+    const { order } = readWoDocs(dir, input.workOrderId);
+    if (order) {
+      const override = parseOrderMd(order).cwd;
+      if (override) return override;
+    }
+  }
   if (input.scope !== undefined) {
     const t = db
       .prepare('SELECT repo FROM track WHERE id = ? AND work_order_id = ?')
@@ -2068,6 +2080,7 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.trackDependencies
             ? {
                 trackDependencies: input.trackDependencies.map((d) => ({
@@ -2163,6 +2176,7 @@ export function createStore(dbPath: string): Store {
         patch.reviewMode !== undefined ? 'review_mode' : null,
         patch.flowMode !== undefined ? 'flow_mode' : null,
         patch.taskRef !== undefined ? 'task' : null,
+        patch.cwd !== undefined ? 'cwd' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);

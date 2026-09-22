@@ -86,6 +86,10 @@ export interface CreateWorkOrderInput {
   // Absent = the pre-WO-0071 behavior byte-for-byte (zero rows, empty lists). Validated purely by
   // core's validateTrackDependencies before anything is written.
   trackDependencies?: TrackDependencyInput[];
+  // WO-0088: the work order's OWN working copy (the wave worktree) — → order.md front-matter `cwd:`.
+  // A PATH, like the local-context precedent: the operator's act, never a store column. Absent →
+  // the connection table resolves the cwd (WO-0050 / D8, unchanged).
+  cwd?: string;
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
@@ -97,6 +101,7 @@ export interface UpdateWorkOrderInput {
   flowMode?: FlowMode; // the Akış chip toggle — audited as flow_mode_changed
   permissionRule?: PermissionRule;
   taskRef?: string | null; // → order.md front-matter task (WO-0048): string sets the link, null drops it
+  cwd?: string | null; // → order.md front-matter cwd (WO-0088): string sets the working copy, null drops it
 }
 
 export interface WorkOrderSource {

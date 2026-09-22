@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyCommandLine,
+  driveOwnerTag,
   fenceDecision,
   foldSessionEvent,
   initialSessionState,
@@ -841,5 +842,27 @@ describe('classifyCommandLine — the gh dispatch (ADR-0017)', () => {
   it('the git side is unchanged: commit is a write, push is a write', () => {
     expect(cl('git commit -m "x"').isWrite).toBe(true);
     expect(cl('git push origin wo-0067-agent-git-actions').isWrite).toBe(true);
+  });
+});
+
+// ===== WO-0088 — the owner tag: the parallel spine's ONE key =====
+describe('driveOwnerTag — the one key every keyed layer derives from the drive input', () => {
+  const woDrive = (id: string): DriveInput => ({ role: 'implementer', workOrderId: id as WorkOrderId, mode: 'direct', prompt: '' });
+  const draftDrive = (id: string): DriveInput =>
+    ({ role: 'architect', workspaceId: id as WorkspaceId, mode: 'plan', prompt: '', goalNote: 'n', docPaths: [] });
+
+  it('a WO drive tags wo:<workOrderId>', () => {
+    expect(driveOwnerTag(woDrive('WO-0088'))).toBe('wo:WO-0088');
+  });
+
+  it('a draft drive tags ws:<workspaceId>', () => {
+    expect(driveOwnerTag(draftDrive('antreo'))).toBe('ws:antreo');
+  });
+
+  it('the tag is stable across the drive input’s other fields (step/review/resume never change the owner)', () => {
+    const step: DriveInput = { role: 'implementer', workOrderId: 'WO-1' as WorkOrderId, mode: 'direct', prompt: '', stepIndex: 3 };
+    const review: DriveInput = { role: 'architect', workOrderId: 'WO-1' as WorkOrderId, mode: 'direct', prompt: '', reviewStepIndex: 2 };
+    expect(driveOwnerTag(step)).toBe(driveOwnerTag(woDrive('WO-1')));
+    expect(driveOwnerTag(review)).toBe(driveOwnerTag(woDrive('WO-1')));
   });
 });

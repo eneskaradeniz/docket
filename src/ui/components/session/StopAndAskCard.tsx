@@ -25,6 +25,7 @@ export function StopAndAskCard({
   input,
   reason,
   planContext,
+  subject,
   onAllow,
   onDeny,
   onAlwaysAuto,
@@ -37,6 +38,9 @@ export function StopAndAskCard({
   reason?: string;
   /** In the architect plan flow a permission reads as "the architect wants to do X", not an alarm. */
   planContext?: boolean;
+  /** WO-0088: WHO asks — the owner work order's label chip. With N owners driving in parallel the
+   *  card must name its work order; absent (the draft pane) the surface is the naming context. */
+  subject?: string;
   onAllow: () => void;
   onDeny: () => void;
   /** WO-0031c: "Bu iş emri için hep otomatik" — persists full_auto AND allows this ask. Absent = the
@@ -59,6 +63,7 @@ export function StopAndAskCard({
         questions={questions}
         reason={reason}
         planContext={planContext}
+        subject={subject}
         onAlwaysAuto={onAlwaysAuto}
         alwaysAutoBusy={alwaysAutoBusy}
         onFold={onAnswer}
@@ -71,6 +76,7 @@ export function StopAndAskCard({
       input={input}
       reason={reason}
       planContext={planContext}
+      subject={subject}
       onAllow={onAllow}
       onDeny={onDeny}
       onAlwaysAuto={onAlwaysAuto}
@@ -94,6 +100,7 @@ function AskQuestionCard({
   questions,
   reason,
   planContext,
+  subject,
   onAlwaysAuto,
   alwaysAutoBusy,
   onFold,
@@ -101,6 +108,7 @@ function AskQuestionCard({
   questions: AskQuestion[];
   reason?: string;
   planContext?: boolean;
+  subject?: string;
   onAlwaysAuto?: () => void;
   alwaysAutoBusy?: boolean;
   onFold: (answered: Array<{ question: AskQuestion; answer: AskAnswer }>) => void;
@@ -123,6 +131,7 @@ function AskQuestionCard({
         <p className="readout flex flex-wrap items-center gap-1.5 text-signal">
           <FilePen className="h-3.5 w-3.5" aria-hidden="true" />
           {planContext ? UI.architectRequest : UI.permissionRequested}
+          {subject ? <span className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
         </p>
         {questions.map((q, i) => (
           <QuestionBlock
@@ -234,6 +243,7 @@ function BinaryAskCard({
   input,
   reason,
   planContext,
+  subject,
   onAllow,
   onDeny,
   onAlwaysAuto,
@@ -244,6 +254,7 @@ function BinaryAskCard({
   input: Record<string, unknown>;
   reason?: string;
   planContext?: boolean;
+  subject?: string;
   onAllow: () => void;
   onDeny: () => void;
   onAlwaysAuto?: () => void;
@@ -289,6 +300,7 @@ function BinaryAskCard({
             <FilePen className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {planContext ? UI.architectRequest : UI.permissionRequested}
+          {subject ? <span className="rounded border border-hairline px-1.5 py-px font-mono text-[10px] text-inkdim">{subject}</span> : null}
           {risky ? <span className="rounded border border-signal/50 px-1.5 py-px text-[10px]">{UI.askRiskyTag}</span> : null}
           {canPeek ? (
             <button type="button" className="irow ml-auto px-1.5 text-[10px] normal-case tracking-normal" onClick={() => void togglePeek()}>

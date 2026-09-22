@@ -15,7 +15,7 @@
 
 import type { CostSummary, SessionRef, SteerNote, TurnUsage } from './types';
 import { ASK_TOOL } from './askq';
-import { PLAN_EXIT_WITHOUT_RESULT, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
+import { PLAN_EXIT_WITHOUT_RESULT, driveOwnerTag, foldSessionEvent, initialSessionState, isDraftDrive } from './runner';
 import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from './runner';
 import type { SessionOwner, SessionStore } from './session-store';
 import type { DraftSourceSummary } from './roadmap-draft';
@@ -127,7 +127,14 @@ export function policyForRule(
 // ===== The pipeline =====
 
 export interface PipelineDeps {
-  runner: SessionRunner;
+  /** The single-drive runner — the default transport when no factory is injected (tests, hosts
+   *  that never drive two owners at once). Every drive shares it, exactly the pre-WO-0088 shape.
+   *  Required UNLESS a `runners` factory is injected (createPipeline refuses both absent). */
+  runner?: SessionRunner;
+  /** WO-0088: ONE runner PER DRIVE — the parallel spine's factory. The adapter's per-instance
+   *  singleton state means N instances = N concurrent drives; the port (SessionRunner) is
+   *  unchanged (ADR-0014 holds). Absent → every drive shares `runner`. */
+  runners?: (owner: SessionOwner) => SessionRunner;
   store: SessionStore;
   permission: PermissionPolicy;
 }
@@ -137,25 +144,36 @@ export interface Pipeline {
    *  RunnerEvent to the host. A deferred permission_request is yielded and the drive pauses (the runner holds
    *  the provider) until the host resolves it via `decide`. */
   drive(input: DriveInput): AsyncIterable<RunnerEvent>;
-  /** Resolve a deferred permission_request (the operator's answer). Forwards to the runner. */
+  /** Resolve a deferred permission_request (the operator's answer). requestId is globally unique,
+   *  so it routes itself: forwarded to every LIVE runner — the one holding the id answers, the
+   *  others no-op (the adapter's unknown-id contract). */
   decide(requestId: string, decision: PermissionDecision): Promise<void>;
-  /** Controlled stop of the current run. Forwards to the runner. */
-  interrupt(): Promise<void>;
-  /** Queue an operator steering note into the RUNNING drive (WO-0045) — injected once at the next
-   *  agent-turn boundary; NEVER an interrupt. Resolves the minted noteId, or undefined when no drive
-   *  is live / the runner refuses. The note enters the mirror BEFORE the transport call (a Durdur in
-   *  the gap must not lose it) and leaves it if the runner refuses. */
-  steer(note: string): Promise<string | undefined>;
-  /** Pull a queued note back before delivery (WO-0045). Best-effort (probe s5/s5b): false = the note
-   *  already left the SDK's cancel window and WILL run. */
-  retractSteer(noteId: string): Promise<boolean>;
+  /** Controlled stop of ONE drive (WO-0088): the owner tag names it (driveOwnerTag); the other
+   *  live drives are untouched. Unknown/no-longer-live tags no-op. */
+  interrupt(owner: string): Promise<void>;
+  /** Queue an operator steering note into ONE running drive (WO-0045) — injected once at the next
+   *  agent-turn boundary; NEVER an interrupt. Resolves the minted noteId, or undefined when no
+   *  drive is live under `owner` / the runner refuses. The note enters the mirror BEFORE the
+   *  transport call (a Durdur in the gap must not lose it) and leaves it if the runner refuses. */
+  steer(owner: string, note: string): Promise<string | undefined>;
+  /** Pull a queued note back before delivery (WO-0045), from ONE drive. Best-effort (probe s5/s5b):
+   *  false = the note already left the SDK's cancel window and WILL run. */
+  retractSteer(owner: string, noteId: string): Promise<boolean>;
 }
 
 export function createPipeline(deps: PipelineDeps): Pipeline {
-  // WO-0045: the active drive's steer surface — set when a drive passes its gates, cleared in its
-  // finally. `steer`/`retractSteer` below are the only entry points; they no-op (undefined/false) when
-  // nothing runs. The runner's own stream carries the lifecycle events (steer_queued/delivered/retracted).
-  let active: { woId: import('./types').WorkOrderId; add: (n: SteerNote) => void; drop: (noteId: string) => void; checkpoint: () => void } | undefined;
+  if (!deps.runner && !deps.runners) {
+    throw new Error('createPipeline: inject a runner (the single-drive shape) or a runners factory (the parallel spine) — never neither');
+  }
+  const runnerFor = (owner: SessionOwner): SessionRunner =>
+    deps.runners ? deps.runners(owner) : (deps.runner as SessionRunner); // the guard above pins the cast
+  // WO-0088: the KEYED steer surface + the live runners — one entry per owner tag, set when a drive
+  // passes its gates, cleared in ITS finally (guarded: a finished drive never tears a successor or a
+  // sibling down). `steer`/`retractSteer`/`interrupt` below are the only entry points; they no-op
+  // (undefined/false) when nothing runs under the addressed tag. The runner's own stream carries the
+  // lifecycle events (steer_queued/delivered/retracted).
+  const actives = new Map<string, { woId: import('./types').WorkOrderId; add: (n: SteerNote) => void; drop: (noteId: string) => void; checkpoint: () => void }>();
+  const liveRunners = new Map<string, SessionRunner>();
   let noteSeq = 0;
   const noteDetail = (text: string): string => `not: ${text.slice(0, 48)}`;
   // WO-0045 (reviewer finding 5): ids outlive the process — a carried note's id sits in a session
@@ -178,6 +196,12 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     const owner: SessionOwner = isDraftDrive(input)
       ? { kind: 'draft', workspaceId: input.workspaceId }
       : { kind: 'wo', workOrderId: input.workOrderId };
+    // WO-0088: THIS drive's own runner instance + its owner tag. The factory (when the host
+    // injected one) mints a fresh transport per drive — the adapter's per-instance singleton
+    // state then holds exactly one drive per instance; the tag keys the control surface below.
+    // Registration happens after the gates (a refused drive owns nothing) but before the stream.
+    const tag = driveOwnerTag(input);
+    const driveRunner: SessionRunner = runnerFor(owner);
     // WO-0047: the workspace BUDGET gate — the FIRST gate, and the only one that sees EVERY drive
     // (plan, step, review, resume, draft alike: each spawns a runner that bills; the plan/flow gates
     // below scope to step/review). Read at SPAWN time only — a drive already running when the cap is
@@ -267,18 +291,22 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     };
     // Functions only — reassignments of mirrorNotes above stay visible through these closures.
     const checkpoint = (): void => record('running');
+    // WO-0088: the live transport registers HERE (after the gates — a refused drive owns nothing)
+    // and un-registers in the finally, guarded to its own registration.
+    liveRunners.set(tag, driveRunner);
     // D15: the steer surface is WO-only — a draft never mounts it (steer/retractSteer no-op for
     // the drive's lifetime; İtiraz is the draft's note path).
-    if (woInput) {
-      active = {
-        woId: woInput.workOrderId,
-        add: (n: SteerNote) => {
-          mirrorNotes = [...mirrorNotes, n];
-        },
-        drop: dropNote,
-        checkpoint,
-      };
-    }
+    const surface = woInput
+      ? {
+          woId: woInput.workOrderId,
+          add: (n: SteerNote): void => {
+            mirrorNotes = [...mirrorNotes, n];
+          },
+          drop: dropNote,
+          checkpoint,
+        }
+      : undefined;
+    if (surface) actives.set(tag, surface);
 
     // WO-0052: the last observed rich usage detail — updated at every turn_usage, checkpointed on
     // every record (defined OVERWRITES, undefined KEEPS the prior row's values — the pendingNotes
@@ -323,7 +351,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     };
 
     try {
-      for await (const ev of deps.runner.drive(di)) {
+      for await (const ev of driveRunner.drive(di)) {
         live = foldSessionEvent(live, ev);
         lastActivityIso = new Date().toISOString();
         switch (ev.kind) {
@@ -341,7 +369,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
             // the notes queue for a BOUNDARY (pushed with the seed they would merge into the first
             // turn, probe s2). Silent (emit:false): the UI fold seeded them from the row already.
             for (const n of requeue) {
-              await deps.runner.steer?.(n.text, { noteId: n.id, emit: false });
+              await driveRunner.steer?.(n.text, { noteId: n.id, emit: false });
             }
             break;
           case 'permission_request':
@@ -355,7 +383,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
                 reason: ev.reason,
               });
               if (outcome.kind === 'resolve') {
-                await deps.runner.decide(ev.requestId, outcome.decision); // answered internally — not surfaced
+                await driveRunner.decide(ev.requestId, outcome.decision); // answered internally — not surfaced
               } else {
                 yield ev; // askOperator: surface; the host resolves via pipeline.decide (drive pauses here)
               }
@@ -514,27 +542,37 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       // return-injection a consumer abort triggers; the `terminated` flag keeps it idempotent.
       // ended_at = the last activity (süre şişmesi, 2026-08-23): an interrupted drive bills its
       // work span, never the idle wait that preceded the stop.
+      // WO-0088: PER-DRIVE — each generator's finally folds only ITS OWN session; a sibling
+      // mid-parallel is untouched (the keyed test pins it).
       if (providerSessionId && !terminated) {
         terminated = true;
         record('idle', undefined, lastActivityIso ?? startedAtIso, limitStampForErrorClose(live));
       }
-      if (active !== undefined) {
-        active = undefined; // the drive is gone — steer/retractSteer no-op until the next spawn
-      }
+      // The keyed surfaces un-register GUARDED (by identity): a finished drive never tears down
+      // its own successor (the serial per-WO rule) or a sibling (the parallel rule).
+      if (liveRunners.get(tag) === driveRunner) liveRunners.delete(tag);
+      if (surface && actives.get(tag) === surface) actives.delete(tag);
     }
   };
 
   return {
     drive,
-    decide: (requestId, decision) => deps.runner.decide(requestId, decision),
-    interrupt: () => deps.runner.interrupt(),
-    steer: async (note: string) => {
+    // WO-0088: the requestId is globally unique — forwarding to every LIVE runner routes it; the
+    // runners not holding the id no-op (the adapter's unknown-id contract).
+    decide: async (requestId, decision) => {
+      for (const r of [...liveRunners.values()]) await r.decide(requestId, decision);
+    },
+    interrupt: async (owner: string) => {
+      await liveRunners.get(owner)?.interrupt();
+    },
+    steer: async (owner: string, note: string) => {
       const trimmed = note.trim();
+      const active = actives.get(owner);
       if (!active || !trimmed) return undefined;
       const { woId, add, drop, checkpoint } = active;
       const noteId = mintNoteId();
       add({ id: noteId, text: trimmed }); // optimistic: a Durdur in the call gap must not lose the note
-      const ok = (await deps.runner.steer?.(trimmed, { noteId, emit: true })) ?? false;
+      const ok = (await liveRunners.get(owner)?.steer?.(trimmed, { noteId, emit: true })) ?? false;
       if (!ok) {
         drop(noteId); // no live transport (or it refused) — un-mirror
         return undefined;
@@ -543,10 +581,11 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       checkpoint(); // a drive parked on an ask records nothing until it resolves — write the note NOW
       return noteId;
     },
-    retractSteer: async (noteId: string) => {
+    retractSteer: async (owner: string, noteId: string) => {
+      const active = actives.get(owner);
       if (!active) return false;
       const { woId, drop } = active;
-      const ok = (await deps.runner.retractSteer?.(noteId)) ?? false;
+      const ok = (await liveRunners.get(owner)?.retractSteer?.(noteId)) ?? false;
       if (!ok) return false; // already past the SDK's cancel window — the note WILL run (probe s5/s5b)
       drop(noteId);
       deps.store.recordAuditEvent(woId, 'steer_retracted', `not: ${noteId}`);

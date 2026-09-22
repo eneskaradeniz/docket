@@ -14,6 +14,10 @@ export interface ParsedOrderMd {
   title: string; // front-matter title
   permissionRule: PermissionRule; // front-matter permission_rule; absent/garbage → 'ask_every' (the safe default — operator ruling: no silent auto-approval)
   taskRef?: string; // front-matter task — the roadmap link (WO-0048, ADR-0016). No validation here: the roadmap's diagnostics own ref validity at join time.
+  cwd?: string; // front-matter cwd (WO-0088) — the WO's own working copy (the wave worktree). The
+  // store's driveCwd reads it BEFORE the connection table; the runner's write fence jails to it
+  // (repoRoot = cwd). Absent → the connection-table fallback stands. A PATH, like the WO-0015
+  // local-context precedent — the operator's act, never a store column.
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -55,6 +59,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const permissionRule: PermissionRule =
     ruleValue === 'full_auto' || ruleValue === 'risky_excluded' ? ruleValue : 'ask_every';
   const taskValue = frontValue(front, 'task');
+  const cwdValue = frontValue(front, 'cwd');
   return {
     reviewMode,
     flowMode,
@@ -62,6 +67,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
     objective: sectionBody(body, 'Objective'),
     permissionRule,
     taskRef: taskValue !== '' ? taskValue : undefined,
+    cwd: cwdValue !== '' ? cwdValue : undefined,
   };
 }
 
@@ -74,6 +80,7 @@ export interface OrderMdEdit {
   flowMode?: FlowMode; // → front-matter flow_mode (WO-0045)
   permissionRule?: PermissionRule;
   taskRef?: string | null; // → front-matter task (WO-0048): a string sets the roadmap link, null DROPS it (silence = unlinked), undefined = untouched
+  cwd?: string | null; // → front-matter cwd (WO-0088): a string sets the working copy, null DROPS it (the connection-table fallback stands), undefined = untouched — the taskRef idiom
 }
 
 /**
@@ -111,6 +118,9 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   // WO-0048: the roadmap link rides the same set/drop idiom as flow_mode — a string sets, null drops.
   if (typeof patch.taskRef === 'string') nextFront = setKey(nextFront, 'task', patch.taskRef);
   else if (patch.taskRef === null) nextFront = dropKey(nextFront, 'task');
+  // WO-0088: the working-copy override — the taskRef idiom verbatim.
+  if (typeof patch.cwd === 'string') nextFront = setKey(nextFront, 'cwd', patch.cwd);
+  else if (patch.cwd === null) nextFront = dropKey(nextFront, 'cwd');
 
   let nextBody = body;
   if (patch.description !== undefined) {

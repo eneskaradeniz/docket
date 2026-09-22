@@ -93,8 +93,10 @@ const settings: AppSettings = {
 
 const runner = {
   // Drives a session; onEvent fires once per RunnerEvent; resolves when the run ends.
-  drive: (input: DriveInput, onEvent: (ev: RunnerEvent) => void): Promise<void> => {
-    const handler = (_e: unknown, ev: RunnerEvent) => onEvent(ev);
+  // WO-0088: the event channel is a broadcast — main sends (ownerTag, ev) for EVERY live drive,
+  // so onEvent receives the tag too; the renderer port filters by it.
+  drive: (input: DriveInput, onEvent: (ev: RunnerEvent, tag?: string) => void): Promise<void> => {
+    const handler = (_e: unknown, tag: string, ev: RunnerEvent) => onEvent(ev, tag);
     ipcRenderer.on('docket:runner:event', handler);
     return ipcRenderer
       .invoke('docket:runner:drive', input)
@@ -109,6 +111,11 @@ const runner = {
   // when no drive is live / the transport refused), and pulls a queued note back (best-effort).
   steer: (note: string): Promise<string | null> => ipcRenderer.invoke('docket:runner:steer', note),
   retractSteer: (noteId: string): Promise<boolean> => ipcRenderer.invoke('docket:runner:steer-retract', noteId),
+  // WO-0088 keyed control: exactly one live drive per call, named by its owner tag.
+  interruptDrive: (owner: string): Promise<void> => ipcRenderer.invoke('docket:runner:interrupt', owner),
+  abortDrive: (owner: string): Promise<void> => ipcRenderer.invoke('docket:runner:abort', owner),
+  steerDrive: (owner: string, note: string): Promise<string | null> => ipcRenderer.invoke('docket:runner:steer', owner, note),
+  retractSteerDrive: (owner: string, noteId: string): Promise<boolean> => ipcRenderer.invoke('docket:runner:steer-retract', owner, noteId),
 };
 
 contextBridge.exposeInMainWorld('docket', {
@@ -170,7 +177,9 @@ contextBridge.exposeInMainWorld('docket', {
   ...(process.env.DOCKET_E2E
     ? {
         e2e: {
-          emit: (ev: RunnerEvent): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev),
+          // WO-0088: a bare event routes to the most recently started drive (the legacy shape);
+          // { owner, ev } targets ONE drive by tag — the multi-drive scenarios' form.
+          emit: (ev: RunnerEvent | { owner: string; ev: RunnerEvent }): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev),
           pickFiles: (paths: string[] | null): Promise<void> => ipcRenderer.invoke('docket:e2e:pick-files', paths),
           lastDriveInput: (): Promise<DriveInput | undefined> => ipcRenderer.invoke('docket:e2e:last-drive-input'),
         },

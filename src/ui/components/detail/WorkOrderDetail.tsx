@@ -119,7 +119,7 @@ export function WorkOrderDetail({
    *  the composition root wired the console; the section is absent without it. */
   changes?: ChangesBridge;
 }) {
-  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI } = useLabels();
+  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI, woIdLabel } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
   // and when it completes the next pending step runs automatically — the operator does NOT click each step
   // (review_mode gates = autonomous between steps; the operator engages at plan approval, revisions, merge).
@@ -515,7 +515,7 @@ export function WorkOrderDetail({
 
   // Zorla kes: the 5s-stuck escape hatch — the generator's injected return runs the completion guarantee.
   const forceKill = (): void => {
-    void store.abort();
+    void store.abort(driveKey);
     store.note(driveKey, { speaker: 'note', kind: 'force_killed' });
     setStopping(false);
     setForceArmed(false);
@@ -525,7 +525,7 @@ export function WorkOrderDetail({
   const stop = (): void => {
     setStopping(true);
     store.note(driveKey, { speaker: 'note', kind: 'interrupt_sent', detail: UI.auditClock(new Date().toISOString()) });
-    void store.interrupt();
+    void store.interrupt(driveKey);
   };
   // Retry after a dead session: re-drive — resume when a session survived, fresh otherwise.
   const retry = (): void => {
@@ -777,7 +777,11 @@ export function WorkOrderDetail({
   };
   useDetailKeys({ closeTopLayer, onBack, onPrimary: primary });
 
-  const objective = useMemo(() => parseOrderMd(docs.order).objective, [docs.order]);
+  // WO-0088: one parse carries both the Objective (the description editor's seed) and the `cwd:`
+  // working-copy override (the edit dialog's prefill).
+  const parsedDocs = useMemo(() => parseOrderMd(docs.order), [docs.order]);
+  const objective = parsedDocs.objective;
+  const cwdOverride = parsedDocs.cwd;
   // WO-0044 (2026-08-25): the ledger is PURE HISTORY — no liveRow pointer, no goLive jump, no
   // logOpenSignal nonce (WO-0039/C's pointer card died: it duplicated the driven row's live
   // header one scroll below in a grammar the completed cards do not speak). The record stack
@@ -849,6 +853,7 @@ export function WorkOrderDetail({
           input={a.input}
           reason={a.reason}
           planContext={planStage}
+          subject={woIdLabel(detail.id)} /* WO-0088: the card names WHICH work order asks */
           onAllow={() => allowAsk(a)}
           onDeny={() => denyAsk(a)}
           onAnswer={(answered) => answerStructuredAsk(a, answered)}
@@ -1377,6 +1382,7 @@ export function WorkOrderDetail({
         <DetailStrip
           detail={detail}
           objective={objective}
+          cwdOverride={cwdOverride}
           phase={phase}
           turn={turn}
           duration={durationText}

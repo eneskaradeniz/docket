@@ -10,7 +10,9 @@ import type { DriveInput, PermissionDecision, RunnerEvent } from '../core/runner
 
 /** The runner as exposed across the contextBridge: callback `drive`, not AsyncIterable. */
 export type RunnerBridge = {
-  drive: (input: DriveInput, onEvent: (ev: RunnerEvent) => void) => Promise<void>;
+  // WO-0088: the channel is a broadcast — onEvent carries the owner tag of the drive that emitted
+  // the event (the renderer port filters by it).
+  drive: (input: DriveInput, onEvent: (ev: RunnerEvent, tag?: string) => void) => Promise<void>;
   decide: (requestId: string, decision: PermissionDecision) => Promise<void>;
   pendingAsks: () => Promise<PermissionAsk[]>;
   interrupt: () => Promise<void>;
@@ -20,6 +22,11 @@ export type RunnerBridge = {
   steer: (note: string) => Promise<string | null>;
   /** WO-0045: pull a queued note back (best-effort — false means it WILL run). */
   retractSteer: (noteId: string) => Promise<boolean>;
+  // WO-0088 keyed control: exactly one live drive per call, named by its owner tag.
+  interruptDrive: (owner: string) => Promise<void>;
+  abortDrive: (owner: string) => Promise<void>;
+  steerDrive: (owner: string, note: string) => Promise<string | null>;
+  retractSteerDrive: (owner: string, noteId: string) => Promise<boolean>;
 };
 
 declare global {
@@ -60,7 +67,9 @@ declare global {
       diffPeek: (workOrderId: import('../core/types').WorkOrderId, filePath: string, newContent: string) => Promise<import('../core/diff').LineDiff | null>;
       /** E2E-only scripting channel (WO-0031c) — present only under DOCKET_E2E. WO-0051 / D7:
        *  pickFiles stages the next native-pick answer. */
-      e2e?: { emit: (ev: RunnerEvent) => Promise<void>; pickFiles: (paths: string[] | null) => Promise<void> };
+      /** WO-0088: emit targets ONE drive by owner tag, or — the legacy bare-event form — the most
+       *  recently started drive. */
+      e2e?: { emit: (ev: RunnerEvent | { owner: string; ev: RunnerEvent }) => Promise<void>; pickFiles: (paths: string[] | null) => Promise<void>; lastDriveInput: () => Promise<DriveInput | undefined> };
     };
   }
 }

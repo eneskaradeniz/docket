@@ -424,6 +424,9 @@ export const UI = {
   woTitlePlaceholder: 'Örn. Kullanıcı profili avatar yüklerken hata',
   woDescLabel: 'Açıklama / hedef (isteğe bağlı)', // WO-0036: minority marker — the one optional free-text field
   woDescPlaceholder: 'Bu iş emri neyi başarmalı? İlk prompt olarak mimar oturumuna gider.',
+  // WO-0088: the work order's own working copy (the wave worktree) — the cwd override field
+  woCwdLabel: 'Çalışma kopyası (isteğe bağlı)',
+  woCwdPlaceholder: 'Örn. /wave/wt/WO-0088 — sürüşler bu klasörde koşar.',
   woTracksLabel: 'Depolar',
   woContextLabel: 'Bağlam dosyaları',
   woContextAdd: '▸ Dosya ekle',

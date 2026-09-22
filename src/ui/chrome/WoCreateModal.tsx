@@ -63,6 +63,8 @@ export function WoCreateModal({
   const [reviewMode, setReviewMode] = useState<ReviewMode>('gates');
   const [permissionRule, setPermissionRule] = useState<PermissionRule>(defaultRule);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
+  // WO-0088: the wave worktree — the WO's own working copy; empty = the connection table resolves.
+  const [cwd, setCwd] = useState('');
   const [titleErr, setTitleErr] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -129,6 +131,7 @@ export function WoCreateModal({
         // WO-0049: the task→WO link — the task identity, written regardless of the track selection.
         ...(prefill !== undefined ? { taskRef: prefill.taskId } : {}),
         ...(picked.length > 0 ? { trackDependencies: picked } : {}),
+        ...(cwd.trim() !== '' ? { cwd: cwd.trim() } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -257,6 +260,19 @@ export function WoCreateModal({
             <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
             {UI.woContextAdd}
           </Button>
+        </section>
+
+        {/* WO-0088: the per-WO working copy — the wave worktree; absent = the connection table. */}
+        <section>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woCwdLabel}</span>
+          <input
+            type="text"
+            value={cwd}
+            onChange={(e) => setCwd(e.target.value)}
+            placeholder={UI.woCwdPlaceholder}
+            aria-label={UI.woCwdLabel}
+            className="w-full rounded-md border border-hairline bg-bg px-2 py-1.5 font-mono text-[12px] text-ink placeholder:text-inkdim focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+          />
         </section>
 
         <section>

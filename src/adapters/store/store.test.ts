@@ -2905,3 +2905,42 @@ describe('WO-0072 — the workspace overview: whose turn, the debt match, ready 
     expect(v.turns[0]!.wos[0]!.stage).toBe('implementation');
   });
 });
+
+// ===== WO-0088 — the per-WO cwd override wins over the connection table =====
+describe('WO-0088 — driveCwd honors the order.md cwd override (the wave worktree)', () => {
+  it('a WO with cwd: spawns there — scoped and unscoped alike; dropping the key restores the fallback', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wave WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const worktree = freshRoot(); // a real dir path (the operator's worktree stand-in)
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id,
+      title: 'Dalga işi',
+      description: 'x',
+      trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates',
+      contextFiles: [],
+      cwd: worktree,
+    });
+    const hydrated = await store.getWorkOrder(wo.id);
+    const track = hydrated!.tracks[0]!;
+    // the override wins for BOTH shapes of drive
+    expect(store.driveCwd({ role: 'implementer', workOrderId: wo.id, scope: track.id, mode: 'direct', prompt: '' })).toBe(worktree);
+    expect(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(worktree);
+    // the authored order.md carries the key
+    const docs = await store.getWorkOrderDocs(wo.id);
+    expect(docs.order).toContain(`cwd: ${worktree}`);
+    // dropping the key (the edit idiom) restores the connection-table fallback
+    await store.updateWorkOrder(wo.id, { cwd: null });
+    expect(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(rootDocs);
+    // and setting it again through the edit wins once more
+    await store.updateWorkOrder(wo.id, { cwd: rootApi });
+    expect(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' })).toBe(rootApi);
+  });
+});

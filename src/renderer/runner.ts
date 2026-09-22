@@ -3,6 +3,13 @@
 // contextBridge does not proxy Symbol-keyed properties (Symbol.asyncIterator) — so
 // the bridge exposes `drive(input, onEvent)` and this wraps it into the port shape
 // the UI consumes. Browser-legal: no Node, no IPC directly (the bridge owns that).
+//
+// WO-0088: the event channel is a BROADCAST — with N owners driving, every live drive() listener
+// receives every drive's events. This port is the renderer's ONE filter: each drive() folds only
+// the events carrying ITS owner tag (driveOwnerTag of the input — the same derivation main makes
+// when sending), so everything downstream (the drive-store folds, the panes) stays key-honest.
+// The keyed control methods (interruptDrive etc.) address exactly one live drive by the same tag.
+import { driveOwnerTag } from '../core/runner';
 import type {
   DriveInput,
   PermissionDecision,
@@ -50,7 +57,11 @@ function fromCallback<T>(run: (emit: (v: T) => void) => Promise<void>): AsyncIte
 
 export function createRunnerPort(bridge: RunnerBridge): SessionRunner {
   return {
-    drive: (input: DriveInput) => fromCallback<RunnerEvent>((emit) => bridge.drive(input, emit)),
+    // The tag filter: events arrive (ev, tag); only THIS input's owner tag folds.
+    drive: (input: DriveInput) => {
+      const tag = driveOwnerTag(input);
+      return fromCallback<RunnerEvent>((emit) => bridge.drive(input, (ev, arrived) => { if (arrived === tag) emit(ev); }));
+    },
     decide: (requestId: string, decision: PermissionDecision) => bridge.decide(requestId, decision),
     pendingAsks: () => bridge.pendingAsks(),
     interrupt: () => bridge.interrupt(),
@@ -64,5 +75,10 @@ export function createRunnerPort(bridge: RunnerBridge): SessionRunner {
       return noteId !== null;
     },
     retractSteer: (noteId: string) => bridge.retractSteer(noteId),
+    // WO-0088 — keyed control: exactly one live drive per call, named by its owner tag.
+    interruptDrive: (owner: string) => bridge.interruptDrive(owner),
+    abortDrive: (owner: string) => bridge.abortDrive(owner),
+    steerDrive: (owner: string, note: string) => bridge.steerDrive(owner, note),
+    retractSteerDrive: (owner: string, noteId: string) => bridge.retractSteerDrive(owner, noteId),
   };
 }

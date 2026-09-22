@@ -250,6 +250,15 @@ export function isDraftDrive(input: DriveInput): input is DraftDriveInput {
   return input.workspaceId !== undefined;
 }
 
+/** WO-0088: the drive's OWNER TAG — the parallel spine's ONE key. Every layer that must target
+ *  exactly one live drive (main's active-drive map, the pipeline's steer/interrupt surface, the
+ *  renderer's event filter and the drive-store's per-owner guard) derives the SAME string from
+ *  the drive input; nothing else parses keys. One owner = one live drive (a work order or the
+ *  workspace's draft), N owners in parallel. Pure, like `isDraftDrive`. */
+export function driveOwnerTag(input: DriveInput): string {
+  return isDraftDrive(input) ? `ws:${input.workspaceId}` : `wo:${input.workOrderId}`;
+}
+
 // --- The port. Async throughout: the provider stream is an async generator and the
 //     permission callback is a Promise the provider awaits. ---
 export interface SessionRunner {
@@ -275,6 +284,19 @@ export interface SessionRunner {
   /** Pull back a queued note before delivery (WO-0045). Best-effort by SDK contract (probe s5/s5b):
    *  false means the note already left the cancel window and WILL run. */
   retractSteer?(noteId: string): Promise<boolean>;
+  // ===== WO-0088 — keyed control: target exactly ONE live drive by its owner tag =====
+  // The unkeyed forms above name no drive; with N owners driving they are ambiguous. The GUI's
+  // transport realization (the renderer port over the preload bridge) implements these; the
+  // unkeyed forms stay for single-drive realizations (the pipeline's per-drive adapter instances,
+  // tests' fakes). A drive-store falls back to the unkeyed form when the keyed one is absent.
+  /** Controlled stop of ONE drive (Durdur). */
+  interruptDrive?(owner: string): Promise<void>;
+  /** FORCED stop of ONE drive (Zorla kes). */
+  abortDrive?(owner: string): Promise<void>;
+  /** Queue an operator steering note into ONE running drive; resolves the minted noteId (or null). */
+  steerDrive?(owner: string, note: string): Promise<string | null>;
+  /** Pull back a queued note from ONE drive. */
+  retractSteerDrive?(owner: string, noteId: string): Promise<boolean>;
 }
 
 /** Is this the pure architect PLAN drive — the one drive that proposes a plan and runs in the provider's plan

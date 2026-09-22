@@ -126,3 +126,24 @@ describe('applyOrderMdEdits — taskRef (WO-0048, the roadmap link)', () => {
     expect(applyOrderMdEdits(linked, {})).toBe(linked);
   });
 });
+
+// ===== WO-0088 — the cwd override edits like the taskRef idiom: string sets, null drops =====
+describe('applyOrderMdEdits — the cwd key (WO-0088)', () => {
+  it('a string sets cwd: into the front-matter', () => {
+    const out = applyOrderMdEdits(doc(['id: WO-0005', 'title: Old title'].join('\n'), 'Body.'), { cwd: '/wave/wt/WO-0005' });
+    expect(parseOrderMd(out).cwd).toBe('/wave/wt/WO-0005');
+    expect(out).toContain('Body.'); // the body is untouched
+  });
+
+  it('null DROPS the key (silence = the connection-table fallback)', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'cwd: /wave/wt/WO-0005'].join('\n'), 'Body.');
+    const out = applyOrderMdEdits(linked, { cwd: null });
+    expect(parseOrderMd(out).cwd).toBeUndefined();
+    expect(out).not.toContain('cwd:');
+  });
+
+  it('undefined = untouched: a patch without cwd never touches the key', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'cwd: /wave/wt/WO-0005'].join('\n'), 'Body.');
+    expect(applyOrderMdEdits(linked, {})).toBe(linked);
+  });
+});
