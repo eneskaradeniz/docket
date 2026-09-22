@@ -701,16 +701,31 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
       incl. the multi-drive spec. Order:
       `docs/work-orders/WO-0088-paralel-omurga/order.md`.
 - [ ] **WO-0089** — the local gate: a CI exemption needs a substitute, not a hole — Docket runs the
-      repo's gate commands and records what it measured (drafted by the WO-0088 round).
+      repo's gate commands and records what it measured (drafted by the WO-0088 round; tracking
+      issue #90).
 - [ ] **WO-0090** — the briefing resolves before it ships: stale context caught at assembly, not
-      mid-drive (drafted by the WO-0088 round).
+      mid-drive (drafted by the WO-0088 round; tracking issue #91).
 - [ ] **WO-0091** — the stall gate: a live drive that stops making progress becomes the operator's
-      turn (drafted by the WO-0088 round; touches WO-0046's informs-never-acts line — ADR round owed).
-- [ ] **WO-0092** — probe: the `agy` stream-json surface against the ADR-0014 bar (cost? permission
-      holds answerable in print mode? plan gate? steering?).
-- [ ] **WO-0093** — the issue bridge: the WO-0081 report's frozen contract (`issue:` front-matter +
-      the 3-call read).
-- [ ] **WO-0094** — the second vendor adapter (Antigravity), if the WO-0092 probe passes.
+      turn (drafted by the WO-0088 round; touches WO-0046's informs-never-acts line — ADR round owed;
+      tracking issue #92).
+- [ ] **WO-0092** — the issue bridge: the WO-0081 report's frozen 3-call read + spawn a work order
+      from an issue (`issue:` front-matter, body via one drill-down) — the wave entry: see the
+      issues, turn them into work orders.
+- [ ] **WO-0093** — worktree automation: "Başlat" prepares the working copy, closure removes it —
+      amends WO-0088's operator-worktree ruling (operator: "setup.sh olmasın, repoyu kirletmesin").
+- [ ] **WO-0094** — agent issue creation: `gh issue create` joins the risky set (the WO-0088 round
+      silently wrote three issues from the fence — the classifier knows pr create/merge, not issue
+      create) + ADR-0017 revision + the reconciliation join.
+- [ ] **WO-0095** — probe: the `agy` stream-json surface against the ADR-0014 bar (cost? permission
+      holds answerable in print mode? plan gate? steering? quota windows — the operator's 2026-09-22
+      panel shows GROUP-based weekly + 5-hour limits, a `limit_windows` mapping candidate).
+- [ ] **WO-0096** — the second vendor adapter (Antigravity), if the WO-0095 probe passes.
+- [ ] **WO-0097** — billing axes made explicit: subscription quota vs API cost per backend/workspace
+      (the operator, 2026-09-22: "claude, agy, codex... abonelik ve api istek ücreti ayrılıyor");
+      the two feeds already exist (WO-0053's `limit_windows` + `cost_usd`) — the WO names the axis
+      on every cost surface and re-anchors the budget gate's meaning per metering kind.
+- [ ] merge-time rebase of the remaining wave branches (operator's DEVIR.md discipline, unnumbered
+      until the pieces above land).
 
 ## Later
 
