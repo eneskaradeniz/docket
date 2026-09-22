@@ -8,10 +8,10 @@
 // captures, and every spec that shoots the board navigates back to it first — filenames never lie.
 // Run: npm run test:ui  (builds first). Exit code = failing spec count.
 import { strict as assert } from 'node:assert';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
@@ -3633,6 +3633,186 @@ await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar,
   await page.waitForTimeout(800);
   assert.equal(await page.locator('[data-detail-issue-chip]').count(), 1, 'the chip did not open the spawned WO detail');
   await backToBoard();
+});
+
+
+// ===== WO-0093 — the worktree automation: Başlat prepares the working copy =====
+// The 'wt' world is a REAL local git repo (seed commit on main) — the prep runs real `git
+// worktree add -b`, network-free. Order matters: the parallel+resume+porcelain spec runs first
+// (it needs both seeded copies alive), then delete, then the close pair, then the prep failure
+// (in 'bos', whose default branch is deliberately NOT main — the verbatim base-missing arm).
+const wtLine = seedOut.trim().split('\n').find((l) => l.startsWith('WT='));
+if (!wtLine) throw new Error('seed failed: no WT= line');
+const WT = JSON.parse(wtLine.slice('WT='.length));
+const wtRootOf = () => join(dirname(DB), 'worktrees', WT.ws);
+const wtDirOf = (title) => {
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const hit = readdirSync(wtRootOf()).find((d) => d.endsWith(`-${slug}`));
+  return hit ? join(wtRootOf(), hit) : null;
+};
+const wtRepoPorcelain = () => execFileSync('git', ['-C', WT.repo, 'status', '--porcelain'], { encoding: 'utf8' });
+const wtWorktreeList = () => execFileSync('git', ['-C', WT.repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+const wtRegistered = (path) => wtWorktreeList().split('\n').some((l) => l === `worktree ${path}`);
+// git's own .git/worktrees bookkeeping is expected and excluded: the ONLY allowed dirt is the
+// Docket-authored order.md docs the operator commits (pre-existing behavior, not this feature's).
+const wtAssertRepoUntouched = () => {
+  for (const line of wtRepoPorcelain().split('\n').filter((l) => l.trim() !== '')) {
+    assert.ok(line.startsWith('?? docs/work-orders/'), `the connected repo's working tree was touched: ${line}`);
+  }
+};
+// The closable chain over a worktree-enabled order: plan proposal → approval → the gates chain
+// (step → review → verifier), all through the tagged emit channel. Leaves the WO closable.
+const wtDriveToClosable = async (woId) => {
+  const emit = (ev) => taggedEmit(`wo:${woId}`, ev);
+  const done = (result) => emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 100, tokensOut: 30, usd: 0.01 }, result });
+  await emit({ kind: 'plan_ready', planText: '# E2E plan\n\n```steps\n[{"role":"implementer","aim":"a","scope":"all"},{"role":"verifier","aim":"v","scope":"all"}]\n```\n' });
+  await done('Plan önerildi.');
+  await page.waitForTimeout(1000);
+  await page.getByRole('button', { name: 'Onayla', exact: true }).click();
+  await page.waitForTimeout(1100); // the gates chain: step 1 starts itself
+  await done('# Rapor\n\n`src-wt.txt:1` tamam.');
+  await page.waitForTimeout(1000); // the review leg starts itself
+  await done('İnceleme tamam.\nVERDICT: proceed');
+  await page.waitForTimeout(1000); // the verifier leg starts itself
+  await done('# Doğrulama\n\n`src-wt.txt:1` ok.');
+  await page.waitForTimeout(1100);
+};
+
+await spec('WO-0093 hazırlık: Başlat kopyayı hazırlar — sürüş orada koşar, dal hazır; tekrar başlatma yeniden eklemez; ikinci iş paralel ayrı kopyada; bağlı depo temiz kalır', async () => {
+  await switchWs('sorun', 'wt');
+  await backToBoard();
+  await openDetail('Kopya A');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(900);
+  const wtA = wtDirOf('Kopya A');
+  assert.ok(wtA && existsSync(wtA), 'Başlat did not prepare the working copy');
+  const di = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
+  assert.equal(di?.cwd, wtA, 'the drive does not run in the derived working copy');
+  const branch = execFileSync('git', ['-C', wtA, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+  assert.equal(branch, basename(wtA), 'the branch is not the wo-NNNN-<slug> convention');
+  assert.equal(branch.startsWith('wo-'), true, 'the branch does not carry the wo- prefix');
+  // resume leg: Durdur → Sürdür — the registration never grows (already-prepared = no-op).
+  // The Durdur's onEnd reload also re-hydrates the detail: the meta line arrives with it.
+  const entryCount = () => wtWorktreeList().split('\n').filter((l) => l.startsWith('worktree ')).length;
+  const before = entryCount();
+  await page.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await page.waitForTimeout(900);
+  assert.equal(await page.locator('[data-worktree-line]').count(), 1, 'no derived-path meta line on the detail');
+  assert.ok(((await page.locator('[data-worktree-line]').textContent()) ?? '').includes(wtA), 'the meta line lost the path');
+  await page.getByRole('button', { name: /Sürdür/ }).first().click();
+  await page.waitForTimeout(800);
+  assert.equal(entryCount(), before, 'the resume re-added the working copy');
+  // the second order starts WHILE A runs — two isolated copies, two branches, zero collisions
+  await backToBoard();
+  await openDetail('Kopya B');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(900);
+  const wtB = wtDirOf('Kopya B');
+  assert.ok(wtB && existsSync(wtB), 'the second order did not prepare its copy');
+  assert.notEqual(wtA, wtB, 'the two orders share a working copy');
+  assert.ok(wtRegistered(wtA) && wtRegistered(wtB), 'both copies are not registered');
+  // the connected repo's working tree: untouched but for Docket's own authored docs
+  wtAssertRepoUntouched();
+  await stopAllDrives();
+  await backToBoard();
+});
+
+await spec('WO-0093 silme: onay çalışma kopyasını sayar; silme kopyayı ve kaydı kaldırır', async () => {
+  await openDetail('Kopya A');
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  const wtA = wtDirOf('Kopya A');
+  assert.equal(await page.locator('[data-delete-worktree-line]').count(), 1, 'the delete confirm does not name the working copy');
+  assert.ok(((await page.locator('[data-delete-worktree-line]').textContent()) ?? '').includes(wtA), 'the confirm line lost the path');
+  await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
+  await page.waitForTimeout(900);
+  assert.equal(existsSync(wtA), false, 'the working copy survived the delete');
+  assert.equal(wtRegistered(wtA), false, 'the worktree registration survived the delete');
+  wtAssertRepoUntouched();
+});
+
+await spec('WO-0093 kapanış (kirli): kapatma kopyayı KORUR ve söyler; silme sonra da kaldırır', async () => {
+  await openDetail('Kopya B');
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(800);
+  await wtDriveToClosable(WT.b);
+  // the agent's leftover: the copy is DIRTY now
+  writeFileSync(join(wtDirOf('Kopya B'), 'agent-notu.md'), 'kirli\n');
+  await stopAllDrives();
+  await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.locator('[role="dialog"] input#wo-close-note').fill('e2e kapanış');
+  await page.getByRole('button', { name: 'Evet, kapat', exact: true }).click();
+  await page.waitForTimeout(1300);
+  assert.ok(existsSync(wtDirOf('Kopya B')), 'the dirty working copy was removed by the close');
+  assert.ok((await page.getByText(/Kirli çalışma kopyası korundu/).count()) >= 1, 'no kept toast naming the dirty copy');
+  // cleanup: the delete cascade removes even a dirty copy (--force is the delete's own grammar)
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
+  await page.waitForTimeout(900);
+  assert.equal(existsSync(wtDirOf('Kopya B')), false, 'the dirty copy survived the delete cascade');
+  wtAssertRepoUntouched();
+});
+
+await spec('WO-0093 seçim + temiz kapanış: seçim varsayılan AÇIK, öncelik satırı dürüst; temiz kapanış kopyayı kaldırır', async () => {
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  const chip = page.locator('[data-wo-checkout]');
+  assert.equal(await chip.getAttribute('aria-pressed'), 'true', 'the working-copy choice is not default ON');
+  // the honest precedence line: an explicit cwd while ON names the override — and dies alone
+  await page.locator('[role="dialog"] input').first().fill('Kopya C');
+  await page.getByLabel('Çalışma kopyası (isteğe bağlı)').fill('/tmp/wt-c-oncelik');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('[data-checkout-precedence]').count(), 1, 'no precedence line when both stand');
+  await page.getByLabel('Çalışma kopyası (isteğe bağlı)').fill('');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('[data-checkout-precedence]').count(), 0, 'the precedence line stood without the override');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400); // create → the detail arrives
+  const woC = await page.evaluate(() =>
+    window.docket.source.getWorkOrders().then((os) => os.find((o) => o.title === 'Kopya C')?.id ?? null),
+  );
+  assert.ok(woC, 'Kopya C did not resolve');
+  await page.getByRole('button', { name: 'Plan iste', exact: true }).click();
+  await page.waitForTimeout(800);
+  assert.ok(existsSync(wtDirOf('Kopya C')), 'the created order did not prepare its copy');
+  await wtDriveToClosable(woC);
+  await stopAllDrives();
+  await page.getByRole('button', { name: 'İş emrini kapat', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.locator('[role="dialog"] input#wo-close-note').fill('e2e temiz kapanış');
+  await page.getByRole('button', { name: 'Evet, kapat', exact: true }).click();
+  await page.waitForTimeout(1300);
+  assert.equal(existsSync(wtDirOf('Kopya C')), false, 'the clean close kept the working copy');
+  assert.equal(await page.getByText(/korundu/).count(), 0, 'a kept toast fired on a clean removal');
+  wtAssertRepoUntouched();
+});
+
+await spec('WO-0093 hazırlık hatası: main yoksa Başlat gerekçesiyle reddeder — oturum satırı yok, yarım durum yok', async () => {
+  await switchWs('wt', 'bos'); // the 'bos' repo's default branch is master — main is missing
+  await backToBoard();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Kapı kopyası');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: 'Plan iste', exact: true }).click();
+  await page.waitForTimeout(1000);
+  const mainText = await page.locator('main').first().innerText();
+  assert.ok(mainText.includes('worktree prep failed'), `the start did not refuse with the reason: ${mainText.slice(0, 300)}`);
+  const woD = await page.evaluate(() =>
+    window.docket.source.getWorkOrders().then((os) => os.find((o) => o.title === 'Kapı kopyası')?.id ?? null),
+  );
+  const sessions = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w.sessions.length), woD);
+  assert.equal(sessions, 0, 'a refused prep wrote a session row');
+  assert.equal(existsSync(join(dirname(DB), 'worktrees', 'bos')), false, 'a half-prepared copy was left behind');
+  // cleanup
+  await page.getByRole('button', { name: 'Sil', exact: true }).first().click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-wo-id]', { hasText: 'Kapı kopyası' }).count(), 0, 'the throwaway survived');
 });
 
 await spec('zero renderer console errors', async () => {
