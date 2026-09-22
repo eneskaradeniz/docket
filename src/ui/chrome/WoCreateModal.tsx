@@ -84,6 +84,9 @@ export function WoCreateModal({
   // WO-0088: the wave worktree — the WO's own working copy; empty = the connection table resolves.
   const [cwd, setCwd] = useState('');
   const [cwdErr, setCwdErr] = useState<string | null>(null);
+  // WO-0093: the worktree automation — default ON for new orders with a repo to copy; the
+  // operator's own cwd override beats it (the precedence line says so when both stand).
+  const [checkout, setCheckout] = useState(trackOptions.length > 0);
   const [titleErr, setTitleErr] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -160,6 +163,9 @@ export function WoCreateModal({
         ...(issuePrefill !== undefined ? { issueRef: issuePrefill.ref } : {}),
         ...(picked.length > 0 ? { trackDependencies: picked } : {}),
         ...(cwd.trim() !== '' ? { cwd: cwd.trim() } : {}),
+        // WO-0093: the enablement rides the front-matter idiom — ON writes `checkout: true`;
+        // OFF writes nothing (silence IS disabled, the pre-WO-0093 bytes).
+        ...(checkout && cwd.trim() === '' ? { checkout: true } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -301,7 +307,9 @@ export function WoCreateModal({
           </Button>
         </section>
 
-        {/* WO-0088: the per-WO working copy — the wave worktree; absent = the connection table. */}
+        {/* WO-0088: the per-WO working copy — the wave worktree; absent = the connection table.
+            WO-0093: the automation's choice rides ABOVE it — the operator's own path wins the
+            precedence, and the line says so honestly when both stand (the store encodes it). */}
         <section>
           <Field label={UI.woCwdLabel} error={cwdErr}>
             <Input
@@ -312,6 +320,23 @@ export function WoCreateModal({
               className="font-mono text-[12px]"
             />
           </Field>
+          {trackOptions.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                data-wo-checkout
+                aria-pressed={checkout}
+                onClick={() => setCheckout((v) => !v)}
+                className={`ichip inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 ${checkout ? 'ichip-on' : ''}`}
+              >
+                <span aria-hidden="true" className={`font-mono text-[11px] ${checkout ? 'text-info' : ''}`}>{checkout ? '✓' : '○'}</span>
+                <span className="font-mono text-[11px]">{UI.woCheckoutLabel}</span>
+              </button>
+              {checkout && cwd.trim() !== '' ? (
+                <p data-checkout-precedence className="text-[11px] text-inkdim">{UI.woCheckoutPrecedence}</p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <section>

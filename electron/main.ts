@@ -13,6 +13,7 @@ import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
 import { createGateLock, runLocalGate, shellGateSpawner } from '../src/adapters/gate-runner';
+import { prepareWorktree, removeWorktree, worktreeCleanStatus } from '../src/adapters/worktree';
 import { createStore } from '../src/adapters/store';
 import { resolveDbPath } from '../src/adapters/store/db-path';
 import { rid, woid } from '../src/adapters/ids';
@@ -562,7 +563,14 @@ ipcMain.handle('docket:source:get-step-verdict', (_e, id: WorkOrderId, idx: numb
 ipcMain.handle('docket:source:reset-step', (_e, id: WorkOrderId, idx: number) => store.resetStep(id, idx));
 
 // --- Work-order deletion (WO-0020). Cascade-deletes DB rows + removes the decision-store folder. ---
-ipcMain.handle('docket:source:delete-work-order', (_e, id: WorkOrderId) => store.deleteWorkOrder(id));
+// WO-0093: the cascade's working copy — the derived worktree dies with the record (the confirm
+// names it). --force: dirty trees included, the whole order is going. Best-effort by contract
+// (removeWorktree answers values, never throws): a removal failure degrades, never blocks.
+ipcMain.handle('docket:source:delete-work-order', async (_e, id: WorkOrderId) => {
+  const wt = store.worktreeFor(id);
+  if (wt) await removeWorktree(wt, gitRun, true);
+  return store.deleteWorkOrder(id);
+});
 
 // --- Work-order closure (WO-0025 / P1-2). Operator-attested: appends the ## Closure note to order.md and
 //   records merged_at + verifier + closure-sha facts. Preconditions re-checked server-side. ---
@@ -577,7 +585,24 @@ ipcMain.handle('docket:source:close-work-order', async (_e, id: WorkOrderId, not
       : { repoRemote: t.repoRemote, unknownReason: parsed.reason };
   });
   const evidence = await observeClosureEvidence({ forge, targets, woId: id });
-  return store.closeWorkOrder(id, note, evidence);
+  await store.closeWorkOrder(id, note, evidence);
+  // WO-0093: the close's working-copy disposition — porcelain-clean → removed; dirty → KEPT
+  // (the operator decides); a failed look or a failed removal → kept honestly. Never blocks
+  // the close: the record landed above, the copy is disposable.
+  let worktreeKept: import('../src/core/source').WorktreeKept | undefined;
+  const wt = store.worktreeFor(id);
+  if (wt) {
+    const clean = await worktreeCleanStatus(gitRun, wt.path);
+    if (clean.kind === 'clean') {
+      const removed = await removeWorktree(wt, gitRun, false);
+      if (!removed.ok) worktreeKept = { path: wt.path, reason: 'remove_failed' };
+    } else if (clean.kind === 'dirty') {
+      worktreeKept = { path: wt.path, reason: 'dirty' };
+    } else {
+      worktreeKept = { path: wt.path, reason: 'unreadable' };
+    }
+  }
+  return { worktreeKept };
 });
 ipcMain.handle('docket:source:override-step-verdict', (_e, id: WorkOrderId, idx: number) => store.overrideStepVerdict(id, idx));
 ipcMain.handle('docket:source:get-work-order-events', (_e, id: WorkOrderId) => store.getWorkOrderEvents(id));
@@ -730,6 +755,27 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
       message: `drive refused: ${tag} already has a running drive (one drive per owner)`,
     });
     return;
+  }
+  // WO-0093: the start click prepares the working copy BEFORE the runner spawns — one
+  // `git worktree add -b wo-NNNN-<slug> <path> main` per start, Docket's own hand through the
+  // git-console seam (the ADR-0018 grammar: an operator click, never the pipeline, never a
+  // timer). A prep failure refuses the start with git's own line — the fail card carries it;
+  // NO session row (the pipeline never ran) and no half state (prepareWorktree is add-or-noop).
+  // A resume leg finds the copy registered and no-ops. An explicit renderer cwd (the --cwd
+  // shape) or an explicit `cwd:` front-matter (worktreeFor is undefined then — the precedence
+  // lives in the store) never prepares.
+  if (!isDraftDrive(driveInput) && input.cwd === undefined) {
+    const wt = store.worktreeFor(driveInput.workOrderId);
+    if (wt) {
+      const prep = await prepareWorktree(wt, gitRun);
+      if (!prep.ok) {
+        event.sender.send('docket:runner:event', tag, {
+          kind: 'error',
+          message: `drive refused: worktree prep failed — ${prep.reason}`,
+        });
+        return;
+      }
+    }
   }
   lastResolvedDriveInput = driveInput;
   lastStartedTag = tag;

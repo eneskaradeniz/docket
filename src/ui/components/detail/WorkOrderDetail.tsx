@@ -795,10 +795,11 @@ export function WorkOrderDetail({
   useDetailKeys({ closeTopLayer, onBack, onPrimary: primary });
 
   // WO-0088: one parse carries both the Objective (the description editor's seed) and the `cwd:`
-  // working-copy override (the edit dialog's prefill).
+  // working-copy override (the edit dialog's prefill). WO-0093: the `checkout:` seed rides along.
   const parsedDocs = useMemo(() => parseOrderMd(docs.order), [docs.order]);
   const objective = parsedDocs.objective;
   const cwdOverride = parsedDocs.cwd;
+  const checkoutOverride = parsedDocs.checkout;
   // WO-0044 (2026-08-25): the ledger is PURE HISTORY — no liveRow pointer, no goLive jump, no
   // logOpenSignal nonce (WO-0039/C's pointer card died: it duplicated the driven row's live
   // header one scroll below in a grammar the completed cards do not speak). The record stack
@@ -1442,6 +1443,7 @@ export function WorkOrderDetail({
           detail={detail}
           objective={objective}
           cwdOverride={cwdOverride}
+          checkoutOverride={checkoutOverride}
           phase={phase}
           turn={turn}
           duration={durationText}
@@ -1510,6 +1512,10 @@ export function WorkOrderDetail({
         >
           <div className="flex flex-col gap-2">
             <p className="text-[12px] text-inkdim">{UI.deleteWoHint}</p>
+            {/* WO-0093: the working copy dies with the record — the confirm counts it. */}
+            {detail.worktreePath !== undefined ? (
+              <p data-delete-worktree-line className="font-mono text-[11px] text-inkdim">{UI.deleteWoWorktreeHint(detail.worktreePath)}</p>
+            ) : null}
             {deleteError ? <p className="text-xs text-error">{UI.deleteWoFailed}</p> : null}
           </div>
         </Dialog>
