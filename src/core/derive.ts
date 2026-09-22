@@ -231,6 +231,25 @@ export function extractPointers(body: string): string[] {
   return pointers;
 }
 
+// ===== WO-0090 — the briefing's pointer resolution (one stage earlier than the verification gate) =====
+//
+// The briefing (order.md) runs at the START of a drive and was never checked: a stale pointer sends
+// the session re-planning mid-drive (the antreo #218 case — WO-0090's order). This is the same
+// discipline as the gate's record-time resolution, lifted pure and re-pointed at a SHA: the adapter
+// (store) reads each repo at the drive-start sha and feeds ONE predicate — `true` iff the file
+// exists at that sha under SOME repo root (the gate's pointerResolvable answer, file-exists, never
+// line-in-range). Core preprocesses exactly what the gate preprocesses (`:line` stripped, a leading
+// `./` normalized away) and returns the UNRESOLVED subset verbatim, order preserved — the SURFACE
+// (never a block: a briefing may legitimately name a file the work will create) is the caller's.
+
+/** The adapter-fed half: does this preprocessed path exist at the checked sha under some repo root?
+ *  Absolute paths arrive unmapped — root mapping is the adapter's, exactly like the gate's. */
+export type FileExistsAtSha = (path: string) => boolean;
+
+export function resolvePointers(pointers: string[], existsAtSha: FileExistsAtSha): string[] {
+  return pointers.filter((p) => !existsAtSha(p.replace(/:\d+$/, '').replace(/^\.\//, '')));
+}
+
 // Per-work-order cost, DERIVED from the WO's session list (ADR-0010 rule 2 — the same lesson as
 // deriveStage for `stage`: a stored aggregate is a claim wearing a schema). The store sets
 // WorkOrder.cost = deriveWorkOrderCost(sessions) at hydrate; undefined session costs (a live row

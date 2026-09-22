@@ -31,6 +31,7 @@ import {
   deriveTrackStage,
   deriveWorkOrderCost,
   extractPointers,
+  resolvePointers,
   limitInEffect,
   localGateSatisfiedAt,
   nextManuelAction,
@@ -1069,6 +1070,52 @@ describe('extractPointers — the `path:line` token extractor (WO-0069)', () => 
 
   it('an empty body extracts nothing', () => {
     expect(extractPointers('')).toEqual([]);
+  });
+});
+
+// ===== WO-0090 — the briefing's pointer resolution (pre-drive; the verification gate's semantics,
+// one stage earlier and read-at-sha instead of working-tree). The ADAPTER feeds the existence
+// predicate (core never touches git); the shapes pinned here are the contract between the two. =====
+describe('resolvePointers — the unresolved subset under an adapter-fed existence predicate (WO-0090)', () => {
+  it('all-resolving pointers yield [] — nothing to surface (the no-noise rule)', () => {
+    expect(resolvePointers(['src/a.ts:1', 'lib/b.dart:9'], () => true)).toEqual([]);
+  });
+
+  it('a pointer whose path the predicate denies returns VERBATIM (line suffix intact), order preserved', () => {
+    expect(
+      resolvePointers(['src/a.ts:1', 'lib/missing.dart:9', 'docs/x.md:2'], (p) => p !== 'lib/missing.dart'),
+    ).toEqual(['lib/missing.dart:9']);
+  });
+
+  it('the predicate receives the PREPROCESSED path: :line stripped, leading ./ normalized away', () => {
+    const seen: string[] = [];
+    resolvePointers(['./src/a.ts:4', 'src/b.ts:12'], (p) => {
+      seen.push(p);
+      return true;
+    });
+    expect(seen).toEqual(['src/a.ts', 'src/b.ts']);
+  });
+
+  it('a Windows-ish pointer keeps its backslashes (the resolver-side normalization is the adapter\'s)', () => {
+    const seen: string[] = [];
+    resolvePointers(['src\\core\\derive.ts:116'], (p) => {
+      seen.push(p);
+      return false;
+    });
+    expect(seen).toEqual(['src\\core\\derive.ts']);
+  });
+
+  it('an absolute pointer passes through unchanged (root mapping is the adapter\'s, like the gate)', () => {
+    const seen: string[] = [];
+    resolvePointers(['/usr/local/lib/app.ts:8'], (p) => {
+      seen.push(p);
+      return true;
+    });
+    expect(seen).toEqual(['/usr/local/lib/app.ts']);
+  });
+
+  it('an empty pointer list resolves to [] (absent is the caller\'s call, never a failure here)', () => {
+    expect(resolvePointers([], () => false)).toEqual([]);
   });
 });
 
