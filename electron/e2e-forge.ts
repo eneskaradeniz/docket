@@ -61,6 +61,18 @@ const ISSUE_LIST = JSON.stringify([
     url: 'https://github.com/antreo-app/api/issues/329',
     closedByPullRequestsReferences: [],
   },
+  {
+    closedAt: null,
+    createdAt: '2026-09-18T11:00:00Z',
+    labels: [],
+    milestone: null,
+    number: 328,
+    state: 'OPEN',
+    title: 'Sosyal giriş (Google/Apple) kayıtsız kimlikle hesap açabilsin',
+    updatedAt: '2026-09-20T11:35:56Z',
+    url: 'https://github.com/antreo-app/api/issues/328',
+    closedByPullRequestsReferences: [],
+  },
 ]);
 
 // `gh api repos/antreo-app/api/issues/N` — the REST drill-down rows; #329 intentionally FAILS so
@@ -88,6 +100,7 @@ const restIssue = (n: number, title: string, body: string): string =>
 
 const ISSUE_333 = restIssue(333, '[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı', '## Bulgu\n\nNetgsm OTP paketi bittiğinde tam kesinti. E2E gövdesi.');
 const ISSUE_330 = restIssue(330, '[API] OTP SMS şablonsuz — mesaj gövdesi çıplak 6 hane', 'E2E gövdesi: şablon eksikliği.');
+const ISSUE_328 = restIssue(328, 'Sosyal giriş (Google/Apple) kayıtsız kimlikle hesap açabilsin', 'E2E gövdesi: sosyal giriş.');
 
 // `gh pr list` — the fixture repo carries no open PRs (issue facts are what the specs drive).
 export function e2eGhRunner(): GhRunner {
@@ -99,6 +112,7 @@ export function e2eGhRunner(): GhRunner {
     if (head === 'issue' && tail.includes('issue list')) return ok(ISSUE_LIST);
     if (head === 'api' && /repos\/antreo-app\/api\/issues\/333$/.test(args[1] ?? '')) return ok(ISSUE_333);
     if (head === 'api' && /repos\/antreo-app\/api\/issues\/330$/.test(args[1] ?? '')) return ok(ISSUE_330);
+    if (head === 'api' && /repos\/antreo-app\/api\/issues\/328$/.test(args[1] ?? '')) return ok(ISSUE_328);
     // The shaped unknown: #329's drill-down dies like an unreachable forge — the spawn must
     // refuse with a reason and write nothing (acceptance 3).
     if (head === 'api' && /repos\/antreo-app\/api\/issues\/\d+$/.test(args[1] ?? ''))
