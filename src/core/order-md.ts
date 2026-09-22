@@ -14,6 +14,7 @@ export interface ParsedOrderMd {
   title: string; // front-matter title
   permissionRule: PermissionRule; // front-matter permission_rule; absent/garbage → 'ask_every' (the safe default — operator ruling: no silent auto-approval)
   taskRef?: string; // front-matter task — the roadmap link (WO-0048, ADR-0016). No validation here: the roadmap's diagnostics own ref validity at join time.
+  issueRef?: string; // front-matter issue — the forge-issue link (WO-0092): text `owner/repo#N`, joined at view time, no DB column (the taskRef pattern). No validation here: the link is the operator's own document text.
   cwd?: string; // front-matter cwd (WO-0088) — the WO's own working copy (the wave worktree). The
   // store's driveCwd reads it BEFORE the connection table; the runner's write fence jails to it
   // (repoRoot = cwd). Absent → the connection-table fallback stands. A PATH, like the WO-0015
@@ -59,6 +60,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const permissionRule: PermissionRule =
     ruleValue === 'full_auto' || ruleValue === 'risky_excluded' ? ruleValue : 'ask_every';
   const taskValue = frontValue(front, 'task');
+  const issueValue = frontValue(front, 'issue');
   const cwdValue = frontValue(front, 'cwd');
   return {
     reviewMode,
@@ -67,6 +69,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
     objective: sectionBody(body, 'Objective'),
     permissionRule,
     taskRef: taskValue !== '' ? taskValue : undefined,
+    issueRef: issueValue !== '' ? issueValue : undefined,
     cwd: cwdValue !== '' ? cwdValue : undefined,
   };
 }

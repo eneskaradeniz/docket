@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
+import type { RepoId, StepView, WorkOrder, WorkOrderId, Workspace, WorkspaceId } from '../../core/types';
 import type { PermissionRule, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { SessionRunner } from '../../core/runner';
-import type { ForgeView, ForgeWatch } from '../../core/forge';
+import type { ForgeIssueRow, ForgeView, ForgeWatch } from '../../core/forge';
 import type { SystemHealth, SystemHealthWatch } from '../../core/health';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import type { ChangesBridge } from '../components/detail/ChangesSection';
@@ -16,8 +16,9 @@ import type { WorkspaceOverview } from '../../core/overview';
 import { useLabels } from '../data/locale';
 import { AppShell, type AppbarActivity, type Surface } from '../chrome/AppShell';
 import type { AppSettings } from '../../core/app-settings';
-import { WoCreateModal } from '../chrome/WoCreateModal';
+import { WoCreateModal, type WoIssuePrefill } from '../chrome/WoCreateModal';
 import { WsSettingsModal } from '../chrome/WsSettingsModal';
+import { Button, Dialog } from '../kit';
 import { BoardScreen } from '../screens/BoardScreen';
 import { HealthSection } from '../components/HealthSection';
 import { DetailScreen } from '../screens/DetailScreen';
@@ -62,6 +63,13 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // WO-0049: the roadmap's `▸ İş emri aç` opens the create modal PRE-FILLED (kare 06); undefined =
   // the plain board flow.
   const [spawnTask, setSpawnTask] = useState<WoSpawnPrefill | undefined>(undefined);
+  // WO-0092: the issue spawn — the prefilled create modal (single) and the counted batch confirm.
+  const [spawnIssue, setSpawnIssue] = useState<WoIssuePrefill | undefined>(undefined);
+  const [batchIssue, setBatchIssue] = useState<WoIssuePrefill[] | undefined>(undefined);
+  const [batchCreating, setBatchCreating] = useState(false);
+  // The issue↔WO join (view-time, no DB column): {woId → 'owner/repo#N'}, refreshed at the same
+  // moments the board list is — a WO deleted manually drops out and the issue row stays honest.
+  const [issueRefs, setIssueRefs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +141,19 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     const loc = roadmapTaskOf(roadmap, ref);
     return loc !== undefined ? { fazId: loc.fazId, taskTitle: loc.taskTitle } : 'missing';
   }, [parsedOrder, roadmap]);
+
+  // WO-0092 — the issue rows' spawned-WO chips: the view-time join over issueRefs × the loaded
+  // work orders (this workspace only). A WO deleted manually drops out; the map stays honest.
+  const spawnedWoByIssue = useMemo(() => {
+    const m = new Map<string, WorkOrderId[]>();
+    for (const w of workOrders) {
+      if (w.workspace !== workspaceId) continue;
+      const ref = issueRefs[w.id as string];
+      if (ref === undefined) continue;
+      m.set(ref, [...(m.get(ref) ?? []), w.id]);
+    }
+    return m;
+  }, [workOrders, workspaceId, issueRefs]);
 
   // WO-0028 / Bulgu 12: the app-level drive store — drives outlive pane navigation. Created before
   // the cards memo because the board reads its live snapshot (base-mobile trial).
@@ -217,11 +238,70 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
     };
   }, [forgeWatch]);
 
+  // WO-0092 — the detail band's issue chip: the order.md `issue:` ref; the ↗ url resolves from
+  // the landed forge view's cache (view-time, zero calls). Unresolvable (no view / not on the
+  // open page) degrades to the ref chip without the link — never a guessed url.
+  const detailIssueChip = useMemo<{ ref: string; url?: string } | undefined>(() => {
+    const ref = parsedOrder.issueRef;
+    if (ref === undefined) return undefined;
+    const view = forge !== undefined && workspaceId !== null && forge.ws === workspaceId ? forge.view : undefined;
+    const row = view?.repos.flatMap((r) => r.issues).find((i) => i.ref === ref);
+    return row !== undefined ? { ref, url: row.url } : { ref };
+  }, [parsedOrder, forge, workspaceId]);
+
   // After creating a work order, re-fetch the list (mirrors refreshWorkspaces) so the new card appears.
   const refreshWorkOrders = useCallback(() => {
     source.getWorkOrders().then(setWorkOrders);
+    // WO-0092: the issue-link join rides the same action funnel — created/deleted WOs move it.
+    if (workspaceId !== null) {
+      source.woIssueRefs(workspaceId).then(setIssueRefs).catch(() => setIssueRefs({}));
+    }
     refreshForgeRef.current(); // "after any action it takes" — the board's action funnel (WO-0064)
-  }, [source]);
+  }, [source, workspaceId]);
+  // WO-0092: the join's workspace-entry read (the actions funnel above covers the rest).
+  useEffect(() => {
+    if (workspaceId === null) {
+      setIssueRefs({});
+      return;
+    }
+    source.woIssueRefs(workspaceId).then(setIssueRefs).catch(() => setIssueRefs({}));
+  }, [source, workspaceId]);
+
+  // WO-0092 — the single spawn: ONE drill-down (the body's only fetch), then the NORMAL create
+  // dialog prefilled — the operator edits before save. A failed drill-down rethrows the
+  // displayable reason: the row refuses in place, nothing is written (the shaped unknown).
+  const handleSpawnIssue = useCallback(
+    async (repoRemote: string, issue: ForgeIssueRow) => {
+      if (forgeWatch === undefined || workspaceId === null) return;
+      const detail = await forgeWatch.issueDetail(workspaceId, repoRemote, issue.number);
+      setSpawnIssue({
+        ref: issue.ref,
+        ...(detail.title !== undefined ? { title: detail.title } : {}),
+        ...(detail.body !== undefined ? { body: detail.body } : {}),
+        repo: detail.repo.name,
+      });
+    },
+    [forgeWatch, workspaceId],
+  );
+  // WO-0092 — the counted batch: EVERY drill-down first (a single failure refuses the whole
+  // batch, nothing written), then the ONE counted confirm gates the N creates.
+  const handleBatchSpawnIssues = useCallback(
+    async (repoRemote: string, issues: ForgeIssueRow[]) => {
+      if (forgeWatch === undefined || workspaceId === null) return;
+      const prefills: WoIssuePrefill[] = [];
+      for (const issue of issues) {
+        const detail = await forgeWatch.issueDetail(workspaceId, repoRemote, issue.number);
+        prefills.push({
+          ref: issue.ref,
+          ...(detail.title !== undefined ? { title: detail.title } : {}),
+          ...(detail.body !== undefined ? { body: detail.body } : {}),
+          repo: detail.repo.name,
+        });
+      }
+      setBatchIssue(prefills);
+    },
+    [forgeWatch, workspaceId],
+  );
 
   // WO-0066 — the health look, ADR-0010's cadence (mount + focus + the slow tick; view-only).
   // A failed look resolves undefined and the LAST observation stays — the strip never flickers
@@ -510,6 +590,47 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // The active workspace — needed by the main chain below (the roadmap screen takes it as a prop).
   const currentWorkspace = useMemo(() => workspaces.find((w) => w.id === workspaceId), [workspaces, workspaceId]);
 
+  // WO-0092 — the counted batch's execution: N creates AFTER the confirm, sequential numbers via
+  // the store's own allocation, each WO carrying its own `issue:` link (the taskRef idiom).
+  const batchTracksFor = useCallback(
+    (repo: string | undefined): RepoId[] => {
+      if (currentWorkspace === undefined) return [];
+      const tracks: RepoId[] =
+        currentWorkspace.repos.length > 1
+          ? currentWorkspace.repos.filter((r) => r !== currentWorkspace.decisionStore)
+          : currentWorkspace.repos;
+      return repo !== undefined && tracks.some((r) => (r as string) === repo)
+        ? tracks.filter((r) => (r as string) === repo)
+        : tracks;
+    },
+    [currentWorkspace],
+  );
+  const runBatchSpawn = useCallback(async () => {
+    if (batchIssue === undefined || workspaceId === null) return;
+    setBatchCreating(true);
+    try {
+      for (const p of batchIssue) {
+        await source.createWorkOrder({
+          workspaceId,
+          title: p.title ?? p.ref, // a title-less wire row falls back to its own ref
+          description: p.body ?? '',
+          trackRepos: batchTracksFor(p.repo),
+          reviewMode: 'gates',
+          contextFiles: [],
+          permissionRule: defaultRule,
+          issueRef: p.ref,
+        });
+      }
+      toast.push({ kind: 'confirm', title: UI.issueBatchToast(batchIssue.length) });
+      setBatchIssue(undefined);
+      refreshWorkOrders();
+    } catch {
+      toast.push({ kind: 'error', title: UI.saveFailed });
+    } finally {
+      setBatchCreating(false);
+    }
+  }, [batchIssue, workspaceId, source, batchTracksFor, defaultRule, UI, refreshWorkOrders]);
+
   let main;
   if (load === 'loading') {
     // TD-037: the named load line — what is actually being read, never a bare 'Yükleniyor…'.
@@ -586,6 +707,8 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
         onDelete={handleDeleteWorkOrder}
         autoRequestPlan={autoPlanFor !== null && autoPlanFor === selectedId}
         taskChip={detailTaskChip}
+        issueChip={detailIssueChip}
+        onOpenIssueExternal={(url: string) => void window.docket.shell?.openExternal(url)}
         changes={changesBridge}
       />
     ) : (
@@ -641,6 +764,9 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
             : undefined
         }
         onOpenExternal={(url: string) => void window.docket.shell?.openExternal(url)}
+        onSpawnIssue={workspaceId !== null && forgeWatch ? (repoRemote, issue) => handleSpawnIssue(repoRemote, issue) : undefined}
+        onBatchSpawnIssues={workspaceId !== null && forgeWatch ? (repoRemote, issues) => handleBatchSpawnIssues(repoRemote, issues) : undefined}
+        spawnedWoIdsByIssue={spawnedWoByIssue}
         onSelect={setSelectedId}
       />
     ) : null;
@@ -795,25 +921,49 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
       {chrome}
       {main}
       <ToastHost />
-      {(woCreateOpen || spawnTask !== undefined) && currentWorkspace ? (
+      {(woCreateOpen || spawnTask !== undefined || spawnIssue !== undefined) && currentWorkspace ? (
         <WoCreateModal
           workspace={currentWorkspace}
           source={source}
           defaultRule={defaultRule}
           prefill={spawnTask}
+          issuePrefill={spawnIssue}
           onClose={() => {
             setWoCreateOpen(false);
             setSpawnTask(undefined);
+            setSpawnIssue(undefined);
           }}
           onCreated={(wo, withPlan) => {
             setWoCreateOpen(false);
             setSpawnTask(undefined);
+            setSpawnIssue(undefined);
             refreshWorkOrders();
             refreshRoadmap(); // WO-0049: the spawned WO flips its task's row (kosuyor + the chip)
             setSelectedId(wo.id); // navigate to the new work order's detail
             if (withPlan) setAutoPlanFor(wo.id); // "Oluştur ve plan iste": the architect starts on arrival
           }}
         />
+      ) : null}
+      {batchIssue !== undefined ? (
+        // WO-0092: the ONE counted confirm — N issues → N work orders, sequential numbers, each
+        // with its own `issue:` link. Nothing was written before this confirm.
+        <Dialog
+          open
+          narrow
+          onOpenChange={(o) => { if (!o && !batchCreating) setBatchIssue(undefined); }}
+          title={UI.issueBatchConfirmTitle}
+          closeAria={UI.dialogCloseAria}
+          footer={
+            <>
+              <Button variant="ghost" size="sm" locked={batchCreating} onClick={() => setBatchIssue(undefined)}>{UI.cancel}</Button>
+              <Button variant="primary" size="sm" busy={batchCreating} locked={batchCreating} onClick={() => void runBatchSpawn()}>
+                {UI.issueBatchGo(batchIssue.length)}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-[12px] text-inkdim">{UI.issueBatchConfirmBody(batchIssue.length)}</p>
+        </Dialog>
       ) : null}
       {wsCreateOpen ? (
         <WsSettingsModal

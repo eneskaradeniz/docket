@@ -22,10 +22,10 @@ import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extrac
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
-import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
+import type { ClosureEvidence, ForgeIssueRow, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
@@ -1082,6 +1082,20 @@ function recordForgeScanRow(db: DatabaseSync, workspaceId: WorkspaceId, repoRemo
     for (const { sha, check } of scan.checks) {
       insCheck.run(workspaceId, repoRemote, sha, check.name, check.status, check.conclusion ?? null, scan.at);
     }
+    // WO-0092: the issue page replaces in the SAME transaction — an issue fallen off the open
+    // page is absent after the scan (observation wins). No body ever enters a row.
+    db.prepare('DELETE FROM forge_issue WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
+    const insIssue = db.prepare(
+      `INSERT INTO forge_issue (workspace_id, repo_remote, number, ref, state, title, url, labels, milestone_title, updated_at, observed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    );
+    for (const issue of scan.issues) {
+      insIssue.run(
+        workspaceId, repoRemote, issue.number, `${issue.repo.owner}/${issue.repo.name}#${issue.number}`,
+        issue.state, issue.title ?? null, issue.url, JSON.stringify(issue.labels),
+        issue.milestone?.title ?? null, issue.updatedAt ?? null, scan.at,
+      );
+    }
     // ADR-0017: the OBSERVED WO→PR link — the scanned open PRs matched to the workspace's OPEN
     // work orders by the title rule (titleCarriesWoId). Latest-wins: this scan's match
     // overwrites; no hit keeps the prior link (the last observation stands — a page replace is
@@ -1148,11 +1162,40 @@ function forgeViewRow(db: DatabaseSync, id: WorkspaceId): ForgeView {
     const checkRows = db
       .prepare('SELECT sha, name, status, conclusion FROM forge_check WHERE workspace_id = ? AND repo_remote = ? ORDER BY name')
       .all(id, conn.repo_remote) as { sha: string; name: string; status: string; conclusion: string | null }[];
+    // WO-0092: the cached issue rows — the display facts + the ref text; the labels ride JSON
+    // (an array of names), the milestone as its display title only.
+    const issueRows = db
+      .prepare(
+        'SELECT number, ref, state, title, url, labels, milestone_title, updated_at FROM forge_issue WHERE workspace_id = ? AND repo_remote = ? ORDER BY number',
+      )
+      .all(id, conn.repo_remote) as {
+      number: number;
+      ref: string;
+      state: string;
+      title: string | null;
+      url: string;
+      labels: string;
+      milestone_title: string | null;
+      updated_at: string | null;
+    }[];
     repos.push({
       repoRemote: conn.repo_remote,
       path: conn.local_path,
       scannedAt: scan.observed_at,
       health: scan.status === 'ok' ? 'ok' : { degraded: scan.reason ?? 'unknown failure' },
+      issues: issueRows.map((issue) => {
+        const row: ForgeIssueRow = {
+          ref: issue.ref as ForgeIssueRow['ref'],
+          number: issue.number,
+          state: issue.state as 'open' | 'closed',
+          url: issue.url,
+          labels: JSON.parse(issue.labels) as string[],
+        };
+        if (issue.title != null) row.title = issue.title;
+        if (issue.updated_at != null) row.updatedAt = issue.updated_at;
+        if (issue.milestone_title != null) row.milestoneTitle = issue.milestone_title;
+        return row;
+      }),
       prs: prRows.map((pr) => {
         const row: ForgePrRow = {
           number: pr.number,
@@ -2096,6 +2139,7 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.issueRef ? { issueRef: input.issueRef } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.trackDependencies
             ? {
@@ -2110,6 +2154,14 @@ export function createStore(dbPath: string): Store {
       const created = createWorkOrderRow(db, { ...input, id });
       appendEvent(db, id as string, 'created', input.title);
       return created;
+    },
+    // WO-0092: the issue-link join read — the workspace's own structure root only (one readdir +
+    // one order.md read per WO, the TD-055 shape). Keyed by woId; unlinked WOs are absent.
+    woIssueRefs: (id: WorkspaceId) => {
+      const refs = scanIssueRefs(structureRoot(db, id));
+      const out: Record<string, string> = {};
+      for (const [woId, ref] of refs) out[woId] = ref;
+      return Promise.resolve(out);
     },
     // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
     // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.

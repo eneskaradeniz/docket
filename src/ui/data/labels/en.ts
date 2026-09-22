@@ -567,6 +567,21 @@ export const UI = {
   forgePrDetailDiffHide: '▸ Hide diff',
   forgePrDetailFiles: (n: number) => `${n} files`,
   forgePrDetailLoadFailed: 'Could not load the details',
+  // WO-0092 — the issue bridge: the repo card's issues fold + the "İş emri aç" spawn. Issue
+  // title/labels/url are DATA (the operator's own forge text); fixed chrome lives here.
+  forgeIssuesCount: (n: number) => `${n} open issue${n === 1 ? '' : 's'}`,
+  FORGE_ISSUE_STATE: { open: 'open', closed: 'closed' },
+  issueSpawnAction: 'New work order',
+  issueSpawnAria: (ref: string) => `Spawn a work order from issue ${ref}`,
+  issueSpawnContext: (ref: string) => `From issue: ${ref}`,
+  issueSpawnFailed: 'Could not spawn the work order',
+  issueSelectToggle: (ref: string) => `Select issue ${ref}`,
+  issueBatchBar: (n: number) => `${n} issues selected`,
+  issueBatchGo: (n: number) => `Create ${n} work order${n === 1 ? '' : 's'}`,
+  issueBatchConfirmTitle: 'Create work orders from issues',
+  issueBatchConfirmBody: (n: number) => `${n} work orders will be created — each carries its own issue link.`,
+  issueBatchToast: (n: number) => `${n} work orders created`,
+  issueChipTitle: (ref: string) => `This work order was spawned from issue ${ref}`,
   forgePrDiffTruncated: (n: number) => `First ${n} lines shown`,
   // WO-0078 — raw diagnostics never reach the surface (atelier ruling, 2026-09-20): the degraded
   // reason stays verbatim in the records; the face speaks operator words, the raw rides the tooltip.

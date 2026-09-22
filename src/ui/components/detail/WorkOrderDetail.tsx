@@ -86,6 +86,8 @@ export function WorkOrderDetail({
   autoRequestPlan,
   onRetractSteerNote,
   taskChip,
+  issueChip,
+  onOpenIssueExternal,
   changes: changesBridge,
 }: {
   detail: WorkOrderDetailView;
@@ -115,6 +117,10 @@ export function WorkOrderDetail({
   onRetractSteerNote?: (sessionId: string, noteId: string) => Promise<boolean>;
   /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight to the strip. */
   taskChip?: { fazId: string; taskTitle: string } | 'missing';
+  /** WO-0092: the order.md `issue:` ref chip (↗ when the cache resolves its display url). */
+  issueChip?: { ref: string; url?: string };
+  /** WO-0092: the chip's browser action (https-allowlisted main-side). */
+  onOpenIssueExternal?: (url: string) => void;
   /** WO-0068: the operator's console bridge (the optional `changes` group) — present only when
    *  the composition root wired the console; the section is absent without it. */
   changes?: ChangesBridge;
@@ -1394,6 +1400,8 @@ export function WorkOrderDetail({
           permissionRule={permissionRule}
           onUpdateWorkOrder={onUpdateWorkOrder}
           taskChip={taskChip}
+          issueChip={issueChip}
+          onOpenIssueExternal={onOpenIssueExternal}
         />
       </div>
       <div className="flow-scroll mt-3 min-h-0 flex-1 overflow-y-auto pr-1">

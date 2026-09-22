@@ -426,3 +426,209 @@ describe('prDetail + prDiff — the depo row\'s lazy detail (WO-0087)', () => {
     await expect(f.prDiff(antreo, 269)).rejects.toThrow();
   });
 });
+
+// ===== WO-0092 — the issue bridge (the WO-0081 probe's frozen contract, report §(a)/(e)) =====
+// Fixtures fed the probe's RAW LOGS verbatim: the list rows from raw/10-api-issue-list-all.json
+// (url + closedByPullRequestsReferences per the frozen §(a) field set; the closedByPrs payload
+// from raw/24-closedlink-milestone-nested.txt:2), the drill-down row from raw/18-api-rest-issue-333.json
+// (body included — the spawn prefill's ONE fetch), the nested milestone from raw/24:4-43, the
+// milestones page from raw/19-milestones-all-repos.txt:1-10.
+const api = { owner: 'antreo-app', name: 'api' };
+
+const ISSUE_FIELDS =
+  'number,title,state,labels,milestone,createdAt,updatedAt,closedAt,url,closedByPullRequestsReferences';
+
+// raw/10 rows #333 + #331 (OPEN) — verbatim, plus the §(a) field-set keys the probe's first cut omitted
+const ISSUES_LIST = JSON.stringify([
+  {
+    closedAt: null,
+    createdAt: '2026-09-20T18:37:15Z',
+    labels: [],
+    milestone: null,
+    number: 333,
+    state: 'OPEN',
+    title: '[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı',
+    updatedAt: '2026-09-20T18:37:15Z',
+    url: 'https://github.com/antreo-app/api/issues/333',
+    closedByPullRequestsReferences: [],
+  },
+  {
+    closedAt: '2026-09-18T21:38:33Z',
+    createdAt: '2026-09-18T18:20:52Z',
+    labels: [{ name: 'bug' }],
+    milestone: {
+      url: 'https://api.github.com/repos/antreo-app/docs/milestones/2',
+      html_url: 'https://github.com/antreo-app/docs/milestone/2',
+      number: 2,
+      title: 'Faz 1 — Antrenör Profil Sistemi',
+      description: '',
+      creator: { login: 'Burakzturk34' },
+      open_issues: 1,
+      closed_issues: 7,
+      state: 'open',
+      created_at: '2026-08-18T07:54:57Z',
+      updated_at: '2026-09-16T17:08:40Z',
+      due_on: null,
+      closed_at: null,
+    },
+    number: 324,
+    state: 'CLOSED',
+    title: '[API] Media guard test iyileştirmeleri — platform-koşullu bare-path testi + stand-in çapa sıkılaştırması',
+    updatedAt: '2026-09-18T21:39:33Z',
+    url: 'https://github.com/antreo-app/api/issues/324',
+    closedByPullRequestsReferences: [
+      {
+        id: 'PR_kwDOT2H5sM8AAAABEJfCRw',
+        number: 327,
+        repository: { id: 'R_kgDOT2H5sA', name: 'api', owner: { id: 'O_kgDOEyk-EA', login: 'antreo-app' } },
+        url: 'https://github.com/antreo-app/api/pull/327',
+      },
+    ],
+  },
+]);
+
+// raw/18-api-rest-issue-333.json — the REST row VERBATIM (37 keys; the body is the operator's spec)
+const REST_ISSUE_333 = `{"url":"https://api.github.com/repos/antreo-app/api/issues/333","repository_url":"https://api.github.com/repos/antreo-app/api","labels_url":"https://api.github.com/repos/antreo-app/api/issues/333/labels{/name}","comments_url":"https://api.github.com/repos/antreo-app/api/issues/333/comments","events_url":"https://api.github.com/repos/antreo-app/api/issues/333/events","html_url":"https://github.com/antreo-app/api/issues/333","id":5519710196,"node_id":"I_kwDOT2H5sM8AAAABSQAX9A","number":333,"title":"[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı","user":{"login":"eneskaradeniz"},"labels":[],"state":"open","locked":false,"assignees":[],"milestone":null,"comments":0,"created_at":"2026-09-20T18:37:15Z","updated_at":"2026-09-20T18:37:15Z","closed_at":null,"assignee":null,"author_association":"MEMBER","issue_field_values":[],"type":null,"active_lock_reason":null,"sub_issues_summary":{"total":0,"completed":0,"percent_completed":0},"issue_dependencies_summary":{"blocked_by":0,"total_blocked_by":0,"blocking":0,"total_blocking":0},"body":"## Bulgu\\n\\nNetgsm OTP paketi bittiğinde API kod **60** dönüyor.","closed_by":null,"state_reason":null}`;
+
+// raw/19-milestones-all-repos.txt:1-10 — the api page's first rows, wire-shaped
+const MILESTONES = JSON.stringify([
+  { number: 1, title: 'Faz 0 — Kullanıcı Altyapısı', state: 'open', open_issues: 0, closed_issues: 8, due_on: null, created_at: '2026-08-12T09:19:53Z', description: 'Şifresiz giriş, roller, KVKK.' },
+  { number: 8, title: 'Faz 7 — Admin Panel & Moderasyon', state: 'closed', open_issues: 0, closed_issues: 11, due_on: null, created_at: '2026-09-14T06:31:26Z', description: '' },
+]);
+
+describe('issues (WO-0092 — report §2/§a, raw/10)', () => {
+  it('the frozen one-shot call: the scan page args are pinned; the wire normalizes at this edge', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual([
+        'issue', 'list', '--repo', 'antreo-app/api', '--state', 'open', '--limit', '50', '--json', ISSUE_FIELDS,
+      ]);
+      return ok(ISSUES_LIST);
+    });
+    expect(await f.issues(api, 'open')).toEqual([
+      {
+        number: 333,
+        repo: api,
+        state: 'open',
+        title: '[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı',
+        url: 'https://github.com/antreo-app/api/issues/333',
+        labels: [],
+        createdAt: '2026-09-20T18:37:15Z',
+        updatedAt: '2026-09-20T18:37:15Z',
+      },
+      {
+        number: 324,
+        repo: api,
+        state: 'closed',
+        title: '[API] Media guard test iyileştirmeleri — platform-koşullu bare-path testi + stand-in çapa sıkılaştırması',
+        url: 'https://github.com/antreo-app/api/issues/324',
+        labels: ['bug'],
+        milestone: { number: 2, title: 'Faz 1 — Antrenör Profil Sistemi', state: 'open' },
+        closedAt: '2026-09-18T21:38:33Z',
+        updatedAt: '2026-09-18T21:39:33Z',
+        createdAt: '2026-09-18T18:20:52Z',
+        closedByPrs: [{ number: 327, url: 'https://github.com/antreo-app/api/pull/327', repo: api }],
+      },
+    ]);
+  });
+
+  it('LIST rows never carry a body — the field is not asked, the mapped shape cannot hold one', async () => {
+    const f = forgeWith(() => ok(ISSUES_LIST));
+    for (const row of await f.issues(api, 'open')) expect('body' in row).toBe(false);
+  });
+
+  it('null wire values stay ABSENT — milestone/closedAt/closedByPrs carry no keys', async () => {
+    const raw = JSON.parse(ISSUES_LIST) as Record<string, unknown>[];
+    delete raw[0]!.closedByPullRequestsReferences;
+    const f = forgeWith(() => ok(JSON.stringify([raw[0]])));
+    const row = (await f.issues(api, 'open'))[0]!;
+    expect('milestone' in row).toBe(false);
+    expect('closedAt' in row).toBe(false);
+    expect('closedByPrs' in row).toBe(false);
+    expect('stateReason' in row).toBe(false); // the list path carries no state_reason at all
+  });
+
+  it('an unknown wire state is the shaped unknown, not a guess', async () => {
+    const raw = JSON.parse(ISSUES_LIST) as Record<string, unknown>[];
+    raw[0]!.state = 'FUTZ';
+    const f = forgeWith(() => ok(JSON.stringify(raw)));
+    await expect(f.issues(api, 'open')).rejects.toThrow(ForgeError);
+    await expect(f.issues(api, 'open')).rejects.toThrow('unknown issue state "FUTZ"');
+  });
+
+  it('non-zero exit → ForgeError carrying the stderr line', async () => {
+    const f = forgeWith(() => fail('gh: Issues are disabled for this repository'));
+    await expect(f.issues(api, 'open')).rejects.toThrow('gh: Issues are disabled for this repository');
+  });
+});
+
+describe('issue — the drill-down (WO-0092, report §4/§a, raw/18)', () => {
+  it('the REST row maps: html_url is the display url, the body rides, the count fields never do', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual(['api', 'repos/antreo-app/api/issues/333']);
+      return ok(REST_ISSUE_333);
+    });
+    const issue = await f.issue(api, 333);
+    expect(issue).toEqual({
+      number: 333,
+      repo: api,
+      state: 'open',
+      title: '[API] OTP paketi bittiğinde tam kesinti, önceden uyarı yok — Netgsm bakiye izleme + düşük paket alarmı',
+      url: 'https://github.com/antreo-app/api/issues/333',
+      labels: [],
+      createdAt: '2026-09-20T18:37:15Z',
+      updatedAt: '2026-09-20T18:37:15Z',
+      body: '## Bulgu\n\nNetgsm OTP paketi bittiğinde API kod **60** dönüyor.',
+    });
+  });
+
+  it('a null state_reason stays ABSENT; closedByPrs stays ABSENT — this path carries no closure fact', async () => {
+    const f = forgeWith(() => ok(REST_ISSUE_333));
+    const issue = await f.issue(api, 333);
+    expect('stateReason' in issue).toBe(false);
+    expect('closedByPrs' in issue).toBe(false);
+  });
+
+  it('a closed REST row maps state_reason lowercase and the milestone object by number/title/state (raw/24)', async () => {
+    const raw = JSON.parse(REST_ISSUE_333) as Record<string, unknown>;
+    raw.state = 'closed';
+    raw.state_reason = 'completed';
+    raw.closed_at = '2026-09-18T21:38:33Z';
+    raw.milestone = JSON.parse(JSON.stringify((JSON.parse(ISSUES_LIST) as Record<string, unknown>[])[1]!.milestone));
+    const f = forgeWith(() => ok(JSON.stringify(raw)));
+    const issue = await f.issue(api, 333);
+    expect(issue.state).toBe('closed');
+    expect(issue.stateReason).toBe('completed');
+    expect(issue.closedAt).toBe('2026-09-18T21:38:33Z');
+    expect(issue.milestone).toEqual({ number: 2, title: 'Faz 1 — Antrenör Profil Sistemi', state: 'open' });
+  });
+
+  it('an empty body stays ABSENT (the spawn prefill reads undefined, never an empty string)', async () => {
+    const raw = JSON.parse(REST_ISSUE_333) as Record<string, unknown>;
+    raw.body = '';
+    const f = forgeWith(() => ok(JSON.stringify(raw)));
+    expect((await f.issue(api, 333)).body).toBeUndefined();
+  });
+
+  it('a missing issue → the wire message as the reason (the spawn refusal, nothing prefilled)', async () => {
+    const f = forgeWith(() => fail('gh: Not Found (HTTP 404)', 1, '{"message":"Not Found"}'));
+    await expect(f.issue(api, 329)).rejects.toThrow('Not Found');
+  });
+});
+
+describe('milestones (WO-0092 — display facts only, report §5, raw/19)', () => {
+  it('the one-shot REST page maps to the frozen shape; due_on null stays ABSENT', async () => {
+    const f = forgeWith((args) => {
+      expect(args).toEqual(['api', 'repos/antreo-app/api/milestones?state=all']);
+      return ok(MILESTONES);
+    });
+    expect(await f.milestones(api)).toEqual([
+      { number: 1, title: 'Faz 0 — Kullanıcı Altyapısı', state: 'open', openIssueCount: 0, closedIssueCount: 8 },
+      { number: 8, title: 'Faz 7 — Admin Panel & Moderasyon', state: 'closed', openIssueCount: 0, closedIssueCount: 11 },
+    ]);
+  });
+
+  it('non-zero exit → ForgeError carrying the stderr line', async () => {
+    const f = forgeWith(() => fail('gh: Could not resolve to a Repository'));
+    await expect(f.milestones(api)).rejects.toThrow('gh: Could not resolve to a Repository');
+  });
+});

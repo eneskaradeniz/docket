@@ -268,6 +268,22 @@ describe('task (WO-0048 — the roadmap link lives only in order.md front-matter
   });
 });
 
+describe('issue (WO-0092 — the forge-issue link lives only in order.md front-matter)', () => {
+  it('reads the issue ref from front-matter — the owner/repo#N text verbatim', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\nissue: antreo-app/api#333');
+    expect(parseOrderMd(md).issueRef).toBe('antreo-app/api#333');
+  });
+  it('absent issue → undefined (spawned-from-nothing work orders stay the common case)', () => {
+    expect(parseOrderMd(sample).issueRef).toBeUndefined();
+  });
+  it('the two links coexist — task: and issue: are independent keys', () => {
+    const md = sample.replace('review_mode: gates', 'review_mode: gates\ntask: f1-t3\nissue: antreo-app/api#333');
+    const parsed = parseOrderMd(md);
+    expect(parsed.taskRef).toBe('f1-t3');
+    expect(parsed.issueRef).toBe('antreo-app/api#333');
+  });
+});
+
 // ===== WO-0067 / ADR-0017 — the implementer's git discipline rides the prompt =====
 describe('implementerPrompt — the git discipline (ADR-0017)', () => {
   const p = implementerPrompt({ objective: 'Fix the crash.', step: implStep, planText: '# Plan', orderMdPath: '/r/o.md' });

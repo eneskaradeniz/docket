@@ -61,6 +61,8 @@ const source: WorkOrderSource = {
   closeWorkOrder: (id: WorkOrderId, note: string) => ipcRenderer.invoke('docket:source:close-work-order', id, note),
   overrideStepVerdict: (id: WorkOrderId, idx: number) => ipcRenderer.invoke('docket:source:override-step-verdict', id, idx),
   getWorkOrderEvents: (id: WorkOrderId) => ipcRenderer.invoke('docket:source:get-work-order-events', id),
+  // WO-0092: the issue-link join read — {woId → 'owner/repo#N'}, view-time (no DB column).
+  woIssueRefs: (id: WorkspaceId) => ipcRenderer.invoke('docket:source:wo-issue-refs', id),
 };
 
 // Operator app settings (WO-0025 / B1). WO-0059 rev 4: the key methods are gone — the check runs
@@ -134,6 +136,9 @@ contextBridge.exposeInMainWorld('docket', {
       ipcRenderer.invoke('docket:forge:prDetail', workspaceId, repoRemote, number),
     prDiff: (workspaceId: WorkspaceId, repoRemote: string, number: number): Promise<string> =>
       ipcRenderer.invoke('docket:forge:prDiff', workspaceId, repoRemote, number),
+    // WO-0092: the spawn prefill's ONE drill-down (live, never cached — the prDetail pattern).
+    issueDetail: (workspaceId: WorkspaceId, repoRemote: string, number: number): Promise<import('../src/core/forge').ForgeIssue> =>
+      ipcRenderer.invoke('docket:forge:issueDetail', workspaceId, repoRemote, number),
   },
   // WO-0087: the depo row's browser chip — https-allowlisted main-side (shell.openExternal).
   shell: {

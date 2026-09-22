@@ -76,6 +76,8 @@ export interface OrderMdInput {
   contextFiles: string[]; // local file paths → Context
   permissionRule?: PermissionRule; // → front-matter permission_rule (WO-0031c); the WO carries its own rule
   taskRef?: string; // → front-matter task (WO-0048, ADR-0016): the roadmap link; omitted when unlinked
+  // WO-0092: the forge-issue link → front-matter `issue:` (`owner/repo#N`); omitted when unlinked.
+  issueRef?: string;
   // WO-0071: the intra-WO depends_on facts, serialized back into the tracks fence as YAML flow
   // lists (`depends_on: [app]`). Absent = every track emits `depends_on: []` (the pre-WO-0071
   // bytes). A track with no entry — or an explicit empty list — emits `[]` the same way.
@@ -111,7 +113,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}tracks:
+${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.issueRef ? `issue: ${input.issueRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}tracks:
 ${tracks}
 ---
 
@@ -309,6 +311,34 @@ export function scanTaskRefs(structureRoot: string): Map<string, string> {
     try {
       const order = readFileSync(join(dir, name, 'order.md'), 'utf8');
       const ref = parseOrderMd(order).taskRef;
+      if (ref !== undefined) out.set(m[0], ref);
+    } catch {
+      // no order.md in the dir — nothing to link
+    }
+  }
+  return out;
+}
+
+// The view-time issue-link join (WO-0092): scanTaskRefs' twin over the `issue:` key — one readdir
+// of <structureRoot>/work-orders plus one order.md read per work order. Returns {woId → ref}; WOs
+// without the key (or without order.md) are absent — unlinked is a legitimate state. The link
+// deliberately has no DB column (ADR-0010 rule 1): a WO deleted manually drops out and the issue
+// row stays honest (the roadmapTaskOf orphan-degrade, on the issue side).
+export function scanIssueRefs(structureRoot: string): Map<string, string> {
+  const dir = join(structureRoot, ...WORK_ORDERS_DIR);
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return new Map();
+  }
+  const out = new Map<string, string>();
+  for (const name of entries) {
+    const m = /^WO-\d{4}/.exec(name);
+    if (!m) continue;
+    try {
+      const order = readFileSync(join(dir, name, 'order.md'), 'utf8');
+      const ref = parseOrderMd(order).issueRef;
       if (ref !== undefined) out.set(m[0], ref);
     } catch {
       // no order.md in the dir — nothing to link

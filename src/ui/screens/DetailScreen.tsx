@@ -30,6 +30,8 @@ export function DetailScreen({
   onRetractSteerNote,
   autoRequestPlan,
   taskChip,
+  issueChip,
+  onOpenIssueExternal,
   changes,
 }: {
   detail: WorkOrderDetailView;
@@ -60,6 +62,10 @@ export function DetailScreen({
   autoRequestPlan?: boolean;
   /** WO-0049 (mockup kare 07): the linked task — resolved / 'missing' / undefined, straight through. */
   taskChip?: { fazId: string; taskTitle: string } | 'missing';
+  /** WO-0092: the order.md `issue:` ref chip (↗ when the cache resolves its display url). */
+  issueChip?: { ref: string; url?: string };
+  /** WO-0092: the chip's browser action (shell.openExternal, https-allowlisted main-side). */
+  onOpenIssueExternal?: (url: string) => void;
   /** WO-0068: the operator's console bridge (the optional `changes` group), straight through. */
   changes?: ChangesBridge;
 }) {
@@ -88,6 +94,8 @@ export function DetailScreen({
         onDelete={onDelete}
         onRetractSteerNote={onRetractSteerNote}
         taskChip={taskChip}
+        issueChip={issueChip}
+        onOpenIssueExternal={onOpenIssueExternal}
         changes={changes}
       />
     </main>

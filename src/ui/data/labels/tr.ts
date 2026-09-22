@@ -663,6 +663,21 @@ export const UI = {
   forgePrDetailDiffHide: '▸ Farkı gizle',
   forgePrDetailFiles: (n: number) => `${n} dosya`,
   forgePrDetailLoadFailed: 'Ayrıntı yüklenemedi',
+  // WO-0092 — sorun köprüsü: Depo kartındaki sorun katlaması + "İş emri aç" üretimi. Sorun
+  // başlığı/başlık/bağlantı VERİDİR (operatörün kendi forge metni); sabit krom burada.
+  forgeIssuesCount: (n: number) => `${n} açık sorun`,
+  FORGE_ISSUE_STATE: { open: 'açık', closed: 'kapalı' },
+  issueSpawnAction: 'İş emri aç',
+  issueSpawnAria: (ref: string) => `Bu sorundan iş emri aç: ${ref}`,
+  issueSpawnContext: (ref: string) => `Sorundan: ${ref}`,
+  issueSpawnFailed: 'İş emri açılamadı',
+  issueSelectToggle: (ref: string) => `Sorunu seç: ${ref}`,
+  issueBatchBar: (n: number) => `${n} sorun seçildi`,
+  issueBatchGo: (n: number) => `${n} iş emri oluştur`,
+  issueBatchConfirmTitle: 'Sorunlardan iş emri oluştur',
+  issueBatchConfirmBody: (n: number) => `${n} iş emri oluşturulacak — her biri kendi sorun bağlantısını taşır.`,
+  issueBatchToast: (n: number) => `${n} iş emri açıldı`,
+  issueChipTitle: (ref: string) => `Bu iş emri bu sorundan açıldı: ${ref}`,
   forgePrDiffTruncated: (n: number) => `İlk ${n} satır gösteriliyor`,
   // WO-0078 — ham tanı yüzeye çıkmaz (atölye kararı 2026-09-20): bozuk taramanın nedeni kayıtta
   // aynen yaşar; yüzeyde operatör sözcükleri konuşur, ham metin ipucunda (tooltip) taşınır.

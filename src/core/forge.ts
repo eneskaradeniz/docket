@@ -47,6 +47,59 @@ export interface ForgeCheck {
   conclusion?: string; // lowercase; absent while the run has no conclusion yet
 }
 
+// ===== WO-0092 — the issue bridge (the WO-0081 probe's FROZEN contract, report §(e) verbatim) =====
+// Shapes + normalizations frozen by the probe (docs/work-orders/WO-0081-issue-probe/report.md);
+// the adapter's fixtures are the probe's raw logs. The port stays READ-ONLY: the three calls are
+// reads like pullRequests/checks — no issue write exists anywhere in core.
+
+/** The front-matter `issue:` value: `owner/repo#N` (the `task:` pattern, ADR-0010 rule 1 — text,
+ *  joined at view time, never a DB column). */
+export type IssueRef = `${string}/${string}#${number}`;
+
+/** The `issues()` state filter; the reconciliation's page is 'open' (`--state open --limit 50`,
+ *  report §(c) — one page per connected repo, pagination never in the hot path). */
+export type ForgeIssueStateFilter = 'open' | 'closed' | 'all';
+
+export interface ForgeIssue {
+  number: number;
+  repo: RepoRef;
+  /** Lowercase, normalized at the adapter edge (gh arrives UPPERCASE, REST whisper-case). */
+  state: 'open' | 'closed';
+  /** The forge's own title, verbatim. Absent when the wire carries an empty one (absence discipline). */
+  title?: string;
+  /** REST state_reason, lowercased at the edge; ABSENT when null, never invented. The list path
+   *  carries no state_reason at all (the gh list wire has none) — absence there is a path fact. */
+  stateReason?: string;
+  /** The DISPLAY url (gh `url` / REST `html_url` — REST `url` is the API url, never this). */
+  url: string;
+  /** Names only; colors never leave the adapter (report §(f)). */
+  labels: string[];
+  /** The display fact (WO-0092: milestone TITLE + state render on the row — no milestone port,
+   *  no planning surface; the roadmap fazlar stay the truth, ADR-0016). */
+  milestone?: { number: number; title: string; state: 'open' | 'closed' };
+  createdAt?: string;
+  updatedAt?: string;
+  closedAt?: string;
+  /** The closure-join fact (report §6): "this issue was closed by PR #N". Only the gh list path
+   *  carries it; the drill-down's REST row has none — absent there is a path fact, like the
+   *  sha→PR path's absent reviewDecision. */
+  closedByPrs?: { number: number; url: string; repo: RepoRef }[];
+  /** The operator's working spec — fetched ONCE, at spawn time, by the drill-down (report §3:
+   *  bodies measured ~10x per list row; lists never ask). ABSENT on every list row; present on
+   *  the drill-down only; NEVER cached (no issue cache ever holds a body). */
+  body?: string;
+}
+
+export interface ForgeMilestone {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  openIssueCount: number;
+  closedIssueCount: number;
+  /** Observed always null (report §5) — absent, never guessed. */
+  dueOn?: string;
+}
+
 /** `health()`'s two-armed verdict: bare 'ok', or degraded WITH the reason. The reason comes
  *  from the failing call's own error surface (stderr line / exit code) — never from the
  *  authenticated payload, whose token-source details and scopes do not leave the adapter
@@ -78,6 +131,17 @@ export interface Forge {
    *  call; measured 2026-09-19, WO-0065's order carries the observed excerpts). A closed-
    *  unmerged row comes back too: only `state === 'merged'` is evidence. */
   searchPullRequests(repo: RepoRef, inTitle: string): Promise<ForgePr[]>;
+  // ===== WO-0092 — the issue bridge (read-only port extensions, the WO-0081 frozen contract) =====
+  /** One page of the repo's issues (one call; the reconciliation rides 'open' — report §(c)).
+   *  List rows NEVER carry a body (report §2: measured ~10x per row — the field is not asked). */
+  issues(repo: RepoRef, state: ForgeIssueStateFilter): Promise<ForgeIssue[]>;
+  /** ONE issue's drill-down row (the REST card — one call). This path carries the body (the
+   *  spawn prefill's single fetch) and the full milestone object; it carries NO closedByPrs. */
+  issue(repo: RepoRef, number: number): Promise<ForgeIssue>;
+  /** The repo's milestones — display facts for the issue rows (report §(d): no milestone port
+   *  surface, no planning write; the titles are already inside the issue rows, zero extra calls
+   *  on the board path). */
+  milestones(repo: RepoRef): Promise<ForgeMilestone[]>;
 }
 
 // ===== The observed forge cache + reconciliation (WO-0064, ADR-0010's forge half) =====
@@ -103,11 +167,15 @@ export interface ForgeShaCheck {
   check: ForgeCheck;
 }
 
-/** One repo's successful scan — the meta row + the replacement PR page + the checks. */
+/** One repo's successful scan — the meta row + the replacement PR page + the checks + (WO-0092)
+ *  the replacement open-issue page. */
 export interface ForgeScan {
   at: string; // ISO
   prs: ForgePr[];
   checks: ForgeShaCheck[];
+  /** The `--state open --limit 50` page (WO-0092, report §(c)) — replaced on every ok scan like
+   *  the PR page. NO body ever enters a row (report §3: no issue cache ever holds a body). */
+  issues: ForgeIssue[];
 }
 
 /** The cache port (store-implemented). The write side is TWO verbs so the store stays dumb:
@@ -124,12 +192,28 @@ export interface ForgePrRow extends ForgePr {
   checks: ForgeCheck[]; // the cached checks for this PR's head sha (possibly none)
 }
 
+/** One cached issue as the view reads it (WO-0092): the row's DISPLAY facts + the `owner/repo#N`
+ *  ref text (the view-time join key — issue rows mark their spawned WOs with it; the front-matter
+ *  value is byte-identical). Only what a view reads is cached: state_reason, the timestamps beyond
+ *  updatedAt and closedByPrs stay port-only — a future reader adds its column with its own scan. */
+export interface ForgeIssueRow {
+  ref: IssueRef;
+  number: number;
+  state: 'open' | 'closed';
+  title?: string;
+  url: string;
+  labels: string[];
+  updatedAt?: string;
+  milestoneTitle?: string;
+}
+
 export interface ForgeRepoView {
   repoRemote: string;
   path: string; // the connection's local path — the operator's own name for the repo
   scannedAt?: string; // the LAST attempt, ok or degraded — the «son gözlem» stamp
   health: ForgeHealth;
   prs: ForgePrRow[];
+  issues: ForgeIssueRow[]; // the cached open-page rows (WO-0092) — possibly none
 }
 
 export interface ForgeView {
@@ -151,6 +235,10 @@ export interface ForgeWatch {
   prDetail(id: WorkspaceId, repoRemote: string, number: number): Promise<ForgePrDetail>;
   /** The PR's unified diff, VERBATIM — the renderer caps and frames the display. */
   prDiff(id: WorkspaceId, repoRemote: string, number: number): Promise<string>;
+  /** WO-0092 — ONE issue's drill-down (the spawn prefill's single body fetch; the prDetail
+   *  pattern: live, one call, never cached). Throws ForgeError with a displayable reason when
+   *  the repoRemote is unparseable or the call fails — the spawn refuses, nothing is written. */
+  issueDetail(id: WorkspaceId, repoRemote: string, number: number): Promise<ForgeIssue>;
 }
 
 /** WO-0087 — ONE pull request's detail, the depo row's ▸ detay. The wire's own view fields,
@@ -253,7 +341,10 @@ export async function reconcileWorkspaceForge(deps: {
           for (const check of await deps.forge.checks(target.ref, pr.headSha))
             checks.push({ sha: pr.headSha, check });
         }
-        deps.observations.recordForgeScan(deps.workspaceId, target.repoRemote, { at: deps.at, prs, checks });
+        // WO-0092: ONE `--state open --limit 50` page per repo rides the same scan — a failed
+        // issue read degrades THAT repo's scan (atomic per repo, the checks rule verbatim).
+        const issues = await deps.forge.issues(target.ref, 'open');
+        deps.observations.recordForgeScan(deps.workspaceId, target.repoRemote, { at: deps.at, prs, checks, issues });
       } catch (e) {
         const reason = e instanceof ForgeError ? e.message : String(e);
         deps.observations.recordForgeDegraded(deps.workspaceId, target.repoRemote, deps.at, reason);

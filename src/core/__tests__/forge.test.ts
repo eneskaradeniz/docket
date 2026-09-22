@@ -30,6 +30,10 @@ const fake: Forge = {
   checks: () =>
     Promise.resolve<ForgeCheck[]>([{ name: 'check', status: 'completed', conclusion: 'success' }]),
   searchPullRequests: () => Promise.resolve<ForgePr[]>([]),
+  // WO-0092: the issue bridge's reads — part of the port's owed shape from here on.
+  issues: () => Promise.resolve([]),
+  issue: () => Promise.reject(new ForgeError('not implemented in the shape fake')),
+  milestones: () => Promise.resolve([]),
 };
 
 describe('forge port shapes (WO-0063)', () => {

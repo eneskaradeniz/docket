@@ -13,7 +13,7 @@
 // it, never color alone. WO-0080: the ready arm is the planli tasks' ALONE — every open WO's
 // startability is already its turn group's content, and listing it twice read as a second,
 // emptier board (the atelier's 2026-09-20 finding).
-import type { ForgePrDetail, ForgeView } from '../../core/forge';
+import type { ForgeIssueRow, ForgePrDetail, ForgeView } from '../../core/forge';
 import type { SystemHealth } from '../../core/health';
 import type { Turn, WorkspaceOverview } from '../../core/overview';
 import type { WorkOrderId } from '../../core/types';
@@ -40,6 +40,9 @@ export function OverviewScreen({
   onPrDetail,
   onPrDiff,
   onOpenExternal,
+  onSpawnIssue,
+  onBatchSpawnIssues,
+  spawnedWoIdsByIssue,
   onSelect,
 }: {
   view: WorkspaceOverview | undefined; // undefined = the read is in flight
@@ -54,6 +57,11 @@ export function OverviewScreen({
   onPrDetail?: (repoRemote: string, number: number) => Promise<ForgePrDetail>;
   onPrDiff?: (repoRemote: string, number: number) => Promise<string>;
   onOpenExternal?: (url: string) => void;
+  /** WO-0092: the issue spawn actions — single (prefilled dialog) + the counted batch. */
+  onSpawnIssue?: (repoRemote: string, issue: ForgeIssueRow) => Promise<void>;
+  onBatchSpawnIssues?: (repoRemote: string, issues: ForgeIssueRow[]) => Promise<void>;
+  /** WO-0092: the view-time issue→WO join — issue ref → its spawned WOs (this workspace). */
+  spawnedWoIdsByIssue?: Map<string, WorkOrderId[]>;
   onSelect: (id: WorkOrderId) => void;
 }) {
   const { UI, woIdLabel, debtIdLabel } = useLabels();
@@ -177,6 +185,10 @@ export function OverviewScreen({
             onPrDetail={onPrDetail}
             onPrDiff={onPrDiff}
             onOpenExternal={onOpenExternal}
+            onSpawnIssue={onSpawnIssue}
+            onBatchSpawnIssues={onBatchSpawnIssues}
+            spawnedWoIdsByIssue={spawnedWoIdsByIssue}
+            onOpenSpawnedWo={onSelect}
           />
         ) : null}
       </div>

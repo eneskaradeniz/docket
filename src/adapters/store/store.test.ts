@@ -15,6 +15,7 @@ import { rid, tid, wid, woid } from '../ids';
 import type { RepoId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from '../../core/types';
 import { deriveWorkOrderCost } from '../../core/derive';
 import { implementerPrompt, verifierPrompt } from '../../core/order-md';
+import type { ForgeIssue } from '../../core/forge';
 
 const dbPath = join(tmpdir(), `docket-store-${Date.now()}.db`);
 const freshDbs: string[] = [];
@@ -2221,7 +2222,7 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     const store = createStore(freshDb());
     const ws = wid('ws-forge-1');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
-    const scan = { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-1', check: { name: 'check', status: 'completed', conclusion: 'success' } }, { sha: 'sha-2', check: { name: 'typecheck', status: 'completed' } }] };
+    const scan = { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-1', check: { name: 'check', status: 'completed', conclusion: 'success' } }, { sha: 'sha-2', check: { name: 'typecheck', status: 'completed' } }], issues: [] };
     store.recordForgeScan(ws, remote, scan);
     store.recordForgeScan(ws, remote, scan); // the reconciler fires repeatedly — no duplicate rows
     const view = store.forgeView(ws);
@@ -2240,8 +2241,8 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     const store = createStore(freshDb());
     const ws = wid('ws-forge-2');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
-    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-2', check: { name: 'check', status: 'completed', conclusion: 'success' } }] });
-    store.recordForgeScan(ws, remote, { at: '2026-09-19T13:00:00Z', prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1'), pr(2, 'sha-2')], checks: [{ sha: 'sha-2', check: { name: 'check', status: 'completed', conclusion: 'success' } }], issues: [] });
+    store.recordForgeScan(ws, remote, { at: '2026-09-19T13:00:00Z', prs: [pr(1, 'sha-1')], checks: [], issues: [] });
     const repo = store.forgeView(ws).repos[0]!;
     expect(repo.prs.map((p) => p.number)).toEqual([1]);
     expect(repo.prs[0]!.checks).toEqual([]); // the fallen PR's checks went with it
@@ -2252,7 +2253,7 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     const store = createStore(freshDb());
     const ws = wid('ws-forge-3');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
-    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [], issues: [] });
     store.recordForgeDegraded(ws, remote, '2026-09-19T14:00:00Z', 'gh: Could not resolve to a Repository');
     const repo = store.forgeView(ws).repos[0]!;
     expect(repo.health).toEqual({ degraded: 'gh: Could not resolve to a Repository' });
@@ -2266,7 +2267,7 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, other, '/tmp/r2');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(wid('ws-forge-5'), remote, '/tmp/r3');
-    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [], issues: [] });
     const view = store.forgeView(ws);
     expect(view.repos.map((r) => r.repoRemote)).toEqual([remote]); // the unscanned sibling is absent
     expect(store.forgeView(wid('ws-forge-5')).repos).toEqual([]); // another workspace never leaks
@@ -2280,14 +2281,118 @@ describe('WO-0064 — the forge cache: scan records, degraded keeps, view joins'
     const store = createStore(freshDb());
     const ws = wid('ws-forge-6');
     store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/r1');
-    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [], issues: [] });
     expect(OBSERVED_TABLES).toContain('forge_scan');
     expect(OBSERVED_TABLES).toContain('forge_pr');
     expect(OBSERVED_TABLES).toContain('forge_check');
     store.reseedObserved();
     expect(store.forgeView(ws).repos).toEqual([]); // discardable by definition — nothing owned lost
-    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [] });
+    store.recordForgeScan(ws, remote, { at, prs: [pr(1, 'sha-1')], checks: [], issues: [] });
     expect(store.forgeView(ws).repos).toHaveLength(1); // a re-scan rebuilds it
+  });
+});
+
+// ===== WO-0092 — the observed issue cache (forge_pr's discipline, mirrored) =====
+describe('WO-0092 — the forge issue cache: replace-on-scan, degraded keeps, the view rows', () => {
+  const remote = 'https://github.com/antreo-app/api.git';
+  const at = '2026-09-22T09:00:00Z';
+  const issue = (n: number, over: Partial<ForgeIssue> = {}): ForgeIssue => ({
+    number: n,
+    repo: { owner: 'antreo-app', name: 'api' },
+    state: 'open',
+    url: `https://github.com/antreo-app/api/issues/${n}`,
+    labels: [],
+    ...over,
+  });
+
+  it('an ok scan records the issue page; the view row carries ref/labels/milestone title/updatedAt', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-issue-1');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/api');
+    store.recordForgeScan(ws, remote, {
+      at, prs: [], checks: [],
+      issues: [
+        issue(333, { title: 'OTP paketi bittiğinde tam kesinti', updatedAt: '2026-09-20T18:37:15Z' }),
+        issue(324, {
+          state: 'closed', title: 'Media guard test iyileştirmeleri', labels: ['bug'],
+          milestone: { number: 2, title: 'Faz 1 — Antrenör Profil Sistemi', state: 'open' },
+          updatedAt: '2026-09-18T21:39:33Z',
+        }),
+      ],
+    });
+    const repo = store.forgeView(ws).repos[0]!;
+    expect(repo.issues).toHaveLength(2);
+    // the view orders by number ascending (the forge_pr convention)
+    expect(repo.issues[0]).toEqual({
+      ref: 'antreo-app/api#324',
+      number: 324,
+      state: 'closed',
+      title: 'Media guard test iyileştirmeleri',
+      url: 'https://github.com/antreo-app/api/issues/324',
+      labels: ['bug'],
+      milestoneTitle: 'Faz 1 — Antrenör Profil Sistemi',
+      updatedAt: '2026-09-18T21:39:33Z',
+    });
+    expect(repo.issues[1]).toEqual({
+      ref: 'antreo-app/api#333',
+      number: 333,
+      state: 'open',
+      title: 'OTP paketi bittiğinde tam kesinti',
+      url: 'https://github.com/antreo-app/api/issues/333',
+      labels: [],
+      updatedAt: '2026-09-20T18:37:15Z',
+    });
+  });
+
+  it('replace-on-scan: an issue fallen off the open page is absent after the next scan', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-issue-2');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/api');
+    store.recordForgeScan(ws, remote, { at, prs: [], checks: [], issues: [issue(1), issue(2)] });
+    store.recordForgeScan(ws, remote, { at: '2026-09-22T10:00:00Z', prs: [], checks: [], issues: [issue(1)] });
+    expect(store.forgeView(ws).repos[0]!.issues.map((i) => i.number)).toEqual([1]);
+  });
+
+  it('a degraded scan touches the meta ONLY — prior issue facts stay (the wipe would be the lie)', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-issue-3');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/api');
+    store.recordForgeScan(ws, remote, { at, prs: [], checks: [], issues: [issue(7, { title: 'kalır' })] });
+    store.recordForgeDegraded(ws, remote, '2026-09-22T11:00:00Z', 'gh: Issues are disabled for this repository');
+    const repo = store.forgeView(ws).repos[0]!;
+    expect(repo.health).toEqual({ degraded: 'gh: Issues are disabled for this repository' });
+    expect(repo.issues.map((i) => i.title)).toEqual(['kalır']);
+  });
+
+  it('forge_issue is OBSERVED: reseedObserved drops it and a re-scan rebuilds; other workspaces never leak', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-issue-4');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/api');
+    store.recordForgeScan(ws, remote, { at, prs: [], checks: [], issues: [issue(1)] });
+    expect(OBSERVED_TABLES).toContain('forge_issue');
+    store.reseedObserved();
+    expect(store.forgeView(ws).repos).toEqual([]);
+    store.recordForgeScan(ws, remote, { at, prs: [], checks: [], issues: [issue(1)] });
+    expect(store.forgeView(ws).repos[0]!.issues).toHaveLength(1);
+    expect(store.forgeView(wid('ws-issue-other')).repos).toEqual([]);
+  });
+
+  it('createWorkOrder writes the issue: front-matter; the store re-reads it at view time (woIssueRefs)', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Issue spawn', repos: [{ path: root, remote: 'https://github.com/antreo-app/api.git' }] });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Sorundan iş', description: 'gövde', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+      issueRef: 'antreo-app/api#333',
+    });
+    expect((await store.getWorkOrderDocs(wo.id)).order).toContain('issue: antreo-app/api#333');
+    // a WO created WITHOUT the link is absent from the map (unlinked is a legitimate state)
+    const unlinked = await store.createWorkOrder({ workspaceId: ws.id, title: 'Bağlantısız', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] });
+    const refs = await store.woIssueRefs(ws.id);
+    expect(refs).toEqual({ [wo.id as string]: 'antreo-app/api#333' });
+    // the orphan degrade: the WO deleted manually leaves the map honest (the join is view-time)
+    await store.deleteWorkOrder(unlinked.id);
+    expect(Object.keys(await store.woIssueRefs(ws.id))).toHaveLength(1);
   });
 });
 
@@ -2364,6 +2469,7 @@ describe('WO-0067 — recordForgeScan writes the observed track link', () => {
     at: '2026-09-19T12:00:00Z',
     prs: [{ number: 5, state: 'open' as const, title, headSha: 'sha-abc', headBranch: 'b', baseBranch: 'main', url: 'https://github.com/o/r/pull/5' }],
     checks: [],
+    issues: [],
   });
 
   it('a scanned PR titled with the WO id fills that WO track row (url + head sha + stamp)', async () => {
@@ -2485,7 +2591,7 @@ describe('WO-0069 — the track CI learns unknown from the forge scan degraded m
   it('a DEGRADED scan for the track repo hydrates run/unknown with the scan reason verbatim', async () => {
     const store = createStore(freshDb());
     const { ws, wo, remote } = await observedWo(store);
-    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [] });
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [], issues: [] });
     store.recordForgeDegraded(ws.id, remote, '2026-09-19T14:00:00Z', 'gh: Could not resolve to a Repository');
     const track = (await store.getWorkOrder(wo.id))!.tracks[0]!;
     expect(track.ci).toEqual({ kind: 'run', state: 'unknown', checks: [], reason: 'gh: Could not resolve to a Repository' });
@@ -2496,7 +2602,7 @@ describe('WO-0069 — the track CI learns unknown from the forge scan degraded m
     const { ws, wo, remote } = await observedWo(store);
     const before = (await store.getWorkOrder(wo.id))!.tracks[0]!.ci;
     expect(before).toEqual({ kind: 'run', state: 'running', checks: [] }); // never scanned
-    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T15:00:00Z', prs: [], checks: [] });
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T15:00:00Z', prs: [], checks: [], issues: [] });
     expect((await store.getWorkOrder(wo.id))!.tracks[0]!.ci).toEqual({ kind: 'run', state: 'running', checks: [] }); // ok
   });
 
@@ -2504,7 +2610,7 @@ describe('WO-0069 — the track CI learns unknown from the forge scan degraded m
     const store = createStore(freshDb());
     const { ws, wo, remote } = await observedWo(store);
     store.db.prepare('UPDATE track SET ci_blob = ? WHERE work_order_id = ?').run(JSON.stringify({ state: 'success', checks: [{ name: 'build', conclusion: 'success' }] }), wo.id);
-    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [] });
+    store.recordForgeScan(ws.id, remote, { at: '2026-09-19T12:00:00Z', prs: [], checks: [], issues: [] });
     const afterOk = (await store.getWorkOrder(wo.id))!.tracks[0]!.ci;
     expect(afterOk.kind === 'run' && afterOk.state).toBe('success'); // ok scan: the blob speaks
     store.recordForgeDegraded(ws.id, remote, '2026-09-19T16:00:00Z', 'gh: rate limited');
