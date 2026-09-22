@@ -1148,7 +1148,10 @@ describe('the local gate (WO-0089)', () => {
       dependsOn: [],
       ...(localGate !== undefined ? { localGate } : {}),
     });
-  const mergedExempt = (localGate?: LocalGate) =>
+  // The LIVE path to closure: every track merged, the verifier report recorded, docs NOT yet
+  // committed — the moment the verification gate decides. closureDocsSha stays ABSENT here: a
+  // set docs sha IS the terminal close (the operator's attestation), a different case below.
+  const liveExempt = (localGate?: LocalGate) =>
     aWorkOrder({
       tracks: [
         {
@@ -1156,28 +1159,37 @@ describe('the local gate (WO-0089)', () => {
           merge: { at: '2026-09-22T01:00:00Z' },
         },
       ],
-      gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' },
+      gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true } },
     });
 
   it('acceptance 1 — an exempt track with the substitute unsatisfied cannot reach the verification gate (stage stays implementation)', () => {
-    expect(deriveStage(mergedExempt(gate([{ command: 'npm test', exit: 1 }])))).toBe('implementation');
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 1 }])))).toBe('implementation');
   });
 
   it('acceptance 1 — not-run is the same refusal (unknown never passes)', () => {
-    expect(deriveStage(mergedExempt({ kind: 'pending' }))).toBe('implementation');
+    expect(deriveStage(liveExempt({ kind: 'pending' }))).toBe('implementation');
   });
 
   it('acceptance 1 — both-exempt (nothing declared) is a refusal state, not a pass', () => {
-    expect(deriveStage(mergedExempt(undefined))).toBe('implementation');
-    expect(deriveStage(mergedExempt({ kind: 'invalid', reason: 'gate.commands: empty' }))).toBe('implementation');
+    expect(deriveStage(liveExempt(undefined))).toBe('implementation');
+    expect(deriveStage(liveExempt({ kind: 'invalid', reason: 'gate.commands: empty' }))).toBe('implementation');
   });
 
-  it('acceptance 1 — with the substitute measured-and-passed the WO advances (closed)', () => {
-    expect(deriveStage(mergedExempt(gate([{ command: 'npm test', exit: 0 }])))).toBe('closed');
+  it('acceptance 1 — with the substitute measured-and-passed the WO reaches closure', () => {
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 0 }])))).toBe('closure');
+  });
+
+  it('a CLOSED archive stays closed regardless of the gate — the rule governs the path, never rewrites history', () => {
+    // Pre-WO-0089 archives: the operator's terminal attestation (closureDocsSha) closed the WO
+    // with no local gate in sight. The mechanical rule must not retroactively re-open them.
+    const closedArchive = { ...liveExempt(undefined), gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' } };
+    expect(deriveStage(closedArchive)).toBe('closed');
+    const closedFailedGate = { ...liveExempt(gate([{ command: 'npm test', exit: 1 }])), gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' } };
+    expect(deriveStage(closedFailedGate)).toBe('closed');
   });
 
   it('acceptance 1 — could-not-run (exit null) never passes even when no command failed', () => {
-    expect(deriveStage(mergedExempt(gate([{ command: 'npm test', exit: 0 }, { command: 'npm run build', exit: null }])))).toBe('implementation');
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 0 }, { command: 'npm run build', exit: null }])))).toBe('implementation');
   });
 
   it('the exempt merge needs the substitute — deriveTrackMerge refuses without it (the rule this WO exists for)', () => {

@@ -162,8 +162,12 @@ export function deriveStage(wo: Pick<WorkOrder, 'gateInputs' | 'tracks' | 'sessi
   // WO-0089: the verification gate is unreachable while a track's MECHANICAL evidence is open —
   // a CI-exempt track with local_gate unsatisfied/unknown/exempt cannot pass it, even when the
   // merge happened on the forge outside Docket's own merge action (deriveTrackMerge's twin).
-  if (allMerged && wo.tracks.every(trackMechanicallyEvidenced) && wo.gateInputs.verifierReport?.resolvablePointers) {
-    return wo.gateInputs.closureDocsSha != null ? 'closed' : 'closure';
+  // The rule governs the PATH to closure, never history: a CLOSED work order (the operator's
+  // terminal attestation, `closureDocsSha`) keeps deriving closed exactly as before this rule —
+  // pre-WO-0089 archives are not retroactively re-opened.
+  const closed = wo.gateInputs.closureDocsSha != null;
+  if (allMerged && (closed || wo.tracks.every(trackMechanicallyEvidenced)) && wo.gateInputs.verifierReport?.resolvablePointers) {
+    return closed ? 'closed' : 'closure';
   }
   return 'implementation';
 }
