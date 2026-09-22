@@ -2364,6 +2364,29 @@ describe('WO-0092 — the forge issue cache: replace-on-scan, degraded keeps, th
     expect(repo.issues.map((i) => i.title)).toEqual(['kalır']);
   });
 
+  it('an issueError scan keeps prior issue rows — the PR page stays fresh, the fold carries the reason (m4)', () => {
+    const store = createStore(freshDb());
+    const ws = wid('ws-issue-3b');
+    store.db.prepare('INSERT INTO connection (workspace_id, repo_remote, local_path) VALUES (?,?,?)').run(ws, remote, '/tmp/api');
+    store.recordForgeScan(ws, remote, { at, prs: [], checks: [], issues: [issue(7, { title: 'kalır' })] });
+    // the partial success: PRs fresh, the issue look failed — prior rows stay, the reason rides
+    store.recordForgeScan(ws, remote, {
+      at: '2026-09-22T12:00:00Z',
+      prs: [{ number: 5, state: 'open', title: 'PR 5', headSha: 'sha-5', headBranch: 'b-5', baseBranch: 'main', url: 'https://github.com/antreo-app/api/pull/5' }],
+      checks: [], issues: [], issueError: 'gh: Issues are disabled for this repository',
+    });
+    const repo = store.forgeView(ws).repos[0]!;
+    expect(repo.health).toBe('ok'); // the PR scan succeeded
+    expect(repo.prs.map((p) => p.number)).toEqual([5]);
+    expect(repo.issues.map((i) => i.number)).toEqual([7]); // the wipe would be the lie
+    expect(repo.issueHealth).toEqual({ degraded: 'gh: Issues are disabled for this repository' });
+    // the next fully-ok scan clears the reason and replaces the page
+    store.recordForgeScan(ws, remote, { at: '2026-09-22T13:00:00Z', prs: [], checks: [], issues: [issue(8)] });
+    const healed = store.forgeView(ws).repos[0]!;
+    expect(healed.issueHealth).toBe('ok');
+    expect(healed.issues.map((i) => i.number)).toEqual([8]);
+  });
+
   it('forge_issue is OBSERVED: reseedObserved drops it and a re-scan rebuilds; other workspaces never leak', () => {
     const store = createStore(freshDb());
     const ws = wid('ws-issue-4');
@@ -2393,6 +2416,65 @@ describe('WO-0092 — the forge issue cache: replace-on-scan, degraded keeps, th
     // the orphan degrade: the WO deleted manually leaves the map honest (the join is view-time)
     await store.deleteWorkOrder(unlinked.id);
     expect(Object.keys(await store.woIssueRefs(ws.id))).toHaveLength(1);
+  });
+});
+
+// ===== WO-0092 fix round (M1) — the decision-store disconnect guards =====
+describe('M1 — a disconnected decision store refuses writes; it can no longer fall back to cwd', () => {
+  const setup = async () => {
+    const store = createStore(freshDb());
+    const storeRepo = freshRoot();
+    const otherRepo = freshRoot();
+    const ws = await store.createWorkspace({
+      label: 'Broken store',
+      repos: [{ path: storeRepo, remote: 'https://github.com/o/store.git' }, { path: otherRepo }],
+    });
+    const dsSlug = storeRepo.split('/').filter(Boolean).at(-1)!;
+    // the reviewer's chain, staged: the workspace row's store slug names a REMOVED repo
+    store.db.prepare('UPDATE workspace SET decision_store = ? WHERE id = ?').run('ghost-repo', ws.id);
+    return { store, ws, storeRepo, dsSlug };
+  };
+
+  it('createWorkOrder refuses with the shaped reason — no row, no order.md anywhere', async () => {
+    const { store, ws } = await setup();
+    const before = await store.getWorkOrders();
+    await expect(store.createWorkOrder({
+      workspaceId: ws.id, title: 'Kaçak iş', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [],
+    })).rejects.toThrow(/decision store disconnected/);
+    expect(await store.getWorkOrders()).toHaveLength(before.length); // no row
+  });
+
+  it('every document write refuses: roadmap save, draft approval', async () => {
+    const { store, ws } = await setup();
+    await expect(store.saveRoadmap(ws.id, '# x')).rejects.toThrow(/decision store disconnected/);
+    store.db
+      .prepare("INSERT INTO roadmap_draft (workspace_id, md, created_at, updated_at) VALUES (?,?,?,?)")
+      .run(ws.id, '# taslak', '2026-09-22T00:00:00Z', '2026-09-22T00:00:00Z');
+    await expect(store.approveRoadmapDraft(ws.id)).rejects.toThrow(/decision store disconnected/);
+  });
+
+  it('a workspace with ZERO connections keeps the fixture fallback (D8) — writes still work', async () => {
+    const store = createStore(freshDb());
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label: 'Fixture world', repos: [{ path: root }] });
+    store.db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(ws.id);
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: 'Fikstür işi', description: 'x', trackRepos: [], reviewMode: 'gates', contextFiles: [] });
+    expect(wo.title).toBe('Fikstür işi');
+  });
+
+  it('removing the decision-store connection is refused — re-point first; rows stay', async () => {
+    const { store, ws, storeRepo, dsSlug } = await setup();
+    store.db.prepare('UPDATE workspace SET decision_store = ? WHERE id = ?').run(dsSlug, ws.id);
+    const before = (await store.repoConnections(ws.id)).length;
+    await expect(store.removeRepoConnection(ws.id, storeRepo)).rejects.toThrow(/decision store/);
+    expect(await store.repoConnections(ws.id)).toHaveLength(before);
+  });
+
+  it('re-pointing to a connection-less slug is refused; re-pointing to a connected repo works', async () => {
+    const { store, ws, storeRepo } = await setup();
+    await expect(store.updateWorkspace(ws.id, { decisionStorePath: '/tmp/nobody/ghost-repo' })).rejects.toThrow(/decision store/);
+    await store.updateWorkspace(ws.id, { decisionStorePath: storeRepo }); // connected — the honest repair
+    await store.createWorkOrder({ workspaceId: ws.id, title: 'Yeniden bağlı', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [] }); // writes work again
   });
 });
 

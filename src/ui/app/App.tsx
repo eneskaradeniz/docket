@@ -67,6 +67,9 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   const [spawnIssue, setSpawnIssue] = useState<WoIssuePrefill | undefined>(undefined);
   const [batchIssue, setBatchIssue] = useState<WoIssuePrefill[] | undefined>(undefined);
   const [batchCreating, setBatchCreating] = useState(false);
+  // WO-0092 fix round (m3): the create phase is retry-honest — the refs already created ride this
+  // list, a mid-batch failure keeps the confirm open, and a re-click creates only the remainder.
+  const [batchDoneRefs, setBatchDoneRefs] = useState<string[]>([]);
   // The issue↔WO join (view-time, no DB column): {woId → 'owner/repo#N'}, refreshed at the same
   // moments the board list is — a WO deleted manually drops out and the issue row stays honest.
   const [issueRefs, setIssueRefs] = useState<Record<string, string>>({});
@@ -270,18 +273,29 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   // WO-0092 — the single spawn: ONE drill-down (the body's only fetch), then the NORMAL create
   // dialog prefilled — the operator edits before save. A failed drill-down rethrows the
   // displayable reason: the row refuses in place, nothing is written (the shaped unknown).
+  // Fix round (m5): the track seed resolves through the CONNECTION ROW (the landed forge view's
+  // repo path slug) — never the forge repo name compared against a path slug.
+  const connectionSlugFor = useCallback(
+    (wsId: WorkspaceId, repoRemote: string): string | undefined => {
+      const view = forge !== undefined && forge.ws === wsId ? forge.view : undefined;
+      const repo = view?.repos.find((r) => r.repoRemote === repoRemote);
+      return repo !== undefined ? (repo.path.split('/').filter(Boolean).at(-1) ?? undefined) : undefined;
+    },
+    [forge],
+  );
   const handleSpawnIssue = useCallback(
     async (repoRemote: string, issue: ForgeIssueRow) => {
       if (forgeWatch === undefined || workspaceId === null) return;
       const detail = await forgeWatch.issueDetail(workspaceId, repoRemote, issue.number);
+      const slug = connectionSlugFor(workspaceId, repoRemote);
       setSpawnIssue({
         ref: issue.ref,
         ...(detail.title !== undefined ? { title: detail.title } : {}),
         ...(detail.body !== undefined ? { body: detail.body } : {}),
-        repo: detail.repo.name,
+        ...(slug !== undefined ? { repo: slug } : {}),
       });
     },
-    [forgeWatch, workspaceId],
+    [forgeWatch, workspaceId, connectionSlugFor],
   );
   // WO-0092 — the counted batch: EVERY drill-down first (a single failure refuses the whole
   // batch, nothing written), then the ONE counted confirm gates the N creates.
@@ -291,16 +305,18 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
       const prefills: WoIssuePrefill[] = [];
       for (const issue of issues) {
         const detail = await forgeWatch.issueDetail(workspaceId, repoRemote, issue.number);
+        const slug = connectionSlugFor(workspaceId, repoRemote);
         prefills.push({
           ref: issue.ref,
           ...(detail.title !== undefined ? { title: detail.title } : {}),
           ...(detail.body !== undefined ? { body: detail.body } : {}),
-          repo: detail.repo.name,
+          ...(slug !== undefined ? { repo: slug } : {}),
         });
       }
+      setBatchDoneRefs([]); // a fresh confirm owns a fresh done-list (m3)
       setBatchIssue(prefills);
     },
-    [forgeWatch, workspaceId],
+    [forgeWatch, workspaceId, connectionSlugFor],
   );
 
   // WO-0066 — the health look, ADR-0010's cadence (mount + focus + the slow tick; view-only).
@@ -607,9 +623,16 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   );
   const runBatchSpawn = useCallback(async () => {
     if (batchIssue === undefined || workspaceId === null) return;
+    // WO-0092 fix round (m3): retry-honest — a mid-batch failure keeps the confirm open and the
+    // created refs stay done; a re-click creates ONLY the remainder (no duplicate issue links).
+    const remaining = batchIssue.filter((p) => !batchDoneRefs.includes(p.ref));
+    if (remaining.length === 0) {
+      setBatchIssue(undefined);
+      return;
+    }
     setBatchCreating(true);
     try {
-      for (const p of batchIssue) {
+      for (const p of remaining) {
         await source.createWorkOrder({
           workspaceId,
           title: p.title ?? p.ref, // a title-less wire row falls back to its own ref
@@ -620,16 +643,18 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
           permissionRule: defaultRule,
           issueRef: p.ref,
         });
+        setBatchDoneRefs((cur) => [...cur, p.ref]);
       }
-      toast.push({ kind: 'confirm', title: UI.issueBatchToast(batchIssue.length) });
+      toast.push({ kind: 'confirm', title: UI.issueBatchToast(remaining.length) });
       setBatchIssue(undefined);
       refreshWorkOrders();
     } catch {
+      // the honest partial state: the confirm stays open, its count now names the remainder
       toast.push({ kind: 'error', title: UI.saveFailed });
     } finally {
       setBatchCreating(false);
     }
-  }, [batchIssue, workspaceId, source, batchTracksFor, defaultRule, UI, refreshWorkOrders]);
+  }, [batchIssue, batchDoneRefs, workspaceId, source, batchTracksFor, defaultRule, UI, refreshWorkOrders]);
 
   let main;
   if (load === 'loading') {
@@ -946,7 +971,9 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
       ) : null}
       {batchIssue !== undefined ? (
         // WO-0092: the ONE counted confirm — N issues → N work orders, sequential numbers, each
-        // with its own `issue:` link. Nothing was written before this confirm.
+        // with its own `issue:` link. Nothing was written before this confirm. Fix round (m3):
+        // the count names the REMAINDER — a mid-batch failure keeps the dialog open, honestly
+        // re-counted, and a re-click creates only what is left.
         <Dialog
           open
           narrow
@@ -957,12 +984,12 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
             <>
               <Button variant="ghost" size="sm" locked={batchCreating} onClick={() => setBatchIssue(undefined)}>{UI.cancel}</Button>
               <Button variant="primary" size="sm" busy={batchCreating} locked={batchCreating} onClick={() => void runBatchSpawn()}>
-                {UI.issueBatchGo(batchIssue.length)}
+                {UI.issueBatchGo(batchIssue.length - batchDoneRefs.length)}
               </Button>
             </>
           }
         >
-          <p className="text-[12px] text-inkdim">{UI.issueBatchConfirmBody(batchIssue.length)}</p>
+          <p className="text-[12px] text-inkdim">{UI.issueBatchConfirmBody(batchIssue.length - batchDoneRefs.length)}</p>
         </Dialog>
       ) : null}
       {wsCreateOpen ? (

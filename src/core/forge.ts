@@ -176,6 +176,11 @@ export interface ForgeScan {
   /** The `--state open --limit 50` page (WO-0092, report §(c)) — replaced on every ok scan like
    *  the PR page. NO body ever enters a row (report §3: no issue cache ever holds a body). */
   issues: ForgeIssue[];
+  /** WO-0092 fix round (m4): the issue page's failure is ISOLATED from the PR/checks scan — a
+   *  failed issues() read records the PR page as ok and carries the reason here (issues must be
+   *  [] then; the store keeps the PRIOR issue rows — a failed look never wipes). Absent = the
+   *  issue page is as fresh as the scan stamp. */
+  issueError?: string;
 }
 
 /** The cache port (store-implemented). The write side is TWO verbs so the store stays dumb:
@@ -214,6 +219,9 @@ export interface ForgeRepoView {
   health: ForgeHealth;
   prs: ForgePrRow[];
   issues: ForgeIssueRow[]; // the cached open-page rows (WO-0092) — possibly none
+  /** WO-0092 fix round (m4): the issue page's own health, isolated from `health` — 'ok' or the
+   *  carried reason when the last issue look failed (the rows then read stale-but-kept). */
+  issueHealth?: ForgeHealth;
 }
 
 export interface ForgeView {
@@ -341,10 +349,21 @@ export async function reconcileWorkspaceForge(deps: {
           for (const check of await deps.forge.checks(target.ref, pr.headSha))
             checks.push({ sha: pr.headSha, check });
         }
-        // WO-0092: ONE `--state open --limit 50` page per repo rides the same scan — a failed
-        // issue read degrades THAT repo's scan (atomic per repo, the checks rule verbatim).
-        const issues = await deps.forge.issues(target.ref, 'open');
-        deps.observations.recordForgeScan(deps.workspaceId, target.repoRemote, { at: deps.at, prs, checks, issues });
+        // WO-0092, fix round m4: the issue page's failure is ISOLATED — a failed issues() read no
+        // longer degrades the fresh PR/checks scan; it rides the scan record as issueError and
+        // the store keeps the prior issue rows (a failed look never wipes, the degraded rule).
+        let issues: ForgeIssue[] = [];
+        let issueError: string | undefined;
+        try {
+          issues = await deps.forge.issues(target.ref, 'open');
+        } catch (e) {
+          issueError = e instanceof ForgeError ? e.message : String(e);
+        }
+        deps.observations.recordForgeScan(
+          deps.workspaceId,
+          target.repoRemote,
+          issueError !== undefined ? { at: deps.at, prs, checks, issues, issueError } : { at: deps.at, prs, checks, issues },
+        );
       } catch (e) {
         const reason = e instanceof ForgeError ? e.message : String(e);
         deps.observations.recordForgeDegraded(deps.workspaceId, target.repoRemote, deps.at, reason);

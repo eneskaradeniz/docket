@@ -69,9 +69,12 @@ export function WoCreateModal({
   const seededTracks = seedRepo !== undefined && trackOptions.some((r) => (r as string) === seedRepo)
     ? trackOptions.filter((r) => (r as string) === seedRepo)
     : trackOptions;
+  const spawnSeeded = prefill !== undefined || issuePrefill !== undefined;
   const [title, setTitle] = useState(prefill?.title ?? issuePrefill?.title ?? '');
   const [description, setDescription] = useState(prefill?.note ?? issuePrefill?.body ?? '');
-  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(prefill !== undefined ? seededTracks : trackOptions);
+  // WO-0092 fix round (m2): the issue spawn's repo seed applies like the roadmap spawn's — a
+  // spawn-seeded dialog mounts with the SEEDED tracks, never the plain all-tracks default.
+  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(spawnSeeded ? seededTracks : trackOptions);
   // WO-0071: per-track depends_on picks — the track's RepoId keyed by its string form (a plain
   // string compare against branded ids, the seededTracks precedent; no identity constructor in ui).
   const [depSelection, setDepSelection] = useState<Record<string, RepoId[]>>({});

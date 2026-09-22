@@ -3425,6 +3425,9 @@ await spec('WO-0092 sorun katlaması: depo kartı açık sorunları taşır — 
   assert.ok(fold.includes('bug'), 'the label name missing');
   assert.ok(fold.includes('#329') && fold.includes('#328'), 'the other open rows missing');
   assert.equal(await page.locator('[data-issue-row] button[data-issue-spawn]').count(), 4, 'not every open row carries the spawn action');
+  // m4: the sibling repo's failed issue look is ISOLATED — its PR page stays ok, the fold speaks
+  // the reason alone, and the failure never touches the api card's rows.
+  assert.equal(await page.locator('[data-issue-degraded]').count(), 1, 'the isolated issue-look failure has no surface');
   await page.screenshot({ path: join(SHOTS, 'issue-bridge@980.png') });
 });
 
@@ -3464,6 +3467,12 @@ await spec('WO-0092 tek üretim: ▸ İş emri aç → önden dolu create diyalo
   assert.ok(titleVal.includes('OTP paketi bittiğinde'), `title not prefilled from the issue: ${titleVal}`);
   const descVal = await dlg.locator('textarea').first().inputValue();
   assert.ok(descVal.includes('E2E gövdesi'), `body not prefilled from the drill-down: ${descVal}`);
+  // m2/m5: the track seed applies — the issue's own repo chip is the pressed one, the sibling
+  // code repo is not (the slug resolved through the connection row, not the forge name).
+  const apiChip = dlg.locator('button[aria-pressed]', { hasText: 'sorun-api' });
+  const mobileChip = dlg.locator('button[aria-pressed]', { hasText: 'sorun-mobile' });
+  assert.equal(await apiChip.getAttribute('aria-pressed'), 'true', 'the issue repo track was not seeded');
+  assert.equal(await mobileChip.getAttribute('aria-pressed'), 'false', 'the sibling track must stay unseeded');
   await dlg.getByRole('button', { name: 'Oluştur', exact: true }).click();
   await page.waitForTimeout(1500); // create + navigate to the new detail
   const chip = page.locator('[data-detail-issue-chip]');
@@ -3473,7 +3482,7 @@ await spec('WO-0092 tek üretim: ▸ İş emri aç → önden dolu create diyalo
   await backToBoard();
 });
 
-await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar, tek sayılı onay; satır WO çiplerini taşır', async () => {
+await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar, tek sayılı onay; orta-kadro hatasında dürüst yeniden deneme', async () => {
   await openIssueFold();
   await page.locator('[data-issue-row="antreo-app/api#330"] button[aria-pressed]').first().click();
   await page.locator('[data-issue-row="antreo-app/api#328"] button[aria-pressed]').first().click();
@@ -3485,8 +3494,21 @@ await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar,
   await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length > 0, undefined, { timeout: 8000 });
   const dlg = page.locator('[role="dialog"]');
   assert.ok((await dlg.getByText('2 iş emri oluşturulacak').count()) >= 1, 'the confirm does not count the batch');
+  // m3: the SECOND create fails (the first passes) — the confirm stays open, honestly re-counted
+  // to the remainder, and the retry creates only what is left (no duplicate issue link).
+  await page.evaluate(() => window.docket.e2e?.failCreates(1, 1));
   await dlg.getByRole('button', { name: '2 iş emri oluştur' }).click();
-  await page.waitForTimeout(1800); // the two creates
+  // create #1 lands, create #2 fails — poll for the honest re-count (dialog open + remainder=1)
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"]')?.textContent?.includes('1 iş emri oluşturulacak') ?? false,
+    undefined,
+    { timeout: 8000 },
+  );
+  assert.equal(await dlg.count(), 1, 'the confirm closed on a mid-batch failure (the remainder would be lost)');
+  await dlg.getByRole('button', { name: '1 iş emri oluştur' }).click();
+  // the retry creates the remainder — poll for the close
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, undefined, { timeout: 8000 });
+  assert.equal(await dlg.count(), 0, 'the confirm did not close after the honest retry');
   // sequential numbers + the issue titles, read from the store. The creates run in the scan
   // page's order (number ASC) — the pin is CONSECUTIVENESS (one counted batch = N sequential
   // allocations), never the click order.
@@ -3495,9 +3517,10 @@ await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar,
   const b = wos.find((o) => o.title.includes('Sosyal giriş'));
   assert.ok(a && b, `the batch WOs are missing: ${JSON.stringify(wos)}`);
   assert.equal(Math.abs(Number(a.id.slice(3)) - Number(b.id.slice(3))), 1, `ids are not sequential: ${a?.id} / ${b?.id}`);
-  // the two-way link, issue side: the rows mark their spawned WOs (view-time join)
+  // the two-way link, issue side: the rows mark their spawned WOs (view-time join) — exactly one
+  // chip per issue (the m3 duplicate would show as two)
   const spawned = page.locator('[data-issue-spawned-wo="antreo-app/api#330"] button');
-  assert.equal(await spawned.count(), 1, 'the issue row does not mark its spawned WO');
+  assert.equal(await spawned.count(), 1, 'the issue row does not mark its spawned WO (or marks it twice — the m3 duplicate)');
   await spawned.first().click();
   await page.waitForTimeout(800);
   assert.equal(await page.locator('[data-detail-issue-chip]').count(), 1, 'the chip did not open the spawned WO detail');

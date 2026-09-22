@@ -107,8 +107,13 @@ export function e2eGhRunner(): GhRunner {
   return async (args) => {
     const head = args[0];
     const tail = args.join(' ');
+    // The m4 pin's second repo (antreo-app/docs): PRs read fine, the ISSUE list dies — the scan
+    // must record a PARTIAL success (fresh PR page + the isolated issue failure).
+    const isDocs = tail.includes('antreo-app/docs');
     if (head === 'auth' && tail.includes('auth status')) return ok(AUTH_OK);
     if (head === 'pr' && tail.includes('pr list')) return ok('[]');
+    if (head === 'issue' && tail.includes('issue list') && isDocs)
+      return { exit: 1, stdout: '', stderr: 'gh: Issues are disabled for this repository' };
     if (head === 'issue' && tail.includes('issue list')) return ok(ISSUE_LIST);
     if (head === 'api' && /repos\/antreo-app\/api\/issues\/333$/.test(args[1] ?? '')) return ok(ISSUE_333);
     if (head === 'api' && /repos\/antreo-app\/api\/issues\/330$/.test(args[1] ?? '')) return ok(ISSUE_330);

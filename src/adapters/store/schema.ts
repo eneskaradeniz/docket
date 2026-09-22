@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS forge_scan (
   status TEXT NOT NULL CHECK (status IN ('ok','degraded')),
   reason TEXT,                -- the degraded reason verbatim (stderr line / JSON message); NULL on ok
   observed_at TEXT NOT NULL,  -- the LAST attempt, ok or degraded — the «son gözlem» stamp
+  issue_reason TEXT,          -- WO-0092 m4: the ISOLATED issue-look failure (status stays ok; prior
+                              -- forge_issue rows stay); NULL = the issue page is scan-fresh
   PRIMARY KEY (workspace_id, repo_remote)
 );
 CREATE TABLE IF NOT EXISTS forge_pr (

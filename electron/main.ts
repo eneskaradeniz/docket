@@ -245,7 +245,19 @@ ipcMain.handle('docket:source:discard-roadmap-draft', (_e, id: WorkspaceId) => s
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
 //   renderer (ADR-0001). ---
-ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => store.createWorkOrder(input));
+// WO-0092 fix round (m3): the E2E-only create-failure stage — the FIRST `skip` creates pass, then
+// `count` fail (the m3 retry pin). Production never sees it; it self-exhausts.
+let e2eFailCreates: { skip: number; count: number } | undefined;
+ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => {
+  if (process.env.DOCKET_E2E && e2eFailCreates !== undefined) {
+    if (e2eFailCreates.skip > 0) e2eFailCreates.skip -= 1;
+    else if (e2eFailCreates.count > 0) {
+      e2eFailCreates.count -= 1;
+      throw new Error('e2e: scripted create failure');
+    }
+  }
+  return store.createWorkOrder(input);
+});
 // WO-0092: the issue-link join read ({woId → 'owner/repo#N'}) — view-time, no DB column.
 ipcMain.handle('docket:source:wo-issue-refs', (_e, id: WorkspaceId) => store.woIssueRefs(id));
 
@@ -705,6 +717,11 @@ if (process.env.DOCKET_E2E) {
   });
   ipcMain.handle('docket:e2e:pick-files', (_e, paths: string[] | null) => {
     stagedPickFiles = paths;
+  });
+  // WO-0092 fix round (m3): stage the create-failure window (the first `skip` creates pass, then
+  // `count` fail) — the mid-batch retry's pin.
+  ipcMain.handle('docket:e2e:fail-creates', (_e, skip: number, count: number) => {
+    e2eFailCreates = { skip, count };
   });
   ipcMain.handle('docket:e2e:last-drive-input', () => lastResolvedDriveInput);
 }

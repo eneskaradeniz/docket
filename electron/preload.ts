@@ -186,6 +186,8 @@ contextBridge.exposeInMainWorld('docket', {
           // { owner, ev } targets ONE drive by tag — the multi-drive scenarios' form.
           emit: (ev: RunnerEvent | { owner: string; ev: RunnerEvent }): Promise<void> => ipcRenderer.invoke('docket:e2e:emit', ev),
           pickFiles: (paths: string[] | null): Promise<void> => ipcRenderer.invoke('docket:e2e:pick-files', paths),
+          // WO-0092 fix round (m3): stage the create-failure window (skip, count).
+          failCreates: (skip: number, count: number): Promise<void> => ipcRenderer.invoke('docket:e2e:fail-creates', skip, count),
           lastDriveInput: (): Promise<DriveInput | undefined> => ipcRenderer.invoke('docket:e2e:last-drive-input'),
         },
       }

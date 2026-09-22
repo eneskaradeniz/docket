@@ -222,8 +222,12 @@ function ForgeRepoRow({
     );
   }
 
-  // Neither open PRs nor issues — ONE led line (the V2 collapse): calm, no card.
-  if (repo.prs.length === 0 && repo.issues.length === 0) {
+  // WO-0092 fix round (m4): the issue look's own failure, isolated from the repo's health — the
+  // fresh PR page stays 'ok' while the fold's look failed; the reason speaks, the prior rows stay.
+  const issueLookDegraded = repo.issueHealth !== undefined && typeof repo.issueHealth !== 'string';
+
+  // Neither open PRs nor issues nor a failed issue look — ONE led line (the V2 collapse): calm, no card.
+  if (repo.prs.length === 0 && repo.issues.length === 0 && !issueLookDegraded) {
     return (
       <Tooltip label={tip}>
         <div className="irow flex items-center gap-2 rounded-md border border-hairline bg-surface px-2.5 py-1.5 text-[12px]">
@@ -334,6 +338,7 @@ function ForgeRepoRow({
           // WO-0092 — the issues fold: the scan page's rows + the ONE product action. The batch
           // bar speaks the counted grammar; a degraded drill-down refuses in place.
           <div className="mt-1 border-t border-[var(--bord)] pt-1" data-issue-fold>
+            {issueLookDegraded ? <DegradedLine reason={(repo.issueHealth as { degraded: string }).degraded} /> : null}
             {selectedIssues.length > 0 ? (
               <div className="mb-1 flex items-center gap-2 rounded-md border border-hairline bg-bg px-2 py-1" data-issue-batch-bar>
                 <span className="font-mono text-[10.5px] text-inkdim">{UI.issueBatchBar(selectedIssues.length)}</span>
@@ -461,6 +466,12 @@ function ForgeRepoRow({
                 {UI.forgeFoldMore(repo.issues.length - 5)}
               </button>
             ) : null}
+          </div>
+        ) : issueLookDegraded ? (
+          // Zero cached rows + a failed look: the reason speaks alone (the fold is absent, the
+          // failure is not — ADR-0012's informative line).
+          <div className="mt-1 border-t border-[var(--bord)] pt-1" data-issue-degraded>
+            <DegradedLine reason={(repo.issueHealth as { degraded: string }).degraded} />
           </div>
         ) : null}
       </div>

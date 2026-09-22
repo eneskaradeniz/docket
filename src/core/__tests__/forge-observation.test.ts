@@ -209,17 +209,21 @@ describe('reconcileWorkspaceForge — the issue page (WO-0092)', () => {
     expect('title' in scan.issues[1]!).toBe(false);
   });
 
-  it('an issue-read failure is a degraded scan for THAT repo — the scan stays atomic per repo', async () => {
+  it('an issue-read failure is a PARTIAL success — the PR/checks page records, the failure rides the scan', async () => {
     const { rec } = sink();
     await run(
       [target('https://github.com/o/r1.git', ref('r1'))],
       fakeForge({ prs: () => [{ number: 1, headSha: 'sha-1' }], failIssues: new ForgeError('gh: Issues are disabled for this repository') }),
       rec,
     );
-    expect(rec.scans).toEqual([]);
-    expect(rec.degraded).toEqual([
-      { ws, remote: 'https://github.com/o/r1.git', at: '2026-09-19T12:00:00Z', reason: 'gh: Issues are disabled for this repository' },
-    ]);
+    // WO-0092 fix round (m4): the issue page no longer widens its failure over the PR cache —
+    // a fresh PR page with a failed issue look beats a degraded-everything row.
+    expect(rec.degraded).toEqual([]);
+    expect(rec.scans).toHaveLength(1);
+    const scan = rec.scans[0]!.scan;
+    expect(scan.prs.map((p) => p.number)).toEqual([1]);
+    expect(scan.issues).toEqual([]);
+    expect(scan.issueError).toBe('gh: Issues are disabled for this repository');
   });
 
   it('the other repos proceed when one repo’s issues die — the per-repo isolation holds for issues', async () => {
@@ -231,8 +235,10 @@ describe('reconcileWorkspaceForge — the issue page (WO-0092)', () => {
       }),
       rec,
     );
-    expect(rec.scans.map((s) => s.remote)).toEqual(['https://github.com/o/live.git']);
-    expect(rec.degraded.map((d) => d.remote)).toEqual(['https://github.com/o/dead.git']);
+    expect(rec.scans.map((s) => s.remote).sort()).toEqual(['https://github.com/o/dead.git', 'https://github.com/o/live.git']);
+    const dead = rec.scans.find((s) => s.remote === 'https://github.com/o/dead.git')!.scan;
+    expect(dead.issueError).toBe('dead issues');
+    expect(rec.scans.find((s) => s.remote === 'https://github.com/o/live.git')!.scan.issueError).toBeUndefined();
   });
 });
 
