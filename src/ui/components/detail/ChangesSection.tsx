@@ -270,8 +270,7 @@ function ChangesRepoCard({
           track's CI is exempt (the required substitute): a workspace declaring nothing sees
           nothing here, exactly as before. The measured line is Docket's OWN measurement — the
           sha it ran at, the per-command count; the tails sit one click away (the diff-expansion
-          grammar). Absence is the gate (ADR-0001): the run action exists only when a gate is
-          declared or required. */}
+          grammar). */}
       {gateStatus !== undefined ? (
         <div className="mt-1.5 border-t border-[var(--bord)] pt-1.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -306,9 +305,15 @@ function ChangesRepoCard({
                 node
               );
             })()}
-            <Button variant="ghost" size="sm" className="ml-auto shrink-0" busy={acting === 'gate'} onClick={handleRunGate}>
-              {UI.gateRunButton}
-            </Button>
+            {/* The run action exists only where a DECLARATION exists (pending/invalid/declared) —
+                the required-but-undeclared face shows the line alone: its fix is authoring
+                workspace.yaml, an act this card cannot offer (ADR-0001: absent, never a click
+                that can only fail). */}
+            {gateLg !== undefined ? (
+              <Button variant="ghost" size="sm" className="ml-auto shrink-0" busy={acting === 'gate'} onClick={handleRunGate}>
+                {UI.gateRunButton}
+              </Button>
+            ) : null}
           </div>
           {gateOpen && gateLg?.kind === 'declared' ? (
             <pre className="mt-1 max-h-48 overflow-auto rounded border border-hairline bg-bg p-2 font-mono text-[11px] leading-relaxed">
