@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS forge_scan (
   status TEXT NOT NULL CHECK (status IN ('ok','degraded')),
   reason TEXT,                -- the degraded reason verbatim (stderr line / JSON message); NULL on ok
   observed_at TEXT NOT NULL,  -- the LAST attempt, ok or degraded — the «son gözlem» stamp
+  issue_reason TEXT,          -- WO-0092 m4: the ISOLATED issue-look failure (status stays ok; prior
+                              -- forge_issue rows stay); NULL = the issue page is scan-fresh
   PRIMARY KEY (workspace_id, repo_remote)
 );
 CREATE TABLE IF NOT EXISTS forge_pr (
@@ -186,6 +188,27 @@ CREATE TABLE IF NOT EXISTS forge_check (
   conclusion TEXT,            -- NULL while the run has no conclusion yet (honest absent)
   observed_at TEXT NOT NULL,
   PRIMARY KEY (workspace_id, repo_remote, sha, name)
+);
+-- The observed ISSUE cache (WO-0092): forge_pr's discipline mirrored — the scan's open-issue page
+-- (REPLACED each ok scan; an issue fallen off the open page is absent), one row per issue, the
+-- row's DISPLAY facts + the 'owner/repo#N' ref text (the view-time join key; byte-identical to
+-- the order.md issue: front-matter value). A body NEVER enters this table (the WO-0081 report
+-- §3 ruling — the body is the spawn-time drill-down's single fetch). Fields no v1 view reads
+-- (state_reason, timestamps beyond updated_at, closedByPrs) stay port-only. Discardable with
+-- forge_scan/forge_pr/forge_check (OBSERVED_TABLES); a degraded scan touches forge_scan ONLY.
+CREATE TABLE IF NOT EXISTS forge_issue (
+  workspace_id TEXT NOT NULL,
+  repo_remote TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  ref TEXT NOT NULL,          -- 'owner/repo#N' — the join key the front-matter carries verbatim
+  state TEXT NOT NULL CHECK (state IN ('open','closed')),
+  title TEXT,
+  url TEXT NOT NULL,
+  labels TEXT NOT NULL,       -- JSON array of names (colors never leave the adapter)
+  milestone_title TEXT,
+  updated_at TEXT,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, repo_remote, number)
 );
 -- Operator app preferences (WO-0025): a third ADR-0010 category — neither a git-observed fact nor a
 -- decision about work; machine-local app configuration (e.g. the provider API key). Key-value rows.
@@ -227,6 +250,7 @@ CREATE TABLE IF NOT EXISTS roadmap_draft (
 // enforced (SQLite default), so this is belt-and-braces.
 export const OBSERVED_TABLES = [
   'forge_check',
+  'forge_issue',
   'forge_pr',
   'forge_scan',
   'track_depends_on',

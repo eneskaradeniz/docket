@@ -82,6 +82,9 @@ export interface CreateWorkOrderInput {
   contextFiles: string[]; // local file paths → order.md Context
   permissionRule?: PermissionRule; // → order.md front-matter (permission_rule, WO-0031c); omit = the Settings default
   taskRef?: string; // → order.md front-matter task (WO-0048, ADR-0016): the roadmap link — document text, never a DB column
+  // WO-0092: the forge-issue link — → order.md front-matter `issue:` as `owner/repo#N` text (the
+  // taskRef idiom). Written by the spawn flow; never a DB column, never a backlink.
+  issueRef?: string;
   // WO-0071: per-track depends_on — → the `track_depends_on` rows + order.md's `depends_on:` keys.
   // Absent = the pre-WO-0071 behavior byte-for-byte (zero rows, empty lists). Validated purely by
   // core's validateTrackDependencies before anything is written.
@@ -197,6 +200,14 @@ export interface WorkOrderSource {
   // observed work_order row + tracks. `description`/`reviewMode`/`contextFiles` transit to order.md,
   // never to the DB (ADR-0010 rule 1 — no document text in the store). M3 git scanner reconciles.
   createWorkOrder(input: CreateWorkOrderInput): Promise<WorkOrder>;
+
+  // WO-0092 — the issue↔WO link's view-time join read: one readdir of the workspace's
+  // work-orders plus one order.md read per work order, parsing each front-matter's `issue:` key
+  // (the scanTaskRefs pattern; the N-file scan is TD-055's accepted cost). Record<string,string>
+  // keyed by woId → the `owner/repo#N` text; WOs without the key are absent — unlinked is a
+  // legitimate state. No DB column (ADR-0010 rule 1): a WO deleted manually drops out and the
+  // issue row stays honest.
+  woIssueRefs(id: WorkspaceId): Promise<Record<string, string>>;
 
   // Approve the architect's proposed plan (WO-0016). Writes plan.md into the decision-store working tree
   // (no commit — operator commits; ADR-0009 M2 addendum) and flips gate_plan_approved. The plan text is

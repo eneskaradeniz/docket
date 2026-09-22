@@ -26,6 +26,7 @@ import type { Locale, PromptOverrides, RoleModels } from '../src/core/app-settin
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { createE2eRunner, type E2eRunner } from './e2e-runner';
+import { e2eGhRunner } from './e2e-forge';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -152,7 +153,7 @@ ipcMain.handle('docket:source:update-repo-path', (_e, id: WorkspaceId, repoId: R
 // cache. One in-flight cycle per workspace — a trigger that overlaps a running one is a no-op
 // (the loop is idempotent; the next trigger reads what landed). The adapter-side RepoRef parse
 // happens HERE, at read time, over the persisted connection remotes (the WO-0063 answer 1).
-const forge = new GitHubForge();
+const forge = new GitHubForge(process.env.DOCKET_E2E ? e2eGhRunner() : undefined);
 const forgeInFlight = new Set<string>();
 async function reconcileForge(workspaceId: WorkspaceId): Promise<void> {
   const key = workspaceId as string;
@@ -191,6 +192,11 @@ ipcMain.handle('docket:forge:prDetail', (_e, _id: WorkspaceId, repoRemote: strin
 );
 ipcMain.handle('docket:forge:prDiff', (_e, _id: WorkspaceId, repoRemote: string, number: number) =>
   forge.prDiff(forgeRefFromRemote(repoRemote), number),
+);
+// WO-0092 — the spawn prefill's ONE drill-down: live, never cached (the prDetail pattern); the
+// reason rides the ForgeError message and the spawn refuses, writing nothing.
+ipcMain.handle('docket:forge:issueDetail', (_e, _id: WorkspaceId, repoRemote: string, number: number) =>
+  forge.issue(forgeRefFromRemote(repoRemote), number),
 );
 // WO-0087 — the browser chip: ONLY https urls open externally (never file://, never schemes).
 ipcMain.handle('docket:shell:openExternal', (_e, url: string) => {
@@ -239,7 +245,21 @@ ipcMain.handle('docket:source:discard-roadmap-draft', (_e, id: WorkspaceId) => s
 // --- Work-order creation (WO-0015). The store resolves the decision-store path server-side, authors
 //   order.md into the working tree (no commit), and inserts the observed row — no path leaks to the
 //   renderer (ADR-0001). ---
-ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => store.createWorkOrder(input));
+// WO-0092 fix round (m3): the E2E-only create-failure stage — the FIRST `skip` creates pass, then
+// `count` fail (the m3 retry pin). Production never sees it; it self-exhausts.
+let e2eFailCreates: { skip: number; count: number } | undefined;
+ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInput) => {
+  if (process.env.DOCKET_E2E && e2eFailCreates !== undefined) {
+    if (e2eFailCreates.skip > 0) e2eFailCreates.skip -= 1;
+    else if (e2eFailCreates.count > 0) {
+      e2eFailCreates.count -= 1;
+      throw new Error('e2e: scripted create failure');
+    }
+  }
+  return store.createWorkOrder(input);
+});
+// WO-0092: the issue-link join read ({woId → 'owner/repo#N'}) — view-time, no DB column.
+ipcMain.handle('docket:source:wo-issue-refs', (_e, id: WorkspaceId) => store.woIssueRefs(id));
 
 // --- Work-order EDITING + permission-decision audit (WO-0031c). order.md rewrite stays store-side. ---
 ipcMain.handle('docket:source:update-work-order', (_e, id: WorkOrderId, patch: UpdateWorkOrderInput) => store.updateWorkOrder(id, patch));
@@ -697,6 +717,11 @@ if (process.env.DOCKET_E2E) {
   });
   ipcMain.handle('docket:e2e:pick-files', (_e, paths: string[] | null) => {
     stagedPickFiles = paths;
+  });
+  // WO-0092 fix round (m3): stage the create-failure window (the first `skip` creates pass, then
+  // `count` fail) — the mid-batch retry's pin.
+  ipcMain.handle('docket:e2e:fail-creates', (_e, skip: number, count: number) => {
+    e2eFailCreates = { skip, count };
   });
   ipcMain.handle('docket:e2e:last-drive-input', () => lastResolvedDriveInput);
 }

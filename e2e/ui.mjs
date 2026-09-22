@@ -3399,6 +3399,134 @@ await spec('WO-0088 paralel omurga: iki iş emri + taslak aynı anda sürer; ola
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Paralel A' }).count(), 0, 'the throwaway parallel WO survived');
 });
 
+// ===== WO-0092 — the issue bridge: see the issues → spawn work orders =====
+// The 'sorun' world's connection parses to the fixture forge repo; under DOCKET_E2E the
+// composition root swaps the gh binary for the scripted e2e-forge runner — REAL adapter parsing,
+// ZERO network. Spec order matters: the degraded-refusal spec runs BEFORE the successful spawns
+// so nothing it asserts can be disturbed by earlier writes (it writes nothing itself).
+const sorunLine = seedOut.trim().split('\n').find((l) => l.startsWith('SORUN='));
+if (!sorunLine) throw new Error('seed failed: no SORUN= line');
+const sorunWsId = JSON.parse(sorunLine.slice(6)).sorun;
+const openIssueFold = async () => {
+  await openOverview();
+  const toggle = page.locator('[data-issue-fold-toggle]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.first().click();
+    await page.waitForTimeout(300);
+  }
+};
+
+await spec('WO-0092 sorun katlaması: depo kartı açık sorunları taşır — başlık, etiket, milestone, ↗; her açık satırda üretim', async () => {
+  await switchWs('e2e', 'sorun');
+  await openIssueFold();
+  const fold = await page.locator('[data-issue-fold]').innerText();
+  assert.ok(fold.includes('#333') && fold.includes('OTP paketi bittiğinde tam kesinti'), `row #333: ${fold.slice(0, 300)}`);
+  assert.ok(fold.includes('#330') && fold.includes('Faz 1 — Antrenör Profil Sistemi'), 'the milestone title is not a display fact on the row');
+  assert.ok(fold.includes('bug'), 'the label name missing');
+  assert.ok(fold.includes('#329') && fold.includes('#328'), 'the other open rows missing');
+  assert.equal(await page.locator('[data-issue-row] button[data-issue-spawn]').count(), 4, 'not every open row carries the spawn action');
+  // m4: the sibling repo's failed issue look is ISOLATED — its PR page stays ok, the fold speaks
+  // the reason alone, and the failure never touches the api card's rows.
+  assert.equal(await page.locator('[data-issue-degraded]').count(), 1, 'the isolated issue-look failure has no surface');
+  await page.screenshot({ path: join(SHOTS, 'issue-bridge@980.png') });
+});
+
+await spec('WO-0092 bozuk ayrıntı: ayrıntısı ölemeyen sorun tekil üretimi yerinde reddeder; toplu seçim de onaysız yazmaz', async () => {
+  await openIssueFold();
+  await page.locator('[data-issue-row="antreo-app/api#329"] button[data-issue-spawn]').first().click();
+  await page.waitForTimeout(700); // the failed drill-down
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'a dialog opened on a degraded drill-down');
+  assert.equal(await page.locator('[data-issue-spawn-error]').count(), 1, 'no in-place refusal reason');
+  // the batch refuses the same way: one dead drill-down refuses the WHOLE batch, nothing written
+  await page.locator('[data-issue-row="antreo-app/api#333"] button[aria-pressed]').first().click();
+  await page.locator('[data-issue-row="antreo-app/api#329"] button[aria-pressed]').first().click();
+  await page.waitForTimeout(200);
+  await page.locator('[data-issue-batch-bar] button', { hasText: '2 iş emri oluştur' }).click();
+  await page.waitForTimeout(900);
+  assert.equal(await page.locator('[role="dialog"]').count(), 0, 'the batch confirm opened despite a degraded drill-down');
+  assert.ok((await page.locator('[data-issue-fold]').innerText()).includes('İş emri açılamadı'), 'no batch refusal reason');
+  const woCount = await page.evaluate(
+    (ws) => window.docket.source.getWorkOrders().then((os) => os.filter((o) => o.workspace === ws).length),
+    sorunWsId,
+  );
+  assert.equal(woCount, 0, 'a degraded spawn wrote something');
+  // deselect #333 so the later batch spec starts clean
+  await page.locator('[data-issue-row="antreo-app/api#333"] button[aria-pressed]').first().click();
+  await page.waitForTimeout(200);
+});
+
+await spec('WO-0092 tek üretim: ▸ İş emri aç → önden dolu create diyalogu → kaydet → bantta sorun çipi (↗)', async () => {
+  await openIssueFold();
+  await page.locator('[data-issue-row="antreo-app/api#333"] button[data-issue-spawn]').first().click();
+  // the ONE drill-down rides IPC — poll for the dialog, never a fixed sleep
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length > 0, undefined, { timeout: 8000 });
+  const dlg = page.locator('[role="dialog"]');
+  assert.equal(await dlg.count(), 1, 'the prefilled create dialog did not open');
+  assert.ok((await dlg.locator('[data-issue-context]').innerText()).includes('antreo-app/api#333'), 'no issue origin line');
+  const titleVal = await dlg.locator('input').first().inputValue();
+  assert.ok(titleVal.includes('OTP paketi bittiğinde'), `title not prefilled from the issue: ${titleVal}`);
+  const descVal = await dlg.locator('textarea').first().inputValue();
+  assert.ok(descVal.includes('E2E gövdesi'), `body not prefilled from the drill-down: ${descVal}`);
+  // m2/m5: the track seed applies — the issue's own repo chip is the pressed one, the sibling
+  // code repo is not (the slug resolved through the connection row, not the forge name).
+  const apiChip = dlg.locator('button[aria-pressed]', { hasText: 'sorun-api' });
+  const mobileChip = dlg.locator('button[aria-pressed]', { hasText: 'sorun-mobile' });
+  assert.equal(await apiChip.getAttribute('aria-pressed'), 'true', 'the issue repo track was not seeded');
+  assert.equal(await mobileChip.getAttribute('aria-pressed'), 'false', 'the sibling track must stay unseeded');
+  await dlg.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1500); // create + navigate to the new detail
+  const chip = page.locator('[data-detail-issue-chip]');
+  assert.equal(await chip.count(), 1, 'the detail band carries no issue chip');
+  assert.ok(((await chip.innerText()) ?? '').includes('antreo-app/api#333'), 'the chip does not name the issue ref');
+  assert.equal(await chip.locator('button').count(), 1, 'the cache-resolved chip carries no ↗ action');
+  await backToBoard();
+});
+
+await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar, tek sayılı onay; orta-kadro hatasında dürüst yeniden deneme', async () => {
+  await openIssueFold();
+  await page.locator('[data-issue-row="antreo-app/api#330"] button[aria-pressed]').first().click();
+  await page.locator('[data-issue-row="antreo-app/api#328"] button[aria-pressed]').first().click();
+  await page.waitForTimeout(200);
+  const bar = page.locator('[data-issue-batch-bar]');
+  assert.ok(((await bar.innerText()) ?? '').includes('2 sorun seçildi'), 'the selection bar does not count');
+  await bar.locator('button', { hasText: '2 iş emri oluştur' }).click();
+  // both drill-downs ride sequential IPC — poll for the confirm, never a fixed sleep
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length > 0, undefined, { timeout: 8000 });
+  const dlg = page.locator('[role="dialog"]');
+  assert.ok((await dlg.getByText('2 iş emri oluşturulacak').count()) >= 1, 'the confirm does not count the batch');
+  // m3: the SECOND create fails (the first passes) — the confirm stays open, honestly re-counted
+  // to the remainder, and the retry creates only what is left (no duplicate issue link).
+  await page.evaluate(() => window.docket.e2e?.failCreates(1, 1));
+  await dlg.getByRole('button', { name: '2 iş emri oluştur' }).click();
+  // create #1 lands, create #2 fails — poll for the honest re-count (dialog open + remainder=1)
+  await page.waitForFunction(
+    () => document.querySelector('[role="dialog"]')?.textContent?.includes('1 iş emri oluşturulacak') ?? false,
+    undefined,
+    { timeout: 8000 },
+  );
+  assert.equal(await dlg.count(), 1, 'the confirm closed on a mid-batch failure (the remainder would be lost)');
+  await dlg.getByRole('button', { name: '1 iş emri oluştur' }).click();
+  // the retry creates the remainder — poll for the close
+  await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0, undefined, { timeout: 8000 });
+  assert.equal(await dlg.count(), 0, 'the confirm did not close after the honest retry');
+  // sequential numbers + the issue titles, read from the store. The creates run in the scan
+  // page's order (number ASC) — the pin is CONSECUTIVENESS (one counted batch = N sequential
+  // allocations), never the click order.
+  const wos = await page.evaluate(() => window.docket.source.getWorkOrders().then((os) => os.map((o) => ({ id: o.id, title: o.title }))));
+  const a = wos.find((o) => o.title.includes('şablonsuz'));
+  const b = wos.find((o) => o.title.includes('Sosyal giriş'));
+  assert.ok(a && b, `the batch WOs are missing: ${JSON.stringify(wos)}`);
+  assert.equal(Math.abs(Number(a.id.slice(3)) - Number(b.id.slice(3))), 1, `ids are not sequential: ${a?.id} / ${b?.id}`);
+  // the two-way link, issue side: the rows mark their spawned WOs (view-time join) — exactly one
+  // chip per issue (the m3 duplicate would show as two)
+  const spawned = page.locator('[data-issue-spawned-wo="antreo-app/api#330"] button');
+  assert.equal(await spawned.count(), 1, 'the issue row does not mark its spawned WO (or marks it twice — the m3 duplicate)');
+  await spawned.first().click();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('[data-detail-issue-chip]').count(), 1, 'the chip did not open the spawned WO detail');
+  await backToBoard();
+});
+
 await spec('zero renderer console errors', async () => {
   assert.deepEqual(consoleErrors, [], `console errors: ${consoleErrors.join(' | ')}`);
 });

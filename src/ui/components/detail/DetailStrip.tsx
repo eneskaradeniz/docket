@@ -57,6 +57,8 @@ export function DetailStrip({
   permissionRule,
   onUpdateWorkOrder,
   taskChip,
+  issueChip,
+  onOpenIssueExternal,
 }: {
   detail: WorkOrderDetailView;
   /** The parsed order.md Objective — the description editor's starting text (WO-0031c). */
@@ -82,6 +84,11 @@ export function DetailStrip({
    *  orphan `task:`, or a roadmap that cannot be read) renders the degrade qualifier; undefined (no
    *  `task:` at all) renders nothing. Raw task ids never reach this surface. */
   taskChip?: { fazId: string; taskTitle: string } | 'missing';
+  /** WO-0092: the order.md `issue:` ref (the two-way link, WO side). The ref renders verbatim as
+   *  the chip; the ↗ action rides ONLY a cache-resolved display url — an unresolved ref degrades
+   *  to the plain chip, never a guessed url. */
+  issueChip?: { ref: string; url?: string };
+  onOpenIssueExternal?: (url: string) => void;
 }) {
   const { budgetLine, fazLabel, formatUsd, PERMISSION_RULE_SHORT, PERMISSION_RULE_TINY, phaseLabelText, STAGE_LABELS, UI, woIdLabel } = useLabels();
   const tone = PHASE_KIND_TONE[phase.kind];
@@ -188,6 +195,26 @@ export function DetailStrip({
               {UI.roadmapTaskChip(fazLabel(taskChip.fazId), taskChip.taskTitle)}
             </span>
           )
+        ) : null}
+        {issueChip !== undefined ? (
+          // WO-0092 — the two-way link, WO side: the ref text + (cache-resolved) ↗ action.
+          <span
+            data-detail-issue-chip
+            title={UI.issueChipTitle(issueChip.ref)}
+            className="flex shrink-0 items-center gap-1 rounded border border-info/50 bg-info/10 px-1.5 py-px font-mono text-[10px] tracking-wide text-info"
+          >
+            {issueChip.ref}
+            {issueChip.url !== undefined && onOpenIssueExternal !== undefined ? (
+              <button
+                type="button"
+                className="ibtn h-3.5 w-3.5 text-[10px]"
+                aria-label={UI.forgePrDetailBrowser}
+                onClick={() => onOpenIssueExternal(issueChip.url!)}
+              >
+                ↗
+              </button>
+            ) : null}
+          </span>
         ) : null}
         <Badge>{STAGE_LABELS[detail.stage]}</Badge>
         <span className="flex min-w-0 items-center gap-1.5">

@@ -23,6 +23,9 @@ import {
   type Forge,
   type ForgeCheck,
   type ForgeHealth,
+  type ForgeIssue,
+  type ForgeIssueStateFilter,
+  type ForgeMilestone,
   type ForgePr,
   type ForgePrDetail,
   type ForgePrStateFilter,
@@ -125,7 +128,61 @@ interface AuthStatusBody {
   hosts: Record<string, { state: string; active: boolean }[]>;
 }
 
+// WO-0092 — the issue bridge's wire shapes (the WO-0081 probe's raw logs; case INCLUDED).
+// gh list row: UPPERCASE state, labels as objects, the milestone nested FULL (raw/24:4-43),
+// closedByPullRequestsReferences riding the list (raw/24:2). NO body on this wire — the list
+// never asks (report §2: measured ~10x per row).
+interface IssueListRow {
+  number: number;
+  state: string; // 'OPEN' | 'CLOSED'
+  title: string;
+  labels: { name: string }[];
+  milestone: RestMilestoneWire | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  closedAt: string | null;
+  url: string;
+  closedByPullRequestsReferences?: { number: number; url: string; repository?: { name?: string; owner?: { login?: string } } }[] | null;
+}
+
+// REST row (raw/18): whisper-case state, snake_case keys, `comments` is a COUNT here (the port
+// carries neither the count nor the thread — report §(f)), `html_url` is the display url.
+interface RestIssueWire {
+  number: number;
+  state: string; // 'open' | 'closed'
+  state_reason: string | null;
+  title: string;
+  labels: { name: string }[];
+  milestone: RestMilestoneWire | null;
+  created_at: string | null;
+  updated_at: string | null;
+  closed_at: string | null;
+  html_url: string;
+  body: string | null;
+}
+
+interface RestMilestoneWire {
+  number: number;
+  title: string;
+  state: string;
+}
+
+// raw/19: the milestones page — snake_case, due_on observed always null.
+interface RestMilestoneRow {
+  number: number;
+  title: string;
+  state: string;
+  open_issues: number;
+  closed_issues: number;
+  due_on: string | null;
+}
+
 const PR_FIELDS = 'number,state,title,headRefOid,headRefName,baseRefName,reviewDecision,mergedAt,url,mergeCommit';
+// The WO-0081 frozen field set (report §(a)) — body is deliberately absent: lists never ask.
+const ISSUE_FIELDS = 'number,title,state,labels,milestone,createdAt,updatedAt,closedAt,url,closedByPullRequestsReferences';
+// The scan page (report §(c)): one page per connected repo, 38 open org-wide — pagination never
+// enters the hot path.
+const ISSUE_SCAN_LIMIT = 50;
 const GITHUB_HOST = 'github.com';
 
 function firstStderrLine(r: GhResult): string | undefined {
@@ -182,6 +239,79 @@ function parseJson<T>(r: GhResult): T {
   }
 }
 
+// ===== WO-0092 — the issue bridge's edge normalizations (the frozen contract's edge rules) =====
+
+// UPPERCASE (gh) / whisper (REST) → lowercase; anything else is the shaped unknown, never a guess.
+function wireIssueState(raw: string): 'open' | 'closed' {
+  const state = raw.toLowerCase();
+  if (state !== 'open' && state !== 'closed') throw new ForgeError(`unknown issue state "${raw}"`);
+  return state;
+}
+
+// The nested milestone object maps by number/title/state — descriptions, creators, counts stay
+// behind (display facts only, report §(d)).
+function mapMilestone(wire: RestMilestoneWire): { number: number; title: string; state: 'open' | 'closed' } {
+  const state = wire.state.toLowerCase();
+  if (state !== 'open' && state !== 'closed') throw new ForgeError(`unknown milestone state "${wire.state}"`);
+  return { number: wire.number, title: wire.title, state };
+}
+
+// Names only — colors never leave the adapter (report §(f)).
+function mapLabels(wire: { name: string }[]): string[] {
+  return wire.map((l) => l.name);
+}
+
+/** The shared list-row mapper (the open page, the closed page, 'all' — one wire shape). The body
+ *  has no path in: the list never asks for it, and the mapper never sets it. */
+function mapIssueListRows(rows: IssueListRow[], repo: RepoRef): ForgeIssue[] {
+  return rows.map((row) => {
+    const issue: ForgeIssue = {
+      number: row.number,
+      repo,
+      state: wireIssueState(row.state),
+      url: row.url,
+      labels: mapLabels(row.labels ?? []),
+    };
+    if (row.title !== '') issue.title = row.title;
+    if (row.milestone != null) issue.milestone = mapMilestone(row.milestone);
+    if (row.createdAt != null) issue.createdAt = row.createdAt;
+    if (row.updatedAt != null) issue.updatedAt = row.updatedAt;
+    if (row.closedAt != null) issue.closedAt = row.closedAt;
+    const prs = (row.closedByPullRequestsReferences ?? []).filter(
+      (p) => p.repository?.owner?.login !== undefined && p.repository?.name !== undefined,
+    );
+    if (prs.length > 0)
+      issue.closedByPrs = prs.map((p) => ({
+        number: p.number,
+        url: p.url,
+        repo: { owner: p.repository!.owner!.login!, name: p.repository!.name! },
+      }));
+    return issue;
+  });
+}
+
+/** The REST drill-down row: `html_url` is the display url (REST `url` is the API url), the body
+ *  rides (non-empty; empty stays absent), state_reason lowercases and null stays absent. This
+ *  path carries NO closedByPrs — the REST row has none (absence is a path fact, like the sha→PR
+ *  path's absent reviewDecision). */
+function mapRestIssue(row: RestIssueWire, repo: RepoRef): ForgeIssue {
+  const issue: ForgeIssue = {
+    number: row.number,
+    repo,
+    state: wireIssueState(row.state),
+    url: row.html_url,
+    labels: mapLabels(row.labels ?? []),
+  };
+  if (row.title !== '') issue.title = row.title;
+  if (row.state_reason != null) issue.stateReason = row.state_reason.toLowerCase();
+  if (row.milestone != null) issue.milestone = mapMilestone(row.milestone);
+  if (row.created_at != null) issue.createdAt = row.created_at;
+  if (row.updated_at != null) issue.updatedAt = row.updated_at;
+  if (row.closed_at != null) issue.closedAt = row.closed_at;
+  if (row.body != null && row.body !== '') issue.body = row.body;
+  return issue;
+}
+
 export class GitHubForge implements Forge {
   constructor(private readonly run: GhRunner = ghProcessRunner()) {}
 
@@ -217,6 +347,47 @@ export class GitHubForge implements Forge {
     ]);
     if (r.exit !== 0) throw fail(r);
     return mapPrListRows(parseJson<PrListRow[]>(r));
+  }
+
+  // ===== WO-0092 — the issue bridge (the WO-0081 frozen contract; reads, never writes) =====
+
+  /** `gh issue list --repo o/n --state S --limit 50 --json <the frozen set>` — ONE page. The
+   *  limit rides every call (the board's unit of cost, report §(c)); history beyond the page is
+   *  a future read's question, never a scan. NO body on the wire — the field is not asked. */
+  async issues(repo: RepoRef, state: ForgeIssueStateFilter): Promise<ForgeIssue[]> {
+    const r = await this.run([
+      'issue', 'list', '--repo', `${repo.owner}/${repo.name}`, '--state', state,
+      '--limit', String(ISSUE_SCAN_LIMIT), '--json', ISSUE_FIELDS,
+    ]);
+    if (r.exit !== 0) throw fail(r);
+    return mapIssueListRows(parseJson<IssueListRow[]>(r), repo);
+  }
+
+  /** `gh api repos/o/n/issues/N` — the REST card (one call). The body rides THIS row only; the
+   *  spawn prefill is its one consumer, and it is never cached. */
+  async issue(repo: RepoRef, number: number): Promise<ForgeIssue> {
+    const r = await this.run(['api', `repos/${repo.owner}/${repo.name}/issues/${number}`]);
+    if (r.exit !== 0) throw fail(r);
+    return mapRestIssue(parseJson<RestIssueWire>(r), repo);
+  }
+
+  /** `gh api repos/o/n/milestones?state=all` — display facts only (report §(d)). */
+  async milestones(repo: RepoRef): Promise<ForgeMilestone[]> {
+    const r = await this.run(['api', `repos/${repo.owner}/${repo.name}/milestones?state=all`]);
+    if (r.exit !== 0) throw fail(r);
+    return parseJson<RestMilestoneRow[]>(r).map((m) => {
+      const state = m.state.toLowerCase();
+      if (state !== 'open' && state !== 'closed') throw new ForgeError(`unknown milestone state "${m.state}"`);
+      const out: ForgeMilestone = {
+        number: m.number,
+        title: m.title,
+        state,
+        openIssueCount: m.open_issues,
+        closedIssueCount: m.closed_issues,
+      };
+      if (m.due_on != null) out.dueOn = m.due_on;
+      return out;
+    });
   }
 
   async pullRequestForSha(repo: RepoRef, sha: string): Promise<ForgePr | undefined> {

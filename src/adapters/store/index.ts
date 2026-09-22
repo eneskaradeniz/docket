@@ -22,10 +22,10 @@ import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extrac
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
-import type { ClosureEvidence, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
+import type { ClosureEvidence, ForgeIssueRow, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
@@ -802,6 +802,11 @@ function migrate(db: DatabaseSync): void {
   // pre-WO-0053 vintage, never backfilled; the three-state write rule lives in recordSessionRow).
   if (!cols.has('limit_reset_at')) db.exec('ALTER TABLE session ADD COLUMN limit_reset_at TEXT');
 
+  // WO-0092 fix round (m4): the ISOLATED issue-look failure rides forge_scan (additive, the same
+  // PRAGMA-guarded discipline — NULL is the honest pre-m4 vintage: the issue page is scan-fresh).
+  const forgeScanCols = new Set((db.prepare('PRAGMA table_info(forge_scan)').all() as { name: string }[]).map((c) => c.name));
+  if (!forgeScanCols.has('issue_reason')) db.exec('ALTER TABLE forge_scan ADD COLUMN issue_reason TEXT');
+
   const trackCols = new Set((db.prepare('PRAGMA table_info(track)').all() as { name: string }[]).map((c) => c.name));
   if (trackCols.has('stage')) {
     // Legacy pre-TD-008 dev schema: `track` carried a stored `stage` column (now derived at hydrate).
@@ -960,6 +965,15 @@ function updateWorkspaceRow(db: DatabaseSync, id: WorkspaceId, patch: { label?: 
     const ds = patch.decisionStorePath
       ? rid(repoBase(patch.decisionStorePath))
       : ((db.prepare('SELECT repo_id FROM workspace_repo WHERE workspace_id = ? LIMIT 1').get(id) as { repo_id: string } | undefined)?.repo_id ?? 'repo');
+    // WO-0092 fix round (M1): the target must be a CONNECTED repo — a store slug naming a
+    // definition row without a connection is the cwd-fallback hazard (the reviewed chain).
+    // Zero-connection workspaces keep the fixture contract (D8) untouched.
+    const hasConnections = db.prepare('SELECT 1 FROM connection WHERE workspace_id = ? LIMIT 1').get(id);
+    if (hasConnections !== undefined) {
+      const rows = db.prepare('SELECT local_path FROM connection WHERE workspace_id = ?').all(id) as { local_path: string }[];
+      if (!rows.some((r) => repoBase(r.local_path) === (ds as string)))
+        throw new Error(`decision store re-point refused: no connected repo named ${ds as string} — connect it first`);
+    }
     db.prepare('UPDATE workspace SET decision_store = ? WHERE id = ?').run(ds, id);
   }
 }
@@ -1010,6 +1024,15 @@ function addRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, repo: RepoConne
 
 function removeRepoConnectionRow(db: DatabaseSync, id: WorkspaceId, path: string): void {
   const repoId = rid(repoBase(path));
+  // WO-0092 fix round (M1): the decision-store connection is the workspace's document root —
+  // removing it orphans the store slug and (pre-guard) aimed every write at the app's own repo
+  // via the cwd fallback. A workspace without a decision store is not a valid state: re-point
+  // first (the settings' select), then remove.
+  const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(id) as
+    | { decision_store: string }
+    | undefined;
+  if (ws && ws.decision_store === (repoId as string))
+    throw new Error(`cannot remove the decision-store connection (${repoId as string}) — re-point the decision store first`);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ? AND repo_id = ?').run(id, repoId);
   db.prepare('DELETE FROM connection WHERE workspace_id = ? AND local_path = ?').run(id, path);
 }
@@ -1061,9 +1084,9 @@ function recordForgeScanRow(db: DatabaseSync, workspaceId: WorkspaceId, repoRemo
   db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare(
-      `INSERT INTO forge_scan (workspace_id, repo_remote, status, reason, observed_at) VALUES (?,?,'ok',NULL,?)
-       ON CONFLICT(workspace_id, repo_remote) DO UPDATE SET status='ok', reason=NULL, observed_at=excluded.observed_at`,
-    ).run(workspaceId, repoRemote, scan.at);
+      `INSERT INTO forge_scan (workspace_id, repo_remote, status, reason, observed_at, issue_reason) VALUES (?,?,'ok',NULL,?,?)
+       ON CONFLICT(workspace_id, repo_remote) DO UPDATE SET status='ok', reason=NULL, observed_at=excluded.observed_at, issue_reason=excluded.issue_reason`,
+    ).run(workspaceId, repoRemote, scan.at, scan.issueError ?? null);
     db.prepare('DELETE FROM forge_pr WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
     db.prepare('DELETE FROM forge_check WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
     const insPr = db.prepare(
@@ -1081,6 +1104,24 @@ function recordForgeScanRow(db: DatabaseSync, workspaceId: WorkspaceId, repoRemo
     );
     for (const { sha, check } of scan.checks) {
       insCheck.run(workspaceId, repoRemote, sha, check.name, check.status, check.conclusion ?? null, scan.at);
+    }
+    // WO-0092: the issue page replaces in the SAME transaction — an issue fallen off the open
+    // page is absent after the scan (observation wins). No body ever enters a row. Fix round
+    // (m4): a scan carrying issueError touches NO issue row — the failed look keeps the prior
+    // page (the degraded rule: a failed look never wipes); the reason rides forge_scan.
+    if (scan.issueError === undefined) {
+      db.prepare('DELETE FROM forge_issue WHERE workspace_id = ? AND repo_remote = ?').run(workspaceId, repoRemote);
+      const insIssue = db.prepare(
+        `INSERT INTO forge_issue (workspace_id, repo_remote, number, ref, state, title, url, labels, milestone_title, updated_at, observed_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      );
+      for (const issue of scan.issues) {
+        insIssue.run(
+          workspaceId, repoRemote, issue.number, `${issue.repo.owner}/${issue.repo.name}#${issue.number}`,
+          issue.state, issue.title ?? null, issue.url, JSON.stringify(issue.labels),
+          issue.milestone?.title ?? null, issue.updatedAt ?? null, scan.at,
+        );
+      }
     }
     // ADR-0017: the OBSERVED WO→PR link — the scanned open PRs matched to the workspace's OPEN
     // work orders by the title rule (titleCarriesWoId). Latest-wins: this scan's match
@@ -1126,8 +1167,8 @@ function forgeViewRow(db: DatabaseSync, id: WorkspaceId): ForgeView {
   const repos: ForgeRepoView[] = [];
   for (const conn of connections) {
     const scan = db
-      .prepare('SELECT status, reason, observed_at FROM forge_scan WHERE workspace_id = ? AND repo_remote = ?')
-      .get(id, conn.repo_remote) as { status: string; reason: string | null; observed_at: string } | undefined;
+      .prepare('SELECT status, reason, observed_at, issue_reason FROM forge_scan WHERE workspace_id = ? AND repo_remote = ?')
+      .get(id, conn.repo_remote) as { status: string; reason: string | null; observed_at: string; issue_reason: string | null } | undefined;
     if (!scan) continue; // never scanned — absent from the view (the section's absent grammar)
     const prRows = db
       .prepare(
@@ -1148,11 +1189,45 @@ function forgeViewRow(db: DatabaseSync, id: WorkspaceId): ForgeView {
     const checkRows = db
       .prepare('SELECT sha, name, status, conclusion FROM forge_check WHERE workspace_id = ? AND repo_remote = ? ORDER BY name')
       .all(id, conn.repo_remote) as { sha: string; name: string; status: string; conclusion: string | null }[];
+    // WO-0092: the cached issue rows — the display facts + the ref text; the labels ride JSON
+    // (an array of names), the milestone as its display title only.
+    const issueRows = db
+      .prepare(
+        'SELECT number, ref, state, title, url, labels, milestone_title, updated_at FROM forge_issue WHERE workspace_id = ? AND repo_remote = ? ORDER BY number',
+      )
+      .all(id, conn.repo_remote) as {
+      number: number;
+      ref: string;
+      state: string;
+      title: string | null;
+      url: string;
+      labels: string;
+      milestone_title: string | null;
+      updated_at: string | null;
+    }[];
     repos.push({
       repoRemote: conn.repo_remote,
       path: conn.local_path,
       scannedAt: scan.observed_at,
       health: scan.status === 'ok' ? 'ok' : { degraded: scan.reason ?? 'unknown failure' },
+      // WO-0092 fix round (m4): the issue look's own health, isolated from the repo's — the
+      // carried reason means the rows below are the PRIOR page, kept (never wiped).
+      ...(scan.status === 'ok' && scan.issue_reason != null
+        ? { issueHealth: { degraded: scan.issue_reason } as ForgeRepoView['issueHealth'] }
+        : { issueHealth: 'ok' as ForgeRepoView['issueHealth'] }),
+      issues: issueRows.map((issue) => {
+        const row: ForgeIssueRow = {
+          ref: issue.ref as ForgeIssueRow['ref'],
+          number: issue.number,
+          state: issue.state as 'open' | 'closed',
+          url: issue.url,
+          labels: JSON.parse(issue.labels) as string[],
+        };
+        if (issue.title != null) row.title = issue.title;
+        if (issue.updated_at != null) row.updatedAt = issue.updated_at;
+        if (issue.milestone_title != null) row.milestoneTitle = issue.milestone_title;
+        return row;
+      }),
       prs: prRows.map((pr) => {
         const row: ForgePrRow = {
           number: pr.number,
@@ -1197,6 +1272,24 @@ function connectedStructureRoot(db: DatabaseSync, workspaceId: WorkspaceId): str
     if (repoBase(r.local_path) === dsSlug) return join(r.local_path, settingDocsRoot(db, workspaceId));
   }
   return undefined;
+}
+
+// WO-0092 fix round (M1): the cwd fallback under structureRoot is a fixture-world courtesy (D8 —
+// "Docket manages itself"); for a REAL workspace whose store slug matches no connection it aimed
+// every document WRITE into the app's own repo (the reviewed incident chain). A workspace with
+// connections but no resolvable store is a broken state: every document write refuses with
+// operator words, and the settings cannot produce the state anymore (the removal/re-point guards
+// below) — this store-side refusal is the second layer.
+function decisionStoreDisconnected(db: DatabaseSync, workspaceId: WorkspaceId): boolean {
+  const anyConnection = db.prepare('SELECT 1 FROM connection WHERE workspace_id = ? LIMIT 1').get(workspaceId);
+  if (anyConnection === undefined) return false; // zero connections = the fixture contract stands (D8)
+  return connectedStructureRoot(db, workspaceId) === undefined;
+}
+function refuseDisconnectedStore(db: DatabaseSync, workspaceId: WorkspaceId): void {
+  if (decisionStoreDisconnected(db, workspaceId))
+    throw new Error(
+      'decision store disconnected — no connected repo carries this workspace\'s decision store; re-point it in the workspace settings',
+    );
 }
 
 // The workspace's STRUCTURE ROOT (WO-0048, ADR-0016): the decision store's local working-tree path
@@ -1451,6 +1544,8 @@ function updateRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId, md: string):
 async function approveRoadmapDraftRow(db: DatabaseSync, wsId: WorkspaceId): Promise<void> {
   const row = db.prepare('SELECT md FROM roadmap_draft WHERE workspace_id = ?').get(wsId) as { md: string } | undefined;
   if (!row) throw new Error('approveRoadmapDraft: no pending draft');
+  // M1: the disconnect refusal precedes the parse guard (the saveRoadmap ruling).
+  refuseDisconnectedStore(db, wsId);
   const why = roadmapParseWhy(row.md);
   if (why) throw new Error(`approveRoadmapDraft: refusing to write a document that cannot be re-read — ${why}`);
   const root = structureRoot(db, wsId);
@@ -1912,6 +2007,9 @@ export function createStore(dbPath: string): Store {
     // never destroys the machine fence, prose-only saves included — and what is written must
     // re-read byte-identical. No commit: the operator commits (ADR-0010).
     saveRoadmap: async (id: WorkspaceId, md: string): Promise<void> => {
+      // M1: the disconnect refusal precedes the parse guard — a store that resolves nowhere is
+      // the more fundamental refusal, whatever the incoming text.
+      refuseDisconnectedStore(db, id);
       const parsed = parseRoadmapMd(md);
       if (parsed.parseError) {
         const e = parsed.parseError;
@@ -2027,8 +2125,11 @@ export function createStore(dbPath: string): Store {
     // WO-0033: async so the duplicate-basename refusal REJECTS (the deleteWorkspace/addRepoConnection
     // ruling — a sync escape is not a promise the caller can await).
     createWorkspace: async (input: CreateWorkspaceInput): Promise<Workspace> => createWorkspaceRow(db, input),
-    updateWorkspace: (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) =>
-      Promise.resolve(updateWorkspaceRow(db, id, patch)),
+    // M1: async so the re-point refusal REJECTS — the sync escape is not a promise the caller can
+    // await (the deleteWorkspace ruling, verbatim).
+    updateWorkspace: async (id: WorkspaceId, patch: { label?: string; decisionStorePath?: string }) => {
+      await updateWorkspaceRow(db, id, patch);
+    },
     // WO-0032: async so the running-session guard's throw REJECTS — the port is async, and the UI's
     // try/catch (the dialog's error line) depends on the await contract, not a sync escape.
     deleteWorkspace: async (id: WorkspaceId) => {
@@ -2039,8 +2140,10 @@ export function createStore(dbPath: string): Store {
     addRepoConnection: async (id: WorkspaceId, repo: RepoConnectionInput) => {
       addRepoConnectionRow(db, id, repo);
     },
-    removeRepoConnection: (id: WorkspaceId, path: string) =>
-      Promise.resolve(removeRepoConnectionRow(db, id, path)),
+    // M1: async so the decision-store refusal REJECTS (the updateWorkspace ruling above).
+    removeRepoConnection: async (id: WorkspaceId, path: string) => {
+      await removeRepoConnectionRow(db, id, path);
+    },
     repoConnections: (id: WorkspaceId) => Promise.resolve(repoConnectionsRow(db, id)),
     // The observed forge cache (WO-0064): sync writes/reads like the SessionStore half — quick
     // SQLite, no I/O beyond it; the forge itself is reached by the composition root's reconciler.
@@ -2075,6 +2178,7 @@ export function createStore(dbPath: string): Store {
         const why = cwdOverrideRefusal(input.cwd);
         if (why) throw new Error(`createWorkOrder: ${why}`);
       }
+      refuseDisconnectedStore(db, input.workspaceId);
       const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
       const slug = slugify(input.title);
@@ -2096,6 +2200,7 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.issueRef ? { issueRef: input.issueRef } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.trackDependencies
             ? {
@@ -2111,6 +2216,14 @@ export function createStore(dbPath: string): Store {
       appendEvent(db, id as string, 'created', input.title);
       return created;
     },
+    // WO-0092: the issue-link join read — the workspace's own structure root only (one readdir +
+    // one order.md read per WO, the TD-055 shape). Keyed by woId; unlinked WOs are absent.
+    woIssueRefs: (id: WorkspaceId) => {
+      const refs = scanIssueRefs(structureRoot(db, id));
+      const out: Record<string, string> = {};
+      for (const [woId, ref] of refs) out[woId] = ref;
+      return Promise.resolve(out);
+    },
     // Approve the architect's proposed plan (WO-0016): write plan.md into the working tree (no commit)
     // and flip the plan_approval gate. Errors (missing WO dir / fs failure) → rejected promise the UI surfaces.
     approvePlan: async (workOrderId: WorkOrderId, planText: string, opts?: { editedCount?: number }) => {
@@ -2118,6 +2231,7 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) throw new Error(`approvePlan: work order ${workOrderId} not found`);
+      refuseDisconnectedStore(db, wid(wo.workspace_id));
       const dir = structureRoot(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, planText);
       db.prepare('UPDATE work_order SET gate_plan_approved = 1 WHERE id = ?').run(workOrderId);
@@ -2133,6 +2247,7 @@ export function createStore(dbPath: string): Store {
         | { workspace_id: string }
         | undefined;
       if (!wo) throw new Error(`savePlanDraft: work order ${workOrderId} not found`);
+      refuseDisconnectedStore(db, wid(wo.workspace_id));
       const dir = structureRoot(db, wid(wo.workspace_id));
       const current = readWoDocs(dir, workOrderId).plan;
       if (current) {
@@ -2163,6 +2278,7 @@ export function createStore(dbPath: string): Store {
         | { plan_text: string }
         | undefined;
       if (!row) throw new Error(`restoreOriginalPlan: no original plan for ${workOrderId}`);
+      refuseDisconnectedStore(db, wid(wo.workspace_id));
       const dir = structureRoot(db, wid(wo.workspace_id));
       writePlanMdById(dir, workOrderId, row.plan_text);
       appendEvent(db, workOrderId as string, 'plan_saved', 'restored-original');
@@ -2180,6 +2296,7 @@ export function createStore(dbPath: string): Store {
       // "Kapalı iş emri değişmez" reason; the store is the second layer. deleteWorkOrder stays open —
       // archive cleanup is legitimate.
       if (wo.gate_closure_docs_sha != null) throw new Error(`updateWorkOrder: ${workOrderId} is closed`);
+      refuseDisconnectedStore(db, wid(wo.workspace_id));
       const dir = structureRoot(db, wid(wo.workspace_id));
       const { order } = readWoDocs(dir, workOrderId);
       if (!order) throw new Error(`updateWorkOrder: order.md not found for ${workOrderId}`);
@@ -2231,6 +2348,7 @@ export function createStore(dbPath: string): Store {
         steps: stepRows.map((r) => ({ status: r.status as 'pending' | 'active' | 'done' | 'blocked', verdict: (r.verdict ?? undefined) as 'proceed' | 'revise' | undefined })),
       });
       if (!check.ok) throw new Error(`closeWorkOrder: preconditions unmet (${check.reason})`);
+      refuseDisconnectedStore(db, wid(wo.workspace_id));
       const dir = structureRoot(db, wid(wo.workspace_id));
       // The closure sha = the decision-store HEAD at close time ("closed at this commit" — an attestation of
       // WHERE the work stands, not yet the M3 docs-commit gate).

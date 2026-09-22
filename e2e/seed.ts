@@ -808,4 +808,29 @@ writeFileSync(
 );
 console.log(`GENEL=${JSON.stringify({ genel: String(wsGenel.id) })}`);
 
+// 20) WO-0092 — the issue bridge world. 'sorun': the faithful antreo shape — a decision-store
+//     repo (unparseable remote, degraded Depo card) + TWO code repos. 'sorun-api' parses to the
+//     fixture forge repo — under DOCKET_E2E the composition root swaps the gh binary for the
+//     scripted e2e-forge runner (electron/e2e-forge.ts), so the Depo card renders REAL adapter
+//     output against the WO-0081 probe's wire shapes: 4 open issues, the #333 drill-down
+//     carrying a body, the #329 drill-down failing (the degraded refusal path). 'sorun-mobile'
+//     also parses (antreo-app/docs) but its ISSUE list fails — the m4 partial-success pin (the
+//     fold's reason line). The decision store IS a connected repo (the structureRoot invariant —
+//     a store that is no connection would fall back to process.cwd(), the app's own repo).
+//     Pre-seeded past every existing id (the global work_order PK — the WO-0090 pattern).
+const repoSorunDocs = join(root, 'sorun-docs');
+mkdirSync(join(repoSorunDocs, 'docs', 'work-orders', 'WO-0095-tohum'), { recursive: true });
+const repoSorunApi = join(root, 'sorun-api');
+const repoSorunMobile = join(root, 'sorun-mobile');
+const wsSorun = await store.createWorkspace({
+  label: 'sorun',
+  repos: [
+    { path: repoSorunDocs, remote: 'e2e-sorun-docs' },
+    { path: repoSorunApi, remote: 'https://github.com/antreo-app/api' },
+    { path: repoSorunMobile, remote: 'https://github.com/antreo-app/docs' },
+  ],
+  decisionStorePath: repoSorunDocs,
+});
+console.log(`SORUN=${JSON.stringify({ sorun: String(wsSorun.id) })}`);
+
 console.log(`DB=${join(root, 'e2e.db')}`);

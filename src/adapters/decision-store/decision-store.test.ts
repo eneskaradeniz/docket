@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readWoDocs, writeOrderMd, writePlanMdById, writeRoadmapMd } from './decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readWoDocs, scanIssueRefs, writeOrderMd, writePlanMdById, writeRoadmapMd } from './decision-store';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -178,6 +178,31 @@ describe('buildOrderMd — taskRef (WO-0048: the roadmap link lives only in orde
   it('omits the key entirely when unlinked (minimal front-matter)', () => {
     const md = buildOrderMd(base);
     expect(md).not.toContain('task:');
+  });
+});
+
+describe('buildOrderMd + scanIssueRefs — issueRef (WO-0092: the forge-issue link lives only in order.md)', () => {
+  const base = { id: 'WO-0092', title: 'Sorundan iş', workspaceSlug: 'docket', description: 'Fix.', trackRepos: ['app'], reviewMode: 'gates' as const, contextFiles: [] };
+
+  it('emits issue: after task:, before cwd:/tracks — the taskRef idiom verbatim', () => {
+    const md = buildOrderMd({ ...base, taskRef: 'f1-t3', issueRef: 'antreo-app/api#333' });
+    expect(md).toContain('task: f1-t3\nissue: antreo-app/api#333\ntracks:');
+  });
+
+  it('omits the key when unlinked; the task link alone keeps the old bytes', () => {
+    expect(buildOrderMd(base)).not.toContain('issue:');
+    const md = buildOrderMd({ ...base, taskRef: 'f1-t3' });
+    expect(md).toContain('task: f1-t3\ntracks:');
+  });
+
+  it('scanIssueRefs: one readdir + one read per WO — {woId → ref}, unlinked WOs absent, missing dir → empty', () => {
+    const r = root();
+    writeOrderMd(r, 'WO-0001', 'linked', `---\nid: WO-0001\ntitle: A\nissue: antreo-app/api#333\n---\n\n# WO-0001\n`);
+    writeOrderMd(r, 'WO-0002', 'unlinked', `---\nid: WO-0002\ntitle: B\n---\n\n# WO-0002\n`);
+    const refs = scanIssueRefs(r);
+    expect(refs.get('WO-0001')).toBe('antreo-app/api#333');
+    expect(refs.has('WO-0002')).toBe(false);
+    expect(scanIssueRefs(join(r, 'yok'))).toEqual(new Map());
   });
 });
 

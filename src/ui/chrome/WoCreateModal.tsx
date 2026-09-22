@@ -8,6 +8,15 @@ import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../k
 import { toast } from './ToastHost';
 import type { WoSpawnPrefill } from '../components/roadmap/TaskRow';
 
+// WO-0092: the issue spawn's data seed — the drill-down's body rides `body` ONCE here and goes
+// straight into order.md's Objective (the operator's own document); nothing is cached.
+export interface WoIssuePrefill {
+  ref: string; // 'owner/repo#N' — written as order.md `issue:` front-matter (the task: idiom)
+  title?: string; // absent = the wire carried none; the operator types one (the form gate)
+  body?: string;
+  repo?: string; // the forge repo name; matched against the track slugs (the seededTracks logic)
+}
+
 const base = (p: string): string => {
   let s = p;
   while (s.endsWith('/')) s = s.slice(0, -1);
@@ -27,6 +36,7 @@ export function WoCreateModal({
   source,
   defaultRule,
   prefill,
+  issuePrefill,
   onClose,
   onCreated,
 }: {
@@ -37,6 +47,9 @@ export function WoCreateModal({
   /** WO-0049 (mockup kare 06): the roadmap task's spawn seed — the uneditable context line + the
    *  seeded fields + `task:` into order.md. Undefined = the plain board flow, untouched. */
   prefill?: WoSpawnPrefill;
+  /** WO-0092: the issue spawn's seed — the context line + title/body seeds + `issue:` into
+   *  order.md. SEEDS, not locks; the operator edits before save (never a silent write). */
+  issuePrefill?: WoIssuePrefill;
   onClose: () => void;
   /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
   onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
@@ -51,13 +64,17 @@ export function WoCreateModal({
   // WO-0049: the spawn seeds title/description/tracks — SEEDS, not locks; everything stays editable
   // ("gerisi bugünkü akışın aynısı"). The repo compare is a plain string compare against branded ids
   // — no identity constructor runs in ui (ADR-0003); an unresolvable seed leaves all tracks on, the
-  // plain default.
-  const seededTracks = prefill?.repo !== undefined && trackOptions.some((r) => (r as string) === prefill.repo)
-    ? trackOptions.filter((r) => (r as string) === prefill.repo)
+  // plain default. WO-0092: the issue spawn's repo seed rides the same string compare.
+  const seedRepo = prefill?.repo ?? issuePrefill?.repo;
+  const seededTracks = seedRepo !== undefined && trackOptions.some((r) => (r as string) === seedRepo)
+    ? trackOptions.filter((r) => (r as string) === seedRepo)
     : trackOptions;
-  const [title, setTitle] = useState(prefill?.title ?? '');
-  const [description, setDescription] = useState(prefill?.note ?? '');
-  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(prefill !== undefined ? seededTracks : trackOptions);
+  const spawnSeeded = prefill !== undefined || issuePrefill !== undefined;
+  const [title, setTitle] = useState(prefill?.title ?? issuePrefill?.title ?? '');
+  const [description, setDescription] = useState(prefill?.note ?? issuePrefill?.body ?? '');
+  // WO-0092 fix round (m2): the issue spawn's repo seed applies like the roadmap spawn's — a
+  // spawn-seeded dialog mounts with the SEEDED tracks, never the plain all-tracks default.
+  const [selectedTracks, setSelectedTracks] = useState<RepoId[]>(spawnSeeded ? seededTracks : trackOptions);
   // WO-0071: per-track depends_on picks — the track's RepoId keyed by its string form (a plain
   // string compare against branded ids, the seededTracks precedent; no identity constructor in ui).
   const [depSelection, setDepSelection] = useState<Record<string, RepoId[]>>({});
@@ -139,6 +156,8 @@ export function WoCreateModal({
         permissionRule,
         // WO-0049: the task→WO link — the task identity, written regardless of the track selection.
         ...(prefill !== undefined ? { taskRef: prefill.taskId } : {}),
+        // WO-0092: the issue→WO link — the `owner/repo#N` ref, written regardless of the tracks.
+        ...(issuePrefill !== undefined ? { issueRef: issuePrefill.ref } : {}),
         ...(picked.length > 0 ? { trackDependencies: picked } : {}),
         ...(cwd.trim() !== '' ? { cwd: cwd.trim() } : {}),
       });
@@ -178,6 +197,17 @@ export function WoCreateModal({
           >
             <span className="font-mono text-[10.5px] tracking-wide text-signal">
               {UI.roadmapSpawnContext(fazLabel(prefill.fazId), prefill.ordinal, prefill.title, prefill.repo)}
+            </span>
+          </div>
+        ) : null}
+        {issuePrefill !== undefined ? (
+          // WO-0092: the issue spawn's ONE uneditable origin line; the seeded fields stay editable.
+          <div
+            data-issue-context
+            className="flex items-center gap-2 rounded-md border border-hairline bg-bg px-2.5 py-1.5"
+          >
+            <span className="font-mono text-[10.5px] tracking-wide text-signal">
+              {UI.issueSpawnContext(issuePrefill.ref)}
             </span>
           </div>
         ) : null}

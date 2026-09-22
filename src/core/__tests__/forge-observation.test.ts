@@ -22,6 +22,8 @@ const fakeForge = (impl: {
   checks?: (r: RepoRef, sha: string) => { name: string; status: string }[] | Promise<{ name: string; status: string }[]>;
   failPrs?: ForgeError;
   failChecksSha?: string;
+  issues?: (r: RepoRef) => { number: number; title?: string; state: 'open' | 'closed' }[] | Promise<{ number: number; title?: string; state: 'open' | 'closed' }[]>;
+  failIssues?: ForgeError;
 }) => ({
   health: () => Promise.resolve('ok' as const),
   pullRequests: async (r: RepoRef) => {
@@ -42,6 +44,20 @@ const fakeForge = (impl: {
     return (await impl.checks?.(r, sha)) ?? [];
   },
   searchPullRequests: () => Promise.resolve([]),
+  // WO-0092: the issue bridge — the reconciler reads ONE open page per repo beside the PRs.
+  issues: async (r: RepoRef) => {
+    if (impl.failIssues) throw impl.failIssues;
+    return (await impl.issues?.(r) ?? []).map((i) => ({
+      number: i.number,
+      repo: r,
+      state: i.state,
+      url: `https://example.test/o/issues/${i.number}`,
+      labels: [],
+      ...(i.title !== undefined ? { title: i.title } : {}),
+    }));
+  },
+  issue: () => Promise.reject(new ForgeError('not implemented in the reconcile fake')),
+  milestones: () => Promise.resolve([]),
 });
 
 interface Recorded {
@@ -169,6 +185,60 @@ describe('reconcileWorkspaceForge (WO-0064)', () => {
     expect(rec.degraded).toEqual([]);
     expect(rec.scans[0]!.scan.prs).toEqual([]);
     expect(rec.scans[0]!.scan.checks).toEqual([]);
+    expect(rec.scans[0]!.scan.issues).toEqual([]); // WO-0092: the issue page rides the same scan record
+  });
+});
+
+// ===== WO-0092 — the issue page rides the reconciliation =====
+describe('reconcileWorkspaceForge — the issue page (WO-0092)', () => {
+  it('the scan records the open issue page beside the PRs — one page per repo, same scan record', async () => {
+    const { rec } = sink();
+    await run(
+      [target('https://github.com/o/r1.git', ref('r1'))],
+      fakeForge({
+        prs: () => [{ number: 1, headSha: 'sha-1' }],
+        issues: () => [{ number: 333, state: 'open', title: 'OTP paketi' }, { number: 331, state: 'open' }],
+      }),
+      rec,
+    );
+    expect(rec.degraded).toEqual([]);
+    const scan = rec.scans[0]!.scan;
+    expect(scan.issues.map((i) => i.number)).toEqual([333, 331]);
+    expect(scan.issues[0]!.repo).toEqual({ owner: 'o', name: 'r1' });
+    expect(scan.issues[0]!.title).toBe('OTP paketi');
+    expect('title' in scan.issues[1]!).toBe(false);
+  });
+
+  it('an issue-read failure is a PARTIAL success — the PR/checks page records, the failure rides the scan', async () => {
+    const { rec } = sink();
+    await run(
+      [target('https://github.com/o/r1.git', ref('r1'))],
+      fakeForge({ prs: () => [{ number: 1, headSha: 'sha-1' }], failIssues: new ForgeError('gh: Issues are disabled for this repository') }),
+      rec,
+    );
+    // WO-0092 fix round (m4): the issue page no longer widens its failure over the PR cache —
+    // a fresh PR page with a failed issue look beats a degraded-everything row.
+    expect(rec.degraded).toEqual([]);
+    expect(rec.scans).toHaveLength(1);
+    const scan = rec.scans[0]!.scan;
+    expect(scan.prs.map((p) => p.number)).toEqual([1]);
+    expect(scan.issues).toEqual([]);
+    expect(scan.issueError).toBe('gh: Issues are disabled for this repository');
+  });
+
+  it('the other repos proceed when one repo’s issues die — the per-repo isolation holds for issues', async () => {
+    const { rec } = sink();
+    await run(
+      [target('https://github.com/o/dead.git', ref('dead')), target('https://github.com/o/live.git', ref('live'))],
+      fakeForge({
+        issues: (r) => (r.name === 'dead' ? Promise.reject(new ForgeError('dead issues')) : Promise.resolve([{ number: 9, state: 'open' }])),
+      }),
+      rec,
+    );
+    expect(rec.scans.map((s) => s.remote).sort()).toEqual(['https://github.com/o/dead.git', 'https://github.com/o/live.git']);
+    const dead = rec.scans.find((s) => s.remote === 'https://github.com/o/dead.git')!.scan;
+    expect(dead.issueError).toBe('dead issues');
+    expect(rec.scans.find((s) => s.remote === 'https://github.com/o/live.git')!.scan.issueError).toBeUndefined();
   });
 });
 
