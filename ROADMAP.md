@@ -683,6 +683,35 @@ diet, the plan.md embed diet.
       the tool verb), ambient/`local_bash` tasks never render. Spec:
       `docs/work-orders/WO-0055-canli-ajan-gorunurlugu/order.md`.
 
+## M9 — Paralel (the wave spine)
+
+The antreo wave (N issues → worktrees → parallel sessions across two CLIs) becomes Docket's own
+shape: N work orders + a ✦ draft driving at once, each in its own working copy. Discovery round
+2026-09-21/22: the four single-drive layers measured and keyed; the wave's remaining pieces queued
+below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091).
+
+- [x] **WO-0088** — the parallel spine (PR #93, merge `6138f03`, 2026-09-22): one active drive per
+      owner (work order / ✦ draft), N owners in parallel, a WO's own steps still serial. The four
+      layers keyed by `driveOwnerTag` — per-drive runner instances at the composition root (the
+      adapter untouched; the port gained four optional keyed methods), the tag riding every
+      `docket:runner:event`, keyed steer/interrupt/decide in the pipeline, the renderer drive-store
+      a Map of active keys. Per-WO cwd override: order.md front-matter `cwd:` (validated; the fence
+      jails to that root). The ask card names its WO. The review round's M1 (a dead-key Durdur
+      falling through to the last-started sibling) closed red→green in-PR. 1141 unit · E2E 105/105
+      incl. the multi-drive spec. Order:
+      `docs/work-orders/WO-0088-paralel-omurga/order.md`.
+- [ ] **WO-0089** — the local gate: a CI exemption needs a substitute, not a hole — Docket runs the
+      repo's gate commands and records what it measured (drafted by the WO-0088 round).
+- [ ] **WO-0090** — the briefing resolves before it ships: stale context caught at assembly, not
+      mid-drive (drafted by the WO-0088 round).
+- [ ] **WO-0091** — the stall gate: a live drive that stops making progress becomes the operator's
+      turn (drafted by the WO-0088 round; touches WO-0046's informs-never-acts line — ADR round owed).
+- [ ] **WO-0092** — probe: the `agy` stream-json surface against the ADR-0014 bar (cost? permission
+      holds answerable in print mode? plan gate? steering?).
+- [ ] **WO-0093** — the issue bridge: the WO-0081 report's frozen contract (`issue:` front-matter +
+      the 3-call read).
+- [ ] **WO-0094** — the second vendor adapter (Antigravity), if the WO-0092 probe passes.
+
 ## Later
 
 - Packaging and distribution

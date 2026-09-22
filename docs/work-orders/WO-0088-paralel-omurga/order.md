@@ -2,7 +2,7 @@
 id: WO-0088
 title: "The parallel spine — N work orders driving at once, each in its own working copy"
 workspace: docket
-status: open
+status: closed
 mode: direct # plan | direct
 review: full # light | full
 review_mode: gates
@@ -100,3 +100,25 @@ WO; per-workspace prompt overrides.
   findings kept 0089-0091 — the WO-0082 precedent, the number goes to whoever lands): the
   `agy` stream-json probe (WO-0092) → the issue bridge (WO-0093, the WO-0081 contract) →
   the second adapter (WO-0094) if the probe passes.
+
+## Closure (2026-09-22)
+
+- The four single-drive layers keyed by the owner tag (`driveOwnerTag`): per-drive runner
+  instances at the composition root (the adapter untouched; the `SessionRunner` port gained
+  four OPTIONAL keyed methods — additive, ADR-0014's substance holds), the tag on every
+  `docket:runner:event`, keyed steer/interrupt/decide in the pipeline, the renderer
+  drive-store holding a Map of active keys. Per-WO cwd override via order.md front-matter
+  `cwd:` (validated absolute, store-side fail-fast; the fence jails to that root). The ask
+  card names its work order (`data-ask-subject`).
+- The independent review round (ladder re-run in the review) found ONE major — a dead-key
+  Durdur/abort fell through to the unkeyed path and could stop the last-STARTED sibling;
+  closed red→green in the same PR (`219ec11`). Minors folded: the limit voice reads the
+  last-TOUCHED drive, stale single-drive comments rewritten, cwd fail-fast validation with
+  form-error + store refusal tests, the E2E subject-chip pin made element-level, the PR
+  body's port wording made honest. Noted-not-fixed: the dead `pendingAsks` aggregate, the
+  spawn-time budget TOCTOU (order.md Notes accepted it).
+- Ladder at merge: typecheck ×2 · unit 1141/1141 · boundaries clean · build · E2E 105/105
+  including the new multi-drive spec — two full runs, the second after the fix round.
+- PR #93 (https://github.com/eneskaradeniz/docket/pull/93), head `219ec11`, merged `6138f03`;
+  closed at the commit carrying this line.
+- The operator's manual tour is deferred to the standing test phase (BUILD-FIRST, 2026-09-19).
