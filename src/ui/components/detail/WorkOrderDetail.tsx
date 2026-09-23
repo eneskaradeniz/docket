@@ -7,7 +7,7 @@ import type { TurnState } from '../../../core/derive';
 import { derivePhase, deriveSessionAudit, deriveTurnState, nextManuelAction } from '../../../core/derive';
 import { applyStepEdits, moveStep, parsePlanSteps } from '../../../core/plan-steps';
 import { parseOrderMd } from '../../../core/order-md';
-import type { PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
+import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput } from '../../../core/source';
 import type { WorkspaceBudgetView } from '../../../core/budget';
 import type { RepoChanges } from '../../../core/console';
 import { useLabels } from '../../data/locale';
@@ -16,6 +16,7 @@ import { toast } from '../../chrome/ToastHost';
 import { EnterMark } from '../EnterMark';
 import { ActionCard } from './ActionCard';
 import { buildRecordSections, RecordStack } from './DetailSections';
+import { BriefingLine } from './BriefingLine';
 import type { ChangesBridge } from './ChangesSection';
 import { DetailStrip } from './DetailStrip';
 import { BudgetRefusalCard } from './BudgetRefusalCard';
@@ -89,6 +90,7 @@ export function WorkOrderDetail({
   issueChip,
   onOpenIssueExternal,
   changes: changesBridge,
+  briefingCheck,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -124,6 +126,10 @@ export function WorkOrderDetail({
   /** WO-0068: the operator's console bridge (the optional `changes` group) — present only when
    *  the composition root wired the console; the section is absent without it. */
   changes?: ChangesBridge;
+  /** WO-0090: the briefing check — order.md's pointers resolved read-at-sha at each repo's HEAD,
+   *  loaded at detail open (the pre-drive moment). undefined = nothing checkable; all-resolving
+   *  renders nothing (the no-noise pin). */
+  briefingCheck?: BriefingCheck;
 }) {
   const { PROVIDER_ERROR_LABELS, ROLE_LABELS, formatCost, formatUsd, transcriptLineText, UI, woIdLabel } = useLabels();
   // The step currently being driven. Auto-sequencing (gates cadence): on approval the first pending step runs,
@@ -1037,6 +1043,18 @@ export function WorkOrderDetail({
   ) : null;
   const limitOpen = limitCard !== null;
 
+  // WO-0090 — the pre-drive briefing line: order.md's pointers that resolve at NO checked repo
+  // sha (each root at its HEAD — the sha a fresh drive starts from) speak here, beneath the
+  // moment cards (asks/refusals own the moment), above the dispatch decisions. Absent when there
+  // is nothing to say — zero pointers, all-resolving, no checkable repo; never a standing zero
+  // (WO-0053's rule) — and while a drive is live or the WO is closed (no drive starts from this
+  // surface then). A SURFACE, never a block: the briefing may legitimately name a file the work
+  // will create; the operator decides with the miss named.
+  const briefingLine =
+    briefingCheck && briefingCheck.unresolved.length > 0 && detail.stage !== 'closed' && !driveLive ? (
+      <BriefingLine check={briefingCheck} />
+    ) : null;
+
   // The decision surfaces (was Faz B's action-card branch + the report reader + the verdict card).
   const decision = (
     <div className="flex flex-col gap-3">
@@ -1044,6 +1062,7 @@ export function WorkOrderDetail({
       {refusalCard}
       {limitCard}
       {failCard}
+      {briefingLine}
 
       {objectionOpen ? (
         // WO-0039 (2026-08-23 fifth pass) — the objection layer redesigned in the current idiom:

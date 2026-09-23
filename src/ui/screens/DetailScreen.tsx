@@ -1,5 +1,5 @@
 import type { StepRole, WorkOrderDetailView } from '../../core/types';
-import type { PermissionRule, UpdateWorkOrderInput } from '../../core/source';
+import type { BriefingCheck, PermissionRule, UpdateWorkOrderInput } from '../../core/source';
 import type { WorkspaceBudgetView } from '../../core/budget';
 import type { ChangesBridge } from '../components/detail/ChangesSection';
 import { WorkOrderDetail } from '../components/detail/WorkOrderDetail';
@@ -33,6 +33,7 @@ export function DetailScreen({
   issueChip,
   onOpenIssueExternal,
   changes,
+  briefingCheck,
 }: {
   detail: WorkOrderDetailView;
   docs: { order: string; plan: string };
@@ -68,6 +69,8 @@ export function DetailScreen({
   onOpenIssueExternal?: (url: string) => void;
   /** WO-0068: the operator's console bridge (the optional `changes` group), straight through. */
   changes?: ChangesBridge;
+  /** WO-0090: the briefing check (order.md pointers at the drive-start sha), straight through. */
+  briefingCheck?: BriefingCheck;
 }) {
   return (
     <main className="mx-auto flex h-[calc(100vh-3rem)] w-full max-w-[1160px] flex-col overflow-hidden px-5 pb-3.5 pt-2.5">
@@ -97,6 +100,7 @@ export function DetailScreen({
         issueChip={issueChip}
         onOpenIssueExternal={onOpenIssueExternal}
         changes={changes}
+        briefingCheck={briefingCheck}
       />
     </main>
   );

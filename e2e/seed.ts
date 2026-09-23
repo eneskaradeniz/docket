@@ -1,6 +1,7 @@
 // e2e/seed.ts — builds a throwaway workspace + WOs across stages for the UI driver (WO-0031).
 // Run via tsx: prints `DB=<path>` for the driver. Never touches the operator's real db/repo.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -832,5 +833,32 @@ const wsSorun = await store.createWorkspace({
   decisionStorePath: repoSorunDocs,
 });
 console.log(`SORUN=${JSON.stringify({ sorun: String(wsSorun.id) })}`);
+
+// 21) WO-0090 — the briefing world. 'brifing': a GIT decision store (the only kind the briefing
+//     check can look at — every other seeded repo is a plain dir, so their checks stay honestly
+//     undefined and no line renders anywhere else in the suite). Three WOs: STALE (one resolving
+//     pointer + one missing — the line names both the pointer and the checked sha), CLEAN (only
+//     the resolving pointer — nothing renders), PLAIN (zero pointers — absent, never a failure).
+//     Own store root, pre-seeded past every id ANY runtime flow mints too (the global work_order
+//     PK): the sorun world's runtime spawns top out at WO-0098, so the tohum sits at WO-0099 and
+//     these rows take WO-0100+ — a lower tohum made the batch spec's retry hit a PK collision.
+const repoBrifing = join(root, 'brifing-store');
+mkdirSync(join(repoBrifing, 'docs', 'work-orders', 'WO-0099-tohum'), { recursive: true });
+mkdirSync(join(repoBrifing, 'src'), { recursive: true });
+writeFileSync(join(repoBrifing, 'src', 'a.ts'), 'export {};\n');
+execFileSync('git', ['-C', repoBrifing, 'init', '-q']);
+execFileSync('git', ['-C', repoBrifing, 'add', '-A']);
+execFileSync('git', ['-C', repoBrifing, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'seed']);
+const wsBrifing = await store.createWorkspace({
+  label: 'brifing',
+  repos: [{ path: repoBrifing, remote: 'e2e-brifing' }],
+  decisionStorePath: repoBrifing,
+});
+const mkB = (title: string, description: string) =>
+  store.createWorkOrder({ workspaceId: wsBrifing.id, title, description, trackRepos: wsBrifing.repos, reviewMode: 'gates', contextFiles: [] });
+await mkB('Brifing bayat', 'E2E: the stale briefing. src/a.ts:1 resolves; lib/kayip.dart:9 does not.');
+await mkB('Brifing temiz', 'E2E: the clean briefing. src/a.ts:1 resolves.');
+await mkB('Brifing sade', 'E2E: zero pointers, prose only. Saat 12:30.');
+console.log(`BRIFING=${JSON.stringify({ ws: String(wsBrifing.id) })}`);
 
 console.log(`DB=${join(root, 'e2e.db')}`);

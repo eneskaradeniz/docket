@@ -616,6 +616,12 @@ export const UI = {
     'tool-missing': 'A required tool is not installed on this machine',
     unknown: 'Could not be observed',
   },
+  // WO-0090 — the briefing check line: order.md's pointers missing at the checked revision speak
+  // BEFORE the drive (a surface, never a block). The first pointer rides the line with the count;
+  // the full list + the checked revisions ride the tooltip.
+  briefingStaleLead: 'Not in the briefing’s revision',
+  briefingStaleMore: (n: number) => `+${n} more`,
+  briefingStaleAt: (at: string) => `checked at: ${at}`,
   // WO-0066 — the health strip: three dependencies, one row (ADR-0010 «health is a first-class,
   // visible state»). The first-run gate speaks ADR-0001's absence grammar: action absent + the
   // reason line, never a disabled control.

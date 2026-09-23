@@ -547,6 +547,8 @@ ipcMain.handle('docket:source:restore-original-plan', (_e, id: WorkOrderId) => s
 // --- Step list + reports (WO-0017). The step specs are parsed from plan.md's ```steps fence; reports are
 //   read from the decision store at view time (ADR-0010). Path resolution stays server-side (ADR-0001). ---
 ipcMain.handle('docket:source:get-work-order-steps', (_e, id: WorkOrderId) => store.getWorkOrderSteps(id));
+// WO-0090 — the briefing check: order.md's pointers resolved read-at-sha (git lives main-side).
+ipcMain.handle('docket:source:briefing-check', (_e, id: WorkOrderId) => store.briefingCheck(id));
 ipcMain.handle('docket:source:get-step-report', (_e, id: WorkOrderId, idx: number, role: StepRole) => store.getStepReport(id, idx, role));
 
 // --- Step verdict + reset (WO-0020). The verdict text is read at view time; reset deletes the observed row. ---

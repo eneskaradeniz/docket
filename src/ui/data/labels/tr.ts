@@ -714,6 +714,12 @@ export const UI = {
     'tool-missing': 'Gerekli araç bulunamadı — bu makinede kurulu değil',
     unknown: 'İzlenemedi',
   },
+  // WO-0090 — brifing kontrol satırı: brifingin (order.md) işaretleri bakılan sürümde yoksa
+  // sürüşten ÖNCE konuşur (yüzey, asla engel değil — brifing işin yaratacağı dosyayı gösterebilir).
+  // İlk işaret satırda, kalan sayı yanında; tam liste + bakılan sürümler ipucunda.
+  briefingStaleLead: 'Brifingde yok',
+  briefingStaleMore: (n: number) => `+${n} işaret`,
+  briefingStaleAt: (at: string) => `bakılan sürüm: ${at}`,
   // WO-0066 — sağlık yüzeyi: üç bağımlılık tek şerit (ADR-0010 «sağlık birinci sınıf görünür
   // durumdur»). İlk-koşu kapısı ADR-0001'in yokluk dilini konuşur: eylem yok + neden satırı.
   healthTitle: 'Sağlık',
