@@ -21,10 +21,11 @@ import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, resolvePointers, validateTrackDependencies, type ObservedStep } from '../../core/derive';
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { BriefingCheck, CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
-import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
+import type { RecordSessionInput, SessionOwner, SessionStore, PendingFinding } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, readWorkspaceYaml, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
+import { parseFindings } from '../../core/findings';
 import type { ClosureEvidence, ForgeIssueRow, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
@@ -400,6 +401,7 @@ function hydrateWorkOrder(db: DatabaseSync, id: string): WorkOrder | undefined {
     cost,
     sources: hydrateSources(db, id),
     ...(closeable ? { closeable: true } : {}),
+    pendingFindings: db.prepare('SELECT id, repo, pointer, problem, source_session_id as sourceSessionId, created_at as createdAt FROM pending_finding WHERE work_order_id = ? ORDER BY id ASC').all(id) as unknown as PendingFinding[],
   };
 }
 
@@ -1885,6 +1887,18 @@ function recordStepReportRow(db: DatabaseSync, workOrderId: WorkOrderId, idx: nu
   if (!dir) throw new Error(`recordStepReport: no decision-store dir for ${workOrderId}`);
   const reportPath = writeStepReport(dir, workOrderId, idx, role, body);
   recordStepRow(db, workOrderId, idx, { status: 'done', reportPath });
+
+  // WO-0099: Parse findings at record time and store them.
+  const findings = parseFindings(body);
+  if (findings.length > 0) {
+    const sessionRow = db.prepare('SELECT id FROM session WHERE work_order_id = ? AND step_idx = ? ORDER BY id DESC LIMIT 1').get(workOrderId, idx) as { id: number } | undefined;
+    if (sessionRow) {
+      const insert = db.prepare('INSERT OR IGNORE INTO pending_finding (work_order_id, repo, pointer, problem, source_session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+      const now = new Date().toISOString();
+      for (const f of findings) insert.run(workOrderId, f.repo, f.path, f.problem, sessionRow.id, now);
+    }
+  }
+
   // WO-0069: the verification gate is a COMPUTATION at record time, not a closure-time `= 1`
   // attestation. The verifier report's `path:line` pointers are extracted (core's extractPointers)
   // and resolved against the WO's repo roots: every pointer resolvable → 1, any miss → 0.
@@ -2164,6 +2178,26 @@ export function createStore(dbPath: string): Store {
       roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths, freeExplore),
     saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }) =>
       saveRoadmapDraftRow(db, workspaceId, md, opts),
+    pendingFindingsFor: (workOrderId: WorkOrderId) => {
+      return db.prepare('SELECT id, repo, pointer, problem, source_session_id as sourceSessionId, created_at as createdAt FROM pending_finding WHERE work_order_id = ? ORDER BY id ASC').all(workOrderId) as unknown as PendingFinding[];
+    },
+    deletePendingFinding: (id: number) => {
+      db.prepare('DELETE FROM pending_finding WHERE id = ?').run(id);
+    },
+    dismissPendingFinding: async (workOrderId: WorkOrderId, id: number) => {
+      const finding = db.prepare('SELECT repo, pointer FROM pending_finding WHERE id = ?').get(id) as { repo: string; pointer: string } | undefined;
+      if (finding) {
+        db.prepare("INSERT INTO wo_event (work_order_id, kind, detail, at) VALUES (?, 'finding_dismissed', ?, ?)").run(
+          workOrderId,
+          `${finding.repo} — ${finding.pointer}`,
+          new Date().toISOString()
+        );
+      }
+      db.prepare('DELETE FROM pending_finding WHERE id = ?').run(id);
+    },
+    consumePendingFinding: async (id: number) => {
+      db.prepare('DELETE FROM pending_finding WHERE id = ?').run(id);
+    },
     clearRoadmapDraft: (workspaceId: WorkspaceId) => {
       db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(workspaceId);
     },

@@ -807,6 +807,8 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
       <DetailScreen
         detail={toDetailView(detail.wo, detail.steps, parsedOrder.reviewMode, parsedOrder.flowMode)}
         docs={detail.docs}
+        source={source}
+        workspace={workspaces.find(w => w.id === workspaceId)!}
         permissionRule={orderMdCarriesRule(detail.docs.order) ? parsedOrder.permissionRule : defaultRule}
         onBack={() => setSelectedId(null)}
         onApprovePlan={handleApprovePlan}

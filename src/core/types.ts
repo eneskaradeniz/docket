@@ -4,6 +4,8 @@
 // three-valued evidence (AC12) and a CardReason that carries the default case (AC13).
 // Core returns structured data only — every fixed human string lives in src/ui/data/labels.ts.
 
+import type { PendingFinding } from './session-store';
+
 // --- Identifiers: branded. Components pass and compare them but cannot construct literals
 //     (a bare project-id string will not typecheck against a WorkspaceId). Only the adapter
 //     constructs them — fixtures now, workspace.yaml/git in M3. ADR-0003 rule 1, structurally. ---
@@ -396,6 +398,8 @@ export interface WorkOrder {
   // (ADR-0010 rule 2 — same as `stage`/`cost`, never stored). The board's honest "the Kapat card
   // is live" signal; undefined = not closable.
   closeable?: boolean;
+  // WO-0099: pending findings parsed from step reports.
+  pendingFindings?: PendingFinding[];
 }
 
 // ===== DERIVED VIEWS (pure functions in core; structured data, no display strings) =====
@@ -498,4 +502,5 @@ export interface WorkOrderDetailView {
   primaryAction: PrimaryAction;
   sources: SourceLink[];
   cost: CostSummary;
+  pendingFindings?: PendingFinding[];
 }

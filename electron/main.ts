@@ -313,6 +313,12 @@ ipcMain.handle('docket:source:create-work-order', (_e, input: CreateWorkOrderInp
 ipcMain.handle('docket:source:wo-issue-refs', (_e, id: WorkspaceId) => store.woIssueRefs(id));
 
 // --- Work-order EDITING + permission-decision audit (WO-0031c). order.md rewrite stays store-side. ---
+ipcMain.handle('docket:source:dismiss-pending-finding', (_e, workOrderId: WorkOrderId, id: number) => {
+  return store.dismissPendingFinding(workOrderId, id);
+});
+ipcMain.handle('docket:source:consume-pending-finding', (_e, id: number) => {
+  return store.consumePendingFinding(id);
+});
 ipcMain.handle('docket:source:update-work-order', (_e, id: WorkOrderId, patch: UpdateWorkOrderInput) => store.updateWorkOrder(id, patch));
 ipcMain.handle(
   'docket:source:record-permission-decision',

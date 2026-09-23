@@ -1027,6 +1027,14 @@ export const UI = {
   toastRuleSaved: 'Rule saved',
   toastRuleSavedBody: 'full auto for this work order',
   titlePending: (n: number) => `(${n}) waiting for permission`,
+  
+  findingProposalTitle: 'Finding proposal',
+  findingProposalConfirm: (count: number) => `Create ${count} work order${count > 1 ? 's' : ''}`,
+  findingProposalDismiss: 'Dismiss',
+  findingProposalLocked: 'not connected',
+  findingProposalLocation: (repo: string, pointer: string) => `${repo} — ${pointer}`,
+  findingProposalDescription: (repo: string, pointer: string, woId: string, sessionId: number, problem: string) =>
+    `Finding:\n\n${repo} — ${pointer}\n\n(Found during ${woId} by Session ${sessionId}.)\n\n${problem}`,
   createAndPlan: 'Create and request a plan',
   wsDelete: 'Delete the workspace',
   wsDeleteHint: (n: number) => n > 0

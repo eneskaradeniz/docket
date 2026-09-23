@@ -255,6 +255,14 @@ function stepScopeText(scope: StepScope): string {
   return scope.kind === 'all' ? 'all' : scope.ref;
 }
 
+const FINDINGS_INSTRUCTION = `If you spot a problem outside your track's scope (e.g. in another repo) or a distinct follow-up issue, do NOT attempt to fix it now. Instead, append a \`\`\`bulgular\`\`\` block to the end of your report containing a JSON array of your findings. Example:
+\`\`\`bulgular
+[
+  { "repo": "api", "path": "src/routes/auth.ts:15", "problem": "Missing rate limit" }
+]
+\`\`\`
+Docket will parse these and propose them to the operator as new work orders.`;
+
 export function implementerPrompt(input: StepPromptInput): string {
   return [
     `You are the implementer for step ${input.step.idx} of this work order.`,
@@ -278,6 +286,7 @@ export function implementerPrompt(input: StepPromptInput): string {
       : []),
     ``,
     `Work autonomously to implement this step within your scope. When you are done, end your turn with a concise report in MARKDOWN (use ## headings and bullet lists): what you changed, the files you touched, and any concerns for the verifier. That report is saved as this step's outcome.`,
+    FINDINGS_INSTRUCTION,
     ``,
     `Git discipline (ADR-0017): work on a FEATURE branch named after this work order — wo-<NNNN>-<short-slug>, derived from the id in order.md (create it if it does not exist; never work on, push to, or merge into main). Commit this step's work with clear messages. When committed: push the branch, and if the work order has no open pull request yet, open one whose title starts EXACTLY with this work order's id (e.g. "WO-0042 — <one-line summary>") — the title is the link Docket records. Pushing and creating the PR are witnessed actions: expect a permission ask, and never work around it.`,
   ].join('\n');
@@ -296,6 +305,7 @@ export function verifierPrompt(input: StepPromptInput): string {
     input.planText || '(see plan.md)',
     ``,
     `Verify the work for this step within your scope (read-only — you do not edit code). When you are done, end your turn with a concise report in MARKDOWN (## headings, bullet lists, and a table for checklists): what you checked, what passed, what failed or is uncertain, and any path:line evidence. That report is saved as this step's outcome.`,
+    FINDINGS_INSTRUCTION,
   ].join('\n');
 }
 

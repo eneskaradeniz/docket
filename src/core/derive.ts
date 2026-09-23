@@ -749,6 +749,7 @@ export function toDetailView(
     primaryAction: derivePrimaryAction(wo),
     sources: wo.sources,
     cost: wo.cost,
+    ...(wo.pendingFindings ? { pendingFindings: wo.pendingFindings } : {}),
   };
 }
 

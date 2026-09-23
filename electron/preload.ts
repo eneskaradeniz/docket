@@ -42,6 +42,8 @@ const source: WorkOrderSource = {
   updateRepoPath: (id: WorkspaceId, repoId: RepoId, newPath: string) =>
     ipcRenderer.invoke('docket:source:update-repo-path', id, repoId, newPath),
   createWorkOrder: (input: CreateWorkOrderInput) => ipcRenderer.invoke('docket:source:create-work-order', input),
+  dismissPendingFinding: (workOrderId: WorkOrderId, id: number) => ipcRenderer.invoke('docket:source:dismiss-pending-finding', workOrderId, id),
+  consumePendingFinding: (id: number) => ipcRenderer.invoke('docket:source:consume-pending-finding', id),
   updateWorkOrder: (id: WorkOrderId, patch: UpdateWorkOrderInput) => ipcRenderer.invoke('docket:source:update-work-order', id, patch),
   recordPermissionDecision: (id: WorkOrderId, input: { allowed: boolean; tool: string; target: string }) =>
     ipcRenderer.invoke('docket:source:record-permission-decision', id, input),

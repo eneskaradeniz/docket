@@ -211,6 +211,10 @@ export interface WorkOrderSource {
   // observed work_order row + tracks. `description`/`reviewMode`/`contextFiles` transit to order.md,
   // never to the DB (ADR-0010 rule 1 — no document text in the store). M3 git scanner reconciles.
   createWorkOrder(input: CreateWorkOrderInput): Promise<WorkOrder>;
+  
+  // WO-0099: Proposal card actions
+  dismissPendingFinding(workOrderId: WorkOrderId, id: number): Promise<void>;
+  consumePendingFinding(id: number): Promise<void>;
 
   // WO-0092 — the issue↔WO link's view-time join read: one readdir of the workspace's
   // work-orders plus one order.md read per work order, parsing each front-matter's `issue:` key

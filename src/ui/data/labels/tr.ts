@@ -1175,6 +1175,15 @@ export const UI = {
   toastRuleSaved: 'Kural kaydedildi',
   toastRuleSavedBody: 'bu iş emrinde tam otomatik',
   titlePending: (n: number) => `(${n}) izin bekliyor`,
+  
+  // WO-0099: Bulgu önerileri (Proposal Cards)
+  findingProposalTitle: 'Bulgu önerisi',
+  findingProposalConfirm: (count: number) => `${count} iş emri açılacak`,
+  findingProposalDismiss: 'Kapat',
+  findingProposalLocked: 'bağlı değil',
+  findingProposalLocation: (repo: string, pointer: string) => `${repo} — ${pointer}`,
+  findingProposalDescription: (repo: string, pointer: string, woId: string, sessionId: number, problem: string) =>
+    `Bulgu:\n\n${repo} — ${pointer}\n\n(${woId} sırasında Session ${sessionId} tarafından bulundu.)\n\n${problem}`,
   // Create-modal: tek adımda mimar + yeni inceleme adları.
   createAndPlan: 'Oluştur ve plan iste',
   // Çalışma alanı silme (WO-0032) — tam cascade: tanım + bağlantılar + iş emirleri + tüm kayıtlar +
