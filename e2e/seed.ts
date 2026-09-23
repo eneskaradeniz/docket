@@ -2,7 +2,6 @@
 // Run via tsx: prints `DB=<path>` for the driver. Never touches the operator's real db/repo.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
