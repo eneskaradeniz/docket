@@ -973,7 +973,11 @@ export function WorkOrderDetail({
       <div className="flex items-stretch overflow-hidden rounded-md border border-error/50 bg-surface">
         <div className="lamp lamp-error" />
         <div className="min-w-0 flex-1 px-3.5 py-3">
-          <p className="readout text-error">{state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError ? UI.failTitle : UI.driveStreamCrashed}</p>
+          <p className="readout text-error">
+            {state.lastProfileRefusal
+              ? UI.profileRefusedTitle(state.lastProfileRefusal.name, state.lastProfileRefusal.source) // WO-0098
+              : state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError ? UI.failTitle : UI.driveStreamCrashed}
+          </p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.failSpent(state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0))}</p>
           <div className="mt-1.5 flex items-center gap-3">
             <button type="button" className="alink text-[11px]" onClick={() => setFailDetailOpen((o) => !o)}>

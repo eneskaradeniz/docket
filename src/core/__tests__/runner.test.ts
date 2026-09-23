@@ -974,3 +974,25 @@ describe('driveOwnerTag — the one key every keyed layer derives from the drive
     expect(driveOwnerTag(review)).toBe(driveOwnerTag(woDrive('WO-1')));
   });
 });
+
+// ===== WO-0098 — the drive's backend-profile + reported-model facts ride `started` =====
+describe('foldSessionEvent — started carries the profile + the session-reported model (WO-0098)', () => {
+  it('folds both facts verbatim onto the live state', () => {
+    const s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's1', profile: 'GLM', model: 'model-x-1' });
+    expect(s.driveProfile).toBe('GLM');
+    expect(s.reportedModel).toBe('model-x-1');
+  });
+
+  it('a later started without the facts CLEARS them (a new drive is its own evidence — never a stale claim)', () => {
+    let s = foldSessionEvent(initialSessionState, { kind: 'started', sessionId: 's1', profile: 'GLM', model: 'model-x-1' });
+    s = foldSessionEvent(s, { kind: 'started', sessionId: 's1' });
+    expect(s.driveProfile).toBeUndefined();
+    expect(s.reportedModel).toBeUndefined();
+  });
+
+  it('seedLiveState restores both facts from the session row (a remounted pane keeps its meta)', () => {
+    const s = seedLiveState({ transcript: [], providerSessionId: 's1', status: 'idle', profile: 'GLM', reportedModel: 'model-x-1' });
+    expect(s.driveProfile).toBe('GLM');
+    expect(s.reportedModel).toBe('model-x-1');
+  });
+});

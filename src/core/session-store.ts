@@ -8,6 +8,7 @@
 import type { CostSummary, PermissionAsk, SessionRef, SessionRole, SteerNote, StepRole, TrackId, TranscriptLine, TurnUsage, WorkOrderId, WorkspaceId } from './types';
 import type { BudgetRefusal } from './runner';
 import type { DraftSourceSummary } from './roadmap-draft';
+import type { ProfileResolution } from './backend-profile';
 
 // WO-0050 / D3: a session's OWNER — every session belongs to exactly one. A work-order session
 // (the pre-WO-0050 universe) or a workspace-scoped session (the roadmap draft drive). The pipeline
@@ -40,6 +41,13 @@ export interface RecordSessionInput {
   // undefined KEEPS the prior row's value. The pipeline always knows which of the three it
   // means; ordinary records stay silent.
   limitResetAt?: string | null;
+  // WO-0098 — which backend drove the session. `profile`: THREE states (the limitResetAt idiom) — a
+  // string SETS the profile name, `null` CLEARS it (a built-in passthrough leg — the row must not
+  // keep claiming a prior leg's profile), undefined KEEPS the prior. `reportedModel`: the model the
+  // session itself reported at open (DATA, verbatim); undefined KEEPS the prior (a leg that reported
+  // nothing never erases the last evidence).
+  profile?: string | null;
+  reportedModel?: string;
 }
 
 /** Server-side persistence + prompt assembly the drive loop needs. The composition root injects the
@@ -92,6 +100,13 @@ export interface SessionStore {
    *  draft session's own spend counts (the widened month sum includes workspace-keyed rows), so a
    *  draft can never bypass the cap the way a missing-WO row once silently did. */
   budgetBlockForDraft(workspaceId: WorkspaceId): BudgetRefusal | undefined;
+  /** The drive's BACKEND PROFILE (WO-0098), read at spawn time: the store reads the configured
+   *  list, the workspace default (`profile:<wsId>`) and — for a WO owner — the order.md `profile:`
+   *  override, and resolves them through core's `resolveProfile` (WO → workspace → the built-in).
+   *  A draft owner resolves by its workspace alone (the ✦ draft rides the workspace default).
+   *  Called UNCONDITIONALLY (the budget-gate clause): fakes must implement it. `missing` refuses
+   *  the drive before the runner spawns — never a silent fall-through to another backend. */
+  backendProfileFor(owner: SessionOwner): ProfileResolution;
   /** The queued steer notes persisted on a session row (WO-0045) — what Sürdür delivers. [] when the
    *  row carries none (the SDK queue died with the stop; this row is the only carrier). WO-0050: the
    *  owner union keys the row (an İtiraz resume re-queues carry notes like any resume). */

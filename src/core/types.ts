@@ -185,6 +185,11 @@ export type SessionRef = (
   // CLEARED by a later clean leg (a stale stamp is a lie — unlike the ctx reading, which
   // is the last observation and keeps). Absent = no limit stop (or pre-WO-0053 rows).
   limitResetAt?: string;
+  // WO-0098 — which backend drove this session: the profile NAME (absent = the built-in
+  // passthrough, or a pre-WO-0098 row) and the model the session itself REPORTED at open (DATA,
+  // verbatim — the model-id ruling). The evidence line, never a config echo.
+  profile?: string;
+  reportedModel?: string;
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
   startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)
   endedAt?: string; // ISO — when it terminally ended (turn complete / abort / error); absent while live

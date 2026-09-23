@@ -3035,9 +3035,9 @@ await spec('WO-0059 rev 4 ayarlar: sol menü üç öğe (WO-0070 İstem şablonl
   await page.locator('button[aria-label="Ayarlar"]').click();
   await page.waitForTimeout(450);
   const dlg = page.locator('[role="dialog"]');
-  // the menu: exactly THREE bare items (WO-0070 added İstem şablonları) — still no provider
-  // section, no workspace section anywhere
-  assert.equal(await dlg.locator('[data-settings-item]').count(), 3, 'the menu does not carry exactly three items');
+  // the menu: exactly FOUR bare items (WO-0070 added İstem şablonları, WO-0098 Sürücüler) — still
+  // no provider section, no workspace section anywhere
+  assert.equal(await dlg.locator('[data-settings-item]').count(), 4, 'the menu does not carry exactly four items');
   assert.equal(await dlg.locator('[data-model-section]').count(), 1, 'the model section is missing');
   assert.equal(await dlg.locator('[data-general-section]').count(), 0, 'the general section leaked into the models pane');
   assert.ok(((await dlg.locator('[data-model-section]').innerText()) ?? '').includes('Mimar'), 'the role rows are missing');
@@ -3850,6 +3850,150 @@ await spec('WO-0093 hazırlık hatası: main yoksa Başlat gerekçesiyle reddede
   await page.getByRole('button', { name: 'Evet, sil', exact: true }).click();
   await page.waitForTimeout(800);
   assert.equal(await page.locator('[data-wo-id]', { hasText: 'Kapı kopyası' }).count(), 0, 'the throwaway survived');
+});
+
+// ===== WO-0098 — backend profiles: the settings section, the selection, the session evidence =====
+// The profile is resolved INSIDE the pipeline (lastDriveInput is main's pre-pipeline fill, so it
+// never carries it — by design: the slot is not host-controllable). The scripted runner REPORTS a
+// model derived from the env it was actually handed (the real CLI's init model moves with the
+// env — docs/probes/backend-profiles/raw/d1-d2), so the session row's reported model is the
+// end-to-end evidence, never a config echo.
+const E2E_PROFILE_ENV = 'AGENT_CONFIG_DIR=/tmp/docket-e2e-glm';
+await spec('WO-0098 sürücüler: yerleşik kart ilk; gizli anahtar/değer alan altında reddedilir, hiçbir şey yazılmaz; profil eklenir; profil başına Test et', async () => {
+  await stopAllDrives();
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  const dlg = page.locator('[role="dialog"]');
+  await dlg.locator('[data-settings-item]', { hasText: 'Sürücüler' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await dlg.locator('[data-profiles-section]').count(), 1, 'the Sürücüler section did not open');
+  assert.equal(await dlg.locator('[data-profile-card="default"]').count(), 1, 'the built-in passthrough card is missing');
+  // a secret KEY refuses under the env field — and nothing lands
+  await dlg.locator('[data-profile-name]').fill('Sızıntı');
+  await dlg.locator('[data-profile-env-input]').fill('PROVIDER_AUTH_TOKEN=abc');
+  await dlg.locator('[data-profile-submit]').click();
+  await page.waitForTimeout(300);
+  const alertText = async () => ((await dlg.locator('[data-profile-form] [role="alert"]').allInnerTexts()).join(' '));
+  assert.ok((await alertText()).includes('gizli anahtar'), `the secret key was not refused under its field: ${await alertText()}`);
+  // a token-looking VALUE under an innocent key refuses the same way
+  await dlg.locator('[data-profile-env-input]').fill('BASE_THING=0f3a9c1e2b4d5f6a7b8c9d0e1f2a3b4c');
+  await page.waitForTimeout(200);
+  assert.ok((await alertText()).includes('anahtara benziyor'), `the token-looking value was not refused: ${await alertText()}`);
+  assert.deepEqual(await page.evaluate(() => window.docket.settings.getBackendProfiles()), [], 'a refused profile was written');
+  // the valid profile lands
+  await dlg.locator('[data-profile-name]').fill('GLM');
+  await dlg.locator('[data-profile-env-input]').fill(E2E_PROFILE_ENV);
+  await dlg.locator('[data-profile-submit]').click();
+  await page.waitForTimeout(500);
+  assert.equal(await dlg.locator('[data-profile-card="GLM"]').count(), 1, 'the new profile card is missing');
+  assert.deepEqual(
+    await page.evaluate(() => window.docket.settings.getBackendProfiles()),
+    [{ name: 'GLM', env: { AGENT_CONFIG_DIR: '/tmp/docket-e2e-glm' } }],
+    'the stored profile is not the operator\'s verbatim pair',
+  );
+  // Test et runs PER PROFILE — a real zero-token handshake under that env; poll for a result word
+  await dlg.locator('[data-profile-test="GLM"]').click();
+  // the adapter's own ceiling is 30s (CHECK_TIMEOUT_MS) — a loaded machine's spawn may need most
+  // of it; poll PAST the ceiling so the spec reads a result word, never its own impatience
+  let cardText = '';
+  for (let i = 0; i < 140; i++) {
+    cardText = ((await dlg.locator('[data-profile-card="GLM"]').innerText()) ?? '').trim();
+    if (/Hazır|Bulunamadı/.test(cardText)) break;
+    await page.waitForTimeout(250);
+  }
+  assert.ok(/Hazır|Bulunamadı/.test(cardText), `the per-profile Test et reported no result: ${cardText}`);
+  await page.screenshot({ path: join(SHOTS, 'settings-profiles@980.png') });
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+});
+
+await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + oturum satırı profil + bildirilen modeli taşır; WO geçersiz kılması (Varsayılan) kazanır', async () => {
+  // a prior spec that died mid-dialog must not cascade here — land on a dialog-free board
+  for (let i = 0; i < 3 && (await page.locator('[role="dialog"]').count()) > 0; i++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+  await stopAllDrives();
+  await openWsEdit();
+  const wsDlg = page.locator('[role="dialog"]');
+  const sec = wsDlg.locator('[data-ws-profile-section]');
+  assert.equal(await sec.count(), 1, 'the workspace backend picker is missing');
+  await sec.getByRole('button', { name: 'GLM', exact: true }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await sec.locator('button[aria-pressed="true"]').textContent(), 'GLM', 'the workspace default did not write through');
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  // (1) a WO that names NO override rides the workspace default
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  const cDlg = page.locator('[role="dialog"]');
+  assert.equal(await cDlg.locator('[data-wo-profile]').count(), 1, 'the per-WO backend field is missing');
+  await cDlg.locator('input').first().fill('Sürücü kanıt');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  let inp;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    inp = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
+    if (inp?.role === 'architect' && inp?.workOrderId) break;
+  }
+  const inheritWo = inp.workOrderId;
+  assert.equal('profile' in (inp ?? {}), false, 'main pre-filled a profile — the slot belongs to the pipeline');
+  // the live pane names the backend + the model the session REPORTED
+  let meta = '';
+  for (let i = 0; i < 20; i++) {
+    meta = (await page.locator('[data-pane-backend]').first().getAttribute('data-pane-backend').catch(() => null)) ?? '';
+    if (meta.includes('GLM')) break;
+    await page.waitForTimeout(250);
+  }
+  assert.ok(meta.includes('GLM') && meta.includes(E2E_PROFILE_ENV), `the pane meta does not carry the backend evidence: ${meta}`);
+  await page.screenshot({ path: join(SHOTS, 'pane-backend@980.png') });
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(900);
+  const evidence = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w?.sessions.map((s) => ({ profile: s.profile, reportedModel: s.reportedModel }))), inheritWo);
+  assert.ok(
+    evidence?.some((s) => s.profile === 'GLM' && s.reportedModel === `e2e-model/${E2E_PROFILE_ENV}`),
+    `the session row does not carry the backend evidence: ${JSON.stringify(evidence)}`,
+  );
+  await backToBoard();
+  // (2) a WO pinning the built-in (Varsayılan) wins over the workspace default: no env injected
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await cDlg.locator('input').first().fill('Geçişli kanıt');
+  await cDlg.locator('[data-wo-profile]').getByRole('button', { name: 'Varsayılan', exact: true }).click();
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    inp = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
+    if (inp?.workOrderId && inp.workOrderId !== inheritWo) break;
+  }
+  assert.notEqual(inp?.workOrderId, inheritWo, 'the pinned WO never drove');
+  const pinnedDocs = await page.evaluate((id) => window.docket.source.getWorkOrderDocs(id), inp.workOrderId);
+  assert.ok(pinnedDocs.order?.includes('profile: default'), 'the override did not land in order.md front-matter');
+  assert.equal(await page.locator('[data-pane-backend]').count(), 0, 'the built-in drive still shows a backend meta');
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(900);
+  const pinnedEvidence = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w?.sessions.map((s) => ({ profile: s.profile ?? null, reportedModel: s.reportedModel }))), inp.workOrderId);
+  assert.ok(pinnedEvidence?.every((s) => s.profile === null) && pinnedEvidence.some((s) => s.reportedModel === 'e2e-model/passthrough'), `the passthrough row lies: ${JSON.stringify(pinnedEvidence)}`);
+  await backToBoard();
+  // cleanup — the workspace back to the built-in, the profile removed (the next run starts clean)
+  await openWsEdit();
+  await page.locator('[role="dialog"] [data-ws-profile-section]').getByRole('button', { name: 'Varsayılan', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  await page.locator('[role="dialog"] [data-settings-item]', { hasText: 'Sürücüler' }).click();
+  await page.waitForTimeout(250);
+  await page.locator('[role="dialog"] [data-profile-remove="GLM"]').click();
+  await page.waitForTimeout(400);
+  assert.deepEqual(await page.evaluate(() => window.docket.settings.getBackendProfiles()), [], 'Sil did not remove the profile');
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
 });
 
 await spec('zero renderer console errors', async () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { initialSessionState, seedLiveState, type DriveInput, type LiveSessionState } from '../../../core/runner';
 import type { SessionRef, StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneLogChip, PaneShell, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneLogChip, PaneShell, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneErrorText, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -46,7 +46,7 @@ export function StepPane({
   /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
   onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
-  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
+  const { ROLE_LABELS, UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store — navigation keeps it running; this pane
   // re-binds to the LIVE fold state on remount, falling back to the persisted seed (F14) after a restart.
@@ -104,6 +104,7 @@ export function StepPane({
   // WO-0044: the shared live grammar — the activity state line + the döküm chip (default closed).
   // WO-0046: `now` also drives the staleness line (the honest heir of the indefinite wait).
   const { show: showActivity, line: activityLine, stale } = usePaneActivity(state, running, now);
+  const errorText = usePaneErrorText(state); // WO-0098: the dangling-profile sentence rides here too
   const { logOpen, toggleLog, headRef } = usePaneLog();
 
   // The TOP instrument (tur 2): the PaneShell card the plan/review panes wear, the ONE header row,
@@ -161,7 +162,7 @@ export function StepPane({
             2026-08-23, the SessionPane ruling, reached here by WO-0044). */}
         {!hasStream && !running ? <p className="text-xs text-inkdim">{UI.noSession}</p> : null}
         {state.status === 'error' || state.lastError ? (
-          <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
+          <PaneError message={errorText} />
         ) : null}
       </div>
     </PaneShell>

@@ -34,6 +34,15 @@ export function lampClass(tone: LampTone, breathe = false): string {
 //     state is the header's activity line ("Düşünüyor···", the operator's 2026-08-23 two-then-one
 //     ruling), reached by SessionPane then, and by StepPane/ReviewPane with the shared grammar. ---
 
+// --- WO-0098: the pane error's WORDS — one home for the four live surfaces. A dangling backend
+//     profile speaks its own operator sentence (the name + where to fix it); a classified provider
+//     error its code's label; otherwise the carried message / the stream-crash line. ---
+export function usePaneErrorText(state: LiveSessionState): string {
+  const { PROVIDER_ERROR_LABELS, UI } = useLabels();
+  if (state.lastProfileRefusal) return UI.profileRefusedTitle(state.lastProfileRefusal.name, state.lastProfileRefusal.source);
+  return state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed);
+}
+
 // --- the error row: calm, one line, iconed ---
 export function PaneError({ message }: { message: string }) {
   return (
@@ -145,8 +154,17 @@ export function PaneCostline({ state, running, liveStart, now }: {
     .join(' · ');
   const contextPart =
     state.context && running ? UI.contextReadout(state.context.percentage, state.context.usedTokens, state.context.maxTokens) : undefined;
+  // WO-0098: the drive's BACKEND evidence — the profile that drove it + the model the session
+  // itself reported (operator vocabulary + provider DATA, verbatim; the ledger's mono idiom). Only
+  // when a named profile drove: the built-in passthrough adds nothing (zero profiles = today's pane).
+  const backendPart = state.driveProfile ? [state.driveProfile, state.reportedModel].filter((x): x is string => !!x).join(' · ') : undefined;
   return (
     <>
+      {backendPart ? (
+        <span data-pane-backend={backendPart} className="min-w-0 truncate font-mono text-[10.5px] text-inkdim">
+          {backendPart}
+        </span>
+      ) : null}
       {contextPart ? (
         <span data-context-readout={contextPart} className="shrink-0 font-mono text-[10.5px] text-inkdim">
           {contextPart}

@@ -25,7 +25,8 @@ import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { driveOwnerTag, isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../src/core/runner';
-import type { Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
+import type { Locale, PromptOverrides, ProviderStatus, RoleModels } from '../src/core/app-settings';
+import { DEFAULT_PROFILE, sameProfileName, type BackendProfile } from '../src/core/backend-profile';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import { trayAllowed, type ChromeNavigate, type RunningOwner } from '../src/core/tray-menu';
@@ -636,7 +637,23 @@ ipcMain.handle(
 );
 // WO-0059 rev 4: no stored key exists to inject — the check runs against the operator's OWN
 // identity (the CLI's login / the environment). The UI speaks the result as one line.
-ipcMain.handle('docket:settings:check-provider', () => checkProvider());
+// WO-0098: the per-profile Test et — a profile NAME resolves HERE to its stored env (the renderer
+// never carries an env map to a spawn); absent / `default` = the built-in passthrough. An unknown
+// name answers not-ok naming it — never a silent check of another environment.
+ipcMain.handle('docket:settings:check-provider', async (_e, profileName?: string): Promise<ProviderStatus> => {
+  if (profileName === undefined || sameProfileName(profileName, DEFAULT_PROFILE)) return checkProvider();
+  const profile = (await store.getBackendProfiles()).find((p) => sameProfileName(p.name, profileName));
+  if (!profile) return { ok: false, code: 'auth_missing', message: `backend profile "${profileName}" not found` };
+  return checkProvider(profile.env);
+});
+// WO-0098: the backend profiles (the list + the per-workspace default) — thin forwarders; the store
+// validates (a secret-looking pair refuses) and the pipeline resolves at spawn time.
+ipcMain.handle('docket:settings:get-backend-profiles', () => store.getBackendProfiles());
+ipcMain.handle('docket:settings:set-backend-profiles', (_e, profiles: BackendProfile[]) => store.setBackendProfiles(profiles));
+ipcMain.handle('docket:settings:get-workspace-profile', (_e, workspaceId: WorkspaceId) => store.getWorkspaceProfile(workspaceId));
+ipcMain.handle('docket:settings:set-workspace-profile', (_e, workspaceId: WorkspaceId, name: string | undefined) =>
+  store.setWorkspaceProfile(workspaceId, name),
+);
 
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {

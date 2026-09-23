@@ -17,8 +17,9 @@
 //   from the result message (findings Q1).
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { query, startup } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
+  AccountInfo,
   CanUseTool,
   Options,
   PermissionMode,
@@ -101,6 +102,7 @@ type AnyMsg = {
   type: string;
   subtype?: string;
   session_id?: string;
+  model?: string; // WO-0098: system/init's reported model (sdk.d.ts SDKSystemMessage.model)
   message?: { content: AnyBlock[] };
   total_cost_usd?: number;
   usage?: {
@@ -433,7 +435,15 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
         case 'system':
           if (msg.subtype === 'init' && msg.session_id) {
             lifecycleSupported = (msg.capabilities ?? []).includes('msg_lifecycle_v1');
-            out.push({ kind: 'started', sessionId: msg.session_id, at: new Date().toISOString() });
+            // WO-0098: the init message's `model` is the session's OWN report of what it reached
+            // (probe raw/d1/d2: glm-… under one profile, the provider's own ids under another) —
+            // carried verbatim as DATA; absent → no key (never an invented default).
+            out.push({
+              kind: 'started',
+              sessionId: msg.session_id,
+              at: new Date().toISOString(),
+              ...(typeof msg.model === 'string' && msg.model !== '' ? { model: msg.model } : {}),
+            });
           }
           // WO-0055: the agent-task lifecycle bookends. The DISCRIMINATOR guards the START only —
           // the wild notification carries NO task_type/subagent_type (probe t1 line 121: bare
@@ -601,7 +611,14 @@ export function createRunner(runnerOpts: RunnerOptions = {}): SessionRunner {
       abortController: abort,
     };
     // Options.env REPLACES the subprocess env — compose over process.env so PATH/HOME survive.
-    if (runnerOpts.env) options.env = { ...process.env, ...runnerOpts.env };
+    // WO-0098: the drive's backend PROFILE env layers last (the pipeline resolved it; core validated
+    // it non-secret). The probe measured the steering lever (docs/probes/backend-profiles): the
+    // config-dir variable routes the spawn to another login; a variable that config dir's own
+    // settings also set is NOT overridden by injection (the settings win). No profile (the built-in)
+    // → `env` stays unset, byte-identical to the pre-profile spawn.
+    if (runnerOpts.env || input.profile) {
+      options.env = { ...process.env, ...(runnerOpts.env ?? {}), ...(input.profile?.env ?? {}) };
+    }
     if (input.resume) options.resume = input.resume;
     // WO-0059: the operator's model preference — the composition root resolved it at spawn time;
     // this is the ONLY translation the id gets (verbatim; alias or full id, the provider validates).
@@ -978,29 +995,60 @@ export function limitWindowsOf(rl: unknown): LimitWindow[] {
   return out;
 }
 
-/** Full provider check (WO-0025): pre-spawn the provider subprocess and complete the initialize handshake
+/** WO-0098 — the zero-token handshake's account read → the neutral status. Measured
+ *  (docs/probes/backend-profiles/raw/h1-h3): an environment-token setup reports its `tokenSource`
+ *  by NAME (never a value); a keychain subscription login reports `subscriptionType` and no
+ *  tokenSource; an unauthenticated environment reports `tokenSource: 'none'` and nothing else — a
+ *  broken profile is caught HERE, before any token is spent. `source` is a name or a plan label
+ *  (never a credential); an absent account is the bare handshake (the pre-WO-0098 posture). */
+export function accountVerdict(account: AccountInfo | undefined): ProviderStatus {
+  if (!account) return { ok: true, source: 'handshake' };
+  const token = account.tokenSource && account.tokenSource !== 'none' ? account.tokenSource : undefined;
+  const apiKey = account.apiKeySource && account.apiKeySource !== 'none' ? account.apiKeySource : undefined;
+  const source = token ?? apiKey ?? account.subscriptionType;
+  if (source) return { ok: true, source };
+  if (account.tokenSource === 'none' || account.apiKeySource === 'none') {
+    return { ok: false, code: 'auth_missing', message: 'not logged in: the environment carries no credential' };
+  }
+  return { ok: true, source: 'handshake' };
+}
+
+/** Full provider check (WO-0025): spawn the provider subprocess and complete the initialize handshake
  *  WITHOUT sending a prompt — zero tokens — then close. Reports the auth source on success; classifies the
- *  throw on failure. Used by the settings "Test" button and `docket doctor --verify`. */
+ *  failure otherwise. Used by the settings "Test" button and the health look.
+ *  WO-0098: `env` is a backend profile's env (composed over process.env — the runDrive rule), so Test
+ *  et runs per profile. The read is the query's own initialization result (the probe's h-cases): the
+ *  prompt channel stays EMPTY for the handle's whole life, so no turn ever starts. */
 export async function checkProvider(env?: Record<string, string>): Promise<ProviderStatus> {
+  const input = new AsyncQueue<SDKUserMessage>(); // never pushed: no prompt, no tokens
+  let q: Query | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const warm = await startup({
+    q = query({
+      prompt: input,
       options: {
         cwd: process.cwd(),
-        // Same replace-semantics as runDrive: compose over process.env.
         ...(env ? { env: { ...process.env, ...env } } : {}),
       },
     });
-    let source = 'handshake';
-    try {
-      const acc = await (warm as unknown as { accountInfo?: () => Promise<{ tokenSource?: string; apiKeySource?: string }> }).accountInfo?.();
-      if (acc?.tokenSource ?? acc?.apiKeySource) source = String(acc?.tokenSource ?? acc?.apiKeySource);
-    } catch {
-      // accountInfo may not exist on a bare warm handle — the handshake itself succeeding is the check.
-    }
-    await warm.close();
-    return { ok: true, source };
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('provider handshake timed out')), CHECK_TIMEOUT_MS);
+    });
+    const init = await Promise.race([q.initializationResult(), timeout]);
+    return accountVerdict(init?.account);
   } catch (e) {
     const message = (e as Error)?.message ?? String(e);
     return { ok: false, code: classifyProviderError(message) ?? 'auth_missing', message };
+  } finally {
+    if (timer) clearTimeout(timer);
+    input.close();
+    try {
+      q?.close();
+    } catch {
+      // the handle may already be gone — the check's answer stands
+    }
   }
 }
+
+/** The handshake's ceiling — a spawn that never initializes is a failed check, not a hung button. */
+const CHECK_TIMEOUT_MS = 30_000;

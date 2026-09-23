@@ -17,7 +17,11 @@ import type { PermissionRule } from './source';
 // --- The stream the runner yields. A vendor-neutral projection of a session.
 //     The adapter translates the provider's message stream into these events. ---
 export type RunnerEvent =
-  | { kind: 'started'; sessionId: string; at?: string }
+  // WO-0098: `model` is the session's OWN report of the model it runs (the adapter reads it off the
+  // provider's init message — DATA, verbatim, the model-id ruling); `profile` is the backend
+  // profile's NAME the pipeline stamps on the event it re-yields (absent = the built-in passthrough).
+  // Together they are the drive's evidence of WHICH backend it reached — never a claim from config.
+  | { kind: 'started'; sessionId: string; at?: string; model?: string; profile?: string }
   // WO-0046: the content events carry the same ISO receive-stamp as the lifecycle ones — the fold
   // turns each into the staleness anchor (`lastLifeAt`); an unstamped event (a scripted fake)
   // honestly leaves the prior anchor alone.
@@ -115,7 +119,16 @@ export type RunnerEvent =
   // the neutral ISO stamp of when the window opens, so the limit card states the clock and its
   // Sürdür appears only once the moment passes. Stamp-less limit stops carry the code alone and
   // degrade to the fail card's localized title (no fabricated time, mockup frame 04).
-  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal; limit?: LimitStop };
+  // WO-0098: `profileRefusal` — the drive named a backend profile that no longer exists (renamed or
+  // deleted): refused before spawn, the NAME carried so the surface speaks it in operator words.
+  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal; limit?: LimitStop; profileRefusal?: ProfileRefusal };
+
+/** WO-0098: the dangling profile reference that refused a drive — the name as written and WHERE it
+ *  was written (the work order's `profile:` or the workspace default), so the fix is findable. */
+export interface ProfileRefusal {
+  name: string;
+  source: 'wo' | 'workspace';
+}
 
 /** The budget gate's refusal facts (WO-0047): what the month has cost and the cap it met. */
 export interface BudgetRefusal {
@@ -150,6 +163,13 @@ export type PermissionDecision = { allow: true; updatedInput?: Record<string, un
 // state is unrepresentable); `isDraftDrive` is the single narrowing point (the isPlanDrive
 // precedent). Every pre-WO-0050 construction site already matches WoDriveInput — only READS
 // of the union change.
+/** WO-0098: the resolved backend profile a drive spawns under — its operator NAME (recorded on the
+ *  session row, shown on the pane) and its NON-SECRET env map (core/backend-profile validates it). */
+export interface DriveProfile {
+  name: string;
+  env: Record<string, string>;
+}
+
 export interface WoDriveInput {
   role: SessionRole;
   /** The work order this session belongs to — main uses it to persist the association. */
@@ -194,6 +214,12 @@ export interface WoDriveInput {
    *  own default governs. Core never defaults it and never names a value (ADR-0006's WO-0052
    *  carve-out: a model id is data, not code). */
   model?: string;
+  /** WO-0098: the backend profile this drive spawns under — PIPELINE-filled from the store's
+   *  resolution (WO override → workspace default → the built-in), overwritten unconditionally (a
+   *  renderer-supplied one is never honored: the environment is not renderer-controllable). The
+   *  adapter composes `env` over the inherited environment; absent = the built-in passthrough,
+   *  byte-identical spawn options. */
+  profile?: DriveProfile;
   /** WHO started this drive (WO-0045). 'auto' = a host's sequencing effect (the verdict auto-advance, a
    *  pane's mount auto-drive) — the pipeline refuses these in `manual` flow mode before spawning.
    *  Absent = the operator (a click, the CLI, a test) — always allowed. */
@@ -244,6 +270,8 @@ export interface DraftDriveInput {
   /** WO-0059: the same global model preference as the WO arm — main-resolved at spawn time,
    *  verbatim to the adapter. Drafts are drives; one preference, both owners. */
   model?: string;
+  /** WO-0098: the same pipeline-filled profile slot as the WO arm — a draft rides its workspace default. */
+  profile?: DriveProfile;
   origin?: 'operator' | 'auto';
   deliveringNote?: { id: string; text: string };
 }
@@ -607,6 +635,14 @@ export interface LiveSessionState {
    *  detail view branches on: the two-choice BudgetRefusalCard instead of the generic fail card.
    *  Cleared by `started` (a raise-and-re-run supersedes the refusal, the pendingPlan precedent). */
   lastRefusal?: BudgetRefusal;
+  /** WO-0098: the backend profile that drove the CURRENT drive (absent = the built-in passthrough)
+   *  and the model the session itself reported — the pane meta's facts. Replaced by every `started`
+   *  (a new drive is its own evidence; an absent fact clears, never a stale claim). */
+  driveProfile?: string;
+  reportedModel?: string;
+  /** WO-0098: the dangling-profile refusal's facts when the error IS one (the `lastRefusal`
+   *  discriminator pattern); cleared by `started`. */
+  lastProfileRefusal?: ProfileRefusal;
 }
 
 export const initialSessionState: LiveSessionState = {
@@ -629,7 +665,7 @@ export const initialSessionState: LiveSessionState = {
  *  row never re-seeds it — the operator's Durdur is the last real event and raises the stopped pane,
  *  not a limit card; the stamp stays in the column for the ledger. Pure; empty input → the initial state. */
 export function seedLiveState(
-  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes' | 'limitResetAt'>,
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes' | 'limitResetAt' | 'profile' | 'reportedModel'>,
   asks: PermissionAsk[] = [],
 ): LiveSessionState {
   if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0 && session.status === 'none') {
@@ -643,6 +679,8 @@ export function seedLiveState(
     ...(session.pendingNotes?.length ? { pendingNotes: session.pendingNotes } : {}),
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
+    ...(session.profile ? { driveProfile: session.profile } : {}),
+    ...(session.reportedModel ? { reportedModel: session.reportedModel } : {}),
     ...(session.limitResetAt && session.status !== 'stopped'
       ? { status: 'error' as const, lastLimit: { resetAt: session.limitResetAt } }
       : {}),
@@ -666,6 +704,9 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         lastRefusal: undefined,
         lastLimit: undefined,
         contextFeed: undefined,
+        driveProfile: event.profile,
+        reportedModel: event.model,
+        lastProfileRefusal: undefined,
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
@@ -870,6 +911,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...(event.code ? { lastErrorCode: event.code } : {}),
         ...(event.refusal ? { lastRefusal: event.refusal } : {}),
         ...(event.limit ? { lastLimit: event.limit } : {}),
+        ...(event.profileRefusal ? { lastProfileRefusal: event.profileRefusal } : {}),
       };
   }
 }

@@ -43,7 +43,13 @@ export function createE2eRunner(): E2eRunner {
         // WO-0050: a draft has no work order — its id keys the WORKSPACE (the upsert's owner pair),
         // same uniqueness rule, same accumulating row for the İtiraz resume.
         const ownerKey = isDraftDrive(input) ? String(input.workspaceId).toLowerCase() : String(input.workOrderId).toLowerCase();
-        yield { kind: 'started', sessionId: `e2e-${ownerKey}-${input.role}`, at: new Date().toISOString() };
+        // WO-0098: the fake REPORTS a model derived from the environment it was spawned with — the
+        // real CLI's init model moves with the profile env (probe raw/d1-d2); here the env's own
+        // pairs stand in for it, so an E2E can prove the profile env reached the spawn input.
+        const reported = input.profile
+          ? `e2e-model/${Object.entries(input.profile.env).map(([k, v]) => `${k}=${v}`).join(';') || 'no-env'}`
+          : 'e2e-model/passthrough';
+        yield { kind: 'started', sessionId: `e2e-${ownerKey}-${input.role}`, at: new Date().toISOString(), model: reported };
         let read = 0; // (renamed from the obvious word — the vendor-name grep matches it)
         for (;;) {
           if (read < queue.length) {

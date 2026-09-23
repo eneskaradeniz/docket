@@ -28,11 +28,12 @@ import { useTheme } from '../data/theme';
 import { VERSION } from '../data/version';
 import { Button, Dialog, Segmented, Spinner, Textarea } from '../kit';
 import { toast } from './ToastHost';
+import { ProfilesSection } from './ProfilesSection';
 
 const MODEL_ROLES = ['architect', 'implementer', 'verifier'] as const;
 type ModelRole = (typeof MODEL_ROLES)[number];
 const ROLE_HUE: Record<ModelRole, string> = { architect: 'text-signal', implementer: 'text-info', verifier: 'text-proceed' };
-type Section = 'models' | 'prompts' | 'general';
+type Section = 'models' | 'profiles' | 'prompts' | 'general';
 
 // WO-0070: the five whole-text template fields, in the pipeline's own order (plan → step → review;
 // the ✦ draft last — the RoleModels map's shape, a PromptKey absent = the built-in stands).
@@ -221,6 +222,7 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
         {/* ===== the sunken menu rail: three bare names; the rail's well is the only divider ===== */}
         <nav data-settings-menu="" aria-label={UI.settings} className="flex w-[200px] shrink-0 flex-col gap-0.5 border-r border-hairline bg-bg/60 p-2">
           <MenuItem label={UI.modelSectionLabel} active={section === 'models'} onClick={() => setSection('models')} />
+          <MenuItem label={UI.settingsTabProfiles} active={section === 'profiles'} onClick={() => setSection('profiles')} />
           <MenuItem label={UI.settingsPromptsTitle} active={section === 'prompts'} onClick={() => setSection('prompts')} />
           <MenuItem label={UI.settingsTabGeneral} active={section === 'general'} onClick={() => setSection('general')} />
         </nav>
@@ -236,6 +238,9 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
               </div>
               <p className="text-[11px] text-inkdim">{UI.modelDraftLine(ROLE_LABELS.architect)}</p>
             </section>
+          ) : section === 'profiles' ? (
+            /* ===== SÜRÜCÜLER (WO-0098) — the backend profiles: built-in first, Test et per card ===== */
+            <ProfilesSection settings={settings} />
           ) : section === 'prompts' ? (
             /* ===== İSTEM ŞABLONLARI (WO-0070) — five whole-text template fields, drafted ===== */
             <section data-prompts-section="" className="flex flex-col gap-2.5">

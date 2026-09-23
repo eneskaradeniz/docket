@@ -15,8 +15,9 @@ import type { AppSettings } from '../../core/app-settings';
 import type { BudgetThreshold } from '../../core/budget';
 import { DEFAULT_WARN_PERCENT, parseAmount } from '../../core/budget';
 import { normalizeDocsRoot } from '../../core/roadmap-md';
+import { DEFAULT_PROFILE, sameProfileName } from '../../core/backend-profile';
 import { useLabels } from '../data/locale';
-import { Button, Dialog, Field, Input, Tooltip } from '../kit';
+import { Button, Dialog, Field, Input, Segmented, Tooltip } from '../kit';
 import { toast } from './ToastHost';
 
 const base = (p: string): string => {
@@ -96,6 +97,11 @@ export function WsSettingsModal({
   const [rootText, setRootText] = useState('');
   const [rootTouched, setRootTouched] = useState(false);
   const [rootBusy, setRootBusy] = useState(false);
+  // WO-0098: the workspace's DEFAULT backend profile — an instant-write segment (the models posture:
+  // a closed enum commits on click). Absent while no profile is configured (an empty group renders
+  // absent, ADR-0012) unless a stored default dangles — then it stays, with the reason line.
+  const [profileNames, setProfileNames] = useState<string[]>([]);
+  const [wsProfile, setWsProfile] = useState<string | undefined>(undefined);
   const wsId = workspace?.id;
   useEffect(() => {
     if (mode !== 'edit' || !wsId || !settings) return;
@@ -108,6 +114,8 @@ export function WsSettingsModal({
       setBudgetTouched(false);
     });
     void source.workspaceMonthSpend(wsId).then((s) => { if (alive) setMonthSpend(s); }).catch(() => { if (alive) setMonthSpend(undefined); });
+    void settings.getBackendProfiles?.().then((ps) => { if (alive) setProfileNames(ps.map((p) => p.name)); }).catch(() => undefined);
+    void settings.getWorkspaceProfile?.(wsId).then((n) => { if (alive) setWsProfile(n); }).catch(() => undefined);
     void settings.getDocsRoot(wsId).then((r) => {
       if (!alive) return;
       setRootText(r);
@@ -117,6 +125,18 @@ export function WsSettingsModal({
       alive = false;
     };
   }, [mode, wsId, settings, source]);
+  const saveWsProfile = async (name: string | undefined): Promise<void> => {
+    if (!wsId || !settings) return;
+    const prior = wsProfile;
+    setWsProfile(name); // optimistic — the row is re-read below
+    try {
+      await settings.setWorkspaceProfile(wsId, name);
+      setWsProfile(await settings.getWorkspaceProfile(wsId));
+    } catch {
+      setWsProfile(prior);
+      toast.push({ kind: 'error', title: UI.saveFailed });
+    }
+  };
   const capParsed = parseAmount(capText);
   const warnParsed = parseAmount(warnText);
   const capErr = !budgetTouched || budgetBusy ? null : !(capParsed > 0) ? UI.budgetErrCap : null;
@@ -686,6 +706,24 @@ export function WsSettingsModal({
                 <p className="mt-1.5 text-[11px] text-inkdim">{UI.docsRootWarn}</p>
               )}
             </div>
+            {profileNames.length > 0 || wsProfile !== undefined ? (
+              <div data-ws-profile-section="">
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-[13px] text-ink">{UI.wsProfileLabel}</span>
+                  <span className="ml-auto">
+                    <Segmented
+                      size="sm"
+                      value={wsProfile !== undefined && profileNames.some((n) => sameProfileName(n, wsProfile)) ? profileNames.find((n) => sameProfileName(n, wsProfile))! : ''}
+                      onValueChange={(v) => void saveWsProfile(v === '' ? undefined : v)}
+                      options={[{ value: '', label: UI.profileDefaultName }, ...profileNames.map((n) => ({ value: n, label: n }))]}
+                    />
+                  </span>
+                </div>
+                {wsProfile !== undefined && !sameProfileName(wsProfile, DEFAULT_PROFILE) && !profileNames.some((n) => sameProfileName(n, wsProfile)) ? (
+                  <p role="alert" className="mt-1.5 text-[11.5px] text-error">{UI.profileRefusedTitle(wsProfile, 'workspace')}</p>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>

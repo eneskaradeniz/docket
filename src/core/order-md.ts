@@ -22,6 +22,9 @@ export interface ParsedOrderMd {
   checkout?: boolean; // front-matter checkout (WO-0093) — the working copy is Docket-prepared (a git
   // worktree under the app home, branched from main at start). Absent = disabled (the pre-WO-0093
   // bytes are untouched); the derived PATH itself is never stored (the order's frozen decision).
+  profile?: string; // front-matter profile (WO-0098) — the WO's backend-profile override, a profile NAME
+  // (operator vocabulary, verbatim). Resolution (WO → workspace default → the built-in) is core's
+  // resolveProfile at spawn time; a dangling name refuses the drive. Absent → the workspace default.
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -66,6 +69,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const issueValue = frontValue(front, 'issue');
   const cwdValue = frontValue(front, 'cwd');
   const checkoutValue = frontValue(front, 'checkout');
+  const profileValue = frontValue(front, 'profile');
   return {
     reviewMode,
     flowMode,
@@ -76,6 +80,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
     issueRef: issueValue !== '' ? issueValue : undefined,
     cwd: cwdValue !== '' ? cwdValue : undefined,
     checkout: checkoutValue === 'true' ? true : checkoutValue === 'false' ? false : undefined,
+    profile: profileValue !== '' ? profileValue : undefined,
   };
 }
 
@@ -91,6 +96,7 @@ export interface OrderMdEdit {
   cwd?: string | null; // → front-matter cwd (WO-0088): a string sets the working copy, null DROPS it (the connection-table fallback stands), undefined = untouched — the taskRef idiom
   checkout?: boolean | null; // → front-matter checkout (WO-0093): true sets the key, false/null DROPS it
   // (silence IS disabled — the pre-WO-0093 orders keep their bytes), undefined = untouched
+  profile?: string | null; // → front-matter profile (WO-0098): a string sets the override, null DROPS it (the workspace default stands), undefined = untouched — the cwd idiom
 }
 
 /**
@@ -135,6 +141,9 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   // flow_mode idiom: the default never needs spelling out).
   if (patch.checkout === true) nextFront = setKey(nextFront, 'checkout', 'true');
   else if (patch.checkout === false || patch.checkout === null) nextFront = dropKey(nextFront, 'checkout');
+  // WO-0098: the backend-profile override — the cwd idiom verbatim.
+  if (typeof patch.profile === 'string') nextFront = setKey(nextFront, 'profile', patch.profile);
+  else if (patch.profile === null) nextFront = dropKey(nextFront, 'profile');
 
   let nextBody = body;
   if (patch.description !== undefined) {
