@@ -19,6 +19,9 @@ export interface ParsedOrderMd {
   // store's driveCwd reads it BEFORE the connection table; the runner's write fence jails to it
   // (repoRoot = cwd). Absent → the connection-table fallback stands. A PATH, like the WO-0015
   // local-context precedent — the operator's act, never a store column.
+  checkout?: boolean; // front-matter checkout (WO-0093) — the working copy is Docket-prepared (a git
+  // worktree under the app home, branched from main at start). Absent = disabled (the pre-WO-0093
+  // bytes are untouched); the derived PATH itself is never stored (the order's frozen decision).
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -62,6 +65,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const taskValue = frontValue(front, 'task');
   const issueValue = frontValue(front, 'issue');
   const cwdValue = frontValue(front, 'cwd');
+  const checkoutValue = frontValue(front, 'checkout');
   return {
     reviewMode,
     flowMode,
@@ -71,6 +75,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
     taskRef: taskValue !== '' ? taskValue : undefined,
     issueRef: issueValue !== '' ? issueValue : undefined,
     cwd: cwdValue !== '' ? cwdValue : undefined,
+    checkout: checkoutValue === 'true' ? true : checkoutValue === 'false' ? false : undefined,
   };
 }
 
@@ -84,6 +89,8 @@ export interface OrderMdEdit {
   permissionRule?: PermissionRule;
   taskRef?: string | null; // → front-matter task (WO-0048): a string sets the roadmap link, null DROPS it (silence = unlinked), undefined = untouched
   cwd?: string | null; // → front-matter cwd (WO-0088): a string sets the working copy, null DROPS it (the connection-table fallback stands), undefined = untouched — the taskRef idiom
+  checkout?: boolean | null; // → front-matter checkout (WO-0093): true sets the key, false/null DROPS it
+  // (silence IS disabled — the pre-WO-0093 orders keep their bytes), undefined = untouched
 }
 
 /**
@@ -124,6 +131,10 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   // WO-0088: the working-copy override — the taskRef idiom verbatim.
   if (typeof patch.cwd === 'string') nextFront = setKey(nextFront, 'cwd', patch.cwd);
   else if (patch.cwd === null) nextFront = dropKey(nextFront, 'cwd');
+  // WO-0093: the worktree enablement — true sets, false/null drops (silence IS disabled, the
+  // flow_mode idiom: the default never needs spelling out).
+  if (patch.checkout === true) nextFront = setKey(nextFront, 'checkout', 'true');
+  else if (patch.checkout === false || patch.checkout === null) nextFront = dropKey(nextFront, 'checkout');
 
   let nextBody = body;
   if (patch.description !== undefined) {

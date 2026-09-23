@@ -46,6 +46,7 @@ export function DetailStrip({
   detail,
   objective,
   cwdOverride,
+  checkoutOverride,
   phase,
   turn,
   duration,
@@ -65,6 +66,8 @@ export function DetailStrip({
   objective: string;
   /** WO-0088: the parsed order.md `cwd:` — the working-copy field's prefill; undefined = empty. */
   cwdOverride?: string;
+  /** WO-0093: the parsed order.md `checkout:` — the edit dialog's chip seed; undefined = off. */
+  checkoutOverride?: boolean;
   phase: WoPhase;
   /** The console's turn state — the band spine's lamp (WO-0038, the substrip's survivor). */
   turn: TurnState;
@@ -114,6 +117,8 @@ export function DetailStrip({
   // WO-0088: the working-copy draft — the taskRef idiom, difference-based save (cleared = drop).
   const [cwd, setCwd] = useState(cwdOverride ?? '');
   const [cwdErr, setCwdErr] = useState<string | null>(null);
+  // WO-0093: the automation's draft — same idiom (dropped = disabled).
+  const [checkout, setCheckout] = useState(checkoutOverride ?? false);
   const [saving, setSaving] = useState(false);
   // WO-0036: the WsSettingsModal form contract — errors under their field; save failures toast
   // top-right (operator review round 2026-08-21; the footer carries no error copy).
@@ -125,6 +130,7 @@ export function DetailStrip({
     setTitle(detail.title);
     setDescription(objective);
     setCwd(cwdOverride ?? '');
+    setCheckout(checkoutOverride ?? false);
     setTitleErr(null);
     setCwdErr(null);
   };
@@ -149,6 +155,8 @@ export function DetailStrip({
         ...(description.trim() !== objective ? { description: description.trim() } : {}),
         // WO-0088: the taskRef idiom — a non-empty string sets the override, a clear DROPS the key.
         ...(cwd.trim() !== (cwdOverride ?? '') ? { cwd: cwd.trim() === '' ? null : cwd.trim() } : {}),
+        // WO-0093: the same idiom — ON sets the key, OFF drops it (silence IS disabled).
+        ...(checkout !== (checkoutOverride ?? false) ? { checkout: checkout ? true : null } : {}),
       });
       setEditing(false);
       setTitleErr(null);
@@ -351,6 +359,15 @@ export function DetailStrip({
         </p>
       ) : null}
 
+      {/* WO-0093: the OBSERVED working copy — the derived path, mono, the ledger idiom. An
+          observed fact at view time: absent on every order without a prepared copy ("nothing
+          new" when the order is not worktree-enabled). */}
+      {detail.worktreePath !== undefined ? (
+        <p data-worktree-line className="truncate font-mono text-[11px] text-inkdim" title={detail.worktreePath}>
+          {UI.worktreeMetaLine(detail.worktreePath)}
+        </p>
+      ) : null}
+
       {editing ? (
         <Dialog
           open
@@ -400,6 +417,22 @@ export function DetailStrip({
                 className="font-mono text-[12px]"
               />
             </Field>
+            {/* WO-0093: the automation's choice — the same chip idiom as the create dialog. */}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                data-wo-checkout
+                aria-pressed={checkout}
+                onClick={() => setCheckout((v) => !v)}
+                className={`ichip inline-flex w-fit items-center gap-1.5 rounded-md px-2 py-1 ${checkout ? 'ichip-on' : ''}`}
+              >
+                <span aria-hidden="true" className={`font-mono text-[11px] ${checkout ? 'text-info' : ''}`}>{checkout ? '✓' : '○'}</span>
+                <span className="font-mono text-[11px]">{UI.woCheckoutLabel}</span>
+              </button>
+              {checkout && cwd.trim() !== '' ? (
+                <p data-checkout-precedence className="text-[11px] text-inkdim">{UI.woCheckoutPrecedence}</p>
+              ) : null}
+            </div>
           </div>
         </Dialog>
       ) : null}

@@ -1,17 +1,28 @@
 // e2e/seed.ts — builds a throwaway workspace + WOs across stages for the UI driver (WO-0031).
 // Run via tsx: prints `DB=<path>` for the driver. Never touches the operator's real db/repo.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = mkdtempSync(join(tmpdir(), 'docket-e2e-'));
 const repo = join(root, 'repo');
 mkdirSync(join(repo, 'docs', 'work-orders'), { recursive: true });
+
+// WO-0093: the fixture repos are REAL local git repos — every connected repo a WO can target is
+// one the worktree automation may branch from (`git worktree add -b` at the start click). One
+// seed commit on main; everything the store authors afterwards stays untracked (the operator's
+// commit). `branch` renames the default for repos that must LACK main (the prep-failure world).
+const gitSeed = (dir: string, branch = 'main'): void => {
+  execFileSync('git', ['init', '-q', '-b', branch, dir]);
+  execFileSync('git', ['-C', dir, 'add', '-A']);
+  execFileSync('git', ['-C', dir, '-c', 'user.email=e2e@docket.local', '-c', 'user.name=e2e', 'commit', '-q', '--allow-empty', '-m', 'seed']);
+};
 // WO-0074 (WO-0069's tightened derivation): a resolvable verifier pointer needs a real file —
 // the closed fixtures' reports point here.
 mkdirSync(join(repo, 'src'), { recursive: true });
 writeFileSync(join(repo, 'src', 'a.ts'), 'export {};\n');
+gitSeed(repo);
 
 const { createStore } = await import('../src/adapters/store/index.ts');
 const store = createStore(join(root, 'e2e.db'));
@@ -464,6 +475,8 @@ await store.setLocale('tr');
 //     numbering is store-global and drifts as this seed evolves; specs never hard-code numbers.
 mkdirSync(join(root, 'api'));
 mkdirSync(join(root, 'mobile'));
+gitSeed(join(root, 'api'));
+gitSeed(join(root, 'mobile'));
 const wsYol = await store.createWorkspace({
   label: 'yol',
   repos: [{ path: repo, remote: 'e2e-remote' }, { path: join(root, 'api') }, { path: join(root, 'mobile') }],
@@ -560,6 +573,8 @@ console.log(`ROADMAP=${JSON.stringify({ foto: String(woFoto.id), yetim: String(w
 //     parse-guard face (Onayla absent, İtiraz et gone, Sürdür the one action — dogfood 2026-08-29).
 mkdirSync(join(root, 'repo-taslak'), { recursive: true });
 mkdirSync(join(root, 'repo-kirli'), { recursive: true });
+gitSeed(join(root, 'repo-taslak'));
+gitSeed(join(root, 'repo-kirli'));
 const wsTaslak = await store.createWorkspace({
   label: 'taslak',
   repos: [{ path: join(root, 'repo-taslak'), remote: 'e2e-taslak' }],
@@ -585,6 +600,7 @@ store.saveRoadmapDraft(wsKirli.id, '---\nworkspace: nope\ntitle: Kirli\n---\n\n#
 // ✦ drive's resume journey (Sürdür → re-proposal) runs here, so the shared kirli world stays
 // pristine for its read-only card specs and the WO-0051 chip spec.
 mkdirSync(join(root, 'repo-olu'), { recursive: true });
+gitSeed(join(root, 'repo-olu'));
 const wsOlu = await store.createWorkspace({
   label: 'taslak-olu',
   repos: [{ path: join(root, 'repo-olu'), remote: 'e2e-olu' }],
@@ -604,6 +620,7 @@ store.saveRoadmapDraft(wsOlu.id, '---\nworkspace: nope\ntitle: Ölü\n---\n\n# �
 // 'taslak-kapi': the draft's OWN budget gate world — at its cap before any ✦ click (ascii label:
 // slugify strips the Turkish ı, so the label IS the slug the draft md's front-matter must name).
 mkdirSync(join(root, 'repo-kapi'), { recursive: true });
+gitSeed(join(root, 'repo-kapi'));
 const wsTaslakKapi = await store.createWorkspace({
   label: 'taslak-kapi',
   repos: [{ path: join(root, 'repo-kapi'), remote: 'e2e-kapi' }],
@@ -630,6 +647,7 @@ console.log(`TASLAK=${JSON.stringify({ taslak: String(wsTaslak.id), kirli: Strin
 //     dialogs degrade to 'belge bulunamadı' and every WO-0050 spec keeps its GENERATE semantics.
 const repoDepo = join(root, 'repo-taslak-depo');
 mkdirSync(join(repoDepo, 'docs', 'adr'), { recursive: true });
+gitSeed(repoDepo); // committed BEFORE the doc writes below — the later .md files stay untracked
 mkdirSync(join(repoDepo, 'docs', 'notlar'), { recursive: true });
 writeFileSync(join(repoDepo, 'docs', 'faz-0-altyapi.md'), '# Faz 0\nKullanıcı altyapısı.\n', 'utf8');
 writeFileSync(join(repoDepo, 'docs', 'faz-1-profil.md'), '# Faz 1\nAntrenör profili.\n', 'utf8');
@@ -649,6 +667,7 @@ console.log(`TASLAK_DEPO=${JSON.stringify({ depo: String(wsDepo.id), external: j
 //     touches. Ten root files: 8 visible rows + the '+2 belge — tümü dahil' tail.
 const repoDuz = join(root, 'repo-taslak-duz');
 mkdirSync(join(repoDuz, 'docs'), { recursive: true });
+gitSeed(repoDuz); // committed BEFORE the ten root docs below — they stay untracked
 for (let i = 0; i < 10; i++) writeFileSync(join(repoDuz, 'docs', `faz-${i}-duz.md`), `# Faz ${i}\nDüz kök belgesi.\n`, 'utf8');
 const wsDuz = await store.createWorkspace({
   label: 'taslak-duz',
@@ -717,8 +736,17 @@ store.recordSession({
   providerSessionId: 'e2e-k-vintage', owner: kOwner(woK1.id), role: 'architect', status: 'idle',
   cost: { tokensIn: 30_000, tokensOut: 4_000, usd: 2.08 }, startedAt: monthDay(7), endedAt: monthDay(7),
 });
-// 'bos': zero usage rows, NO budget key — the empty face has nothing to lean on
-mkdirSync(join(root, 'repo-bos'), { recursive: true });
+// 'bos': zero usage rows, NO budget key — the empty face has nothing to lean on. Its default
+// branch is deliberately `master`: the WO-0093 prep-failure spec branches a worktree from MAIN
+// here and the missing base must refuse the start (AC 5, the verbatim failure arm). The tohum
+// dir pre-seeds its own store past every id (the WO-0090 pattern — the work_order PK is global).
+// 0100 (the original pin) collided live with `UNIQUE constraint failed: work_order.id` once the
+// 'brifing' world (WO-0090) landed on main: its own tohum sits at 0099 and it seeds 3 WOs
+// directly (0100/0101/0102) — bos's runtime create ('WO-0093 hazırlık hatası') landed on the
+// same 0101 independently. 0130 clears every tohum + runtime ceiling in this file (wt's own
+// runtime creates top out around 0113).
+mkdirSync(join(root, 'repo-bos', 'docs', 'work-orders', 'WO-0130-tohum'), { recursive: true });
+gitSeed(join(root, 'repo-bos'), 'master');
 const wsBos = await store.createWorkspace({
   label: 'bos',
   repos: [{ path: join(root, 'repo-bos'), remote: 'e2e-bos' }],
@@ -750,6 +778,7 @@ console.log(`USAGE=${JSON.stringify({ kullanim: String(wsKullanim.id), bos: Stri
 //     all-empty face: no WOs, no roadmap, no debt ledger.)
 const repoGenel = join(root, 'repo-genel');
 mkdirSync(join(repoGenel, 'docs', 'work-orders', 'WO-0090-tohum'), { recursive: true });
+gitSeed(repoGenel);
 const wsGenel = await store.createWorkspace({
   label: 'genel',
   repos: [{ path: repoGenel, remote: 'e2e-genel' }],
@@ -823,6 +852,9 @@ const repoSorunDocs = join(root, 'sorun-docs');
 mkdirSync(join(repoSorunDocs, 'docs', 'work-orders', 'WO-0095-tohum'), { recursive: true });
 const repoSorunApi = join(root, 'sorun-api');
 const repoSorunMobile = join(root, 'sorun-mobile');
+gitSeed(repoSorunDocs);
+gitSeed(repoSorunApi);
+gitSeed(repoSorunMobile);
 const wsSorun = await store.createWorkspace({
   label: 'sorun',
   repos: [
@@ -860,5 +892,46 @@ await mkB('Brifing bayat', 'E2E: the stale briefing. src/a.ts:1 resolves; lib/ka
 await mkB('Brifing temiz', 'E2E: the clean briefing. src/a.ts:1 resolves.');
 await mkB('Brifing sade', 'E2E: zero pointers, prose only. Saat 12:30.');
 console.log(`BRIFING=${JSON.stringify({ ws: String(wsBrifing.id) })}`);
+
+// 22) WO-0093 — the worktree world. 'wt': a single-repo workspace whose repo is a REAL local git
+//     repo (main + one seed commit) — the faithful single-repo wave shape (the store IS the
+//     track). TWO worktree-enabled orders ride the parallel spec (two isolated copies, two
+//     branches, zero collisions); the closable chain + the dirty-kept / clean-removed close
+//     specs ride them. `src-wt.txt` is COMMITTED — the verifier report's pointer resolves
+//     against it (the WO-0069 record-time gate). Pre-seeded past every id (the WO-0090 pattern:
+//     the work_order PK is global, the number is per decision store) — WO-0097 collided with the
+//     sorun world's own documented ceiling (WO-0098, this file's own note above): its "tek
+//     üretim" + "toplu üretim" specs can independently reach 098, and 'wt' seeding two WOs at
+//     097 landed them on 098/099, so a later sorun-side create hit `UNIQUE constraint failed:
+//     work_order.id` (the TD-035 pattern, caught live). 0110 clears every tohum in this file
+//     with margin, not just today's ceiling.
+const repoWt = join(root, 'repo-wt');
+mkdirSync(join(repoWt, 'docs', 'work-orders', 'WO-0110-tohum'), { recursive: true });
+// A file, not just the empty dir: git tracks nothing for a directory with no file in it, so
+// `docs/work-orders/` itself would stay untracked — the later WO-0093 spec's own repo-cleanliness
+// check (wtAssertRepoUntouched) reads `git status --porcelain`, which then compacts the WHOLE
+// `docs/` tree into one `?? docs/` line once Kopya A/B's order.md lands (nothing tracked under it
+// to force a finer breakdown) instead of the expected `?? docs/work-orders/…` per entry.
+writeFileSync(join(repoWt, 'docs', 'work-orders', 'WO-0110-tohum', '.gitkeep'), '');
+writeFileSync(join(repoWt, 'src-wt.txt'), 'wt seed\n');
+gitSeed(repoWt);
+const wsWt = await store.createWorkspace({
+  label: 'wt',
+  repos: [{ path: repoWt, remote: 'e2e-wt' }],
+  decisionStorePath: repoWt,
+});
+const mkWt = (title: string) =>
+  store.createWorkOrder({
+    workspaceId: wsWt.id,
+    title,
+    description: 'E2E: worktree automation.',
+    trackRepos: wsWt.repos,
+    reviewMode: 'gates',
+    contextFiles: [],
+    checkout: true,
+  });
+const woWtA = await mkWt('Kopya A');
+const woWtB = await mkWt('Kopya B');
+console.log(`WT=${JSON.stringify({ ws: String(wsWt.id), a: String(woWtA.id), b: String(woWtB.id), repo: repoWt })}`);
 
 console.log(`DB=${join(root, 'e2e.db')}`);

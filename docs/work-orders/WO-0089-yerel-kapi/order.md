@@ -3,7 +3,7 @@ id: WO-0089
 title: "The local gate — Docket measures the mechanical evidence itself; a CI exemption needs a substitute, not a hole"
 workspace: docket
 status: open
-mode: plan # plan | direct
+mode: direct # plan | direct (operator ruling 2026-09-22: the parallel wave runs direct)
 review: full # light | full
 review_mode: gates
 tracks:

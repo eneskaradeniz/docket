@@ -466,7 +466,15 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
   const handleCloseWorkOrder = useCallback(
     async (note: string) => {
       if (!selectedId) return;
-      await source.closeWorkOrder(selectedId, note);
+      // WO-0093: a KEPT working copy is honest news, not an error — the toast names it and why.
+      const { worktreeKept } = await source.closeWorkOrder(selectedId, note);
+      if (worktreeKept) {
+        const line =
+          worktreeKept.reason === 'dirty' ? UI.worktreeKeptDirty(worktreeKept.path)
+          : worktreeKept.reason === 'unreadable' ? UI.worktreeKeptUnreadable(worktreeKept.path)
+          : UI.worktreeKeptFailed(worktreeKept.path);
+        toast.push({ kind: 'news', title: line });
+      }
       reloadDetail();
       refreshWorkOrders();
     },

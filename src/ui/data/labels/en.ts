@@ -411,6 +411,15 @@ export const UI = {
   woCwdLabel: 'Working copy (optional)',
   woCwdPlaceholder: 'e.g. /wave/wt/WO-0088 — drives run in this folder.',
   woCwdErr: 'Must be an absolute path (starts with /)',
+  // WO-0093: the worktree automation — the create/edit choice, the honest precedence line, the
+  // detail meta line, the delete confirm's consequence and the close-kept toast.
+  woCheckoutLabel: 'Separate working copy (worktree)',
+  woCheckoutPrecedence: 'An explicit working copy wins — no worktree is prepared.',
+  worktreeMetaLine: (path: string) => `Working copy: ${path}`,
+  deleteWoWorktreeHint: (path: string) => `The working copy is deleted too: ${path}`,
+  worktreeKeptDirty: (path: string) => `Dirty working copy kept — your call: ${path}`,
+  worktreeKeptUnreadable: (path: string) => `The working copy could not be read — left in place: ${path}`,
+  worktreeKeptFailed: (path: string) => `The working copy could not be removed — left in place: ${path}`,
   woTracksLabel: 'Repos',
   woContextLabel: 'Context files',
   woContextAdd: '▸ Add file',

@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createStore } from './index';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
@@ -3409,5 +3409,160 @@ describe('WO-0090 — briefingCheck: the briefing resolves before it ships (surf
     const wo = await briefedWo(store, root, 'Clean order, prose only.');
     await store.approvePlan(wo.id, '# plan\n\nThe plan says lib/kayip.dart:9 — not checkable here.\n\n```steps\n[]\n```\n');
     assert.equal(await store.briefingCheck(wo.id), undefined); // zero pointers in the BRIEFING
+  });
+});
+
+// ===== WO-0093 — the prepared working copy: derivation, precedence, observed view =====
+describe('WO-0093 — worktreeFor derives the working copy from the convention (never stored)', () => {
+  it('checkout: true derives <dbHome>/worktrees/<ws>/wo-NNNN-<slug> on the first CODE track', async () => {
+    const dbPath = freshDb();
+    const store = createStore(dbPath);
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Kopya işi', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [], checkout: true,
+    });
+    const wt = store.worktreeFor(wo.id);
+    assert.ok(wt, 'the enabled order derives no working copy');
+    assert.equal(wt.repoPath, rootApi, 'the base repo is the code track, never the decision store');
+    assert.match(wt.path, new RegExp(`^${dirname(dbPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/worktrees/wt-ws/wo-\\d{4}-`));
+    assert.match(wt.branch, /^wo-\d{4}-/);
+    // the authored order.md carries the enablement and NEVER the derived path
+    const docs = await store.getWorkOrderDocs(wo.id);
+    assert.ok(docs.order.includes('checkout: true'), 'the order.md lost the checkout key');
+    assert.equal(docs.order.includes(wt.path), false, 'a machine-local path leaked into the committed document');
+  });
+
+  it('checkout absent (or false) derives nothing — the pre-WO-0093 bytes keep their behavior', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt Off WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Kapalı kopya', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [],
+    });
+    assert.equal(store.worktreeFor(wo.id), undefined);
+  });
+
+  it('an explicit cwd: front-matter WINS the precedence — worktreeFor yields undefined (AC 4)', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt Prec WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Öncelik işi', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [], checkout: true, cwd: rootApi,
+    });
+    assert.equal(store.worktreeFor(wo.id), undefined, 'the override must beat the automation');
+    // dropping the override re-arms the worktree
+    await store.updateWorkOrder(wo.id, { cwd: null });
+    assert.ok(store.worktreeFor(wo.id), 'the worktree did not re-arm after the override drop');
+  });
+});
+
+describe('WO-0093 — driveCwd precedence: explicit cwd > worktree > the connection table', () => {
+  it('the worktree wins over the table only when no cwd: override stands (the WO-0088 contract intact)', async () => {
+    const dbPath = freshDb();
+    const store = createStore(dbPath);
+    const dbHome = dirname(dbPath);
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt Cwd WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Sıralama işi', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [], checkout: true,
+    });
+    const hydrated = await store.getWorkOrder(wo.id);
+    const track = hydrated!.tracks[0]!;
+    const wt = store.worktreeFor(wo.id)!;
+    assert.equal(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' }), wt.path);
+    assert.equal(store.driveCwd({ role: 'implementer', workOrderId: wo.id, scope: track.id, mode: 'direct', prompt: '' }), wt.path);
+    // 1st place: an explicit cwd: beats the worktree — byte-for-byte the WO-0088 shape
+    const operatorPath = freshRoot();
+    await store.updateWorkOrder(wo.id, { cwd: operatorPath });
+    assert.equal(store.driveCwd({ role: 'architect', workOrderId: wo.id, mode: 'plan', prompt: '' }), operatorPath);
+    assert.equal(store.driveCwd({ role: 'implementer', workOrderId: wo.id, scope: track.id, mode: 'direct', prompt: '' }), operatorPath);
+    assert.ok(dbHome.length > 0);
+  });
+});
+
+describe('WO-0093 — the detail view observes the working copy (exists on disk → the path)', () => {
+  it('worktreePath is absent until the derived dir exists, present after (never for disabled orders)', async () => {
+    const dbPath = freshDb();
+    const store = createStore(dbPath);
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt View WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const woOn = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Görünüm işi', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [], checkout: true,
+    });
+    const woOff = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Görünüm kapalı', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [],
+    });
+    const wt = store.worktreeFor(woOn.id)!;
+    rmSync(wt.path, { recursive: true, force: true }); // the shared tmpdir may hold a prior run's copy
+    assert.equal((await store.getWorkOrder(woOn.id))!.worktreePath, undefined, 'an unprepared copy showed a path');
+    assert.equal((await store.getWorkOrder(woOff.id))!.worktreePath, undefined, 'a disabled order showed a path');
+    mkdirSync(wt.path, { recursive: true }); // the prep's effect, stand-in
+    assert.equal((await store.getWorkOrder(woOn.id))!.worktreePath, wt.path);
+    assert.equal((await store.getWorkOrder(woOff.id))!.worktreePath, undefined);
+  });
+});
+
+describe('WO-0093 — the checkout edit idiom rides updateWorkOrder', () => {
+  it('true sets the key, false/null drops it, and the audit records the field', async () => {
+    const store = createStore(freshDb());
+    const rootApi = freshRoot();
+    const rootDocs = freshRoot();
+    const apiSlug = rootApi.split('/').pop()!;
+    const ws = await store.createWorkspace({
+      label: 'Wt Edit WS',
+      repos: [{ path: rootApi }, { path: rootDocs }],
+      decisionStorePath: rootDocs,
+    });
+    const wo = await store.createWorkOrder({
+      workspaceId: ws.id, title: 'Düzen kopya', description: 'x', trackRepos: [rid(apiSlug)],
+      reviewMode: 'gates', contextFiles: [],
+    });
+    await store.updateWorkOrder(wo.id, { checkout: true });
+    assert.ok((await store.getWorkOrderDocs(wo.id)).order.includes('checkout: true'), 'the edit did not set the key');
+    await store.updateWorkOrder(wo.id, { checkout: false });
+    assert.equal((await store.getWorkOrderDocs(wo.id)).order.includes('checkout:'), false, 'false did not drop the key');
+    await store.updateWorkOrder(wo.id, { checkout: true });
+    await store.updateWorkOrder(wo.id, { checkout: null });
+    assert.equal((await store.getWorkOrderDocs(wo.id)).order.includes('checkout:'), false, 'null did not drop the key');
+    const evs = await store.getWorkOrderEvents(wo.id);
+    const edits = evs.filter((e) => e.kind === 'wo_edited' && (e.detail ?? '').includes('checkout'));
+    assert.ok(edits.length >= 3, `the checkout edits were not audited: ${JSON.stringify(evs.map((e) => e.detail))}`);
   });
 });

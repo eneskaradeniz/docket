@@ -11,6 +11,14 @@ import type { WorkspaceOverview } from './overview';
 import type { DraftSourceSummary } from './roadmap-draft';
 import type { ClosureEvidence } from './forge';
 
+/** WO-0093: the working copy the close could NOT remove — the honest kept case. `dirty` is the
+ *  operator's own decision to make (their work is in there); `unreadable`/`remove_failed` keep
+ *  the copy and say so, never a silent success or a blocked close. */
+export interface WorktreeKept {
+  path: string;
+  reason: 'dirty' | 'unreadable' | 'remove_failed';
+}
+
 export interface RepoConnectionInput {
   path: string;
   remote?: string;
@@ -104,6 +112,9 @@ export interface CreateWorkOrderInput {
   // A PATH, like the local-context precedent: the operator's act, never a store column. Absent →
   // the connection table resolves the cwd (WO-0050 / D8, unchanged).
   cwd?: string;
+  // WO-0093: the worktree enablement — → order.md front-matter `checkout: true`. Absent/false
+  // emit nothing (silence IS disabled); the derived path itself is never stored anywhere.
+  checkout?: boolean;
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
@@ -116,6 +127,7 @@ export interface UpdateWorkOrderInput {
   permissionRule?: PermissionRule;
   taskRef?: string | null; // → order.md front-matter task (WO-0048): string sets the link, null drops it
   cwd?: string | null; // → order.md front-matter cwd (WO-0088): string sets the working copy, null drops it
+  checkout?: boolean | null; // → order.md front-matter checkout (WO-0093): true sets, false/null drops (silence IS disabled)
 }
 
 export interface WorkOrderSource {
@@ -303,7 +315,10 @@ export interface WorkOrderSource {
   // WO-0065: `evidence` carries what the forge SAW (observed merge / absent / unknown) — handed
   // in by the composition root, which owns the forge; the store records it as a `forge_merge`
   // event. Absent = the legacy attested close (the CLI/test path): nothing extra, nothing claimed.
-  closeWorkOrder(workOrderId: WorkOrderId, note: string, evidence?: ClosureEvidence): Promise<void>;
+  // WO-0093: the result carries the worktree outcome — `worktreeKept` names the working copy
+  // that could NOT be removed at close (dirty: the operator decides; a failed/unreadable look
+  // or a failed removal: kept honestly). Absent = nothing kept (no worktree, or removed clean).
+  closeWorkOrder(workOrderId: WorkOrderId, note: string, evidence?: ClosureEvidence): Promise<{ worktreeKept?: WorktreeKept }>;
 
   // WO-0029 / B19: the operator's override on a revise verdict ("Devam et") — the step's row flips to
   // proceed; the architect's original text stays in the verdict file. Idempotent (no-op when not revise).

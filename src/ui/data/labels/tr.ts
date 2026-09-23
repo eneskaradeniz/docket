@@ -454,6 +454,15 @@ export const UI = {
   woCwdLabel: 'Çalışma kopyası (isteğe bağlı)',
   woCwdPlaceholder: 'Örn. /wave/wt/WO-0088 — sürüşler bu klasörde koşar.',
   woCwdErr: 'Mutlak bir yol olmalı (/ ile başlamalı)',
+  // WO-0093: the worktree automation — the create/edit choice, the honest precedence line, the
+  // detail meta line, the delete confirm's consequence and the close-kept toast.
+  woCheckoutLabel: 'Ayrı çalışma kopyası (worktree)',
+  woCheckoutPrecedence: 'Açık çalışma kopyası kazanır — worktree hazırlanmaz.',
+  worktreeMetaLine: (path: string) => `Çalışma kopyası: ${path}`,
+  deleteWoWorktreeHint: (path: string) => `Çalışma kopyası da silinir: ${path}`,
+  worktreeKeptDirty: (path: string) => `Kirli çalışma kopyası korundu — sen karar ver: ${path}`,
+  worktreeKeptUnreadable: (path: string) => `Çalışma kopyası okunamadı, yerinde duruyor: ${path}`,
+  worktreeKeptFailed: (path: string) => `Çalışma kopyası silinemedi, yerinde duruyor: ${path}`,
   woTracksLabel: 'Depolar',
   woContextLabel: 'Bağlam dosyaları',
   woContextAdd: '▸ Dosya ekle',

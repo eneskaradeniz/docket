@@ -3,7 +3,7 @@ id: WO-0091
 title: "The stall gate — a live drive that stops making progress is the operator's turn, not a running one"
 workspace: docket
 status: open
-mode: plan # plan | direct
+mode: direct # plan | direct (operator ruling 2026-09-22: the parallel wave runs direct)
 review: full # light | full
 review_mode: gates
 tracks:

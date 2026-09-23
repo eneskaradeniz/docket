@@ -85,6 +85,10 @@ export interface OrderMdInput {
   // WO-0088: the work order's own working copy — → front-matter `cwd:`; emitted only when set
   // (silence IS the connection-table fallback, the flow_mode idiom).
   cwd?: string;
+  // WO-0093: the worktree enablement — → front-matter `checkout: true`; emitted only when ON
+  // (silence IS disabled: the pre-WO-0093 orders keep their bytes, and a disabled order's
+  // front-matter never grows the key).
+  checkout?: boolean;
 }
 
 // Compose the order.md body. Follows docs/work-orders/TEMPLATE.md + the WO-0013/0014 front-matter
@@ -113,7 +117,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.issueRef ? `issue: ${input.issueRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}tracks:
+${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.issueRef ? `issue: ${input.issueRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}${input.checkout === true ? `checkout: true\n` : ''}tracks:
 ${tracks}
 ---
 

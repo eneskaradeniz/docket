@@ -3,7 +3,7 @@ id: WO-0090
 title: "The briefing resolves before it ships — stale context is caught at assembly, not discovered mid-drive"
 workspace: docket
 status: open
-mode: plan # plan | direct
+mode: direct # plan | direct (operator ruling 2026-09-22: the parallel wave runs direct)
 review: full # light | full
 review_mode: gates
 tracks:
