@@ -13,8 +13,11 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
+import { acquireE2eLock } from './lock.mjs';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
+// WO-0101: one suite per machine — wait for any other worktree's suite before seeding or launching
+await acquireE2eLock(ROOT);
 const SHOTS = join(ROOT, 'docs', 'ui-shots');
 mkdirSync(SHOTS, { recursive: true });
 
