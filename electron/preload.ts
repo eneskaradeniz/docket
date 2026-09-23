@@ -9,6 +9,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
 import type { AppSettings, Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
+import type { BackendProfile } from '../src/core/backend-profile';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import type { ChromeNavigate } from '../src/core/tray-menu';
 
@@ -73,7 +74,13 @@ const source: WorkOrderSource = {
 // Operator app settings (WO-0025 / B1). WO-0059 rev 4: the key methods are gone — the check runs
 // main-side against the operator's own identity.
 const settings: AppSettings = {
-  checkProvider: () => ipcRenderer.invoke('docket:settings:check-provider'),
+  // WO-0098: a profile NAME runs the check under that profile's env (resolved main-side).
+  checkProvider: (profileName?: string) => ipcRenderer.invoke('docket:settings:check-provider', profileName),
+  getBackendProfiles: () => ipcRenderer.invoke('docket:settings:get-backend-profiles'),
+  setBackendProfiles: (profiles: BackendProfile[]) => ipcRenderer.invoke('docket:settings:set-backend-profiles', profiles),
+  getWorkspaceProfile: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-workspace-profile', workspaceId),
+  setWorkspaceProfile: (workspaceId: WorkspaceId, name: string | undefined) =>
+    ipcRenderer.invoke('docket:settings:set-workspace-profile', workspaceId, name),
   providerName: () => ipcRenderer.invoke('docket:settings:provider-name'),
   getPermissionRule: () => ipcRenderer.invoke('docket:settings:get-permission-rule'),
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),

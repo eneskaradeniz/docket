@@ -27,6 +27,8 @@ import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
 import type { FazStatus } from '../../../core/roadmap';
 import type { RoadmapDiagnosticCode } from '../../../core/roadmap-md';
+import type { EnvLineIssue, ProfileIssue } from '../../../core/backend-profile';
+type ProfileNameIssue = Extract<ProfileIssue, { field: 'name' }>['code'];
 
 // Eski 3-sütunlu tahta (BoardColumn) — uyumluluk için kalır; yeni tahta BUCKET_* kullanır.
 // Yeni iki kovalı tahta (WO-0013).
@@ -561,6 +563,43 @@ export const UI = {
   settingsPromptSave: 'Kaydet',
   settingsPromptReset: 'Varsayılana dön',
   toastPromptsSaved: 'İstem şablonları kaydedildi',
+  // Sürücüler (WO-0098 — arka uç profilleri: operatörün adlandırdığı, gizli olmayan ortam
+  // parçaları; kimlik bilgisi kabukta/CLI girişinde kalır). Kodlar core verisidir; paket insan
+  // kelimesini taşır.
+  settingsTabProfiles: 'Sürücüler',
+  profileDefaultName: 'Varsayılan',
+  profileInheritLine: 'Ortamı olduğu gibi devralır',
+  profileTest: 'Test et',
+  profileEdit: 'Düzenle',
+  profileRemove: 'Sil',
+  profileAddTitle: 'Yeni sürücü',
+  profileEditTitle: 'Sürücüyü düzenle',
+  profileNameLabel: 'Ad',
+  profileEnvLabel: 'Ortam (isteğe bağlı)',
+  profileEnvPlaceholder: 'ANAHTAR=değer — satır başına bir',
+  profileAdd: 'Ekle',
+  profileSave: 'Kaydet',
+  profileNameErr: (code: ProfileNameIssue): string =>
+    code === 'name_empty' ? 'Ad boş olamaz'
+    : code === 'name_duplicate' ? 'Bu adda bir sürücü zaten var'
+    : code === 'name_reserved' ? '«default» yerleşik sürücünün adı'
+    : 'Tek satır, en fazla 40 karakter',
+  profileEnvErr: (line: number, code: EnvLineIssue['code'], key?: string): string =>
+    `Satır ${line}: ` + (
+      code === 'secret_key' ? `gizli anahtar saklanmaz${key ? ` (${key})` : ''} — kimlik bilgisi kabukta kalır`
+      : code === 'secret_value' ? `değer bir anahtara benziyor${key ? ` (${key})` : ''} — kimlik bilgisi kabukta kalır`
+      : code === 'duplicate_key' ? `${key ?? ''} iki kez yazılmış`
+      : code === 'key_shape' ? 'anahtar harf/rakam/alt çizgi olmalı'
+      : code === 'value_empty' ? 'değer boş'
+      : code === 'value_shape' ? 'değer tek satır olmalı'
+      : 'ANAHTAR=değer biçiminde olmalı'
+    ),
+  toastProfilesSaved: 'Sürücüler kaydedildi',
+  wsProfileLabel: 'Sürücü',
+  woProfileLabel: 'Sürücü (isteğe bağlı)',
+  woProfileInherit: 'Çalışma alanınınki',
+  profileRefusedTitle: (name: string, source: 'wo' | 'workspace'): string =>
+    `«${name}» sürücüsü yok — ${source === 'wo' ? 'iş emrinin' : 'çalışma alanının'} sürücü seçimini düzelt`,
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',

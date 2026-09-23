@@ -190,3 +190,24 @@ describe('applyOrderMdEdits — the checkout key (WO-0093)', () => {
     expect(applyOrderMdEdits(linked, {})).toBe(linked);
   });
 });
+
+// ===== WO-0098 — the per-WO backend profile override edits like the cwd key: string sets, null drops =====
+describe('applyOrderMdEdits — the profile key (WO-0098)', () => {
+  it('a string sets profile: into the front-matter', () => {
+    const out = applyOrderMdEdits(doc(['id: WO-0005', 'title: Old title'].join('\n'), 'Body.'), { profile: 'GLM' });
+    expect(parseOrderMd(out).profile).toBe('GLM');
+    expect(out).toContain('Body.');
+  });
+
+  it('null DROPS the key (silence = the workspace default stands)', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'profile: GLM'].join('\n'), 'Body.');
+    const out = applyOrderMdEdits(linked, { profile: null });
+    expect(parseOrderMd(out).profile).toBeUndefined();
+    expect(out).not.toContain('profile:');
+  });
+
+  it('undefined = untouched', () => {
+    const linked = doc(['id: WO-0005', 'title: Old title', 'profile: GLM'].join('\n'), 'Body.');
+    expect(applyOrderMdEdits(linked, {})).toBe(linked);
+  });
+});

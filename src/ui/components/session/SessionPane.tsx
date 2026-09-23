@@ -3,7 +3,7 @@ import { initialSessionState, seedLiveState, type DriveInput } from '../../../co
 import type { SessionRef, SessionRole, StageId, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 import { Button, Segmented, Textarea } from '../../kit';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneErrorText, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -43,7 +43,7 @@ export function SessionPane({
   /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
   onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
-  const { PROVIDER_ERROR_LABELS, ROLE_LABELS, UI } = useLabels();
+  const { ROLE_LABELS, UI } = useLabels();
   const store: DriveStore = useDriveStore();
   // WO-0028 / Bulgu 12: the drive lives in the app-level store, NOT this pane — navigating away keeps the
   // session running in the background; a remounted pane re-binds to the live fold state instantly.
@@ -76,6 +76,7 @@ export function SessionPane({
   // progressive verb or "Düşünüyor"; not running → the fold's own state word, frozen.
   // WO-0046: `now` also drives the staleness line.
   const { show: showActivity, line: activityLine, stale } = usePaneActivity(state, running, now);
+  const errorText = usePaneErrorText(state); // WO-0098: the dangling-profile sentence rides here too
   // The drive's own live cost/context line (StepPane's costline, mirrored — the strip carries the WO total).
   const liveStart = store.get(driveKey)?.startedAt;
 
@@ -227,7 +228,7 @@ export function SessionPane({
       {!hasStream && !running ? <p className="text-xs text-inkdim">{UI.noSession}</p> : null}
 
       {state.status === 'error' || state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
+        <PaneError message={errorText} />
       ) : null}
     </PaneShell>
   );

@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, X } from 'lucide-react';
 import type { RepoId, WorkOrder, Workspace } from '../../core/types';
 import type { PermissionRule, ReviewMode, WorkOrderSource } from '../../core/source';
 import { cwdOverrideIsAbsolute } from '../../core/order-md';
+import type { AppSettings } from '../../core/app-settings';
+import { DEFAULT_PROFILE } from '../../core/backend-profile';
 import { useLabels } from '../data/locale';
 import { Button, Dialog, Field, Input, Segmented, Textarea, Tooltip } from '../kit';
 import { toast } from './ToastHost';
@@ -37,6 +39,7 @@ export function WoCreateModal({
   defaultRule,
   prefill,
   issuePrefill,
+  settings,
   onClose,
   onCreated,
 }: {
@@ -50,6 +53,9 @@ export function WoCreateModal({
   /** WO-0092: the issue spawn's seed — the context line + title/body seeds + `issue:` into
    *  order.md. SEEDS, not locks; the operator edits before save (never a silent write). */
   issuePrefill?: WoIssuePrefill;
+  /** WO-0098: the backend-profile list's read — the per-WO override field's options. Absent (or no
+   *  configured profile) → the field renders ABSENT (an empty group, ADR-0012). */
+  settings?: Pick<AppSettings, 'getBackendProfiles'>;
   onClose: () => void;
   /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
   onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
@@ -87,6 +93,17 @@ export function WoCreateModal({
   // WO-0093: the worktree automation — default ON for new orders with a repo to copy; the
   // operator's own cwd override beats it (the precedence line says so when both stand).
   const [checkout, setCheckout] = useState(trackOptions.length > 0);
+  // WO-0098: the per-WO backend override — '' = the workspace's default (no front-matter key),
+  // DEFAULT_PROFILE pins the built-in, a name pins that profile (→ order.md `profile:`).
+  const [profileNames, setProfileNames] = useState<string[]>([]);
+  const [profile, setProfile] = useState('');
+  useEffect(() => {
+    let alive = true;
+    void settings?.getBackendProfiles().then((ps) => { if (alive) setProfileNames(ps.map((p) => p.name)); }).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [settings]);
   const [titleErr, setTitleErr] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -166,6 +183,7 @@ export function WoCreateModal({
         // WO-0093: the enablement rides the front-matter idiom — ON writes `checkout: true`;
         // OFF writes nothing (silence IS disabled, the pre-WO-0093 bytes).
         ...(checkout && cwd.trim() === '' ? { checkout: true } : {}),
+        ...(profile !== '' ? { profile } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -338,6 +356,22 @@ export function WoCreateModal({
             </div>
           ) : null}
         </section>
+
+        {/* WO-0098: the per-WO backend override — absent while no profile is configured. */}
+        {profileNames.length > 0 ? (
+          <section data-wo-profile="">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woProfileLabel}</span>
+            <Segmented
+              value={profile}
+              onValueChange={setProfile}
+              options={[
+                { value: '', label: UI.woProfileInherit },
+                { value: DEFAULT_PROFILE, label: UI.profileDefaultName },
+                ...profileNames.map((n) => ({ value: n, label: n })),
+              ]}
+            />
+          </section>
+        ) : null}
 
         <section>
           <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-inkdim">{UI.woReviewLabel}</span>

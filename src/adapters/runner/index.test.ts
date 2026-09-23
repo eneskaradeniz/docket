@@ -11,6 +11,7 @@
 // no amount of pure-function pinning can reach.
 import { describe, expect, it, vi } from 'vitest';
 import {
+  accountVerdict,
   addCost,
   applyResultCost,
   classifyProviderError,
@@ -706,5 +707,70 @@ describe('WO-0077 — the settle pin: canUseTool → decide carries the measured
     expect(await held).toEqual({ behavior: 'deny', message: 'the operator declined to answer this question' });
     h.release();
     await h.done;
+  });
+});
+
+// ===== WO-0098 — backend profiles: the spawn env, the reported model, the handshake verdict =====
+// The probe (docs/probes/backend-profiles/findings.md) measured that the injected config-dir
+// variable steers the spawn and that the session's init message reports the model it reached —
+// these pin the adapter's half: the profile env composes OVER the inherited environment, the
+// built-in leaves the spawn options byte-identical, and the init model rides `started`.
+
+describe('WO-0098 — the profile env reaches the spawn; the built-in stays byte-identical', () => {
+  it('a drive carrying a profile composes its env over process.env (the injected key wins, PATH survives)', async () => {
+    sdkMock.setScript([initMsg, resultMsg()]);
+    const runner = createRunner();
+    const prior = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = '/inherited/config';
+    try {
+      await collect(runner, { ...stepInput, profile: { name: 'Max', env: { CLAUDE_CONFIG_DIR: '/Users/op/.claude-anthropic' } } });
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = prior;
+    }
+    const env = sdkMock.lastOptions()?.env as Record<string, string> | undefined;
+    expect(env?.CLAUDE_CONFIG_DIR).toBe('/Users/op/.claude-anthropic');
+    expect(env?.PATH).toBe(process.env.PATH);
+  });
+
+  it('no profile → Options.env stays UNSET (the SDK inherits the environment itself — today, byte-identical)', async () => {
+    sdkMock.setScript([initMsg, resultMsg()]);
+    const runner = createRunner();
+    await collect(runner, stepInput);
+    expect(sdkMock.lastOptions()?.env).toBeUndefined();
+  });
+
+  it("the init message's model rides `started` verbatim (the session's own report — the evidence)", async () => {
+    sdkMock.setScript([{ ...initMsg, model: 'glm-5.3-flash[1m]' }, resultMsg()]);
+    const runner = createRunner();
+    const events = await collect(runner, stepInput);
+    expect(events.find((e) => e.kind === 'started')).toMatchObject({ kind: 'started', sessionId: 's9', model: 'glm-5.3-flash[1m]' });
+  });
+
+  it('an init without a model adds no key (never an invented default)', async () => {
+    sdkMock.setScript([initMsg, resultMsg()]);
+    const runner = createRunner();
+    const events = await collect(runner, stepInput);
+    expect('model' in (events.find((e) => e.kind === 'started') ?? {})).toBe(false);
+  });
+});
+
+describe('WO-0098 — accountVerdict: the zero-token handshake read (probe h1/h2/h3)', () => {
+  it('a token-sourced account is ready (h1: the environment-token profile)', () => {
+    expect(accountVerdict({ tokenSource: 'ANTHROPIC_AUTH_TOKEN', apiProvider: 'firstParty' })).toEqual({ ok: true, source: 'ANTHROPIC_AUTH_TOKEN' });
+  });
+
+  it('a subscription login with no tokenSource field is ready (h2: the keychain login)', () => {
+    expect(accountVerdict({ subscriptionType: 'Claude Max', apiProvider: 'firstParty' })).toEqual({ ok: true, source: 'Claude Max' });
+  });
+
+  it("tokenSource 'none' with nothing else is NOT logged in (h3: an empty config dir) — auth_missing, before any token is spent", () => {
+    const v = accountVerdict({ tokenSource: 'none', apiProvider: 'firstParty' });
+    expect(v.ok).toBe(false);
+    expect(v).toMatchObject({ code: 'auth_missing' });
+  });
+
+  it('an absent account reads as the bare handshake (the pre-WO-0098 posture)', () => {
+    expect(accountVerdict(undefined)).toEqual({ ok: true, source: 'handshake' });
   });
 });

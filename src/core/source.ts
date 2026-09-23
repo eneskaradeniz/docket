@@ -115,6 +115,10 @@ export interface CreateWorkOrderInput {
   // WO-0093: the worktree enablement — → order.md front-matter `checkout: true`. Absent/false
   // emit nothing (silence IS disabled); the derived path itself is never stored anywhere.
   checkout?: boolean;
+  // WO-0098: the work order's backend-profile override — → order.md front-matter `profile:` (the cwd
+  // idiom). A profile NAME (operator vocabulary); absent → the workspace default. The store refuses a
+  // name no configured profile carries (`default`, the built-in, is always legal).
+  profile?: string;
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
@@ -128,6 +132,7 @@ export interface UpdateWorkOrderInput {
   taskRef?: string | null; // → order.md front-matter task (WO-0048): string sets the link, null drops it
   cwd?: string | null; // → order.md front-matter cwd (WO-0088): string sets the working copy, null drops it
   checkout?: boolean | null; // → order.md front-matter checkout (WO-0093): true sets, false/null drops (silence IS disabled)
+  profile?: string | null; // → order.md front-matter profile (WO-0098): string sets the override, null drops it
 }
 
 export interface WorkOrderSource {

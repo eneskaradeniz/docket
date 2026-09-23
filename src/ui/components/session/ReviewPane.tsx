@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { initialSessionState } from '../../../core/runner';
 import type { StepView, WorkOrderId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneLog } from './pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneSteerBar, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneErrorText, usePaneLog } from './pane-chrome';
 import { DriveControls, type DriveState } from './DriveControls';
 import { useDrive, useDriveStore } from './drive-store';
 import { ChatTranscript } from './ChatTranscript';
@@ -37,7 +37,7 @@ export function ReviewPane({
   /** WO-0045: retract a queued note from a STOPPED drive (the data-port mirror route). */
   onRetractStoppedSteer?: (sessionId: string, noteId: string) => Promise<boolean>;
 }) {
-  const { PROVIDER_ERROR_LABELS, UI } = useLabels();
+  const { UI } = useLabels();
   const store = useDriveStore();
   // WO-0028 / Bulgu 12: review drives live in the app-level store like every other drive — the pane is
   // just a window onto them; the store's onEnd refreshes the detail when the review completes.
@@ -70,6 +70,7 @@ export function ReviewPane({
 
   // WO-0046: `now` also drives the staleness line.
   const { show: showActivity, line: activityLine, stale } = usePaneActivity(state, running, now);
+  const errorText = usePaneErrorText(state); // WO-0098: the dangling-profile sentence rides here too
   const { logOpen, toggleLog, headRef } = usePaneLog();
 
   return (
@@ -119,7 +120,7 @@ export function ReviewPane({
       ) : null}
 
       {state.status === 'error' || state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
+        <PaneError message={errorText} />
       ) : null}
     </PaneShell>
   );

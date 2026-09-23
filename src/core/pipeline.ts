@@ -20,6 +20,7 @@ import type { DraftDriveInput, DriveInput, LiveSessionState, PermissionDecision,
 import type { SessionOwner, SessionStore } from './session-store';
 import type { DraftSourceSummary } from './roadmap-draft';
 import { parseVerdict } from './verdict';
+import { spawnEnvOf } from './backend-profile';
 import { isRiskyPermission } from './risky';
 import type { PermissionRule } from './source';
 
@@ -221,6 +222,25 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       };
       return;
     }
+    // WO-0098: the BACKEND PROFILE gate — after the budget (a capped workspace refuses first), before
+    // everything that writes. The store resolves WO override → workspace default → the built-in; a
+    // DANGLING reference (a renamed/deleted profile) is refused here, naming it — never a silent
+    // spawn on another backend (another account, another bill). The slot is OVERWRITTEN
+    // unconditionally: a host-carried profile is never honored (the decisionStoreRoot posture), and
+    // the built-in leaves NO key at all — the spawn input stays byte-identical to the pre-profile one.
+    const profileRes = deps.store.backendProfileFor(owner);
+    if (profileRes.kind === 'missing') {
+      yield {
+        kind: 'error',
+        message: `drive refused: backend profile "${profileRes.name}" not found (${profileRes.source === 'wo' ? 'work order' : 'workspace default'})`,
+        profileRefusal: { name: profileRes.name, source: profileRes.source },
+      };
+      return;
+    }
+    delete di.profile;
+    if (profileRes.kind === 'profile') di.profile = { name: profileRes.profile.name, env: spawnEnvOf(profileRes) ?? {} };
+    const profileName = di.profile?.name;
+    let reportedModel: string | undefined; // the session's OWN report (started.model) — the evidence
     // WO-0050 / D5: a draft whose prompt did not assemble (the workspace did not resolve) is
     // refused BEFORE the runner spawns — no empty-prompt provider run. The plan-gate refusal shape.
     if (draftInput && !di.prompt) {
@@ -347,11 +367,19 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         ...(live.context ? { ctx: { usedTokens: live.context.usedTokens, maxTokens: live.context.maxTokens } } : {}),
         ...(lastUsage ? { finalUsage: lastUsage } : {}),
         ...(limitResetAt !== undefined ? { limitResetAt } : {}),
+        // WO-0098: the drive's backend evidence — the profile on EVERY record (null clears a prior
+        // leg's claim on a passthrough leg), the reported model once the session reported one.
+        profile: profileName ?? null,
+        ...(reportedModel !== undefined ? { reportedModel } : {}),
       });
     };
 
     try {
-      for await (const ev of driveRunner.drive(di)) {
+      for await (const raw of driveRunner.drive(di)) {
+        // WO-0098: the `started` event leaves here carrying the profile NAME (the host fold's pane
+        // meta) — stamped BEFORE the one fold, so the pipeline's own live state and the host's agree.
+        // The built-in adds no key (byte-identical).
+        const ev: RunnerEvent = raw.kind === 'started' && profileName !== undefined ? { ...raw, profile: profileName } : raw;
         live = foldSessionEvent(live, ev);
         lastActivityIso = new Date().toISOString();
         switch (ev.kind) {
@@ -362,6 +390,7 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
           case 'started':
             providerSessionId = ev.sessionId;
             startedAtIso = new Date().toISOString();
+            reportedModel = ev.model ?? reportedModel;
             record('running');
             if (woInput && stepIdx !== undefined) deps.store.recordStep(woInput.workOrderId, stepIdx, { status: 'active' });
             yield ev;

@@ -10,6 +10,7 @@ import type { ProviderErrorCode } from './runner';
 import type { PermissionRule } from './source';
 import type { SessionRole, WorkspaceId } from './types';
 import type { BudgetThreshold } from './budget';
+import type { BackendProfile } from './backend-profile';
 
 /** Vendor-neutral provider readiness: the happy path names the auth SOURCE (e.g. 'oauth', 'env'); the
  *  failure path carries the classification + the raw message (shown only as a fallback). */
@@ -95,6 +96,23 @@ export interface AppSettings {
   /** Full provider check (WO-0059 rev 4 — the Sağlayıcı section died, the check stayed): runs the
    *  spawn-free provider handshake (no prompt — zero tokens) against the OPERATOR'S OWN identity
    *  (the CLI's login / the environment — no stored key exists to inject anymore). Reports auth
-   *  state; the UI speaks it as one line (the name is adapter DATA — providerName). */
-  checkProvider(): Promise<ProviderStatus>;
+   *  state; the UI speaks it as one line (the name is adapter DATA — providerName).
+   *  WO-0098: `profileName` runs the SAME zero-token handshake under that profile's environment
+   *  (the per-profile Test et); absent or `default` = the built-in passthrough. An unknown name
+   *  resolves `{ ok: false }` naming it — never a silent check of another environment. */
+  checkProvider(profileName?: string): Promise<ProviderStatus>;
+  /** WO-0098 — the configured backend profiles, in the operator's order (the built-in passthrough
+   *  is NOT in the list: it always exists, first, never stored). Read FAIL-OPEN through core's
+   *  normalizeProfiles — a corrupt or secret-carrying entry never comes back. */
+  getBackendProfiles(): Promise<BackendProfile[]>;
+  /** Replace the whole list (the prompt-overrides write shape; [] clears the row). THROWS when
+   *  core's validateProfiles names any issue — a secret-looking key or value never lands (the
+   *  operator write refuses loudly; the form places each issue under its field first). */
+  setBackendProfiles(profiles: BackendProfile[]): Promise<void>;
+  /** The workspace's DEFAULT profile name (`profile:<wsId>`), undefined = the built-in. A draft
+   *  rides it; a work order's order.md `profile:` wins over it. */
+  getWorkspaceProfile(workspaceId: WorkspaceId): Promise<string | undefined>;
+  /** Set (or clear, on undefined) the workspace default. THROWS on a name no configured profile
+   *  carries (`default`, the built-in's key, is always legal). */
+  setWorkspaceProfile(workspaceId: WorkspaceId, name: string | undefined): Promise<void>;
 }

@@ -3566,3 +3566,162 @@ describe('WO-0093 — the checkout edit idiom rides updateWorkOrder', () => {
     assert.ok(edits.length >= 3, `the checkout edits were not audited: ${JSON.stringify(evs.map((e) => e.detail))}`);
   });
 });
+
+// ===== WO-0098 — backend profiles: the settings rows, the resolution, the session evidence =====
+describe('WO-0098 — backend profiles in the store', () => {
+  const wsIn = async (store: ReturnType<typeof createStore>, label: string, extra: { profile?: string } = {}) => {
+    const root = freshRoot();
+    const ws = await store.createWorkspace({ label, repos: [{ path: root }] });
+    const wo = await store.createWorkOrder({ workspaceId: ws.id, title: label, description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], ...extra });
+    return { ws, wo };
+  };
+  const GLM = { name: 'GLM', env: {} };
+  const MAX = { name: 'Max', env: { AGENT_CONFIG_DIR: '/Users/op/.agent-max' } };
+
+  it('zero configured profiles: the list is empty and every owner resolves to the built-in (today, byte-identical)', async () => {
+    const store = createStore(freshDb());
+    const { ws, wo } = await wsIn(store, 'Profilsiz');
+    expect(await store.getBackendProfiles()).toEqual([]);
+    expect(await store.getWorkspaceProfile(ws.id)).toBeUndefined();
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
+    expect(store.backendProfileFor({ kind: 'draft', workspaceId: ws.id })).toEqual({ kind: 'builtin' });
+  });
+
+  it('the list round-trips verbatim; an empty list clears the row', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM, MAX]);
+    expect(await store.getBackendProfiles()).toEqual([GLM, MAX]);
+    await store.setBackendProfiles([]);
+    expect(await store.getBackendProfiles()).toEqual([]);
+    expect(store.db.prepare("SELECT value FROM app_setting WHERE key = 'backend_profiles'").get()).toBeUndefined();
+  });
+
+  it('a secret never enters a row: the write REFUSES a secret key or a token-looking value, nothing lands (grep-pinned)', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([MAX]);
+    const TOKEN = '0f3a9c1e2b4d5f6a7b8c9d0e1f2a3b4c.AbCdEfGhIjKlMnOp';
+    await assert.rejects(() => store.setBackendProfiles([MAX, { name: 'Leaky', env: { PROVIDER_AUTH_TOKEN: 'abc' } }]), /secret_key/);
+    await assert.rejects(() => store.setBackendProfiles([MAX, { name: 'Leaky', env: { BASE_THING: TOKEN } }]), /secret_value/);
+    // the prior row stands, and NO row anywhere in app_setting carries the token or the secret key name
+    expect(await store.getBackendProfiles()).toEqual([MAX]);
+    const all = store.db.prepare('SELECT key, value FROM app_setting').all() as { key: string; value: string }[];
+    const dump = JSON.stringify(all);
+    expect(dump).not.toContain(TOKEN);
+    expect(dump).not.toContain('PROVIDER_AUTH_TOKEN');
+    // and whatever DID land is token-free by the same rule the write enforces
+    const stored = JSON.parse((all.find((r) => r.key === 'backend_profiles')?.value ?? '[]')) as { env: Record<string, string> }[];
+    for (const p of stored) for (const v of Object.values(p.env)) expect(/[A-Za-z0-9]{16,}/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v)).toBe(false);
+  });
+
+  it('a hand-planted leaky row is dropped on READ (fail-open) — it never resolves, never spawns', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Sızıntı');
+    // the WO names it by hand (the create path would refuse an unknown name — the write gate)
+    const orderMd = (await store.getWorkOrderDocs(wo.id)).order!;
+    expect(orderMd).not.toContain('profile:');
+    store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('backend_profiles', JSON.stringify([{ name: 'Leaky', env: {} }]));
+    await store.updateWorkOrder(wo.id, { profile: 'Leaky' });
+    store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('backend_profiles', JSON.stringify([{ name: 'Leaky', env: { X_TOKEN: 'v' } }, MAX]));
+    expect(await store.getBackendProfiles()).toEqual([MAX]);
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'missing', name: 'Leaky', source: 'wo' });
+  });
+
+  it("resolution: the workspace default applies; a WO's `profile:` override wins; the draft rides the workspace default", async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM, MAX]);
+    const { ws, wo } = await wsIn(store, 'Seçim');
+    const { wo: pinned } = await (async () => {
+      const w = await store.createWorkOrder({ workspaceId: ws.id, title: 'Pinned', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], profile: 'GLM' });
+      return { wo: w };
+    })();
+    await store.setWorkspaceProfile(ws.id, 'Max');
+    expect(await store.getWorkspaceProfile(ws.id)).toBe('Max');
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: pinned.id })).toEqual({ kind: 'profile', profile: GLM, source: 'wo' });
+    expect(store.backendProfileFor({ kind: 'draft', workspaceId: ws.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
+    // the WO override edits like cwd: null drops it → the workspace default stands again
+    expect((await store.getWorkOrderDocs(pinned.id)).order).toContain('profile: GLM');
+    await store.updateWorkOrder(pinned.id, { profile: null });
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: pinned.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
+    // clearing the workspace default returns everyone to the built-in
+    await store.setWorkspaceProfile(ws.id, undefined);
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
+  });
+
+  it('writes refuse an unknown profile name (the workspace default, a create, an edit) — the drive refusal is the second layer', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM]);
+    const { ws, wo } = await wsIn(store, 'Bilinmeyen');
+    await assert.rejects(() => store.setWorkspaceProfile(ws.id, 'Nope'), /not found/);
+    await assert.rejects(
+      () => store.createWorkOrder({ workspaceId: ws.id, title: 'Nope WO', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], profile: 'Nope' }),
+      /not found/,
+    );
+    await assert.rejects(() => store.updateWorkOrder(wo.id, { profile: 'Nope' }), /not found/);
+    // `default` (the built-in's key) is always legal
+    await store.setWorkspaceProfile(ws.id, 'default');
+    await store.updateWorkOrder(wo.id, { profile: 'default' });
+    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
+  });
+
+  it('a deleted workspace takes its default-profile row with it', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM]);
+    const { ws } = await wsIn(store, 'Silinen');
+    await store.setWorkspaceProfile(ws.id, 'GLM');
+    await store.deleteWorkspace(ws.id);
+    expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${ws.id}`)).toBeUndefined();
+  });
+
+  it('the session row carries the drive evidence: profile SET · KEEP · null CLEAR; the reported model KEEPS', async () => {
+    const store = createStore(freshDb());
+    const { wo } = await wsIn(store, 'Kanıt');
+    const owner = { kind: 'wo', workOrderId: wo.id } as const;
+    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'running', profile: 'GLM', reportedModel: 'model-glm-1' });
+    let s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.profile).toBe('GLM');
+    expect(s.reportedModel).toBe('model-glm-1');
+    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'idle' });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect(s.profile).toBe('GLM');
+    expect(s.reportedModel).toBe('model-glm-1');
+    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'idle', profile: null, reportedModel: 'model-max-1' });
+    s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('profile' in s).toBe(false);
+    expect(s.reportedModel).toBe('model-max-1');
+  });
+
+  it('a pre-WO-0098 session table gains the two evidence columns on open (NULL = honestly absent)', async () => {
+    const path = freshDb();
+    const first = createStore(path);
+    const { wo } = await wsIn(first, 'Göç');
+    first.recordSession({ providerSessionId: 'sess-old', owner: { kind: 'wo', workOrderId: wo.id }, role: 'implementer', status: 'idle' });
+    // Rewind the session table to the pre-WO-0098 shape via rename+recreate+column-listed copy —
+    // never a raw `DROP COLUMN` on the live schema: SQLite's own column-drop rewrite is unreliable
+    // across engine versions when the dropped column is the table's last and trailing inline `--`
+    // comments follow it (exactly this table's style), which is what actually broke CI here.
+    const legacyCols =
+      'id, provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
+      'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ' +
+      'ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at';
+    first.db.exec('ALTER TABLE session RENAME TO session_pre_0098');
+    first.db.exec(
+      `CREATE TABLE session (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_session_id TEXT, workspace_id TEXT NOT NULL,
+       work_order_id TEXT, role TEXT NOT NULL CHECK (role IN ('implementer','architect','verifier')), scope_track_id TEXT,
+       status TEXT NOT NULL CHECK (status IN ('running','stopped_asking','idle','stopped','none')), transcript TEXT NOT NULL,
+       stop_and_ask TEXT, pending_notes TEXT, cost_tokens_in INTEGER, cost_tokens_out INTEGER, cost_usd REAL,
+       started_at TEXT, ended_at TEXT, step_idx INTEGER, ctx_used_tokens INTEGER, ctx_max_tokens INTEGER,
+       final_model_usage TEXT, limit_reset_at TEXT)`,
+    );
+    first.db.exec(`INSERT INTO session (${legacyCols}) SELECT ${legacyCols} FROM session_pre_0098`);
+    first.db.exec('DROP TABLE session_pre_0098');
+    first.db.close();
+    const reopened = createStore(path);
+    const cols = (reopened.db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain('backend_profile');
+    expect(cols).toContain('reported_model');
+    const s = (await reopened.getWorkOrder(wo.id))!.sessions[0]!;
+    expect('profile' in s).toBe(false);
+    expect('reportedModel' in s).toBe(false);
+  });
+});

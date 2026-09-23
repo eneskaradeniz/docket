@@ -354,3 +354,16 @@ describe('cwdOverrideIsAbsolute — the override must be a real absolute path', 
     expect(cwdOverrideIsAbsolute('')).toBe(false);
   });
 });
+
+// ===== WO-0098 — the per-WO backend profile override =====
+describe('parseOrderMd — the front-matter profile key (WO-0098)', () => {
+  it('carries the profile name verbatim (operator vocabulary, spaces included)', () => {
+    const md = ['---', 'id: WO-0098', 'title: Profiller', 'profile: Max hesabı', '---', '', '# WO-0098'].join('\n');
+    expect(parseOrderMd(md).profile).toBe('Max hesabı');
+  });
+
+  it('absent → undefined (the workspace default stands)', () => {
+    const md = ['---', 'id: WO-0098', 'title: Profiller', '---', '', '# WO-0098'].join('\n');
+    expect(parseOrderMd(md).profile).toBeUndefined();
+  });
+});

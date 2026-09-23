@@ -27,6 +27,8 @@ import type { WoPhase } from '../../../core/derive';
 import type { ProviderErrorCode } from '../../../core/runner';
 import type { FazStatus } from '../../../core/roadmap';
 import type { RoadmapDiagnosticCode } from '../../../core/roadmap-md';
+import type { EnvLineIssue, ProfileIssue } from '../../../core/backend-profile';
+type ProfileNameIssue = Extract<ProfileIssue, { field: 'name' }>['code'];
 import type { Labels } from './tr';
 
 export const BUCKET_LABELS: Record<BoardBucket, string> = {
@@ -506,6 +508,42 @@ export const UI = {
   settingsPromptSave: 'Save',
   settingsPromptReset: 'Reset to default',
   toastPromptsSaved: 'Prompt templates saved',
+  // Backends (WO-0098 — backend profiles: operator-named, non-secret environment pieces; the
+  // credential stays in the shell / the CLI login).
+  settingsTabProfiles: 'Backends',
+  profileDefaultName: 'Default',
+  profileInheritLine: 'Inherits the environment as is',
+  profileTest: 'Test',
+  profileEdit: 'Edit',
+  profileRemove: 'Remove',
+  profileAddTitle: 'New backend',
+  profileEditTitle: 'Edit backend',
+  profileNameLabel: 'Name',
+  profileEnvLabel: 'Environment (optional)',
+  profileEnvPlaceholder: 'KEY=value — one per line',
+  profileAdd: 'Add',
+  profileSave: 'Save',
+  profileNameErr: (code: ProfileNameIssue): string =>
+    code === 'name_empty' ? 'Name cannot be empty'
+    : code === 'name_duplicate' ? 'A backend with this name exists'
+    : code === 'name_reserved' ? '«default» is the built-in backend'
+    : 'One line, at most 40 characters',
+  profileEnvErr: (line: number, code: EnvLineIssue['code'], key?: string): string =>
+    `Line ${line}: ` + (
+      code === 'secret_key' ? `secret keys are never stored${key ? ` (${key})` : ''} — the credential stays in the shell`
+      : code === 'secret_value' ? `the value looks like a key${key ? ` (${key})` : ''} — the credential stays in the shell`
+      : code === 'duplicate_key' ? `${key ?? ''} written twice`
+      : code === 'key_shape' ? 'the key must be letters, digits, underscores'
+      : code === 'value_empty' ? 'empty value'
+      : code === 'value_shape' ? 'the value must be one line'
+      : 'must be KEY=value'
+    ),
+  toastProfilesSaved: 'Backends saved',
+  wsProfileLabel: 'Backend',
+  woProfileLabel: 'Backend (optional)',
+  woProfileInherit: "The workspace's",
+  profileRefusedTitle: (name: string, source: 'wo' | 'workspace'): string =>
+    `No «${name}» backend — fix the ${source === 'wo' ? "work order's" : "workspace's"} backend choice`,
   reviewHeader: 'Architect review',
   reviewHint: "The architect is reviewing this step's report…",
   verdictCardProceedTitle: 'The architect said proceed',

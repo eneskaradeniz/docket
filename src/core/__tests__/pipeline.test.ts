@@ -4,6 +4,7 @@ import { PLAN_EXIT_WITHOUT_RESULT, driveOwnerTag } from '../runner';
 import type { SessionOwner, SessionStore } from '../session-store';
 import type { DraftDriveInput, DriveInput, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from '../runner';
 import type { CostSummary, WorkOrderId, WorkspaceId } from '../types';
+import type { ProfileResolution } from '../backend-profile';
 
 // WO-0023 — the drive loop, tested with a FakeRunner + FakeStore (the codebase's first port fakes). No SDK,
 // no SQLite, no agent. This is the testability the loop never had while it lived inline in electron/main.ts.
@@ -122,6 +123,7 @@ function fakeStore(
     budgetBlock?: { observedUsd: number; capUsd: number };
     draftPrompt?: string;
     draftBudgetBlock?: { observedUsd: number; capUsd: number };
+    profile?: ProfileResolution; // WO-0098: the store's backend-profile resolution (absent → the built-in)
   } = {},
 ) {
   const calls: FakeStoreCalls[] = [];
@@ -142,6 +144,12 @@ function fakeStore(
     flowModeFor: () => opts.flowMode ?? 'auto',
     budgetBlockFor: () => opts.budgetBlock,
     budgetBlockForDraft: () => opts.draftBudgetBlock,
+    // WO-0098: called unconditionally (the budget-gate clause) — the owner is recorded so the
+    // draft-rides-its-workspace pin can see which key the pipeline asked with.
+    backendProfileFor: (owner: unknown) => {
+      calls.push({ method: 'backendProfileFor', args: [owner] });
+      return opts.profile ?? { kind: 'builtin' };
+    },
     roadmapDraftPromptFor: (wsId: unknown, goalNote: unknown, docPaths: unknown, freeExplore?: unknown) => {
       calls.push({ method: 'roadmapDraftPromptFor', args: [wsId, goalNote, docPaths, freeExplore] });
       return opts.draftPrompt;
@@ -1434,5 +1442,98 @@ describe('WO-0088 — the parallel spine', () => {
     await p.decide('seq-1', { allow: true }); // the scripted ask id replays on the second drive
     await end2;
     expect(instances.get('wo:WO-A')!.steerCalls).toHaveLength(1);
+  });
+});
+
+
+// ===== WO-0098 — the backend-profile gate: resolved from the store, stamped on the drive =====
+// The store resolves WO override → workspace default → the built-in (core's resolveProfile); the
+// pipeline fills the drive's `profile` slot from it (overwriting anything the host carried), refuses
+// a DANGLING reference before the runner spawns, and records which profile drove + the model the
+// session REPORTED — the evidence, never a config echo.
+
+describe('backend profiles — the pipeline gate + the session evidence (WO-0098)', () => {
+  const GLM = { name: 'GLM', env: { AGENT_CONFIG_DIR: '/cfg/glm' } };
+  const startedWithModel = (model: string): RunnerEvent => ({ kind: 'started', sessionId: 's1', model });
+
+  it('a resolved profile reaches the runner as { name, env } and the started event carries its name', async () => {
+    const fr = fakeRunner([startedWithModel('model-glm-1'), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { profile: { kind: 'profile', profile: GLM, source: 'workspace' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(fr.drivenInputs[0]?.profile).toEqual({ name: 'GLM', env: { AGENT_CONFIG_DIR: '/cfg/glm' } });
+    expect(events.find((e) => e.kind === 'started')).toMatchObject({ profile: 'GLM', model: 'model-glm-1' });
+  });
+
+  it('the session row records the profile name and the REPORTED model', async () => {
+    const fr = fakeRunner([startedWithModel('model-glm-1'), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { profile: { kind: 'profile', profile: GLM, source: 'wo' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    const recs = fs.calls.filter((c) => c.method === 'recordSession').map((c) => c.args[0] as { profile?: string | null; reportedModel?: string });
+    expect(recs.length).toBeGreaterThan(0);
+    for (const r of recs) {
+      expect(r.profile).toBe('GLM');
+      expect(r.reportedModel).toBe('model-glm-1');
+    }
+  });
+
+  it('the built-in (zero profiles) leaves the driven input WITHOUT a profile key — byte-identical — and records null', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect('profile' in (fr.drivenInputs[0] ?? {})).toBe(false);
+    expect('profile' in (events.find((e) => e.kind === 'started') ?? {})).toBe(false);
+    const rec = findCall(fs.calls, 'recordSession')?.args[0] as { profile?: string | null; reportedModel?: string };
+    expect(rec.profile).toBeNull(); // a passthrough leg CLEARS a prior leg's claim
+    expect('reportedModel' in rec).toBe(false); // unreported = absent, never invented
+  });
+
+  it('a host-supplied profile is OVERWRITTEN by the store resolution (never renderer-controllable)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive({ profile: { name: 'Sneaky', env: { AGENT_CONFIG_DIR: '/elsewhere' } } }));
+    expect('profile' in (fr.drivenInputs[0] ?? {})).toBe(false);
+  });
+
+  it('a DANGLING reference refuses the drive before the runner spawns, naming the profile', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { profile: { kind: 'missing', name: 'Gone', source: 'wo' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: 'error', profileRefusal: { name: 'Gone', source: 'wo' } });
+    expect((events[0] as { message: string }).message).toContain('Gone');
+    expect(fr.drivenInputs).toHaveLength(0);
+    expect(methods(fs.calls)).not.toContain('recordSession');
+  });
+
+  it('the budget gate outranks the profile gate (a capped workspace never reaches the profile read)', async () => {
+    const fs = fakeStore({ architect: 'plan it' }, true, { budgetBlock: { observedUsd: 5, capUsd: 4 }, profile: { kind: 'missing', name: 'Gone', source: 'wo' } });
+    const p = createPipeline({ runner: fakeRunner([]).runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect((events[0] as { message: string }).message).toMatch(/budget cap met/);
+  });
+
+  it('the ✦ draft asks with its WORKSPACE owner — it rides the workspace default', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({}, true, { draftPrompt: 'draft it', profile: { kind: 'profile', profile: GLM, source: 'workspace' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, draftDrive());
+    expect(findCall(fs.calls, 'backendProfileFor')?.args[0]).toEqual({ kind: 'draft', workspaceId: WS });
+    expect(fr.drivenInputs[0]?.profile?.name).toBe('GLM');
+  });
+});
+
+describe('backend profiles — the stamp never doubles the transcript (WO-0098)', () => {
+  it('ONE session_started note per drive in the checkpointed transcript', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { profile: { kind: 'profile', profile: { name: 'GLM', env: {} }, source: 'workspace' } });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    await collect(p, planDrive());
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)?.args[0] as { transcript: { kind?: string }[] };
+    expect(last.transcript.filter((l) => l.kind === 'session_started')).toHaveLength(1);
   });
 });

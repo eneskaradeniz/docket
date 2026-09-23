@@ -35,6 +35,7 @@ import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
 import { deriveOverview, parseTechDebt, type DebtLine, type WorkspaceOverview } from '../../core/overview';
 import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSessionFact, type WorkspaceUsageView } from '../../core/usage';
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
+import { DEFAULT_PROFILE, normalizeProfiles, resolveProfile, sameProfileName, validateProfiles, type BackendProfile, type ProfileResolution } from '../../core/backend-profile';
 import { isDraftDrive } from '../../core/runner';
 import { roadmapDraftPrompt, type DraftSourceSummary } from '../../core/roadmap-draft';
 import { worktreeName, worktreePathUnder } from '../../core/worktree';
@@ -147,6 +148,13 @@ export interface AppSettingsData {
    *  carries one, else the Settings default (a pre-c2 work order has no key — its behavior follows the
    *  operator's default, with the legacy ask/auto values mapped). */
   getPermissionRuleFor(workOrderId: WorkOrderId): Promise<PermissionRule>;
+  /** WO-0098 — the backend profiles (the AppSettings port's methods; shape + semantics live on the
+   *  port). ONE JSON row `backend_profiles` (the prompt_overrides posture) + a raw `profile:<wsId>`
+   *  row per workspace default (the docs_root posture). */
+  getBackendProfiles(): Promise<BackendProfile[]>;
+  setBackendProfiles(profiles: BackendProfile[]): Promise<void>;
+  getWorkspaceProfile(workspaceId: WorkspaceId): Promise<string | undefined>;
+  setWorkspaceProfile(workspaceId: WorkspaceId, name: string | undefined): Promise<void>;
 }
 
 // --- row shapes (node:sqlite returns untyped rows) ---
@@ -193,6 +201,8 @@ type SessionRow = {
   ctx_max_tokens: number | null; // WO-0052
   final_model_usage: string | null; // WO-0052
   limit_reset_at: string | null; // WO-0053
+  backend_profile: string | null; // WO-0098
+  reported_model: string | null; // WO-0098
 };
 
 // ===== Hydration (rows → domain; stage derived; ids re-branded) =====
@@ -325,6 +335,10 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
     // WO-0053: NULL = no limit stop (or a pre-WO-0053 row) — the seed's boundary decides what
     // the UI does with it; hydration only carries the honest fact.
     ...(r.limit_reset_at ? { limitResetAt: r.limit_reset_at } : {}),
+    // WO-0098: the drive's backend evidence — NULL = the built-in passthrough / not reported / a
+    // pre-WO-0098 row (honestly absent, never a fabricated default).
+    ...(r.backend_profile ? { profile: r.backend_profile } : {}),
+    ...(r.reported_model ? { reportedModel: r.reported_model } : {}),
   };
   switch (r.status) {
     case 'stopped_asking':
@@ -477,9 +491,9 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WOs); a foreign row survives instead of being stolen. `IS ?` is SQLite's NULL-safe equality —
   // a draft row's NULL work_order_id must match its own row (and only it).
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
     .get(input.providerSessionId, wsId, woId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null; limit_reset_at: string | null }
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null; limit_reset_at: string | null; backend_profile: string | null; reported_model: string | null }
     | undefined;
   const priorTranscript = (() => {
     if (!prior?.transcript) return undefined;
@@ -531,9 +545,13 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // above, this is NOT latest-wins: only the pipeline's terminal records ever speak.
   const limitResetAt =
     input.limitResetAt !== undefined ? input.limitResetAt : (prior?.limit_reset_at ?? null);
+  // WO-0098: the backend evidence — `profile` is three-state (string sets, null clears on a
+  // passthrough leg, undefined keeps); the reported model keeps unless a leg reported a new one.
+  const backendProfile = input.profile !== undefined ? input.profile : (prior?.backend_profile ?? null);
+  const reportedModel = input.reportedModel !== undefined ? input.reportedModel : (prior?.reported_model ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     wsId,
@@ -554,6 +572,8 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     ctxPair.max,
     finalUsageJson,
     limitResetAt,
+    backendProfile,
+    reportedModel,
   );
 }
 
@@ -822,7 +842,7 @@ function workspaceOverviewRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceOve
 // workspace_id (through the WO join; `''` for an orphan row — joins to nothing, hydrates nowhere).
 const SESSION_REBUILD_COPY =
   'INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at) ' +
+  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model) ' +
   'SELECT provider_session_id, ' +
   "COALESCE((SELECT w.workspace_id FROM work_order w WHERE w.id = session_legacy.work_order_id), ''), work_order_id, " +
   'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ' +
@@ -830,7 +850,9 @@ const SESSION_REBUILD_COPY =
   // always carries them (NULL for a pre-WO-0052 row: honestly absent through the copy).
   'ctx_used_tokens, ctx_max_tokens, final_model_usage, ' +
   // WO-0053: the limit stamp rides the same way (NULL for pre-WO-0053 rows).
-  'limit_reset_at FROM session_legacy';
+  'limit_reset_at, ' +
+  // WO-0098: the backend evidence rides the same way (NULL for pre-WO-0098 rows).
+  'backend_profile, reported_model FROM session_legacy';
 
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
@@ -853,6 +875,10 @@ function migrate(db: DatabaseSync): void {
   // WO-0053: the limit stamp (the same additive, PRAGMA-guarded discipline — NULL is the honest
   // pre-WO-0053 vintage, never backfilled; the three-state write rule lives in recordSessionRow).
   if (!cols.has('limit_reset_at')) db.exec('ALTER TABLE session ADD COLUMN limit_reset_at TEXT');
+  // WO-0098: the drive's backend evidence (the same additive discipline — NULL is the honest
+  // pre-WO-0098 vintage: the built-in passthrough, never backfilled).
+  if (!cols.has('backend_profile')) db.exec('ALTER TABLE session ADD COLUMN backend_profile TEXT');
+  if (!cols.has('reported_model')) db.exec('ALTER TABLE session ADD COLUMN reported_model TEXT');
 
   // WO-0092 fix round (m4): the ISOLATED issue-look failure rides forge_scan (additive, the same
   // PRAGMA-guarded discipline — NULL is the honest pre-m4 vintage: the issue page is scan-fresh).
@@ -1059,6 +1085,7 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   db.prepare('DELETE FROM roadmap_draft WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`docs_root:${id}`);
+  db.prepare('DELETE FROM app_setting WHERE key = ?').run(`profile:${id}`); // WO-0098
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
@@ -1787,6 +1814,49 @@ function driveCwdRow(db: DatabaseSync, dbHome: string, input: DriveInput): strin
 // or the drive (and its write fence) would aim at the wrong root or a nonexistent dir. The dialogs
 // pre-check the shape (core's cwdOverrideIsAbsolute) for the under-field error; the store is the
 // second layer and refuses the write. `null` (the drop) is always legal.
+// ===== WO-0098 — backend profiles =====
+// The list: ONE JSON row `backend_profiles`, read FAIL-OPEN through core's normalizeProfiles (a
+// corrupt or secret-carrying entry never comes back — never reaches a spawn). The workspace default:
+// a RAW `profile:<wsId>` row (the docs_root posture). The WO override: order.md `profile:`, read at
+// spawn time (the driveCwd pattern — no cache, no column).
+function settingBackendProfiles(db: DatabaseSync): BackendProfile[] {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('backend_profiles') as { value: string } | undefined)?.value;
+  if (!value) return [];
+  try {
+    return normalizeProfiles(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function settingWorkspaceProfile(db: DatabaseSync, wsId: string): string | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${wsId}`) as { value: string } | undefined)?.value;
+  return value && value.trim() !== '' ? value : undefined;
+}
+
+// The write-side gate for a profile REFERENCE (a workspace default, an order.md override): the name
+// must be a configured profile's, or the built-in's key. The drive-time refusal (the pipeline's
+// `missing`) is the second layer — a profile deleted AFTER the reference was written.
+function profileRefRefusal(db: DatabaseSync, name: string): string | undefined {
+  if (name.trim() === '') return 'backend profile name is empty';
+  if (sameProfileName(name, DEFAULT_PROFILE)) return undefined;
+  return settingBackendProfiles(db).some((p) => sameProfileName(p.name, name)) ? undefined : `backend profile "${name.trim()}" not found`;
+}
+
+function backendProfileForRow(db: DatabaseSync, owner: SessionOwner): ProfileResolution {
+  const profiles = settingBackendProfiles(db);
+  if (owner.kind === 'draft') return resolveProfile({ profiles, workspaceDefault: settingWorkspaceProfile(db, owner.workspaceId as string) });
+  const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(owner.workOrderId) as { ws: string } | undefined;
+  if (!wo) return { kind: 'builtin' };
+  let woOverride: string | undefined;
+  const dir = woDir(db, owner.workOrderId);
+  if (dir) {
+    const { order } = readWoDocs(dir, owner.workOrderId);
+    if (order) woOverride = parseOrderMd(order).profile;
+  }
+  return resolveProfile({ profiles, workspaceDefault: settingWorkspaceProfile(db, wo.ws), woOverride });
+}
+
 function cwdOverrideRefusal(cwd: string): string | undefined {
   if (!cwdOverrideIsAbsolute(cwd)) return 'cwd override must be an absolute path';
   if (!existsSync(cwd)) return 'cwd override path does not exist';
@@ -2233,6 +2303,7 @@ export function createStore(dbPath: string): Store {
     // composition's counts ride the row (D2/D5) — and the DEPO channel reads through
     // decisionDocs (D3), the dialog's scan at open.
     budgetBlockForDraft: (workspaceId: WorkspaceId) => budgetBlockForDraftRow(db, workspaceId),
+    backendProfileFor: (owner: SessionOwner) => backendProfileForRow(db, owner),
     roadmapDraftPromptFor: (workspaceId: WorkspaceId, goalNote: string, docPaths: string[], freeExplore?: boolean) =>
       roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths, freeExplore),
     saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }) =>
@@ -2389,6 +2460,11 @@ export function createStore(dbPath: string): Store {
         const why = cwdOverrideRefusal(input.cwd);
         if (why) throw new Error(`createWorkOrder: ${why}`);
       }
+      // WO-0098: the profile override the same way — a name no configured profile carries refuses.
+      if (input.profile !== undefined) {
+        const why = profileRefRefusal(db, input.profile);
+        if (why) throw new Error(`createWorkOrder: ${why}`);
+      }
       refuseDisconnectedStore(db, input.workspaceId);
       const dir = structureRoot(db, input.workspaceId);
       const id = nextWorkOrderNumber(dir);
@@ -2414,6 +2490,7 @@ export function createStore(dbPath: string): Store {
           ...(input.issueRef ? { issueRef: input.issueRef } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.checkout ? { checkout: true } : {}),
+          ...(input.profile ? { profile: input.profile.trim() } : {}),
           ...(input.trackDependencies
             ? {
                 trackDependencies: input.trackDependencies.map((d) => ({
@@ -2517,7 +2594,11 @@ export function createStore(dbPath: string): Store {
         const why = cwdOverrideRefusal(patch.cwd);
         if (why) throw new Error(`updateWorkOrder: ${why}`);
       }
-      const next = applyOrderMdEdits(order, patch);
+      if (typeof patch.profile === 'string') {
+        const why = profileRefRefusal(db, patch.profile);
+        if (why) throw new Error(`updateWorkOrder: ${why}`);
+      }
+      const next = applyOrderMdEdits(order, typeof patch.profile === 'string' ? { ...patch, profile: patch.profile.trim() } : patch);
       if (next !== order) writeOrderMdById(dir, workOrderId, next);
       if (patch.title !== undefined) db.prepare('UPDATE work_order SET title = ? WHERE id = ?').run(patch.title, workOrderId);
       const fields = [
@@ -2528,6 +2609,7 @@ export function createStore(dbPath: string): Store {
         patch.taskRef !== undefined ? 'task' : null,
         patch.cwd !== undefined ? 'cwd' : null,
         patch.checkout !== undefined ? 'checkout' : null,
+        patch.profile !== undefined ? 'profile' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
@@ -2640,6 +2722,35 @@ export function createStore(dbPath: string): Store {
     },
     // WO-0059 rev 2: the per-role model preference — ONE atomic JSON row (the budget posture);
     // undefined or a map with no usable role clears the row entirely.
+    // WO-0098 — the backend profiles. The list write refuses loudly on ANY validation issue (a
+    // secret-looking pair never lands); [] clears the row. The workspace default refuses an
+    // unknown name; undefined clears it.
+    getBackendProfiles: () => Promise.resolve(settingBackendProfiles(db)),
+    setBackendProfiles: (profiles: BackendProfile[]) => {
+      const issues = validateProfiles(profiles);
+      if (issues.length > 0) {
+        const i = issues[0]!;
+        return Promise.reject(new Error(`setBackendProfiles: profile #${i.index + 1} ${i.field} ${i.code}${'key' in i && i.key ? ` (${i.key})` : ''}`));
+      }
+      if (profiles.length === 0) db.prepare('DELETE FROM app_setting WHERE key = ?').run('backend_profiles');
+      else {
+        const clean = profiles.map((p) => ({ name: p.name, env: { ...p.env } }));
+        db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('backend_profiles', JSON.stringify(clean));
+      }
+      return Promise.resolve();
+    },
+    getWorkspaceProfile: (workspaceId: WorkspaceId) => Promise.resolve(settingWorkspaceProfile(db, workspaceId as string)),
+    setWorkspaceProfile: (workspaceId: WorkspaceId, name: string | undefined) => {
+      const key = `profile:${workspaceId}`;
+      if (name === undefined) {
+        db.prepare('DELETE FROM app_setting WHERE key = ?').run(key);
+        return Promise.resolve();
+      }
+      const why = profileRefRefusal(db, name);
+      if (why) return Promise.reject(new Error(`setWorkspaceProfile: ${why}`));
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(key, name.trim());
+      return Promise.resolve();
+    },
     getModels: () => Promise.resolve(settingModels(db)),
     setModels: (models: RoleModels | undefined) => {
       const clean: RoleModels = {};

@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { initialSessionState, type LiveSessionState } from '../../../core/runner';
 import type { WorkspaceId } from '../../../core/types';
 import { useLabels } from '../../data/locale';
-import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneLog } from '../session/pane-chrome';
+import { PaneCostline, PaneError, PaneShell, PaneLogChip, PaneAgentStrip, PaneWarnline, usePaneActivity, usePaneErrorText, usePaneLog } from '../session/pane-chrome';
 import { DriveControls, type DriveState } from '../session/DriveControls';
 import { useDrive, useDriveStore, type DriveStore } from '../session/drive-store';
 import { ChatTranscript } from '../session/ChatTranscript';
@@ -28,7 +28,7 @@ export function RoadmapPane({
   /** The screen's one-second ticker (the live costline's elapsed). */
   now?: number;
 }) {
-  const { PROVIDER_ERROR_LABELS, UI } = useLabels();
+  const { UI } = useLabels();
   const store: DriveStore = useDriveStore();
   const driveKey = `${workspaceId}:draft`;
   const seedState = useMemo(() => seed ?? initialSessionState, [seed]);
@@ -39,6 +39,7 @@ export function RoadmapPane({
 
   const { logOpen, toggleLog, headRef } = usePaneLog();
   const { show: showActivity, line: activityLine, stale } = usePaneActivity(state, running, now);
+  const errorText = usePaneErrorText(state); // WO-0098: the dangling-profile sentence rides here too
 
   // The wind-down bookkeeping (the WorkOrderDetail precedent, pane-local): stopping freezes into
   // the stopped offer, 5s stuck arms Zorla kes.
@@ -150,7 +151,7 @@ export function RoadmapPane({
       {!hasStream && !running ? <p className="text-xs text-inkdim">{UI.noSession}</p> : null}
 
       {state.status === 'error' || state.lastError ? (
-        <PaneError message={state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed)} />
+        <PaneError message={errorText} />
       ) : null}
     </PaneShell>
   );

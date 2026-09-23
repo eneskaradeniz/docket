@@ -129,6 +129,13 @@ function SessionCard({
                 <span className="text-info">{UI.actionRunning}</span>
               </>
             ) : null}
+            {/* WO-0098: which backend drove it — the profile + the model the session REPORTED
+                (only when a named profile drove; the built-in passthrough adds nothing). */}
+            {session.profile ? (
+              <span data-session-backend="" className="max-w-[220px] truncate whitespace-nowrap">
+                {[session.profile, session.reportedModel].filter((x): x is string => !!x).join(' · ')}
+              </span>
+            ) : null}
             <span className="whitespace-nowrap">{range}</span>
             <span className="whitespace-nowrap">{UI.formatDuration(row.durationMs)}</span>
             {row.costUsd !== undefined ? <span className="whitespace-nowrap">{formatUsd(row.costUsd)}</span> : null}

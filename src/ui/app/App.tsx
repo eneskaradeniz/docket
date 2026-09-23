@@ -1059,6 +1059,7 @@ export function App({ source, settings, runner, forge: forgeWatch, health: healt
           defaultRule={defaultRule}
           prefill={spawnTask}
           issuePrefill={spawnIssue}
+          settings={settings}
           onClose={() => {
             setWoCreateOpen(false);
             setSpawnTask(undefined);
