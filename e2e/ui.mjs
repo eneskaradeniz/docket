@@ -8,7 +8,7 @@
 // captures, and every spec that shoots the board navigates back to it first — filenames never lie.
 // Run: npm run test:ui  (builds first). Exit code = failing spec count.
 import { strict as assert } from 'node:assert';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -3652,7 +3652,10 @@ const wtDirOf = (title) => {
 };
 const wtRepoPorcelain = () => execFileSync('git', ['-C', WT.repo, 'status', '--porcelain'], { encoding: 'utf8' });
 const wtWorktreeList = () => execFileSync('git', ['-C', WT.repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
-const wtRegistered = (path) => wtWorktreeList().split('\n').some((l) => l === `worktree ${path}`);
+// git's own listing reports the REAL path (macOS /var is a symlink to /private/var — the
+// adapter's own isRegisteredWorktree note); wtDirOf's path is unresolved, so the compare must
+// realpath it the same way, or a genuinely-registered copy reads as unregistered here.
+const wtRegistered = (path) => wtWorktreeList().split('\n').some((l) => l === `worktree ${realpathSync(path)}`);
 // git's own .git/worktrees bookkeeping is expected and excluded: the ONLY allowed dirt is the
 // Docket-authored order.md docs the operator commits (pre-existing behavior, not this feature's).
 const wtAssertRepoUntouched = () => {
@@ -3679,6 +3682,11 @@ const wtDriveToClosable = async (woId) => {
 };
 
 await spec('WO-0093 hazırlık: Başlat kopyayı hazırlar — sürüş orada koşar, dal hazır; tekrar başlatma yeniden eklemez; ikinci iş paralel ayrı kopyada; bağlı depo temiz kalır', async () => {
+  // toplu üretim's own chain leaves the app on Genel bakış (a spawned WO's detail, opened from
+  // the issue fold, backToBoard's Escape only closes ITS OWN layer) — switchWs changes the
+  // workspace but not the surface, so [data-wo-id] renders nothing there. Land on Pano first.
+  await page.getByRole('button', { name: 'Pano' }).click();
+  await page.waitForTimeout(300);
   await switchWs('sorun', 'wt');
   await backToBoard();
   await openDetail('Kopya A');
@@ -3713,7 +3721,13 @@ await spec('WO-0093 hazırlık: Başlat kopyayı hazırlar — sürüş orada ko
   assert.ok(wtRegistered(wtA) && wtRegistered(wtB), 'both copies are not registered');
   // the connected repo's working tree: untouched but for Docket's own authored docs
   wtAssertRepoUntouched();
-  await stopAllDrives();
+  // stopAllDrives only ever finds ITS Durdur on the CURRENTLY-OPEN detail (DriveControls lives
+  // there, never on the board card) — with A resumed-and-left-running and B just started, both
+  // need their OWN visit + stop, or A leaks into the next spec still "thinking".
+  await stopAllDrives(); // Kopya B, still open here
+  await backToBoard();
+  await openDetail('Kopya A');
+  await stopAllDrives(); // Kopya A, resumed earlier and never revisited since
   await backToBoard();
 });
 

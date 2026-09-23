@@ -895,9 +895,20 @@ console.log(`BRIFING=${JSON.stringify({ ws: String(wsBrifing.id) })}`);
 //     branches, zero collisions); the closable chain + the dirty-kept / clean-removed close
 //     specs ride them. `src-wt.txt` is COMMITTED — the verifier report's pointer resolves
 //     against it (the WO-0069 record-time gate). Pre-seeded past every id (the WO-0090 pattern:
-//     the work_order PK is global, the number is per decision store).
+//     the work_order PK is global, the number is per decision store) — WO-0097 collided with the
+//     sorun world's own documented ceiling (WO-0098, this file's own note above): its "tek
+//     üretim" + "toplu üretim" specs can independently reach 098, and 'wt' seeding two WOs at
+//     097 landed them on 098/099, so a later sorun-side create hit `UNIQUE constraint failed:
+//     work_order.id` (the TD-035 pattern, caught live). 0110 clears every tohum in this file
+//     with margin, not just today's ceiling.
 const repoWt = join(root, 'repo-wt');
-mkdirSync(join(repoWt, 'docs', 'work-orders', 'WO-0097-tohum'), { recursive: true });
+mkdirSync(join(repoWt, 'docs', 'work-orders', 'WO-0110-tohum'), { recursive: true });
+// A file, not just the empty dir: git tracks nothing for a directory with no file in it, so
+// `docs/work-orders/` itself would stay untracked — the later WO-0093 spec's own repo-cleanliness
+// check (wtAssertRepoUntouched) reads `git status --porcelain`, which then compacts the WHOLE
+// `docs/` tree into one `?? docs/` line once Kopya A/B's order.md lands (nothing tracked under it
+// to force a finer breakdown) instead of the expected `?? docs/work-orders/…` per entry.
+writeFileSync(join(repoWt, 'docs', 'work-orders', 'WO-0110-tohum', '.gitkeep'), '');
 writeFileSync(join(repoWt, 'src-wt.txt'), 'wt seed\n');
 gitSeed(repoWt);
 const wsWt = await store.createWorkspace({
