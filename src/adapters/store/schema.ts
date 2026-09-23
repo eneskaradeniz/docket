@@ -59,6 +59,19 @@ CREATE TABLE IF NOT EXISTS track_depends_on (
   depends_on_track_id TEXT NOT NULL,
   PRIMARY KEY (track_id, depends_on_track_id)
 );
+-- The OBSERVED local-gate measurement (WO-0089): ONE latest-wins row per track — what DOCKET
+-- itself measured running the workspace's declared gate commands (never the session). The
+-- DECLARATION is not here (it lives in the decision store's .workflow/workspace.yaml, read at
+-- view time — ADR-0010 rule 1); this row is only the measurement, keyed to the sha it ran at.
+-- Discardable with the rest of the observed tables (a re-run rewrites it).
+CREATE TABLE IF NOT EXISTS local_gate_run (
+  track_id TEXT PRIMARY KEY,
+  work_order_id TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  sha TEXT NOT NULL,
+  results TEXT NOT NULL,      -- JSON GateCommandResult[] (exit + bounded tail, verbatim data)
+  observed_at TEXT NOT NULL   -- the measurement's ISO stamp
+);
 CREATE TABLE IF NOT EXISTS session (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider_session_id TEXT,
@@ -253,6 +266,7 @@ export const OBSERVED_TABLES = [
   'forge_issue',
   'forge_pr',
   'forge_scan',
+  'local_gate_run',
   'track_depends_on',
   'track',
   'work_order_source',

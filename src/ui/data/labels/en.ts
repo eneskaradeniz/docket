@@ -64,6 +64,7 @@ export const EVIDENCE_LABELS: Record<EvidenceKind, string> = {
   plan_approval: 'plan approval',
   pr_open: 'PR open',
   ci_green: 'CI green',
+  local_gate: 'local gate',
   verification: 'verifier report',
   closure: 'closure docs',
 };
@@ -328,6 +329,27 @@ export const UI = {
   // a dim line; the CI reason renders verbatim from the degraded scan.
   evidenceUnknown: 'unverified — could not be checked',
   ciUnknown: 'CI state unknown',
+  // WO-0089 — the local gate faces: DOCKET'S OWN measurement speaks (never the session's report).
+  // Measured-failure (not green) and not-measured (not run / not declared) are distinct faces;
+  // the sha + per-command results + tail ride the tooltip/record.
+  gateGreenShort: 'local gate green',
+  gateRedShort: 'local gate not green',
+  gateUnknown: 'local gate not run',
+  // Review M2 (WO-0089): a passing measurement at a SUPERSEDED sha does not satisfy the merge —
+  // the antreo twin's lesson. The short chip + the card line both name the two shas.
+  gateStaleShort: 'local gate stale',
+  gateRunStale: (ok: number, n: number, sha: string, headSha: string): string =>
+    `local gate ${ok}/${n} passed · ${sha} — branch moved to ${headSha}, re-run`,
+  gateUndeclared: 'local gate not declared',
+  gateRunButton: 'Run gate',
+  gateRunBusy: 'gate running…',
+  gateRunPending: 'local gate has not run',
+  gateRunPassed: (ok: number, n: number, sha: string) => `local gate ${ok}/${n} passed · ${sha}`,
+  gateRunFailed: (ok: number, n: number, sha: string) => `local gate ${ok}/${n} — failed · ${sha}`,
+  gateRunUnmeasured: 'local gate could not be measured',
+  gateToastPassed: 'Local gate passed',
+  gateToastFailed: 'Local gate failed — read the tail on the card',
+  gateMergeBlocked: 'CI exempt — the local gate must pass before merge',
   orderDoc: 'order.md',
   planDoc: 'plan.md',
   loading: 'Loading…',

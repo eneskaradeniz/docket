@@ -14,7 +14,7 @@ import { splitStepsFence } from '../../../core/plan-steps';
 import type { WorkOrderDetailView } from '../../../core/types';
 import type { Labels } from '../../data/labels';
 import { useLabels } from '../../data/locale';
-import { ChangesSection, type ChangesBridge } from './ChangesSection';
+import { ChangesSection, type ChangesBridge, type RepoGateFace } from './ChangesSection';
 import { isLiveSessionRow, SessionCards } from './SessionCards';
 import { SourceLinks } from './SourceLinks';
 import { MarkdownBody } from './MarkdownBody';
@@ -92,8 +92,16 @@ export function buildRecordSections({
    *  persisted 'running' row that matches it (pure history, even on the mid-run re-entry path). */
   liveSessionId?: string;
   /** WO-0068: the console's observed per-repo changes, fetched by the detail (undefined = the
-   *  bridge is absent or the look has not landed). The section is ABSENT with nothing to show. */
-  changes?: { bridge: ChangesBridge; repos: RepoChanges[]; onRefresh: () => void };
+   *  bridge is absent or the look has not landed). The section is ABSENT with nothing to show.
+   *  WO-0089: `gateByRepo`/`onGateRan` carry the local gate's per-repo faces + the post-run
+   *  reload; absent map = nothing declared — the cards render exactly as before. */
+  changes?: {
+    bridge: ChangesBridge;
+    repos: RepoChanges[];
+    onRefresh: () => void;
+    gateByRepo?: Map<string, RepoGateFace>;
+    onGateRan?: () => void;
+  };
 }): DetailSection[] {
   const sections: DetailSection[] = [];
   if (docs.order || docs.plan) {
@@ -135,7 +143,16 @@ export function buildRecordSections({
             {UI.changesRefresh}
           </button>
         ),
-        node: <ChangesSection woId={detail.id} repos={changes.repos} bridge={changes.bridge} onRefresh={changes.onRefresh} />,
+        node: (
+          <ChangesSection
+            woId={detail.id}
+            repos={changes.repos}
+            bridge={changes.bridge}
+            onRefresh={changes.onRefresh}
+            gateByRepo={changes.gateByRepo}
+            onGateRan={changes.onGateRan}
+          />
+        ),
       });
     }
   }

@@ -67,6 +67,9 @@ declare global {
         push: (workOrderId: import('../core/types').WorkOrderId, repoPath: string) => Promise<import('../core/console').PushResult>;
         createPr: (workOrderId: import('../core/types').WorkOrderId, repoPath: string, summary: string) => Promise<import('../core/console').CreatePrResult>;
         merge: (workOrderId: import('../core/types').WorkOrderId, repoPath: string, prNumber: number) => Promise<import('../core/console').MergeResult>;
+        /** WO-0089: the local gate run — DOCKET executes the workspace's declared gate commands
+         *  in the jailed repo (never the session); ok carries the verdict, the store the detail. */
+        runGate: (workOrderId: import('../core/types').WorkOrderId, repoPath: string) => Promise<import('../core/console').GateRunResult>;
       };
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;

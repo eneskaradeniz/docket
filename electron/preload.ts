@@ -195,6 +195,9 @@ contextBridge.exposeInMainWorld('docket', {
       ipcRenderer.invoke('docket:console:create-pr', workOrderId, repoPath, summary),
     merge: (workOrderId: WorkOrderId, repoPath: string, prNumber: number): Promise<import('../src/core/console').MergeResult> =>
       ipcRenderer.invoke('docket:console:merge', workOrderId, repoPath, prNumber),
+    // WO-0089 — the local gate run (DOCKET runs the declared commands, never the session).
+    runGate: (workOrderId: WorkOrderId, repoPath: string): Promise<import('../src/core/console').GateRunResult> =>
+      ipcRenderer.invoke('docket:gate:run', workOrderId, repoPath),
   },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),

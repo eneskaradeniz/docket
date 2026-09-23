@@ -5,6 +5,9 @@
 // PR/CI position ('PR açık · CI yeşil' / 'henüz PR yok' / 'CI muaf' / 'CI yeşil değil'). The scope
 // suffix is the REPO name (never a TrackId); a single-repo work order prints no suffix. Chips are not
 // controls → no hover (ADR-0012 r1 scopes the contract to controls).
+// WO-0089: a track with a declared local gate (or an exempt CI facing its missing substitute) carries
+// a SECOND chip beside the CI one — Docket's own measurement, its sha + per-command exits in the title.
+import { localGateSatisfiedAt, localGateStatus } from '../../../core/derive';
 import type { EvidenceItem, TrackId, TrackLaneView } from '../../../core/types';
 import { useLabels } from '../../data/locale';
 
@@ -102,6 +105,39 @@ export function EvidencePanel({
         chip = { key: `tr-${ln.track.id}`, text: UI.evdCiRed(multiRepo ? repo : undefined), tone: 'dim' };
       }
       chips.push(chip);
+      // WO-0089 — the local gate chip BESIDE the CI one: on every declared track and on every
+      // exempt-CI track (whose undeclared arm is the substitute that was never declared). The
+      // faces mirror the CI grammar — measured-pass (proceed), measured-fail (dim), not-run
+      // (dim), undeclared (info, the exempt arm). Docket's own measurement speaks; the sha and
+      // per-command exits ride the title; the full tails live on the console card.
+      const lg = ln.track.localGate;
+      if (lg !== undefined || ln.track.ci.kind === 'exempt') {
+        const status = localGateStatus(lg);
+        const title =
+          lg?.kind === 'declared'
+            ? [
+                ...(lg.sha !== '' ? [lg.sha] : []),
+                ...lg.results.map((r) => `${r.command} → exit ${r.exit ?? '—'} (expected ${r.expectExit})`),
+              ].join('\n')
+            : lg?.kind === 'invalid'
+              ? lg.reason
+              : undefined;
+        // Review M2 — measured-and-passed still needs to be FRESH (at the track's current head,
+        // the forge-observed PR sha): a superseded measurement reads as its own chip, dim like
+        // unsatisfied (it does not satisfy the merge either), never the green checkmark that
+        // would tell the close card's own reader the substitute stands when it does not.
+        if (status === 'satisfied' && !localGateSatisfiedAt(lg, ln.track.pr?.headSha ?? '')) {
+          chips.push({ key: `gate-${ln.track.id}`, text: UI.gateStaleShort, tone: 'dim', ...(title ? { title } : {}) });
+        } else if (status === 'satisfied') {
+          chips.push({ key: `gate-${ln.track.id}`, text: `✓ ${UI.gateGreenShort}`, tone: 'proceed', ...(title ? { title } : {}) });
+        } else if (status === 'unsatisfied') {
+          chips.push({ key: `gate-${ln.track.id}`, text: UI.gateRedShort, tone: 'dim', ...(title ? { title } : {}) });
+        } else if (status === 'exempt') {
+          chips.push({ key: `gate-${ln.track.id}`, text: UI.gateUndeclared, tone: 'info' });
+        } else {
+          chips.push({ key: `gate-${ln.track.id}`, text: UI.gateUnknown, tone: 'dim', ...(title ? { title } : {}) });
+        }
+      }
     }
     return chips;
   }

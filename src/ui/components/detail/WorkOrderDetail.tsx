@@ -829,7 +829,27 @@ export function WorkOrderDetail({
         UI,
         ...(liveSessionId ? { liveSessionId } : {}),
         ...(changesBridge && changesRepos && changesRepos.length > 0
-          ? { changes: { bridge: changesBridge, repos: changesRepos, onRefresh: refreshChanges } }
+          ? {
+              changes: {
+                bridge: changesBridge,
+                repos: changesRepos,
+                onRefresh: refreshChanges,
+                // WO-0089: the local gate's per-repo faces (required = the track's CI is exempt —
+                // the substitute is REQUIRED); keyed by the repo slug (the basename invariant the
+                // console rows join by). A gate run re-hydrates the detail — observation wins.
+                gateByRepo: new Map(
+                  detail.tracks.map((ln) => [
+                    ln.track.repo as string,
+                    // Review M2: the freshness reference — the track's forge-observed PR head.
+                    { localGate: ln.track.localGate, required: ln.track.ci.kind === 'exempt', headSha: ln.track.pr?.headSha },
+                  ]),
+                ),
+                onGateRan: () => {
+                  refreshChanges();
+                  reloadDetail();
+                },
+              },
+            }
           : {}),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

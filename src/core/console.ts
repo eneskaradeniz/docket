@@ -63,3 +63,9 @@ export type CreatePrResult = { ok: true; number: number; url: string } | { ok: f
 /** The merge: ok is bare — the durable record is the scan's own observation, never a console
  *  event (the console records nothing of its own; wo_event gains NO console kinds). */
 export type MergeResult = { ok: true } | { ok: false; error: string };
+
+/** WO-0089 — the LOCAL GATE run: DOCKET executes the workspace's declared gate commands in the
+ *  repo's cwd (never the session). ok carries whether every command measured its expected exit
+ *  at the recorded sha; the durable detail (sha, per-command exits + tails) hydrates through
+ *  the store into Track.localGate — never through this result (the CommitResult posture). */
+export type GateRunResult = { ok: true; passed: boolean; sha: string } | { ok: false; error: string };

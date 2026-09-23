@@ -22,13 +22,14 @@ import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extrac
 import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore } from '../../core/session-store';
-import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
+import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, readWorkspaceYaml, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
 import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, orderMdCarriesRule, parseOrderMd, verifierPrompt, withOverride } from '../../core/order-md';
 import { parsePlanSteps } from '../../core/plan-steps';
 import type { ClosureEvidence, ForgeIssueRow, ForgeObservations, ForgePr, ForgePrRow, ForgeRepoView, ForgeScan, ForgeView } from '../../core/forge';
 import { titleCarriesWoId } from '../../core/forge';
 import { budgetStatus, monthWindow, type BudgetThreshold } from '../../core/budget';
 import { DEFAULT_DOCS_ROOT, normalizeDocsRoot, parseRoadmapMd } from '../../core/roadmap-md';
+import { parseGateConfig, type GateCommandSpec, type GateConfig } from '../../core/gate-config';
 import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
 import { deriveOverview, parseTechDebt, type DebtLine, type WorkspaceOverview } from '../../core/overview';
 import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSessionFact, type WorkspaceUsageView } from '../../core/usage';
@@ -41,6 +42,8 @@ import type {
   Ci,
   CiCheck,
   CostSummary,
+  GateCommandResult,
+  LocalGate,
   RepoId,
   SessionRef,
   SessionRole,
@@ -84,6 +87,15 @@ export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, F
    *  absolute structure root, docs_root-aligned — undefined when the drive's workspace does not
    *  resolve (the adapter keeps its cwd-relative default). Concrete-store concern, like driveCwd. */
   decisionStoreRootFor(input: DriveInput): string | undefined;
+  /** WO-0089 — the work order's workspace's DECLARED gate commands, read from the decision
+   *  store's `.workflow/workspace.yaml` at call time (never stored — ADR-0010 rule 1). [] when
+   *  nothing is declared or the declaration is unreadable (the runner only runs what parses).
+   *  Concrete-store concern, like driveCwd: the composition root's gate channel reads it. */
+  gateCommandsFor(workOrderId: WorkOrderId): GateCommandSpec[];
+  /** WO-0089 — record what DOCKET measured running the declared gate commands in a track's repo
+   *  (never the session — independence is the point). Latest-wins per track (INSERT OR REPLACE),
+   *  keyed to the sha the run measured at. Throws when no track row matches the repo. */
+  recordLocalGateRun(workOrderId: WorkOrderId, repo: RepoId, run: { sha: string; at: string; results: GateCommandResult[] }): void;
   /** The underlying handle (tests / future migration tooling). */
   readonly db: DatabaseSync;
   /** The connection rows' raw (repo_remote, local_path) pairs (WO-0064) — the composition
@@ -201,6 +213,10 @@ function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): 
     | { workspace_id: string }
     | undefined)?.workspace_id;
   const degraded = degradedScansByRepo(db, wsId);
+  // WO-0089: the local gate's declaration (one workspace.yaml read per hydrate) composes with the
+  // latest measured run row into Track.localGate. Undeclared → the field stays ABSENT (today's
+  // shape, byte-identical — no evidence item, no new blocking).
+  const gateConfig = gateConfigFor(db, wsId === undefined ? undefined : wid(wsId));
   const rows = db.prepare('SELECT * FROM track WHERE work_order_id = ?').all(woId) as TrackRow[];
   return rows.map((r): Track => {
     const ci = JSON.parse(r.ci_blob) as { state?: 'running' | 'success' | 'failed'; checks?: CiCheck[]; reason?: string };
@@ -224,12 +240,32 @@ function hydrateTracks(db: DatabaseSync, woId: string, sessions: SessionRef[]): 
     const pr = r.pr_url ? { url: r.pr_url, headSha: r.pr_head_sha ?? '' } : undefined;
     const merge = r.merged_at ? { at: r.merged_at } : undefined;
     const hasActiveSession = sessions.some((s) => s.scope === tid(r.id) && s.status !== 'none');
+    // WO-0089: declared → the latest measured row (a corrupt blob fail-opens to pending — the
+    // pending_notes precedent: a corrupt row never bricks hydration); declared with no row yet →
+    // pending; invalid → the parser's reason rides; undeclared → absent.
+    let localGate: LocalGate | undefined;
+    if (gateConfig.kind === 'invalid') localGate = { kind: 'invalid', reason: gateConfig.reason };
+    else if (gateConfig.kind === 'declared') {
+      const run = db
+        .prepare('SELECT sha, results, observed_at FROM local_gate_run WHERE track_id = ?')
+        .get(r.id) as { sha: string; results: string; observed_at: string } | undefined;
+      if (run) {
+        try {
+          localGate = { kind: 'declared', sha: run.sha, at: run.observed_at, results: JSON.parse(run.results) as GateCommandResult[] };
+        } catch {
+          localGate = { kind: 'pending' };
+        }
+      } else {
+        localGate = { kind: 'pending' };
+      }
+    }
     return {
       id: tid(r.id),
       repo: rid(r.repo),
       dependsOn,
       stage: deriveTrackStage({ ...(pr ? { pr } : {}), ...(merge ? { merge } : {}) }, hasActiveSession),
       ci: trackCi,
+      ...(localGate !== undefined ? { localGate } : {}),
       ...(pr ? { pr } : {}),
       ...(merge ? { merge } : {}),
     };
@@ -1261,6 +1297,15 @@ function forgeViewRow(db: DatabaseSync, id: WorkspaceId): ForgeView {
 // process.cwd() fallback (fixture workspaces resolve there, and under vitest cwd IS the operator's
 // real repo).
 function connectedStructureRoot(db: DatabaseSync, workspaceId: WorkspaceId): string | undefined {
+  const dsRoot = decisionStoreRepoRoot(db, workspaceId);
+  return dsRoot === undefined ? undefined : join(dsRoot, settingDocsRoot(db, workspaceId));
+}
+
+// WO-0089 — the decision store's REPO root (the connected local_path whose basename matches the
+// workspace's decision_store slug; connectedStructureRoot minus the docs_root join): the home of
+// `.workflow/workspace.yaml`, the local gate's declaration. Strict, no process.cwd() fallback —
+// a fixture workspace declares nothing.
+function decisionStoreRepoRoot(db: DatabaseSync, workspaceId: WorkspaceId): string | undefined {
   const ws = db.prepare('SELECT decision_store FROM workspace WHERE id = ?').get(workspaceId) as
     | { decision_store: string }
     | undefined;
@@ -1269,9 +1314,28 @@ function connectedStructureRoot(db: DatabaseSync, workspaceId: WorkspaceId): str
     local_path: string;
   }[];
   for (const r of rows) {
-    if (repoBase(r.local_path) === dsSlug) return join(r.local_path, settingDocsRoot(db, workspaceId));
+    if (repoBase(r.local_path) === dsSlug) return r.local_path;
   }
   return undefined;
+}
+
+// WO-0089 — the workspace's local-gate DECLARATION, read from the decision store at view time
+// (ADR-0010 rule 1 — the definition is a document). Undeclared when the store has no
+// workspace.yaml or no `gate:` section; INVALID when a declaration exists but cannot be read or
+// parsed — never silently undeclared (an unread declaration must not open the hole WO-0089
+// closes). Per-hydrate read; the N-file cost is TD-055's accepted shape.
+function gateConfigFor(db: DatabaseSync, workspaceId: WorkspaceId | undefined): GateConfig {
+  if (!workspaceId) return { kind: 'undeclared' };
+  const root = decisionStoreRepoRoot(db, workspaceId);
+  if (root === undefined) return { kind: 'undeclared' };
+  let text: string | undefined;
+  try {
+    text = readWorkspaceYaml(root);
+  } catch (e) {
+    return { kind: 'invalid', reason: `workspace.yaml unreadable (${(e as Error).message})` };
+  }
+  if (text === undefined) return { kind: 'undeclared' };
+  return parseGateConfig(text);
 }
 
 // WO-0092 fix round (M1): the cwd fallback under structureRoot is a fixture-world courtesy (D8 —
@@ -2476,6 +2540,28 @@ export function createStore(dbPath: string): Store {
     },
     getPermissionRuleFor: (workOrderId: WorkOrderId) => Promise.resolve(effectivePermissionRule(db, workOrderId)),
     woRepoPaths: (workOrderId: WorkOrderId) => woRepoPaths(db, workOrderId),
+    // WO-0089 — the declared gate commands for the gate runner. [] when nothing (or nothing
+    // readable) is declared: Docket only runs what parsed — an invalid declaration never spawns
+    // commands, it refuses through the evidence face instead.
+    gateCommandsFor: (workOrderId: WorkOrderId) => {
+      const ws = db.prepare('SELECT workspace_id FROM work_order WHERE id = ?').get(workOrderId) as
+        | { workspace_id: string }
+        | undefined;
+      if (!ws) return [];
+      const config = gateConfigFor(db, wid(ws.workspace_id));
+      return config.kind === 'declared' ? config.commands : [];
+    },
+    // WO-0089 — record DOCKET'S OWN measurement of the declared gate commands (latest-wins per
+    // track). The row resolves the track by (work order, repo slug) — never invents one.
+    recordLocalGateRun: (workOrderId: WorkOrderId, repo: RepoId, run: { sha: string; at: string; results: GateCommandResult[] }) => {
+      const track = db.prepare('SELECT id FROM track WHERE work_order_id = ? AND repo = ?').get(workOrderId, repo) as
+        | { id: string }
+        | undefined;
+      if (!track) throw new Error(`recordLocalGateRun: no track for ${workOrderId} repo ${repo}`);
+      db.prepare(
+        'INSERT OR REPLACE INTO local_gate_run (track_id, work_order_id, repo, sha, results, observed_at) VALUES (?,?,?,?,?,?)',
+      ).run(track.id, workOrderId, repo, run.sha, JSON.stringify(run.results), run.at);
+    },
     // Upsert a step's run outcome — main side-effect on started (active) / turn_complete (done + report).
     recordStep: (workOrderId: WorkOrderId, idx: number, patch: { status: 'active' | 'done'; reportPath?: string }) =>
       recordStepRow(db, workOrderId, idx, patch),

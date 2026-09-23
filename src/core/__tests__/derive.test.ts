@@ -32,6 +32,7 @@ import {
   deriveWorkOrderCost,
   extractPointers,
   limitInEffect,
+  localGateSatisfiedAt,
   nextManuelAction,
   overlayLiveDrive,
   sessionForTrack,
@@ -330,16 +331,30 @@ describe('named invariant cases (AC10)', () => {
     expect(ciGreen.status).toBe('exempt');
     expect(ciGreen.exemption?.reason).toBeTruthy();
 
-    // an exempt track with pr + closed deps CAN merge (not blocked) — AC12
-    const exempt = aTrack({
+    // WO-0089 amends AC12's exempt arm: the exemption now needs a SUBSTITUTE. A CI-exempt track
+    // with no local gate is refused (both-exempt is a hole, not a pass); the same track WITH a
+    // measured-and-passed local gate merges (the substitute carries it — still not "passing").
+    const exemptNoGate = aTrack({
       id: 'e',
       repo: 'r',
       ci: { kind: 'exempt', reason: 'no CI configured' },
       pr: { url: 'https://example/pull/1', headSha: 'deadbee' },
       dependsOn: [],
     });
-    const w = aWorkOrder({ tracks: [exempt] });
-    expect(deriveTrackMerge(w, exempt)).toEqual({ kind: 'available' });
+    const w = aWorkOrder({ tracks: [exemptNoGate] });
+    expect(deriveTrackMerge(w, exemptNoGate)).toEqual({ kind: 'absent', reason: 'local_gate_open' });
+
+    const exemptGated = {
+      ...exemptNoGate,
+      localGate: {
+        kind: 'declared',
+        sha: 'deadbee',
+        at: '2026-09-22T00:00:00Z',
+        results: [{ command: 'npm test', exit: 0, expectExit: 0, tail: '' }],
+      } as import('../types').LocalGate,
+    };
+    const wGate = aWorkOrder({ tracks: [exemptGated] });
+    expect(deriveTrackMerge(wGate, exemptGated)).toEqual({ kind: 'available' });
 
     // a failed CI run DOES block the same configuration
     const failed = aTrack({
@@ -471,7 +486,7 @@ describe('six-state coverage — every derivation (AC10)', () => {
       'WO-1003': [e('plan_approval', 'unsatisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
       'WO-1004': [e('plan_approval', 'satisfied'), e('verification', 'satisfied'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'satisfied')],
       'WO-1005': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'satisfied'), e('ci_green', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'unsatisfied')],
-      'WO-1006': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'exempt')],
+      'WO-1006': [e('plan_approval', 'satisfied'), e('verification', 'unknown'), e('closure', 'unsatisfied'), e('pr_open', 'unsatisfied'), e('ci_green', 'exempt'), e('local_gate', 'exempt')],
     };
     it.each(IDS)('%s', (id) => {
       const items = deriveEvidence(wo(id)).map(({ kind, status }) => ({ kind, status }));
@@ -1108,5 +1123,226 @@ describe('validateTrackDependencies (WO-0071)', () => {
     expect(problems[0]).toContain('cannot depend on itself');
     expect(problems[2]).toContain('duplicate dependency');
     expect(problems[3]).toContain("'nope'");
+  });
+});
+
+// ===== WO-0089 — the local gate: a CI exemption needs a substitute, not a hole =====
+//
+// Docket runs the workspace's declared gate commands ITSELF and records what it measured. The
+// exempt-needs-substitute rule: a CI-exempt track must satisfy local_gate; both-exempt (CI
+// exempt AND nothing declared) is a refusal state, not a pass. Unknown never passes (the Ci
+// precedent): not-run and could-not-run are one non-passing state, distinct from measured-fail.
+describe('the local gate (WO-0089)', () => {
+  type LocalGate = import('../types').LocalGate;
+  const gate = (results: Array<{ command: string; exit: number | null; expectExit?: number }>): Extract<LocalGate, { kind: 'declared' }> => ({
+    kind: 'declared',
+    sha: 'deadbee',
+    at: '2026-09-22T00:00:00Z',
+    results: results.map((r) => ({ tail: '', expectExit: 0, ...r, ...(r.expectExit !== undefined ? {} : {}) }) as import('../types').GateCommandResult),
+  });
+  const exemptTrack = (localGate?: LocalGate) =>
+    aTrack({
+      id: 'e',
+      repo: 'r',
+      ci: { kind: 'exempt', reason: 'no CI configured' },
+      pr: { url: 'https://example/pull/1', headSha: 'deadbee' },
+      dependsOn: [],
+      ...(localGate !== undefined ? { localGate } : {}),
+    });
+  // The LIVE path to closure: every track merged, the verifier report recorded, docs NOT yet
+  // committed — the moment the verification gate decides. closureDocsSha stays ABSENT here: a
+  // set docs sha IS the terminal close (the operator's attestation), a different case below.
+  const liveExempt = (localGate?: LocalGate) =>
+    aWorkOrder({
+      tracks: [
+        {
+          ...exemptTrack(localGate),
+          merge: { at: '2026-09-22T01:00:00Z' },
+        },
+      ],
+      gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true } },
+    });
+
+  it('acceptance 1 — an exempt track with the substitute unsatisfied cannot reach the verification gate (stage stays implementation)', () => {
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 1 }])))).toBe('implementation');
+  });
+
+  it('acceptance 1 — not-run is the same refusal (unknown never passes)', () => {
+    expect(deriveStage(liveExempt({ kind: 'pending' }))).toBe('implementation');
+  });
+
+  it('acceptance 1 — both-exempt (nothing declared) is a refusal state, not a pass', () => {
+    expect(deriveStage(liveExempt(undefined))).toBe('implementation');
+    expect(deriveStage(liveExempt({ kind: 'invalid', reason: 'gate.commands: empty' }))).toBe('implementation');
+  });
+
+  it('acceptance 1 — with the substitute measured-and-passed the WO reaches closure', () => {
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 0 }])))).toBe('closure');
+  });
+
+  it('a CLOSED archive stays closed regardless of the gate — the rule governs the path, never rewrites history', () => {
+    // Pre-WO-0089 archives: the operator's terminal attestation (closureDocsSha) closed the WO
+    // with no local gate in sight. The mechanical rule must not retroactively re-open them.
+    const closedArchive = { ...liveExempt(undefined), gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' } };
+    expect(deriveStage(closedArchive)).toBe('closed');
+    const closedFailedGate = { ...liveExempt(gate([{ command: 'npm test', exit: 1 }])), gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' } };
+    expect(deriveStage(closedFailedGate)).toBe('closed');
+  });
+
+  it('acceptance 1 — could-not-run (exit null) never passes even when no command failed', () => {
+    expect(deriveStage(liveExempt(gate([{ command: 'npm test', exit: 0 }, { command: 'npm run build', exit: null }])))).toBe('implementation');
+  });
+
+  it('the exempt merge needs the substitute — deriveTrackMerge refuses without it (the rule this WO exists for)', () => {
+    const w = aWorkOrder({ tracks: [exemptTrack()] });
+    expect(deriveTrackMerge(w, w.tracks[0]!)).toEqual({ kind: 'absent', reason: 'local_gate_open' });
+    const failed = aWorkOrder({ tracks: [exemptTrack(gate([{ command: 'npm test', exit: 1 }]))] });
+    expect(deriveTrackMerge(failed, failed.tracks[0]!)).toEqual({ kind: 'absent', reason: 'local_gate_open' });
+    const passed = aWorkOrder({ tracks: [exemptTrack(gate([{ command: 'npm test', exit: 0 }]))] });
+    expect(deriveTrackMerge(passed, passed.tracks[0]!)).toEqual({ kind: 'available' });
+  });
+
+  it('acceptance 2 — a measured non-zero exit is unsatisfied (measured-and-failed), distinct from not-run (unknown); neither passes', () => {
+    const failed = deriveEvidence(aWorkOrder({ tracks: [exemptTrack(gate([{ command: 'npm test', exit: 1 }]))] })).find((e) => e.kind === 'local_gate')!;
+    expect(failed.status).toBe('unsatisfied');
+    const pending = deriveEvidence(aWorkOrder({ tracks: [exemptTrack({ kind: 'pending' })] })).find((e) => e.kind === 'local_gate')!;
+    expect(pending.status).toBe('unknown');
+    const couldNotRun = deriveEvidence(aWorkOrder({ tracks: [exemptTrack(gate([{ command: 'npm test', exit: null }]))] })).find((e) => e.kind === 'local_gate')!;
+    expect(couldNotRun.status).toBe('unknown');
+  });
+
+  it('a non-zero expect_exit is satisfied by its own expected exit (the declaration, not zero, is the contract)', () => {
+    const w = aWorkOrder({
+      tracks: [exemptTrack(gate([{ command: 'grep -r TODO src', exit: 1, expectExit: 1 }]))],
+    });
+    expect(deriveEvidence(w).find((e) => e.kind === 'local_gate')!.status).toBe('satisfied');
+    expect(deriveTrackMerge(w, w.tracks[0]!)).toEqual({ kind: 'available' });
+  });
+
+  it('the local_gate item sits BESIDE ci_green on an exempt track — the undeclared face is exempt, with a reason-shaped absence', () => {
+    const items = deriveEvidence(aWorkOrder({ tracks: [exemptTrack()] })).filter((e) => e.scope !== undefined);
+    expect(items.map((e) => e.kind)).toEqual(['pr_open', 'ci_green', 'local_gate']);
+    expect(items[2]).toEqual({ kind: 'local_gate', status: 'exempt', scope: items[2]!.scope });
+  });
+
+  it('a declared gate shows beside ci_green on a CI-RUN track too — and a FAILED gate there does not block the merge (CI keeps its mechanical evidence)', () => {
+    const track = aTrack({
+      id: 'c',
+      repo: 'r',
+      ci: { kind: 'run', state: 'success', checks: [{ name: 'build', conclusion: 'success' }] },
+      pr: { url: 'https://example/pull/3', headSha: 'feedface' },
+      dependsOn: [],
+      localGate: gate([{ command: 'npm test', exit: 1 }]),
+    });
+    const w = aWorkOrder({ tracks: [track] });
+    const items = deriveEvidence(w).filter((e) => e.scope !== undefined);
+    expect(items.map((e) => e.kind)).toEqual(['pr_open', 'ci_green', 'local_gate']);
+    expect(items[2]!.status).toBe('unsatisfied');
+    expect(deriveTrackMerge(w, track)).toEqual({ kind: 'available' }); // CI is the mechanical evidence here
+    expect(deriveStage({ ...w, gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 's' } })).toBe('implementation'); // not merged — unchanged by the gate
+  });
+
+  it('acceptance 5 — a workspace declaring nothing behaves exactly as today: no local_gate item on a CI-run track, the merge follows CI alone', () => {
+    const track = aTrack({
+      id: 'n',
+      repo: 'r',
+      ci: { kind: 'run', state: 'success', checks: [] },
+      pr: { url: 'https://example/pull/4', headSha: 'cafef00d' },
+      dependsOn: [],
+    });
+    const w = aWorkOrder({ tracks: [track] });
+    const items = deriveEvidence(w).filter((e) => e.scope !== undefined);
+    expect(items.map((e) => e.kind)).toEqual(['pr_open', 'ci_green']); // byte-identical to the pre-WO-0089 shape
+    expect(deriveTrackMerge(w, track)).toEqual({ kind: 'available' });
+  });
+
+  it('an invalid declaration is unknown on the evidence row — never exempt, never a pass', () => {
+    const items = deriveEvidence(aWorkOrder({ tracks: [exemptTrack({ kind: 'invalid', reason: 'gate.commands: empty' })] }));
+    const lg = items.find((e) => e.kind === 'local_gate')!;
+    expect(lg.status).toBe('unknown');
+  });
+
+  // ===== Review round M2 — the substitute must be FRESH (measured at the repo's CURRENT HEAD) =====
+  //
+  // A gate measured at another sha never satisfies the merge: the measurement speaks for code
+  // that is no longer the repo's HEAD (the antreo twin — numbers that describe a different run).
+  describe('localGateSatisfiedAt — freshness (review M2)', () => {
+    it('measured-pass at X with HEAD X satisfies', () => {
+      const lg = gate([{ command: 'npm test', exit: 0 }]);
+      expect(localGateSatisfiedAt(lg, 'deadbee')).toBe(true);
+    });
+
+    it('measured-pass at X but HEAD moved to Y → REFUSED (stale — a re-run is forced)', () => {
+      const lg = gate([{ command: 'npm test', exit: 0 }]);
+      expect(localGateSatisfiedAt(lg, 'cafef00d')).toBe(false);
+    });
+
+    it('a measurement with an empty sha (git could not read the cwd) never satisfies', () => {
+      const lg: LocalGate = { ...gate([{ command: 'npm test', exit: 0 }]), sha: '' };
+      expect(localGateSatisfiedAt(lg, 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt(lg, '')).toBe(false);
+    });
+
+    it('a failed or unrun gate is refused regardless of the head (the unmet rule first)', () => {
+      expect(localGateSatisfiedAt(gate([{ command: 'npm test', exit: 1 }]), 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt({ kind: 'pending' }, 'deadbee')).toBe(false);
+      expect(localGateSatisfiedAt(undefined, 'deadbee')).toBe(false);
+    });
+
+    it('a CI-run track is fresh-eligible through CI alone — freshness never gates it', () => {
+      // The CI-run arm passes deriveTrackMerge before local_gate is ever consulted (its own
+      // `ci.kind === 'exempt'` guard) — a stale local_gate beside a green CI never blocks.
+      const track = aTrack({
+        id: 'c2',
+        repo: 'r',
+        ci: { kind: 'run', state: 'success', checks: [] },
+        pr: { url: 'https://example/pull/9', headSha: 'cafef00d' },
+        dependsOn: [],
+        localGate: gate([{ command: 'npm test', exit: 0 }]), // sha 'deadbee' — stale vs the PR's 'cafef00d'
+      });
+      const w = aWorkOrder({ tracks: [track] });
+      expect(deriveTrackMerge(w, track)).toEqual({ kind: 'available' });
+    });
+  });
+
+  // ===== deriveTrackMerge / deriveStage wired to freshness (review M2) =====
+  describe('the merge + closure gates refuse a STALE substitute (review M2)', () => {
+    // exemptTrack()'s PR headSha defaults to 'deadbee', matching gate()'s default measured sha —
+    // every OTHER test above stays fresh by construction; these two override the PR's headSha to
+    // prove the mismatch actually bites.
+    it('deriveTrackMerge refuses a measured-and-passed gate whose sha is not the PR head', () => {
+      const stale = aTrack({
+        id: 'e2',
+        repo: 'r',
+        ci: { kind: 'exempt', reason: 'no CI configured' },
+        pr: { url: 'https://example/pull/2', headSha: 'cafef00d' }, // the branch moved past 'deadbee'
+        dependsOn: [],
+        localGate: gate([{ command: 'npm test', exit: 0 }]),
+      });
+      const w = aWorkOrder({ tracks: [stale] });
+      expect(deriveTrackMerge(w, stale)).toEqual({ kind: 'absent', reason: 'local_gate_open' });
+      // the SAME track at its own measured sha (the operator has not pushed since) satisfies —
+      // the rule bites staleness, not the measurement itself.
+      const fresh = { ...stale, pr: { url: stale.pr!.url, headSha: 'deadbee' } };
+      expect(deriveTrackMerge({ ...w, tracks: [fresh] }, fresh)).toEqual({ kind: 'available' });
+    });
+
+    it('the live path to closure stays at implementation while the substitute is stale — a re-run, not a re-open, clears it', () => {
+      const stale = aWorkOrder({
+        tracks: [{ ...exemptTrack(gate([{ command: 'npm test', exit: 0 }])), pr: { url: 'https://example/pull/1', headSha: 'cafef00d' }, merge: { at: '2026-09-22T01:00:00Z' } }],
+        gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true } },
+      });
+      expect(deriveStage(stale)).toBe('implementation');
+    });
+
+    it('an already-CLOSED archive is untouched by staleness too — the path rule, never a rewrite of history', () => {
+      const staleButClosed = {
+        ...aWorkOrder({
+          tracks: [{ ...exemptTrack(gate([{ command: 'npm test', exit: 0 }])), pr: { url: 'https://example/pull/1', headSha: 'cafef00d' }, merge: { at: '2026-09-22T01:00:00Z' } }],
+        }),
+        gateInputs: { planApproved: true, verifierReport: { resolvablePointers: true }, closureDocsSha: 'closure-sha' },
+      };
+      expect(deriveStage(staleButClosed)).toBe('closed');
+    });
   });
 });
