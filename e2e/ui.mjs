@@ -3632,6 +3632,14 @@ await spec('WO-0092 toplu üretim: 2 sorun → 2 iş emri, ardışık numaralar,
   await spawned.first().click();
   await page.waitForTimeout(800);
   assert.equal(await page.locator('[data-detail-issue-chip]').count(), 1, 'the chip did not open the spawned WO detail');
+  // the injected failure ALSO fires a real error toast (App.tsx's runBatchSpawn catch) — error
+  // toasts never auto-dismiss (ADR-0012: an operator reads and acts on one). Left alive, it sits
+  // in the top-right corner for the rest of this continuous session and blocks whatever renders
+  // under it later (found live: it silently ate WO-0093's Sil clicks four specs downstream). A
+  // real operator would read and dismiss it; this test does the same, now that no dialog is open
+  // to misread the click as an outside-pointerdown dismiss (Radix's default Dialog behavior).
+  const failToast = page.locator('[data-toast="error"]');
+  if ((await failToast.count()) > 0) await failToast.first().click();
   await backToBoard();
 });
 
@@ -3655,7 +3663,12 @@ const wtWorktreeList = () => execFileSync('git', ['-C', WT.repo, 'worktree', 'li
 // git's own listing reports the REAL path (macOS /var is a symlink to /private/var — the
 // adapter's own isRegisteredWorktree note); wtDirOf's path is unresolved, so the compare must
 // realpath it the same way, or a genuinely-registered copy reads as unregistered here.
-const wtRegistered = (path) => wtWorktreeList().split('\n').some((l) => l === `worktree ${realpathSync(path)}`);
+// realpathSync throws ENOENT on a path that no longer exists — exactly the case right after a
+// successful delete/removal, which is the honest "not registered" answer, not a test error.
+const wtRegistered = (path) => {
+  if (!existsSync(path)) return false;
+  return wtWorktreeList().split('\n').some((l) => l === `worktree ${realpathSync(path)}`);
+};
 // git's own .git/worktrees bookkeeping is expected and excluded: the ONLY allowed dirt is the
 // Docket-authored order.md docs the operator commits (pre-existing behavior, not this feature's).
 const wtAssertRepoUntouched = () => {
@@ -3678,6 +3691,12 @@ const wtDriveToClosable = async (woId) => {
   await done('İnceleme tamam.\nVERDICT: proceed');
   await page.waitForTimeout(1000); // the verifier leg starts itself
   await done('# Doğrulama\n\n`src-wt.txt:1` ok.');
+  // nextManuelAction treats ANY done step without a verdict as reviewable, verifier steps
+  // included — the verifier's own report still needs its review leg before canClose is satisfied
+  // (found live: closing without this refused with "ön koşullar karşılanmadı", canClose's honest
+  // step_not_reviewed, since the verifier step sat done with no verdict).
+  await page.waitForTimeout(1000); // the verifier's own review leg starts itself
+  await done('Doğrulama incelendi.\nVERDICT: proceed');
   await page.waitForTimeout(1100);
 };
 
@@ -3813,6 +3832,10 @@ await spec('WO-0093 hazırlık hatası: main yoksa Başlat gerekçesiyle reddede
   await page.waitForTimeout(1400);
   await page.getByRole('button', { name: 'Plan iste', exact: true }).click();
   await page.waitForTimeout(1000);
+  // the fail card's title is operator-generic (ADR-0012: raw diagnostics never render directly);
+  // the verbatim reason rides the collapsed "Ayrıntı" toggle.
+  await page.getByRole('button', { name: /Ayrıntı/ }).click();
+  await page.waitForTimeout(300);
   const mainText = await page.locator('main').first().innerText();
   assert.ok(mainText.includes('worktree prep failed'), `the start did not refuse with the reason: ${mainText.slice(0, 300)}`);
   const woD = await page.evaluate(() =>

@@ -740,7 +740,12 @@ store.recordSession({
 // branch is deliberately `master`: the WO-0093 prep-failure spec branches a worktree from MAIN
 // here and the missing base must refuse the start (AC 5, the verbatim failure arm). The tohum
 // dir pre-seeds its own store past every id (the WO-0090 pattern — the work_order PK is global).
-mkdirSync(join(root, 'repo-bos', 'docs', 'work-orders', 'WO-0100-tohum'), { recursive: true });
+// 0100 (the original pin) collided live with `UNIQUE constraint failed: work_order.id` once the
+// 'brifing' world (WO-0090) landed on main: its own tohum sits at 0099 and it seeds 3 WOs
+// directly (0100/0101/0102) — bos's runtime create ('WO-0093 hazırlık hatası') landed on the
+// same 0101 independently. 0130 clears every tohum + runtime ceiling in this file (wt's own
+// runtime creates top out around 0113).
+mkdirSync(join(root, 'repo-bos', 'docs', 'work-orders', 'WO-0130-tohum'), { recursive: true });
 gitSeed(join(root, 'repo-bos'), 'master');
 const wsBos = await store.createWorkspace({
   label: 'bos',
