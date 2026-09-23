@@ -3914,6 +3914,16 @@ await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + ot
     await page.waitForTimeout(300);
   }
   await stopAllDrives();
+  await backToBoard();
+  // this spec cares only about backend-profile evidence, never worktrees — land on a workspace
+  // whose repo has an ordinary `main` (WO-0093's own specs leave the app on 'bos', whose repo is
+  // deliberately main-less; a checkout-default-ON create there crashes the drive on the SAME
+  // worktree-prep refusal WO-0093 tests, unrelated to this spec's own concern).
+  const currentWs = ((await page.locator('header button').first().textContent()) ?? '').replace(/[▾▎]/g, '').trim();
+  if (currentWs !== 'e2e') {
+    await switchWs(currentWs, 'e2e');
+    await backToBoard();
+  }
   await openWsEdit();
   const wsDlg = page.locator('[role="dialog"]');
   const sec = wsDlg.locator('[data-ws-profile-section]');
