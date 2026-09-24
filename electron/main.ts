@@ -25,7 +25,7 @@ import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
 import { driveOwnerTag, isDraftDrive } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../src/core/runner';
-import type { Locale, PromptOverrides, ProviderStatus, RoleModels } from '../src/core/app-settings';
+import type { Locale, PromptOverrides, ProviderStatus, RoleModels, Theme } from '../src/core/app-settings';
 import { DEFAULT_PROFILE, sameProfileName, type BackendProfile } from '../src/core/backend-profile';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
@@ -616,6 +616,14 @@ ipcMain.handle('docket:settings:set-permission-rule', (_e, rule: PermissionRule)
 // WO-0035: the UI locale — undefined (no explicit choice) survives the structured clone.
 ipcMain.handle('docket:settings:get-locale', () => store.getLocale());
 ipcMain.handle('docket:settings:set-locale', (_e, locale: Locale) => store.setLocale(locale));
+// WO-0102: theme joins locale (ADR-0020 #7 — the remote surface reads+writes it; the desktop
+// renderer keeps localStorage this WO, TD-065) + the remote boot rows (the kill-switch UI is
+// WO-0103's; these channels are the surface it consumes).
+ipcMain.handle('docket:settings:get-theme', () => store.getTheme());
+ipcMain.handle('docket:settings:set-theme', (_e, theme: Theme) => store.setTheme(theme));
+ipcMain.handle('docket:settings:get-remote-enabled', () => store.getRemoteEnabled());
+ipcMain.handle('docket:settings:set-remote-enabled', (_e, enabled: boolean) => store.setRemoteEnabled(enabled));
+ipcMain.handle('docket:settings:get-remote-port', () => store.getRemotePort());
 // WO-0059 rev 2: the per-role model preference (the DB half) + the adapter-minted presets — the
 // checkProvider pattern: the id vocabulary lives in the runner adapter, main only composes the channel.
 ipcMain.handle('docket:settings:get-models', () => store.getModels());

@@ -86,6 +86,13 @@ const settings: AppSettings = {
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
   setLocale: (locale: Locale): Promise<void> => ipcRenderer.invoke('docket:settings:set-locale', locale),
+  // WO-0102: theme joins locale in the row store (the remote surface reads+writes it); the remote
+  // boot rows ride the same settings IPC (the kill-switch UI is WO-0103's).
+  getTheme: (): Promise<import('../src/core/app-settings').Theme | undefined> => ipcRenderer.invoke('docket:settings:get-theme'),
+  setTheme: (theme: import('../src/core/app-settings').Theme): Promise<void> => ipcRenderer.invoke('docket:settings:set-theme', theme),
+  getRemoteEnabled: (): Promise<boolean> => ipcRenderer.invoke('docket:settings:get-remote-enabled'),
+  setRemoteEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke('docket:settings:set-remote-enabled', enabled),
+  getRemotePort: (): Promise<number | undefined> => ipcRenderer.invoke('docket:settings:get-remote-port'),
   // WO-0059 rev 2: the per-role model preference (DB half) + the adapter-minted presets (the
   // checkProvider pattern — the handler lives main-side, composed from the runner adapter).
   getModels: (): Promise<RoleModels | undefined> => ipcRenderer.invoke('docket:settings:get-models'),

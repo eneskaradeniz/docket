@@ -1,7 +1,10 @@
 // src/core/app-settings.ts — the operator-preferences PORT (WO-0025 / B1).
 //
 // Operator preferences live in the shared DB so BOTH hosts see them (the Electron GUI and
-// the CLI open the same docket.db); theme stays renderer-local localStorage because it is presentation only.
+// the CLI opened the same docket.db); WO-0102 moves THEME into the row store too (ADR-0020 #7)
+// so the remote settings surface can read+write it — the desktop renderer keeps its localStorage
+// behavior this WO (TD-065), and the remote boot switch (remote:enabled / remote:port) rows join
+// the same table.
 // ADR-0010's observed|owned split gains a third, tiny category here: an operator preference is neither a
 // git-observed fact nor a decision about work — it is machine-local app configuration.
 // WO-0059 rev 4: the stored provider API key RETIRED (port methods, spawn-env injection, the stored
@@ -59,6 +62,22 @@ export interface AppSettings {
    *  never of the project — this row, not workspace.yaml). */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** WO-0102 (ADR-0020 #7): the theme choice joins locale in the shared row store so the remote
+   *  settings surface can read+write it. undefined = nothing stored ('system' is the effective
+   *  face). "Sistem" follows each device's own OS at render time regardless of where the row
+   *  lives. The desktop renderer KEEPS its localStorage behavior this WO (TD-065) — adoption is
+   *  a named debt entry, never smuggled work. */
+  getTheme(): Promise<Theme | undefined>;
+  setTheme(theme: Theme): Promise<void>;
+  /** WO-0102: the remote server's kill-switch (`remote:enabled`, an app_setting row) — default
+   *  TRUE (ADR-0020 #2's "the desktop app is open" IS the deployment assumption). The UI that
+   *  writes it is WO-0103's; the read gates the boot wiring in the composition root. */
+  getRemoteEnabled(): Promise<boolean>;
+  setRemoteEnabled(enabled: boolean): Promise<void>;
+  /** WO-0102: the listen-port override (`remote:port`). READ-ONLY this WO (architect amendment
+   *  3b): the row is the operator's escape hatch — a setter lands with the UI that needs it
+   *  (none exists; a ruled silence beats an undecided one). undefined = the fixed default. */
+  getRemotePort(): Promise<number | undefined>;
   /** The per-role model preference (WO-0059 rev 2): one map, three roles; an absent role = the
    *  provider's own default. undefined = nothing stored. The composition root reads it at SPAWN
    *  time and picks the drive's role row, so a change hits the next drive, never a running one. */

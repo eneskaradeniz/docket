@@ -3725,3 +3725,87 @@ describe('WO-0098 — backend profiles in the store', () => {
     expect('reportedModel' in s).toBe(false);
   });
 });
+
+// WO-0102 — the device registry over the app-home db: mint → exchange → list → revoke → the
+// used-key refusal. Core's pairingVerdict semantics are pinned in device-store.test.ts; this
+// block pins the SQL half (row shapes, the one-live-grant invariant, the hashed key, lastSeen).
+describe('device registry (WO-0102)', () => {
+  it('mints one live grant, exchanges once, and refuses the replay with the honest reason', async () => {
+    const db = createStore(freshDb());
+    const minted = await db.mintGrant('2026-09-24T12:00:00.000Z');
+    expect(minted.code).toMatch(/^\d{6}$/);
+    expect(minted.attemptsLeft).toBe(5);
+    const paired = await db.exchange(minted.code, 'Pixel 9', '2026-09-24T12:01:00.000Z');
+    expect(paired).toMatchObject({ kind: 'paired' });
+    const key = (paired as { kind: 'paired'; deviceId: string; deviceKey: string }).deviceKey;
+    expect(key).toMatch(/^dk_[0-9a-f]{64}$/);
+    // single-use: the same code again reads 'used' (the row stays, marked)
+    expect(await db.exchange(minted.code, 'Pixel 9', '2026-09-24T12:01:01.000Z')).toEqual({ kind: 'dead', reason: 'used' });
+    // the row carries the HASH, never the key
+    const rows = db.db.prepare('SELECT key_hash FROM device').all() as { key_hash: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.key_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows[0]!.key_hash).not.toContain(key);
+  });
+
+  it('spends the strike budget on wrong codes, expires past the TTL, and supersedes on mint', async () => {
+    const db = createStore(freshDb());
+    const g = await db.mintGrant('2026-09-24T12:00:00.000Z');
+    for (let i = 0; i < 4; i++) {
+      expect(await db.exchange('000000', 'Pixel 9', `2026-09-24T12:00:0${i + 1}.000Z`)).toEqual({
+        kind: 'invalid_code',
+        attemptsLeft: 4 - i,
+      });
+    }
+    expect(await db.exchange('000000', 'Pixel 9', '2026-09-24T12:00:05.000Z')).toEqual({ kind: 'dead', reason: 'struck' });
+    // struck = dead row: even the right code reads unknown now
+    expect(await db.exchange(g.code, 'Pixel 9', '2026-09-24T12:00:03.000Z')).toEqual({ kind: 'dead', reason: 'unknown' });
+    // TTL: a fresh grant dies past its window
+    const g2 = await db.mintGrant('2026-09-24T12:00:00.000Z');
+    expect(await db.exchange(g2.code, 'Pixel 9', '2026-09-24T12:05:00.001Z')).toEqual({ kind: 'dead', reason: 'expired' });
+    // supersede: one live grant row at a time
+    await db.mintGrant('2026-09-24T13:00:00.000Z');
+    expect((db.db.prepare('SELECT COUNT(*) AS n FROM pairing_token').get() as { n: number }).n).toBe(1);
+  });
+
+  it('lists, stamps lastSeen on the key-hash lookup, and revoke stops the key resolving', async () => {
+    const db = createStore(freshDb());
+    const g = await db.mintGrant('2026-09-24T12:00:00.000Z');
+    const paired = (await db.exchange(g.code, 'Pixel 9', '2026-09-24T12:01:00.000Z')) as {
+      kind: 'paired';
+      deviceId: string;
+      deviceKey: string;
+    };
+    const devices = await db.listDevices();
+    expect(devices).toEqual([{ id: paired.deviceId, name: 'Pixel 9', createdAt: '2026-09-24T12:01:00.000Z', lastSeenAt: null }]);
+    // auth lookup by hash (the server hashes the bearer the same way)
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha256').update(paired.deviceKey).digest('hex');
+    const seen = await db.deviceByKeyHash(hash, '2026-09-24T12:02:00.000Z');
+    expect(seen).toMatchObject({ id: paired.deviceId, lastSeenAt: '2026-09-24T12:02:00.000Z' });
+    expect(await db.deviceByKeyHash('deadbeef', '2026-09-24T12:02:00.000Z')).toBeUndefined();
+    // revoke: the row goes, the key stops resolving, a second revoke is false
+    expect(await db.revokeDevice(paired.deviceId)).toBe(true);
+    expect(await db.deviceByKeyHash(hash, '2026-09-24T12:03:00.000Z')).toBeUndefined();
+    expect(await db.revokeDevice(paired.deviceId)).toBe(false);
+    expect(await db.listDevices()).toEqual([]);
+  });
+
+  it('carries the theme and remote boot rows with the locale row\'s discipline', async () => {
+    const db = createStore(freshDb());
+    expect(await db.getTheme()).toBeUndefined();
+    await db.setTheme('dark');
+    expect(await db.getTheme()).toBe('dark');
+    expect(await db.getRemoteEnabled()).toBe(true); // absent row = ON (the frozen default)
+    await db.setRemoteEnabled(false);
+    expect(await db.getRemoteEnabled()).toBe(false);
+    expect(await db.getRemotePort()).toBeUndefined(); // absent row = the fixed default
+    db.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('remote_port', '47700')").run();
+    expect(await db.getRemotePort()).toBe(47700);
+    // garbage rows read as the default, never throw
+    db.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('remote_port', 'notaport')").run();
+    expect(await db.getRemotePort()).toBeUndefined();
+    db.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('theme', 'neon')").run();
+    expect(await db.getTheme()).toBeUndefined();
+  });
+});

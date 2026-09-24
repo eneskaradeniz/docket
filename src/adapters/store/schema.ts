@@ -274,6 +274,27 @@ CREATE TABLE IF NOT EXISTS pending_finding (
   created_at TEXT NOT NULL,
   UNIQUE (work_order_id, repo, pointer)
 );
+-- WO-0102 (ADR-0020 #3): the paired-device registry. OWNED rows in the app-home db — Docket's
+-- own record of which devices it trusts. key_hash is SHA-256(deviceKey) hex: the plaintext key
+-- exists only in the /pair response and on the phone (Records & PRs, extended by ADR-0020 #3);
+-- no key, token or hash ever enters an event or a log line.
+CREATE TABLE IF NOT EXISTS device (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT
+);
+-- WO-0102: the ONE live pairing grant (minting supersedes — mint deletes prior rows). The
+-- single-use/TTL/attempt-cap state machine is core's pairingVerdict; this row is its persisted
+-- state. A crashed-stale row is inert (an expired read is dead) and dies at the next mint.
+CREATE TABLE IF NOT EXISTS pairing_token (
+  code TEXT PRIMARY KEY,
+  attempts_left INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 `;
 
 // Drop order respects dependencies (children first). Foreign keys are documented, not
