@@ -17,9 +17,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { OBSERVED_TABLES, SCHEMA_SQL, SEED_OBSERVED_AT } from './schema';
 import { deriveStage, deriveSteps, deriveTrackStage, deriveWorkOrderCost, extractPointers, canClose, resolvePointers, validateTrackDependencies, type ObservedStep } from '../../core/derive';
-import type { Locale, PromptOverrides, RoleModels } from '../../core/app-settings';
+import type { Locale, PromptOverrides, RoleModels, Theme } from '../../core/app-settings';
+import { PAIRING_CODE_DIGITS, PAIRING_MAX_ATTEMPTS, grantExpiresAt, pairingVerdict, type DeviceView, type PairingExchangeResult, type PairingGrantView, type StoredGrant } from '../../core/remote';
+import type { DeviceStore } from '../../core/device-store';
 import type { BriefingCheck, CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, RepoConnectionView, RoadmapDraft, UpdateWorkOrderInput, WorkOrderSource } from '../../core/source';
 import type { RecordSessionInput, SessionOwner, SessionStore, PendingFinding } from '../../core/session-store';
 import { buildOrderMd, findWorkOrderDir, nextWorkOrderNumber, readRoadmapMd, readStepReport, readStepVerdict, readTechDebtMd, readWoDocs, readWorkspaceYaml, removeWorkOrderDir, scanDecisionDocs, scanIssueRefs, scanTaskRefs, writeOrderMd, writeOrderMdById, writePlanMdById, writeRoadmapMd, writeStepReport, writeStepVerdict } from '../decision-store/decision-store';
@@ -70,7 +73,7 @@ import type {
 // `SessionStore` port (src/core/session-store.ts); `Store` implements it. The drive loop (src/core/pipeline.ts)
 // depends on that port, not on this adapter (WO-0023).
 
-export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, ForgeObservations {
+export interface Store extends WorkOrderSource, SessionStore, AppSettingsData, DeviceStore, ForgeObservations {
   /** Drop every observed table and re-seed it; owned tables are untouched (ADR-0010). */
   reseedObserved(): void;
   /** The work order's REPO ROOT PATHS (its tracks' connected local paths, decision store included) —
@@ -125,6 +128,15 @@ export interface AppSettingsData {
    *  detects the system language; only a deliberate pick reaches this row. */
   getLocale(): Promise<Locale | undefined>;
   setLocale(locale: Locale): Promise<void>;
+  /** WO-0102: the theme choice (ADR-0020 #7) — same row discipline as locale: only a deliberate
+   *  pick is stored, an absent or garbage row reads undefined ('system' is the effective face). */
+  getTheme(): Promise<Theme | undefined>;
+  setTheme(theme: Theme): Promise<void>;
+  /** WO-0102: the remote server's kill-switch + port override rows. `remote:enabled` defaults
+   *  TRUE (an absent row is ON — the frozen decision); `remote:port` is read-only this WO. */
+  getRemoteEnabled(): Promise<boolean>;
+  setRemoteEnabled(enabled: boolean): Promise<void>;
+  getRemotePort(): Promise<number | undefined>;
   /** The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models` — the three
    *  session roles, an absent role = the provider's own default. Ids ride VERBATIM; the store
    *  normalizes SHAPE only (unknown role keys and blank values drop), never names or validates a
@@ -1458,6 +1470,92 @@ function settingLocale(db: DatabaseSync): Locale | undefined {
   return value === 'tr' || value === 'en' ? value : undefined;
 }
 
+// WO-0102: the theme choice — the locale row's discipline exactly (ADR-0020 #7). The desktop
+// renderer keeps localStorage this WO (TD-065); the row exists so the remote surface reads+writes it.
+function settingTheme(db: DatabaseSync): Theme | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('theme') as { value: string } | undefined)?.value;
+  return value === 'system' || value === 'light' || value === 'dark' ? value : undefined;
+}
+
+// WO-0102: the remote boot rows. `remote:enabled` defaults TRUE (the frozen decision — an absent
+// or garbage row is ON, the kill-switch is the deliberate OFF); `remote:port` (read-only this WO)
+// reads only a valid port integer, anything else is the fixed default.
+function settingRemoteEnabled(db: DatabaseSync): boolean {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('remote_enabled') as { value: string } | undefined)?.value;
+  return value !== '0';
+}
+function settingRemotePort(db: DatabaseSync): number | undefined {
+  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('remote_port') as { value: string } | undefined)?.value;
+  const n = value === undefined ? Number.NaN : Number(value);
+  return Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
+}
+
+// WO-0102 (ADR-0020 #3): the device registry's SQL half. The state machine is core's
+// pairingVerdict (pure, over this table's row); randomness + SHA-256 live here — the plaintext
+// key exists only in the exchange's return value (the /pair response), never in a row. Ids and
+// keys carry their frozen wire prefixes (dv_/dk_) and lengths (16/64 hex).
+function mintGrantRow(db: DatabaseSync, now: string): PairingGrantView {
+  db.prepare('DELETE FROM pairing_token').run(); // ONE live grant: minting supersedes
+  const code = String(randomInt(0, 10 ** PAIRING_CODE_DIGITS)).padStart(PAIRING_CODE_DIGITS, '0');
+  const expiresAt = grantExpiresAt(now);
+  db.prepare('INSERT INTO pairing_token (code, attempts_left, expires_at, used, created_at) VALUES (?, ?, ?, 0, ?)').run(
+    code,
+    PAIRING_MAX_ATTEMPTS,
+    expiresAt,
+    now,
+  );
+  return { code, expiresAt, attemptsLeft: PAIRING_MAX_ATTEMPTS };
+}
+
+interface DeviceRow {
+  id: string;
+  name: string;
+  key_hash: string;
+  created_at: string;
+  last_seen_at: string | null;
+}
+const deviceView = (row: DeviceRow): DeviceView => ({
+  id: row.id,
+  name: row.name,
+  createdAt: row.created_at,
+  lastSeenAt: row.last_seen_at,
+});
+
+function exchangeGrantRow(db: DatabaseSync, code: string, deviceName: string, now: string): PairingExchangeResult {
+  // ONE live grant exists by construction (mint supersedes), so the lookup fetches THE row — a
+  // wrong submitted code must still find (and strike) the grant it was guessed against; keying
+  // the SELECT by the submitted code would turn every miss into 'unknown' and the 5-strike
+  // budget could never spend.
+  const row = db.prepare('SELECT code, attempts_left, expires_at, used FROM pairing_token LIMIT 1').get() as
+    | { code: string; attempts_left: number; expires_at: string; used: number }
+    | undefined;
+  const grant: StoredGrant | undefined = row
+    ? { code: row.code, attemptsLeft: row.attempts_left, expiresAt: row.expires_at, used: row.used !== 0 }
+    : undefined;
+  const verdict = pairingVerdict(grant, code, now);
+  if (verdict.kind === 'ok') {
+    const id = `dv_${randomBytes(8).toString('hex')}`; // 16 hex
+    const deviceKey = `dk_${randomBytes(32).toString('hex')}`; // 64 hex — plaintext, returned ONCE
+    const keyHash = createHash('sha256').update(deviceKey).digest('hex');
+    db.prepare('INSERT INTO device (id, name, key_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, NULL)').run(
+      id,
+      deviceName,
+      keyHash,
+      now,
+    );
+    // single-use: the row STAYS marked used (a replayed code reads 'used' — the honest reason),
+    // inert for every other path, dying at the next mint or expiry.
+    db.prepare('UPDATE pairing_token SET used = 1 WHERE code = ?').run(code);
+    return { kind: 'paired', deviceId: id, deviceKey };
+  }
+  if (verdict.kind === 'wrong_code') {
+    db.prepare('UPDATE pairing_token SET attempts_left = ? WHERE code = ?').run(verdict.attemptsLeft, grant!.code);
+    return { kind: 'invalid_code', attemptsLeft: verdict.attemptsLeft };
+  }
+  if (grant !== undefined) db.prepare('DELETE FROM pairing_token WHERE code = ?').run(grant.code); // dead = cleaned up
+  return { kind: 'dead', reason: verdict.reason };
+}
+
 // The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models`. The store
 // normalizes SHAPE only — unknown role keys and blank values drop; a map with no usable role row
 // is nothing. Any id is legal (the provider validates), so unlike locale there is no value
@@ -2719,6 +2817,42 @@ export function createStore(dbPath: string): Store {
     setLocale: (locale: Locale) => {
       db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('locale', locale);
       return Promise.resolve();
+    },
+    // WO-0102: theme + the remote boot rows (the kill-switch UI is WO-0103's; the surface ships here).
+    getTheme: () => Promise.resolve(settingTheme(db)),
+    setTheme: (theme: Theme) => {
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('theme', theme);
+      return Promise.resolve();
+    },
+    getRemoteEnabled: () => Promise.resolve(settingRemoteEnabled(db)),
+    setRemoteEnabled: (enabled: boolean) => {
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('remote_enabled', enabled ? '1' : '0');
+      return Promise.resolve();
+    },
+    getRemotePort: () => Promise.resolve(settingRemotePort(db)),
+    // WO-0102 (ADR-0020 #3): the DeviceStore port over the device/pairing_token tables. Core's
+    // pairingVerdict governs; the plaintext device key exists only in exchange()'s return value.
+    mintGrant: (now: string) => Promise.resolve(mintGrantRow(db, now)),
+    exchange: (code: string, deviceName: string, now: string) => {
+      const name = deviceName.trim();
+      if (name === '' || name.length > 64) {
+        return Promise.reject(new Error('exchange: deviceName must be 1-64 chars after trim'));
+      }
+      return Promise.resolve(exchangeGrantRow(db, code, name, now));
+    },
+    listDevices: () =>
+      Promise.resolve(
+        (db.prepare('SELECT id, name, key_hash, created_at, last_seen_at FROM device ORDER BY created_at, id').all() as unknown as DeviceRow[]).map(deviceView),
+      ),
+    revokeDevice: (id: string) =>
+      Promise.resolve(db.prepare('DELETE FROM device WHERE id = ?').run(id).changes > 0),
+    deviceByKeyHash: (keyHash: string, now: string) => {
+      const row = db.prepare('SELECT id, name, key_hash, created_at, last_seen_at FROM device WHERE key_hash = ?').get(keyHash) as
+        | DeviceRow
+        | undefined;
+      if (!row) return Promise.resolve(undefined);
+      db.prepare('UPDATE device SET last_seen_at = ? WHERE id = ?').run(now, row.id); // the auth stamp
+      return Promise.resolve(deviceView({ ...row, last_seen_at: now }));
     },
     // WO-0059 rev 2: the per-role model preference — ONE atomic JSON row (the budget posture);
     // undefined or a map with no usable role clears the row entirely.

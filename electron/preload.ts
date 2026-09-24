@@ -86,6 +86,13 @@ const settings: AppSettings = {
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
   setLocale: (locale: Locale): Promise<void> => ipcRenderer.invoke('docket:settings:set-locale', locale),
+  // WO-0102: theme joins locale in the row store (the remote surface reads+writes it); the remote
+  // boot rows ride the same settings IPC (the kill-switch UI is WO-0103's).
+  getTheme: (): Promise<import('../src/core/app-settings').Theme | undefined> => ipcRenderer.invoke('docket:settings:get-theme'),
+  setTheme: (theme: import('../src/core/app-settings').Theme): Promise<void> => ipcRenderer.invoke('docket:settings:set-theme', theme),
+  getRemoteEnabled: (): Promise<boolean> => ipcRenderer.invoke('docket:settings:get-remote-enabled'),
+  setRemoteEnabled: (enabled: boolean): Promise<void> => ipcRenderer.invoke('docket:settings:set-remote-enabled', enabled),
+  getRemotePort: (): Promise<number | undefined> => ipcRenderer.invoke('docket:settings:get-remote-port'),
   // WO-0059 rev 2: the per-role model preference (DB half) + the adapter-minted presets (the
   // checkProvider pattern — the handler lives main-side, composed from the runner adapter).
   getModels: (): Promise<RoleModels | undefined> => ipcRenderer.invoke('docket:settings:get-models'),
@@ -212,6 +219,15 @@ contextBridge.exposeInMainWorld('docket', {
   },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
+  // WO-0102 (ADR-0020 #3): the Cihazlar → Eşleştir surface's three channels — mint the one-time
+  // pairing grant (endpoint + QR string ride along; null when the server is not listening, so the
+  // screen renders absent + reason), list paired devices, revoke one. WO-0103 consumes these; no
+  // mobile logic ever crosses here.
+  remote: {
+    pairMint: (): Promise<import('../src/core/remote').PairingStartView | null> => ipcRenderer.invoke('docket:remote:pair-mint'),
+    devices: (): Promise<import('../src/core/remote').DeviceView[]> => ipcRenderer.invoke('docket:remote:devices'),
+    deviceRevoke: (id: string): Promise<boolean> => ipcRenderer.invoke('docket:remote:device-revoke', id),
+  },
   // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-
   // relative paths (the absolute root never crosses, ADR-0001).
   listDecisionDocs: (workspaceId: WorkspaceId): Promise<{ docsRoot: string; files: string[] }> =>
