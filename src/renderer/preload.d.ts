@@ -73,6 +73,15 @@ declare global {
       };
       pickFolder: () => Promise<string | null>;
       pickFiles: () => Promise<string[] | null>;
+      /** WO-0102 (ADR-0020 #3): the Cihazlar → Eşleştir surface — mint the one-time pairing
+       *  grant (null when the server is not listening — the screen renders absent + reason),
+       *  list paired devices, revoke one. WO-0103 consumes this bridge; it stays optional so
+       *  tests and fakes need nothing. */
+      remote?: {
+        pairMint: () => Promise<import('../core/remote').PairingStartView | null>;
+        devices: () => Promise<import('../core/remote').DeviceView[]>;
+        deviceRevoke: (id: string) => Promise<boolean>;
+      };
       /** WO-0051 / D3: the ✦ dialog's DEPO scan — { docsRoot, files }, structure-root-relative
        *  paths (the absolute root never crosses, ADR-0001). */
       listDecisionDocs: (workspaceId: import('../core/types').WorkspaceId) => Promise<{ docsRoot: string; files: string[] }>;

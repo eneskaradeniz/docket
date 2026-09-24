@@ -5,7 +5,8 @@
 // snapshot bridge — TD-017 — is deleted); the runner channel is unchanged.
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, session, shell } from 'electron';
 import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, networkInterfaces } from 'node:os';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
@@ -14,6 +15,7 @@ import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
 import { createGateLock, runLocalGate, shellGateSpawner } from '../src/adapters/gate-runner';
 import { prepareWorktree, removeWorktree, worktreeCleanStatus } from '../src/adapters/worktree';
+import { createRemoteServer } from '../src/adapters/remote/server';
 import { createStore } from '../src/adapters/store';
 import { resolveDbPath } from '../src/adapters/store/db-path';
 import { rid, woid } from '../src/adapters/ids';
@@ -23,9 +25,23 @@ import { ForgeError, observeClosureEvidence, reconcileWorkspaceForge, type Forge
 import type { ChangesWatch, CommitResult, CreatePrResult, GateRunResult, MergeResult, PushResult, RepoChanges } from '../src/core/console';
 import type { SystemHealth } from '../src/core/health';
 import { unifiedDiffLines } from '../src/core/diff';
-import { driveOwnerTag, isDraftDrive } from '../src/core/runner';
+import { driveOwnerTag, isDraftDrive, summarizeToolInput } from '../src/core/runner';
 import type { DriveInput, PermissionDecision, RunnerEvent, SessionRunner } from '../src/core/runner';
+import { parseAskRequest } from '../src/core/askq';
+import { DEFAULT_WARN_PERCENT } from '../src/core/budget';
+import {
+  REMOTE_DEFAULT_PORT,
+  REMOTE_TAIL_WINDOW,
+  deriveRemoteConsole,
+  remoteAskDecision,
+  serializePairingQr,
+  type RemoteConsoleView,
+  type RemoteIntents,
+  type RemoteServerDeps,
+  type RemoteSettingsRead,
+} from '../src/core/remote';
 import type { Locale, PromptOverrides, ProviderStatus, RoleModels, Theme } from '../src/core/app-settings';
+import type { LimitWindow } from '../src/core/types';
 import { DEFAULT_PROFILE, sameProfileName, type BackendProfile } from '../src/core/backend-profile';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
@@ -733,15 +749,283 @@ let lastStartedTag: string | undefined; // the untagged e2e emit's target (the l
 // docket:e2e:last-drive-input channel; production never registers it.
 let lastResolvedDriveInput: DriveInput | undefined;
 
-ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
-  // The renderer cannot know filesystem paths; the composition root fills cwd. Everything else — prompt
-  // assembly, persistence side-effects (WO-0010/0017/0020), verdict capture, permission handling — lives in
-  // the host-agnostic pipeline (src/core/pipeline.ts, WO-0023), which drives the runner port and re-yields
-  // every event here for IPC. This handler is a thin forwarder; it owns no logic.
-  // WO-0031c: the work order's permission rule applies unless the drive explicitly carries one (the
-  // CLI's --policy). The rule resolves from the WO's order.md front-matter, falling back to the Settings
-  // default. WO-0050: a draft has no order.md — it reads the Settings default directly (D7). The
-  // fence (scope) is identical under every rule — this is cadence only.
+// ===== WO-0102: the embedded console server's main-side state =====
+//
+// The remote folds ride the SAME event stream the GUI forwards (startDrive calls remoteFeed per
+// event) — a second source of running-drive truth is the defect ADR-0020 #1 exists to prevent.
+// No secret ever passes through here: events carry targets/metrics, never keys (Records & PRs,
+// extended by ADR-0020 #3 — pinned by the adapter test).
+const lastInputs = new Map<string, DriveInput>(); // the resolved input per owner (resume's re-spawn)
+const lastSessionIds = new Map<string, string>(); // the provider session id per owner (from `started`)
+const refusedInputs = new Map<string, DriveInput>(); // the BUDGET-REFUSED input per owner (raise-and-rerun)
+const remoteRings = new Map<string, RunnerEvent[]>(); // the tail rings, capped at REMOTE_TAIL_WINDOW
+const tagProfiles = new Map<string, string>(); // owner tag → the profile its `started` event reported
+const remoteQuota = new Map<string, { windows: LimitWindow[]; status?: 'ok' | 'warning' | 'blocked' }>(); // presence-derived
+const wsTaps = new Set<(owner: string, ev: RunnerEvent) => void>(); // the live WS listeners
+
+function remoteFeed(tag: string, ev: RunnerEvent): void {
+  const ring = remoteRings.get(tag);
+  const next = ring === undefined ? [ev] : [...ring, ev];
+  remoteRings.set(tag, next.length > REMOTE_TAIL_WINDOW ? next.slice(-REMOTE_TAIL_WINDOW) : next);
+  if (ev.kind === 'started') {
+    if (ev.sessionId) lastSessionIds.set(tag, ev.sessionId);
+    if (ev.profile !== undefined) tagProfiles.set(tag, ev.profile);
+  }
+  if (ev.kind === 'error' && ev.refusal !== undefined) {
+    // WO-0047's gate refused this drive before the runner spawned: retain the input so
+    // raise-and-rerun can re-spawn from either surface; the next start under the tag clears it.
+    const input = lastInputs.get(tag);
+    if (input !== undefined) refusedInputs.set(tag, input);
+  }
+  if (ev.kind === 'limit_windows') {
+    // ADR-0020 #6, presence-derived: one row per profile that REPORTED windows. The profile name
+    // comes from the drive's own `started` event (WO-0098's evidence, never a config echo); the
+    // built-in passthrough rows under 'default'. A pull-channel report carries no status — the
+    // prior one carries forward (the renderer fold's rule).
+    const profile = tagProfiles.get(tag) ?? 'default';
+    const prior = remoteQuota.get(profile);
+    const nextQuota: { windows: LimitWindow[]; status?: 'ok' | 'warning' | 'blocked' } = { windows: ev.windows };
+    const status = ev.status ?? prior?.status;
+    if (status !== undefined) nextQuota.status = status;
+    remoteQuota.set(profile, nextQuota);
+  }
+  for (const tap of wsTaps) tap(tag, ev);
+}
+
+// The broadcast sink a remote-started drive's events ride — the GUI window hears them on the SAME
+// channel its own drives use (the renderer's fold keys its own drives; the tray and the phone's
+// Konsol always show them — the desktop-pane gap is a named follow-up).
+const wsSink = (tag: string, ev: RunnerEvent): void => {
+  if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send('docket:runner:event', tag, ev);
+};
+
+// The account-wide Konsol read — deriveRemoteConsole over the maps this file already holds plus
+// the store reads the view needs. A WO whose row no longer resolves (unreachable while the Sil
+// gate holds live WOs) is honestly absent from the phone's model.
+async function remoteConsoleView(): Promise<RemoteConsoleView> {
+  const workspaces = await store.getWorkspaces();
+  const drives: Parameters<typeof deriveRemoteConsole>[0]['drives'] = [];
+  for (const [tag, owner] of driveOwners) {
+    const asks = (await liveRunnerInstances.get(tag)?.pendingAsks()) ?? [];
+    const input = lastInputs.get(tag);
+    if (owner.kind === 'draft') {
+      drives.push({ owner: tag, kind: 'draft', workspaceId: owner.workspaceId, role: input?.role ?? 'architect', asks });
+      continue;
+    }
+    const wo = await store.getWorkOrder(owner.woId);
+    if (wo === undefined) continue;
+    drives.push({
+      owner: tag,
+      kind: 'wo',
+      workspaceId: wo.workspace,
+      woId: owner.woId,
+      ...(owner.title !== undefined ? { title: owner.title } : {}),
+      role: input?.role ?? 'implementer',
+      asks,
+    });
+  }
+  const budgets: Parameters<typeof deriveRemoteConsole>[0]['budgets'] = [];
+  for (const ws of workspaces) {
+    const threshold = await store.getBudget(ws.id);
+    if (threshold === undefined) continue;
+    const spend = await store.workspaceMonthSpend(ws.id);
+    budgets.push({ workspaceId: ws.id, threshold, monthUsd: spend.usd, hasUnknown: spend.hasUnknown });
+  }
+  return deriveRemoteConsole({
+    now: new Date().toISOString(),
+    drives,
+    quota: [...remoteQuota.entries()].map(([profile, q]) => ({
+      profile,
+      windows: q.windows,
+      ...(q.status !== undefined ? { status: q.status } : {}),
+    })),
+    budgets,
+    workspaces: workspaces.map((w) => ({ id: w.id, label: w.label })),
+  });
+}
+
+const readRemoteSettings = async (): Promise<RemoteSettingsRead> => ({
+  locale: (await store.getLocale()) ?? null,
+  theme: (await store.getTheme()) ?? 'system',
+  workspaces: await Promise.all(
+    (await store.getWorkspaces()).map(async (w) => {
+      const cap = await store.getBudget(w.id);
+      return { id: w.id, label: w.label, ...(cap !== undefined ? { cap } : {}) };
+    }),
+  ),
+});
+
+// WO-0102: the write intents — each a THIN DELEGATE to the existing call (the frozen decision:
+// the server never re-derives a verdict; the plan-approval/budget/profile gates fire in the
+// pipeline exactly as for the GUI host, and their refusals surface as error events on the WS
+// stream — the same events the GUI folds).
+const remoteIntents: RemoteIntents = {
+  answerAsk: async (requestId, answer) => {
+    // attribute the ask through the SAME map the flat IPC aggregate iterates (the per-owner twin)
+    for (const [tag, runner] of liveRunnerInstances) {
+      const asks = await runner.pendingAsks();
+      const ask = asks.find((a) => a.requestId === requestId);
+      if (ask === undefined) continue;
+      const decision = remoteAskDecision(ask.input, answer);
+      await pipeline.decide(requestId, decision);
+      // the timeline twin — the timeline stays honest no matter which surface answered. A DRAFT
+      // owner writes no wo_event (the recordAuditEvent D15 posture: a draft has no timeline home).
+      const owner = driveOwners.get(tag);
+      if (owner?.kind === 'wo') {
+        if (answer.kind === 'binary') {
+          void store.recordPermissionDecision(owner.woId, {
+            allowed: decision.allow,
+            tool: ask.tool,
+            target: summarizeToolInput(ask.input),
+          });
+        } else {
+          const questions = parseAskRequest(ask.tool, ask.input) ?? [];
+          for (const { question, answer: a } of answer.answered) {
+            const header = questions.find((q) => q.question === question)?.header ?? question;
+            const target =
+              a.kind === 'selection' || a.kind === 'other'
+                ? `${header}: ${a.kind === 'selection' ? a.labels.join(', ') : a.text}`
+                : question;
+            void store.recordPermissionDecision(owner.woId, { allowed: decision.allow, tool: ask.tool, target });
+          }
+        }
+      }
+      return 'resolved';
+    }
+    return 'unknown';
+  },
+  stopDrive: async (owner) => {
+    if (!activeDrives.has(owner)) return false;
+    await pipeline.interrupt(owner);
+    return true;
+  },
+  resumeDrive: async (owner) => {
+    if (activeDrives.has(owner)) return 'running';
+    const input = lastInputs.get(owner);
+    if (input === undefined) return 'no_retained';
+    const sessionId = lastSessionIds.get(owner);
+    const resolved = await resolveDriveInput(sessionId === undefined ? input : { ...input, resume: sessionId });
+    const outcome = await startDrive(resolved, { prep: true, sink: wsSink });
+    if (outcome.kind === 'refused') throw new Error(outcome.message); // the 500 catch-all: the GUI hears refusals as error events; a REST caller needs the failure named
+    return 'spawned';
+  },
+  raiseBudget: async (workspaceId, capUsd) => {
+    const workspaces = await store.getWorkspaces();
+    if (!workspaces.some((w) => w.id === workspaceId)) return 'unknown_workspace';
+    // the WO-0047 write, exactly as the GUI's raise composes it (permanent; warn ratio kept)
+    const existing = await store.getBudget(workspaceId);
+    await store.setBudget(workspaceId, { capUsd, warnPercent: existing?.warnPercent ?? DEFAULT_WARN_PERCENT });
+    // the re-run: the LATEST retained refused input whose owner belongs to this workspace
+    for (const [tag, input] of [...refusedInputs.entries()].reverse()) {
+      let matches: boolean;
+      if (isDraftDrive(input)) {
+        matches = tag === `ws:${workspaceId}`;
+      } else {
+        const wo = await store.getWorkOrder(input.workOrderId);
+        matches = wo?.workspace === workspaceId;
+      }
+      if (!matches) continue;
+      refusedInputs.delete(tag);
+      const outcome = await startDrive(await resolveDriveInput(input), { prep: true, sink: wsSink });
+      if (outcome.kind === 'refused') throw new Error(outcome.message);
+      return { raised: true, rerun: true };
+    }
+    // the raise stood (a permanent settings write); no refused input retained, nothing re-spawned
+    // — never fabricated (the drive list is truth for what runs; the yaml says exactly this).
+    return { raised: true, rerun: false };
+  },
+  approveDraft: async (workspaceId) => {
+    if ((await store.getRoadmapDraft(workspaceId)) === null) return 'no_draft';
+    try {
+      await store.approveRoadmapDraft(workspaceId);
+      return 'approved';
+    } catch {
+      return 'unparsable'; // the parse-guard throw: nothing was written
+    }
+  },
+  rejectDraft: async (workspaceId) => {
+    if ((await store.getRoadmapDraft(workspaceId)) === null) return 'no_draft';
+    await store.discardRoadmapDraft(workspaceId);
+    return 'discarded';
+  },
+};
+
+// WO-0102 (ADR-0020 #4): the endpoint is transport-agnostic — the host is whatever the current
+// network offers. The first non-internal IPv4 today; a Tailscale name needs no code here when it
+// comes. Honest degrade: 127.0.0.1 (the manual fallback can still type it).
+function lanHost(): string {
+  for (const list of Object.values(networkInterfaces())) {
+    for (const ni of list ?? []) {
+      if (ni.family === 'IPv4' && !ni.internal) return ni.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+// The ACTUAL bound port once the server listens — null when it does not (WO-0103's Eşleştir
+// renders absent + reason off the null).
+let remotePort: number | null = null;
+
+async function startRemoteConsole(): Promise<void> {
+  const deps: RemoteServerDeps = {
+    now: () => new Date().toISOString(),
+    devices: store,
+    consoleView: remoteConsoleView,
+    readSettings: readRemoteSettings,
+    writeSettings: async (patch) => {
+      if (patch.locale !== undefined) await store.setLocale(patch.locale);
+      if (patch.theme !== undefined) await store.setTheme(patch.theme);
+      return readRemoteSettings();
+    },
+    intents: remoteIntents,
+    stream: {
+      tail: () => [...remoteRings.entries()].map(([owner, events]) => ({ owner, events })),
+      tap: (fn) => {
+        wsTaps.add(fn);
+        return () => wsTaps.delete(fn);
+      },
+    },
+    ids: {
+      ticket: () => `wt_${randomBytes(16).toString('hex')}`,
+      keyHash: (key) => createHash('sha256').update(key).digest('hex'),
+    },
+    log: (line) => console.log(line),
+  };
+  // A listen attempt that errors (EADDRINUSE) leaves its server instance dead — a FRESH instance
+  // per attempt. The fixed default keeps a paired phone's saved endpoint alive across reboots;
+  // the ephemeral fallback carries the ACTUAL port in the pairing endpoint (the frozen decision).
+  const attempt = async (port: number) => createRemoteServer(deps).listen(port, '0.0.0.0');
+  let handle: Awaited<ReturnType<ReturnType<typeof createRemoteServer>['listen']>>;
+  try {
+    handle = await attempt((await store.getRemotePort()) ?? REMOTE_DEFAULT_PORT);
+  } catch {
+    handle = await attempt(0);
+  }
+  remotePort = handle.port;
+  console.log(`[remote] listening on ${lanHost()}:${handle.port}`);
+}
+
+// WO-0103's surface (its order consumes these; it adds no core or main-side logic itself).
+ipcMain.handle('docket:remote:pair-mint', async () => {
+  if (remotePort === null) return null; // not listening — the screen renders absent + reason
+  const grant = await store.mintGrant(new Date().toISOString());
+  const endpoint = { host: lanHost(), port: remotePort };
+  return { ...grant, endpoint, qr: serializePairingQr({ version: 1, endpoint, code: grant.code }) };
+});
+ipcMain.handle('docket:remote:devices', () => store.listDevices());
+ipcMain.handle('docket:remote:device-revoke', (_e, id: string) => store.revokeDevice(id));
+
+// WO-0102: the SHARED spawn path's FILL half — the composition root fills cwd, the permission
+// rule, the architect's write-fence root and the per-role model at spawn time (the renderer
+// cannot know filesystem paths and never sends a model or a root; a renderer-supplied one is
+// overwritten — the fence is not renderer-controllable). Both callers — the GUI's IPC handler
+// below and the remote's resume/raise-and-rerun intents — go through here, so the fills apply to
+// every host alike (the WO-0059 posture: nothing stale leaks, everything re-resolves).
+async function resolveDriveInput(input: DriveInput): Promise<DriveInput> {
+  // WO-0031c: the work order's permission rule applies unless the drive explicitly carries one
+  // (the CLI's --policy). The rule resolves from the WO's order.md front-matter, falling back to
+  // the Settings default. WO-0050: a draft has no order.md — it reads the Settings default (D7).
+  // The fence (scope) is identical under every rule — this is cadence only.
   const permissionRule =
     input.permissionRule
     ?? (isDraftDrive(input) ? await store.getPermissionRule() : await store.getPermissionRuleFor(input.workOrderId));
@@ -752,58 +1036,63 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   // (before the table) — the wave worktree is the operator's front-matter act, never a renderer arg.
   // WO-0051 / D9 (TD-056): an architect drive's write fence lands on the workspace's structure
   // root (docs_root-aligned) instead of the cwd-relative default. The fill OVERWRITES
-  // unconditionally (review f1): a renderer-supplied decisionStoreRoot is never honored — the
-  // write fence is not renderer-controllable; undefined (workspace unresolvable) keeps the
-  // adapter's cwd-relative default. Non-architect drives carry no root at all (their scopes
-  // never read it — writeScopeFor gives implementers the repo and verifiers read-only).
+  // unconditionally (review f1). Non-architect drives carry no root at all (their scopes never
+  // read it — writeScopeFor gives implementers the repo and verifiers read-only).
   const decisionStoreRoot = input.role === 'architect' ? store.decisionStoreRootFor(input) : undefined;
-  // WO-0059 rev 2: the PER-ROLE model preference resolves HERE, at spawn time — the drive's own
-  // role picks its row (the draft arm is an architect session and inherits the architect's). A
-  // mid-life settings change hits the next drive, never a running one. The renderer never sends a
-  // model; a renderer-supplied one is overwritten, exactly like the root.
+  // WO-0059 rev 2: the PER-ROLE model preference resolves at spawn time — the drive's own role
+  // picks its row (the draft arm is an architect session and inherits the architect's). A
+  // mid-life settings change hits the next drive, never a running one.
   const models = await store.getModels();
   const model = models?.[input.role];
-  const driveInput: DriveInput = {
+  return {
     ...input,
     cwd: input.cwd ?? store.driveCwd(input),
     decisionStoreRoot,
     permissionRule,
     ...(model ? { model } : {}),
   };
+}
+
+type StartDriveOutcome = { kind: 'started' } | { kind: 'refused'; message: string };
+
+// WO-0102: the SHARED spawn path — the one-drive-per-owner guard, the worktree prep, the pipeline
+// drive, the owner maps and the event forward loop, with the caller's SINK receiving every event
+// (the GUI handler passes its IPC send; the remote intents pass the WS broadcast). Extracted
+// verbatim from the pre-WO-0102 handler — the GUI path's behavior is byte-identical (the
+// refusals return as values and the handler re-sends the same error events it always sent).
+async function startDrive(
+  driveInput: DriveInput,
+  opts: { prep: boolean; sink: (tag: string, ev: RunnerEvent) => void },
+): Promise<StartDriveOutcome> {
   // WO-0088: the frozen concurrency scope — ONE drive per owner at a time (a WO's step sequencing
   // stays serial). The renderer store guards too; this is the host-side second layer. The refusal
   // is the pipeline's error-event shape.
   const tag = driveOwnerTag(driveInput);
   if (activeDrives.has(tag)) {
-    event.sender.send('docket:runner:event', tag, {
-      kind: 'error',
-      message: `drive refused: ${tag} already has a running drive (one drive per owner)`,
-    });
-    return;
+    return { kind: 'refused', message: `drive refused: ${tag} already has a running drive (one drive per owner)` };
   }
-  // WO-0093: the start click prepares the working copy BEFORE the runner spawns — one
-  // `git worktree add -b wo-NNNN-<slug> <path> main` per start, Docket's own hand through the
-  // git-console seam (the ADR-0018 grammar: an operator click, never the pipeline, never a
-  // timer). A prep failure refuses the start with git's own line — the fail card carries it;
-  // NO session row (the pipeline never ran) and no half state (prepareWorktree is add-or-noop).
-  // A resume leg finds the copy registered and no-ops. An explicit renderer cwd (the --cwd
+  // WO-0093: the start click prepares the working copy BEFORE the runner spawns (the ADR-0018
+  // grammar: an operator click, never the pipeline, never a timer). A prep failure refuses the
+  // start with git's own line; NO session row (the pipeline never ran) and no half state
+  // (prepareWorktree is add-or-noop — a resume leg no-ops). An explicit renderer cwd (the --cwd
   // shape) or an explicit `cwd:` front-matter (worktreeFor is undefined then — the precedence
-  // lives in the store) never prepares.
-  if (!isDraftDrive(driveInput) && input.cwd === undefined) {
+  // lives in the store) never prepares; the remote path always passes prep (its inputs are
+  // already-resolved retained inputs whose cwd came from driveCwd, and prep is add-or-noop).
+  if (opts.prep && !isDraftDrive(driveInput)) {
     const wt = store.worktreeFor(driveInput.workOrderId);
     if (wt) {
       const prep = await prepareWorktree(wt, gitRun);
       if (!prep.ok) {
-        event.sender.send('docket:runner:event', tag, {
-          kind: 'error',
-          message: `drive refused: worktree prep failed — ${prep.reason}`,
-        });
-        return;
+        return { kind: 'refused', message: `drive refused: worktree prep failed — ${prep.reason}` };
       }
     }
   }
   lastResolvedDriveInput = driveInput;
   lastStartedTag = tag;
+  // WO-0102: the remote-side retention — the resolved input per owner (resume's re-spawn), and
+  // the tail ring's reset (a new drive's window starts empty).
+  lastInputs.set(tag, driveInput);
+  remoteRings.delete(tag);
   const iterator = pipeline.drive(driveInput);
   activeDrives.set(tag, iterator);
   // WO-0100: the tray's owner entry. A WO title is looked up once; it lands only if THIS entry is
@@ -829,11 +1118,12 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
   notifyDrivesChanged();
   try {
     for await (const ev of iterator) {
-      event.sender.send('docket:runner:event', tag, ev);
+      opts.sink(tag, ev);
+      remoteFeed(tag, ev); // WO-0102: the rings/session ids/refusal retention/quota fold/WS broadcast
     }
   } catch (e) {
     // The pipeline catches drive errors itself; this is a last-resort guard for an IPC/send failure.
-    event.sender.send('docket:runner:event', tag, { kind: 'error', message: (e as Error)?.message ?? String(e) });
+    opts.sink(tag, { kind: 'error', message: (e as Error)?.message ?? String(e) });
   } finally {
     // The concurrent same-tag drive is refused (the guard above), so this plain delete can never
     // evict a successor's registration — the wind-down window has no same-tag spawn.
@@ -843,6 +1133,22 @@ ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
       driveOwners.delete(tag);
       notifyDrivesChanged();
     }
+  }
+  return { kind: 'started' };
+}
+
+ipcMain.handle('docket:runner:drive', async (event, input: DriveInput) => {
+  // The renderer cannot know filesystem paths; the composition root fills cwd. Everything else — prompt
+  // assembly, persistence side-effects (WO-0010/0017/0020), verdict capture, permission handling — lives in
+  // the host-agnostic pipeline (src/core/pipeline.ts, WO-0023), which drives the runner port and re-yields
+  // every event here for IPC. This handler is a thin forwarder; it owns no logic.
+  const sink = (tag: string, ev: RunnerEvent): void => {
+    event.sender.send('docket:runner:event', tag, ev);
+  };
+  const driveInput = await resolveDriveInput(input);
+  const outcome = await startDrive(driveInput, { prep: input.cwd === undefined, sink });
+  if (outcome.kind === 'refused') {
+    sink(driveOwnerTag(driveInput), { kind: 'error', message: outcome.message });
   }
 });
 
@@ -939,6 +1245,14 @@ app.whenReady().then(() => {
     callback(permission === 'notifications');
   });
   createWindow();
+  // WO-0102: the embedded console server — on by default (the kill-switch row obeys at the NEXT
+  // boot), never under DOCKET_E2E (the WO-0101 one-suite-per-host lock governs the later
+  // dedicated spec; the fixed port across the suite's repeated launches is a hazard it never
+  // needs). A listen failure logs one line and the app runs on — WO-0103's Eşleştir renders
+  // absent + reason off the null mint.
+  if (!process.env.DOCKET_E2E) {
+    void startRemoteConsole().catch((e) => console.warn(`[remote] unavailable: ${(e as Error)?.message ?? String(e)}`));
+  }
   // WO-0100: the tray and the macOS dev Dock tile — OFF under DOCKET_E2E and on a headless Linux
   // (one pure predicate, core's trayAllowed). Where a tray cannot exist it degrades with a log line.
   if (

@@ -219,6 +219,15 @@ contextBridge.exposeInMainWorld('docket', {
   },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('docket:pick-folder'),
   pickFiles: (): Promise<string[] | null> => ipcRenderer.invoke('docket:pick-files'),
+  // WO-0102 (ADR-0020 #3): the Cihazlar → Eşleştir surface's three channels — mint the one-time
+  // pairing grant (endpoint + QR string ride along; null when the server is not listening, so the
+  // screen renders absent + reason), list paired devices, revoke one. WO-0103 consumes these; no
+  // mobile logic ever crosses here.
+  remote: {
+    pairMint: (): Promise<import('../src/core/remote').PairingStartView | null> => ipcRenderer.invoke('docket:remote:pair-mint'),
+    devices: (): Promise<import('../src/core/remote').DeviceView[]> => ipcRenderer.invoke('docket:remote:devices'),
+    deviceRevoke: (id: string): Promise<boolean> => ipcRenderer.invoke('docket:remote:device-revoke', id),
+  },
   // WO-0051 / D3: the ✦ dialog's DEPO scan at open — { docsRoot, files } with structure-root-
   // relative paths (the absolute root never crosses, ADR-0001).
   listDecisionDocs: (workspaceId: WorkspaceId): Promise<{ docsRoot: string; files: string[] }> =>
