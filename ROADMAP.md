@@ -752,7 +752,7 @@ the server and the Cihazlar screen; `docket-mobile` (Flutter, base-mobile templa
 generated `contract/endpoints.yaml` mirror in three waves (pairing → Konsol + connection states →
 reads; live transcript + both ask shapes + drive control; management writes).
 
-- [ ] **WO-0102** — the remote console server: the core contract types + `contract/endpoints.yaml`
+- [x] **WO-0102** — the remote console server: the core contract types + `contract/endpoints.yaml`
       generation (drift-guarded, the FIRST commit — docket-mobile wave 1 builds on it), the device
       store (one-time 6-digit pairing token → per-device key, stored hashed, list/revoke) in the
       app-home db, the HTTP+WS adapter under `src/adapters/remote/` (bearer-device-key auth, reads
@@ -760,7 +760,13 @@ reads; live transcript + both ask shapes + drive control; management writes).
       pipeline/store/settings calls — the server never re-derives a verdict), and the wiring in
       `electron/main.ts` (on-by-default + kill-switch, fixed port, WS ticket; ADR-0020's rulings
       carried in the order). No desktop screen, no mobile code, no push, no TLS (LAN trust, named);
-      no new E2E spec (the WO-0101 lock governs the later dedicated one).
+      no new E2E spec (the WO-0101 lock governs the later dedicated one). Merged PR #104
+      (`7251ca8`): 1427 unit tests, typecheck ×2/build/boundaries/contract all clean, E2E baseline
+      (105 specs) untouched. `docket-mobile`'s wave 1 (DM-0002) builds on the generated
+      `contract/endpoints.yaml` mirror this WO produced. Debts recorded at closure: TD-065
+      (desktop theme doesn't yet read the shared `app_setting` row), TD-066 (the dedicated E2E
+      spec stays deferred behind the WO-0101 lock); win/linux listen verification folds into
+      TD-064's Route V pass.
 - [ ] **WO-0103** — the desktop Cihazlar → Eşleştir screen — **BLOCKED-BY WO-0102** (opens only
       after 0102 merges): the Ayarlar Cihazlar section (paired-device list with revoke, the
       remote kill-switch), the Eşleştir dialog rendering the QR carrying endpoint + one-time
