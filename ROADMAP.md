@@ -743,6 +743,30 @@ below (operator ruling 2026-09-22: the round's three finding-WOs keep 0089-0091)
 - [ ] merge-time rebase of the remaining wave branches (operator's DEVIR.md discipline, unnumbered
       until the pieces above land).
 
+## M10 — Mobil uzaktan (the remote wave, ADR-0020)
+
+The phone is a thin client over an embedded HTTP+WS server in the one composition root (ADR-0020,
+accepted 2026-09-24): pairing by QR (the desktop shows, the phone scans), every gate stays
+core-enforced, Konsol is the account-wide mobile-only layer above the workspaces. docket builds
+the server and the Cihazlar screen; `docket-mobile` (Flutter, base-mobile template) consumes the
+generated `contract/endpoints.yaml` mirror in three waves (pairing → Konsol + connection states →
+reads; live transcript + both ask shapes + drive control; management writes).
+
+- [ ] **WO-0102** — the remote console server: the core contract types + `contract/endpoints.yaml`
+      generation (drift-guarded, the FIRST commit — docket-mobile wave 1 builds on it), the device
+      store (one-time 6-digit pairing token → per-device key, stored hashed, list/revoke) in the
+      app-home db, the HTTP+WS adapter under `src/adapters/remote/` (bearer-device-key auth, reads
+      = the Konsol view-model + settings, writes = thin delegates to the existing
+      pipeline/store/settings calls — the server never re-derives a verdict), and the wiring in
+      `electron/main.ts` (on-by-default + kill-switch, fixed port, WS ticket; ADR-0020's rulings
+      carried in the order). No desktop screen, no mobile code, no push, no TLS (LAN trust, named);
+      no new E2E spec (the WO-0101 lock governs the later dedicated one).
+- [ ] **WO-0103** — the desktop Cihazlar → Eşleştir screen — **BLOCKED-BY WO-0102** (opens only
+      after 0102 merges): the Ayarlar Cihazlar section (paired-device list with revoke, the
+      remote kill-switch), the Eşleştir dialog rendering the QR carrying endpoint + one-time
+      token with the 6-digit manual code beside it, label-bundle entries tr/en; consumes 0102's
+      IPC — no new core surface.
+
 ## Later
 
 - Packaging and distribution
