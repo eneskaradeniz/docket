@@ -28,6 +28,12 @@ export type RoleModels = Partial<Record<SessionRole, string>>;
  *  per-locale bundles in src/ui/data/labels/, keyed by this type. */
 export type Locale = 'tr' | 'en';
 
+/** WO-0102 (ADR-0020 #7): the theme choice joins locale in app_setting so the remote settings
+ *  surface can read+write it. "Sistem" follows each device's own OS at render time regardless of
+ *  where the row lives. The port methods land with the device-store commit; the desktop renderer
+ *  keeps its localStorage behavior this WO (TD-065). */
+export type Theme = 'system' | 'light' | 'dark';
+
 /** WO-0070: the FIVE prompt templates an operator may override wholesale. Four are the role
  *  templates assembled in core (order-md.ts: architect / implementer / verifier / architectReview),
  *  the fifth is the ✦ draft drive's (roadmap-draft.ts). The key names the TEMPLATE, not the text —
