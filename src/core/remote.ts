@@ -16,6 +16,7 @@
 import { askDecisionAll, parseAskRequest } from './askq';
 import type { AskAnswer, AskQuestion } from './askq';
 import type { Locale, Theme } from './app-settings';
+import type { DeviceStore } from './device-store';
 import type { PermissionDecision, RunnerEvent } from './runner';
 import { workspaceBudgetView } from './budget';
 import type { BudgetThreshold, WorkspaceBudgetView } from './budget';
@@ -340,3 +341,44 @@ export type RemoteWsMessage =
   | { type: 'tail'; owner: string; events: RunnerEvent[] }
   /** Live, in stream order — the SAME RunnerEvent stream the IPC forward loop yields. */
   | { type: 'event'; owner: string; event: RunnerEvent };
+
+// ===== The server adapter's dependency shape (the composition root fills it) =====
+//
+// The HTTP+WS adapter (src/adapters/remote/server.ts) is DUMB TRANSPORT: every fact and every
+// write arrives through this shape, so the server can never grow a verdict of its own. The
+// composition root (electron/main.ts) is the only implementor; tests inject fakes.
+
+/** The write intents — each a thin delegate to an existing call, each returning its frozen
+ *  outcome union so the route maps it onto the taxonomy without learning anything else. */
+export interface RemoteIntents {
+  answerAsk(requestId: string, answer: RemoteAskAnswer): Promise<'resolved' | 'unknown'>;
+  stopDrive(owner: string): Promise<boolean>;
+  resumeDrive(owner: string): Promise<'spawned' | 'no_retained' | 'running'>;
+  raiseBudget(
+    workspaceId: WorkspaceId,
+    capUsd: number,
+  ): Promise<{ raised: boolean; rerun: boolean } | 'unknown_workspace'>;
+  approveDraft(workspaceId: WorkspaceId): Promise<'approved' | 'no_draft' | 'unparsable'>;
+  rejectDraft(workspaceId: WorkspaceId): Promise<'discarded' | 'no_draft'>;
+}
+
+/** The event stream: the tail rings + a live tap. `tail()` is read once per WS connect (the
+ *  hello sequence); `tap` registers a live listener and returns its unregister. */
+export interface RemoteStream {
+  tail(): Array<{ owner: string; events: RunnerEvent[] }>;
+  tap(fn: (owner: string, ev: RunnerEvent) => void): () => void;
+}
+
+export interface RemoteServerDeps {
+  /** ISO now — injected so tests (and TTL checks) control the clock. */
+  now(): string;
+  devices: DeviceStore;
+  consoleView(): Promise<RemoteConsoleView>;
+  readSettings(): Promise<RemoteSettingsRead>;
+  writeSettings(patch: { locale?: Locale; theme?: Theme }): Promise<RemoteSettingsRead>;
+  intents: RemoteIntents;
+  stream: RemoteStream;
+  /** Adapter-side randomness/hashing surface: the WS ticket mint + the bearer's hash. */
+  ids: { ticket(): string; keyHash(key: string): string };
+  log(line: string): void;
+}
