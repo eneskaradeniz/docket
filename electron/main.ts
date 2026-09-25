@@ -703,13 +703,14 @@ ipcMain.handle('docket:vendors:info', async (): Promise<VendorInfo[]> => {
   ]);
   const byId = new Map(detections.map((d) => [d.id, d.path]));
   return [
-    ...VENDOR_REGISTRY.map((e) => ({
+    ...VENDOR_REGISTRY.map((e, i) => ({
       id: e.id,
       name: e.providerName(),
       wired: true,
       status: 'wired' as const,
       models: e.modelOptions(),
       path: byId.get(e.id) ?? null,
+      builtin: i === 0, // the default adapter — the global profiles' home (a named follow-up owns per-vendor profiles)
     })),
     ...KNOWN_VENDOR_DEFS.filter((d) => !WIRED_VENDORS.has(d.id)).map((d) => ({
       id: d.id,
@@ -718,6 +719,7 @@ ipcMain.handle('docket:vendors:info', async (): Promise<VendorInfo[]> => {
       status: 'probe-pending' as const,
       models: [...(d.modelOptions ?? [])],
       path: byId.get(d.id) ?? null,
+      builtin: false,
     })),
   ];
 });

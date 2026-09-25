@@ -29,6 +29,9 @@ import { VERSION } from '../data/version';
 import { Button, Dialog, Segmented, Spinner, Textarea } from '../kit';
 import { toast } from './ToastHost';
 import { ProfilesSection } from './ProfilesSection';
+import { DriverSelect, driverOptions, type DriverRouteValue } from './DriverSelect';
+import type { VendorInfo } from '../../core/app-settings';
+import type { BackendProfile } from '../../core/backend-profile';
 
 const MODEL_ROLES = ['architect', 'implementer', 'verifier'] as const;
 type ModelRole = (typeof MODEL_ROLES)[number];
@@ -77,6 +80,11 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
   // The MOUNT check is in flight too — the line starts neutral (spinner), never a premature
   // «Bulunamadı» (review f5: the two-state word is for RESULTS, not for the loading window).
   const [verifying, setVerifying] = useState(true);
+  // WO-0108 (Faz E): the vendor cast + each wired vendor's own model roster + the global
+  // profiles (the builtin vendor's picker arm) — all adapter DATA, one read each at open.
+  const [vendors, setVendors] = useState<VendorInfo[]>([]);
+  const [rosters, setRosters] = useState<Record<string, string[]>>({});
+  const [profiles, setProfiles] = useState<BackendProfile[]>([]);
   // WO-0070 — İstem şablonları: the stored map of record lives in the REF (the modelsRef
   // discipline — a write must not build from a stale map), the DRAFT is what the textareas show.
   const [prompts, setPrompts] = useState<PromptOverrides | undefined>(undefined);
@@ -88,9 +96,22 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
     void settings.getModels().then((m) => { modelsRef.current = m; setModels(m); }).catch(() => setModels(undefined));
     void settings.getPromptOverrides().then((m) => { promptsRef.current = m; setPrompts(m); setPromptDraft(draftOf(m)); }).catch(() => setPromptDraft(EMPTY_DRAFT));
     void settings.modelOptions().then(setPresets).catch(() => setPresets([]));
+    void settings.vendors()
+      .then(async (vs) => {
+        setVendors(vs);
+        // each WIRED vendor's own tiers (the route's vendor picks the row's roster; the
+        // builtin's rides the preset state above — one roster per vendor, fetched once)
+        const wired = vs.filter((v) => v.wired);
+        const entries = await Promise.all(wired.map(async (v) => [v.id, await settings.modelOptions(v.id).catch(() => [])] as const));
+        setRosters(Object.fromEntries(entries));
+      })
+      .catch(() => setVendors([]));
+    // WO-0108: re-read on every SECTION switch too — a profile added under Sürücüler must
+    // reach the Modeller driver options without a close/reopen (the mount-once read goes stale).
+    void settings.getBackendProfiles().then(setProfiles).catch(() => setProfiles([]));
     void settings.providerName().then(setProviderName).catch(() => setProviderName(undefined));
     void settings.checkProvider().then((s) => { setStatus(s); setVerifying(false); }).catch(() => { setStatus(undefined); setVerifying(false); });
-  }, [settings]);
+  }, [settings, section]);
 
   const verify = async (): Promise<void> => {
     setVerifying(true);
@@ -117,6 +138,30 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
       else next[role] = { ...(prior?.vendor !== undefined ? { vendor: prior.vendor } : {}), ...(prior?.profile !== undefined ? { profile: prior.profile } : {}) };
     } else {
       next[role] = { ...(prior ?? {}), model: tier };
+    }
+    modelsRef.current = next;
+    setModels(next);
+    settings.setModels(Object.keys(next).length > 0 ? next : undefined)
+      .then(() => settings.getModels())
+      .then((stored) => { modelsRef.current = stored; setModels(stored); })
+      .catch(() => {
+        toast.push({ kind: 'error', title: UI.saveFailed });
+        settings.getModels().then((stored) => { modelsRef.current = stored; setModels(stored); }).catch(() => undefined);
+      });
+  };
+
+  // WO-0108: the role's DRIVER arm — {vendor?, profile?} rides the SAME route row (the map of
+  // record discipline; an emptied route drops the role). The chain arm (undefined) keeps any
+  // model the row still names: the picker speaks vendor+profile only, the tier segment model.
+  const setRoleRoute = (role: ModelRole, route: DriverRouteValue | undefined): void => {
+    const next: RoleModels = { ...(modelsRef.current ?? {}) };
+    const prior = next[role];
+    const model = prior?.model;
+    if (route === undefined) {
+      if (model === undefined) delete next[role];
+      else next[role] = { model };
+    } else {
+      next[role] = { ...(model !== undefined ? { model } : {}), ...route };
     }
     modelsRef.current = next;
     setModels(next);
@@ -192,18 +237,31 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
     </div>
   );
 
+  // The row's model roster follows its own route: the named vendor's tiers, else the builtin's
+  // presets (the settings' own default read). A vendor with no roster offers Default alone.
+  const rosterFor = (role: ModelRole): string[] => {
+    const v = models?.[role]?.vendor;
+    return v !== undefined ? (rosters[v] ?? []) : presets;
+  };
+
   const roleRow = (role: ModelRole) => (
-    <div className="flex items-center gap-2.5 py-0.5">
+    <div data-model-row={role} className="flex flex-wrap items-center gap-2.5 py-0.5">
       <span aria-hidden="true" className={`rlamp rlamp-${role}`} />
       <span className={`text-[12.5px] font-medium tracking-tight ${ROLE_HUE[role]}`}>{ROLE_LABELS[role]}</span>
-      <span className="ml-auto">
+      <span className="ml-auto flex flex-wrap items-center gap-2">
+        <DriverSelect
+          value={models?.[role]}
+          options={driverOptions(vendors, profiles, UI)}
+          ariaLabel={`${UI.wsProfileLabel} · ${ROLE_LABELS[role]}`}
+          onValueChange={(route) => setRoleRoute(role, route)}
+        />
         <Segmented
           size="sm"
           value={models?.[role]?.model ?? ''}
           onValueChange={(tier) => setRoleTier(role, tier)}
           options={[
             { value: '', label: UI.modelDefaultTier },
-            ...presets.map((tier) => ({ value: tier, label: tier })),
+            ...rosterFor(role).map((tier) => ({ value: tier, label: tier })),
           ]}
         />
       </span>

@@ -54,8 +54,9 @@ export function WoCreateModal({
    *  order.md. SEEDS, not locks; the operator edits before save (never a silent write). */
   issuePrefill?: WoIssuePrefill;
   /** WO-0098: the backend-profile list's read — the per-WO override field's options. Absent (or no
-   *  configured profile) → the field renders ABSENT (an empty group, ADR-0012). */
-  settings?: Pick<AppSettings, 'getBackendProfiles'>;
+   *  configured profile) → the field renders ABSENT (an empty group, ADR-0012). WO-0108: the
+   *  vendor cast joins the same read (the per-WO vendor override appears with a second vendor). */
+  settings?: Pick<AppSettings, 'getBackendProfiles' | 'vendors'>;
   onClose: () => void;
   /** `withPlan` = the "Oluştur ve plan iste ⏎" path: create AND auto-start the architect (v3 §1). */
   onCreated: (wo: WorkOrder, withPlan?: boolean) => void;
@@ -97,9 +98,15 @@ export function WoCreateModal({
   // DEFAULT_PROFILE pins the built-in, a name pins that profile (→ order.md `profile:`).
   const [profileNames, setProfileNames] = useState<string[]>([]);
   const [profile, setProfile] = useState('');
+  // WO-0108 (Faz E): the per-WO VENDOR override — the picker appears only when a second wired
+  // vendor exists (with one vendor the segment is noise: inherit ≡ the only choice); '' = the
+  // workspace's default (no `vendor:` key in order.md).
+  const [wiredVendors, setWiredVendors] = useState<{ id: string; name: string }[]>([]);
+  const [vendor, setVendor] = useState('');
   useEffect(() => {
     let alive = true;
     void settings?.getBackendProfiles().then((ps) => { if (alive) setProfileNames(ps.map((p) => p.name)); }).catch(() => undefined);
+    void settings?.vendors().then((vs) => { if (alive) setWiredVendors(vs.filter((v) => v.wired).map((v) => ({ id: v.id, name: v.name }))); }).catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -184,6 +191,7 @@ export function WoCreateModal({
         // OFF writes nothing (silence IS disabled, the pre-WO-0093 bytes).
         ...(checkout && cwd.trim() === '' ? { checkout: true } : {}),
         ...(profile !== '' ? { profile } : {}),
+        ...(vendor !== '' ? { vendor } : {}),
       });
       onCreated(wo, withPlan);
       onClose();
@@ -370,6 +378,15 @@ export function WoCreateModal({
                 ...profileNames.map((n) => ({ value: n, label: n })),
               ]}
             />
+            {wiredVendors.length > 1 ? (
+              <div className="mt-2" data-wo-vendor="">
+                <Segmented
+                  value={vendor}
+                  onValueChange={setVendor}
+                  options={[{ value: '', label: UI.woProfileInherit }, ...wiredVendors.map((v) => ({ value: v.id, label: v.name }))]}
+                />
+              </div>
+            ) : null}
           </section>
         ) : null}
 
