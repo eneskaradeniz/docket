@@ -598,8 +598,12 @@ export const UI = {
   wsProfileLabel: 'Sürücü',
   woProfileLabel: 'Sürücü (isteğe bağlı)',
   woProfileInherit: 'Çalışma alanınınki',
-  profileRefusedTitle: (name: string, source: 'wo' | 'workspace'): string =>
-    `«${name}» sürücüsü yok — ${source === 'wo' ? 'iş emrinin' : 'çalışma alanının'} sürücü seçimini düzelt`,
+  profileRefusedTitle: (name: string, source: 'wo' | 'workspace' | 'role'): string =>
+    `«${name}» sürücüsü yok — ${source === 'wo' ? 'iş emrinin' : source === 'workspace' ? 'çalışma alanının' : 'rolün'} sürücü seçimini düzelt`,
+  // WO-0104: the vendor axis — a route naming a vendor no wired adapter carries (the vendor word
+  // is the operator's own "sağlayıcı", the Genel presence line's subject).
+  vendorRefusedTitle: (vendor: string, source: 'wo' | 'workspace' | 'role'): string =>
+    `«${vendor}» sağlayıcısı bağlı değil — ${source === 'wo' ? 'iş emrinin' : source === 'workspace' ? 'çalışma alanının' : 'rolün'} sağlayıcı seçimini düzelt`,
   // Mimar denetim / karar (WO-0020)
   reviewHeader: 'Mimar denetimi',
   reviewHint: 'Mimar bu adımın raporunu inceliyor…',

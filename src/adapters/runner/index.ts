@@ -912,6 +912,13 @@ export function providerDisplayName(): string {
   return 'Claude Code';
 }
 
+/** WO-0104 — this adapter's VENDOR id: the value the driver route's `vendor` field carries to
+ *  select THIS adapter (the composition root's registry key). Adapter-minted DATA (the c1
+ *  carve-out); core and ui know it only as an opaque string. */
+export function providerId(): string {
+  return 'claude';
+}
+
 /** Map a raw provider error string onto the neutral code. String matching is heuristic — the messages are
  *  the SDK's own (extracted from its bundle); unknown shapes return undefined (the UI shows the raw text). */
 export function classifyProviderError(message: string): ProviderErrorCode | undefined {

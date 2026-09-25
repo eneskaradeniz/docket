@@ -14,6 +14,7 @@ import type { PermissionRule } from './source';
 import type { SessionRole, WorkspaceId } from './types';
 import type { BudgetThreshold } from './budget';
 import type { BackendProfile } from './backend-profile';
+import type { RoleRoute } from './driver-route';
 
 /** Vendor-neutral provider readiness: the happy path names the auth SOURCE (e.g. 'oauth', 'env'); the
  *  failure path carries the classification + the raw message (shown only as a fallback). */
@@ -21,11 +22,14 @@ export type ProviderStatus =
   | { ok: true; source: string }
   | { ok: false; code: ProviderErrorCode; message: string };
 
-/** The per-role model preference (WO-0059 rev 2, the operator's correction): the PLAN rides the
+/** The per-role DRIVER ROUTE map (WO-0059 rev 2, widened by WO-0104 / Faz A): the PLAN rides the
  *  best model while implementation rides a simpler one — the axis is the SESSION ROLE, not one
- *  global value. A role absent from the map = the provider's own default for it. Ids are DATA,
- *  carried verbatim; core never validates or names a value (ADR-0006's WO-0052 carve-out). */
-export type RoleModels = Partial<Record<SessionRole, string>>;
+ *  global value — and each role may now name its vendor adapter and backend profile beside the
+ *  model. A role absent from the map = the provider's own defaults for it. Every value is DATA,
+ *  carried verbatim; core never validates or names a vendor or model (ADR-0006's WO-0052
+ *  carve-out). A legacy stored string row (the pre-WO-0104 shape) reads as `{model}` — the
+ *  store normalizes shape, never values. */
+export type RoleModels = Partial<Record<SessionRole, RoleRoute>>;
 
 /** The UI locale (WO-0035 / ADR-0007): a pure union carrying no display strings — the words live in the
  *  per-locale bundles in src/ui/data/labels/, keyed by this type. */
@@ -78,12 +82,14 @@ export interface AppSettings {
    *  3b): the row is the operator's escape hatch — a setter lands with the UI that needs it
    *  (none exists; a ruled silence beats an undecided one). undefined = the fixed default. */
   getRemotePort(): Promise<number | undefined>;
-  /** The per-role model preference (WO-0059 rev 2): one map, three roles; an absent role = the
-   *  provider's own default. undefined = nothing stored. The composition root reads it at SPAWN
-   *  time and picks the drive's role row, so a change hits the next drive, never a running one. */
+  /** The per-role driver route map (WO-0059 rev 2, widened WO-0104): one map, three roles; an
+   *  absent role = the provider's own defaults. undefined = nothing stored. The composition
+   *  root reads the MODEL half at spawn time and the pipeline resolves the vendor/profile
+   *  halves through the chain — a change hits the next drive, never a running one. */
   getModels(): Promise<RoleModels | undefined>;
-  /** Store (or clear, on undefined/empty) the per-role preference. The ids ride verbatim; the
-   *  store normalizes shape (unknown role keys and blanks dropped), never values. */
+  /** Store (or clear, on undefined/empty) the per-role route map. The ids ride verbatim; the
+   *  store normalizes shape (unknown role keys, blanks and legacy string entries normalized),
+   *  never values. */
   setModels(models: RoleModels | undefined): Promise<void>;
   /** The whole-text prompt-template overrides (WO-0070): one map over the five PromptKeys, an absent
    *  key = the built-in stands. undefined = nothing stored. Read at PROMPT-ASSEMBLY time in the
@@ -95,12 +101,14 @@ export interface AppSettings {
   setPromptOverrides(overrides: PromptOverrides | undefined): Promise<void>;
   /** The preset model ids the ADAPTER offers (the checkProvider pattern — provider vocabulary is
    *  minted adapter-side and crosses as DATA; ADR-0006 names the provider adapter as the one
-   *  place). [] → the UI's preset chips render ABSENT (ADR-0001); the free-text field is
-   *  unaffected. */
-  modelOptions(): Promise<string[]>;
+   *  place). WO-0104: `vendor` scopes the question to one wired adapter; absent = the built-in.
+   *  An unknown vendor id answers [] (honestly absent) — never the built-in's tiers wearing
+   *  another vendor's name. [] → the UI's preset chips render ABSENT (ADR-0001). */
+  modelOptions(vendor?: string): Promise<string[]>;
   /** The provider's DISPLAY NAME for the status line (WO-0059 rev 4) — provider vocabulary minted
-   *  adapter-side, crossing as DATA (the modelOptions posture); the UI renders it verbatim. */
-  providerName(): Promise<string>;
+   *  adapter-side, crossing as DATA (the modelOptions posture); the UI renders it verbatim.
+   *  WO-0104: `vendor` scopes it the same way; an unknown id answers '' (rendered absent). */
+  providerName(vendor?: string): Promise<string>;
   /** The workspace's month-spend threshold (WO-0047): cap + warn percent, ONE atomic pair per
    *  workspace (solo scale — no per-agent or per-project scoping). undefined = none configured:
    *  the gate fails open and the surfaces show nothing. */
@@ -134,10 +142,15 @@ export interface AppSettings {
    *  core's validateProfiles names any issue — a secret-looking key or value never lands (the
    *  operator write refuses loudly; the form places each issue under its field first). */
   setBackendProfiles(profiles: BackendProfile[]): Promise<void>;
-  /** The workspace's DEFAULT profile name (`profile:<wsId>`), undefined = the built-in. A draft
-   *  rides it; a work order's order.md `profile:` wins over it. */
-  getWorkspaceProfile(workspaceId: WorkspaceId): Promise<string | undefined>;
-  /** Set (or clear, on undefined) the workspace default. THROWS on a name no configured profile
-   *  carries (`default`, the built-in's key, is always legal). */
-  setWorkspaceProfile(workspaceId: WorkspaceId, name: string | undefined): Promise<void>;
+  /** WO-0104: the workspace's DEFAULT driver route (`driver:<wsId>`) — the vendor + profile a
+   *  drive of this workspace falls to when neither the work order nor the per-role route names
+   *  one. undefined = nothing stored (the built-in adapter). A draft rides it; a work order's
+   *  order.md `vendor:`/`profile:` win over it. A legacy pre-WO-0104 `profile:<wsId>` raw row
+   *  reads as the route's profile half. */
+  getWorkspaceDriver(workspaceId: WorkspaceId): Promise<{ vendor?: string; profile?: string } | undefined>;
+  /** Set (or clear, on undefined) the workspace default route. THROWS on a profile name no
+   *  configured profile carries (`default`, the built-in's key, is always legal); a VENDOR id
+   *  is data — the pipeline's wired-set gate refuses a dangling one at spawn time (the store
+   *  cannot know what is wired). */
+  setWorkspaceDriver(workspaceId: WorkspaceId, route: { vendor?: string; profile?: string } | undefined): Promise<void>;
 }

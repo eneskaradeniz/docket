@@ -107,9 +107,17 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
     // The map of record is the REF, not the state — two quick clicks inside one IPC round-trip
     // would otherwise build the second write from the stale map and silently drop the first tier
     // (review f4). Optimistic update first, then the write; a failed write toasts and re-reads.
+    // WO-0104: the row is a ROUTE — the tier writes the route's MODEL half; the route's other
+    // halves (vendor/profile, no picker for them yet — Faz E) ride through untouched, and an
+    // emptied route drops the role entirely.
     const next: RoleModels = { ...(modelsRef.current ?? {}) };
-    if (tier === '') delete next[role];
-    else next[role] = tier;
+    const prior = next[role];
+    if (tier === '') {
+      if (prior?.vendor === undefined && prior?.profile === undefined) delete next[role];
+      else next[role] = { ...(prior?.vendor !== undefined ? { vendor: prior.vendor } : {}), ...(prior?.profile !== undefined ? { profile: prior.profile } : {}) };
+    } else {
+      next[role] = { ...(prior ?? {}), model: tier };
+    }
     modelsRef.current = next;
     setModels(next);
     settings.setModels(Object.keys(next).length > 0 ? next : undefined)
@@ -191,7 +199,7 @@ export function AppSettingsModal({ settings, onClose }: { settings: AppSettings;
       <span className="ml-auto">
         <Segmented
           size="sm"
-          value={models?.[role] ?? ''}
+          value={models?.[role]?.model ?? ''}
           onValueChange={(tier) => setRoleTier(role, tier)}
           options={[
             { value: '', label: UI.modelDefaultTier },

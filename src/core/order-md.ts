@@ -25,6 +25,9 @@ export interface ParsedOrderMd {
   profile?: string; // front-matter profile (WO-0098) — the WO's backend-profile override, a profile NAME
   // (operator vocabulary, verbatim). Resolution (WO → workspace default → the built-in) is core's
   // resolveProfile at spawn time; a dangling name refuses the drive. Absent → the workspace default.
+  vendor?: string; // front-matter vendor (WO-0104) — the WO's vendor-adapter override, a vendor id
+  // (adapter-minted DATA, verbatim). Resolution rides the same chain as profile (WO → workspace →
+  // role → the built-in); an id the composition root's registry does not carry refuses the drive.
 }
 
 // Split YAML front matter (---\n…\n---) from the body without a dependency. No front matter → whole doc
@@ -70,6 +73,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
   const cwdValue = frontValue(front, 'cwd');
   const checkoutValue = frontValue(front, 'checkout');
   const profileValue = frontValue(front, 'profile');
+  const vendorValue = frontValue(front, 'vendor');
   return {
     reviewMode,
     flowMode,
@@ -81,6 +85,7 @@ export function parseOrderMd(md: string): ParsedOrderMd {
     cwd: cwdValue !== '' ? cwdValue : undefined,
     checkout: checkoutValue === 'true' ? true : checkoutValue === 'false' ? false : undefined,
     profile: profileValue !== '' ? profileValue : undefined,
+    vendor: vendorValue !== '' ? vendorValue : undefined,
   };
 }
 
@@ -97,6 +102,7 @@ export interface OrderMdEdit {
   checkout?: boolean | null; // → front-matter checkout (WO-0093): true sets the key, false/null DROPS it
   // (silence IS disabled — the pre-WO-0093 orders keep their bytes), undefined = untouched
   profile?: string | null; // → front-matter profile (WO-0098): a string sets the override, null DROPS it (the workspace default stands), undefined = untouched — the cwd idiom
+  vendor?: string | null; // → front-matter vendor (WO-0104): a string sets the override, null DROPS it, undefined = untouched — the profile idiom verbatim
 }
 
 /**
@@ -144,6 +150,9 @@ export function applyOrderMdEdits(orderMd: string, patch: OrderMdEdit): string {
   // WO-0098: the backend-profile override — the cwd idiom verbatim.
   if (typeof patch.profile === 'string') nextFront = setKey(nextFront, 'profile', patch.profile);
   else if (patch.profile === null) nextFront = dropKey(nextFront, 'profile');
+  // WO-0104: the vendor-adapter override — the profile idiom verbatim.
+  if (typeof patch.vendor === 'string') nextFront = setKey(nextFront, 'vendor', patch.vendor);
+  else if (patch.vendor === null) nextFront = dropKey(nextFront, 'vendor');
 
   let nextBody = body;
   if (patch.description !== undefined) {

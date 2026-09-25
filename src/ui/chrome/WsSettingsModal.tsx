@@ -115,7 +115,9 @@ export function WsSettingsModal({
     });
     void source.workspaceMonthSpend(wsId).then((s) => { if (alive) setMonthSpend(s); }).catch(() => { if (alive) setMonthSpend(undefined); });
     void settings.getBackendProfiles?.().then((ps) => { if (alive) setProfileNames(ps.map((p) => p.name)); }).catch(() => undefined);
-    void settings.getWorkspaceProfile?.(wsId).then((n) => { if (alive) setWsProfile(n); }).catch(() => undefined);
+    // WO-0104: the workspace's default DRIVER route — the picker speaks its PROFILE half (no
+    // per-workspace vendor picker exists yet; Faz E's surface widens this section).
+    void settings.getWorkspaceDriver?.(wsId).then((r) => { if (alive) setWsProfile(r?.profile); }).catch(() => undefined);
     void settings.getDocsRoot(wsId).then((r) => {
       if (!alive) return;
       setRootText(r);
@@ -130,8 +132,11 @@ export function WsSettingsModal({
     const prior = wsProfile;
     setWsProfile(name); // optimistic — the row is re-read below
     try {
-      await settings.setWorkspaceProfile(wsId, name);
-      setWsProfile(await settings.getWorkspaceProfile(wsId));
+      // WO-0104: the write replaces the DRIVER row — the vendor half (no picker for it yet,
+      // Faz E's surface) rides along unchanged so a profile flip never drops it.
+      const priorRoute = await settings.getWorkspaceDriver(wsId);
+      await settings.setWorkspaceDriver(wsId, { vendor: priorRoute?.vendor, profile: name });
+      setWsProfile((await settings.getWorkspaceDriver(wsId))?.profile);
     } catch {
       setWsProfile(prior);
       toast.push({ kind: 'error', title: UI.saveFailed });

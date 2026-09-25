@@ -188,7 +188,10 @@ export type SessionRef = (
   // WO-0098 — which backend drove this session: the profile NAME (absent = the built-in
   // passthrough, or a pre-WO-0098 row) and the model the session itself REPORTED at open (DATA,
   // verbatim — the model-id ruling). The evidence line, never a config echo.
+  // WO-0104: `vendor` joins the evidence — the resolved driver route's vendor id (adapter-minted
+  // DATA; absent = the built-in adapter, or a pre-WO-0104 row).
   profile?: string;
+  vendor?: string;
   reportedModel?: string;
   stepIdx?: number; // the plan step this session runs (WO-0017); undefined for the architect plan session + free-form runs
   startedAt?: string; // ISO — when the session's drive started (WO-0027 / İstek 7: durations)

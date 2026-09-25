@@ -699,26 +699,39 @@ describe('WO-0029 — maliyet birikimi + idempotent kapanış + override', () =>
     store.db.prepare("UPDATE app_setting SET value = 'xx' WHERE key = 'locale'").run();
     expect(await store.getLocale()).toBeUndefined();
   });
-  it('per-role models round-trip; blank roles drop, unknown keys never persist, clear leaves no row (WO-0059 rev 2)', async () => {
+  it('per-role routes round-trip; blanks drop, unknown keys never persist, clear leaves no row (WO-0059 rev 2 + WO-0104)', async () => {
     const store = createStore(freshDb());
-    // no row → undefined: every role rides the provider's own default (the store never names a value)
+    // no row → undefined: every role rides the provider's own defaults (the store never names a value)
     expect(await store.getModels()).toBeUndefined();
-    await store.setModels({ architect: 'model-check-x', implementer: '  model-check-y  ', verifier: '  ' });
-    expect(await store.getModels()).toEqual({ architect: 'model-check-x', implementer: 'model-check-y' });
+    await store.setModels({
+      architect: { model: 'model-check-x', vendor: 'vendor-x' },
+      implementer: { model: '  model-check-y  ' },
+      verifier: { model: '  ' },
+    });
+    expect(await store.getModels()).toEqual({
+      architect: { model: 'model-check-x', vendor: 'vendor-x' },
+      implementer: { model: 'model-check-y' },
+    });
     // a write with NO usable role clears the row entirely
-    await store.setModels({ verifier: '  ' });
+    await store.setModels({ verifier: { model: '  ' } });
     expect(await store.getModels()).toBeUndefined();
     expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
     // a garbage ROW reads undefined (the settingBudget posture): a corrupt map opens no gate
     store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', 'not-json')").run();
     expect(await store.getModels()).toBeUndefined();
     store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', '{\"architect\":5,\"unknown\":\"x\"}')").run();
-    expect(await store.getModels()).toBeUndefined(); // a map with no usable role row is nothing
+    expect(await store.getModels()).toBeUndefined(); // a map with no usable route is nothing
     // undefined clears
-    await store.setModels({ architect: 'model-check-x' });
+    await store.setModels({ architect: { model: 'model-check-x' } });
     await store.setModels(undefined);
     expect(await store.getModels()).toBeUndefined();
     expect(store.db.prepare("SELECT COUNT(*) AS n FROM app_setting WHERE key = 'models'").get()).toEqual({ n: 0 });
+  });
+
+  it('a LEGACY bare-string models row reads as {model} — the read-time migration (WO-0104)', async () => {
+    const store = createStore(freshDb());
+    store.db.prepare("INSERT OR REPLACE INTO app_setting (key, value) VALUES ('models', '{\"architect\":\"opus\",\"implementer\":\"  sonnet \"}')").run();
+    expect(await store.getModels()).toEqual({ architect: { model: 'opus' }, implementer: { model: 'sonnet' } });
   });
   it('a legacy provider_key row is swept at open — the stored-key concept retired (WO-0059 rev 4)', () => {
     const path = freshDb();
@@ -3582,9 +3595,9 @@ describe('WO-0098 — backend profiles in the store', () => {
     const store = createStore(freshDb());
     const { ws, wo } = await wsIn(store, 'Profilsiz');
     expect(await store.getBackendProfiles()).toEqual([]);
-    expect(await store.getWorkspaceProfile(ws.id)).toBeUndefined();
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
-    expect(store.backendProfileFor({ kind: 'draft', workspaceId: ws.id })).toEqual({ kind: 'builtin' });
+    expect(await store.getWorkspaceDriver(ws.id)).toBeUndefined();
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'builtin' } });
+    expect(store.driverRouteFor({ kind: 'draft', workspaceId: ws.id }, 'architect')).toEqual({ profile: { kind: 'builtin' } });
   });
 
   it('the list round-trips verbatim; an empty list clears the row', async () => {
@@ -3623,7 +3636,7 @@ describe('WO-0098 — backend profiles in the store', () => {
     await store.updateWorkOrder(wo.id, { profile: 'Leaky' });
     store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('backend_profiles', JSON.stringify([{ name: 'Leaky', env: { X_TOKEN: 'v' } }, MAX]));
     expect(await store.getBackendProfiles()).toEqual([MAX]);
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'missing', name: 'Leaky', source: 'wo' });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'missing', name: 'Leaky', source: 'wo' } });
   });
 
   it("resolution: the workspace default applies; a WO's `profile:` override wins; the draft rides the workspace default", async () => {
@@ -3634,60 +3647,140 @@ describe('WO-0098 — backend profiles in the store', () => {
       const w = await store.createWorkOrder({ workspaceId: ws.id, title: 'Pinned', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], profile: 'GLM' });
       return { wo: w };
     })();
-    await store.setWorkspaceProfile(ws.id, 'Max');
-    expect(await store.getWorkspaceProfile(ws.id)).toBe('Max');
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: pinned.id })).toEqual({ kind: 'profile', profile: GLM, source: 'wo' });
-    expect(store.backendProfileFor({ kind: 'draft', workspaceId: ws.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
+    await store.setWorkspaceDriver(ws.id, { profile: 'Max' });
+    expect(await store.getWorkspaceDriver(ws.id)).toEqual({ profile: 'Max' });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'profile', profile: MAX, source: 'workspace' } });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: pinned.id }, 'implementer')).toEqual({ profile: { kind: 'profile', profile: GLM, source: 'wo' } });
+    expect(store.driverRouteFor({ kind: 'draft', workspaceId: ws.id }, 'architect')).toEqual({ profile: { kind: 'profile', profile: MAX, source: 'workspace' } });
     // the WO override edits like cwd: null drops it → the workspace default stands again
     expect((await store.getWorkOrderDocs(pinned.id)).order).toContain('profile: GLM');
     await store.updateWorkOrder(pinned.id, { profile: null });
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: pinned.id })).toEqual({ kind: 'profile', profile: MAX, source: 'workspace' });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: pinned.id }, 'implementer')).toEqual({ profile: { kind: 'profile', profile: MAX, source: 'workspace' } });
     // clearing the workspace default returns everyone to the built-in
-    await store.setWorkspaceProfile(ws.id, undefined);
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
+    await store.setWorkspaceDriver(ws.id, undefined);
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'builtin' } });
+  });
+
+  it('driverRouteFor: the VENDOR chain — WO `vendor:` beats the workspace default beats the per-role route; blank lines are absent (WO-0104)', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM, MAX]);
+    const { ws, wo } = await wsIn(store, 'Yolcu');
+    const { wo: pinned } = await (async () => {
+      const w = await store.createWorkOrder({ workspaceId: ws.id, title: 'Pinned vendor', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], vendor: 'vend-wo' });
+      return { wo: w };
+    })();
+    // nothing anywhere → the built-in (no vendor key at all)
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'builtin' } });
+    // the ROLE route is the last level
+    await store.setModels({ implementer: { vendor: 'vend-role' } });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({
+      vendor: 'vend-role',
+      vendorSource: 'role',
+      profile: { kind: 'builtin' },
+    });
+    // the architect role is untouched by the implementer's route
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'architect')).toEqual({ profile: { kind: 'builtin' } });
+    // the WORKSPACE default outranks the role route; a draft reads the same levels minus the WO
+    await store.setWorkspaceDriver(ws.id, { vendor: 'vend-ws', profile: 'GLM' });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({
+      vendor: 'vend-ws',
+      vendorSource: 'workspace',
+      profile: { kind: 'profile', profile: GLM, source: 'workspace' },
+    });
+    expect(store.driverRouteFor({ kind: 'draft', workspaceId: ws.id }, 'architect')).toEqual({
+      vendor: 'vend-ws',
+      vendorSource: 'workspace',
+      profile: { kind: 'profile', profile: GLM, source: 'workspace' },
+    });
+    // the WO override outranks everything — and the axes stay independent: the WO pins only the
+    // VENDOR, so the profile still falls through to the workspace's GLM
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: pinned.id }, 'implementer')).toEqual({
+      vendor: 'vend-wo',
+      vendorSource: 'wo',
+      profile: { kind: 'profile', profile: GLM, source: 'workspace' },
+    });
+    expect((await store.getWorkOrderDocs(pinned.id)).order).toContain('vendor: vend-wo');
+    // the WO override edits like cwd/profile: null drops it → the workspace default stands again
+    await store.updateWorkOrder(pinned.id, { vendor: null });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: pinned.id }, 'implementer').vendorSource).toBe('workspace');
+    // the ROLE-level profile joins the chain under WO/workspace absence
+    await store.setModels({ implementer: { profile: 'Max' } });
+    await store.setWorkspaceDriver(ws.id, { vendor: 'vend-ws' }); // profile cleared, vendor kept
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({
+      vendor: 'vend-ws',
+      vendorSource: 'workspace',
+      profile: { kind: 'profile', profile: MAX, source: 'role' },
+    });
+  });
+
+  it('the workspace driver row: round-trip, a LEGACY raw profile row reads as the profile half, a full clear drops both rows (WO-0104)', async () => {
+    const store = createStore(freshDb());
+    await store.setBackendProfiles([GLM]);
+    const { ws } = await wsIn(store, 'Dizi');
+    // legacy shape: a raw `profile:<wsId>` string row
+    store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(`profile:${ws.id}`, 'GLM');
+    expect(await store.getWorkspaceDriver(ws.id)).toEqual({ profile: 'GLM' });
+    // a write lands in the new row and SUBSUMES the legacy row
+    await store.setWorkspaceDriver(ws.id, { vendor: 'vend-ws', profile: 'GLM' });
+    expect(await store.getWorkspaceDriver(ws.id)).toEqual({ vendor: 'vend-ws', profile: 'GLM' });
+    expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${ws.id}`)).toBeUndefined();
+    // a vendor-only write keeps the row minimal; undefined clears BOTH rows
+    await store.setWorkspaceDriver(ws.id, { vendor: 'vend-ws' });
+    expect(await store.getWorkspaceDriver(ws.id)).toEqual({ vendor: 'vend-ws' });
+    store.db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(`profile:${ws.id}`, 'GLM'); // residue
+    await store.setWorkspaceDriver(ws.id, undefined);
+    expect(await store.getWorkspaceDriver(ws.id)).toBeUndefined();
+    expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`driver:${ws.id}`)).toBeUndefined();
+    expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${ws.id}`)).toBeUndefined();
+    // a vendor id is DATA — the write never validates it (the pipeline's wired-set gate does)
+    await store.setWorkspaceDriver(ws.id, { vendor: 'ghost-vendor' });
+    expect(await store.getWorkspaceDriver(ws.id)).toEqual({ vendor: 'ghost-vendor' });
   });
 
   it('writes refuse an unknown profile name (the workspace default, a create, an edit) — the drive refusal is the second layer', async () => {
     const store = createStore(freshDb());
     await store.setBackendProfiles([GLM]);
     const { ws, wo } = await wsIn(store, 'Bilinmeyen');
-    await assert.rejects(() => store.setWorkspaceProfile(ws.id, 'Nope'), /not found/);
+    await assert.rejects(() => store.setWorkspaceDriver(ws.id, { profile: 'Nope' }), /not found/);
     await assert.rejects(
       () => store.createWorkOrder({ workspaceId: ws.id, title: 'Nope WO', description: 'x', trackRepos: ws.repos, reviewMode: 'gates', contextFiles: [], profile: 'Nope' }),
       /not found/,
     );
     await assert.rejects(() => store.updateWorkOrder(wo.id, { profile: 'Nope' }), /not found/);
     // `default` (the built-in's key) is always legal
-    await store.setWorkspaceProfile(ws.id, 'default');
+    await store.setWorkspaceDriver(ws.id, { profile: 'default' });
     await store.updateWorkOrder(wo.id, { profile: 'default' });
-    expect(store.backendProfileFor({ kind: 'wo', workOrderId: wo.id })).toEqual({ kind: 'builtin' });
+    expect(store.driverRouteFor({ kind: 'wo', workOrderId: wo.id }, 'implementer')).toEqual({ profile: { kind: 'builtin' } });
   });
 
   it('a deleted workspace takes its default-profile row with it', async () => {
     const store = createStore(freshDb());
     await store.setBackendProfiles([GLM]);
     const { ws } = await wsIn(store, 'Silinen');
-    await store.setWorkspaceProfile(ws.id, 'GLM');
+    await store.setWorkspaceDriver(ws.id, { profile: 'GLM' });
     await store.deleteWorkspace(ws.id);
     expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${ws.id}`)).toBeUndefined();
+    expect(store.db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`driver:${ws.id}`)).toBeUndefined();
   });
 
   it('the session row carries the drive evidence: profile SET · KEEP · null CLEAR; the reported model KEEPS', async () => {
     const store = createStore(freshDb());
     const { wo } = await wsIn(store, 'Kanıt');
     const owner = { kind: 'wo', workOrderId: wo.id } as const;
-    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'running', profile: 'GLM', reportedModel: 'model-glm-1' });
+    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'running', profile: 'GLM', vendor: 'vend-a', reportedModel: 'model-glm-1' });
     let s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
     expect(s.profile).toBe('GLM');
+    expect(s.vendor).toBe('vend-a');
     expect(s.reportedModel).toBe('model-glm-1');
     store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'idle' });
     s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
     expect(s.profile).toBe('GLM');
+    expect(s.vendor).toBe('vend-a');
     expect(s.reportedModel).toBe('model-glm-1');
-    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'idle', profile: null, reportedModel: 'model-max-1' });
+    store.recordSession({ providerSessionId: 'sess-p', owner, role: 'implementer', status: 'idle', profile: null, vendor: null, reportedModel: 'model-max-1' });
     s = (await store.getWorkOrder(wo.id))!.sessions[0]!;
     expect('profile' in s).toBe(false);
+    expect('vendor' in s).toBe(false);
     expect(s.reportedModel).toBe('model-max-1');
   });
 

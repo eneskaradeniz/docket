@@ -773,6 +773,42 @@ reads; live transcript + both ask shapes + drive control; management writes).
       token with the 6-digit manual code beside it, label-bundle entries tr/en; consumes 0102's
       IPC — no new core surface.
 
+## M11 — Çok sağlayıcı (the multi-CLI provider wave)
+
+Docket grows from one fixed agent adapter to operator-selectable vendors (Codex, Cursor-agent, …)
+while keeping ADR-0014's bar (machine-readable mode, never terminal scraping). The mechanism and
+its phases live in `docs/research/2026-09-25-multi-cli-provider-architecture.md` (the open-design
+reference: one spawn call site + N vendor definition files); issues #105–#109 carry the five
+phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — one precedence chain
+(WO → workspace → role → built-in).
+
+- [ ] **WO-0104** — Faz A (#105): role → vendor routing. The per-role `RoleModels` widens into a
+      `{vendor, profile, model}` route resolved through the WO-0098 chain; order.md gains
+      `vendor:`; the workspace default becomes the `driver:<wsId>` route row (legacy
+      `profile:<wsId>` reads as its profile half); the pipeline gates an unwired vendor before
+      spawn (`vendorRefusal`, the missing-profile discipline) and the composition root gains the
+      registry shape (one wired vendor today — the built-in SDK adapter; vendor ids minted
+      adapter-side, ADR-0006 untouched). Session evidence gains `driver_vendor`. No new vendor,
+      no UI beyond type-driven touch-ups — pure plumbing that de-risks everything after it.
+- [ ] **WO-0105** — Faz B (#106): the generic CLI-spawn adapter. One adapter that spawns an
+      arbitrary binary and parses its declared machine-readable stream, parametrized by a
+      per-vendor definition (id, bin, args builder, auth probe, stream parser) — written once;
+      every subsequent vendor is a definition file, not a new adapter. Explicitly inside
+      ADR-0014's line: a plain-stdout-only vendor is not a target (no terminal scraping).
+- [ ] **WO-0106** — Faz C (#107): the first real second vendor (Codex proposed), probed against
+      the ADR-0014 bar (machine-readable mode, cost on the terminating message, permission/
+      plan-gate signal, quota windows) BEFORE a definition + wiring lands — the WO-0095 agy
+      posture; a vendor that fails the probe stays a named "henüz değil" info row (ADR-0001).
+- [ ] **WO-0107** — Faz D (#108): agent auto-discovery — PATH plus well-known toolchain dirs
+      (Homebrew, `~/.local/bin`, `~/.bun/bin`, node-version-manager dirs, npm prefixes — the
+      GUI-launched PATH is thinner than a login shell's), a per-vendor `<ID>_BIN`-style override,
+      results streamed as each probe finishes. The onboarding wizard's visuals stay Figma-gated
+      (2026-10-01); the detection engine + its first surface land here.
+- [ ] **WO-0108** — Faz E (#109): the settings surface — the Modeller rows gain a driver selector
+      (vendor · profile) beside the model tier, the Sürücüler screen groups by vendor with a
+      "henüz değil" group, the workspace override carries the vendor, order.md `vendor:` editable
+      from the WO dialog — every level reading/writing the ONE chain Faz A introduced.
+
 ## Later
 
 - Packaging and distribution

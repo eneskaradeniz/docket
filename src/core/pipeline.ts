@@ -21,6 +21,7 @@ import type { SessionOwner, SessionStore } from './session-store';
 import type { DraftSourceSummary } from './roadmap-draft';
 import { parseVerdict } from './verdict';
 import { spawnEnvOf } from './backend-profile';
+import type { DriverRouteResolution } from './driver-route';
 import { isRiskyPermission } from './risky';
 import type { PermissionRule } from './source';
 
@@ -134,8 +135,17 @@ export interface PipelineDeps {
   runner?: SessionRunner;
   /** WO-0088: ONE runner PER DRIVE — the parallel spine's factory. The adapter's per-instance
    *  singleton state means N instances = N concurrent drives; the port (SessionRunner) is
-   *  unchanged (ADR-0014 holds). Absent → every drive shares `runner`. */
-  runners?: (owner: SessionOwner) => SessionRunner;
+   *  unchanged (ADR-0014 holds). Absent → every drive shares `runner`.
+   *  WO-0104: the factory RECEIVES the drive's resolved route — the composition root picks the
+   *  VENDOR adapter from it (undefined = its default/built-in). The vendor gate below already
+   *  refused anything the registry does not carry, so a factory that cannot serve the route is
+   *  a wiring bug — throwing is honest, never a silent wrong-backend spawn. */
+  runners?: (owner: SessionOwner, route: DriverRouteResolution) => SessionRunner;
+  /** WO-0104: the WIRED vendor ids (the composition root's registry). A resolved route naming
+   *  a vendor outside the set refuses the drive before the runner spawns — the missing-profile
+   *  discipline (never a silent spawn on another backend). Absent = the empty set: any route
+   *  naming an explicit vendor refuses (the single-adapter default posture). */
+  vendors?: () => ReadonlySet<string>;
   store: SessionStore;
   permission: PermissionPolicy;
 }
@@ -166,8 +176,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
   if (!deps.runner && !deps.runners) {
     throw new Error('createPipeline: inject a runner (the single-drive shape) or a runners factory (the parallel spine) — never neither');
   }
-  const runnerFor = (owner: SessionOwner): SessionRunner =>
-    deps.runners ? deps.runners(owner) : (deps.runner as SessionRunner); // the guard above pins the cast
+  // WO-0104: no injected registry = nothing but the built-in is wired (an explicit vendor refuses).
+  const EMPTY_VENDORS: ReadonlySet<string> = new Set();
+  const runnerFor = (owner: SessionOwner, route: DriverRouteResolution): SessionRunner =>
+    deps.runners ? deps.runners(owner, route) : (deps.runner as SessionRunner); // the guard above pins the cast
   // WO-0088: the KEYED steer surface + the live runners — one entry per owner tag, set when a drive
   // passes its gates, cleared in ITS finally (guarded: a finished drive never tears a successor or a
   // sibling down). `steer`/`retractSteer`/`interrupt` below are the only entry points; they no-op
@@ -202,7 +214,10 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
     // state then holds exactly one drive per instance; the tag keys the control surface below.
     // Registration happens after the gates (a refused drive owns nothing) but before the stream.
     const tag = driveOwnerTag(input);
-    const driveRunner: SessionRunner = runnerFor(owner);
+    // WO-0104: the DRIVER ROUTE — ONE store read resolving the vendor AND the profile through
+    // the chain (WO → workspace → role → the built-in; core's resolveDriverRoute). Read before
+    // every gate that needs it; the gates below consume its halves in order.
+    const route = deps.store.driverRouteFor(owner, input.role);
     // WO-0047: the workspace BUDGET gate — the FIRST gate, and the only one that sees EVERY drive
     // (plan, step, review, resume, draft alike: each spawns a runner that bills; the plan/flow gates
     // below scope to step/review). Read at SPAWN time only — a drive already running when the cap is
@@ -222,13 +237,31 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       };
       return;
     }
-    // WO-0098: the BACKEND PROFILE gate — after the budget (a capped workspace refuses first), before
-    // everything that writes. The store resolves WO override → workspace default → the built-in; a
-    // DANGLING reference (a renamed/deleted profile) is refused here, naming it — never a silent
-    // spawn on another backend (another account, another bill). The slot is OVERWRITTEN
-    // unconditionally: a host-carried profile is never honored (the decisionStoreRoot posture), and
-    // the built-in leaves NO key at all — the spawn input stays byte-identical to the pre-profile one.
-    const profileRes = deps.store.backendProfileFor(owner);
+    // WO-0104: the VENDOR gate — after the budget (a capped workspace refuses first), beside the
+    // profile gate, before the runner spawns. A route naming a vendor the composition root's
+    // registry does not carry (a not-yet-probed vendor, a typo, a deleted adapter) is refused
+    // naming it and WHERE it was written — never a silent spawn on another backend. The slot is
+    // OVERWRITTEN unconditionally (the profile posture): a host-carried vendor is never honored,
+    // and the built-in leaves NO key at all.
+    if (route.vendor !== undefined && !(deps.vendors?.() ?? EMPTY_VENDORS).has(route.vendor)) {
+      const source = route.vendorSource ?? 'role';
+      yield {
+        kind: 'error',
+        message: `drive refused: vendor "${route.vendor}" not wired (${source === 'wo' ? 'work order' : source === 'workspace' ? 'workspace default' : 'role route'})`,
+        vendorRefusal: { vendor: route.vendor, source },
+      };
+      return;
+    }
+    delete di.vendor;
+    if (route.vendor !== undefined) di.vendor = route.vendor;
+    // WO-0098: the BACKEND PROFILE gate — the route's profile half (WO override → workspace
+    // default → the role route → the built-in); a DANGLING reference (a renamed/deleted profile)
+    // is refused here, naming it — never a silent spawn on another backend (another account,
+    // another bill). The slot is OVERWRITTEN unconditionally: a host-carried profile is never
+    // honored (the decisionStoreRoot posture), and the built-in leaves NO key at all — the spawn
+    // input stays byte-identical to the pre-profile one.
+    const driveRunner: SessionRunner = runnerFor(owner, route);
+    const profileRes = route.profile;
     if (profileRes.kind === 'missing') {
       yield {
         kind: 'error',
@@ -369,7 +402,9 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
         ...(limitResetAt !== undefined ? { limitResetAt } : {}),
         // WO-0098: the drive's backend evidence — the profile on EVERY record (null clears a prior
         // leg's claim on a passthrough leg), the reported model once the session reported one.
+        // WO-0104: the vendor rides the same evidence rule (null clears on a built-in leg).
         profile: profileName ?? null,
+        vendor: route.vendor ?? null,
         ...(reportedModel !== undefined ? { reportedModel } : {}),
       });
     };
@@ -378,8 +413,11 @@ export function createPipeline(deps: PipelineDeps): Pipeline {
       for await (const raw of driveRunner.drive(di)) {
         // WO-0098: the `started` event leaves here carrying the profile NAME (the host fold's pane
         // meta) — stamped BEFORE the one fold, so the pipeline's own live state and the host's agree.
-        // The built-in adds no key (byte-identical).
-        const ev: RunnerEvent = raw.kind === 'started' && profileName !== undefined ? { ...raw, profile: profileName } : raw;
+        // The built-in adds no key (byte-identical). WO-0104: the vendor id rides the same stamp.
+        const ev: RunnerEvent =
+          raw.kind === 'started' && (profileName !== undefined || route.vendor !== undefined)
+            ? { ...raw, ...(profileName !== undefined ? { profile: profileName } : {}), ...(route.vendor !== undefined ? { vendor: route.vendor } : {}) }
+            : raw;
         live = foldSessionEvent(live, ev);
         lastActivityIso = new Date().toISOString();
         switch (ev.kind) {
