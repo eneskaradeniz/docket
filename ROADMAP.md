@@ -800,10 +800,14 @@ phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — 
       Merged PR #111: 1467 unit tests (16 new engine tests against a scripted fake binary — a
       real spawn, real signals), typecheck ×2/build/boundaries/contract clean, E2E untouched;
       the ADR-0014 addendum (generic adapter + the sandbox-as-fence honesty note) landed with it.
-- [ ] **WO-0106** — Faz C (#107): the first real second vendor (Codex proposed), probed against
+- [x] **WO-0106** — Faz C (#107): the first real second vendor (Codex proposed), probed against
       the ADR-0014 bar (machine-readable mode, cost on the terminating message, permission/
       plan-gate signal, quota windows) BEFORE a definition + wiring lands — the WO-0095 agy
       posture; a vendor that fails the probe stays a named "henüz değil" info row (ADR-0001).
+      Merged PR #112: the probe (measured unauth stream + the documented union + the
+      authenticated one-command spot-check), the def behind CODEX_PROBE_PASSED (the wiring
+      gate), 13 def tests, checkProvider's vendor axis. 1480 unit tests, all checks clean;
+      TD-067 (token-only spend invisible to the budget cap) recorded.
 - [ ] **WO-0107** — Faz D (#108): agent auto-discovery — PATH plus well-known toolchain dirs
       (Homebrew, `~/.local/bin`, `~/.bun/bin`, node-version-manager dirs, npm prefixes — the
       GUI-launched PATH is thinner than a login shell's), a per-vendor `<ID>_BIN`-style override,
