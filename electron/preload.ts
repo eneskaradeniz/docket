@@ -75,7 +75,9 @@ const source: WorkOrderSource = {
 // main-side against the operator's own identity.
 const settings: AppSettings = {
   // WO-0098: a profile NAME runs the check under that profile's env (resolved main-side).
-  checkProvider: (profileName?: string) => ipcRenderer.invoke('docket:settings:check-provider', profileName),
+  // WO-0106: the vendor axis scopes the probe to that adapter's zero-token handshake.
+  checkProvider: (profileName?: string, vendor?: string) =>
+    ipcRenderer.invoke('docket:settings:check-provider', profileName, vendor),
   getBackendProfiles: () => ipcRenderer.invoke('docket:settings:get-backend-profiles'),
   setBackendProfiles: (profiles: BackendProfile[]) => ipcRenderer.invoke('docket:settings:set-backend-profiles', profiles),
   // WO-0104: the workspace's default driver route (vendor + profile). undefined (no row / full

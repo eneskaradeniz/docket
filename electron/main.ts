@@ -10,6 +10,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { checkProvider, createRunner, modelOptions, providerDisplayName, providerId } from '../src/adapters/runner';
+import { checkCliVendor, createCliRunner } from '../src/adapters/cli-runner';
+import { CODEX_PROBE_PASSED, codexDef } from '../src/adapters/cli-runner/defs/codex';
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
@@ -666,11 +668,16 @@ ipcMain.handle(
 // WO-0098: the per-profile Test et — a profile NAME resolves HERE to its stored env (the renderer
 // never carries an env map to a spawn); absent / `default` = the built-in passthrough. An unknown
 // name answers not-ok naming it — never a silent check of another environment.
-ipcMain.handle('docket:settings:check-provider', async (_e, profileName?: string): Promise<ProviderStatus> => {
-  if (profileName === undefined || sameProfileName(profileName, DEFAULT_PROFILE)) return checkProvider();
+// WO-0106: the check gained its vendor axis — `vendor` scopes the probe to that adapter's
+// zero-token handshake (absent = the built-in; an UNWIRED id answers not-ok naming it, never
+// the built-in's handshake wearing another vendor's name).
+ipcMain.handle('docket:settings:check-provider', async (_e, profileName?: string, vendor?: string): Promise<ProviderStatus> => {
+  const entry = vendorEntry(vendor);
+  if (entry === undefined) return { ok: false, code: 'auth_missing', message: `vendor "${vendor}" not wired` };
+  if (profileName === undefined || sameProfileName(profileName, DEFAULT_PROFILE)) return entry.check();
   const profile = (await store.getBackendProfiles()).find((p) => sameProfileName(p.name, profileName));
   if (!profile) return { ok: false, code: 'auth_missing', message: `backend profile "${profileName}" not found` };
-  return checkProvider(profile.env);
+  return entry.check(profile.env);
 });
 // WO-0098: the backend profiles (the list + the per-workspace default) — thin forwarders; the store
 // validates (a secret-looking pair refuses) and the pipeline resolves at spawn time.
@@ -730,14 +737,29 @@ interface VendorEntry {
   create: () => SessionRunner;
   modelOptions: () => string[];
   providerName: () => string;
+  /** The zero-token vendor check (the built-in's SDK handshake or checkCliVendor). */
+  check: (env?: Record<string, string>) => Promise<ProviderStatus>;
 }
+// Faz C: a def vendor joins ONLY behind its probe's verdict (WO-0106) — CODEX_PROBE_PASSED is
+// flipped by hand with findings.md's PASS in hand; until then a route naming it refuses with
+// vendorRefusal and the settings surface lists it under «henüz değil».
 const VENDOR_REGISTRY: readonly VendorEntry[] = [
   {
     id: providerId(),
     create: () => createRunner(),
     modelOptions: () => modelOptions(),
     providerName: () => providerDisplayName(),
+    check: (env) => checkProvider(env),
   },
+  ...(CODEX_PROBE_PASSED
+    ? [{
+        id: codexDef.id,
+        create: () => createCliRunner(codexDef),
+        modelOptions: () => [...(codexDef.modelOptions ?? [])],
+        providerName: () => codexDef.displayName,
+        check: (env?: Record<string, string>) => checkCliVendor(codexDef, env),
+      }]
+    : []),
 ];
 const WIRED_VENDORS: ReadonlySet<string> = new Set(VENDOR_REGISTRY.map((e) => e.id));
 const vendorEntry = (vendor?: string): VendorEntry | undefined =>
