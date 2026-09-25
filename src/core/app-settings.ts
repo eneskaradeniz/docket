@@ -64,6 +64,9 @@ export interface VendorInfo {
   status: 'wired' | 'probe-pending';
   models: string[];
   path: string | null;
+  /** The composition root's default adapter (undefined-vendor routes land here) — the home of
+   *  today's global backend profiles until per-vendor profiles exist (a named follow-up). */
+  builtin: boolean;
 }
 
 export interface AppSettings {
@@ -149,8 +152,12 @@ export interface AppSettings {
    *  state; the UI speaks it as one line (the name is adapter DATA — providerName).
    *  WO-0098: `profileName` runs the SAME zero-token handshake under that profile's environment
    *  (the per-profile Test et); absent or `default` = the built-in passthrough. An unknown name
-   *  resolves `{ ok: false }` naming it — never a silent check of another environment. */
-  checkProvider(profileName?: string): Promise<ProviderStatus>;
+   *  resolves `{ ok: false }` naming it — never a silent check of another environment.
+   *  WO-0106: `vendor` scopes the check to that WIRED adapter's own zero-token probe (the
+   *  built-in's SDK handshake or the def vendor's version/auth probe); absent = the built-in.
+   *  An unwired id answers not-ok naming it — never the built-in's handshake wearing another
+   *  vendor's name. */
+  checkProvider(profileName?: string, vendor?: string): Promise<ProviderStatus>;
   /** WO-0098 — the configured backend profiles, in the operator's order (the built-in passthrough
    *  is NOT in the list: it always exists, first, never stored). Read FAIL-OPEN through core's
    *  normalizeProfiles — a corrupt or secret-carrying entry never comes back. */

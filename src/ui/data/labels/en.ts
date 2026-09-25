@@ -542,6 +542,12 @@ export const UI = {
   wsProfileLabel: 'Backend',
   woProfileLabel: 'Backend (optional)',
   woProfileInherit: "The workspace's",
+  // WO-0108 (Faz E): the vendor-grouped Sürücüler + the role-row driver selector.
+  vendorPendingGroup: 'Not yet',
+  vendorPendingReason: 'verification pending',
+  vendorFoundLine: (path: string): string => `Found: ${path}`,
+  vendorMissingLine: 'not found on this machine',
+  roleDriverTierLine: 'Drives ride this driver; the model picks from its own roster',
   profileRefusedTitle: (name: string, source: 'wo' | 'workspace' | 'role'): string =>
     `No «${name}» backend — fix the ${source === 'wo' ? "work order's" : source === 'workspace' ? "workspace's" : "role's"} backend choice`,
   // WO-0104: the vendor axis (the Genel presence line's subject word).

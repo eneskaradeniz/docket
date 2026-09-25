@@ -17,8 +17,10 @@ import { DEFAULT_WARN_PERCENT, parseAmount } from '../../core/budget';
 import { normalizeDocsRoot } from '../../core/roadmap-md';
 import { DEFAULT_PROFILE, sameProfileName } from '../../core/backend-profile';
 import { useLabels } from '../data/locale';
-import { Button, Dialog, Field, Input, Segmented, Tooltip } from '../kit';
+import { Button, Dialog, Field, Input, Tooltip } from '../kit';
 import { toast } from './ToastHost';
+import { DriverSelect, driverOptions, type DriverRouteValue } from './DriverSelect';
+import type { VendorInfo } from '../../core/app-settings';
 
 const base = (p: string): string => {
   let s = p;
@@ -102,6 +104,10 @@ export function WsSettingsModal({
   // absent, ADR-0012) unless a stored default dangles — then it stays, with the reason line.
   const [profileNames, setProfileNames] = useState<string[]>([]);
   const [wsProfile, setWsProfile] = useState<string | undefined>(undefined);
+  // WO-0108 (Faz E): the workspace's default DRIVER ROUTE (vendor + profile) — the picker
+  // speaks both halves; `wsProfile` keeps the dangling-profile line's input.
+  const [wsRoute, setWsRoute] = useState<DriverRouteValue | undefined>(undefined);
+  const [wsVendors, setWsVendors] = useState<VendorInfo[]>([]);
   const wsId = workspace?.id;
   useEffect(() => {
     if (mode !== 'edit' || !wsId || !settings) return;
@@ -117,7 +123,12 @@ export function WsSettingsModal({
     void settings.getBackendProfiles?.().then((ps) => { if (alive) setProfileNames(ps.map((p) => p.name)); }).catch(() => undefined);
     // WO-0104: the workspace's default DRIVER route — the picker speaks its PROFILE half (no
     // per-workspace vendor picker exists yet; Faz E's surface widens this section).
-    void settings.getWorkspaceDriver?.(wsId).then((r) => { if (alive) setWsProfile(r?.profile); }).catch(() => undefined);
+    void settings.getWorkspaceDriver?.(wsId).then((r) => {
+      if (!alive) return;
+      setWsRoute(r);
+      setWsProfile(r?.profile);
+    }).catch(() => undefined);
+    void settings.vendors().then((vs) => { if (alive) setWsVendors(vs); }).catch(() => undefined);
     void settings.getDocsRoot(wsId).then((r) => {
       if (!alive) return;
       setRootText(r);
@@ -127,18 +138,20 @@ export function WsSettingsModal({
       alive = false;
     };
   }, [mode, wsId, settings, source]);
-  const saveWsProfile = async (name: string | undefined): Promise<void> => {
+  // WO-0108: ONE write for the whole route (vendor + profile); the chain arm (undefined)
+  // clears the row. A dangling profile name refuses at the store — the toast speaks it and
+  // the row re-reads (the under-field line below names a STORED dangling name).
+  const saveWsRoute = async (route: DriverRouteValue | undefined): Promise<void> => {
     if (!wsId || !settings) return;
-    const prior = wsProfile;
-    setWsProfile(name); // optimistic — the row is re-read below
+    const prior = wsRoute;
+    setWsRoute(route); // optimistic — the row is re-read below
     try {
-      // WO-0104: the write replaces the DRIVER row — the vendor half (no picker for it yet,
-      // Faz E's surface) rides along unchanged so a profile flip never drops it.
-      const priorRoute = await settings.getWorkspaceDriver(wsId);
-      await settings.setWorkspaceDriver(wsId, { vendor: priorRoute?.vendor, profile: name });
-      setWsProfile((await settings.getWorkspaceDriver(wsId))?.profile);
+      await settings.setWorkspaceDriver(wsId, route);
+      const stored = await settings.getWorkspaceDriver(wsId);
+      setWsRoute(stored);
+      setWsProfile(stored?.profile);
     } catch {
-      setWsProfile(prior);
+      setWsRoute(prior);
       toast.push({ kind: 'error', title: UI.saveFailed });
     }
   };
@@ -716,11 +729,11 @@ export function WsSettingsModal({
                 <div className="mt-3 flex items-center gap-2">
                   <span className="text-[13px] text-ink">{UI.wsProfileLabel}</span>
                   <span className="ml-auto">
-                    <Segmented
-                      size="sm"
-                      value={wsProfile !== undefined && profileNames.some((n) => sameProfileName(n, wsProfile)) ? profileNames.find((n) => sameProfileName(n, wsProfile))! : ''}
-                      onValueChange={(v) => void saveWsProfile(v === '' ? undefined : v)}
-                      options={[{ value: '', label: UI.profileDefaultName }, ...profileNames.map((n) => ({ value: n, label: n }))]}
+                    <DriverSelect
+                      value={wsRoute}
+                      options={driverOptions(wsVendors, profileNames.map((n) => ({ name: n, env: {} })), UI)}
+                      ariaLabel={UI.wsProfileLabel}
+                      onValueChange={(route) => void saveWsRoute(route)}
                     />
                   </span>
                 </div>

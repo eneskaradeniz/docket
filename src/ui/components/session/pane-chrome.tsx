@@ -158,7 +158,12 @@ export function PaneCostline({ state, running, liveStart, now }: {
   // WO-0098: the drive's BACKEND evidence — the profile that drove it + the model the session
   // itself reported (operator vocabulary + provider DATA, verbatim; the ledger's mono idiom). Only
   // when a named profile drove: the built-in passthrough adds nothing (zero profiles = today's pane).
-  const backendPart = state.driveProfile ? [state.driveProfile, state.reportedModel].filter((x): x is string => !!x).join(' · ') : undefined;
+  // WO-0108: the resolved VENDOR joins the evidence (adapter DATA, the reported-model rule) — the
+  // non-builtin vendors' drives name themselves; the built-in stays wordless as always.
+  const backendPart =
+    state.driveProfile !== undefined || state.driveVendor !== undefined
+      ? [state.driveVendor, state.driveProfile, state.reportedModel].filter((x): x is string => !!x).join(' · ')
+      : undefined;
   return (
     <>
       {backendPart ? (

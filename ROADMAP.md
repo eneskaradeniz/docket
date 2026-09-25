@@ -818,10 +818,16 @@ phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — 
       VendorInfo port read (wired + probe-pending rows with per-machine detection), 10 tests
       against real temp dirs; the wizard itself stays the Figma-gated follow-up. TD-068
       (win32 well-known set absent) recorded.
-- [ ] **WO-0108** — Faz E (#109): the settings surface — the Modeller rows gain a driver selector
+- [x] **WO-0108** — Faz E (#109): the settings surface — the Modeller rows gain a driver selector
       (vendor · profile) beside the model tier, the Sürücüler screen groups by vendor with a
       "henüz değil" group, the workspace override carries the vendor, order.md `vendor:` editable
       from the WO dialog — every level reading/writing the ONE chain Faz A introduced.
+      Merged PR #114: the ONE DriverSelect (chain arm + vendor·profile pairs, stale values keep
+      their option), per-vendor model rosters, the vendor-grouped Sürücüler + the probe-pending
+      info rows, the workspace route write, the WO-create vendor segment (second-vendor-gated),
+      the pane evidence line, VendorInfo.builtin; the E2E-found stale-profiles bug fixed
+      (re-read on section switch). 1490 unit + 101 e2e green; TD-069 (per-vendor profiles)
+      recorded.
 
 ## Later
 

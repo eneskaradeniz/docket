@@ -598,6 +598,12 @@ export const UI = {
   wsProfileLabel: 'Sürücü',
   woProfileLabel: 'Sürücü (isteğe bağlı)',
   woProfileInherit: 'Çalışma alanınınki',
+  // WO-0108 (Faz E): the vendor-grouped Sürücüler + the role-row driver selector.
+  vendorPendingGroup: 'Henüz değil',
+  vendorPendingReason: 'doğrulama bekliyor',
+  vendorFoundLine: (path: string): string => `Bulundu: ${path}`,
+  vendorMissingLine: 'Bu makinede bulunamadı',
+  roleDriverTierLine: 'Sürüş bu sürücüyle; model seçimi sürücünün kendi kadrosu',
   profileRefusedTitle: (name: string, source: 'wo' | 'workspace' | 'role'): string =>
     `«${name}» sürücüsü yok — ${source === 'wo' ? 'iş emrinin' : source === 'workspace' ? 'çalışma alanının' : 'rolün'} sürücü seçimini düzelt`,
   // WO-0104: the vendor axis — a route naming a vendor no wired adapter carries (the vendor word

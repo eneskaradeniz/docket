@@ -3931,9 +3931,19 @@ await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + ot
   const wsDlg = page.locator('[role="dialog"]');
   const sec = wsDlg.locator('[data-ws-profile-section]');
   assert.equal(await sec.count(), 1, 'the workspace backend picker is missing');
-  await sec.getByRole('button', { name: 'GLM', exact: true }).click();
+  // WO-0108: the picker is the ONE driver select (vendor · profile) — the option label carries
+  // the vendor's own display name (adapter DATA), never a raw id
+  const builtinName = await page.evaluate(() => window.docket.settings.vendors().then((vs) => vs.find((v) => v.builtin)?.name ?? '?'));
+  await sec.locator('select[data-driver-select]').selectOption({ label: `${builtinName} · GLM` });
   await page.waitForTimeout(400);
-  assert.equal(await sec.locator('button[aria-pressed="true"]').textContent(), 'GLM', 'the workspace default did not write through');
+  const wsDriver = await page.evaluate(() =>
+    window.docket.source.getWorkspaces().then((ws) => {
+      const id = ws.find((w) => w.label === 'e2e')?.id;
+      return id ? window.docket.settings.getWorkspaceDriver(id) : undefined;
+    }),
+  );
+  const builtinId = await page.evaluate(() => window.docket.settings.vendors().then((vs) => vs.find((v) => v.builtin)?.id));
+  assert.deepEqual(wsDriver, { vendor: builtinId, profile: 'GLM' }, 'the workspace driver route did not write through');
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
   // (1) a WO that names NO override rides the workspace default
@@ -3986,7 +3996,10 @@ await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + ot
   assert.notEqual(inp?.workOrderId, inheritWo, 'the pinned WO never drove');
   const pinnedDocs = await page.evaluate((id) => window.docket.source.getWorkOrderDocs(id), inp.workOrderId);
   assert.ok(pinnedDocs.order?.includes('profile: default'), 'the override did not land in order.md front-matter');
-  assert.equal(await page.locator('[data-pane-backend]').count(), 0, 'the built-in drive still shows a backend meta');
+  // WO-0108: the route may name the VENDOR (the ws default did) — the pane may say the word;
+  // what the pinned passthrough must NOT claim is a PROFILE (no GLM, no env echo).
+  const pinnedMeta = ((await page.locator('[data-pane-backend]').first().getAttribute('data-pane-backend').catch(() => null)) ?? '');
+  assert.ok(!pinnedMeta.includes('GLM') && !pinnedMeta.includes(E2E_PROFILE_ENV), `the pinned passthrough still claims a profile: ${pinnedMeta}`);
   await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
   await page.waitForTimeout(900);
   const pinnedEvidence = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w?.sessions.map((s) => ({ profile: s.profile ?? null, reportedModel: s.reportedModel }))), inp.workOrderId);
@@ -3994,7 +4007,7 @@ await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + ot
   await backToBoard();
   // cleanup — the workspace back to the built-in, the profile removed (the next run starts clean)
   await openWsEdit();
-  await page.locator('[role="dialog"] [data-ws-profile-section]').getByRole('button', { name: 'Varsayılan', exact: true }).click();
+  await page.locator('[role="dialog"] [data-ws-profile-section]').locator('select[data-driver-select]').selectOption({ label: 'Varsayılan' });
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
@@ -4050,6 +4063,91 @@ await spec('an unwired vendor refuses the drive with the localized line; the bui
   assert.equal('vendor' in (clean ?? {}), false, 'the built-in drive carries a vendor key');
   await stopAllDrives();
   await backToBoard();
+});
+
+// ===== WO-0108 (Faz E) — the vendor surfaces: the grouped Sürücüler, the role-row driver select, the evidence =====
+await spec('the Sürücüler groups by vendor with the «henüz değil» cast; the role driver select writes the route and the drive carries the vendor evidence', async () => {
+  // Sürücüler: the builtin vendor's group (its cards + form), the pending cast below it
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  await page.locator('[role="dialog"] [data-settings-item]', { hasText: 'Sürücüler' }).click();
+  await page.waitForTimeout(400);
+  const dlg = page.locator('[role="dialog"]');
+  const vendors = await page.evaluate(() => window.docket.settings.vendors());
+  const builtin = vendors.find((v) => v.builtin);
+  assert.ok(builtin && builtin.wired, 'the builtin vendor row is missing from vendors()');
+  assert.equal(await dlg.locator(`[data-vendor-group="${builtin.id}"]`).count(), 1, 'the builtin vendor group is missing');
+  assert.equal(await dlg.locator(`[data-vendor-group="${builtin.id}"] [data-profile-card="default"]`).count(), 1, 'the builtin passthrough card left its group');
+  // the probe-pending cast: plain info rows, the reason + the vendor's own display name
+  const pending = vendors.filter((v) => !v.wired);
+  assert.ok(pending.length >= 1, 'no probe-pending vendor row answered (the cast is gone)');
+  assert.equal(await dlg.locator('[data-vendor-pending]').count(), 1, 'the «henüz değil» group is missing');
+  for (const v of pending) {
+    const row = dlg.locator(`[data-vendor-pending-row="${v.id}"]`);
+    assert.equal(await row.count(), 1, `the pending row for ${v.name} is missing`);
+    assert.ok((await row.innerText()).includes(v.name), 'the pending row does not name its vendor (adapter DATA)');
+  }
+  await page.screenshot({ path: join(SHOTS, 'settings-vendors@980.png') });
+  // a profile to route to
+  await dlg.locator('[data-profile-name]').fill('GLM');
+  await dlg.locator('[data-profile-env-input]').fill(E2E_PROFILE_ENV);
+  await dlg.locator('[data-profile-submit]').click();
+  await page.waitForTimeout(400);
+  // Modeller: the Mimar row's driver select writes {vendor, profile} through the route row
+  await dlg.locator('[data-settings-item]', { hasText: 'Modeller' }).click();
+  await page.waitForTimeout(300);
+  const mimarSelect = dlg.locator('[data-model-row="architect"] select[data-driver-select]');
+  assert.equal(await mimarSelect.count(), 1, 'the role driver select is missing');
+  await mimarSelect.selectOption({ label: `${builtin.name} · GLM` });
+  await page.waitForTimeout(400);
+  const architectRoute = (await page.evaluate(() => window.docket.settings.getModels()))?.architect;
+  assert.equal(architectRoute?.vendor, builtin.id, 'the role route did not carry the vendor');
+  assert.equal(architectRoute?.profile, 'GLM', 'the role route did not carry the profile');
+  await page.screenshot({ path: join(SHOTS, 'settings-models-driver@980.png') });
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
+  // the drive stamps the vendor beside the profile: the pane meta + the session row
+  await stopAllDrives();
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  await page.locator('[role="dialog"] input').first().fill('Sürücü kanıt E');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  let meta = '';
+  for (let i = 0; i < 20; i++) {
+    meta = (await page.locator('[data-pane-backend]').first().getAttribute('data-pane-backend').catch(() => null)) ?? '';
+    if (meta.includes('GLM') && meta.includes(builtin.id)) break;
+    await page.waitForTimeout(250);
+  }
+  assert.ok(meta.includes(builtin.id) && meta.includes('GLM'), `the pane evidence does not carry vendor·profile: ${meta}`);
+  await page.evaluate(() => window.docket.e2e?.emit({ kind: 'turn_complete', stopReason: 'end_turn', cost: { tokensIn: 1, tokensOut: 1, usd: 0.01 } }));
+  await page.waitForTimeout(900);
+  let evidenceWo;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    evidenceWo = await page.evaluate(() => window.docket.source.getWorkOrders().then((ws) => ws.find((w) => w.title === 'Sürücü kanıt E')?.id));
+    if (evidenceWo) break;
+  }
+  assert.ok(evidenceWo, 'the spec WO never appeared');
+  const evidence = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => w?.sessions.map((x) => ({ vendor: x.vendor, profile: x.profile }))), evidenceWo);
+  assert.ok(evidence?.some((x) => x.vendor === builtin.id && x.profile === 'GLM'), `the session row does not carry the vendor evidence: ${JSON.stringify(evidence)}`);
+  await stopAllDrives();
+  await backToBoard();
+  // cleanup: the route arm back to Varsayılan (the model half rides along untouched), the profile gone
+  await page.locator('button[aria-label="Ayarlar"]').click();
+  await page.waitForTimeout(450);
+  await dlg.locator('[data-settings-item]', { hasText: 'Modeller' }).click();
+  await page.waitForTimeout(250);
+  await dlg.locator('[data-model-row="architect"] select[data-driver-select]').selectOption({ label: 'Varsayılan' });
+  await page.waitForTimeout(300);
+  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect, undefined, 'the route arm did not clear the vendor·profile halves');
+  await dlg.locator('[data-settings-item]', { hasText: 'Sürücüler' }).click();
+  await page.waitForTimeout(250);
+  await dlg.locator('[data-profile-remove="GLM"]').click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Kapat', exact: true }).click();
+  await page.waitForTimeout(300);
 });
 
 await spec('zero renderer console errors', async () => {
