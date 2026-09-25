@@ -38,7 +38,8 @@ import { deriveRoadmapView, type RoadmapView } from '../../core/roadmap';
 import { deriveOverview, parseTechDebt, type DebtLine, type WorkspaceOverview } from '../../core/overview';
 import { deriveUsageView, type UsageFactRow, type UsageOrderFact, type UsageSessionFact, type WorkspaceUsageView } from '../../core/usage';
 import type { BudgetRefusal, DriveInput } from '../../core/runner';
-import { DEFAULT_PROFILE, normalizeProfiles, resolveProfile, sameProfileName, validateProfiles, type BackendProfile, type ProfileResolution } from '../../core/backend-profile';
+import { DEFAULT_PROFILE, normalizeProfiles, sameProfileName, validateProfiles, type BackendProfile } from '../../core/backend-profile';
+import { normalizeRoleRoute, normalizeRoleRoutes, resolveDriverRoute, type DriverRouteResolution } from '../../core/driver-route';
 import { isDraftDrive } from '../../core/runner';
 import { roadmapDraftPrompt, type DraftSourceSummary } from '../../core/roadmap-draft';
 import { worktreeName, worktreePathUnder } from '../../core/worktree';
@@ -137,10 +138,11 @@ export interface AppSettingsData {
   getRemoteEnabled(): Promise<boolean>;
   setRemoteEnabled(enabled: boolean): Promise<void>;
   getRemotePort(): Promise<number | undefined>;
-  /** The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models` — the three
-   *  session roles, an absent role = the provider's own default. Ids ride VERBATIM; the store
-   *  normalizes SHAPE only (unknown role keys and blank values drop), never names or validates a
-   *  value (ADR-0006: ids are data). undefined = nothing stored. */
+  /** The operator's per-role DRIVER ROUTE map (WO-0059 rev 2, widened WO-0104): ONE JSON row
+   *  `models` — the three session roles, an absent role = the provider's own defaults. Ids ride
+   *  VERBATIM; the store normalizes SHAPE only through core's normalizeRoleRoutes (unknown role
+   *  keys drop, legacy string entries read as {model}), never names or validates a value
+   *  (ADR-0006: ids are data). undefined = nothing stored. */
   getModels(): Promise<RoleModels | undefined>;
   setModels(models: RoleModels | undefined): Promise<void>;
   /** The whole-text prompt-template overrides (WO-0070) — the AppSettings port's methods; the
@@ -161,12 +163,13 @@ export interface AppSettingsData {
    *  operator's default, with the legacy ask/auto values mapped). */
   getPermissionRuleFor(workOrderId: WorkOrderId): Promise<PermissionRule>;
   /** WO-0098 — the backend profiles (the AppSettings port's methods; shape + semantics live on the
-   *  port). ONE JSON row `backend_profiles` (the prompt_overrides posture) + a raw `profile:<wsId>`
-   *  row per workspace default (the docs_root posture). */
+   *  port). ONE JSON row `backend_profiles` (the prompt_overrides posture); the per-workspace
+   *  default is the WO-0104 `driver:<wsId>` route row below (a legacy `profile:<wsId>` raw row
+   *  reads as its profile half — read-time migration, writes land in the new shape only). */
   getBackendProfiles(): Promise<BackendProfile[]>;
   setBackendProfiles(profiles: BackendProfile[]): Promise<void>;
-  getWorkspaceProfile(workspaceId: WorkspaceId): Promise<string | undefined>;
-  setWorkspaceProfile(workspaceId: WorkspaceId, name: string | undefined): Promise<void>;
+  getWorkspaceDriver(workspaceId: WorkspaceId): Promise<{ vendor?: string; profile?: string } | undefined>;
+  setWorkspaceDriver(workspaceId: WorkspaceId, route: { vendor?: string; profile?: string } | undefined): Promise<void>;
 }
 
 // --- row shapes (node:sqlite returns untyped rows) ---
@@ -214,6 +217,7 @@ type SessionRow = {
   final_model_usage: string | null; // WO-0052
   limit_reset_at: string | null; // WO-0053
   backend_profile: string | null; // WO-0098
+  driver_vendor: string | null; // WO-0104 — the resolved route's vendor id (NULL = the built-in adapter)
   reported_model: string | null; // WO-0098
 };
 
@@ -348,8 +352,10 @@ function hydrateSessionRow(r: SessionRow): SessionRef {
     // the UI does with it; hydration only carries the honest fact.
     ...(r.limit_reset_at ? { limitResetAt: r.limit_reset_at } : {}),
     // WO-0098: the drive's backend evidence — NULL = the built-in passthrough / not reported / a
-    // pre-WO-0098 row (honestly absent, never a fabricated default).
+    // pre-WO-0098 row (honestly absent, never a fabricated default). WO-0104: the vendor id rides
+    // the same honest-absent rule (NULL = the built-in adapter / a pre-WO-0104 row).
     ...(r.backend_profile ? { profile: r.backend_profile } : {}),
+    ...(r.driver_vendor ? { vendor: r.driver_vendor } : {}),
     ...(r.reported_model ? { reportedModel: r.reported_model } : {}),
   };
   switch (r.status) {
@@ -503,9 +509,9 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
   // WOs); a foreign row survives instead of being stolen. `IS ?` is SQLite's NULL-safe equality —
   // a draft row's NULL work_order_id must match its own row (and only it).
   const prior = db
-    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
+    .prepare('SELECT cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, transcript, pending_notes, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, driver_vendor, reported_model FROM session WHERE provider_session_id = ? AND workspace_id = ? AND work_order_id IS ?')
     .get(input.providerSessionId, wsId, woId) as
-    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null; limit_reset_at: string | null; backend_profile: string | null; reported_model: string | null }
+    | { cost_tokens_in: number | null; cost_tokens_out: number | null; cost_usd: number | null; started_at: string | null; ended_at: string | null; transcript: string | null; pending_notes: string | null; ctx_used_tokens: number | null; ctx_max_tokens: number | null; final_model_usage: string | null; limit_reset_at: string | null; backend_profile: string | null; driver_vendor: string | null; reported_model: string | null }
     | undefined;
   const priorTranscript = (() => {
     if (!prior?.transcript) return undefined;
@@ -559,11 +565,13 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     input.limitResetAt !== undefined ? input.limitResetAt : (prior?.limit_reset_at ?? null);
   // WO-0098: the backend evidence — `profile` is three-state (string sets, null clears on a
   // passthrough leg, undefined keeps); the reported model keeps unless a leg reported a new one.
+  // WO-0104: `vendor` rides the same three states.
   const backendProfile = input.profile !== undefined ? input.profile : (prior?.backend_profile ?? null);
+  const driverVendor = input.vendor !== undefined ? input.vendor : (prior?.driver_vendor ?? null);
   const reportedModel = input.reportedModel !== undefined ? input.reportedModel : (prior?.reported_model ?? null);
   db.prepare(
-    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, driver_vendor, reported_model)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.providerSessionId,
     wsId,
@@ -585,6 +593,7 @@ function recordSessionRow(db: DatabaseSync, input: RecordSessionInput): void {
     finalUsageJson,
     limitResetAt,
     backendProfile,
+    driverVendor,
     reportedModel,
   );
 }
@@ -854,7 +863,7 @@ function workspaceOverviewRow(db: DatabaseSync, wsId: WorkspaceId): WorkspaceOve
 // workspace_id (through the WO join; `''` for an orphan row — joins to nothing, hydrates nowhere).
 const SESSION_REBUILD_COPY =
   'INSERT INTO session (provider_session_id, workspace_id, work_order_id, role, scope_track_id, status, transcript, stop_and_ask, ' +
-  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, reported_model) ' +
+  'pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ctx_used_tokens, ctx_max_tokens, final_model_usage, limit_reset_at, backend_profile, driver_vendor, reported_model) ' +
   'SELECT provider_session_id, ' +
   "COALESCE((SELECT w.workspace_id FROM work_order w WHERE w.id = session_legacy.work_order_id), ''), work_order_id, " +
   'role, scope_track_id, status, transcript, stop_and_ask, pending_notes, cost_tokens_in, cost_tokens_out, cost_usd, started_at, ended_at, step_idx, ' +
@@ -864,7 +873,7 @@ const SESSION_REBUILD_COPY =
   // WO-0053: the limit stamp rides the same way (NULL for pre-WO-0053 rows).
   'limit_reset_at, ' +
   // WO-0098: the backend evidence rides the same way (NULL for pre-WO-0098 rows).
-  'backend_profile, reported_model FROM session_legacy';
+  'backend_profile, driver_vendor, reported_model FROM session_legacy';
 
 function migrate(db: DatabaseSync): void {
   const cols = new Set((db.prepare('PRAGMA table_info(session)').all() as { name: string }[]).map((c) => c.name));
@@ -890,6 +899,9 @@ function migrate(db: DatabaseSync): void {
   // WO-0098: the drive's backend evidence (the same additive discipline — NULL is the honest
   // pre-WO-0098 vintage: the built-in passthrough, never backfilled).
   if (!cols.has('backend_profile')) db.exec('ALTER TABLE session ADD COLUMN backend_profile TEXT');
+  // WO-0104: the driver route's vendor id (the same additive discipline — NULL is the honest
+  // pre-WO-0104 vintage: the built-in adapter, never backfilled).
+  if (!cols.has('driver_vendor')) db.exec('ALTER TABLE session ADD COLUMN driver_vendor TEXT');
   if (!cols.has('reported_model')) db.exec('ALTER TABLE session ADD COLUMN reported_model TEXT');
 
   // WO-0092 fix round (m4): the ISOLATED issue-look failure rides forge_scan (additive, the same
@@ -1098,6 +1110,7 @@ function deleteWorkspaceRow(db: DatabaseSync, id: WorkspaceId): void {
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`budget:${id}`);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`docs_root:${id}`);
   db.prepare('DELETE FROM app_setting WHERE key = ?').run(`profile:${id}`); // WO-0098
+  db.prepare('DELETE FROM app_setting WHERE key = ?').run(`driver:${id}`); // WO-0104
   db.prepare('DELETE FROM connection WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace_repo WHERE workspace_id = ?').run(id);
   db.prepare('DELETE FROM workspace WHERE id = ?').run(id);
@@ -1556,23 +1569,18 @@ function exchangeGrantRow(db: DatabaseSync, code: string, deviceName: string, no
   return { kind: 'dead', reason: verdict.reason };
 }
 
-// The operator's per-role model preference (WO-0059 rev 2): ONE JSON row `models`. The store
-// normalizes SHAPE only — unknown role keys and blank values drop; a map with no usable role row
-// is nothing. Any id is legal (the provider validates), so unlike locale there is no value
-// enumeration to check — ids ride verbatim, trimmed.
-const MODEL_ROLES: ReadonlySet<string> = new Set(['architect', 'implementer', 'verifier']);
+// The operator's per-role DRIVER ROUTE map (WO-0059 rev 2, widened WO-0104): ONE JSON row
+// `models`. The store normalizes SHAPE only, through core's normalizeRoleRoutes — unknown role
+// keys drop, a legacy bare-string entry (the pre-WO-0104 row) reads as {model}, a map with no
+// usable route is nothing. Any id is legal (the provider validates; the pipeline gates vendors
+// against the wired set), so unlike locale there is no value enumeration to check — ids ride
+// verbatim, trimmed. Read FAIL-OPEN: a corrupt row is every built-in, never a crash.
 function settingModels(db: DatabaseSync): RoleModels | undefined {
   const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get('models') as { value: string } | undefined)?.value;
   if (!value) return undefined;
   try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    const out: RoleModels = {};
-    for (const [role, id] of Object.entries(parsed)) {
-      if (!MODEL_ROLES.has(role) || typeof id !== 'string') continue;
-      const trimmed = id.trim();
-      if (trimmed) out[role as keyof RoleModels] = trimmed;
-    }
-    return Object.keys(out).length > 0 ? out : undefined;
+    const routes = normalizeRoleRoutes(JSON.parse(value));
+    return Object.keys(routes).length > 0 ? routes : undefined;
   } catch {
     return undefined;
   }
@@ -1927,9 +1935,28 @@ function settingBackendProfiles(db: DatabaseSync): BackendProfile[] {
   }
 }
 
-function settingWorkspaceProfile(db: DatabaseSync, wsId: string): string | undefined {
-  const value = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${wsId}`) as { value: string } | undefined)?.value;
-  return value && value.trim() !== '' ? value : undefined;
+// WO-0104: the workspace's DEFAULT DRIVER ROUTE — ONE JSON row `driver:<wsId>` ({vendor?, profile?}),
+// read FAIL-OPEN through core's shape guards. A legacy pre-WO-0104 raw `profile:<wsId>` row reads as
+// the route's profile half (a read-time migration; writes land in the new shape only, and a full
+// clear drops BOTH rows — the legacy residue never resurfaces as a phantom default).
+function settingWorkspaceDriver(db: DatabaseSync, wsId: string): { vendor?: string; profile?: string } | undefined {
+  const driver = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`driver:${wsId}`) as { value: string } | undefined)?.value;
+  if (driver) {
+    try {
+      const route = normalizeRoleRoute(JSON.parse(driver));
+      if (route) {
+        const out: { vendor?: string; profile?: string } = {};
+        if (route.vendor !== undefined) out.vendor = route.vendor;
+        if (route.profile !== undefined) out.profile = route.profile;
+        if (Object.keys(out).length > 0) return out;
+      }
+    } catch {
+      // a corrupt row falls to the legacy read — never a crash
+    }
+  }
+  const legacy = (db.prepare('SELECT value FROM app_setting WHERE key = ?').get(`profile:${wsId}`) as { value: string } | undefined)?.value;
+  const profile = legacy && legacy.trim() !== '' ? legacy.trim() : undefined;
+  return profile !== undefined ? { profile } : undefined;
 }
 
 // The write-side gate for a profile REFERENCE (a workspace default, an order.md override): the name
@@ -1941,18 +1968,44 @@ function profileRefRefusal(db: DatabaseSync, name: string): string | undefined {
   return settingBackendProfiles(db).some((p) => sameProfileName(p.name, name)) ? undefined : `backend profile "${name.trim()}" not found`;
 }
 
-function backendProfileForRow(db: DatabaseSync, owner: SessionOwner): ProfileResolution {
+// WO-0104: the drive's DRIVER ROUTE — vendor AND profile through the one chain (WO → workspace →
+// role → the built-in; core's resolveDriverRoute). Replaces WO-0098's backendProfileForRow: the
+// per-role route (the widened `models` row) is the chain's third level, and the order.md `vendor:`
+// override rides beside `profile:`. The pipeline gates the vendor half against the composition
+// root's wired set; the store cannot know what is wired.
+function driverRouteForRow(db: DatabaseSync, owner: SessionOwner, role: SessionRole): DriverRouteResolution {
   const profiles = settingBackendProfiles(db);
-  if (owner.kind === 'draft') return resolveProfile({ profiles, workspaceDefault: settingWorkspaceProfile(db, owner.workspaceId as string) });
+  if (owner.kind === 'draft') {
+    const wsDriver = settingWorkspaceDriver(db, owner.workspaceId as string);
+    return resolveDriverRoute({
+      profiles,
+      wsVendor: wsDriver?.vendor,
+      wsProfile: wsDriver?.profile,
+      roleRoute: settingModels(db)?.[role],
+    });
+  }
   const wo = db.prepare('SELECT workspace_id AS ws FROM work_order WHERE id = ?').get(owner.workOrderId) as { ws: string } | undefined;
-  if (!wo) return { kind: 'builtin' };
+  if (!wo) return { profile: { kind: 'builtin' } };
+  let woVendor: string | undefined;
   let woOverride: string | undefined;
   const dir = woDir(db, owner.workOrderId);
   if (dir) {
     const { order } = readWoDocs(dir, owner.workOrderId);
-    if (order) woOverride = parseOrderMd(order).profile;
+    if (order) {
+      const parsed = parseOrderMd(order);
+      woOverride = parsed.profile;
+      woVendor = parsed.vendor;
+    }
   }
-  return resolveProfile({ profiles, workspaceDefault: settingWorkspaceProfile(db, wo.ws), woOverride });
+  const wsDriver = settingWorkspaceDriver(db, wo.ws);
+  return resolveDriverRoute({
+    profiles,
+    woVendor,
+    woProfile: woOverride,
+    wsVendor: wsDriver?.vendor,
+    wsProfile: wsDriver?.profile,
+    roleRoute: settingModels(db)?.[role],
+  });
 }
 
 function cwdOverrideRefusal(cwd: string): string | undefined {
@@ -2401,7 +2454,7 @@ export function createStore(dbPath: string): Store {
     // composition's counts ride the row (D2/D5) — and the DEPO channel reads through
     // decisionDocs (D3), the dialog's scan at open.
     budgetBlockForDraft: (workspaceId: WorkspaceId) => budgetBlockForDraftRow(db, workspaceId),
-    backendProfileFor: (owner: SessionOwner) => backendProfileForRow(db, owner),
+    driverRouteFor: (owner: SessionOwner, role: SessionRole) => driverRouteForRow(db, owner, role),
     roadmapDraftPromptFor: (workspaceId: WorkspaceId, goalNote: string, docPaths: string[], freeExplore?: boolean) =>
       roadmapDraftPromptForRow(db, workspaceId, goalNote, docPaths, freeExplore),
     saveRoadmapDraft: (workspaceId: WorkspaceId, md: string, opts?: { providerSessionId?: string; sourceSummary?: DraftSourceSummary }) =>
@@ -2585,6 +2638,7 @@ export function createStore(dbPath: string): Store {
           ...(input.flowMode === 'manual' ? { flowMode: input.flowMode } : {}),
           ...(input.permissionRule ? { permissionRule: input.permissionRule } : {}),
           ...(input.taskRef ? { taskRef: input.taskRef } : {}),
+          ...(input.vendor ? { vendor: input.vendor.trim() } : {}),
           ...(input.issueRef ? { issueRef: input.issueRef } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.checkout ? { checkout: true } : {}),
@@ -2696,7 +2750,10 @@ export function createStore(dbPath: string): Store {
         const why = profileRefRefusal(db, patch.profile);
         if (why) throw new Error(`updateWorkOrder: ${why}`);
       }
-      const next = applyOrderMdEdits(order, typeof patch.profile === 'string' ? { ...patch, profile: patch.profile.trim() } : patch);
+      // WO-0104: the vendor override trims like profile but validates against NOTHING store-side —
+      // the wired set is the composition root's registry (the pipeline's vendor gate refuses).
+      const patchNext = typeof patch.profile === 'string' ? { ...patch, profile: patch.profile.trim() } : patch;
+      const next = applyOrderMdEdits(order, typeof patchNext.vendor === 'string' ? { ...patchNext, vendor: patchNext.vendor.trim() } : patchNext);
       if (next !== order) writeOrderMdById(dir, workOrderId, next);
       if (patch.title !== undefined) db.prepare('UPDATE work_order SET title = ? WHERE id = ?').run(patch.title, workOrderId);
       const fields = [
@@ -2708,6 +2765,7 @@ export function createStore(dbPath: string): Store {
         patch.cwd !== undefined ? 'cwd' : null,
         patch.checkout !== undefined ? 'checkout' : null,
         patch.profile !== undefined ? 'profile' : null,
+        patch.vendor !== undefined ? 'vendor' : null,
       ].filter((f): f is string => f !== null);
       if (fields.length > 0) appendEvent(db, workOrderId as string, 'wo_edited', fields.join(' · '));
       if (patch.permissionRule !== undefined) appendEvent(db, workOrderId as string, 'rule_changed', patch.permissionRule);
@@ -2873,28 +2931,38 @@ export function createStore(dbPath: string): Store {
       }
       return Promise.resolve();
     },
-    getWorkspaceProfile: (workspaceId: WorkspaceId) => Promise.resolve(settingWorkspaceProfile(db, workspaceId as string)),
-    setWorkspaceProfile: (workspaceId: WorkspaceId, name: string | undefined) => {
-      const key = `profile:${workspaceId}`;
-      if (name === undefined) {
-        db.prepare('DELETE FROM app_setting WHERE key = ?').run(key);
+    // WO-0104: the workspace's default driver route (the `driver:<wsId>` JSON row; the legacy
+    // `profile:<wsId>` raw row reads as the profile half). A full clear drops BOTH rows; the
+    // PROFILE half of the route refuses an unknown name exactly as the pre-WO-0104 write did.
+    getWorkspaceDriver: (workspaceId: WorkspaceId) => Promise.resolve(settingWorkspaceDriver(db, workspaceId as string)),
+    setWorkspaceDriver: (workspaceId: WorkspaceId, route: { vendor?: string; profile?: string } | undefined) => {
+      const driverKey = `driver:${workspaceId}`;
+      const legacyKey = `profile:${workspaceId}`;
+      if (route === undefined) {
+        db.prepare('DELETE FROM app_setting WHERE key = ?').run(driverKey);
+        db.prepare('DELETE FROM app_setting WHERE key = ?').run(legacyKey);
         return Promise.resolve();
       }
-      const why = profileRefRefusal(db, name);
-      if (why) return Promise.reject(new Error(`setWorkspaceProfile: ${why}`));
-      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(key, name.trim());
+      const clean = normalizeRoleRoute(route);
+      if (clean === undefined) {
+        db.prepare('DELETE FROM app_setting WHERE key = ?').run(driverKey);
+        db.prepare('DELETE FROM app_setting WHERE key = ?').run(legacyKey);
+        return Promise.resolve();
+      }
+      if (clean.profile !== undefined) {
+        const why = profileRefRefusal(db, clean.profile);
+        if (why) return Promise.reject(new Error(`setWorkspaceDriver: ${why}`));
+      }
+      db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run(driverKey, JSON.stringify(clean));
+      db.prepare('DELETE FROM app_setting WHERE key = ?').run(legacyKey); // the new row subsumes the legacy default
       return Promise.resolve();
     },
     getModels: () => Promise.resolve(settingModels(db)),
+    // WO-0104: the per-role ROUTE map — core's normalizeRoleRoutes is the single shape guard
+    // (unknown roles drop, legacy string entries read as {model}); a map with no usable route
+    // clears the row entirely.
     setModels: (models: RoleModels | undefined) => {
-      const clean: RoleModels = {};
-      if (models) {
-        for (const [role, id] of Object.entries(models)) {
-          if (!MODEL_ROLES.has(role) || typeof id !== 'string') continue;
-          const trimmed = id.trim();
-          if (trimmed) clean[role as keyof RoleModels] = trimmed;
-        }
-      }
+      const clean = normalizeRoleRoutes(models);
       if (Object.keys(clean).length === 0) db.prepare('DELETE FROM app_setting WHERE key = ?').run('models');
       else db.prepare('INSERT OR REPLACE INTO app_setting (key, value) VALUES (?, ?)').run('models', JSON.stringify(clean));
       return Promise.resolve();

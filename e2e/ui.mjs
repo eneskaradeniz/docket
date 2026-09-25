@@ -3048,7 +3048,7 @@ await spec('WO-0059 rev 4 ayarlar: sol menü üç öğe (WO-0070 İstem şablonl
   const mimarRow = dlg.locator('[data-model-rows] > div', { hasText: 'Mimar' });
   await mimarRow.getByRole('button', { name: 'opus', exact: true }).click();
   await page.waitForTimeout(300);
-  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect, 'opus', 'the Mimar tier did not write through');
+  assert.equal((await page.evaluate(() => window.docket.settings.getModels()))?.architect?.model, 'opus', 'the Mimar tier did not write through');
   assert.equal(await mimarRow.locator('button[aria-pressed="true"]').textContent(), 'opus', 'the segment did not read pressed');
   await page.screenshot({ path: join(SHOTS, 'settings-menu@980.png') });
   // Genel: the presence line (name + the two-state word) + the permission rule + language + theme
@@ -4007,6 +4007,49 @@ await spec('WO-0098 seçim + kanıt: ws varsayılanı sürüşe gider, pane + ot
   assert.deepEqual(await page.evaluate(() => window.docket.settings.getBackendProfiles()), [], 'Sil did not remove the profile');
   await page.getByRole('button', { name: 'Kapat', exact: true }).click();
   await page.waitForTimeout(300);
+});
+
+// ===== WO-0104 — the driver route: an order.md `vendor:` naming an unwired vendor refuses the drive =====
+await spec('an unwired vendor refuses the drive with the localized line; the built-in spawn stays vendor-free', async () => {
+  await page.getByRole('button', { name: /yeni iş emri/i }).first().click();
+  await page.waitForTimeout(350);
+  const cDlg = page.locator('[role="dialog"]');
+  await cDlg.locator('input').first().fill('Hayalet sağlayıcı');
+  await page.getByRole('button', { name: 'Oluştur', exact: true }).click();
+  await page.waitForTimeout(1400);
+  // resolve THIS spec's own work order by title (lastDriveInput is process-global — a previous
+  // spec's drive would masquerade as ours)
+  let woId;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    woId = await page.evaluate(() => window.docket.source.getWorkOrders().then((ws) => ws.find((w) => w.title === 'Hayalet sağlayıcı')?.id));
+    if (woId) break;
+  }
+  assert.ok(woId, 'the spec WO never appeared on the board');
+  // the WO names a vendor nothing wires (Faz A: only the built-in adapter exists)
+  await page.evaluate((id) => window.docket.source.updateWorkOrder(id, { vendor: 'hayalet' }), woId);
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  await page.waitForTimeout(700);
+  // the refusal speaks OPERATOR words (the raw English message never renders as the title)
+  assert.ok((await page.getByText('sağlayıcısı bağlı değil').count()) >= 1, 'the localized vendor refusal line is missing');
+  await page.screenshot({ path: join(SHOTS, 'vendor-refusal@980.png') });
+  // cleanup: drop the override → the built-in drive spawns vendor-free (no vendor key at all)
+  await page.evaluate((id) => window.docket.source.updateWorkOrder(id, { vendor: null }), woId);
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /Plan iste|Sürdür/ }).first().click();
+  // the built-in drive SPAWNS this time — wait for its session row (the refused drive wrote none)
+  let spawned = false;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(250);
+    spawned = await page.evaluate((id) => window.docket.source.getWorkOrder(id).then((w) => (w?.sessions.length ?? 0) > 0), woId);
+    if (spawned) break;
+  }
+  assert.ok(spawned, 'the built-in drive never spawned after the override dropped');
+  const clean = await page.evaluate(() => window.docket.e2e?.lastDriveInput());
+  assert.equal('vendor' in (clean ?? {}), false, 'the built-in drive carries a vendor key');
+  await stopAllDrives();
+  await backToBoard();
 });
 
 await spec('zero renderer console errors', async () => {

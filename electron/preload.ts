@@ -78,10 +78,13 @@ const settings: AppSettings = {
   checkProvider: (profileName?: string) => ipcRenderer.invoke('docket:settings:check-provider', profileName),
   getBackendProfiles: () => ipcRenderer.invoke('docket:settings:get-backend-profiles'),
   setBackendProfiles: (profiles: BackendProfile[]) => ipcRenderer.invoke('docket:settings:set-backend-profiles', profiles),
-  getWorkspaceProfile: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-workspace-profile', workspaceId),
-  setWorkspaceProfile: (workspaceId: WorkspaceId, name: string | undefined) =>
-    ipcRenderer.invoke('docket:settings:set-workspace-profile', workspaceId, name),
-  providerName: () => ipcRenderer.invoke('docket:settings:provider-name'),
+  // WO-0104: the workspace's default driver route (vendor + profile). undefined (no row / full
+  // clear) survives the structured clone.
+  getWorkspaceDriver: (workspaceId: WorkspaceId) =>
+    ipcRenderer.invoke('docket:settings:get-workspace-driver', workspaceId),
+  setWorkspaceDriver: (workspaceId: WorkspaceId, route: { vendor?: string; profile?: string } | undefined) =>
+    ipcRenderer.invoke('docket:settings:set-workspace-driver', workspaceId, route),
+  providerName: (vendor?: string): Promise<string> => ipcRenderer.invoke('docket:settings:provider-name', vendor),
   getPermissionRule: () => ipcRenderer.invoke('docket:settings:get-permission-rule'),
   setPermissionRule: (rule: PermissionRule) => ipcRenderer.invoke('docket:settings:set-permission-rule', rule),
   getLocale: (): Promise<Locale | undefined> => ipcRenderer.invoke('docket:settings:get-locale'),
@@ -102,7 +105,8 @@ const settings: AppSettings = {
   getPromptOverrides: (): Promise<PromptOverrides | undefined> => ipcRenderer.invoke('docket:settings:get-prompt-overrides'),
   setPromptOverrides: (overrides: PromptOverrides | undefined): Promise<void> =>
     ipcRenderer.invoke('docket:settings:set-prompt-overrides', overrides),
-  modelOptions: (): Promise<string[]> => ipcRenderer.invoke('docket:settings:model-options'),
+  // WO-0104: vendor-scoped (absent = the built-in adapter's tiers; an unknown id answers []).
+  modelOptions: (vendor?: string): Promise<string[]> => ipcRenderer.invoke('docket:settings:model-options', vendor),
   // The workspace's month-spend threshold (WO-0047): undefined clears it (raise = permanent write).
   getDocsRoot: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-docs-root', workspaceId),
   setDocsRoot: (workspaceId: WorkspaceId, root: string | undefined) =>

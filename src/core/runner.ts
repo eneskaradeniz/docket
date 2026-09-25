@@ -21,7 +21,9 @@ export type RunnerEvent =
   // provider's init message — DATA, verbatim, the model-id ruling); `profile` is the backend
   // profile's NAME the pipeline stamps on the event it re-yields (absent = the built-in passthrough).
   // Together they are the drive's evidence of WHICH backend it reached — never a claim from config.
-  | { kind: 'started'; sessionId: string; at?: string; model?: string; profile?: string }
+  // WO-0104: `vendor` joins them — the resolved route's vendor id (adapter-minted DATA; absent =
+  // the built-in adapter), stamped by the pipeline the same way.
+  | { kind: 'started'; sessionId: string; at?: string; model?: string; profile?: string; vendor?: string }
   // WO-0046: the content events carry the same ISO receive-stamp as the lifecycle ones — the fold
   // turns each into the staleness anchor (`lastLifeAt`); an unstamped event (a scripted fake)
   // honestly leaves the prior anchor alone.
@@ -121,13 +123,24 @@ export type RunnerEvent =
   // degrade to the fail card's localized title (no fabricated time, mockup frame 04).
   // WO-0098: `profileRefusal` — the drive named a backend profile that no longer exists (renamed or
   // deleted): refused before spawn, the NAME carried so the surface speaks it in operator words.
-  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal; limit?: LimitStop; profileRefusal?: ProfileRefusal };
+  // WO-0104: `vendorRefusal` — the same discipline for the vendor axis: the route named a vendor id
+  // no wired adapter carries (a not-yet-probed vendor, a typo), refused before spawn with the name
+  // and WHERE it was written (the work order's `vendor:`, the workspace default, or the role route).
+  | { kind: 'error'; message: string; code?: ProviderErrorCode; refusal?: BudgetRefusal; limit?: LimitStop; profileRefusal?: ProfileRefusal; vendorRefusal?: VendorRefusal };
 
 /** WO-0098: the dangling profile reference that refused a drive — the name as written and WHERE it
- *  was written (the work order's `profile:` or the workspace default), so the fix is findable. */
+ *  was written (the work order's `profile:`, the workspace default, or — WO-0104 — the per-role
+ *  route), so the fix is findable. */
 export interface ProfileRefusal {
   name: string;
-  source: 'wo' | 'workspace';
+  source: 'wo' | 'workspace' | 'role';
+}
+
+/** WO-0104: the unwired vendor reference that refused a drive — the vendor id as written and where
+ *  it was written (order.md `vendor:` / the workspace default / the per-role route). */
+export interface VendorRefusal {
+  vendor: string;
+  source: 'wo' | 'workspace' | 'role';
 }
 
 /** The budget gate's refusal facts (WO-0047): what the month has cost and the cap it met. */
@@ -220,6 +233,12 @@ export interface WoDriveInput {
    *  adapter composes `env` over the inherited environment; absent = the built-in passthrough,
    *  byte-identical spawn options. */
   profile?: DriveProfile;
+  /** WO-0104: the VENDOR adapter this drive runs on — pipeline-filled from the same chain
+   *  (WO `vendor:` → workspace default → the per-role route; absent = the built-in adapter),
+   *  overwritten unconditionally (the profile posture). An id the composition root's registry
+   *  does not carry refuses the drive before spawn (the vendorRefusal event) — never a silent
+   *  spawn on the built-in. */
+  vendor?: string;
   /** WHO started this drive (WO-0045). 'auto' = a host's sequencing effect (the verdict auto-advance, a
    *  pane's mount auto-drive) — the pipeline refuses these in `manual` flow mode before spawning.
    *  Absent = the operator (a click, the CLI, a test) — always allowed. */
@@ -272,6 +291,9 @@ export interface DraftDriveInput {
   model?: string;
   /** WO-0098: the same pipeline-filled profile slot as the WO arm — a draft rides its workspace default. */
   profile?: DriveProfile;
+  /** WO-0104: the same pipeline-filled vendor slot as the WO arm — a draft's route reads the
+   *  workspace default and the role-level default only (no order.md exists for a draft). */
+  vendor?: string;
   origin?: 'operator' | 'auto';
   deliveringNote?: { id: string; text: string };
 }
@@ -637,12 +659,17 @@ export interface LiveSessionState {
   lastRefusal?: BudgetRefusal;
   /** WO-0098: the backend profile that drove the CURRENT drive (absent = the built-in passthrough)
    *  and the model the session itself reported — the pane meta's facts. Replaced by every `started`
-   *  (a new drive is its own evidence; an absent fact clears, never a stale claim). */
+   *  (a new drive is its own evidence; an absent fact clears, never a stale claim).
+   *  WO-0104: `driveVendor` joins them — the resolved route's vendor id (absent = the built-in
+   *  adapter), the same replaced-by-started rule. */
   driveProfile?: string;
+  driveVendor?: string;
   reportedModel?: string;
   /** WO-0098: the dangling-profile refusal's facts when the error IS one (the `lastRefusal`
-   *  discriminator pattern); cleared by `started`. */
+   *  discriminator pattern); cleared by `started`. WO-0104: `lastVendorRefusal` — the same
+   *  pattern for the unwired-vendor refusal. */
   lastProfileRefusal?: ProfileRefusal;
+  lastVendorRefusal?: VendorRefusal;
 }
 
 export const initialSessionState: LiveSessionState = {
@@ -665,7 +692,7 @@ export const initialSessionState: LiveSessionState = {
  *  row never re-seeds it — the operator's Durdur is the last real event and raises the stopped pane,
  *  not a limit card; the stamp stays in the column for the ledger. Pure; empty input → the initial state. */
 export function seedLiveState(
-  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes' | 'limitResetAt' | 'profile' | 'reportedModel'>,
+  session: Pick<SessionRef, 'transcript' | 'cost' | 'providerSessionId' | 'status' | 'pendingNotes' | 'limitResetAt' | 'profile' | 'reportedModel' | 'vendor'>,
   asks: PermissionAsk[] = [],
 ): LiveSessionState {
   if (!session.transcript.length && !session.cost && !session.providerSessionId && asks.length === 0 && session.status === 'none') {
@@ -680,6 +707,7 @@ export function seedLiveState(
     ...(session.cost ? { cost: session.cost } : {}),
     ...(session.providerSessionId ? { sessionId: session.providerSessionId } : {}),
     ...(session.profile ? { driveProfile: session.profile } : {}),
+    ...(session.vendor ? { driveVendor: session.vendor } : {}),
     ...(session.reportedModel ? { reportedModel: session.reportedModel } : {}),
     ...(session.limitResetAt && session.status !== 'stopped'
       ? { status: 'error' as const, lastLimit: { resetAt: session.limitResetAt } }
@@ -705,8 +733,10 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         lastLimit: undefined,
         contextFeed: undefined,
         driveProfile: event.profile,
+        driveVendor: event.vendor,
         reportedModel: event.model,
         lastProfileRefusal: undefined,
+        lastVendorRefusal: undefined,
         entries: [...state.entries, { speaker: 'note', kind: 'session_started', ...(event.at ? { detail: event.at } : {}) }],
         ...(event.at ? { lastLifeAt: event.at, lastProgressAt: event.at } : {}),
       };
@@ -912,6 +942,7 @@ export function foldSessionEvent(state: LiveSessionState, event: RunnerEvent): L
         ...(event.refusal ? { lastRefusal: event.refusal } : {}),
         ...(event.limit ? { lastLimit: event.limit } : {}),
         ...(event.profileRefusal ? { lastProfileRefusal: event.profileRefusal } : {}),
+        ...(event.vendorRefusal ? { lastVendorRefusal: event.vendorRefusal } : {}),
       };
   }
 }

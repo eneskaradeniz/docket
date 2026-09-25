@@ -5,6 +5,7 @@ import type { SessionOwner, SessionStore } from '../session-store';
 import type { DraftDriveInput, DriveInput, PermissionDecision, RunnerEvent, SessionRunner, WoDriveInput } from '../runner';
 import type { CostSummary, WorkOrderId, WorkspaceId } from '../types';
 import type { ProfileResolution } from '../backend-profile';
+import type { DriverRouteResolution } from '../driver-route';
 
 // WO-0023 — the drive loop, tested with a FakeRunner + FakeStore (the codebase's first port fakes). No SDK,
 // no SQLite, no agent. This is the testability the loop never had while it lived inline in electron/main.ts.
@@ -124,6 +125,8 @@ function fakeStore(
     draftPrompt?: string;
     draftBudgetBlock?: { observedUsd: number; capUsd: number };
     profile?: ProfileResolution; // WO-0098: the store's backend-profile resolution (absent → the built-in)
+    vendor?: string; // WO-0104: the route's vendor half (absent → the built-in adapter)
+    vendorSource?: 'wo' | 'workspace' | 'role'; // WO-0104: where the vendor reference was written
   } = {},
 ) {
   const calls: FakeStoreCalls[] = [];
@@ -144,11 +147,14 @@ function fakeStore(
     flowModeFor: () => opts.flowMode ?? 'auto',
     budgetBlockFor: () => opts.budgetBlock,
     budgetBlockForDraft: () => opts.draftBudgetBlock,
-    // WO-0098: called unconditionally (the budget-gate clause) — the owner is recorded so the
-    // draft-rides-its-workspace pin can see which key the pipeline asked with.
-    backendProfileFor: (owner: unknown) => {
-      calls.push({ method: 'backendProfileFor', args: [owner] });
-      return opts.profile ?? { kind: 'builtin' };
+    // WO-0098/WO-0104: called unconditionally (the budget-gate clause) — the owner+role pair is
+    // recorded so the draft-rides-its-workspace and role-asks pins can see what the pipeline asked with.
+    driverRouteFor: (owner: unknown, role: unknown) => {
+      calls.push({ method: 'driverRouteFor', args: [owner, role] });
+      return {
+        ...(opts.vendor !== undefined ? { vendor: opts.vendor, ...(opts.vendorSource !== undefined ? { vendorSource: opts.vendorSource } : {}) } : {}),
+        profile: opts.profile ?? { kind: 'builtin' },
+      };
     },
     roadmapDraftPromptFor: (wsId: unknown, goalNote: unknown, docPaths: unknown, freeExplore?: unknown) => {
       calls.push({ method: 'roadmapDraftPromptFor', args: [wsId, goalNote, docPaths, freeExplore] });
@@ -1522,8 +1528,92 @@ describe('backend profiles — the pipeline gate + the session evidence (WO-0098
     const fs = fakeStore({}, true, { draftPrompt: 'draft it', profile: { kind: 'profile', profile: GLM, source: 'workspace' } });
     const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
     await collect(p, draftDrive());
-    expect(findCall(fs.calls, 'backendProfileFor')?.args[0]).toEqual({ kind: 'draft', workspaceId: WS });
+    expect(findCall(fs.calls, 'driverRouteFor')?.args[0]).toEqual({ kind: 'draft', workspaceId: WS });
     expect(fr.drivenInputs[0]?.profile?.name).toBe('GLM');
+  });
+});
+
+describe('the driver route — the vendor axis (WO-0104)', () => {
+  it('a WIRED vendor passes the gate, rides the spawn input, stamps the `started` event and every record', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { vendor: 'vend-x', vendorSource: 'role' });
+    const seen: string[] = [];
+    const p = createPipeline({
+      runner: fr.runner,
+      store: fs.store,
+      permission: autoAllowPolicy(),
+      vendors: () => new Set(['vend-x']),
+    });
+    const events = await collect(p, planDrive());
+    // the runner factory contract is pinned by the driven input: the spawn carries the vendor
+    expect(fr.drivenInputs[0]?.vendor).toBe('vend-x');
+    // the started event carries the stamp beside the profile (never doubling the transcript note)
+    expect(events[0]).toMatchObject({ kind: 'started', vendor: 'vend-x' });
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)?.args[0] as { vendor?: string | null };
+    expect(last.vendor).toBe('vend-x');
+    expect(seen).toEqual([]); // (no factory injected — the single-runner transport)
+  });
+
+  it('an UNWIRED vendor REFUSES the drive before the runner spawns, naming it and where it was written', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { vendor: 'ghost', vendorSource: 'wo' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy(), vendors: () => new Set(['vend-x']) });
+    const events = await collect(p, planDrive());
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: 'error', vendorRefusal: { vendor: 'ghost', source: 'wo' } });
+    expect((events[0] as { message: string }).message).toContain('ghost');
+    expect(fr.drivenInputs).toHaveLength(0);
+    expect(methods(fs.calls)).not.toContain('recordSession');
+  });
+
+  it('no injected registry = nothing but the built-in is wired (an explicit vendor refuses)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { vendor: 'vend-x', vendorSource: 'role' });
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy() });
+    const events = await collect(p, planDrive());
+    expect(events[0]).toMatchObject({ kind: 'error', vendorRefusal: { vendor: 'vend-x', source: 'role' } });
+    expect(fr.drivenInputs).toHaveLength(0);
+  });
+
+  it('the budget gate still outranks the vendor gate; a host-supplied vendor is never honored', async () => {
+    const fs = fakeStore({ architect: 'plan it' }, true, { budgetBlock: { observedUsd: 5, capUsd: 4 }, vendor: 'ghost' });
+    const p = createPipeline({ runner: fakeRunner([]).runner, store: fs.store, permission: autoAllowPolicy(), vendors: () => new Set(['vend-x']) });
+    const events = await collect(p, planDrive());
+    expect((events[0] as { message: string }).message).toMatch(/budget cap met/);
+    // the sneaky-host pin: a renderer-supplied vendor on the input is overwritten by the route's own
+    const fr2 = fakeRunner([started(), done()]);
+    const fs2 = fakeStore({ architect: 'plan it' }, true, { vendor: 'vend-x' });
+    const p2 = createPipeline({ runner: fr2.runner, store: fs2.store, permission: autoAllowPolicy(), vendors: () => new Set(['vend-x']) });
+    await collect(p2, planDrive({ vendor: 'ghost' }));
+    expect(fr2.drivenInputs[0]?.vendor).toBe('vend-x');
+  });
+
+  it('the runner FACTORY receives the route (the composition root picks the adapter from it)', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true, { vendor: 'vend-x', vendorSource: 'workspace' });
+    const routes: (DriverRouteResolution | undefined)[] = [];
+    const p = createPipeline({
+      runners: (_owner, route) => {
+        routes.push(route);
+        return fr.runner;
+      },
+      store: fs.store,
+      permission: autoAllowPolicy(),
+      vendors: () => new Set(['vend-x']),
+    });
+    await collect(p, planDrive());
+    expect(routes).toEqual([{ vendor: 'vend-x', vendorSource: 'workspace', profile: { kind: 'builtin' } }]);
+  });
+
+  it('the built-in route spawns byte-identical: no vendor key on the input, no vendorRefusal, no stamp', async () => {
+    const fr = fakeRunner([started(), done()]);
+    const fs = fakeStore({ architect: 'plan it' }, true);
+    const p = createPipeline({ runner: fr.runner, store: fs.store, permission: autoAllowPolicy(), vendors: () => new Set(['vend-x']) });
+    const events = await collect(p, planDrive());
+    expect('vendor' in (fr.drivenInputs[0] ?? {})).toBe(false);
+    expect(events[0]).not.toHaveProperty('vendor');
+    const last = fs.calls.filter((c) => c.method === 'recordSession').at(-1)?.args[0] as { vendor?: string | null };
+    expect(last.vendor).toBe(null); // the built-in CLEAR (never a stale claim)
   });
 });
 

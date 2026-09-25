@@ -40,6 +40,7 @@ export function lampClass(tone: LampTone, breathe = false): string {
 export function usePaneErrorText(state: LiveSessionState): string {
   const { PROVIDER_ERROR_LABELS, UI } = useLabels();
   if (state.lastProfileRefusal) return UI.profileRefusedTitle(state.lastProfileRefusal.name, state.lastProfileRefusal.source);
+  if (state.lastVendorRefusal) return UI.vendorRefusedTitle(state.lastVendorRefusal.vendor, state.lastVendorRefusal.source); // WO-0104
   return state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : (state.lastError ?? UI.driveStreamCrashed);
 }
 

@@ -9,7 +9,7 @@ import { homedir, networkInterfaces } from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { checkProvider, createRunner, modelOptions, providerDisplayName } from '../src/adapters/runner';
+import { checkProvider, createRunner, modelOptions, providerDisplayName, providerId } from '../src/adapters/runner';
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
 import { carriedLine, gitDiff, gitProcessRunner, gitStatus, unifiedPatchToDiff } from '../src/adapters/git-console';
@@ -647,9 +647,13 @@ ipcMain.handle('docket:settings:set-models', (_e, models: RoleModels | undefined
 // WO-0070: the whole-text prompt-template overrides — undefined (no row / clear-all) survives the clone.
 ipcMain.handle('docket:settings:get-prompt-overrides', () => store.getPromptOverrides());
 ipcMain.handle('docket:settings:set-prompt-overrides', (_e, overrides: PromptOverrides | undefined) => store.setPromptOverrides(overrides));
-ipcMain.handle('docket:settings:model-options', () => modelOptions());
+// WO-0104: vendor-scoped — the built-in adapter's tiers when no vendor names one; an UNKNOWN id
+// answers [] (honestly absent — never the built-in's tiers wearing another vendor's name).
+ipcMain.handle('docket:settings:model-options', (_e, vendor?: string) =>
+  vendor === undefined || vendor === providerId() ? modelOptions() : []);
 // WO-0059 rev 4: the status line's subject name — provider vocabulary crosses as DATA (c1).
-ipcMain.handle('docket:settings:provider-name', () => providerDisplayName());
+ipcMain.handle('docket:settings:provider-name', (_e, vendor?: string) =>
+  vendor === undefined || vendor === providerId() ? providerDisplayName() : '');
 // WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
 ipcMain.handle('docket:settings:get-docs-root', (_e, workspaceId: WorkspaceId) => store.getDocsRoot(workspaceId));
 ipcMain.handle('docket:settings:set-docs-root', (_e, workspaceId: WorkspaceId, root: string | undefined) => store.setDocsRoot(workspaceId, root));
@@ -674,9 +678,12 @@ ipcMain.handle('docket:settings:check-provider', async (_e, profileName?: string
 // validates (a secret-looking pair refuses) and the pipeline resolves at spawn time.
 ipcMain.handle('docket:settings:get-backend-profiles', () => store.getBackendProfiles());
 ipcMain.handle('docket:settings:set-backend-profiles', (_e, profiles: BackendProfile[]) => store.setBackendProfiles(profiles));
-ipcMain.handle('docket:settings:get-workspace-profile', (_e, workspaceId: WorkspaceId) => store.getWorkspaceProfile(workspaceId));
-ipcMain.handle('docket:settings:set-workspace-profile', (_e, workspaceId: WorkspaceId, name: string | undefined) =>
-  store.setWorkspaceProfile(workspaceId, name),
+// WO-0104: the workspace's default DRIVER ROUTE (vendor + profile, the `driver:<wsId>` row).
+ipcMain.handle('docket:settings:get-workspace-driver', (_e, workspaceId: WorkspaceId) => store.getWorkspaceDriver(workspaceId));
+ipcMain.handle(
+  'docket:settings:set-workspace-driver',
+  (_e, workspaceId: WorkspaceId, route: { vendor?: string; profile?: string } | undefined) =>
+    store.setWorkspaceDriver(workspaceId, route),
 );
 
 // --- Folder picker (WO-0014): native dialog, main-only ---
@@ -716,6 +723,10 @@ ipcMain.handle('docket:list-decision-docs', (_e, workspaceId: WorkspaceId) => st
 // WO-0088: ONE runner INSTANCE per drive (the adapter's per-instance singleton state holds exactly
 // one drive; N instances = N concurrent drives; the SessionRunner port is unchanged — ADR-0014).
 const makeRunner = (): E2eRunner | ReturnType<typeof createRunner> => (process.env.DOCKET_E2E ? createE2eRunner() : createRunner());
+// WO-0104 (Faz A): the vendor REGISTRY — the one-entry shape the phases after this fill in. The
+// built-in adapter's id is the adapter's own constant (vendor vocabulary is minted adapter-side,
+// ADR-0006); a route naming anything else was already refused by the pipeline's gate.
+const WIRED_VENDORS: ReadonlySet<string> = new Set([providerId()]);
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 // WO-0088: the pipeline drives a FRESH runner per owner (the factory below) and keys its steer/
@@ -724,8 +735,15 @@ const pipeline = createPipeline({
   // The factory is the ONE birthplace of a drive's runner — it registers the instance under the
   // owner tag as it mints it, so the E2E emit routing and the pending-asks aggregate see exactly
   // the instance the pipeline drives (a second creation site would orphan the stream).
-  runners: (owner) => {
+  // WO-0104: the factory RECEIVES the drive's resolved route — the vendor picks the adapter
+  // (undefined = the built-in; the gate above already refused any id outside WIRED_VENDORS, so
+  // an unservable route here is a wiring bug — refusing loudly beats a wrong-backend spawn).
+  vendors: () => WIRED_VENDORS,
+  runners: (owner, route) => {
     const tag = owner.kind === 'draft' ? `ws:${owner.workspaceId}` : `wo:${owner.workOrderId}`;
+    if (route.vendor !== undefined && route.vendor !== providerId()) {
+      throw new Error(`vendor "${route.vendor}" passed the gate but has no wired adapter — a registry bug`);
+    }
     const r = makeRunner();
     liveRunnerInstances.set(tag, r);
     return r;
@@ -1042,8 +1060,10 @@ async function resolveDriveInput(input: DriveInput): Promise<DriveInput> {
   // WO-0059 rev 2: the PER-ROLE model preference resolves at spawn time — the drive's own role
   // picks its row (the draft arm is an architect session and inherits the architect's). A
   // mid-life settings change hits the next drive, never a running one.
+  // WO-0104: the model is the per-role ROUTE's model half (a bare pre-WO-0104 string row reads
+  // as {model} at the store) — the vendor/profile halves resolve pipeline-side.
   const models = await store.getModels();
-  const model = models?.[input.role];
+  const model = models?.[input.role]?.model;
   return {
     ...input,
     cwd: input.cwd ?? store.driveCwd(input),

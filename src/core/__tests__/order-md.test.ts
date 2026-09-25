@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt, withOverride } from '../order-md';
+import { applyOrderMdEdits, architectPrompt, architectReviewPrompt, cwdOverrideIsAbsolute, implementerPrompt, parseOrderMd, stripUnfilledSections, verifierPrompt, withOverride } from '../order-md';
 import type { StepSpec } from '../types';
 
 // Mirrors the document WO-0015's buildOrderMd produces (front matter + Objective section).
@@ -365,5 +365,22 @@ describe('parseOrderMd — the front-matter profile key (WO-0098)', () => {
   it('absent → undefined (the workspace default stands)', () => {
     const md = ['---', 'id: WO-0098', 'title: Profiller', '---', '', '# WO-0098'].join('\n');
     expect(parseOrderMd(md).profile).toBeUndefined();
+  });
+});
+
+// ===== WO-0104 — the per-WO vendor-adapter override (the profile idiom verbatim) =====
+describe('parseOrderMd + applyOrderMdEdits — the front-matter vendor key (WO-0104)', () => {
+  const base = ['---', 'id: WO-0104', 'title: Sağlayıcı', '---', '', '# WO-0104'].join('\n');
+  it('carries the vendor id verbatim; absent → undefined', () => {
+    expect(parseOrderMd(base).vendor).toBeUndefined();
+    expect(parseOrderMd(base.replace('title: Sağlayıcı', 'title: Sağlayıcı\nvendor: vend-x')).vendor).toBe('vend-x');
+  });
+
+  it('the edit patch sets and drops it like profile (string sets, null drops, undefined untouched)', () => {
+    const withVendor = applyOrderMdEdits(base, { vendor: 'vend-x' });
+    expect(withVendor).toContain('vendor: vend-x');
+    expect(parseOrderMd(withVendor).vendor).toBe('vend-x');
+    expect(applyOrderMdEdits(withVendor, { vendor: null })).not.toContain('vendor:');
+    expect(applyOrderMdEdits(withVendor, {})).toBe(withVendor); // silence = untouched
   });
 });

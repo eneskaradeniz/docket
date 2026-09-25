@@ -92,6 +92,10 @@ export interface OrderMdInput {
   // WO-0098: the backend-profile override — → front-matter `profile:`; emitted only when set
   // (silence IS the workspace default, the cwd idiom).
   profile?: string;
+  // WO-0104: the vendor-adapter override — → front-matter `vendor:`; emitted only when set.
+  // A vendor id is DATA (adapter-minted); no validation here — the pipeline's wired-set gate
+  // refuses a dangling one at spawn time.
+  vendor?: string;
 }
 
 // Compose the order.md body. Follows docs/work-orders/TEMPLATE.md + the WO-0013/0014 front-matter
@@ -120,7 +124,7 @@ status: draft
 mode: plan
 review: light
 review_mode: ${input.reviewMode}
-${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.issueRef ? `issue: ${input.issueRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}${input.checkout === true ? `checkout: true\n` : ''}${input.profile ? `profile: ${input.profile}\n` : ''}tracks:
+${input.flowMode === 'manual' ? `flow_mode: manual\n` : ''}${input.permissionRule ? `permission_rule: ${input.permissionRule}\n` : ''}${input.taskRef ? `task: ${input.taskRef}\n` : ''}${input.issueRef ? `issue: ${input.issueRef}\n` : ''}${input.cwd ? `cwd: ${input.cwd}\n` : ''}${input.checkout === true ? `checkout: true\n` : ''}${input.profile ? `profile: ${input.profile}\n` : ''}${input.vendor ? `vendor: ${input.vendor}\n` : ''}tracks:
 ${tracks}
 ---
 

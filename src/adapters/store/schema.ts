@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS session (
                             -- which keeps: it is the last observation). NULL = no limit stop.
   backend_profile TEXT,     -- WO-0098: the backend profile NAME that drove the latest leg (NULL = the built-in
                             -- passthrough); CLEARED by a passthrough leg — never a stale claim
+  driver_vendor TEXT,       -- WO-0104: the resolved driver route's VENDOR id (adapter-minted DATA; NULL = the
+                            -- built-in adapter); CLEARED by a built-in leg — the backend_profile rule
   reported_model TEXT       -- WO-0098: the model the session itself REPORTED at open (DATA, verbatim) — the
                             -- evidence of which backend the spawn reached, never a config echo
 );

@@ -8,7 +8,8 @@
 // is a small, NON-SECRET env map, and the credentials stay where the operator's CLI login keeps
 // them. This module is the rules and nothing else: the no-secret guard, the list validation (an
 // operator write refuses loudly), the fail-open read (a corrupt or leaky row never reaches a
-// spawn), the WO → workspace → built-in resolution, and the env-text codec the settings form
+// spawn), the WO → workspace → role → built-in resolution (WO-0104 widened WO-0098's chain
+// with the per-role route level), and the env-text codec the settings form
 // speaks. No I/O, no display strings, no vendor names.
 
 /** The built-in passthrough's reference key — the first profile, always present, never stored:
@@ -123,22 +124,35 @@ export function normalizeProfiles(raw: unknown): BackendProfile[] {
 
 /** Where a drive's profile came from — the resolution the pipeline gates on. `builtin` is the
  *  passthrough (no env injected); `missing` is a DANGLING reference (a renamed or deleted
- *  profile): the drive is refused, never silently spawned on another backend. */
+ *  profile): the drive is refused, never silently spawned on another backend. WO-0104 adds the
+ *  `'role'` source — the per-role route's profile is the chain's THIRD level (the WO-0098
+ *  two-level chain, widened). */
 export type ProfileResolution =
   | { kind: 'builtin' }
-  | { kind: 'profile'; profile: BackendProfile; source: 'wo' | 'workspace' }
-  | { kind: 'missing'; name: string; source: 'wo' | 'workspace' };
+  | { kind: 'profile'; profile: BackendProfile; source: 'wo' | 'workspace' | 'role' }
+  | { kind: 'missing'; name: string; source: 'wo' | 'workspace' | 'role' };
 
-/** WO override (order.md `profile:`) → workspace default (`profile:<wsId>`) → the built-in.
+/** WO override (order.md `profile:`) → workspace default (`driver:<wsId>`'s profile half) →
+ *  the role-level account default (the per-role route, WO-0104) → the built-in.
  *  A reference to `default` pins the built-in explicitly. Blank references are absent. */
-export function resolveProfile(input: { profiles: readonly BackendProfile[]; workspaceDefault?: string; woOverride?: string }): ProfileResolution {
-  const pick = (ref: string | undefined, source: 'wo' | 'workspace'): ProfileResolution | undefined => {
+export function resolveProfile(input: {
+  profiles: readonly BackendProfile[];
+  workspaceDefault?: string;
+  woOverride?: string;
+  roleProfile?: string;
+}): ProfileResolution {
+  const pick = (ref: string | undefined, source: 'wo' | 'workspace' | 'role'): ProfileResolution | undefined => {
     if (ref === undefined || ref.trim() === '') return undefined;
     if (sameProfileName(ref, DEFAULT_PROFILE)) return { kind: 'builtin' };
     const profile = input.profiles.find((p) => sameProfileName(p.name, ref));
     return profile ? { kind: 'profile', profile, source } : { kind: 'missing', name: ref.trim(), source };
   };
-  return pick(input.woOverride, 'wo') ?? pick(input.workspaceDefault, 'workspace') ?? { kind: 'builtin' };
+  return (
+    pick(input.woOverride, 'wo')
+    ?? pick(input.workspaceDefault, 'workspace')
+    ?? pick(input.roleProfile, 'role')
+    ?? { kind: 'builtin' }
+  );
 }
 
 /** The env map the adapter composes over the inherited environment — undefined for the built-in

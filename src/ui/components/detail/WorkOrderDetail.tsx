@@ -976,7 +976,9 @@ export function WorkOrderDetail({
           <p className="readout text-error">
             {state.lastProfileRefusal
               ? UI.profileRefusedTitle(state.lastProfileRefusal.name, state.lastProfileRefusal.source) // WO-0098
-              : state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError ? UI.failTitle : UI.driveStreamCrashed}
+              : state.lastVendorRefusal
+                ? UI.vendorRefusedTitle(state.lastVendorRefusal.vendor, state.lastVendorRefusal.source) // WO-0104
+                : state.lastErrorCode ? PROVIDER_ERROR_LABELS[state.lastErrorCode] : state.lastError ? UI.failTitle : UI.driveStreamCrashed}
           </p>
           <p className="mt-1 text-[12px] text-inkdim">{UI.failSpent(state.cost.usd > 0 ? formatCost(state.cost) : formatUsd(0))}</p>
           <div className="mt-1.5 flex items-center gap-3">

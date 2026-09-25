@@ -542,8 +542,11 @@ export const UI = {
   wsProfileLabel: 'Backend',
   woProfileLabel: 'Backend (optional)',
   woProfileInherit: "The workspace's",
-  profileRefusedTitle: (name: string, source: 'wo' | 'workspace'): string =>
-    `No «${name}» backend — fix the ${source === 'wo' ? "work order's" : "workspace's"} backend choice`,
+  profileRefusedTitle: (name: string, source: 'wo' | 'workspace' | 'role'): string =>
+    `No «${name}» backend — fix the ${source === 'wo' ? "work order's" : source === 'workspace' ? "workspace's" : "role's"} backend choice`,
+  // WO-0104: the vendor axis (the Genel presence line's subject word).
+  vendorRefusedTitle: (vendor: string, source: 'wo' | 'workspace' | 'role'): string =>
+    `The «${vendor}» provider is not wired — fix the ${source === 'wo' ? "work order's" : source === 'workspace' ? "workspace's" : "role's"} provider choice`,
   reviewHeader: 'Architect review',
   reviewHint: "The architect is reviewing this step's report…",
   verdictCardProceedTitle: 'The architect said proceed',

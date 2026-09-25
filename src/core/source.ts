@@ -119,6 +119,10 @@ export interface CreateWorkOrderInput {
   // idiom). A profile NAME (operator vocabulary); absent → the workspace default. The store refuses a
   // name no configured profile carries (`default`, the built-in, is always legal).
   profile?: string;
+  // WO-0104: the work order's vendor-adapter override — → order.md front-matter `vendor:`. A vendor
+  // id (adapter-minted DATA, verbatim); no store-side validation — the pipeline's wired-set gate
+  // refuses a dangling one at spawn time (the drive-time refusal, never a write-time guess).
+  vendor?: string;
 }
 
 /** The editable-after-creation fields (WO-0031c): the operator may retitle/redescribe a work order and
@@ -133,6 +137,7 @@ export interface UpdateWorkOrderInput {
   cwd?: string | null; // → order.md front-matter cwd (WO-0088): string sets the working copy, null drops it
   checkout?: boolean | null; // → order.md front-matter checkout (WO-0093): true sets, false/null drops (silence IS disabled)
   profile?: string | null; // → order.md front-matter profile (WO-0098): string sets the override, null drops it
+  vendor?: string | null; // → order.md front-matter vendor (WO-0104): the profile idiom verbatim
 }
 
 export interface WorkOrderSource {
