@@ -808,11 +808,16 @@ phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — 
       authenticated one-command spot-check), the def behind CODEX_PROBE_PASSED (the wiring
       gate), 13 def tests, checkProvider's vendor axis. 1480 unit tests, all checks clean;
       TD-067 (token-only spend invisible to the budget cap) recorded.
-- [ ] **WO-0107** — Faz D (#108): agent auto-discovery — PATH plus well-known toolchain dirs
+- [x] **WO-0107** — Faz D (#108): agent auto-discovery — PATH plus well-known toolchain dirs
       (Homebrew, `~/.local/bin`, `~/.bun/bin`, node-version-manager dirs, npm prefixes — the
       GUI-launched PATH is thinner than a login shell's), a per-vendor `<ID>_BIN`-style override,
       results streamed as each probe finishes. The onboarding wizard's visuals stay Figma-gated
       (2026-10-01); the detection engine + its first surface land here.
+      Merged PR #113: detectVendors (streamed per vendor, override→PATH→well-known, X-bit
+      enforced, honest null), the shared candidatesOf (spawns honor CODEX_BIN alike), the
+      VendorInfo port read (wired + probe-pending rows with per-machine detection), 10 tests
+      against real temp dirs; the wizard itself stays the Figma-gated follow-up. TD-068
+      (win32 well-known set absent) recorded.
 - [ ] **WO-0108** — Faz E (#109): the settings surface — the Modeller rows gain a driver selector
       (vendor · profile) beside the model tier, the Sürücüler screen groups by vendor with a
       "henüz değil" group, the workspace override carries the vendor, order.md `vendor:` editable

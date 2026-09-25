@@ -80,6 +80,22 @@ export interface CliRunnerDef {
   };
 }
 
+/** The per-vendor binary-override env key (`codex` → `CODEX_BIN`) — the escape hatch when
+ *  detection misses (the open-design lesson): a full path to the binary, honored by BOTH the
+ *  spawn path and discovery. */
+export function binEnvKey(id: string): string {
+  return `${id.toUpperCase().replace(/-/g, '_')}_BIN`;
+}
+
+/** The binary try-order for spawns: the `<ID>_BIN` override first (when set), then the def's
+ *  own bin and fallbacks (names a spawn resolves through PATH). */
+export function candidatesOf(def: Pick<CliRunnerDef, 'id' | 'bin' | 'fallbackBins'>): string[] {
+  const override = process.env[binEnvKey(def.id)];
+  return [override !== undefined && override !== '' ? override : undefined, def.bin, ...(def.fallbackBins ?? [])].filter(
+    (b): b is string => b !== undefined,
+  );
+}
+
 /** Decode one NDJSON line safely — garbage/blank lines decode undefined, never throw. */
 export function decodeJsonLine(line: string): Record<string, unknown> | undefined {
   const t = line.trim();

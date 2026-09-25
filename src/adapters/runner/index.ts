@@ -919,6 +919,12 @@ export function providerId(): string {
   return 'claude';
 }
 
+/** WO-0107 — the adapter's own BINARY name (the SDK spawns it internally; auto-discovery
+ *  probes for it). Adapter-minted DATA, the providerId posture. */
+export function providerBin(): string {
+  return 'claude';
+}
+
 /** Map a raw provider error string onto the neutral code. String matching is heuristic — the messages are
  *  the SDK's own (extracted from its bundle); unknown shapes return undefined (the UI shows the raw text). */
 export function classifyProviderError(message: string): ProviderErrorCode | undefined {
