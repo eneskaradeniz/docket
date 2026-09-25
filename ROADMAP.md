@@ -782,7 +782,7 @@ reference: one spawn call site + N vendor definition files); issues #105–#109 
 phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — one precedence chain
 (WO → workspace → role → built-in).
 
-- [ ] **WO-0104** — Faz A (#105): role → vendor routing. The per-role `RoleModels` widens into a
+- [x] **WO-0104** — Faz A (#105): role → vendor routing. The per-role `RoleModels` widens into a
       `{vendor, profile, model}` route resolved through the WO-0098 chain; order.md gains
       `vendor:`; the workspace default becomes the `driver:<wsId>` route row (legacy
       `profile:<wsId>` reads as its profile half); the pipeline gates an unwired vendor before
@@ -790,6 +790,8 @@ phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — 
       registry shape (one wired vendor today — the built-in SDK adapter; vendor ids minted
       adapter-side, ADR-0006 untouched). Session evidence gains `driver_vendor`. No new vendor,
       no UI beyond type-driven touch-ups — pure plumbing that de-risks everything after it.
+      Merged PR #110 (`a97083b`): 1451 unit tests, typecheck ×2/build/boundaries/contract clean,
+      E2E 99 specs green (one new: the unwired-vendor refusal + the localized line).
 - [ ] **WO-0105** — Faz B (#106): the generic CLI-spawn adapter. One adapter that spawns an
       arbitrary binary and parses its declared machine-readable stream, parametrized by a
       per-vendor definition (id, bin, args builder, auth probe, stream parser) — written once;
