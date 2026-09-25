@@ -792,11 +792,14 @@ phases. Three axes: vendor (new), profile (WO-0098), role→model (WO-0059) — 
       no UI beyond type-driven touch-ups — pure plumbing that de-risks everything after it.
       Merged PR #110 (`a97083b`): 1451 unit tests, typecheck ×2/build/boundaries/contract clean,
       E2E 99 specs green (one new: the unwired-vendor refusal + the localized line).
-- [ ] **WO-0105** — Faz B (#106): the generic CLI-spawn adapter. One adapter that spawns an
+- [x] **WO-0105** — Faz B (#106): the generic CLI-spawn adapter. One adapter that spawns an
       arbitrary binary and parses its declared machine-readable stream, parametrized by a
       per-vendor definition (id, bin, args builder, auth probe, stream parser) — written once;
       every subsequent vendor is a definition file, not a new adapter. Explicitly inside
       ADR-0014's line: a plain-stdout-only vendor is not a target (no terminal scraping).
+      Merged PR #111: 1467 unit tests (16 new engine tests against a scripted fake binary — a
+      real spawn, real signals), typecheck ×2/build/boundaries/contract clean, E2E untouched;
+      the ADR-0014 addendum (generic adapter + the sandbox-as-fence honesty note) landed with it.
 - [ ] **WO-0106** — Faz C (#107): the first real second vendor (Codex proposed), probed against
       the ADR-0014 bar (machine-readable mode, cost on the terminating message, permission/
       plan-gate signal, quota windows) BEFORE a definition + wiring lands — the WO-0095 agy

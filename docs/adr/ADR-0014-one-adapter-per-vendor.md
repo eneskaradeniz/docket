@@ -67,3 +67,35 @@ is reading the raw transcript, not scraping a pty.
   shim): premature — it would design for vendors that do not exist and constrain the ones that do.
   The port absorbs what Docket needs; a shared abstraction can be extracted when there are two
   real adapters to compare.
+
+## Addendum — the generic CLI-spawn adapter (WO-0105, 2026-09-25)
+
+**Status: accepted · Extends the decision to the "or on the CLI's stream-json mode" arm.**
+
+The decision named two machine-readable foundations (SDK, stream-json) but only the SDK arm
+existed. The multi-CLI research (`docs/research/2026-09-25-multi-cli-provider-architecture.md`,
+fed by reading nexu-io/open-design) settled the second arm's shape, and this addendum records it:
+
+- **One generic spawn adapter, N definition files.** `src/adapters/cli-runner/` owns the PROCESS
+  (spawn, stdin prompt, line-split stdout, signals, exit handling); a `CliRunnerDef` owns every
+  vendor vocabulary item (bin, flag grammar, the NDJSON line parser, the error classifier). A
+  new vendor is a definition file, never a new adapter — the open-design lesson (26 CLIs, one
+  spawn call site), narrowed to Docket's port.
+- **The port is honored honestly, not completely.** A CLI `exec` stream has no permission
+  callback: `decide`/`pendingAsks` are no-ops on this adapter and no ask ever arises. The
+  per-vendor SANDBOX arguments the def declares per role stand where the SDK's `canUseTool`
+  cannot. This is a COARSER fence than ADR-0002's write-scope (a sandbox cannot distinguish the
+  decision store from the repo) — which is exactly why each vendor is PROBED before it is wired
+  (the WO-0095 posture, Faz C's gate): the probe's findings document the residual surface a
+  def's sandbox leaves open, and a vendor whose residual surface is unacceptable stays a named
+  "henüz değil".
+- **Machine-readable stays the hard line.** The engine parses NDJSON event lines through the
+  def's parser; a plain-stdout vendor is not a target (the rejected alternative, restated).
+  Cost honesty rides the WO-0026/TD-030 rule: the parser maps what the vendor actually reports
+  (tokens without a price carry `usd: 0` beside real token counts — the ledger's `hasUnknown`
+  arm; a turn with nothing observed carries no event), a clean exit with no terminal event is an
+  ERROR naming exactly that, never a fabricated `turn_complete`, and an interrupt-requested exit
+  closes CALM (`interrupted`, WO-0039).
+- **The composition root's registry selects.** `VENDOR_REGISTRY` in `electron/main.ts` is the one
+  list of wired vendors (id + adapter birthplace + per-vendor modelOptions/providerName); the
+  pipeline's WO-0104 vendor gate refuses any route naming an id outside it.

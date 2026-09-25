@@ -649,11 +649,9 @@ ipcMain.handle('docket:settings:get-prompt-overrides', () => store.getPromptOver
 ipcMain.handle('docket:settings:set-prompt-overrides', (_e, overrides: PromptOverrides | undefined) => store.setPromptOverrides(overrides));
 // WO-0104: vendor-scoped — the built-in adapter's tiers when no vendor names one; an UNKNOWN id
 // answers [] (honestly absent — never the built-in's tiers wearing another vendor's name).
-ipcMain.handle('docket:settings:model-options', (_e, vendor?: string) =>
-  vendor === undefined || vendor === providerId() ? modelOptions() : []);
+ipcMain.handle('docket:settings:model-options', (_e, vendor?: string) => vendorEntry(vendor)?.modelOptions() ?? []);
 // WO-0059 rev 4: the status line's subject name — provider vocabulary crosses as DATA (c1).
-ipcMain.handle('docket:settings:provider-name', (_e, vendor?: string) =>
-  vendor === undefined || vendor === providerId() ? providerDisplayName() : '');
+ipcMain.handle('docket:settings:provider-name', (_e, vendor?: string) => vendorEntry(vendor)?.providerName() ?? '');
 // WO-0047: the workspace's month-spend threshold — undefined (no threshold / clear) survives the clone.
 ipcMain.handle('docket:settings:get-docs-root', (_e, workspaceId: WorkspaceId) => store.getDocsRoot(workspaceId));
 ipcMain.handle('docket:settings:set-docs-root', (_e, workspaceId: WorkspaceId, root: string | undefined) => store.setDocsRoot(workspaceId, root));
@@ -723,10 +721,27 @@ ipcMain.handle('docket:list-decision-docs', (_e, workspaceId: WorkspaceId) => st
 // WO-0088: ONE runner INSTANCE per drive (the adapter's per-instance singleton state holds exactly
 // one drive; N instances = N concurrent drives; the SessionRunner port is unchanged — ADR-0014).
 const makeRunner = (): E2eRunner | ReturnType<typeof createRunner> => (process.env.DOCKET_E2E ? createE2eRunner() : createRunner());
-// WO-0104 (Faz A): the vendor REGISTRY — the one-entry shape the phases after this fill in. The
-// built-in adapter's id is the adapter's own constant (vendor vocabulary is minted adapter-side,
-// ADR-0006); a route naming anything else was already refused by the pipeline's gate.
-const WIRED_VENDORS: ReadonlySet<string> = new Set([providerId()]);
+// WO-0104/WO-0105 (Faz A+B): the vendor REGISTRY — every wired vendor adapter, one entry each.
+// The built-in SDK adapter is Faz A's single entry; Faz C's probed CLI vendors join here as
+// createCliRunner(def) entries. Vendor vocabulary is minted adapter-side (ADR-0006); a route
+// naming anything outside this registry was already refused by the pipeline's gate.
+interface VendorEntry {
+  id: string;
+  create: () => SessionRunner;
+  modelOptions: () => string[];
+  providerName: () => string;
+}
+const VENDOR_REGISTRY: readonly VendorEntry[] = [
+  {
+    id: providerId(),
+    create: () => createRunner(),
+    modelOptions: () => modelOptions(),
+    providerName: () => providerDisplayName(),
+  },
+];
+const WIRED_VENDORS: ReadonlySet<string> = new Set(VENDOR_REGISTRY.map((e) => e.id));
+const vendorEntry = (vendor?: string): VendorEntry | undefined =>
+  vendor === undefined ? VENDOR_REGISTRY[0] : VENDOR_REGISTRY.find((e) => e.id === vendor);
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 // WO-0088: the pipeline drives a FRESH runner per owner (the factory below) and keys its steer/
@@ -735,16 +750,18 @@ const pipeline = createPipeline({
   // The factory is the ONE birthplace of a drive's runner — it registers the instance under the
   // owner tag as it mints it, so the E2E emit routing and the pending-asks aggregate see exactly
   // the instance the pipeline drives (a second creation site would orphan the stream).
-  // WO-0104: the factory RECEIVES the drive's resolved route — the vendor picks the adapter
-  // (undefined = the built-in; the gate above already refused any id outside WIRED_VENDORS, so
-  // an unservable route here is a wiring bug — refusing loudly beats a wrong-backend spawn).
+  // WO-0104/WO-0105: the factory RECEIVES the drive's resolved route — the vendor picks the
+  // adapter (undefined = the built-in; the gate above already refused any id outside the
+  // registry, so an unservable route here is a wiring bug — refusing loudly beats a
+  // wrong-backend spawn). The registry entry's create() is the ONE adapter birthplace.
   vendors: () => WIRED_VENDORS,
   runners: (owner, route) => {
     const tag = owner.kind === 'draft' ? `ws:${owner.workspaceId}` : `wo:${owner.workOrderId}`;
-    if (route.vendor !== undefined && route.vendor !== providerId()) {
-      throw new Error(`vendor "${route.vendor}" passed the gate but has no wired adapter — a registry bug`);
+    const entry = vendorEntry(route.vendor);
+    if (entry === undefined) {
+      throw new Error(`vendor "${route.vendor ?? '(built-in)'}" passed the gate but has no wired adapter — a registry bug`);
     }
-    const r = makeRunner();
+    const r = entry.id === providerId() ? makeRunner() : entry.create();
     liveRunnerInstances.set(tag, r);
     return r;
   },
