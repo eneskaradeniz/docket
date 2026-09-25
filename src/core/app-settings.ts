@@ -53,6 +53,19 @@ export type PromptKey = 'architect' | 'implementer' | 'verifier' | 'architectRev
  *  validates the content (the operator's text is the operator's text). */
 export type PromptOverrides = Partial<Record<PromptKey, string>>;
 
+/** WO-0107 (Faz D): one KNOWN vendor as the settings surface sees it — adapter DATA all the
+ *  way down (the id/name/models are minted adapter-side; `path` is THIS machine's detection,
+ *  null = not found — the honest absent). `wired` is whether a driver route naming it can run
+ *  today; a not-wired vendor carries its REASON in `status` («henüz değil» rows, ADR-0001). */
+export interface VendorInfo {
+  id: string;
+  name: string;
+  wired: boolean;
+  status: 'wired' | 'probe-pending';
+  models: string[];
+  path: string | null;
+}
+
 export interface AppSettings {
   /** The DEFAULT permission rule (WO-0031c): Settings holds only the default — each work order carries
    *  its own rule (order.md front-matter; changeable from the ask card). 'ask'/'auto' legacy values map
@@ -99,6 +112,10 @@ export interface AppSettings {
    *  per-key clear sends the object minus that key. The store normalizes shape (unknown keys and
    *  whitespace-only values dropped), never content. */
   setPromptOverrides(overrides: PromptOverrides | undefined): Promise<void>;
+  /** WO-0107 (Faz D): every KNOWN vendor — the wired registry entries plus the probe-pending
+   *  definition files — with this machine's detection result. The settings surface (Faz E)
+   *  groups by it; nothing here names a vendor in code (adapter DATA, the modelOptions rule). */
+  vendors(): Promise<VendorInfo[]>;
   /** The preset model ids the ADAPTER offers (the checkProvider pattern — provider vocabulary is
    *  minted adapter-side and crosses as DATA; ADR-0006 names the provider adapter as the one
    *  place). WO-0104: `vendor` scopes the question to one wired adapter; absent = the built-in.

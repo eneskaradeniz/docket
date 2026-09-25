@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput, WorkOrderSource } from '../src/core/source';
 import type { DriveInput, PermissionAsk, PermissionDecision, RunnerEvent } from '../src/core/runner';
-import type { AppSettings, Locale, PromptOverrides, RoleModels } from '../src/core/app-settings';
+import type { AppSettings, Locale, PromptOverrides, RoleModels, VendorInfo } from '../src/core/app-settings';
 import type { BackendProfile } from '../src/core/backend-profile';
 import type { RepoId, StepRole, WorkOrderId, WorkspaceId } from '../src/core/types';
 import type { ChromeNavigate } from '../src/core/tray-menu';
@@ -109,6 +109,9 @@ const settings: AppSettings = {
     ipcRenderer.invoke('docket:settings:set-prompt-overrides', overrides),
   // WO-0104: vendor-scoped (absent = the built-in adapter's tiers; an unknown id answers []).
   modelOptions: (vendor?: string): Promise<string[]> => ipcRenderer.invoke('docket:settings:model-options', vendor),
+  // WO-0107 (Faz D): the known-vendor read (the settings surface groups by it; the wizard
+  // consumes the same list when its Figma-gated visuals land).
+  vendors: (): Promise<VendorInfo[]> => ipcRenderer.invoke('docket:vendors:info'),
   // The workspace's month-spend threshold (WO-0047): undefined clears it (raise = permanent write).
   getDocsRoot: (workspaceId: WorkspaceId) => ipcRenderer.invoke('docket:settings:get-docs-root', workspaceId),
   setDocsRoot: (workspaceId: WorkspaceId, root: string | undefined) =>

@@ -22,6 +22,13 @@ import { isPlanDrive } from '../../core/runner';
 import type { DriveInput, RunnerEvent, SessionRunner } from '../../core/runner';
 import type { ProviderStatus } from '../../core/app-settings';
 import type { CliParseState, CliRunnerDef } from './def';
+import { candidatesOf } from './def';
+
+// WO-0107: discovery lives beside the defs (same vendor vocabulary home); re-exported so the
+// composition root imports the adapter surface from ONE place.
+export { detectVendors } from './discover';
+export type { VendorDetection } from './discover';
+export type { CliRunnerDef } from './def';
 
 // The push-queue shape the SDK adapter uses (src/adapters/runner): lets the exit path push
 // events into the drive() stream. Local copy — adapters do not import each other's internals.
@@ -48,11 +55,6 @@ class AsyncQueue<T> {
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return { next: () => this.next() };
   }
-}
-
-/** The spawned binary candidates, in try order (bin then fallbackBins). */
-function candidatesOf(def: CliRunnerDef): string[] {
-  return [def.bin, ...(def.fallbackBins ?? [])];
 }
 
 /** One parsed event batch → receive-stamped (events whose `at` is unset get the adapter's now —

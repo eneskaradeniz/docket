@@ -9,8 +9,9 @@ import { homedir, networkInterfaces } from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { checkProvider, createRunner, modelOptions, providerDisplayName, providerId } from '../src/adapters/runner';
-import { checkCliVendor, createCliRunner } from '../src/adapters/cli-runner';
+import { checkProvider, createRunner, modelOptions, providerBin, providerDisplayName, providerId } from '../src/adapters/runner';
+import { checkCliVendor, createCliRunner, detectVendors } from '../src/adapters/cli-runner';
+import type { CliRunnerDef } from '../src/adapters/cli-runner';
 import { CODEX_PROBE_PASSED, codexDef } from '../src/adapters/cli-runner/defs/codex';
 import { GitHubForge, parseRepoRemote } from '../src/adapters/forge/github';
 import { gitHealth } from '../src/adapters/health';
@@ -42,7 +43,7 @@ import {
   type RemoteServerDeps,
   type RemoteSettingsRead,
 } from '../src/core/remote';
-import type { Locale, PromptOverrides, ProviderStatus, RoleModels, Theme } from '../src/core/app-settings';
+import type { Locale, PromptOverrides, ProviderStatus, RoleModels, Theme, VendorInfo } from '../src/core/app-settings';
 import type { LimitWindow } from '../src/core/types';
 import { DEFAULT_PROFILE, sameProfileName, type BackendProfile } from '../src/core/backend-profile';
 import type { CreateWorkOrderInput, CreateWorkspaceInput, PermissionRule, RepoConnectionInput, UpdateWorkOrderInput } from '../src/core/source';
@@ -691,6 +692,36 @@ ipcMain.handle(
     store.setWorkspaceDriver(workspaceId, route),
 );
 
+// WO-0107 (Faz D): the known-vendor read — the wired registry + the probe-pending defs, each
+// with THIS machine's detection (PATH + the well-known toolchain dirs, detectVendors). The
+// surface (Faz E) groups by it; the onboarding wizard consumes the same list when its
+// Figma-gated visuals land.
+ipcMain.handle('docket:vendors:info', async (): Promise<VendorInfo[]> => {
+  const detections = await detectVendors([
+    { id: providerId(), bin: providerBin() },
+    ...KNOWN_VENDOR_DEFS.map((d) => ({ id: d.id, bin: d.bin, ...(d.fallbackBins ? { fallbackBins: d.fallbackBins } : {}) })),
+  ]);
+  const byId = new Map(detections.map((d) => [d.id, d.path]));
+  return [
+    ...VENDOR_REGISTRY.map((e) => ({
+      id: e.id,
+      name: e.providerName(),
+      wired: true,
+      status: 'wired' as const,
+      models: e.modelOptions(),
+      path: byId.get(e.id) ?? null,
+    })),
+    ...KNOWN_VENDOR_DEFS.filter((d) => !WIRED_VENDORS.has(d.id)).map((d) => ({
+      id: d.id,
+      name: d.displayName,
+      wired: false,
+      status: 'probe-pending' as const,
+      models: [...(d.modelOptions ?? [])],
+      path: byId.get(d.id) ?? null,
+    })),
+  ];
+});
+
 // --- Folder picker (WO-0014): native dialog, main-only ---
 ipcMain.handle('docket:pick-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
@@ -764,6 +795,9 @@ const VENDOR_REGISTRY: readonly VendorEntry[] = [
 const WIRED_VENDORS: ReadonlySet<string> = new Set(VENDOR_REGISTRY.map((e) => e.id));
 const vendorEntry = (vendor?: string): VendorEntry | undefined =>
   vendor === undefined ? VENDOR_REGISTRY[0] : VENDOR_REGISTRY.find((e) => e.id === vendor);
+// Faz D: every vendor DEFINITION file, wired or probe-pending — the settings surface's full
+// cast (a pending def shows as its own «henüz değil» row with this machine's detection).
+const KNOWN_VENDOR_DEFS: readonly CliRunnerDef[] = [codexDef];
 // Host-agnostic drive loop (WO-0023): prompt assembly + persistence side-effects + permission handling live
 // in core; the host contributes cwd + an ask-operator permission policy (the GUI surfaces stop-and-ask cards).
 // WO-0088: the pipeline drives a FRESH runner per owner (the factory below) and keys its steer/
