@@ -1,5 +1,5 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
-import type { CapabilitySlug, FlowSlug, GateSlug, RoleSlug, StageSlug, WorkspaceSlug } from '../shared';
+import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, RoleSlug, StageSlug, WorkspaceSlug } from '../shared';
 
 export type WriteScope =
   | { readonly kind: 'none' } // read-only role
@@ -22,7 +22,9 @@ export type GateDef =
   | { readonly kind: 'command'; readonly id: GateSlug; readonly commandSet: string }
   | { readonly kind: 'agent_verdict'; readonly id: GateSlug; readonly role: RoleSlug }
   | { readonly kind: 'secret_scan'; readonly id: GateSlug }
-  | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string };
+  | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string }
+  | { readonly kind: 'deploy'; readonly id: GateSlug; readonly environment: EnvSlug }
+  | { readonly kind: 'remote_checks'; readonly id: GateSlug; readonly required: readonly string[] | 'all'; readonly timeoutMinutes: number };
 
 export interface StageDef {
   readonly id: StageSlug;
@@ -61,6 +63,17 @@ export interface RepoRef {
   readonly defaultBranch: string;
 }
 
+export interface EnvironmentDef {
+  readonly id: EnvSlug;
+  readonly name: string;
+  readonly order: number; // promotion order, ascending
+  readonly deploy: string; // commandSet name
+  readonly verify?: string; // commandSet name (post-deploy smoke)
+  readonly env: Readonly<Record<string, EnvValue>>; // injected only during deploy/verify
+  readonly protected: boolean; // stricter rules: separate approver, promoteFrom required
+  readonly promoteFrom?: EnvSlug; // same commit must have a successful deploy there first
+}
+
 export interface WorkspaceDef {
   readonly id: WorkspaceSlug;
   readonly name: string;
@@ -71,6 +84,7 @@ export interface WorkspaceDef {
   readonly roleOverrides: readonly RoleOverride[];
   readonly docsRoot: string; // default "docs"
   readonly testGlobs: readonly string[]; // used by WriteScope 'tests'
+  readonly environments?: readonly EnvironmentDef[]; // default []
 }
 
 export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;

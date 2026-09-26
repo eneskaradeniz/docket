@@ -4,3 +4,5 @@ export * from './gates';
 export * from './routing';
 export * from './proposals';
 export * from './accounts';
+export * from './deploy-gate';
+export * from './remote-checks-gate';

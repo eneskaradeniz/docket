@@ -1,5 +1,5 @@
-import { mkdtemp } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,6 +28,19 @@ function pidAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/** Waits until the command has written its pid file, tolerating the create/write window. */
+async function pollForPid(pidFile: string): Promise<number> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (existsSync(pidFile)) {
+      const pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10);
+      if (!Number.isNaN(pid)) return pid;
+    }
+    await delay(50);
+  }
+  throw new Error(`the command never wrote its pid to ${pidFile}`);
 }
 
 describePosix('createCommandRunner', () => {
@@ -106,6 +119,41 @@ describePosix('createCommandRunner', () => {
     expect(Number.isInteger(result.durationMs)).toBe(true);
   });
 
+  it('I-25: a command killed by SIGKILL exits with 137', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    // A process inside the command tree is SIGKILLed while the shell itself survives; sh reports
+    // a signal death as 128 + signal number, so the run must surface 137 — a gate failure the
+    // caller can tell apart from a timeout, which would report 124.
+    const result = await runner.run(cwd, 'sleep 60 & pid=$!; kill -9 $pid; wait $pid', RUN_TIMEOUT_MS);
+    expect(result.exitCode).toBe(137);
+    expect(Number.isInteger(result.durationMs)).toBe(true);
+  });
+
+  it(
+    'I-25: a command that ignores the group SIGTERM is ended by the group SIGKILL',
+    async () => {
+      const cwd = await tempDir();
+      const runner = createCommandRunner({ env: {} });
+      // The trap is installed before the child starts, so the shell and the background sleep both
+      // ignore SIGTERM (an ignored disposition is inherited): only the escalation's group SIGKILL
+      // can end the run. The child's pid lands in the cwd so the test can watch it across the
+      // grace window.
+      const resultPromise = runner.run(cwd, "trap '' TERM; sleep 60 & echo $! > killed.pid; wait $!", 300);
+      const pidFile = join(cwd, 'killed.pid');
+      const pid = await pollForPid(pidFile);
+      await delay(1_500); // well into the 5 s grace: the SIGTERM was delivered long before
+      expect(pidAlive(pid)).toBe(true);
+      const result = await resultPromise;
+      expect(result.exitCode).toBe(124);
+      // The 5 s grace elapsed before the run resolved, so the group SIGKILL is what ended it.
+      expect(result.durationMs).toBeGreaterThanOrEqual(4_500);
+      expect(result.durationMs).toBeLessThan(20_000);
+      expect(pidAlive(pid)).toBe(false);
+    },
+    30_000,
+  );
+
   it('I-26: outputTail interleaves stdout and stderr in arrival order', async () => {
     const cwd = await tempDir();
     // Two pipes have no cross-pipe write ordering, so the command pauses between writes:
@@ -173,6 +221,78 @@ describePosix('createCommandRunner', () => {
     // leaving nothing for the secret patterns to match.
     const runner = createCommandRunner({ env: { K: 'sk-' + 'a'.repeat(32) } });
     const result = await runner.run(cwd, 'echo "$K"', RUN_TIMEOUT_MS);
+    expect(result.outputTail).toBe('[env]\n');
+  });
+
+  it('I-24: a call-only env variable is visible to the command', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "[$DOCKET_CALL_ONLY]"', RUN_TIMEOUT_MS, {
+      DOCKET_CALL_ONLY: 'here',
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.outputTail).toBe('[here]\n');
+  });
+
+  it('I-24: the call env adds to config.env — its entries stay visible', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { DOCKET_BASE: 'cfg' } });
+    const result = await runner.run(cwd, 'echo "$DOCKET_BASE-$DOCKET_EXTRA"', RUN_TIMEOUT_MS, {
+      DOCKET_EXTRA: 'x2',
+    });
+    expect(result.outputTail).toBe('cfg-x2\n');
+  });
+
+  it('I-24: on a name clash the call env wins, and only for that call', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { DOCKET_CLASH: 'cfg' } });
+    const withCall = await runner.run(cwd, 'echo "$DOCKET_CLASH"', RUN_TIMEOUT_MS, {
+      DOCKET_CLASH: 'call',
+    });
+    expect(withCall.outputTail).toBe('call\n');
+    const withoutCall = await runner.run(cwd, 'echo "$DOCKET_CLASH"', RUN_TIMEOUT_MS);
+    expect(withoutCall.outputTail).toBe('cfg\n');
+  });
+
+  it('I-24: nothing from process.env leaks in when only the call env is given', async () => {
+    const cwd = await tempDir();
+    process.env.DOCKET_RUNNER_CALL_LEAK = 'leak-call-value';
+    try {
+      const runner = createCommandRunner({ env: {} });
+      const result = await runner.run(cwd, 'echo "[$DOCKET_RUNNER_CALL_LEAK]"', RUN_TIMEOUT_MS, {
+        DOCKET_ONLY: 'cv',
+      });
+      expect(result.outputTail).toBe('[]\n');
+    } finally {
+      delete process.env.DOCKET_RUNNER_CALL_LEAK;
+    }
+  });
+
+  it('I-26: a call env value of at least 8 characters is replaced with [env]', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$T"', RUN_TIMEOUT_MS, { T: 't'.repeat(12) });
+    expect(result.outputTail).toBe('[env]\n');
+  });
+
+  it('I-26: a call env value shorter than 8 characters is kept', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$S"', RUN_TIMEOUT_MS, { S: 'tiny' });
+    expect(result.outputTail).toBe('tiny\n');
+  });
+
+  it('I-26: config and call env values are redacted in the same output', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { B: 'b'.repeat(9) } });
+    const result = await runner.run(cwd, 'echo "$B-$C-$B"', RUN_TIMEOUT_MS, { C: 'c'.repeat(9) });
+    expect(result.outputTail).toBe('[env]-[env]-[env]\n');
+  });
+
+  it('I-26: a secret-shaped call env value is redacted as [env], not [redacted]', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$K"', RUN_TIMEOUT_MS, { K: 'sk-' + 'c'.repeat(32) });
     expect(result.outputTail).toBe('[env]\n');
   });
 });

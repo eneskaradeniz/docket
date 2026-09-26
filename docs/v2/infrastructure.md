@@ -277,9 +277,9 @@ export function createCommandRunner(config: CommandRunnerConfig): CommandRunner;
 Rules:
 - **I-22** `findSecrets` checks every line against every pattern; a line containing `ALLOW_MARKER` is skipped; one finding per (line, pattern). Each pattern has a matching and a non-matching test. `redactSecrets` replaces every match (allow-marked lines too) with `[redacted]`.
 - **I-23** `scan(cwd)` scans only what the work order changed when `cwd` is a Docket worktree — the current branch is `docket/wo-<id>` and `refs/docket/bases/<ID>` exists: files from `git diff --name-only --diff-filter=ACMR <base>` plus untracked files from `git ls-files --others --exclude-standard`. Any other `cwd` → every file from `git ls-files --cached --others --exclude-standard`. Files over 1 MiB or with a NUL byte in their first 8 KiB are skipped. `findings` = total `SecretFinding`s. Not a git work tree → throws.
-- **I-24** `run(cwd, command, timeoutMs)` runs `command` through `/bin/sh -c` (Windows: `cmd.exe /d /s /c`) in `cwd` with **exactly** `config.env` — nothing inherited from `process.env` — in its own process group.
+- **I-24** `run(cwd, command, timeoutMs)` runs `command` through `/bin/sh -c` (Windows: `cmd.exe /d /s /c`) in `cwd` with **exactly** `config.env` plus the call's `env` argument (the call's value wins on a name clash) — nothing inherited from `process.env` — in its own process group.
 - **I-25** Timeout: SIGTERM to the process group, SIGKILL 5 s later if still alive; `exitCode` 124. A failure to spawn (e.g. missing `cwd`) → `exitCode` 127 and `outputTail` `'spawn failed: ' + <error code>`. `durationMs` is a whole number.
-- **I-26** `outputTail`: stdout and stderr interleaved in arrival order; the last `tailBytes` bytes, cut on a UTF-8 character boundary; then every value of `config.env` that is at least 8 characters long is replaced with `[env]`, then `redactSecrets` runs.
+- **I-26** `outputTail`: stdout and stderr interleaved in arrival order; the last `tailBytes` bytes, cut on a UTF-8 character boundary; then every value of `config.env` and of the call's `env` that is at least 8 characters long is replaced with `[env]`, then `redactSecrets` runs.
 
 ---
 

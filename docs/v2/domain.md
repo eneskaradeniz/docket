@@ -68,6 +68,7 @@ export type CapabilitySlug = Slug<'capability'>;
 export type WorkspaceSlug = Slug<'workspace'>;
 export type PhaseSlug = Slug<'phase'>;
 export type TaskSlug = Slug<'task'>;
+export type EnvSlug = Slug<'env'>;
 
 /** Runtime identifiers: ULID, 26 chars Crockford base32 (0-9 A-H J K M N P-T V-Z), uppercase. */
 export type Ulid<B extends string> = Branded<string, B>;
@@ -127,7 +128,11 @@ export type GateDef =
   | { readonly kind: 'command'; readonly id: GateSlug; readonly commandSet: string }
   | { readonly kind: 'agent_verdict'; readonly id: GateSlug; readonly role: RoleSlug }
   | { readonly kind: 'secret_scan'; readonly id: GateSlug }
-  | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string };
+  | { readonly kind: 'page_approval'; readonly id: GateSlug; readonly label: string }
+  | { readonly kind: 'deploy'; readonly id: GateSlug; readonly environment: EnvSlug }
+  | { readonly kind: 'remote_checks'; readonly id: GateSlug;
+      readonly required: readonly string[] | 'all';
+      readonly timeoutMinutes: number };
 
 export interface StageDef {
   readonly id: StageSlug;
@@ -156,6 +161,17 @@ export type HookEvent = 'before_tool' | 'after_tool' | 'after_write' | 'run_end'
 
 export interface RepoRef { readonly id: string; readonly remote: string; readonly defaultBranch: string }
 
+export interface EnvironmentDef {
+  readonly id: EnvSlug;
+  readonly name: string;
+  readonly order: number;                             // promotion order, ascending
+  readonly deploy: string;                            // commandSet name
+  readonly verify?: string;                           // commandSet name (post-deploy smoke)
+  readonly env: Readonly<Record<string, EnvValue>>;   // injected only during deploy/verify
+  readonly protected: boolean;                        // stricter rules: separate approver, promoteFrom required
+  readonly promoteFrom?: EnvSlug;                     // same commit must have a successful deploy there first
+}
+
 export interface WorkspaceDef {
   readonly id: WorkspaceSlug;
   readonly name: string;
@@ -166,6 +182,7 @@ export interface WorkspaceDef {
   readonly roleOverrides: readonly RoleOverride[];
   readonly docsRoot: string;                         // default "docs"
   readonly testGlobs: readonly string[];             // used by WriteScope 'tests'
+  readonly environments?: readonly EnvironmentDef[]; // default []
 }
 
 export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;
@@ -186,7 +203,9 @@ export interface DefinitionIssue {
 export type DefinitionIssueCode =
   | 'invalid_slug' | 'duplicate_id' | 'unknown_role' | 'inactive_role' | 'unknown_stage'
   | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
-  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type';
+  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
+  | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
+  | 'env_command_set_missing' | 'duplicate_env_order';
 
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
@@ -200,6 +219,11 @@ Rules:
 - **R-7** `command` gates must name a `commandSet` present in `workspace.commandSets` when a workspace is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
 - **R-9** `workspace.defaultFlow` must be listed in `workspace.flows`, and every listed flow must exist.
+- **E-1** `EnvSlug` follows the same `parseSlug` rules as other slugs.
+- **E-2** Environment ids are unique within a workspace; `order` values are unique within a workspace (`duplicate_env_order`).
+- **E-3** `EnvironmentDef.deploy` and `verify` (when present) must name a `commandSet` present in `workspace.commandSets` (`env_command_set_missing`).
+- **E-4** A `deploy` gate's `environment` must name an environment in `workspace.environments` (`unknown_environment`).
+- **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value. The `promoteFrom` chain must be acyclic (`promote_cycle`).
 
 ---
 
@@ -244,11 +268,24 @@ export interface GateEvidence {
   readonly agentVerdict?: { readonly approve: boolean; readonly pointersResolved: boolean };
   readonly approval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor; readonly note?: string };
   readonly pageApproval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor };
+  readonly deployment?: { readonly environment: EnvSlug; readonly commit: string;
+    readonly result: 'success' | 'failed'; readonly approvedBy: Actor;
+    readonly confirmedEnvironment?: EnvSlug };   // the environment id the user typed to confirm
+  readonly remoteChecks?: { readonly checks: readonly CheckRunResult[];
+    readonly status: 'all_passed' | 'has_failure' | 'pending' | 'timeout' };
+}
+
+export interface CheckRunResult {
+  readonly name: string;
+  readonly status: 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped';
 }
 
 export type GateEvaluator<K extends GateDef['kind']> =
   (gate: Extract<GateDef, { kind: K }>, evidence: GateEvidence, ctx: GateContext) => GateVerdict;
-export interface GateContext { readonly commandSets: Readonly<Record<string, readonly string[]>> }
+export interface GateContext {
+  readonly commandSets: Readonly<Record<string, readonly string[]>>;
+  readonly environments?: readonly EnvironmentDef[];   // required to evaluate `deploy` gates
+}
 
 export const GATE_EVALUATORS: { readonly [K in GateDef['kind']]: GateEvaluator<K> };
 export function evaluateGate(gate: GateDef, evidence: GateEvidence, ctx: GateContext): GateVerdict;
@@ -260,6 +297,11 @@ Rules:
 - **R-14** `secret_scan`: missing → `pending`; `findings > 0` → `failed`; `0` → `passed`.
 - **R-15** `agent_verdict`: missing → `pending`; `approve && pointersResolved` → `passed`; `approve && !pointersResolved` → `unknown` ("evidence pointers did not resolve"); `!approve` → `failed`.
 - **R-16** `unknown` never counts as passed anywhere in the domain.
+- **E-6** `deploy`: the gate's environment missing from `ctx.environments` (or `environments` absent) → `unknown`. Missing evidence → `pending`. `deployment.result === 'success'` → `passed`. `deployment.result === 'failed'` → `failed` with the environment id in the reason.
+- **E-7** A `deploy` gate always requires a user approval in the evidence (`deployment.approvedBy` must be `kind: 'user'`). Without it → `pending`. This enforces invariant 1.
+- **E-8** For a `protected` environment, `deployment.confirmedEnvironment` must equal the gate's `environment` (the user typed the environment id to confirm); absent or different → `pending`. (Docket is single-user: a rule requiring a *different* approver would make protected environments undeployable. A second-approver option arrives with team mode.)
+- **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
+- **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
 
 ---
 
@@ -277,6 +319,12 @@ export type WorkOrderEvent =
   | { readonly type: 'gate_evaluated'; readonly at: EpochMs; readonly stage: StageSlug; readonly gate: GateSlug; readonly verdict: GateVerdict }
   | { readonly type: 'blocked'; readonly at: EpochMs; readonly by: Actor; readonly reason: string }
   | { readonly type: 'unblocked'; readonly at: EpochMs; readonly by: Actor }
+  | { readonly type: 'deployment_attempted'; readonly at: EpochMs;
+      readonly stage: StageSlug; readonly gate: GateSlug;
+      readonly environment: EnvSlug; readonly commit: string;
+      readonly approvedBy: Actor;
+      readonly result: 'success' | 'failed';
+      readonly outputTail?: string }   // redacted like command gates — no env values or secrets
   | { readonly type: 'closed'; readonly at: EpochMs; readonly by: Actor };
 
 // flow/derive.ts

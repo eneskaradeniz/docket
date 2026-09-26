@@ -207,7 +207,10 @@ export interface TransportResolver { forAccount(accountId: AccountId): Promise<A
 
 // workspace-tools.ts — what gates and runs need from the machine
 export interface CommandResult { readonly exitCode: number; readonly durationMs: number; readonly outputTail: string }
-export interface CommandRunner { run(cwd: string, command: string, timeoutMs: number): Promise<CommandResult> }
+export interface CommandRunner {
+  /** `env` (Phase 2c) is added to the runner's base environment for this call only; its values are redacted from `outputTail`. */
+  run(cwd: string, command: string, timeoutMs: number, env?: Readonly<Record<string, string>>): Promise<CommandResult>;
+}
 export interface SecretScanner { scan(cwd: string): Promise<{ readonly findings: number }> }
 export interface EvidenceChecker {
   /** True when every `path:line` pointer names an existing file and line in `cwd`. */
@@ -237,6 +240,62 @@ Rules for fakes (`ports/fakes/`):
 - **A-2** Fakes honour every ordering promise written in the port comments (e.g. `list` createdAt asc, `EventLog.list` newest first) and return copies, never internal arrays.
 - **A-3** `FakeClock` has `advance(ms)`; `FakeIdGen` yields valid, strictly increasing ULIDs from a seed; `FakeTransport` is scripted: `createFakeTransport(script: readonly AgentEvent[])` emits the script, records `answerPermission`/`steer`/`stop` calls, and pauses on a `permission_ask` until it is answered.
 - **A-4** `FakeDefinitionStore.writeFile` enforces `expectedHash` exactly like the contract ('' = must not exist) and returns `err('stale')` otherwise.
+
+### Forge port (`ports/forge.ts`) — Phase 2c
+
+```ts
+export type ForgeKind = string;   // 'github' | 'bitbucket' | 'azure-devops' | 'gitlab' | … (data)
+export interface ForgeCapabilities { readonly pullRequests: boolean; readonly checks: boolean; readonly issues: boolean }
+export interface PullRequestRef { readonly number: number; readonly url: string }
+export interface CheckRun {
+  readonly name: string;
+  readonly status: 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped';
+  readonly url?: string;
+}
+export type ForgeError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown';
+
+export interface Forge {
+  readonly kind: ForgeKind;
+  readonly capabilities: ForgeCapabilities;
+  pushBranch(repo: RepoRef, branch: string): Promise<Result<void, ForgeError>>;
+  openPullRequest(repo: RepoRef, input: {
+    readonly head: string; readonly base: string;
+    readonly title: string; readonly body: string;
+  }): Promise<Result<PullRequestRef, ForgeError>>;
+  pullRequest(repo: RepoRef, number: number): Promise<Result<{
+    readonly state: 'open' | 'merged' | 'closed';
+    readonly mergeable?: boolean;
+  }, ForgeError>>;
+  checks(repo: RepoRef, ref: string): Promise<Result<readonly CheckRun[], ForgeError>>;
+  mergePullRequest(repo: RepoRef, number: number): Promise<Result<void, ForgeError>>;
+}
+
+/** Resolves the forge for a given repo (by remote URL host or explicit config). */
+export interface ForgeResolver { forRepo(repo: RepoRef): Promise<Forge | undefined> }
+```
+
+Fake: `createFakeForge(opts?: { checks?: readonly CheckRun[] }): Forge & { readonly pushed: readonly string[]; readonly opened: readonly { head: string; base: string; title: string }[] }`.
+
+### IssueTracker port (`ports/issue-tracker.ts`) — Phase 2c
+
+```ts
+export interface ExternalItem {
+  readonly source: string; readonly key: string;
+  readonly title: string; readonly url: string;
+  readonly status: string; readonly updatedAt: EpochMs;
+}
+export type TrackerError = 'auth' | 'not_found' | 'network' | 'rate_limited' | 'unknown';
+
+export interface IssueTracker {
+  readonly kind: string;   // 'jira' | 'azure-boards' | 'github-issues' | 'odoo-project' | … (data)
+  search(query: string, limit: number): Promise<Result<readonly ExternalItem[], TrackerError>>;
+  get(key: string): Promise<Result<ExternalItem | undefined, TrackerError>>;
+  comment(key: string, text: string): Promise<Result<void, TrackerError>>;
+  transition(key: string, status: string): Promise<Result<void, TrackerError>>;
+}
+```
+
+Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
 
 ---
 
@@ -415,6 +474,52 @@ Rules:
 - **A-21** Every string id in a command is parsed with `parseSlug`/`parseUlid` before reaching a use case; a parse failure returns `{ ok: false, code: 'invalid_id' }` without calling any port.
 - **A-22** `cockpit.attention` is ordered by kind (`permission_ask`, `awaiting_human`, `blocked`, `limit_waiting`), then `since` ascending.
 - **A-23** `workspace.board` has one column per stage of the workspace's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
+
+### Deploy and remote-checks use cases — Phase 2c
+
+```ts
+// use-cases/deploy-gate.ts
+export type DeployGateError =
+  | 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_deploy_gate'
+  | 'no_approval' | 'confirmation_mismatch' | 'promote_prerequisite_missing'
+  | 'definitions_invalid' | 'unknown_environment' | 'no_repo';
+
+export function approveAndDeploy(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'worktrees' | 'commands' | 'secrets'>,
+  input: {
+    readonly id: WorkOrderId; readonly gate: GateSlug;
+    readonly approver: Actor;    // must be user
+    readonly commit: string;
+    readonly confirmedEnvironment?: EnvSlug;   // required for protected environments
+  },
+): Promise<Result<WorkOrderState, DeployGateError>>;
+
+// use-cases/remote-checks-gate.ts
+export type RemoteChecksError =
+  | 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_remote_checks_gate'
+  | 'forge_unavailable' | 'forge_error';
+
+/** `forges` is passed separately (like `PermissionGate` in executeRun); it is not part of AppDeps. */
+export function pollRemoteChecks(
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions'>,
+  forges: ForgeResolver,
+  input: {
+    readonly id: WorkOrderId; readonly gate: GateSlug;
+    readonly branchRef: string;
+    readonly repo: RepoRef;
+  },
+): Promise<Result<WorkOrderState, RemoteChecksError>>;
+```
+
+- **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `input.confirmedEnvironment` must equal the gate's environment (`confirmation_mismatch`). The environment must exist in the workspace definition (`unknown_environment`); the worktree comes from `Worktrees.ensure` (`no_repo`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
+- **E-12** Deploy execution: run `deploy` commandSet in the work order's worktree with the environment's `env` values passed as `CommandRunner.run`'s `env` argument (literal + `SecretVault`-resolved `secretRef`; an unresolvable ref → `result: 'failed'` without running). If deploy exits 0 and `verify` exists, run `verify` the same way. Both exit 0 → `result: 'success'`; otherwise → `result: 'failed'`.
+- **E-13** After deploy execution, append one `deployment_attempted` event and one `gate_evaluated` event (using E-6). Environment values and secrets never appear in the event or the output tail.
+- **E-14** `pollRemoteChecks`: gate must be a pending `remote_checks` gate of the current stage. Resolve the forge via `ForgeResolver.forRepo`; if unavailable → `forge_unavailable`. Call `forge.checks(repo, branchRef)`.
+- **E-15** Match returned checks against `required`: if `required === 'all'`, use all returned checks; otherwise filter to those whose `name` is in the `required` array. Determine status: all `passed` → `all_passed`; any `failed`/`cancelled` → `has_failure`; otherwise → `pending`.
+- **E-16** If elapsed time since the gate entered `pending` exceeds `timeoutMinutes` → `timeout`.
+- **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
+- **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the workspace definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
+- **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
 
 ---
 

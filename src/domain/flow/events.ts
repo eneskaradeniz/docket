@@ -1,6 +1,6 @@
 // flow/events.ts — exact contract from docs/v2/domain.md section 5.
 import type { GateVerdict } from '../gates';
-import type { Actor, EpochMs, FlowSlug, GateSlug, RunId, RunOutcome, StageSlug } from '../shared';
+import type { Actor, EnvSlug, EpochMs, FlowSlug, GateSlug, RunId, RunOutcome, StageSlug } from '../shared';
 
 /** The append-only history a work order's state is derived from. Events are facts; derive
  *  walks them in order and assumes they are sorted by `at`. */
@@ -11,4 +11,10 @@ export type WorkOrderEvent =
   | { readonly type: 'gate_evaluated'; readonly at: EpochMs; readonly stage: StageSlug; readonly gate: GateSlug; readonly verdict: GateVerdict }
   | { readonly type: 'blocked'; readonly at: EpochMs; readonly by: Actor; readonly reason: string }
   | { readonly type: 'unblocked'; readonly at: EpochMs; readonly by: Actor }
+  | { readonly type: 'deployment_attempted'; readonly at: EpochMs;
+      readonly stage: StageSlug; readonly gate: GateSlug;
+      readonly environment: EnvSlug; readonly commit: string;
+      readonly approvedBy: Actor;
+      readonly result: 'success' | 'failed';
+      readonly outputTail?: string }
   | { readonly type: 'closed'; readonly at: EpochMs; readonly by: Actor };

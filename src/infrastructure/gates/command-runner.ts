@@ -4,7 +4,7 @@ import type { CommandRunner } from '../../application/index';
 import { redactSecrets } from './secret-patterns';
 
 export interface CommandRunnerConfig {
-  readonly env: Readonly<Record<string, string>>; // the complete child environment (built by the composition root)
+  readonly env: Readonly<Record<string, string>>; // the base child environment (built by the composition root); per-call env is added on top
   readonly tailBytes?: number; // default 8192
 }
 
@@ -48,16 +48,18 @@ function redactEnvValues(text: string, values: readonly string[]): string {
 
 export function createCommandRunner(config: CommandRunnerConfig): CommandRunner {
   const tailBytes = config.tailBytes ?? DEFAULT_TAIL_BYTES;
-  const env = { ...config.env };
-  const envValues = Object.values(config.env);
 
   return {
-    run(cwd, command, timeoutMs) {
+    run(cwd, command, timeoutMs, callEnv) {
       return new Promise((resolve) => {
         const startedAt = Date.now();
         const isWindows = process.platform === 'win32';
         const file = isWindows ? 'cmd.exe' : '/bin/sh';
         const args = isWindows ? ['/d', '/s', '/c', command] : ['-c', command];
+        // The call's env is layered onto the base environment for this call only; on a name
+        // clash the call's value wins. Neither process.env nor a previous call's env leaks in.
+        const env = { ...config.env, ...callEnv };
+        const envValues = [...Object.values(config.env), ...Object.values(callEnv ?? {})];
         // detached: the child leads its own process group, so a timeout can signal the whole
         // tree (a gate command may spawn children of its own) rather than only the shell.
         const child = spawn(file, args, {

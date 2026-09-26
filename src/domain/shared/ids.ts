@@ -13,6 +13,7 @@ export type CapabilitySlug = Slug<'capability'>;
 export type WorkspaceSlug = Slug<'workspace'>;
 export type PhaseSlug = Slug<'phase'>;
 export type TaskSlug = Slug<'task'>;
+export type EnvSlug = Slug<'env'>;
 
 /** Runtime identifiers: ULID, 26 chars Crockford base32 (0-9 A-H J K M N P-T V-Z), uppercase. */
 export type Ulid<B extends string> = Branded<string, B>;

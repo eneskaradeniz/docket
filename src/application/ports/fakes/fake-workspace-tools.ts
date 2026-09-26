@@ -7,7 +7,12 @@ export interface FakeCommandRunner extends CommandRunner {
   /** Scripts the result for an exact command string; same-command scripts are consumed in order. */
   script(command: string, result: CommandResult): void;
   /** Every run call, in order. */
-  calls(): readonly { readonly cwd: string; readonly command: string; readonly timeoutMs: number }[];
+  calls(): readonly {
+    readonly cwd: string;
+    readonly command: string;
+    readonly timeoutMs: number;
+    readonly env?: Readonly<Record<string, string>>;
+  }[];
 }
 
 /** The port surface is complete on its own; the named type exists for tests that want it. */
@@ -34,22 +39,43 @@ const SUCCESS: CommandResult = { exitCode: 0, durationMs: 0, outputTail: '' };
 
 export const createFakeCommandRunner = (): FakeCommandRunner => {
   const scripts: { readonly command: string; readonly result: CommandResult }[] = [];
-  const calls: { readonly cwd: string; readonly command: string; readonly timeoutMs: number }[] = [];
+  const calls: {
+    readonly cwd: string;
+    readonly command: string;
+    readonly timeoutMs: number;
+    readonly env?: Readonly<Record<string, string>>;
+  }[] = [];
 
   return {
     script: (command: string, result: CommandResult): void => {
       scripts.push({ command, result });
     },
 
-    run: async (cwd: string, command: string, timeoutMs: number): Promise<CommandResult> => {
-      calls.push({ cwd, command, timeoutMs });
+    run: async (
+      cwd: string,
+      command: string,
+      timeoutMs: number,
+      env?: Readonly<Record<string, string>>,
+    ): Promise<CommandResult> => {
+      calls.push({
+        cwd,
+        command,
+        timeoutMs,
+        // A copy: the caller mutating its record afterwards must not change what was recorded.
+        ...(env === undefined ? {} : { env: { ...env } }),
+      });
       const scriptedAt = scripts.findIndex((entry) => entry.command === command);
       if (scriptedAt === -1) return { ...SUCCESS };
       const [entry] = scripts.splice(scriptedAt, 1);
       return { ...entry.result };
     },
 
-    calls: (): readonly { readonly cwd: string; readonly command: string; readonly timeoutMs: number }[] => [...calls],
+    calls: (): readonly {
+      readonly cwd: string;
+      readonly command: string;
+      readonly timeoutMs: number;
+      readonly env?: Readonly<Record<string, string>>;
+    }[] => [...calls],
   };
 };
 
