@@ -161,6 +161,52 @@ describe('validateRoadmap', () => {
     expect(issues.filter((issue) => issue.code === 'phase_cycle')).toHaveLength(1);
   });
 
+  it('R-39a: reports a cross-graph deadlock as one cross_cycle naming the tasks involved', () => {
+    // t-a depends on t-b, while p-2 (home of t-b) is blocked by p-1 (home of t-a): neither can start.
+    const issues = expectErr(
+      validateRoadmap(doc([phase('p-1', [task('t-a', ['t-b'])]), phase('p-2', [task('t-b')], ['p-1'])])),
+    );
+    const cross = issues.filter((issue) => issue.code === 'cross_cycle');
+    expect(cross).toHaveLength(1);
+    expect(cross[0]?.message).toContain('t-a');
+    expect(cross[0]?.message).toContain('t-b');
+    expect(issueWithCode(issues, 'task_cycle')).toBeUndefined();
+  });
+
+  it('R-39a: reports a pure task cycle only as task_cycle, never as cross_cycle', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-a', ['t-b']), task('t-b', ['t-a'])])])));
+    expect(issueWithCode(issues, 'task_cycle')).toBeDefined();
+    expect(issues.filter((issue) => issue.code === 'cross_cycle')).toHaveLength(0);
+  });
+
+  it('R-39a: a task depending on itself is not reported as cross_cycle', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-a', ['t-a'])])])));
+    expect(issueWithCode(issues, 'task_cycle')).toBeDefined();
+    expect(issues.filter((issue) => issue.code === 'cross_cycle')).toHaveLength(0);
+  });
+
+  it('R-39a: detects the deadlock through transitive phase blocking', () => {
+    // p-3 is blocked by p-2, which is blocked by p-1; the block edge t-c -> t-a spans two hops.
+    const issues = expectErr(
+      validateRoadmap(
+        doc([
+          phase('p-1', [task('t-a', ['t-c'])]),
+          phase('p-2', [], ['p-1']),
+          phase('p-3', [task('t-c')], ['p-2']),
+        ]),
+      ),
+    );
+    const cross = issues.filter((issue) => issue.code === 'cross_cycle');
+    expect(cross).toHaveLength(1);
+    expect(cross[0]?.message).toContain('t-a');
+    expect(cross[0]?.message).toContain('t-c');
+  });
+
+  it('R-39a: accepts a dependency into the blocking phase without a phantom cross_cycle', () => {
+    // t-3 sits in p-2, blocked by p-1, and depends on p-1's t-2: every edge points forward.
+    expect(validateRoadmap(validInput).ok).toBe(true);
+  });
+
   it('R-39: reports invalid task and phase slugs', () => {
     const issues = expectErr(
       validateRoadmap(doc([phase('P_1', [task('Bad Slug')])])),

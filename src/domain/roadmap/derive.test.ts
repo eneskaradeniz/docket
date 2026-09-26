@@ -128,13 +128,43 @@ describe('deriveRoadmap', () => {
     expect(view.phases['p-2']).toBe('done');
   });
 
-  it('R-41: a blocked phase whose tasks are all done stays waiting', () => {
-    // Blocking is checked before the all-done rule, so the phase waits for its blocker.
+  it('R-41: a blocked phase whose tasks are all done is done', () => {
+    // All-done outranks blocked: finished work is never reported as waiting.
     const roadmap: Roadmap = {
       phases: [phase('p-1', [task('t-first')]), phase('p-2', [task('t-done')], ['p-1'])],
     };
     const view = deriveRoadmap(roadmap, [wo('t-done', 'done')]);
+    expect(view.phases['p-2']).toBe('done');
+  });
+
+  it('R-41: a blocked phase with mixed done and unfinished tasks is waiting', () => {
+    // Rule 2 needs every task done; one unfinished task falls through to the blocked rule.
+    const roadmap: Roadmap = {
+      phases: [phase('p-1', [task('t-first')]), phase('p-2', [task('t-done'), task('t-later', ['t-done'])], ['p-1'])],
+    };
+    const view = deriveRoadmap(roadmap, [wo('t-done', 'done')]);
     expect(view.phases['p-2']).toBe('waiting');
+  });
+
+  it('R-41: a running task outranks the all-done rule in the same phase', () => {
+    const roadmap: Roadmap = { phases: [phase('p-1', [task('t-a'), task('t-b')])] };
+    const view = deriveRoadmap(roadmap, [wo('t-a', 'done'), wo('t-b', 'running')]);
+    expect(view.phases['p-1']).toBe('running');
+  });
+
+  it('R-41: a finished blocked phase counts as done for its dependents', () => {
+    // p-2 finished while blocked by p-1; its done status releases p-3, which can then run.
+    const roadmap: Roadmap = {
+      phases: [
+        phase('p-1', [task('t-first')]),
+        phase('p-2', [task('t-done')], ['p-1']),
+        phase('p-3', [task('t-next')], ['p-2']),
+      ],
+    };
+    const view = deriveRoadmap(roadmap, [wo('t-done', 'done')]);
+    expect(view.phases['p-2']).toBe('done');
+    expect(view.phases['p-3']).toBe('planned');
+    expect(view.runnable).toEqual(['t-first', 't-next']);
   });
 
   it('R-41: a phase with zero tasks is planned', () => {
