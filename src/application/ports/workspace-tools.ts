@@ -8,7 +8,8 @@ export interface CommandResult {
 }
 
 export interface CommandRunner {
-  run(cwd: string, command: string, timeoutMs: number): Promise<CommandResult>;
+  /** `env` (Phase 2c) is added to the runner's base environment for this call only; its values are redacted from `outputTail`. */
+  run(cwd: string, command: string, timeoutMs: number, env?: Readonly<Record<string, string>>): Promise<CommandResult>;
 }
 
 export interface SecretScanner {
