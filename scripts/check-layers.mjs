@@ -42,6 +42,8 @@ const DOMAIN_MODULES = {
   flow: ['shared', 'definitions', 'gates'],
   dispatch: ['shared', 'quota', 'budget'],
   roadmap: ['shared', 'flow'],
+  // Cross-module scenario tests only (no production code): may import every module.
+  scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap'],
 };
 const VENDOR_RE = /\b(claude|anthropic|codex|openai|gpt|gemini|antigravity|cursor|copilot)\b/i;
 const IMPURE_RE = /\bDate\.now\b|\bnew Date\b|\bMath\.random\b|\bcrypto\b|\bperformance\.now\b/;
@@ -126,6 +128,11 @@ function checkDomainModule(file, target, spec, ln) {
   if (!allowed.includes(toMod)) { report(file, ln, 'D2 module-deps', `domain/${fromMod} may not import domain/${toMod}: ${spec}`); return; }
   const isIndex = relTarget.length === 2 && /^index\.tsx?$/.test(relTarget[1]);
   if (!isIndex) report(file, ln, 'D3 module-index', `import domain/${toMod} through its index.ts only: ${spec}`);
+}
+
+// src/domain/scenarios holds cross-module scenario tests only.
+for (const file of walk(join(SRC, 'domain', 'scenarios'))) {
+  if (!isTest(file)) report(file, 1, 'D5 scenarios', 'src/domain/scenarios may contain *.test.ts files only');
 }
 
 // Domain modules must not import the top-level barrel.
