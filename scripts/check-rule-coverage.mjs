@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Rule-coverage check — mechanical closure of the test conventions in docs/v2/domain.md and
-// docs/v2/application.md: every rule id defined there (`**R-n**` / `**R-n<letter>**` for the
-// domain, `**A-n**` / `**A-n<letter>**` for the application) must have at least one test titled
-// after it (`it('R-n: …')` / `it('A-n: …')`) in the layer's test files. A bold id in a Rules list
-// is the definition; plain mentions in prose (`see R-16`) never define a rule, and a title like
-// `R-4 edge:` does not satisfy the `R-n:` convention. Domain and application results are reported
-// separately. Runs as part of `npm run check:boundaries`.
+// Rule-coverage check — mechanical closure of the test conventions in docs/v2/domain.md,
+// docs/v2/application.md and docs/v2/infrastructure.md: every rule id defined there
+// (`**R-n**` / `**R-n<letter>**` for the domain, `**A-n**` / `**A-n<letter>**` for the
+// application, `**I-n**` / `**I-n<letter>**` for the infrastructure) must have at least one test
+// titled after it (`it('R-n: …')` / `it('A-n: …')` / `it('I-n: …')`) in the layer's test files.
+// A bold id in a Rules list is the definition; plain mentions in prose (`see R-16`) never define a
+// rule, and a title like `R-4 edge:` does not satisfy the `R-n:` convention. Each layer's results
+// are reported separately. Runs as part of `npm run check:boundaries`.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,8 +15,9 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 // One entry per rule namespace: where the ids are defined and which folders carry its tests.
 const SECTIONS = [
-  { name: 'domain', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
-  { name: 'application', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
+  { name: 'domain', prefix: 'R', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
+  { name: 'application', prefix: 'A', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
+  { name: 'infrastructure', prefix: 'I', doc: join(ROOT, 'docs', 'v2', 'infrastructure.md'), dirs: [join(ROOT, 'src', 'infrastructure')] },
 ];
 
 function walk(dir, acc = []) {
@@ -35,7 +37,7 @@ const byRuleId = (a, b) => {
 };
 
 const checkSection = (section) => {
-  const prefix = section.name === 'domain' ? 'R' : 'A';
+  const prefix = section.prefix;
   const definedRe = new RegExp(`\\*\\*(${prefix}-\\d+[a-z]?)\\*\\*`, 'g');
   const testedRe = new RegExp(`\\bit\\(\\s*['"]${prefix}-(\\d+[a-z]?):`, 'g');
 
@@ -70,7 +72,7 @@ const checkSection = (section) => {
 
 let failed = false;
 for (const section of SECTIONS) {
-  const prefix = section.name === 'domain' ? 'R' : 'A';
+  const prefix = section.prefix;
   const { failures, defined } = checkSection(section);
   if (failures.length) {
     failed = true;
