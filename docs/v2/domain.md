@@ -269,7 +269,8 @@ export interface GateEvidence {
   readonly approval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor; readonly note?: string };
   readonly pageApproval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor };
   readonly deployment?: { readonly environment: EnvSlug; readonly commit: string;
-    readonly result: 'success' | 'failed'; readonly approvedBy: Actor };
+    readonly result: 'success' | 'failed'; readonly approvedBy: Actor;
+    readonly confirmedEnvironment?: EnvSlug };   // the environment id the user typed to confirm
   readonly remoteChecks?: { readonly checks: readonly CheckRunResult[];
     readonly status: 'all_passed' | 'has_failure' | 'pending' | 'timeout' };
 }
@@ -281,7 +282,10 @@ export interface CheckRunResult {
 
 export type GateEvaluator<K extends GateDef['kind']> =
   (gate: Extract<GateDef, { kind: K }>, evidence: GateEvidence, ctx: GateContext) => GateVerdict;
-export interface GateContext { readonly commandSets: Readonly<Record<string, readonly string[]>> }
+export interface GateContext {
+  readonly commandSets: Readonly<Record<string, readonly string[]>>;
+  readonly environments?: readonly EnvironmentDef[];   // required to evaluate `deploy` gates
+}
 
 export const GATE_EVALUATORS: { readonly [K in GateDef['kind']]: GateEvaluator<K> };
 export function evaluateGate(gate: GateDef, evidence: GateEvidence, ctx: GateContext): GateVerdict;
@@ -293,9 +297,9 @@ Rules:
 - **R-14** `secret_scan`: missing → `pending`; `findings > 0` → `failed`; `0` → `passed`.
 - **R-15** `agent_verdict`: missing → `pending`; `approve && pointersResolved` → `passed`; `approve && !pointersResolved` → `unknown` ("evidence pointers did not resolve"); `!approve` → `failed`.
 - **R-16** `unknown` never counts as passed anywhere in the domain.
-- **E-6** `deploy`: missing evidence → `pending`. `deployment.result === 'success'` → `passed`. `deployment.result === 'failed'` → `failed` with the environment id in the reason.
+- **E-6** `deploy`: the gate's environment missing from `ctx.environments` (or `environments` absent) → `unknown`. Missing evidence → `pending`. `deployment.result === 'success'` → `passed`. `deployment.result === 'failed'` → `failed` with the environment id in the reason.
 - **E-7** A `deploy` gate always requires a user approval in the evidence (`deployment.approvedBy` must be `kind: 'user'`). Without it → `pending`. This enforces invariant 1.
-- **E-8** For a `protected` environment, the `deployment.approvedBy` actor must not be the actor who started the work order's last run on the current stage (separate-approver rule). Violation → `failed` with reason `same_approver_on_protected`.
+- **E-8** For a `protected` environment, `deployment.confirmedEnvironment` must equal the gate's `environment` (the user typed the environment id to confirm); absent or different → `pending`. (Docket is single-user: a rule requiring a *different* approver would make protected environments undeployable. A second-approver option arrives with team mode.)
 - **E-9** `remote_checks`: `status === 'all_passed'` → `passed`; `status === 'has_failure'` → `failed` naming the first failed check; `status === 'timeout'` → `failed` with reason `timeout`; `status === 'pending'` → `pending`.
 - **E-10** `deployment_attempted` event is appended exactly once per deploy-gate evaluation, carrying the redacted `outputTail` (same redaction as command gates: no env values, no secrets).
 
