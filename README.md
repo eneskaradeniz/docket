@@ -28,3 +28,8 @@ npm run check:boundaries
 ```
 
 Contributors and coding agents: read `CLAUDE.md` first.
+
+## License
+
+[Apache License 2.0](LICENSE). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Security
+reports: see [SECURITY.md](SECURITY.md).

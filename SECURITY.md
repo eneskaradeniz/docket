@@ -1,21 +1,24 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Docket is being rebuilt (v2) and has no released version yet. Security fixes land on `main`.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+Please report vulnerabilities **privately** through GitHub:
+**Security → Report a vulnerability** on this repository (private vulnerability reporting).
+Do not open a public issue for a security problem.
 
-Use this section to tell people how to report a vulnerability.
+Include what you found, how to reproduce it, and the impact you expect. You will get an
+acknowledgement within 7 days and a status update at least every 14 days until it is resolved.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+## Scope
+
+Docket runs AI coding agents on your machine and handles provider credentials, so these areas matter
+most:
+
+- Leaks of API keys or tokens (they must live only in the OS keychain, never in files, logs, or
+  records).
+- Ways an agent can escape its write scope or merge without a human approval.
+- Agent-produced pages (artifacts) escaping their sandbox or reaching the network.
