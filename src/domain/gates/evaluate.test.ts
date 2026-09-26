@@ -92,8 +92,12 @@ describe('evaluateGate — page_approval (R-12)', () => {
 });
 
 describe('evaluateGate — command (R-13)', () => {
+  const AB: GateContext = { commandSets: { ab: ['cmd-a', 'cmd-b'] } };
+  const COMMAND_AB: GateDef = { kind: 'command', id: gate('ab'), commandSet: 'ab' };
+
   it('R-13: a missing result for any command is pending', () => {
     expect(run(COMMAND, {})).toEqual({ status: 'pending' });
+    expect(run(COMMAND, { commands: {} })).toEqual({ status: 'pending' });
     expect(run(COMMAND, { commands: { 'npm test': { exitCode: 0 } } })).toEqual({ status: 'pending' });
   });
 
@@ -101,6 +105,18 @@ describe('evaluateGate — command (R-13)', () => {
     expect(run(COMMAND, { commands: { 'npm test': { exitCode: 0 }, 'npm run lint': undefined } })).toEqual({
       status: 'pending',
     });
+  });
+
+  it('R-13: order-independent — a failed command fails the gate even though an earlier command has no result yet', () => {
+    const verdict = run(COMMAND_AB, { commands: { 'cmd-b': { exitCode: 1 } } }, AB);
+    expect(verdict.status).toBe('failed');
+    if (verdict.status === 'failed') expect(verdict.reason).toContain('cmd-b');
+  });
+
+  it('R-13: order-independent — a failed command fails the gate even though a later command has no result', () => {
+    const verdict = run(COMMAND_AB, { commands: { 'cmd-a': { exitCode: 1 } } }, AB);
+    expect(verdict.status).toBe('failed');
+    if (verdict.status === 'failed') expect(verdict.reason).toContain('cmd-a');
   });
 
   it('R-13: a non-zero exit fails naming the command', () => {
@@ -112,14 +128,23 @@ describe('evaluateGate — command (R-13)', () => {
     if (verdict.status === 'failed') expect(verdict.reason).toContain('npm run lint');
   });
 
-  it('R-13: the first failing command in set order is named, not the first in evidence order', () => {
+  it('R-13: the first failing command in set order is named, not the first result that arrived', () => {
     const verdict = run(COMMAND, {
-      commands: { 'npm test': { exitCode: 1 }, 'npm run lint': { exitCode: 3 } },
+      commands: { 'npm run lint': { exitCode: 3 }, 'npm test': { exitCode: 1 } },
     });
     expect(verdict).toMatchObject({ status: 'failed' });
     if (verdict.status === 'failed') {
       expect(verdict.reason).toContain('npm test');
       expect(verdict.reason).not.toContain('lint');
+    }
+  });
+
+  it('R-13: with every command failing, the first failing command in set order is named', () => {
+    const verdict = run(COMMAND_AB, { commands: { 'cmd-a': { exitCode: 1 }, 'cmd-b': { exitCode: 2 } } }, AB);
+    expect(verdict.status).toBe('failed');
+    if (verdict.status === 'failed') {
+      expect(verdict.reason).toContain('cmd-a');
+      expect(verdict.reason).toContain('1');
     }
   });
 
