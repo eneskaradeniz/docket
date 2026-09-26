@@ -1,2 +1,3 @@
-// Public API of domain/library — see docs/v2/domain.md. Filled in by its Phase 1 issue.
-export {};
+// Public API of domain/library — see docs/v2/domain.md section 12.
+export * from './roles';
+export * from './flows';

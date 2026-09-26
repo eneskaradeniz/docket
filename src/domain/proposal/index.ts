@@ -1,2 +1,2 @@
-// Public API of domain/proposal — see docs/v2/domain.md. Filled in by its Phase 1 issue.
-export {};
+// Public API of domain/proposal — see docs/v2/domain.md section 9.
+export * from './proposal';

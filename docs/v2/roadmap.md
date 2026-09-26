@@ -50,7 +50,7 @@ Tests · Touches · Manual check · Done when. The **Interfaces** section is cop
 Used for phases without UI (Phase 1, most of Phase 2). The operator reviews the result in the
 morning. Rules:
 
-1. **Integration branch `v2`.** Each issue gets a branch `v2/<issue>-<slug>` from the latest
+1. **Integration branch `v2`.** Each issue gets a branch `v2-<issue>-<slug>` from the latest
    `origin/v2` and a PR **into `v2`** (never into `main`).
 2. One subagent per issue, in its own git worktree, with the model from the issue's label. Waves run
    in order; inside a wave at most 3 issues in parallel.

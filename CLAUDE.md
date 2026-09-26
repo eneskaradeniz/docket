@@ -52,7 +52,7 @@ ask; do not pick one yourself.
 - No agent-vendor names outside `src/infrastructure/providers/`.
 
 ## Git and PRs
-- Branch per issue: `v2/<issue-number>-<short-slug>`. Batch mode bases on `origin/v2`; interactive
+- Branch per issue: `v2-<issue-number>-<short-slug>` (a `v2/…` name is impossible while the branch `v2` exists). Batch mode bases on `origin/v2`; interactive
   work bases on `origin/v2` too unless the issue says `main`.
 - Commit: `<type>(<scope>): <summary> (#<issue>)`, e.g. `feat(domain/quota): headroom rules (#131)`.
 - PR body starts with `**Model Used:** <provider> — <model id>` then `Closes #<issue>`, a short
