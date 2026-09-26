@@ -4,6 +4,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["electron", "src/adapters/runner", "src/adapters/store", "src/adapters/forge", "src/adapters/health.ts", "src/adapters/git-console.ts"],
+  "include": ["electron", "src/adapters/runner", "src/adapters/store", "src/adapters/forge", "src/adapters/health.ts", "src/adapters/git-console.ts", "src/infrastructure"],
   "exclude": []
 }
