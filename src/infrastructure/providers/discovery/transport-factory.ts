@@ -15,6 +15,7 @@ import {
   createStreamJsonTransport,
   type StreamDialect,
 } from '../transports/stream-json/index';
+import { createAcpTransport } from '../transports/acp/index';
 import { createSdkTransport, type QueryFn } from '../transports/sdk/transport';
 
 export interface ProviderTransportFactoryConfig {
@@ -66,6 +67,11 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
           { ...def, bins: binPath === null ? [] : [binPath] },
           dialect,
         );
+      }
+      if (def.transport === 'acp') {
+        const binPath = config.binPaths[def.id] ?? null;
+        // Discovery's result replaces the candidate list, as with the other spawned transports.
+        return createAcpTransport({ ...def, bins: binPath === null ? [] : [binPath] });
       }
       if (def.transport !== 'sdk') return unsupportedTransport(def);
       return createSdkTransport({

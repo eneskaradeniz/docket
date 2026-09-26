@@ -139,6 +139,44 @@ const writeFakeStreamBin = (): string => {
   return path;
 };
 
+/**
+ * An executable node script speaking a minimal Agent Client Protocol handshake as a fake agent:
+ * initialize → session/new → session/prompt, echoing the config-dir variable it was spawned
+ * with so the test can see the run-scoped config reached the child environment.
+ */
+const writeFakeAcpBin = (): string => {
+  const path = join(root, 'factory-fake-acp-bin.cjs');
+  writeFileSync(
+    path,
+    [
+      '#!/usr/bin/env node',
+      "const readline = require('node:readline');",
+      'let sessionId = null;',
+      "const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');",
+      "const rl = readline.createInterface({ input: process.stdin });",
+      "rl.on('line', (line) => {",
+      '  const message = JSON.parse(line);',
+      "  if (message.method === 'initialize') {",
+      "    send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: {}, agentInfo: { name: 'fake', version: '1' }, authMethods: [] } });",
+      '    return;',
+      '  }',
+      "  if (message.method === 'session/new') {",
+      "    sessionId = 'sess_factory';",
+      "    send({ jsonrpc: '2.0', id: message.id, result: { sessionId } });",
+      '    return;',
+      '  }',
+      "  if (message.method === 'session/prompt') {",
+      "    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', messageId: 'msg_1', content: { type: 'text', text: process.env.FAKE_CLI_HOME ?? 'no-config' } } } });",
+      "    send({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } });",
+      '    return;',
+      '  }',
+      '});',
+    ].join('\n') + '\n',
+  );
+  chmodSync(path, 0o755);
+  return path;
+};
+
 // --- fake query (the transport must never reach a real agent CLI here) ---
 
 interface CapturedCall {
@@ -243,30 +281,27 @@ describe('provider transport factory', () => {
     expect(await factory.forAccount(ACCOUNT_UNKNOWN)).toBeUndefined(); // account missing
   });
 
-  it('reports unsupported for the app-server and acp transports, and for a stream-json def whose dialect id has no implementation', async () => {
+  it('reports unsupported for the app-server transport, and for a stream-json def whose dialect id has no implementation', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(accountOf(ACCOUNT_APP_SERVER, 'fake-app-server'));
-    await accounts.save(accountOf(ACCOUNT_ACP, 'fake-acp'));
     await accounts.save(accountOf(ACCOUNT_STREAM_JSON, 'fake-stream-json'));
     const factory = createProviderTransportFactory({
       defs: [
         defOf({ id: 'fake-app-server', transport: 'app-server' }),
-        defOf({ id: 'fake-acp', transport: 'acp' }),
         defOf({ id: 'fake-stream-json', transport: 'stream-json', streamDialect: 'fake' }),
       ],
       accounts,
       secrets: createFakeSecretVault(),
       clock: createFakeClock(),
       baseEnv: {},
-      // Even a discovered binary does not make these transports available yet.
+      // Even a discovered binary does not make an unimplemented transport available.
       binPaths: {
         'fake-app-server': '/toolchain/bin/fake-app-server',
-        'fake-acp': '/toolchain/bin/fake-acp',
         'fake-stream-json': '/toolchain/bin/fake-stream-json',
       },
     });
 
-    for (const accountId of [ACCOUNT_APP_SERVER, ACCOUNT_ACP, ACCOUNT_STREAM_JSON]) {
+    for (const accountId of [ACCOUNT_APP_SERVER, ACCOUNT_STREAM_JSON]) {
       const transport = await factory.forAccount(accountId);
       if (transport === undefined) throw new Error('expected a transport that reports unsupported');
       const started = await transport.start(request(accountId));
@@ -324,6 +359,33 @@ describe('provider transport factory', () => {
     const started = await transport.start(request(ACCOUNT_STREAM_JSON, join(root, 'stream-json-missing')));
     expect(started.ok).toBe(false);
     if (!started.ok) expect(started.error.code).toBe('not_installed');
+  });
+
+  it('maps an acp account to the ACP transport bound to its discovered binary', async () => {
+    const bin = writeFakeAcpBin();
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_ACP, 'fake-acp'));
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-acp', transport: 'acp' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: { 'fake-acp': bin },
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_ACP);
+    if (transport === undefined) throw new Error('expected a transport for the acp provider');
+    const cwd = join(root, 'acp-run');
+    const handle = unwrap(await transport.start(request(ACCOUNT_ACP, cwd)));
+    const events = await collect(handle.events);
+
+    // The handshake ran through the fake agent; its message echoes the run-scoped config dir,
+    // proving the spawned child is exactly the discovered binary with the isolated config.
+    expect(events.map((event) => event.type)).toEqual(['session_started', 'text', 'finished']);
+    expect(events[0]).toMatchObject({ sessionRef: 'sess_factory' });
+    expect(events[1]).toMatchObject({ delta: join(cwd, 'config') });
+    expect(events.filter((event) => event.type === 'finished')).toHaveLength(1);
   });
 
   it('creates the SDK transport with the SDK default when discovery found no binary', async () => {
