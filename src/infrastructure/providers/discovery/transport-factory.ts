@@ -10,6 +10,7 @@ import type {
 } from '../../../application/index';
 import { err } from '../../../domain/index';
 import type { ProviderDef } from '../defs/index';
+import { createAppServerTransport } from '../transports/app-server/index';
 import {
   BUILTIN_STREAM_DIALECTS,
   createStreamJsonTransport,
@@ -72,6 +73,12 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
         const binPath = config.binPaths[def.id] ?? null;
         // Discovery's result replaces the candidate list, as with the other spawned transports.
         return createAcpTransport({ ...def, bins: binPath === null ? [] : [binPath] });
+      }
+      if (def.transport === 'app-server') {
+        const binPath = config.binPaths[def.id] ?? null;
+        // Discovery's result replaces the candidate list, exactly as for stream-json: the spawned
+        // path is the probed path, and "not found" becomes the transport's not_installed report.
+        return createAppServerTransport({ ...def, bins: binPath === null ? [] : [binPath] });
       }
       if (def.transport !== 'sdk') return unsupportedTransport(def);
       return createSdkTransport({
