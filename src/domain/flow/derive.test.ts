@@ -214,7 +214,7 @@ describe('deriveWorkOrderState — creation (R-17)', () => {
     expect(derive(allAuto, [created()])).toEqual({ status: 'done', stage: null, attempt: 1, pendingGates: [] });
   });
 
-  it('an empty history derives the same entry state as created', () => {
+  it('R-23a: an empty history derives the same entry state as created', () => {
     expect(derive(THREE_STAGE, [])).toEqual(derive(THREE_STAGE, [created()]));
   });
 });
@@ -570,10 +570,17 @@ describe('deriveWorkOrderState — block, unblock, close (R-23)', () => {
     expect(derive(THREE_STAGE, [...AT_IMPLEMENT_GATING, unblockedEvent()])).toEqual(derive(THREE_STAGE, AT_IMPLEMENT_GATING));
   });
 
-  it('events arriving while blocked leave the state untouched', () => {
+  it('R-23a: events arriving while blocked leave the state untouched', () => {
     expect(
       derive(THREE_STAGE, [...AT_IMPLEMENT_GATING, blockedEvent('stop'), runStarted('implement'), gateFailed('implement', 'tests')]),
     ).toEqual(derive(THREE_STAGE, [...AT_IMPLEMENT_GATING, blockedEvent('stop')]));
+  });
+
+  it('R-23a: block reasons name the cause — "run failed", the failed gate, or the unknown verdict reason', () => {
+    const runFailed = derive(NO_ONFAIL, [created(), runStarted('solo'), runFinished('failed')]);
+    expect(runFailed.blockedReason).toBe('run failed');
+    const gateFailedState = derive(NO_ONFAIL, [created(), runStarted('solo'), runFinished('succeeded'), gateFailed('solo', 'tests', 'exit 1')]);
+    expect(gateFailedState.blockedReason).toBe('gate "tests" failed: exit 1');
   });
 
   it('R-23: closed ends the work order with status done and stage null', () => {
