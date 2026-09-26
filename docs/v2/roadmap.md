@@ -6,13 +6,14 @@
 | --- | --- | --- |
 | **v2 · Phase 0 — Preparation** | Design docs, layer checks, folder scaffold, probes, rename (later) | Scaffold passes CI; probe results recorded |
 | **v2 · Phase 1 — Domain core** | `src/domain/` per [domain.md](domain.md) | Every R-rule has a test; v1 parity scenarios pass |
-| **v2 · Phase 2 — Application & storage** | Use cases, ports + fakes, SQLite repositories, YAML definition store, keychain, event log, API boundary, Claude SDK transport | A headless test runs a work order end to end |
-| **v2 · Phase 3 — Providers** | Discovery, stream-json, Codex app-server, ACP, quota probes, per-run isolated capabilities | Claude, Codex and one ACP agent run the same work order |
-| **v2 · Phase 4 — UI & parity** | Shell, wizard, cockpit, workspace board, work-order detail, live pane, settings, secret-scan gate | v1 parity → v1 code removed |
-| **v2 · Phase 5 — Roadmap & dispatcher** | Task dependencies, "run phase", auto-resume after quota, pool switching, fallback chain | A phase advances unattended |
+| **v2 · Phase 2 — Application & storage** | Use cases, ports + fakes, SQLite repositories, YAML definition store, keychain, event log, API boundary, Claude SDK transport; 2c: environments, deploy and remote-check gates, `Forge`/`IssueTracker` ports ([integrations.md](integrations.md)) | A headless test runs a work order end to end |
+| **v2 · Phase 3 — Providers** | Discovery, stream-json, Codex app-server, ACP, quota probes, per-run isolated capabilities, GitHub `Forge` adapter | Claude, Codex and one ACP agent run the same work order |
+| **v2 · Phase 4 — UI & parity** | Shell, wizard, cockpit, workspace board, work-order detail, live pane, settings, secret-scan gate, environments and deploy approval | v1 parity → v1 code removed |
+| **v2 · Phase 5 — Roadmap & dispatcher** | Task dependencies, "run phase", auto-resume after quota, pool switching, fallback chain, remote-check polling, tracker import and write-back | A phase advances unattended |
 | **v2 · Phase 6 — Pages & chat** | Docket MCP server, page viewer, page-approval gate, chat at three scopes, proposals | "Add a test role" approved from chat as a diff |
 | **v2 · Phase 7 — Companion & library** | New project from scratch, role/flow library, security gates | From an empty machine to a running project |
 | **v2 · Phase 8 — Mobile** | Free local-network mobile app: attention inbox, approvals, live view | A gate approved from the phone |
+| **v2 · Phase 9 — Integrations** | `Forge` and `IssueTracker` adapters: Bitbucket, Azure DevOps, GitLab, Jira, Odoo Project, GitHub Issues | Each platform passes its adapter tests; one workspace runs on Bitbucket + Jira |
 
 Team features and off-LAN remote access are out of scope for now.
 
