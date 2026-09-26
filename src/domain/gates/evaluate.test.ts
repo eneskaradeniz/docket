@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GateDef } from '../definitions';
-import type { Actor, GateSlug, RoleSlug } from '../shared';
+import type { Actor, EnvSlug, GateSlug, RoleSlug } from '../shared';
 import { evaluateGate, GATE_EVALUATORS, type GateContext, type GateEvidence, type GateVerdict } from './evaluate';
 
 const USER: Actor = { kind: 'user', id: 'u-1' };
@@ -12,6 +12,8 @@ const PAGE: GateDef = { kind: 'page_approval', id: gate('findings'), label: 'Bul
 const COMMAND: GateDef = { kind: 'command', id: gate('tests'), commandSet: 'tests' };
 const SECRET_SCAN: GateDef = { kind: 'secret_scan', id: gate('secrets') };
 const AGENT_VERDICT: GateDef = { kind: 'agent_verdict', id: gate('review-verdict'), role: 'reviewer' as RoleSlug };
+const DEPLOY: GateDef = { kind: 'deploy', id: gate('deploy-stg'), environment: 'stg' as EnvSlug };
+const REMOTE_CHECKS: GateDef = { kind: 'remote_checks', id: gate('ci'), required: 'all', timeoutMinutes: 10 };
 
 const CTX: GateContext = {
   commandSets: {
@@ -35,13 +37,13 @@ const viaRegistry = <K extends GateDef['kind']>(
 describe('GATE_EVALUATORS', () => {
   it('has exactly one entry per GateDef kind', () => {
     expect(Object.keys(GATE_EVALUATORS).sort()).toEqual(
-      ['agent_verdict', 'command', 'human', 'page_approval', 'secret_scan'],
+      ['agent_verdict', 'command', 'deploy', 'human', 'page_approval', 'remote_checks', 'secret_scan'],
     );
   });
 
   it('R-12: every kind is reachable through the registry, matching evaluateGate', () => {
     const evidence: GateEvidence = { approval: approved() };
-    for (const gateDef of [HUMAN, PAGE, COMMAND, SECRET_SCAN, AGENT_VERDICT] as const) {
+    for (const gateDef of [HUMAN, PAGE, COMMAND, SECRET_SCAN, AGENT_VERDICT, DEPLOY, REMOTE_CHECKS] as const) {
       expect(viaRegistry(gateDef, evidence)).toEqual(run(gateDef, evidence));
     }
   });
