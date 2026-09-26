@@ -1,7 +1,12 @@
 // Transport factory tests (docs/v2/providers.md → "Discovery" closing paragraph): the factory maps
 // an account's provider definition to a transport — the sdk kind to the real SDK transport bound to
-// the discovered binary, the other kinds to an `unsupported` report until their issues land.
-import { describe, expect, it } from 'vitest';
+// the discovered binary, the stream-json kind to the framing transport bound to its dialect and
+// binary (a fake node bin here), and the remaining kinds to an `unsupported` report until their
+// issues land.
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { createFakeAccountRepo, createFakeClock, createFakeSecretVault } from '../../../application/ports/fakes/index';
@@ -9,8 +14,19 @@ import type { AccountRecord, RunHandle, RunRequest, TransportError } from '../..
 import type { Result, RoleDef, RunId } from '../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../domain/index';
 import type { ProviderDef } from '../defs/index';
+import type { StreamDialect } from '../transports/stream-json/index';
 import type { QueryFn } from '../transports/sdk/transport';
 import { createProviderTransportFactory } from './transport-factory';
+
+let root: string;
+
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), 'docket-transport-factory-'));
+});
+
+afterAll(() => {
+  rmSync(root, { recursive: true, force: true });
+});
 
 const RUN_ID: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FBV');
 const ACCOUNT_SDK: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
@@ -51,10 +67,10 @@ function accountOf(id: AccountId, provider: string): AccountRecord {
   };
 }
 
-function request(accountId: AccountId): RunRequest {
+function request(accountId: AccountId, cwd: string = '/tmp/docket-transport-factory'): RunRequest {
   return {
     runId: RUN_ID,
-    cwd: '/tmp/docket-transport-factory',
+    cwd,
     role: ROLE,
     route: { accountId },
     prompt: 'do the work',
@@ -97,6 +113,31 @@ const defOf = (overrides: Pick<ProviderDef, 'id' | 'transport'> & { readonly str
   id: overrides.id,
   ...(overrides.streamDialect === undefined ? {} : { streamDialect: overrides.streamDialect }),
 });
+
+/** Recognises {say} → text and {end} → finished; a minimal dialect for wiring tests. */
+const fakeDialect: StreamDialect = {
+  id: 'fake',
+  parse: (line) => {
+    if (typeof line !== 'object' || line === null || Array.isArray(line)) return null;
+    const record = line as Record<string, unknown>;
+    if (typeof record['say'] === 'string') return [{ type: 'text', at: 1, delta: record['say'] }];
+    if (record['end'] === 'completed' || record['end'] === 'failed') {
+      return [{ type: 'finished', at: 1, reason: record['end'] }];
+    }
+    return null;
+  },
+};
+
+/** An executable node script emitting its own path and a completed finish, as a fake CLI. */
+const writeFakeStreamBin = (): string => {
+  const path = join(root, 'factory-fake-stream-bin.cjs');
+  writeFileSync(
+    path,
+    '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ say: process.argv[1] }) + \'\\n{"end":"completed"}\\n\');\n',
+  );
+  chmodSync(path, 0o755);
+  return path;
+};
 
 // --- fake query (the transport must never reach a real agent CLI here) ---
 
@@ -202,7 +243,7 @@ describe('provider transport factory', () => {
     expect(await factory.forAccount(ACCOUNT_UNKNOWN)).toBeUndefined(); // account missing
   });
 
-  it('reports unsupported for the app-server, acp and stream-json transports for now', async () => {
+  it('reports unsupported for the app-server and acp transports, and for a stream-json def whose dialect id has no implementation', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(accountOf(ACCOUNT_APP_SERVER, 'fake-app-server'));
     await accounts.save(accountOf(ACCOUNT_ACP, 'fake-acp'));
@@ -232,6 +273,57 @@ describe('provider transport factory', () => {
       expect(started.ok).toBe(false);
       if (!started.ok) expect(started.error.code).toBe('unsupported');
     }
+    // An unimplemented dialect id is reported by name, never a crash.
+    const transport = await factory.forAccount(ACCOUNT_STREAM_JSON);
+    if (transport === undefined) throw new Error('expected a transport that reports unsupported');
+    const started = await transport.start(request(ACCOUNT_STREAM_JSON));
+    if (!started.ok) expect(started.error.message).toContain('"fake"');
+  });
+
+  it('maps a stream-json account to the stream-json transport bound to its dialect and discovered binary', async () => {
+    const bin = writeFakeStreamBin();
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_STREAM_JSON, 'fake-stream-json'));
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-stream-json', transport: 'stream-json', streamDialect: 'fake' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: { 'fake-stream-json': bin },
+      streamDialects: { fake: fakeDialect },
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_STREAM_JSON);
+    if (transport === undefined) throw new Error('expected a transport for the stream-json provider');
+    const cwd = join(root, 'stream-json-run');
+    const handle = unwrap(await transport.start(request(ACCOUNT_STREAM_JSON, cwd)));
+    const events = await collect(handle.events);
+
+    // The bin announces its own path: exactly the discovered binary was spawned.
+    expect(events.map((event) => event.type)).toEqual(['text', 'finished']);
+    expect(events[0]).toMatchObject({ delta: bin });
+    expect(events.filter((event) => event.type === 'finished')).toHaveLength(1);
+  });
+
+  it('reports not_installed for a stream-json provider discovery found no binary for', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_STREAM_JSON, 'fake-stream-json'));
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-stream-json', transport: 'stream-json', streamDialect: 'fake' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: { 'fake-stream-json': null },
+      streamDialects: { fake: fakeDialect },
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_STREAM_JSON);
+    if (transport === undefined) throw new Error('expected a transport that reports not_installed');
+    const started = await transport.start(request(ACCOUNT_STREAM_JSON, join(root, 'stream-json-missing')));
+    expect(started.ok).toBe(false);
+    if (!started.ok) expect(started.error.code).toBe('not_installed');
   });
 
   it('creates the SDK transport with the SDK default when discovery found no binary', async () => {
