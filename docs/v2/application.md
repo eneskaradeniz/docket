@@ -31,6 +31,8 @@ General rules for `src/application/` and `src/api/`:
 | `services/` | Long-lived orchestration (dispatcher, run executor) + `index.ts` | domain, `ports`, `use-cases` |
 | `index.ts` | Barrel: ports, use cases, services, `AppDeps` | all of the above |
 
+Cross-layer scenario tests live in `src/api/scenarios/` (test files only), because only the API layer may import both the application and the API.
+
 `src/api/` (contracts only in Phase 2a) may import domain and application.
 
 ---
@@ -418,9 +420,10 @@ Rules:
 
 ## 5. Phase 2a acceptance — headless end to end
 
-`src/application/scenarios/standard-flow.test.ts` (test-only folder, may import everything in
-`src/application` and the domain) drives the built-in `standard` flow with fakes, calling the use
-cases and services directly (and `createApi` for the open/decide commands):
+`src/api/scenarios/standard-flow.test.ts` (test-only folder in the API layer, which may import the
+application and the domain) drives the built-in `standard` flow with fakes: opening and human gate
+decisions go through `createApi`; runs, machine gates and agent verdicts call the application
+directly:
 
 1. open → `plan`/`ready`; enqueue + tick → started; `executeRun` with a fake transport that
    finishes `completed` → `plan`/`awaiting_human`.
