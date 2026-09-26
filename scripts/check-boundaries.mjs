@@ -27,7 +27,10 @@ const NODE_BUILTINS = new Set(builtinModules);
 const isNodeSpecifier = (spec) => spec.startsWith('node:') || NODE_BUILTINS.has(spec) || spec === 'electron';
 const COMPOSITION_ROOTS = new Set(['electron/main.ts']); // a composition root imports an adapter (ADR-0006; WO-0024's CLI root removed by WO-0073 — the one root is the Electron main)
 
-const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))];
+// v1 rules apply to v1 code only; v2 layers (src/domain, application, api, infrastructure, presentation)
+// are checked by scripts/check-layers.mjs.
+const V2_DIRS = ['domain', 'application', 'api', 'infrastructure', 'presentation'].map((d) => join(SRC, d));
+const files = [...walk(SRC), ...walk(join(ROOT, 'electron'))].filter((f) => !V2_DIRS.some((d) => f.startsWith(d + '/')));
 const read = (f) => readFileSync(f, 'utf8').split('\n');
 const rel = (f) => relative(ROOT, f);
 const isTest = (r) => r.includes('/__tests__/') || /\.test\.[tj]sx?$/.test(r);
