@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { createCommandRunner } from './command-runner';
 
 // The runner goes through /bin/sh -c, so every command below is POSIX; the Windows branch
-// (cmd.exe) is implemented per the contract but not exercised by these tests.
-const itPosix = it.skipIf(process.platform === 'win32');
+// (cmd.exe) is implemented per the contract but not exercised by these tests. The skip sits on
+// the describe so every rule title is registered through a literal it('I-n: …') call, which is
+// what the rule-coverage check matches.
+const describePosix = describe.skipIf(process.platform === 'win32');
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'docket-command-runner-'));
@@ -28,8 +30,8 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-describe('createCommandRunner', () => {
-  itPosix('I-24: the command runs in the given cwd', async () => {
+describePosix('createCommandRunner', () => {
+  it('I-24: the command runs in the given cwd', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {} });
     const result = await runner.run(cwd, 'pwd', RUN_TIMEOUT_MS);
@@ -39,7 +41,7 @@ describe('createCommandRunner', () => {
     expect(Number.isInteger(result.durationMs)).toBe(true);
   });
 
-  itPosix('I-24: the command goes through /bin/sh -c', async () => {
+  it('I-24: the command goes through /bin/sh -c', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {} });
     const result = await runner.run(cwd, 'echo a$(echo b)c', RUN_TIMEOUT_MS);
@@ -47,7 +49,7 @@ describe('createCommandRunner', () => {
     expect(result.outputTail).toBe('abc\n');
   });
 
-  itPosix('I-24: the child environment is exactly config.env — nothing is inherited from process.env', async () => {
+  it('I-24: the child environment is exactly config.env — nothing is inherited from process.env', async () => {
     const cwd = await tempDir();
     process.env.DOCKET_RUNNER_LEAK = 'leak-secret-value';
     try {
@@ -65,7 +67,7 @@ describe('createCommandRunner', () => {
     }
   });
 
-  itPosix('I-24: resolves with the command exit code and raw output', async () => {
+  it('I-24: resolves with the command exit code and raw output', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {} });
     const ok = await runner.run(cwd, 'echo hello', RUN_TIMEOUT_MS);
@@ -75,7 +77,7 @@ describe('createCommandRunner', () => {
     expect(failed.exitCode).toBe(3);
   });
 
-  itPosix(
+  it(
     'I-25: a timed-out command returns exitCode 124 and leaves no child process',
     async () => {
       const cwd = await tempDir();
@@ -104,7 +106,7 @@ describe('createCommandRunner', () => {
     expect(Number.isInteger(result.durationMs)).toBe(true);
   });
 
-  itPosix('I-26: outputTail interleaves stdout and stderr in arrival order', async () => {
+  it('I-26: outputTail interleaves stdout and stderr in arrival order', async () => {
     const cwd = await tempDir();
     // Two pipes have no cross-pipe write ordering, so the command pauses between writes:
     // each chunk is flushed and consumed before the next is produced, making the arrival
@@ -116,7 +118,7 @@ describe('createCommandRunner', () => {
     expect(result.outputTail).toBe('o1e1o2e2');
   });
 
-  itPosix('I-26: outputTail keeps the last tailBytes bytes', async () => {
+  it('I-26: outputTail keeps the last tailBytes bytes', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {}, tailBytes: 10 });
     const result = await runner.run(cwd, "printf 'abcdefghij0123456789'", RUN_TIMEOUT_MS);
@@ -124,7 +126,7 @@ describe('createCommandRunner', () => {
     expect(result.outputTail).toBe('0123456789');
   });
 
-  itPosix('I-26: outputTail defaults to the last 8192 bytes', async () => {
+  it('I-26: outputTail defaults to the last 8192 bytes', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {} });
     const result = await runner.run(cwd, `printf '${'x'.repeat(9000)}'`, RUN_TIMEOUT_MS);
@@ -132,7 +134,7 @@ describe('createCommandRunner', () => {
     expect(result.outputTail.endsWith('x'.repeat(64))).toBe(true);
   });
 
-  itPosix('I-26: the tail cut lands on a UTF-8 character boundary', async () => {
+  it('I-26: the tail cut lands on a UTF-8 character boundary', async () => {
     const cwd = await tempDir();
     // 'abc' + U+1F600 (4 UTF-8 bytes) + 'def': 10 bytes in total; a 6-byte tail starts
     // inside the emoji and must drop the split character instead of decoding half of it.
@@ -143,21 +145,21 @@ describe('createCommandRunner', () => {
     expect((await misaligned.run(cwd, `printf 'abc${emojiBytes}def'`, RUN_TIMEOUT_MS)).outputTail).toBe('def');
   });
 
-  itPosix('I-26: every env value of at least 8 characters is replaced with [env]', async () => {
+  it('I-26: every env value of at least 8 characters is replaced with [env]', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: { DOCKET_VALUE: 'v'.repeat(14) } });
     const result = await runner.run(cwd, 'echo "$DOCKET_VALUE-$DOCKET_VALUE"', RUN_TIMEOUT_MS);
     expect(result.outputTail).toBe('[env]-[env]\n');
   });
 
-  itPosix('I-26: env values shorter than 8 characters are kept', async () => {
+  it('I-26: env values shorter than 8 characters are kept', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: { S: 'short' } });
     const result = await runner.run(cwd, 'echo "$S"', RUN_TIMEOUT_MS);
     expect(result.outputTail).toBe('short\n');
   });
 
-  itPosix('I-26: secret-looking output is replaced with [redacted]', async () => {
+  it('I-26: secret-looking output is replaced with [redacted]', async () => {
     const cwd = await tempDir();
     const runner = createCommandRunner({ env: {} });
     const secret = 'AKIA' + 'X'.repeat(16);
@@ -165,7 +167,7 @@ describe('createCommandRunner', () => {
     expect(result.outputTail).toBe('[redacted]\n');
   });
 
-  itPosix('I-26: env redaction runs before secret redaction', async () => {
+  it('I-26: env redaction runs before secret redaction', async () => {
     const cwd = await tempDir();
     // The env value is itself secret-shaped: env redaction must turn it into '[env]' first,
     // leaving nothing for the secret patterns to match.
