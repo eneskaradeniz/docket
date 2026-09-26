@@ -6,10 +6,11 @@ import { redactSecrets } from './secret-patterns';
 export interface CommandRunnerConfig {
   readonly env: Readonly<Record<string, string>>; // the base child environment (built by the composition root); per-call env is added on top
   readonly tailBytes?: number; // default 8192
+  readonly killGraceMs?: number; // default 5000
 }
 
 /** Grace between the group SIGTERM and the group SIGKILL: time to flush and shut down cleanly. */
-const KILL_GRACE_MS = 5_000;
+const DEFAULT_KILL_GRACE_MS = 5_000;
 const DEFAULT_TAIL_BYTES = 8_192;
 
 /** UTF-8 sequence length for a lead byte, or 0 for a stray continuation / invalid byte. */
@@ -48,6 +49,7 @@ function redactEnvValues(text: string, values: readonly string[]): string {
 
 export function createCommandRunner(config: CommandRunnerConfig): CommandRunner {
   const tailBytes = config.tailBytes ?? DEFAULT_TAIL_BYTES;
+  const killGraceMs = config.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
 
   return {
     run(cwd, command, timeoutMs, callEnv) {
@@ -78,7 +80,7 @@ export function createCommandRunner(config: CommandRunnerConfig): CommandRunner 
         const timeoutTimer = setTimeout(() => {
           timedOut = true;
           signalGroup('SIGTERM');
-          killTimer = setTimeout(() => signalGroup('SIGKILL'), KILL_GRACE_MS);
+          killTimer = setTimeout(() => signalGroup('SIGKILL'), killGraceMs);
         }, timeoutMs);
 
         function signalGroup(signal: NodeJS.Signals): void {

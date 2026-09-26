@@ -134,24 +134,25 @@ describePosix('createCommandRunner', () => {
     'I-25: a command that ignores the group SIGTERM is ended by the group SIGKILL',
     async () => {
       const cwd = await tempDir();
-      const runner = createCommandRunner({ env: {} });
+      const timeoutMs = 300;
+      const killGraceMs = 200;
+      const runner = createCommandRunner({ env: {}, killGraceMs });
       // The trap is installed before the child starts, so the shell and the background sleep both
       // ignore SIGTERM (an ignored disposition is inherited): only the escalation's group SIGKILL
-      // can end the run. The child's pid lands in the cwd so the test can watch it across the
-      // grace window.
-      const resultPromise = runner.run(cwd, "trap '' TERM; sleep 60 & echo $! > killed.pid; wait $!", 300);
-      const pidFile = join(cwd, 'killed.pid');
-      const pid = await pollForPid(pidFile);
-      await delay(1_500); // well into the 5 s grace: the SIGTERM was delivered long before
-      expect(pidAlive(pid)).toBe(true);
+      // can end the run. The child's pid lands in the cwd so the test can check it after the run.
+      const resultPromise = runner.run(cwd, "trap '' TERM; sleep 60 & echo $! > killed.pid; wait $!", timeoutMs);
+      const pid = await pollForPid(join(cwd, 'killed.pid'));
       const result = await resultPromise;
       expect(result.exitCode).toBe(124);
-      // The 5 s grace elapsed before the run resolved, so the group SIGKILL is what ended it.
-      expect(result.durationMs).toBeGreaterThanOrEqual(4_500);
-      expect(result.durationMs).toBeLessThan(20_000);
+      // Outlasting the timeout plus the whole grace is the race-free proof that the group ignored
+      // SIGTERM: a SIGTERM death would have closed the run at ~timeoutMs, so only the post-grace
+      // group SIGKILL can explain a duration this long — no wall-clock waiting needed.
+      expect(result.durationMs).toBeGreaterThanOrEqual(timeoutMs + killGraceMs);
+      expect(result.durationMs).toBeLessThan(5_000);
+      // The background sleep ignores SIGTERM too, so its death shows the group signal reached it.
       expect(pidAlive(pid)).toBe(false);
     },
-    30_000,
+    10_000,
   );
 
   it('I-26: outputTail interleaves stdout and stderr in arrival order', async () => {
