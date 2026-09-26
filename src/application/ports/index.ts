@@ -8,6 +8,7 @@ export * from './deps';
 export * from './event-log';
 export * from './forge';
 export * from './id-gen';
+export * from './issue-tracker';
 export * from './notifier';
 export * from './proposal-repo';
 export * from './queue-repo';
