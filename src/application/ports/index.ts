@@ -1,2 +1,16 @@
-// Ports barrel — see docs/v2/application.md. Filled in by its Phase 2a issue.
-export {};
+// Ports barrel — see docs/v2/application.md § 1.
+export * from './account-repo';
+export * from './agent-transport';
+export * from './binding-repo';
+export * from './clock';
+export * from './definition-store';
+export * from './deps';
+export * from './event-log';
+export * from './id-gen';
+export * from './notifier';
+export * from './proposal-repo';
+export * from './queue-repo';
+export * from './run-repo';
+export * from './secret-vault';
+export * from './workspace-tools';
+export * from './work-order-repo';
