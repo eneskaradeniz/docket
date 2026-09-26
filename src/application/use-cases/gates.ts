@@ -1,2 +1,259 @@
-// use-cases/gates.ts — see docs/v2/application.md. Filled in by its Phase 2a issue.
-export {};
+// use-cases/gates.ts — human decisions, machine-gate evaluation and agent verdicts. Every verdict
+// is judged by the domain's evaluateGate and recorded as one gate_evaluated event on the work
+// order; the application only gathers evidence through ports and writes results back.
+import type {
+  Actor,
+  Definitions,
+  FlowDef,
+  GateContext,
+  GateDef,
+  GateEvidence,
+  GateSlug,
+  GateVerdict,
+  Result,
+  StageSlug,
+  WorkOrderEvent,
+  WorkOrderId,
+  WorkOrderState,
+} from '../../domain/index';
+import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok } from '../../domain/index';
+
+import type { AppDeps, WorkOrderRecord } from '../ports';
+
+/** A gate's commands run in the work order's worktree, ten minutes each. */
+const COMMAND_TIMEOUT_MS = 10 * MINUTE;
+
+type LoadError = 'not_found' | 'definitions_invalid';
+
+interface LoadedWorkOrder {
+  readonly record: WorkOrderRecord;
+  readonly definitions: Definitions;
+  readonly flow: FlowDef;
+  readonly events: readonly WorkOrderEvent[];
+  readonly state: WorkOrderState;
+}
+
+const loadWorkOrder = async (
+  deps: Pick<AppDeps, 'workOrders' | 'definitions'>,
+  id: WorkOrderId,
+): Promise<Result<LoadedWorkOrder, LoadError>> => {
+  const record = await deps.workOrders.get(id);
+  if (record === undefined) return err('not_found');
+  const definitions = await deps.definitions.load(record.workspace);
+  if (!definitions.ok) return err('definitions_invalid');
+  const flow = definitions.value.flows.find((candidate) => candidate.id === record.flow);
+  if (flow === undefined) return err('not_found');
+  const events = await deps.workOrders.events(id);
+  return ok({
+    record,
+    definitions: definitions.value,
+    flow,
+    events,
+    state: deriveWorkOrderState(flow, events),
+  });
+};
+
+/** The current stage's exit gate with that id; undefined when the work order is done or the gate
+ *  belongs to another stage. */
+const findCurrentGate = (
+  flow: FlowDef,
+  state: WorkOrderState,
+  gate: GateSlug,
+): { readonly stage: StageSlug; readonly gate: GateDef } | undefined => {
+  if (state.stage === null) return undefined;
+  const stage = flow.stages.find((candidate) => candidate.id === state.stage);
+  if (stage === undefined) return undefined;
+  const found = stage.exit.find((candidate) => candidate.id === gate);
+  return found === undefined ? undefined : { stage: state.stage, gate: found };
+};
+
+const gateContext = (definitions: Definitions): GateContext => ({
+  commandSets: definitions.workspace?.commandSets ?? {},
+});
+
+/** Records one decided gate — the event on the work order plus its audit entry — and returns the
+ *  state that event derives. */
+const recordGateDecision = async (
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders'>,
+  decided: {
+    readonly id: WorkOrderId;
+    readonly stage: StageSlug;
+    readonly gate: GateSlug;
+    readonly verdict: GateVerdict;
+    readonly decision: 'approved' | 'rejected';
+    readonly actor: Actor;
+  },
+  flow: FlowDef,
+  events: readonly WorkOrderEvent[],
+): Promise<WorkOrderState> => {
+  const now = deps.clock.now();
+  const event: WorkOrderEvent = {
+    type: 'gate_evaluated',
+    at: now,
+    stage: decided.stage,
+    gate: decided.gate,
+    verdict: decided.verdict,
+  };
+  await deps.workOrders.appendEvent(decided.id, event);
+  await deps.log.append({
+    id: deps.ids.next<'audit'>(),
+    at: now,
+    actor: decided.actor,
+    action: 'gate.decided',
+    subject: { kind: 'work_order', id: decided.id },
+    detail: { gate: decided.gate, decision: decided.decision },
+  });
+  return deriveWorkOrderState(flow, [...events, event]);
+};
+
+export type DecideGateError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_human_gate' | 'agent_cannot_decide';
+
+export async function decideHumanGate(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  input: {
+    readonly id: WorkOrderId;
+    readonly gate: GateSlug;
+    readonly decision: 'approved' | 'rejected';
+    readonly note?: string;
+    readonly actor: Actor;
+  },
+): Promise<Result<WorkOrderState, DecideGateError>> {
+  const loaded = await loadWorkOrder(deps, input.id);
+  // Neither a missing work order nor unloadable definitions leaves a gate to locate, and this
+  // use case's error vocabulary has no code for broken definitions: the gate the caller asked
+  // for simply cannot be found.
+  if (!loaded.ok) return err('not_found');
+  const { definitions, flow, events, state } = loaded.value;
+  const current = findCurrentGate(flow, state, input.gate);
+  if (current === undefined) return err('not_current_stage');
+  if (!state.pendingGates.includes(input.gate)) return err('not_pending');
+  if (current.gate.kind !== 'human' && current.gate.kind !== 'page_approval') return err('not_a_human_gate');
+  if (input.actor.kind === 'agent') return err('agent_cannot_decide');
+
+  const evidence: GateEvidence =
+    current.gate.kind === 'page_approval'
+      ? { pageApproval: { decision: input.decision, by: input.actor } }
+      : {
+          approval:
+            input.note === undefined
+              ? { decision: input.decision, by: input.actor }
+              : { decision: input.decision, by: input.actor, note: input.note },
+        };
+  const verdict = evaluateGate(current.gate, evidence, gateContext(definitions));
+  const stateAfter = await recordGateDecision(
+    deps,
+    { id: input.id, stage: current.stage, gate: input.gate, verdict, decision: input.decision, actor: input.actor },
+    flow,
+    events,
+  );
+  return ok(stateAfter);
+}
+
+/** Runs a whole command set in order, shaped the way the gate evaluator reads its evidence. */
+const runCommandSet = async (
+  deps: Pick<AppDeps, 'commands'>,
+  cwd: string,
+  commands: readonly string[],
+): Promise<NonNullable<GateEvidence['commands']>> => {
+  const results: Record<string, { readonly exitCode: number }> = {};
+  for (const command of commands) {
+    const result = await deps.commands.run(cwd, command, COMMAND_TIMEOUT_MS);
+    results[command] = { exitCode: result.exitCode };
+  }
+  return results;
+};
+
+/** Evaluates every pending machine gate of the current stage (command, secret_scan, agent_verdict). */
+export async function evaluateMachineGates(
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs'>,
+  input: { readonly id: WorkOrderId },
+): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo'>> {
+  const loaded = await loadWorkOrder(deps, input.id);
+  if (!loaded.ok) return err(loaded.error);
+  const { record, definitions, flow, events, state } = loaded.value;
+  if (state.status !== 'gating') return err('not_gating');
+  const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+  if (!worktree.ok) return err('no_repo');
+  const ctx = gateContext(definitions);
+
+  let history = events;
+  // One gate at a time, re-deriving in between: a verdict can advance, retry or block the stage,
+  // and a gate that is no longer pending must not be evaluated — its event would be a dead fact.
+  for (;;) {
+    const current = deriveWorkOrderState(flow, history);
+    if (current.status !== 'gating' || current.stage === null) break;
+    const stage = flow.stages.find((candidate) => candidate.id === current.stage);
+    if (stage === undefined) break;
+    const gate = stage.exit.find(
+      (candidate) =>
+        current.pendingGates.includes(candidate.id) &&
+        (candidate.kind === 'command' || candidate.kind === 'secret_scan'),
+    );
+    if (gate === undefined) break;
+
+    const evidence: GateEvidence =
+      gate.kind === 'command'
+        ? { commands: await runCommandSet(deps, worktree.value.path, ctx.commandSets[gate.commandSet] ?? []) }
+        : { secretScan: await deps.secretScanner.scan(worktree.value.path) };
+
+    const event: WorkOrderEvent = {
+      type: 'gate_evaluated',
+      at: deps.clock.now(),
+      stage: current.stage,
+      gate: gate.id,
+      verdict: evaluateGate(gate, evidence, ctx),
+    };
+    history = [...history, event];
+    await deps.workOrders.appendEvent(input.id, event);
+  }
+  return ok(deriveWorkOrderState(flow, history));
+}
+
+/** An agent_verdict gate's evidence: the reviewer role reports approve/reject with evidence pointers. */
+export type VerdictError = 'not_found' | 'not_current_stage' | 'not_pending' | 'not_an_agent_gate' | 'wrong_role' | 'no_repo';
+
+export async function submitAgentVerdict(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'worktrees' | 'evidence'>,
+  input: {
+    readonly id: WorkOrderId;
+    readonly gate: GateSlug;
+    readonly approve: boolean;
+    readonly pointers: readonly string[];
+    readonly actor: Actor;
+  },
+): Promise<Result<WorkOrderState, VerdictError>> {
+  const loaded = await loadWorkOrder(deps, input.id);
+  // Same reading as decideHumanGate: without loadable definitions there is no gate to find.
+  if (!loaded.ok) return err('not_found');
+  const { record, definitions, flow, events, state } = loaded.value;
+  const current = findCurrentGate(flow, state, input.gate);
+  if (current === undefined) return err('not_current_stage');
+  if (!state.pendingGates.includes(input.gate)) return err('not_pending');
+  if (current.gate.kind !== 'agent_verdict') return err('not_an_agent_gate');
+  if (input.actor.kind !== 'agent' || input.actor.role !== current.gate.role) return err('wrong_role');
+  const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+  if (!worktree.ok) return err('no_repo');
+
+  // An empty pointer list proves nothing, whatever a checker would say about the empty set.
+  const pointersResolved =
+    input.pointers.length > 0 && (await deps.evidence.resolvePointers(worktree.value.path, input.pointers));
+  const verdict = evaluateGate(
+    current.gate,
+    { agentVerdict: { approve: input.approve, pointersResolved } },
+    gateContext(definitions),
+  );
+  const stateAfter = await recordGateDecision(
+    deps,
+    {
+      id: input.id,
+      stage: current.stage,
+      gate: input.gate,
+      verdict,
+      decision: input.approve ? 'approved' : 'rejected',
+      actor: input.actor,
+    },
+    flow,
+    events,
+  );
+  return ok(stateAfter);
+}
