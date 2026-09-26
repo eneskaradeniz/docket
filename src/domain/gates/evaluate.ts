@@ -1,7 +1,7 @@
 // gates/evaluate.ts — evidence + context → verdict for each gate kind, via a registry
 // so a new gate kind is a new evaluator, never an edit to the engine.
-import type { Actor } from '../shared';
-import type { GateDef } from '../definitions';
+import type { Actor, EnvSlug } from '../shared';
+import type { EnvironmentDef, GateDef } from '../definitions';
 
 export type GateVerdict =
   | { readonly status: 'passed' }
@@ -19,6 +19,22 @@ export interface GateEvidence {
     readonly note?: string;
   };
   readonly pageApproval?: { readonly decision: 'approved' | 'rejected'; readonly by: Actor };
+  readonly deployment?: {
+    readonly environment: EnvSlug;
+    readonly commit: string;
+    readonly result: 'success' | 'failed';
+    readonly approvedBy: Actor;
+    readonly confirmedEnvironment?: EnvSlug; // the environment id the user typed to confirm
+  };
+  readonly remoteChecks?: {
+    readonly checks: readonly CheckRunResult[];
+    readonly status: 'all_passed' | 'has_failure' | 'pending' | 'timeout';
+  };
+}
+
+export interface CheckRunResult {
+  readonly name: string;
+  readonly status: 'queued' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped';
 }
 
 export type GateEvaluator<K extends GateDef['kind']> = (
@@ -29,6 +45,7 @@ export type GateEvaluator<K extends GateDef['kind']> = (
 
 export interface GateContext {
   readonly commandSets: Readonly<Record<string, readonly string[]>>;
+  readonly environments?: readonly EnvironmentDef[]; // required to evaluate `deploy` gates
 }
 
 const evaluateHuman: GateEvaluator<'human'> = (_gate, evidence) => {
@@ -88,12 +105,53 @@ const evaluateAgentVerdict: GateEvaluator<'agent_verdict'> = (_gate, evidence) =
   return { status: 'passed' };
 };
 
+const evaluateDeploy: GateEvaluator<'deploy'> = (gate, evidence, ctx) => {
+  // The protected flag lives on the definition, so the environment must resolve before any verdict.
+  const environment = ctx.environments?.find((candidate) => candidate.id === gate.environment);
+  if (environment === undefined) {
+    return { status: 'unknown', reason: `unknown environment "${gate.environment}"` };
+  }
+  const deployment = evidence.deployment;
+  if (deployment === undefined) return { status: 'pending' };
+  // Deploying is a human action: the evidence counts only when a user approved it.
+  if (deployment.approvedBy.kind !== 'user') return { status: 'pending' };
+  // A protected environment needs the user to have typed its id to confirm the deploy.
+  if (environment.protected && deployment.confirmedEnvironment !== gate.environment) {
+    return { status: 'pending' };
+  }
+  if (deployment.result === 'success') return { status: 'passed' };
+  return { status: 'failed', reason: `deploy to "${gate.environment}" failed` };
+};
+
+const evaluateRemoteChecks: GateEvaluator<'remote_checks'> = (_gate, evidence) => {
+  const remote = evidence.remoteChecks;
+  // The poller reduces the check runs to one status; the evaluator maps that status to a verdict.
+  if (remote === undefined) return { status: 'pending' };
+  switch (remote.status) {
+    case 'all_passed':
+      return { status: 'passed' };
+    case 'has_failure': {
+      // Cancelled runs also block promotion, so they count as failures when naming one.
+      const failed = remote.checks.find((c) => c.status === 'failed' || c.status === 'cancelled');
+      return failed === undefined
+        ? { status: 'failed', reason: 'remote checks failed' }
+        : { status: 'failed', reason: `remote check failed: ${failed.name}` };
+    }
+    case 'timeout':
+      return { status: 'failed', reason: 'timeout' };
+    case 'pending':
+      return { status: 'pending' };
+  }
+};
+
 export const GATE_EVALUATORS: { readonly [K in GateDef['kind']]: GateEvaluator<K> } = {
   human: evaluateHuman,
   page_approval: evaluatePageApproval,
   command: evaluateCommand,
   secret_scan: evaluateSecretScan,
   agent_verdict: evaluateAgentVerdict,
+  deploy: evaluateDeploy,
+  remote_checks: evaluateRemoteChecks,
 };
 
 export function evaluateGate(gate: GateDef, evidence: GateEvidence, ctx: GateContext): GateVerdict {
