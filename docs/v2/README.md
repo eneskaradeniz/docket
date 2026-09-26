@@ -14,6 +14,7 @@ until an architect change updates them.
 | [domain.md](domain.md) | The domain model and the exact TypeScript contracts for Phase 1 |
 | [application.md](application.md) | Ports, use cases, services and API contracts for Phase 2a |
 | [infrastructure.md](infrastructure.md) | Adapters for Phase 2b: SQLite, YAML definitions, keychain, git, gates, the SDK transport |
+| [integrations.md](integrations.md) | Design (not yet contract): code hosting, issue trackers, environments, deployment, remote CI |
 | [providers.md](providers.md) | Agent CLI integration: transports, the common event stream, support tiers, isolation |
 | [quota.md](quota.md) | Accounts, pools, windows, limit policies, budgets |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
@@ -42,6 +43,10 @@ The UI speaks Turkish; code uses the English term.
 | Dispatcher | Dağıtıcı | The single service every run passes through: queue, limits, resume |
 | Conversation | Sohbet | Chat at global / workspace / work-order scope; can only propose |
 | Proposal | Öneri | The only way AI changes configuration: a diff the user approves |
+| Environment | Ortam | A deployment target of a workspace (dev, stg, prd, …) |
+| Deployment | Yayına alma | One run of an environment's deploy commands for a commit, after human approval |
+| Forge | Kod platformu | Where repositories are hosted: pull requests, CI checks (GitHub, Bitbucket, Azure, …) |
+| Issue tracker | İş takip sistemi | External task system (Jira, Azure Boards, …) linked to roadmap tasks |
 | Page | Sayfa | A visual artifact an agent publishes (mockup, diagram, report) |
 | Actor | — | Who did something: `user`, `agent`, or `system` |
 
