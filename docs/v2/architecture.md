@@ -26,6 +26,9 @@ Additional rules, enforced by `scripts/check-layers.mjs` (added in Phase 0):
   `src/application/` — time and ids come through the `Clock` and `IdGen` ports.
 - No `any` in v2 code (`@typescript-eslint`-free check: the literal `: any` / `as any` / `<any>`).
 - No default exports in v2 code.
+- `electron` is imported only under `electron/`; adapters receive Electron objects by injection.
+- Infrastructure modules import each other only through their `index.ts`, following the module map in
+  [infrastructure.md](infrastructure.md); `src/infrastructure/scenarios/` holds test files only.
 
 ## Folders
 
@@ -47,12 +50,15 @@ src/
     index.ts       public barrel — the only import path other layers use
   application/     use-cases/ · ports/ · dispatcher.ts
   api/             commands.ts · queries.ts · events.ts
-  infrastructure/
+  infrastructure/   module map and contracts: infrastructure.md
+    system/        clock · ulid · workspace-paths
     providers/     discovery · transports/{sdk, stream-json, app-server, acp} · defs/ · quota-probes/
     storage/       sqlite/ (one file per repository) · definitions-yaml/ · keychain/
-    vcs/           git · worktree · forge
-    gates/         command-runner · secret-scan
+    vcs/           git · worktrees · evidence · forge
+    gates/         secret-patterns · secret-scanner · command-runner
     pages/         mcp-server · page-store
+    compose/       create-node-deps (everything except Electron objects)
+    scenarios/     cross-module scenario tests only
   presentation/    shell · cockpit · workspace-board · work-order · roadmap · settings · wizard · pages-viewer
 electron/          main.ts (composition root) · preload.ts (API bridge)
 ```

@@ -13,6 +13,7 @@ until an architect change updates them.
 | [architecture.md](architecture.md) | Layers, folders, ports, the API boundary, team-ready rules, mechanical layer checks |
 | [domain.md](domain.md) | The domain model and the exact TypeScript contracts for Phase 1 |
 | [application.md](application.md) | Ports, use cases, services and API contracts for Phase 2a |
+| [infrastructure.md](infrastructure.md) | Adapters for Phase 2b: SQLite, YAML definitions, keychain, git, gates, the SDK transport |
 | [providers.md](providers.md) | Agent CLI integration: transports, the common event stream, support tiers, isolation |
 | [quota.md](quota.md) | Accounts, pools, windows, limit policies, budgets |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
