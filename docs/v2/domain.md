@@ -33,9 +33,11 @@ This keeps Phase 1 issues independent and conflict-free.
 | `flow` | `shared`, `definitions`, `gates` |
 | `dispatch` | `shared`, `quota`, `budget` |
 | `roadmap` | `shared`, `flow` |
+| `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
-every module. Issues edit only their own module folder.
+every module. Issues edit only their own module folder. Cross-module scenario tests (e.g. v1 parity)
+live in `src/domain/scenarios/` so no production module needs an extra dependency for a test.
 
 ---
 
@@ -254,7 +256,7 @@ export function evaluateGate(gate: GateDef, evidence: GateEvidence, ctx: GateCon
 
 Rules:
 - **R-12** `human` / `page_approval`: no decision → `pending`; `approved` → `passed`; `rejected` → `failed` with the note (or `"rejected"`).
-- **R-13** `command`: every command of the set must have a result; any missing → `pending`; any non-zero exit → `failed` naming the first failing command; all zero → `passed`. An empty or unknown set → `unknown`.
+- **R-13** `command`: an empty or unknown set → `unknown`. Otherwise, independent of the order results arrive in: if any command that has a result exited non-zero → `failed`, naming the first such command in set order; else if any command has no result yet → `pending`; else → `passed`.
 - **R-14** `secret_scan`: missing → `pending`; `findings > 0` → `failed`; `0` → `passed`.
 - **R-15** `agent_verdict`: missing → `pending`; `approve && pointersResolved` → `passed`; `approve && !pointersResolved` → `unknown` ("evidence pointers did not resolve"); `!approve` → `failed`.
 - **R-16** `unknown` never counts as passed anywhere in the domain.
@@ -315,6 +317,7 @@ Rules (derive walks events in order; events are assumed sorted by `at`):
 - **R-21a** "Entering" a stage = becoming the current stage (initially, by advance, or by goto). The first entry is attempt 1.
 - **R-22** A gate `unknown` → `blocked` with its reason (never advances; see R-16).
 - **R-23** `blocked` event → `blocked`; `unblocked` → back to the state before the block (re-derive without the block); `closed` → `done`. Events after `done` are ignored.
+- **R-23a** While `blocked`, only `unblocked` and `closed` have an effect; any other event is ignored (it belongs to the blocked period). An empty event history derives the same state as a lone `created`. Block reasons: a failed run → `"run failed"`; a failed gate → `gate "<gate>" failed: <reason>`; an unknown gate → its verdict reason.
 - **R-24** `nextAction`: `ready` → `start_run`; `gating` → `evaluate_gates` for pending non-human gates; `awaiting_human` → `await_human`; `limit_waiting` → `wait_limit`; others → `none`.
 
 ---
@@ -400,7 +403,7 @@ export type LimitDecision =
   | { readonly kind: 'schedule_resume'; readonly at: EpochMs; readonly requeryFirst: true }
   | { readonly kind: 'switch_pool'; readonly poolId: PoolId }
   | { readonly kind: 'fallback'; readonly route: AccountRoute }
-  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' | 'no_alternative' };
+  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' };
 export const RESUME_JITTER_MS: number;      // 60_000
 export function decideOnLimit(hit: LimitHit, ctx: LimitContext): LimitDecision;
 ```
@@ -465,7 +468,7 @@ export interface DispatchSnapshot {
   readonly headroom: Readonly<Record<string, Headroom>>;          // QueueItemId → headroom for its route
   readonly spend: Readonly<Record<string, SpendStatus>>;          // QueueItemId → combined spend status
 }
-export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'workspace_limit' | 'account_limit' | 'quota' | 'quota_unknown' | 'budget';
+export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'workspace_limit' | 'account_limit' | 'quota' | 'budget';
 export type DispatchDecision =
   | { readonly item: QueueItemId; readonly kind: 'start' }
   | { readonly item: QueueItemId; readonly kind: 'wait'; readonly reason: WaitReason; readonly until?: EpochMs };
@@ -524,7 +527,7 @@ export interface PhaseDef {
   readonly tasks: readonly TaskDef[];
 }
 export interface Roadmap { readonly phases: readonly PhaseDef[] }
-export type RoadmapIssueCode = 'invalid_slug' | 'duplicate_id' | 'unknown_task' | 'unknown_phase' | 'task_cycle' | 'phase_cycle' | 'missing_field' | 'wrong_type';
+export type RoadmapIssueCode = 'invalid_slug' | 'duplicate_id' | 'unknown_task' | 'unknown_phase' | 'task_cycle' | 'phase_cycle' | 'cross_cycle' | 'missing_field' | 'wrong_type';
 export interface RoadmapIssue { readonly path: string; readonly code: RoadmapIssueCode; readonly message: string }
 export function validateRoadmap(input: unknown): Result<Roadmap, readonly RoadmapIssue[]>;
 
@@ -541,8 +544,9 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
 
 Rules:
 - **R-39** Task ids are unique across the whole roadmap; phase ids unique; all references resolve; cycles are reported with the ids involved in the message.
+- **R-39a** Cross-graph deadlock → `cross_cycle`. Build a graph over tasks: an edge T → D for every `D` in `T.dependsOn`, and an edge T → X for every task X of every phase that T's phase is (transitively) `blockedBy`. A cycle in this graph that is not already reported as `task_cycle` is reported once as `cross_cycle`, naming its task ids. (Example: task a in phase P1 depends on task b in phase P2, while P2 is blocked by P1.)
 - **R-40** Task status: any linked work order not `done` → `running`; linked and all `done` → `done`; no linked work orders → `waiting` if any dependency is not `done` or the phase is blocked, else `planned`.
-- **R-41** Phase status: blocked by a phase that is not `done` → `waiting` (unless it already has a running task, then `running`); any task `running` → `running`; all tasks `done` and at least one task → `done`; otherwise `planned`. A phase with zero tasks is `planned`.
+- **R-41** Phase status, first matching rule wins: (1) any task `running` → `running`; (2) at least one task and all tasks `done` → `done`; (3) blocked by a phase that is not `done` → `waiting` (this includes a blocked zero-task phase); (4) otherwise `planned` (including an unblocked zero-task phase). Finished work is never reported as waiting.
 - **R-42** `runnable` = tasks with status `planned` (so dependencies done and phase not blocked).
 
 ---
@@ -623,7 +627,8 @@ Flows:
   `onFail: implement ×3`) → `close` (role null; human gate `closure`).
 - `quick-fix` Hızlı düzeltme: `implement` (developer; `tests`, `secrets`; onFail implement ×3) → `close`.
 - `security-reviewed` Güvenlik incelemeli: standard, with a `security` stage (security-auditor;
-  `agent_verdict` role security-auditor + human `security-approval`) between `implement` and `review`.
+  `agent_verdict` gate `security-verdict` role security-auditor + human gate `security-approval`;
+  `onFail: implement ×3`) between `implement` and `review`.
 - `research` Araştırma: `research` (analyst; `page_approval` gate `findings`).
 
 ```ts
@@ -641,7 +646,7 @@ Rule:
 ## 13. v1 parity (acceptance for the whole phase)
 
 The `standard` flow must reproduce v1's work-order lifecycle. A scenario test
-(`src/domain/flow/v1-parity.test.ts`) drives event sequences and asserts:
+(`src/domain/scenarios/v1-parity.test.ts`) drives event sequences and asserts:
 
 | Scenario | Expected state |
 | --- | --- |
