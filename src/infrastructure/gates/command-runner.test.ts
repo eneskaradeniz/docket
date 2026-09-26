@@ -1,5 +1,5 @@
-import { mkdtemp } from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,6 +28,19 @@ function pidAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+/** Waits until the command has written its pid file, tolerating the create/write window. */
+async function pollForPid(pidFile: string): Promise<number> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (existsSync(pidFile)) {
+      const pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10);
+      if (!Number.isNaN(pid)) return pid;
+    }
+    await delay(50);
+  }
+  throw new Error(`the command never wrote its pid to ${pidFile}`);
 }
 
 describePosix('createCommandRunner', () => {
@@ -105,6 +118,41 @@ describePosix('createCommandRunner', () => {
     expect(result.outputTail).toBe('spawn failed: ENOENT');
     expect(Number.isInteger(result.durationMs)).toBe(true);
   });
+
+  it('I-25: a command killed by SIGKILL exits with 137', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    // A process inside the command tree is SIGKILLed while the shell itself survives; sh reports
+    // a signal death as 128 + signal number, so the run must surface 137 — a gate failure the
+    // caller can tell apart from a timeout, which would report 124.
+    const result = await runner.run(cwd, 'sleep 60 & pid=$!; kill -9 $pid; wait $pid', RUN_TIMEOUT_MS);
+    expect(result.exitCode).toBe(137);
+    expect(Number.isInteger(result.durationMs)).toBe(true);
+  });
+
+  it(
+    'I-25: a command that ignores the group SIGTERM is ended by the group SIGKILL',
+    async () => {
+      const cwd = await tempDir();
+      const runner = createCommandRunner({ env: {} });
+      // The trap is installed before the child starts, so the shell and the background sleep both
+      // ignore SIGTERM (an ignored disposition is inherited): only the escalation's group SIGKILL
+      // can end the run. The child's pid lands in the cwd so the test can watch it across the
+      // grace window.
+      const resultPromise = runner.run(cwd, "trap '' TERM; sleep 60 & echo $! > killed.pid; wait $!", 300);
+      const pidFile = join(cwd, 'killed.pid');
+      const pid = await pollForPid(pidFile);
+      await delay(1_500); // well into the 5 s grace: the SIGTERM was delivered long before
+      expect(pidAlive(pid)).toBe(true);
+      const result = await resultPromise;
+      expect(result.exitCode).toBe(124);
+      // The 5 s grace elapsed before the run resolved, so the group SIGKILL is what ended it.
+      expect(result.durationMs).toBeGreaterThanOrEqual(4_500);
+      expect(result.durationMs).toBeLessThan(20_000);
+      expect(pidAlive(pid)).toBe(false);
+    },
+    30_000,
+  );
 
   it('I-26: outputTail interleaves stdout and stderr in arrival order', async () => {
     const cwd = await tempDir();
