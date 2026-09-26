@@ -1,49 +1,73 @@
 # CLAUDE.md
 
-Interim rules for the v2 preparation period (from 2026-09-26). They replace every v1 rule. When the
-v2 design is approved, this file is rewritten from `docs/v2/`; until then, this is the whole contract.
+Rules for every session in this repository (v2 rebuild, from 2026-09-26). The design lives in
+`docs/v2/` — read `docs/v2/README.md` first. When this file, the docs, and an issue disagree, stop and
+ask; do not pick one yourself.
 
 ## Status
-- The product is being redesigned from the ground up (v2): user-configurable roles, flows, gates,
-  capabilities (MCP/skills/hooks), multi-provider agent CLIs, subscription- and API-aware budgets,
-  a roadmap layer and parallel work orders — set up through a first-run wizard.
-- v1 is frozen at git tag **`v1-final`**: all v1 source, work orders, ADRs, research and mockups.
-  The v1 source still in `src/`, `electron/`, `e2e/` is migration material, NOT the design to extend.
-- The product name is undecided. Keep using "Docket" until a rename issue says otherwise.
+- Docket is being rebuilt from the ground up (v2). v1 is frozen at git tag **`v1-final`**; its code
+  still sits in `src/core/`, `src/adapters/`, `src/ui/`, `src/renderer/` until Phase 4 and must not
+  be extended, imported by v2 code, or treated as the design.
+- The product is local, single-user, free and open source (Apache-2.0), built team-ready
+  (`docs/v2/architecture.md` → "Team-ready rules").
+- Product name: "Docket" until a rename issue says otherwise.
 
 ## Who does what
-- **Architect session** (Claude Opus): writes the design (`docs/v2/`, English), defines interfaces
-  and types, opens GitHub issues, reviews PRs for architecture.
-- **Coding sessions**: implement exactly ONE open GitHub issue. The issue fixes the scope, the
-  out-of-scope list, the interfaces and the acceptance criteria.
+- **Architect session**: writes `docs/v2/`, fixes interfaces, opens issues, reviews PRs. Only the
+  architect changes `docs/v2/**` and this file.
+- **Coding sessions**: implement exactly ONE GitHub issue each. The issue fixes scope, out-of-scope,
+  interfaces, and acceptance criteria.
 
 ## Rules for coding sessions
-1. No issue → no code. If asked to change product code without an issue, stop and ask.
-2. Stay inside the issue's scope. Anything outside it — a refactor, a rename, an "while I'm here"
-   fix — is a new issue, not part of this PR.
-3. Do not change an interface or type the issue gives you. If it cannot work as written, stop and
-   explain why in the PR or the issue.
-4. Reach v1 code only through the path the issue names: `git show v1-final:<path>`. Never restore
-   deleted v1 documents, and never treat a v1 rule, ADR or work order as current.
-5. Ambiguity or a contradiction with this file → stop and ask. Do not decide architecture.
+1. **No issue → no code.** Asked to change product code without an issue: stop and ask.
+2. **Stay inside the issue.** Touch only the paths its "Touches" section allows. A refactor, rename,
+   or "while I'm here" fix is a new issue, not part of this PR.
+3. **Contracts are fixed.** Types and signatures from `docs/v2/domain.md` (copied into the issue) are
+   implemented exactly — same names, same shapes, same exports. If one cannot work, stop and comment
+   on the issue with the reason.
+4. **Test-first for `src/domain/`.** Write a test for every rule `R-n` the issue lists, named
+   `R-n: …`, run it red, then implement until green. Cover edge cases the rule implies.
+5. **Before every commit:** `npm run typecheck && npm test && npm run check:boundaries` — all green.
+6. **v1 is reference only**, reached through the exact path an issue names:
+   `git show v1-final:<path>`. Never restore v1 documents; never follow a v1 rule or ADR.
+7. **No third-party code.** Do not copy source code from other projects, and do not name them in
+   code or comments. Integrations are written from the CLI's or protocol's own documentation.
+8. **No new npm dependencies** unless the issue names them.
+9. Ambiguity → stop and ask on the issue. Never decide architecture.
 
-## Repository conventions
-- Code and repository documents are English. UI copy is Turkish by default, with English as a peer
-  locale.
-- Persisted records and logs never carry environment values, credentials or provider keys.
-- A PR names the model that authored it (provider + model id) in a "Model Used" line at the top of
-  its body. A PR without it is incomplete.
-- Commit messages: `<type>(<scope>): <summary>`, scope = issue number when there is one.
+## Code rules (v2)
+- Layers and imports: `docs/v2/architecture.md`. Enforced by `scripts/check-layers.mjs`.
+- `src/domain/`: pure TypeScript — no npm packages, no Node builtins, no `Date`, no `Math.random`,
+  no classes with behaviour, no exceptions for expected failures (return `Result`), no mutation of
+  inputs. Only import other modules through their `index.ts`, following the module dependency map in
+  `docs/v2/domain.md`.
+- No `any`, no default exports, no non-null assertions (`!`) in v2 code. Prefer `readonly` types.
+- Names: files `kebab-case.ts`; types `PascalCase`; functions and values `camelCase`; constants
+  `UPPER_SNAKE_CASE`.
+- Comments explain *why*, never history. No issue numbers or dates in code comments.
+- Code and repository documents are English. UI copy is Turkish by default with English as a peer
+  locale; copy lives in label bundles, never inline in components.
+- Records and logs never carry secrets or environment values; they may name targets (paths,
+  commands). Secrets live only in the OS keychain.
+- No agent-vendor names outside `src/infrastructure/providers/`.
 
-## Operator manual-check gate
-- Every chunk of work ends with a short, numbered manual scenario for the operator (minutes, not
-  hours). The assistant never launches the app itself; the operator does.
-- Until the operator's verdict: no commit, no next chunk, no closure.
+## Git and PRs
+- Branch per issue: `v2/<issue-number>-<short-slug>`. Batch mode bases on `origin/v2`; interactive
+  work bases on `origin/v2` too unless the issue says `main`.
+- Commit: `<type>(<scope>): <summary> (#<issue>)`, e.g. `feat(domain/quota): headroom rules (#131)`.
+- PR body starts with `**Model Used:** <provider> — <model id>` then `Closes #<issue>`, a short
+  summary, and the test evidence (the three commands' results).
+- Never push to `main`, never force-push, never delete branches you did not create.
+
+## Operator gate
+- Work that changes the UI ends with a short numbered manual scenario for the operator; no merge to
+  `main` before the operator's verdict. The assistant never launches the app itself.
+- Batch mode (unattended, no UI): merges go into the `v2` integration branch only; the operator
+  reviews the `v2 → main` PR in the morning. Full protocol: `docs/v2/roadmap.md` → "Batch mode".
 
 ## CI
-- `npm run typecheck`, `npm test`, `npm run build` and `npm run check:boundaries` run on every pull
-  request and every push to `main`. They still check the v1 code; do not break them until an issue
-  replaces that code.
+- `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
+  pushes to `main`. `check:boundaries` runs the v1 checks and the v2 layer checks.
 
 ## Do not read
-- `~/source/docket-arsiv/` — archived v1 AI memories and local history. Stale by definition.
+- `~/source/docket-arsiv/` — archived v1 memories. Stale by definition.
