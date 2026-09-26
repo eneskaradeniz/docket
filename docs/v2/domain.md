@@ -223,7 +223,7 @@ Rules:
 - **E-2** Environment ids are unique within a workspace; `order` values are unique within a workspace (`duplicate_env_order`).
 - **E-3** `EnvironmentDef.deploy` and `verify` (when present) must name a `commandSet` present in `workspace.commandSets` (`env_command_set_missing`).
 - **E-4** A `deploy` gate's `environment` must name an environment in `workspace.environments` (`unknown_environment`).
-- **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value. The `promoteFrom` chain must be acyclic (`promote_cycle`).
+- **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value; an equal- or higher-order target reports `promote_cycle` — with unique `order` values (E-2), a non-descending chain and a cyclic one are the same defect class. The `promoteFrom` chain must be acyclic (`promote_cycle`).
 
 ---
 

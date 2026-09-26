@@ -22,6 +22,11 @@ Phase N · `model:…` · wave N
 ## Out of scope
 <!-- what NOT to touch -->
 
+## Test location (checked against `scripts/check-layers.mjs`)
+<!-- colocated test file path. Domain-internal tests import module-relative
+     (./validate, ../gates/evaluate — D4 bans ../index there); application and
+     infrastructure tests may import their own layer barrel (../index). -->
+
 ## Interfaces (exact — do not change)
 ```ts
 ```
