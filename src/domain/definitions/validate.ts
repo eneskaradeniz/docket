@@ -1,9 +1,10 @@
 // definitions/validate.ts — narrows untyped (parsed YAML/JSON) input into typed Definitions.
 // Field-by-field narrowing only; every issue is collected before deciding (all-or-nothing).
-import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type FlowSlug, type RoleSlug, type StageSlug, type WorkspaceSlug } from '../shared';
+import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type RoleSlug, type StageSlug, type WorkspaceSlug } from '../shared';
 import type {
   CapabilityDef,
   Definitions,
+  EnvironmentDef,
   EnvValue,
   FlowDef,
   GateDef,
@@ -24,13 +25,15 @@ export interface DefinitionIssue {
 export type DefinitionIssueCode =
   | 'invalid_slug' | 'duplicate_id' | 'unknown_role' | 'inactive_role' | 'unknown_stage'
   | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
-  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type';
+  | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
+  | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
+  | 'env_command_set_missing' | 'duplicate_env_order';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASSWORD)/i;
 
-type GateKind = 'human' | 'command' | 'agent_verdict' | 'secret_scan' | 'page_approval';
+type GateKind = 'human' | 'command' | 'agent_verdict' | 'secret_scan' | 'page_approval' | 'deploy' | 'remote_checks';
 type CapabilityKind = 'mcp' | 'skill' | 'hook' | 'context';
 type SimpleWriteScopeKind = 'none' | 'docs' | 'tests' | 'repo';
 
@@ -66,6 +69,17 @@ interface FlowDraft {
   readonly stages: readonly (StageDraft | undefined)[];
 }
 
+interface EnvironmentDraft {
+  readonly id: EnvSlug | undefined;
+  readonly name: string | undefined;
+  readonly order: number | undefined;
+  readonly deploy: string | undefined;
+  readonly verify: string | undefined;
+  readonly env: Readonly<Record<string, EnvValue>> | undefined;
+  readonly protected: boolean | undefined;
+  readonly promoteFrom: EnvSlug | undefined;
+}
+
 interface WorkspaceDraft {
   readonly id: WorkspaceSlug | undefined;
   readonly name: string | undefined;
@@ -76,13 +90,14 @@ interface WorkspaceDraft {
   readonly roleOverrides: readonly RoleOverride[] | undefined;
   readonly docsRoot: string | undefined;
   readonly testGlobs: readonly string[] | undefined;
+  readonly environments: readonly (EnvironmentDraft | undefined)[] | undefined;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isGateKind = (value: unknown): value is GateKind =>
-  value === 'human' || value === 'command' || value === 'agent_verdict' || value === 'secret_scan' || value === 'page_approval';
+  value === 'human' || value === 'command' || value === 'agent_verdict' || value === 'secret_scan' || value === 'page_approval' || value === 'deploy' || value === 'remote_checks';
 
 const isCapabilityKind = (value: unknown): value is CapabilityKind =>
   value === 'mcp' || value === 'skill' || value === 'hook' || value === 'context';
@@ -158,6 +173,17 @@ const readNumberField = (issues: DefinitionIssue[], container: UnknownRecord, fi
 
 const readSlugField = <B extends string>(issues: DefinitionIssue[], container: UnknownRecord, field: string, path: string): Slug<B> | undefined => {
   const value = readStringField(issues, container, field, path);
+  if (value === undefined) return undefined;
+  const parsed = parseSlug<B>(value);
+  if (!parsed.ok) {
+    addIssue(issues, path, 'invalid_slug', `${path} "${value}" is not a valid slug (^[a-z0-9][a-z0-9-]{0,62}$)`);
+    return undefined;
+  }
+  return parsed.value;
+};
+
+const readOptionalSlugField = <B extends string>(issues: DefinitionIssue[], container: UnknownRecord, field: string, path: string): Slug<B> | undefined => {
+  const value = readOptionalStringField(issues, container, field, path);
   if (value === undefined) return undefined;
   const parsed = parseSlug<B>(value);
   if (!parsed.ok) {
@@ -279,6 +305,31 @@ const parseEnv = (issues: DefinitionIssue[], value: unknown, path: string): Read
   return valid ? env : undefined;
 };
 
+/** `required` on a remote_checks gate: the string 'all' or a list of check names. */
+const readRequiredChecksField = (issues: DefinitionIssue[], container: UnknownRecord, path: string): readonly string[] | 'all' | undefined => {
+  const value: unknown = container['required'];
+  if (value === undefined) {
+    addIssue(issues, path, 'missing_field', `${path} is required`);
+    return undefined;
+  }
+  if (value === 'all') return 'all';
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, 'wrong_type', `${path} must be "all" or an array of strings`);
+    return undefined;
+  }
+  const out: string[] = [];
+  let valid = true;
+  value.forEach((item: unknown, index: number) => {
+    if (typeof item !== 'string') {
+      addIssue(issues, `${path}[${index}]`, 'wrong_type', `${path}[${index}] must be a string`);
+      valid = false;
+    } else {
+      out.push(item);
+    }
+  });
+  return valid ? out : undefined;
+};
+
 const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: string): GateDef | undefined => {
   const kind: unknown = container['kind'];
   if (kind === undefined) {
@@ -286,7 +337,7 @@ const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: st
     return undefined;
   }
   if (!isGateKind(kind)) {
-    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of human, command, agent_verdict, secret_scan, page_approval`);
+    addIssue(issues, `${path}.kind`, 'wrong_type', `${path}.kind must be one of human, command, agent_verdict, secret_scan, page_approval, deploy, remote_checks`);
     return undefined;
   }
   const id = readSlugField<'gate'>(issues, container, 'id', `${path}.id`);
@@ -310,6 +361,17 @@ const parseGate = (issues: DefinitionIssue[], container: UnknownRecord, path: st
     case 'secret_scan': {
       if (id === undefined) return undefined;
       return { kind, id };
+    }
+    case 'deploy': {
+      const environment = readSlugField<'env'>(issues, container, 'environment', `${path}.environment`);
+      if (id === undefined || environment === undefined) return undefined;
+      return { kind, id, environment };
+    }
+    case 'remote_checks': {
+      const required = readRequiredChecksField(issues, container, `${path}.required`);
+      const timeoutMinutes = readNumberField(issues, container, 'timeoutMinutes', `${path}.timeoutMinutes`);
+      if (id === undefined || required === undefined || timeoutMinutes === undefined) return undefined;
+      return { kind, id, required, timeoutMinutes };
     }
   }
   return undefined;
@@ -470,6 +532,41 @@ const parseRoleOverride = (issues: DefinitionIssue[], container: UnknownRecord, 
   return { id, ...parts };
 };
 
+const parseEnvironment = (issues: DefinitionIssue[], container: UnknownRecord, path: string): EnvironmentDraft => {
+  const id = readSlugField<'env'>(issues, container, 'id', `${path}.id`);
+  const name = readStringField(issues, container, 'name', `${path}.name`);
+  const order = readNumberField(issues, container, 'order', `${path}.order`);
+  const deploy = readStringField(issues, container, 'deploy', `${path}.deploy`);
+  const verify = readOptionalStringField(issues, container, 'verify', `${path}.verify`);
+  const envRaw: unknown = container['env'];
+  let env: Readonly<Record<string, EnvValue>> | undefined;
+  if (envRaw === undefined) {
+    addIssue(issues, `${path}.env`, 'missing_field', `${path}.env is required`);
+  } else {
+    env = parseEnv(issues, envRaw, `${path}.env`);
+  }
+  const protectedEnv = readBooleanField(issues, container, 'protected', `${path}.protected`);
+  const promoteFrom = readOptionalSlugField<'env'>(issues, container, 'promoteFrom', `${path}.promoteFrom`);
+  return { id, name, order, deploy, verify, env, protected: protectedEnv, promoteFrom };
+};
+
+const parseEnvironments = (issues: DefinitionIssue[], container: UnknownRecord): readonly (EnvironmentDraft | undefined)[] | undefined => {
+  const raw: unknown = container['environments'];
+  if (raw === undefined) return undefined; // optional, default []
+  if (!Array.isArray(raw)) {
+    addIssue(issues, 'workspace.environments', 'wrong_type', 'workspace.environments must be an array');
+    return undefined;
+  }
+  return raw.map((item: unknown, index: number) => {
+    const envPath = `workspace.environments[${index}]`;
+    if (!isRecord(item)) {
+      addIssue(issues, envPath, 'wrong_type', `${envPath} must be an object`);
+      return undefined;
+    }
+    return parseEnvironment(issues, item, envPath);
+  });
+};
+
 const parseWorkspace = (issues: DefinitionIssue[], container: UnknownRecord): WorkspaceDraft | undefined => {
   const id = readSlugField<'workspace'>(issues, container, 'id', 'workspace.id');
   const name = readStringField(issues, container, 'name', 'workspace.name');
@@ -554,7 +651,7 @@ const parseWorkspace = (issues: DefinitionIssue[], container: UnknownRecord): Wo
     roleOverrides = list;
   }
 
-  return { id, name, repos, flowSlots, defaultFlow, commandSets, roleOverrides, docsRoot, testGlobs };
+  return { id, name, repos, flowSlots, defaultFlow, commandSets, roleOverrides, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
 };
 
 const parseRoles = (issues: DefinitionIssue[], input: UnknownRecord): readonly (RoleDraft | undefined)[] => {
@@ -687,6 +784,16 @@ const crossCheck = (
     }
   });
 
+  // First parsed occurrence wins, so references to an id whose entry failed elsewhere still resolve
+  // instead of cascading into phantom "unknown" reports.
+  const envById = new Map<string, EnvironmentDraft>();
+  const envIds = new Set<string>();
+  workspace?.environments?.forEach((draft) => {
+    if (draft === undefined || draft.id === undefined) return;
+    envIds.add(draft.id);
+    if (!envById.has(draft.id)) envById.set(draft.id, draft);
+  });
+
   flowDrafts.forEach((draft, flowIndex) => {
     if (draft === undefined) return;
     const stageIdsAtIndex = draft.stages.map((stage) => stage?.id);
@@ -722,6 +829,9 @@ const crossCheck = (
         if (gate.kind === 'command' && workspace !== undefined && workspace.commandSets !== undefined && !(gate.commandSet in workspace.commandSets)) {
           addIssue(issues, `${gatePath}.commandSet`, 'unknown_command_set', `"${gate.commandSet}" is not defined in workspace.commandSets`);
         }
+        if (gate.kind === 'deploy' && workspace !== undefined && !envIds.has(gate.environment)) {
+          addIssue(issues, `${gatePath}.environment`, 'unknown_environment', `"${gate.environment}" is not a defined environment`);
+        }
       });
       if (stage.onFail !== undefined && stage.onFail.goto !== undefined) {
         const goto = stage.onFail.goto;
@@ -750,6 +860,71 @@ const crossCheck = (
         addIssue(issues, `workspace.roleOverrides[${index}].id`, 'unknown_role', `"${override.id}" is not a defined role`);
       }
     });
+
+    const seenEnvIds = new Set<string>();
+    const seenOrders = new Set<number>();
+    workspace.environments?.forEach((draft, index) => {
+      if (draft === undefined) return;
+      const envPath = `workspace.environments[${index}]`;
+      if (draft.id !== undefined) {
+        if (seenEnvIds.has(draft.id)) {
+          addIssue(issues, `${envPath}.id`, 'duplicate_id', `${envPath}.id "${draft.id}" duplicates an earlier environment id`);
+        } else {
+          seenEnvIds.add(draft.id);
+        }
+      }
+      if (draft.order !== undefined) {
+        if (seenOrders.has(draft.order)) {
+          addIssue(issues, `${envPath}.order`, 'duplicate_env_order', `${envPath}.order ${draft.order} duplicates an earlier environment order`);
+        } else {
+          seenOrders.add(draft.order);
+        }
+      }
+      if (workspace.commandSets !== undefined) {
+        if (draft.deploy !== undefined && !(draft.deploy in workspace.commandSets)) {
+          addIssue(issues, `${envPath}.deploy`, 'env_command_set_missing', `${envPath}.deploy "${draft.deploy}" is not defined in workspace.commandSets`);
+        }
+        if (draft.verify !== undefined && !(draft.verify in workspace.commandSets)) {
+          addIssue(issues, `${envPath}.verify`, 'env_command_set_missing', `${envPath}.verify "${draft.verify}" is not defined in workspace.commandSets`);
+        }
+      }
+    });
+
+    workspace.environments?.forEach((draft, index) => {
+      if (draft === undefined || draft.id === undefined) return;
+      const promotePath = `workspace.environments[${index}].promoteFrom`;
+      if (draft.protected === true && draft.promoteFrom === undefined) {
+        addIssue(issues, promotePath, 'missing_promote_from', `${promotePath} is required for a protected environment`);
+      }
+      const promoteFrom = draft.promoteFrom;
+      if (promoteFrom === undefined) return;
+      const target = envById.get(promoteFrom);
+      if (target === undefined) {
+        addIssue(issues, promotePath, 'unknown_environment', `"${promoteFrom}" is not a defined environment`);
+        return;
+      }
+      if (promoteFrom === draft.id) {
+        addIssue(issues, promotePath, 'promote_cycle', `${promotePath} "${promoteFrom}" must name another environment`);
+        return;
+      }
+      // The chain must descend strictly in order, which alone rules cycles out; an order that does
+      // not descend is reported as the cycle it makes possible.
+      if (draft.order !== undefined && target.order !== undefined && target.order >= draft.order) {
+        addIssue(issues, promotePath, 'promote_cycle', `${promotePath} "${promoteFrom}" must name an environment with a lower order`);
+        return;
+      }
+      const visited = new Set<string>([draft.id, promoteFrom]);
+      let next: EnvSlug | undefined = target.promoteFrom;
+      while (next !== undefined) {
+        if (next === draft.id) {
+          addIssue(issues, promotePath, 'promote_cycle', `${promotePath} chain reaches "${draft.id}" again`);
+          return;
+        }
+        if (visited.has(next)) return; // a cycle this environment is not part of; its own members report it
+        visited.add(next);
+        next = envById.get(next)?.promoteFrom;
+      }
+    });
   }
 };
 
@@ -773,6 +948,29 @@ const buildFlowDef = (flow: FlowDraft): FlowDef | undefined => {
   return { id: flow.id, name: flow.name, stages };
 };
 
+const buildEnvironmentDef = (draft: EnvironmentDraft): EnvironmentDef | undefined => {
+  if (
+    draft.id === undefined ||
+    draft.name === undefined ||
+    draft.order === undefined ||
+    draft.deploy === undefined ||
+    draft.env === undefined ||
+    draft.protected === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    id: draft.id,
+    name: draft.name,
+    order: draft.order,
+    deploy: draft.deploy,
+    ...(draft.verify !== undefined ? { verify: draft.verify } : {}),
+    env: draft.env,
+    protected: draft.protected,
+    ...(draft.promoteFrom !== undefined ? { promoteFrom: draft.promoteFrom } : {}),
+  };
+};
+
 const buildWorkspaceDef = (workspace: WorkspaceDraft): WorkspaceDef | undefined => {
   if (
     workspace.id === undefined ||
@@ -787,6 +985,17 @@ const buildWorkspaceDef = (workspace: WorkspaceDraft): WorkspaceDef | undefined 
   ) {
     return undefined;
   }
+  let environments: readonly EnvironmentDef[] | undefined;
+  if (workspace.environments !== undefined) {
+    const list: EnvironmentDef[] = [];
+    for (const draft of workspace.environments) {
+      if (draft === undefined) return undefined;
+      const built = buildEnvironmentDef(draft);
+      if (built === undefined) return undefined;
+      list.push(built);
+    }
+    environments = list;
+  }
   return {
     id: workspace.id,
     name: workspace.name,
@@ -797,6 +1006,7 @@ const buildWorkspaceDef = (workspace: WorkspaceDraft): WorkspaceDef | undefined 
     roleOverrides: workspace.roleOverrides,
     docsRoot: workspace.docsRoot,
     testGlobs: workspace.testGlobs,
+    ...(environments !== undefined ? { environments } : {}),
   };
 };
 
