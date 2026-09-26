@@ -2,6 +2,7 @@
   "name": "docket",
   "private": true,
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "description": "Docket — work-order console",
   "author": {
     "name": "Enes Karadeniz",
