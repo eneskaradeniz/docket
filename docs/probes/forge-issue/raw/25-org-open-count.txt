@@ -1,2 +1,0 @@
-org-wide OPEN issues total_count: 38
-first-page breakdown: {'antreo-app/mobile': 24, 'antreo-app/api': 6}
