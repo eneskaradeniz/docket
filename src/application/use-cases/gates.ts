@@ -10,6 +10,7 @@ import type {
   GateEvidence,
   GateSlug,
   GateVerdict,
+  RepoRef,
   Result,
   StageSlug,
   WorkOrderEvent,
@@ -18,7 +19,9 @@ import type {
 } from '../../domain/index';
 import { MINUTE, deriveWorkOrderState, err, evaluateGate, ok } from '../../domain/index';
 
-import type { AppDeps, WorkOrderRecord } from '../ports';
+import type { AppDeps, ForgeResolver, WorkOrderRecord } from '../ports';
+
+import { pollRemoteChecks } from './remote-checks-gate';
 
 /** A gate's commands run in the work order's worktree, ten minutes each. */
 const COMMAND_TIMEOUT_MS = 10 * MINUTE;
@@ -69,6 +72,7 @@ const findCurrentGate = (
 
 const gateContext = (definitions: Definitions): GateContext => ({
   commandSets: definitions.workspace?.commandSets ?? {},
+  environments: definitions.workspace?.environments,
 });
 
 /** Records one decided gate — the event on the work order plus its audit entry — and returns the
@@ -163,10 +167,21 @@ const runCommandSet = async (
   return results;
 };
 
-/** Evaluates every pending machine gate of the current stage (command, secret_scan, agent_verdict). */
+/** Evaluates every pending machine gate of the current stage that a machine can conclude:
+ *  command and secret_scan gates, then remote_checks gates when the caller brought a forge.
+ *  agent_verdict gates wait for their reviewer (submitAgentVerdict); deploy gates wait for a
+ *  human (approveAndDeploy) — a deploy is never decided by a machine pass. */
 export async function evaluateMachineGates(
   deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions' | 'commands' | 'secretScanner' | 'worktrees' | 'runs'>,
-  input: { readonly id: WorkOrderId },
+  input: {
+    readonly id: WorkOrderId;
+    /** Without this the stage's remote_checks gates are left pending — there is no forge to ask. */
+    readonly remote?: {
+      readonly forges: ForgeResolver;
+      readonly repo: RepoRef;
+      readonly branchRef: string;
+    };
+  },
 ): Promise<Result<WorkOrderState, 'not_found' | 'not_gating' | 'definitions_invalid' | 'no_repo'>> {
   const loaded = await loadWorkOrder(deps, input.id);
   if (!loaded.ok) return err(loaded.error);
@@ -206,7 +221,35 @@ export async function evaluateMachineGates(
     history = [...history, event];
     await deps.workOrders.appendEvent(input.id, event);
   }
-  return ok(deriveWorkOrderState(flow, history));
+
+  // remote_checks gates come after the local ones. Each poll is delegated whole — it reloads,
+  // judges and records its own event — so this loop re-reads history instead of extending it.
+  if (input.remote !== undefined) {
+    const polled = new Set<GateSlug>();
+    for (;;) {
+      const current = deriveWorkOrderState(flow, await deps.workOrders.events(input.id));
+      if (current.status !== 'gating' || current.stage === null) break;
+      const stage = flow.stages.find((candidate) => candidate.id === current.stage);
+      if (stage === undefined) break;
+      const gate = stage.exit.find(
+        (candidate) =>
+          candidate.kind === 'remote_checks' &&
+          current.pendingGates.includes(candidate.id) &&
+          !polled.has(candidate.id),
+      );
+      if (gate === undefined) break;
+      // One poll per gate per call: an unconcluded poll stays pending for the dispatcher's next
+      // tick, and a poll that cannot reach a verdict must not fail the rest of the evaluation.
+      polled.add(gate.id);
+      await pollRemoteChecks(deps, input.remote.forges, {
+        id: input.id,
+        gate: gate.id,
+        branchRef: input.remote.branchRef,
+        repo: input.remote.repo,
+      });
+    }
+  }
+  return ok(deriveWorkOrderState(flow, await deps.workOrders.events(input.id)));
 }
 
 /** An agent_verdict gate's evidence: the reviewer role reports approve/reject with evidence pointers. */
