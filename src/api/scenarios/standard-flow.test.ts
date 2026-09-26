@@ -1,9 +1,7 @@
 // scenarios/standard-flow.test.ts — the docs/v2/application.md section-5 acceptance: the built-in
 // `standard` flow driven headless from open to done over the in-memory fakes, plus the wait_resume
-// limit path. Open and gate decisions run through the exact use cases the api boundary maps its
-// workOrder.open and gate.decide commands to (openWorkOrder / decideHumanGate, same input shapes):
-// this folder sits in src/application, whose layer rules reject an import of src/api, so the api
-// module itself cannot be reached from here and its command mappings are called directly.
+// limit path. Opening and human gate decisions go through the api boundary (`createApi`), exactly as
+// the UI will issue them; runs, machine gates and agent verdicts call the application directly.
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -32,21 +30,20 @@ import {
   type WorkspaceSlug,
 } from '../../domain/index';
 
-import type { AccountRecord, AppDeps } from '../index';
+import { createApi } from '../index';
+import type { AccountRecord, AppDeps } from '../../application/index';
 import {
   applyLimitDecision,
-  decideHumanGate,
   dispatcherTick,
   enqueueStage,
   evaluateMachineGates,
   executeRun,
   getWorkOrder,
-  openWorkOrder,
   resolveRoute,
   submitAgentVerdict,
   type ExecuteOutcome,
   type PermissionGate,
-} from '../index';
+} from '../../application/index';
 import {
   createFakeClock,
   createFakeCommandRunner,
@@ -62,7 +59,7 @@ import {
   type FakeEventLog,
   type FakeEvidenceChecker,
   type FakeTransportResolver,
-} from '../ports/fakes';
+} from '../../application/ports/fakes/index';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
@@ -86,6 +83,18 @@ const PLANNER_ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCW');
 const DEVELOPER_ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCX');
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
+
+/** Opens a work order through the api boundary and returns its parsed id. */
+const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
+  const result = await createApi(deps).command(USER, { type: 'workOrder.open', workspace: WS, title });
+  if (!result.ok || result.id === undefined) return undefined;
+  const parsed = parseUlid<'work-order'>(result.id);
+  return parsed.ok ? parsed.value : undefined;
+};
+
+/** Approves a human gate through the api boundary. */
+const approveViaApi = (deps: AppDeps, id: WorkOrderId, gate: GateSlug) =>
+  createApi(deps).command(USER, { type: 'gate.decide', workOrderId: id, gate, decision: 'approved' });
 
 /** The standard flow's stages and gates, as slugs the inputs below are typed with. */
 const PLAN: StageSlug = slugOf<'stage'>('plan');
@@ -246,10 +255,9 @@ describe('standard flow, headless end to end', () => {
     h.evidence.setResolvable(['src/main.ts:1']);
 
     // 1. open → plan/ready.
-    const opened = await openWorkOrder(h.deps, { workspace: WS, title: '  Ship the standard flow  ', actor: USER });
-    expect(opened.ok).toBe(true);
-    if (!opened.ok) return;
-    const id = opened.value;
+    const id = await openViaApi(h.deps, '  Ship the standard flow  ');
+    expect(id).toBeDefined();
+    if (id === undefined) return;
     h.clock.advance(1_000);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: PLAN, pendingGates: [PLAN_APPROVAL] });
@@ -264,8 +272,7 @@ describe('standard flow, headless end to end', () => {
     expect(view.next.kind).toBe('await_human');
 
     // 2. the plan approval moves the flow to implement/ready.
-    const afterPlan = await decideHumanGate(h.deps, { id, gate: PLAN_APPROVAL, decision: 'approved', actor: USER });
-    expect(afterPlan.ok).toBe(true);
+    expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     h.clock.advance(1_000);
     view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: IMPLEMENT, pendingGates: [slugOf<'gate'>('tests'), slugOf<'gate'>('secrets')] });
@@ -308,14 +315,12 @@ describe('standard flow, headless end to end', () => {
     view = await viewOf(h.deps, id);
     expectState(view, { status: 'awaiting_human', stage: REVIEW, pendingGates: [REVIEW_APPROVAL] });
 
-    const afterReview = await decideHumanGate(h.deps, { id, gate: REVIEW_APPROVAL, decision: 'approved', actor: USER });
-    expect(afterReview.ok).toBe(true);
+    expect((await approveViaApi(h.deps, id, REVIEW_APPROVAL)).ok).toBe(true);
     view = await viewOf(h.deps, id);
     expectState(view, { status: 'awaiting_human', stage: CLOSE, pendingGates: [CLOSURE] });
 
     // 5. the closure approval finishes the work order.
-    const afterClosure = await decideHumanGate(h.deps, { id, gate: CLOSURE, decision: 'approved', actor: USER });
-    expect(afterClosure.ok).toBe(true);
+    expect((await approveViaApi(h.deps, id, CLOSURE)).ok).toBe(true);
     view = await viewOf(h.deps, id);
     expectState(view, { status: 'done', stage: null, pendingGates: [] });
     expect(view.next.kind).toBe('none');
@@ -362,13 +367,11 @@ describe('standard flow, headless end to end', () => {
     await bindRole(h.deps, slugOf<'role'>('developer'), DEVELOPER_ACCOUNT);
 
     // Walk to implement/ready: open, run the plan, approve it.
-    const opened = await openWorkOrder(h.deps, { workspace: WS, title: 'Hit the window limit', actor: USER });
-    expect(opened.ok).toBe(true);
-    if (!opened.ok) return;
-    const id = opened.value;
+    const id = await openViaApi(h.deps, 'Hit the window limit');
+    expect(id).toBeDefined();
+    if (id === undefined) return;
     expect((await runCurrentStage(h, id)).kind).toBe('finished');
-    const approved = await decideHumanGate(h.deps, { id, gate: PLAN_APPROVAL, decision: 'approved', actor: USER });
-    expect(approved.ok).toBe(true);
+    expect((await approveViaApi(h.deps, id, PLAN_APPROVAL)).ok).toBe(true);
     let view = await viewOf(h.deps, id);
     expectState(view, { status: 'ready', stage: IMPLEMENT });
 
