@@ -2,11 +2,15 @@
 // Rule-coverage check — mechanical closure of the test conventions in docs/v2/domain.md,
 // docs/v2/application.md and docs/v2/infrastructure.md: every rule id defined there
 // (`**R-n**` / `**R-n<letter>**` for the domain, `**A-n**` / `**A-n<letter>**` for the
-// application, `**I-n**` / `**I-n<letter>**` for the infrastructure) must have at least one test
-// titled after it (`it('R-n: …')` / `it('A-n: …')` / `it('I-n: …')`) in the layer's test files.
+// application, `**I-n**` / `**I-n<letter>**` for the infrastructure, `**E-n**` /
+// `**E-n<letter>**` for the environment rules in the domain and application docs) must have at
+// least one test titled after it (`it('R-n: …')` / `it('A-n: …')` / `it('I-n: …')` /
+// `it('E-n: …')`) in the layer's test files.
 // A bold id in a Rules list is the definition; plain mentions in prose (`see R-16`) never define a
 // rule, and a title like `R-4 edge:` does not satisfy the `R-n:` convention. Each layer's results
-// are reported separately. Runs as part of `npm run check:boundaries`.
+// are reported separately. The E rules span two docs, so each half carries its own search scope:
+// domain.md's E rules are tested under src/domain, application.md's under src/application and
+// src/api (the acceptance scenario lives there). Runs as part of `npm run check:boundaries`.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +22,8 @@ const SECTIONS = [
   { name: 'domain', prefix: 'R', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
   { name: 'application', prefix: 'A', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
   { name: 'infrastructure', prefix: 'I', doc: join(ROOT, 'docs', 'v2', 'infrastructure.md'), dirs: [join(ROOT, 'src', 'infrastructure')] },
+  { name: 'domain environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
+  { name: 'application environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
 ];
 
 function walk(dir, acc = []) {
