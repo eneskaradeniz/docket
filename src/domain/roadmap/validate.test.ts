@@ -1,0 +1,251 @@
+import { describe, expect, it } from 'vitest';
+import type { Result } from '../shared';
+import type { Roadmap } from './types';
+import type { RoadmapIssue } from './types';
+import { validateRoadmap } from './validate';
+
+type Obj = Record<string, unknown>;
+
+const task = (id: string, dependsOn: readonly string[] = [], over: Obj = {}): Obj => ({
+  id,
+  title: `Task ${id}`,
+  dependsOn,
+  acceptance: [`acceptance of ${id}`],
+  ...over,
+});
+
+const phase = (id: string, tasks: readonly Obj[] = [], blockedBy: readonly string[] = [], over: Obj = {}): Obj => ({
+  id,
+  name: `Phase ${id}`,
+  blockedBy,
+  tasks,
+  ...over,
+});
+
+const doc = (phases: readonly Obj[]): Obj => ({ phases });
+
+const expectOk = (result: Result<Roadmap, readonly RoadmapIssue[]>): Roadmap => {
+  if (!result.ok) throw new Error(`expected ok, got issues: ${JSON.stringify(result.error)}`);
+  return result.value;
+};
+
+const expectErr = (result: Result<Roadmap, readonly RoadmapIssue[]>): readonly RoadmapIssue[] => {
+  if (result.ok) throw new Error(`expected err, got ok: ${JSON.stringify(result.value)}`);
+  return result.error;
+};
+
+const codesOf = (issues: readonly RoadmapIssue[]): readonly string[] => issues.map((issue) => issue.code);
+
+const issueWithCode = (issues: readonly RoadmapIssue[], code: string): RoadmapIssue | undefined =>
+  issues.find((issue) => issue.code === code);
+
+const deepFreeze = <T>(value: T): T => {
+  if (value !== null && typeof value === 'object') {
+    Object.values(value as Obj).forEach((inner) => deepFreeze(inner));
+    Object.freeze(value);
+  }
+  return value;
+};
+
+// Two phases, three tasks, dependencies across the phase border — the shape every rule below hangs on.
+const validInput: Obj = doc([
+  phase('p-1', [task('t-1'), task('t-2', ['t-1'])]),
+  phase('p-2', [task('t-3', ['t-2'], { repo: 'docket' })], ['p-1']),
+]);
+
+describe('validateRoadmap', () => {
+  it('R-39: accepts a valid roadmap and returns the parsed phases and tasks', () => {
+    const value = expectOk(validateRoadmap(validInput));
+    expect(value.phases).toHaveLength(2);
+    expect(value.phases[0]?.id).toBe('p-1');
+    expect(value.phases[0]?.tasks[1]?.dependsOn).toEqual(['t-1']);
+    expect(value.phases[1]?.blockedBy).toEqual(['p-1']);
+    expect(value.phases[1]?.tasks[0]?.repo).toBe('docket');
+    expect(value.phases[0]?.tasks[0]?.acceptance).toEqual(['acceptance of t-1']);
+  });
+
+  it('R-39: accepts a task depending on a task declared in a later phase', () => {
+    const value = expectOk(
+      validateRoadmap(doc([phase('p-1', [task('t-1', ['t-later'])]), phase('p-2', [task('t-later')])])),
+    );
+    expect(value.phases[0]?.tasks[0]?.dependsOn).toEqual(['t-later']);
+  });
+
+  it('R-39: accepts an empty roadmap', () => {
+    const value = expectOk(validateRoadmap(doc([])));
+    expect(value.phases).toEqual([]);
+  });
+
+  it('R-39: accepts a phase with no tasks', () => {
+    const value = expectOk(validateRoadmap(doc([phase('p-1', [])])));
+    expect(value.phases[0]?.tasks).toEqual([]);
+  });
+
+  it('R-39: reports duplicate task ids across the whole roadmap', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-dup')]), phase('p-2', [task('t-dup')])])));
+    const duplicate = issueWithCode(issues, 'duplicate_id');
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.path).toBe('phases[1].tasks[0].id');
+    expect(duplicate?.message).toContain('t-dup');
+  });
+
+  it('R-39: reports duplicate task ids inside one phase', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-a'), task('t-a')])])));
+    expect(issueWithCode(issues, 'duplicate_id')?.path).toBe('phases[0].tasks[1].id');
+  });
+
+  it('R-39: reports duplicate phase ids', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1'), phase('p-1')])));
+    const duplicate = issueWithCode(issues, 'duplicate_id');
+    expect(duplicate?.path).toBe('phases[1].id');
+    expect(duplicate?.message).toContain('p-1');
+  });
+
+  it('R-39: reports dependsOn references to a task that does not exist', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1'), task('t-2', ['t-ghost'])])])));
+    const unknown = issueWithCode(issues, 'unknown_task');
+    expect(unknown).toBeDefined();
+    expect(unknown?.path).toBe('phases[0].tasks[1].dependsOn[0]');
+    expect(unknown?.message).toContain('t-ghost');
+  });
+
+  it('R-39: reports blockedBy references to a phase that does not exist', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1'), phase('p-2', [], ['p-ghost'])])));
+    const unknown = issueWithCode(issues, 'unknown_phase');
+    expect(unknown).toBeDefined();
+    expect(unknown?.path).toBe('phases[1].blockedBy[0]');
+    expect(unknown?.message).toContain('p-ghost');
+  });
+
+  it('R-39: reports a task dependency cycle with the ids involved in the message', () => {
+    // t-a dependsOn t-b, t-b dependsOn t-c, t-c dependsOn t-a.
+    const issues = expectErr(
+      validateRoadmap(doc([phase('p-1', [task('t-a', ['t-b']), task('t-b', ['t-c']), task('t-c', ['t-a'])])])),
+    );
+    const cycle = issueWithCode(issues, 'task_cycle');
+    expect(cycle).toBeDefined();
+    expect(cycle?.message).toContain('t-a');
+    expect(cycle?.message).toContain('t-b');
+    expect(cycle?.message).toContain('t-c');
+    expect(cycle?.path).toContain('dependsOn');
+  });
+
+  it('R-39: reports a task that depends on itself', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-a', ['t-a'])])])));
+    const cycle = issueWithCode(issues, 'task_cycle');
+    expect(cycle).toBeDefined();
+    expect(cycle?.message).toContain('t-a');
+  });
+
+  it('R-39: reports a phase blockedBy cycle with the ids involved in the message', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [], ['p-2']), phase('p-2', [], ['p-1'])])));
+    const cycle = issueWithCode(issues, 'phase_cycle');
+    expect(cycle).toBeDefined();
+    expect(cycle?.message).toContain('p-1');
+    expect(cycle?.message).toContain('p-2');
+    expect(cycle?.path).toContain('blockedBy');
+  });
+
+  it('R-39: reports a task cycle and a phase cycle in one validation result', () => {
+    const issues = expectErr(
+      validateRoadmap(
+        doc([
+          phase('p-1', [task('t-a', ['t-b']), task('t-b', ['t-a'])], ['p-2']),
+          phase('p-2', [], ['p-1']),
+        ]),
+      ),
+    );
+    expect(codesOf(issues)).toContain('task_cycle');
+    expect(codesOf(issues)).toContain('phase_cycle');
+    expect(issues.filter((issue) => issue.code === 'task_cycle')).toHaveLength(1);
+    expect(issues.filter((issue) => issue.code === 'phase_cycle')).toHaveLength(1);
+  });
+
+  it('R-39: reports invalid task and phase slugs', () => {
+    const issues = expectErr(
+      validateRoadmap(doc([phase('P_1', [task('Bad Slug')])])),
+    );
+    expect(issueWithCode(issues, 'invalid_slug')?.path).toBe('phases[0].id');
+    expect(issues.filter((issue) => issue.code === 'invalid_slug').map((issue) => issue.path)).toContain(
+      'phases[0].tasks[0].id',
+    );
+  });
+
+  it('R-39: reports invalid slugs inside dependsOn and blockedBy', () => {
+    const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', ['NOPE'])], ['NOPE'])])));
+    expect(issues.filter((issue) => issue.code === 'invalid_slug').map((issue) => issue.path)).toEqual([
+      'phases[0].blockedBy[0]',
+      'phases[0].tasks[0].dependsOn[0]',
+    ]);
+  });
+
+  it('R-39: reports missing required fields with their paths', () => {
+    const issues = expectErr(
+      validateRoadmap(
+        doc([
+          {
+            id: 'p-1',
+            blockedBy: [],
+            tasks: [{ id: 't-1', dependsOn: [], acceptance: [] }],
+          },
+        ]),
+      ),
+    );
+    const missing = issues.filter((issue) => issue.code === 'missing_field');
+    expect(missing.map((issue) => issue.path).sort()).toEqual(['phases[0].name', 'phases[0].tasks[0].title']);
+  });
+
+  it('R-39: reports a roadmap without phases', () => {
+    const issues = expectErr(validateRoadmap({}));
+    expect(issueWithCode(issues, 'missing_field')?.path).toBe('phases');
+  });
+
+  it('R-39: reports wrong types at every level', () => {
+    const rawPhase = (over: Obj): Obj => ({ id: 'p-1', name: 'Phase p-1', blockedBy: [], tasks: [], ...over });
+    const rawTask = (over: Obj): Obj => ({ id: 't-1', title: 'Task t-1', dependsOn: [], acceptance: [], ...over });
+
+    const notObject = expectErr(validateRoadmap(null));
+    expect(issueWithCode(notObject, 'wrong_type')).toBeDefined();
+
+    const notArray = expectErr(validateRoadmap({ phases: 'nope' }));
+    expect(issueWithCode(notArray, 'wrong_type')?.path).toBe('phases');
+
+    const phaseNotObject = expectErr(validateRoadmap({ phases: ['nope'] }));
+    expect(issueWithCode(phaseNotObject, 'wrong_type')?.path).toBe('phases[0]');
+
+    const tasksNotArray = expectErr(validateRoadmap(doc([rawPhase({ tasks: 'nope' })])));
+    expect(issueWithCode(tasksNotArray, 'wrong_type')?.path).toBe('phases[0].tasks');
+
+    const blockedByNotArray = expectErr(validateRoadmap(doc([rawPhase({ blockedBy: 'nope' })])));
+    expect(issueWithCode(blockedByNotArray, 'wrong_type')?.path).toBe('phases[0].blockedBy');
+
+    const dependsOnNotArray = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ dependsOn: 'nope' })] })])));
+    expect(issueWithCode(dependsOnNotArray, 'wrong_type')?.path).toBe('phases[0].tasks[0].dependsOn');
+
+    const acceptanceNotString = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ acceptance: [7] })] })])));
+    expect(issueWithCode(acceptanceNotString, 'wrong_type')?.path).toBe('phases[0].tasks[0].acceptance[0]');
+
+    const repoNotString = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ repo: 7 })] })])));
+    expect(issueWithCode(repoNotString, 'wrong_type')?.path).toBe('phases[0].tasks[0].repo');
+  });
+
+  it('R-39: collects every issue in one result instead of stopping at the first', () => {
+    const issues = expectErr(
+      validateRoadmap(
+        doc([
+          phase('p-1', [task('t-1'), task('t-1', ['t-ghost'])]),
+          phase('p-1', [], ['p-ghost']),
+        ]),
+      ),
+    );
+    expect(codesOf(issues)).toEqual(
+      expect.arrayContaining(['duplicate_id', 'duplicate_id', 'unknown_task', 'unknown_phase']),
+    );
+  });
+
+  it('R-39: does not mutate its input', () => {
+    const input = deepFreeze(structuredClone(validInput));
+    expect(() => validateRoadmap(input)).not.toThrow();
+    expect(validateRoadmap(input).ok).toBe(true);
+  });
+});
