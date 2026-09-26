@@ -54,14 +54,17 @@ const evaluateCommand: GateEvaluator<'command'> = (gate, evidence, ctx) => {
     return { status: 'unknown', reason: `command set "${gate.commandSet}" is empty` };
   }
   const results = evidence.commands ?? {};
-  // One pass in set order: the first missing result means we are still waiting; the first
-  // non-zero exit is the failure to report (later commands may never have run).
+  // Results may arrive in any order, so a failure must win over a missing result no matter where
+  // each sits in the set: pass once in set order for the first failure to name, then once more
+  // for evidence still outstanding.
   for (const command of commands) {
     const result = results[command];
-    if (result === undefined) return { status: 'pending' };
-    if (result.exitCode !== 0) {
+    if (result !== undefined && result.exitCode !== 0) {
       return { status: 'failed', reason: `command failed (exit ${result.exitCode}): ${command}` };
     }
+  }
+  for (const command of commands) {
+    if (results[command] === undefined) return { status: 'pending' };
   }
   return { status: 'passed' };
 };
