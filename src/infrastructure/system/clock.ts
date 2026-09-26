@@ -2,5 +2,5 @@
 import type { Clock } from '../../application/index';
 
 export function createSystemClock(): Clock {
-  throw new Error('not implemented');
+  return { now: (): number => Date.now() };
 }
