@@ -178,6 +178,10 @@ const step = (flow: FlowDef, acc: Acc, event: WorkOrderEvent): Acc => {
       return block(acc, event.reason);
     case 'unblocked':
       return acc.preBlock ?? acc;
+    case 'deployment_attempted':
+      // The attempt is an audit fact; the verdict that moves the gate arrives as its own
+      // gate_evaluated event, so the record itself must never shift the fold.
+      return acc;
     case 'closed':
       return doneAcc(acc.stageIndex, acc.attempt, acc.entries);
   }

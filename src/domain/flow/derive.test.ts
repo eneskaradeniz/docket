@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowDef, GateDef } from '../definitions';
 import type { GateVerdict } from '../gates';
-import type { Actor, EpochMs, FlowSlug, GateSlug, RoleSlug, RunId, RunOutcome, StageSlug } from '../shared';
+import type { Actor, EnvSlug, EpochMs, FlowSlug, GateSlug, RoleSlug, RunId, RunOutcome, StageSlug } from '../shared';
 import { deriveWorkOrderState, type WorkOrderState, type WorkOrderStatus } from './derive';
 import type { WorkOrderEvent } from './events';
 
@@ -11,6 +11,7 @@ const stageOf = (id: string): StageSlug => id as StageSlug;
 const gateOf = (id: string): GateSlug => id as GateSlug;
 const roleOf = (id: string): RoleSlug => id as RoleSlug;
 const flowOf = (id: string): FlowSlug => id as FlowSlug;
+const envOf = (id: string): EnvSlug => id as EnvSlug;
 const runOf = (n: number): RunId => `01RUN000000000000000000${String(n).padStart(2, '0')}` as RunId;
 
 const HUMAN_PLAN: GateDef = { kind: 'human', id: gateOf('plan-approval'), label: 'Plan onayı' };
@@ -120,6 +121,18 @@ const LAST_AGENT_FLOW: FlowDef = {
   stages: [{ id: stageOf('verdicts'), name: 'Verdicts', role: roleOf('reviewer'), exit: [AGENT_VERDICT] }],
 };
 
+// A deploy stage: the deploy gate is machine-flavoured, so a succeeded run gates on it until an
+// approved deployment is recorded; a failed deployment re-enters the stage for one retry.
+const DEPLOY_STG: GateDef = { kind: 'deploy', id: gateOf('deploy-stg'), environment: envOf('stg') };
+const DEPLOY_FLOW: FlowDef = {
+  id: flowOf('deploy'),
+  name: 'Deploy',
+  stages: [
+    { id: stageOf('build'), name: 'Build', role: roleOf('developer'), exit: [COMMAND_TESTS] },
+    { id: stageOf('ship'), name: 'Ship', role: roleOf('developer'), exit: [DEPLOY_STG], onFail: { goto: stageOf('ship'), maxAttempts: 2 } },
+  ],
+};
+
 const created = (at: EpochMs = 10): WorkOrderEvent => ({ type: 'created', at, by: USER, flow: THREE_STAGE.id });
 const runStarted = (stage: string, attempt = 1, at: EpochMs = 20): WorkOrderEvent => ({
   type: 'run_started',
@@ -147,6 +160,18 @@ const gateFailed = (stage: string, gate: string, reason = 'boom', at: EpochMs = 
 const blockedEvent = (reason: string, at: EpochMs = 50): WorkOrderEvent => ({ type: 'blocked', at, by: USER, reason });
 const unblockedEvent = (at: EpochMs = 60): WorkOrderEvent => ({ type: 'unblocked', at, by: USER });
 const closedEvent = (at: EpochMs = 70): WorkOrderEvent => ({ type: 'closed', at, by: USER });
+const COMMIT = '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
+const deployAttempted = (result: 'success' | 'failed', at: EpochMs = 45, outputTail?: string): WorkOrderEvent => ({
+  type: 'deployment_attempted',
+  at,
+  stage: stageOf('ship'),
+  gate: gateOf('deploy-stg'),
+  environment: envOf('stg'),
+  commit: COMMIT,
+  approvedBy: USER,
+  result,
+  ...(outputTail === undefined ? {} : { outputTail }),
+});
 
 const derive = (flow: FlowDef, events: readonly WorkOrderEvent[]): WorkOrderState => deriveWorkOrderState(flow, events);
 
@@ -168,6 +193,16 @@ const FAILED_THRICE: readonly WorkOrderEvent[] = (() => {
   }
   return events;
 })();
+
+// A healthy walk up to the deploy stage's gating point, so the deployment tests read as deltas.
+const AT_SHIP_GATING: readonly WorkOrderEvent[] = [
+  created(),
+  runStarted('build'),
+  runFinished('succeeded'),
+  gatePassed('build', 'tests'),
+  runStarted('ship'),
+  runFinished('succeeded'),
+];
 
 describe('deriveWorkOrderState — creation (R-17)', () => {
   it('R-17: created enters the first stage at attempt 1, ready when it has a role', () => {
@@ -618,6 +653,62 @@ describe('deriveWorkOrderState — block, unblock, close (R-23)', () => {
       closedEvent(),
     ]);
     expect(after).toEqual(done);
+  });
+});
+
+describe('deriveWorkOrderState — deployment attempts (E-10)', () => {
+  it('E-10: a deployment_attempted is a recorded fact — the gate only moves with its verdict event', () => {
+    expect(derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success')])).toEqual(derive(DEPLOY_FLOW, AT_SHIP_GATING));
+  });
+
+  it('E-10: the record never decides the gate — the accompanying gate_evaluated carries the transition', () => {
+    expect(derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success'), gatePassed('ship', 'deploy-stg')])).toEqual({
+      status: 'done',
+      stage: null,
+      attempt: 1,
+      pendingGates: [],
+    });
+  });
+
+  it('E-10: a failed record followed by its failed verdict applies the fail rule like any gate', () => {
+    expect(
+      derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('failed', 45, 'deploy exited 1'), gateFailed('ship', 'deploy-stg', 'deploy failed in stg')]),
+    ).toEqual({ status: 'ready', stage: 'ship', attempt: 2, pendingGates: ['deploy-stg'] });
+  });
+
+  it('E-10: one record per evaluation — a retried deployment adds a second record, the final verdict still decides', () => {
+    expect(
+      derive(DEPLOY_FLOW, [
+        ...AT_SHIP_GATING,
+        deployAttempted('failed', 45, 'deploy exited 1'),
+        gateFailed('ship', 'deploy-stg', 'deploy failed in stg'),
+        runStarted('ship', 2),
+        runFinished('succeeded', 2),
+        deployAttempted('success', 55),
+        gatePassed('ship', 'deploy-stg'),
+      ]),
+    ).toEqual({ status: 'done', stage: null, attempt: 2, pendingGates: [] });
+  });
+
+  it('E-10: the redacted outputTail rides along as inert data, with or without it the fold is the same', () => {
+    // Built at runtime so no credential-shaped literal ever sits in the source.
+    const tokenTail = ['deploy: releasing commit ' + COMMIT, 'export DEPLOY_TOKEN=' + 'x'.repeat(12)].join('\n');
+    const withTail = derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success', 45, tokenTail)]);
+    const withoutTail = derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success', 46)]);
+    expect(withTail).toEqual(withoutTail);
+  });
+
+  it('E-10: a deployment_attempted arriving while blocked is held by the block with everything else', () => {
+    expect(
+      derive(DEPLOY_FLOW, [...AT_SHIP_GATING, blockedEvent('hold'), deployAttempted('success'), gatePassed('ship', 'deploy-stg')]),
+    ).toEqual(derive(DEPLOY_FLOW, [...AT_SHIP_GATING, blockedEvent('hold')]));
+  });
+
+  it('E-10: a deployment_attempted after done changes nothing', () => {
+    const done = derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success'), gatePassed('ship', 'deploy-stg')]);
+    expect(
+      derive(DEPLOY_FLOW, [...AT_SHIP_GATING, deployAttempted('success'), gatePassed('ship', 'deploy-stg'), deployAttempted('failed', 99)]),
+    ).toEqual(done);
   });
 });
 
