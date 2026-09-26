@@ -1,10 +1,9 @@
 # Integrations and environments — design
 
-Status: **design, not yet a contract.** This document fixes the shape of code hosting, issue
+Status: **Phase 2c is a contract.** This document fixes the shape of code hosting, issue
 tracking, environments, deployment and remote CI so that later phases can add adapters without
-changing the core. The exact types and rules move into [domain.md](domain.md),
-[application.md](application.md) and [infrastructure.md](infrastructure.md) when their phase is broken
-down into issues (see "Phases" below); until then nothing here is implemented or tested.
+changing the core. The exact types and rules for Phase 2c (environments, deploy gates, remote checks, forge/tracker ports) have moved into [domain.md](domain.md) and
+[application.md](application.md). The rest (platform adapters, tracker write-back) remain design until their phase.
 
 ## Principles
 
