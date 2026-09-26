@@ -207,7 +207,10 @@ export interface TransportResolver { forAccount(accountId: AccountId): Promise<A
 
 // workspace-tools.ts — what gates and runs need from the machine
 export interface CommandResult { readonly exitCode: number; readonly durationMs: number; readonly outputTail: string }
-export interface CommandRunner { run(cwd: string, command: string, timeoutMs: number): Promise<CommandResult> }
+export interface CommandRunner {
+  /** `env` (Phase 2c) is added to the runner's base environment for this call only; its values are redacted from `outputTail`. */
+  run(cwd: string, command: string, timeoutMs: number, env?: Readonly<Record<string, string>>): Promise<CommandResult>;
+}
 export interface SecretScanner { scan(cwd: string): Promise<{ readonly findings: number }> }
 export interface EvidenceChecker {
   /** True when every `path:line` pointer names an existing file and line in `cwd`. */
@@ -478,14 +481,16 @@ Rules:
 // use-cases/deploy-gate.ts
 export type DeployGateError =
   | 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_deploy_gate'
-  | 'no_approval' | 'same_approver_on_protected' | 'promote_prerequisite_missing';
+  | 'no_approval' | 'confirmation_mismatch' | 'promote_prerequisite_missing'
+  | 'definitions_invalid' | 'unknown_environment' | 'no_repo';
 
 export function approveAndDeploy(
-  deps: { workOrderRepo: WorkOrderRepo; eventLog: EventLog; workspaceTools: WorkspaceTools },
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'worktrees' | 'commands' | 'secrets'>,
   input: {
     readonly id: WorkOrderId; readonly gate: GateSlug;
     readonly approver: Actor;    // must be user
     readonly commit: string;
+    readonly confirmedEnvironment?: EnvSlug;   // required for protected environments
   },
 ): Promise<Result<WorkOrderState, DeployGateError>>;
 
@@ -494,8 +499,10 @@ export type RemoteChecksError =
   | 'not_found' | 'not_current_stage' | 'not_pending' | 'not_a_remote_checks_gate'
   | 'forge_unavailable' | 'forge_error';
 
+/** `forges` is passed separately (like `PermissionGate` in executeRun); it is not part of AppDeps. */
 export function pollRemoteChecks(
-  deps: { workOrderRepo: WorkOrderRepo; forgeResolver: ForgeResolver },
+  deps: Pick<AppDeps, 'clock' | 'workOrders' | 'definitions'>,
+  forges: ForgeResolver,
   input: {
     readonly id: WorkOrderId; readonly gate: GateSlug;
     readonly branchRef: string;
@@ -504,14 +511,14 @@ export function pollRemoteChecks(
 ): Promise<Result<WorkOrderState, RemoteChecksError>>;
 ```
 
-- **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `approver` must differ from the last `run_started` event's actor on the current stage (`same_approver_on_protected`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
-- **E-12** Deploy execution: run `deploy` commandSet in the work order's worktree with the environment's `env` values injected (literal + keychain-resolved `secretRef`). If deploy exits 0 and `verify` exists, run `verify` the same way. Both exit 0 → `result: 'success'`; otherwise → `result: 'failed'`.
+- **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `input.confirmedEnvironment` must equal the gate's environment (`confirmation_mismatch`). The environment must exist in the workspace definition (`unknown_environment`); the worktree comes from `Worktrees.ensure` (`no_repo`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
+- **E-12** Deploy execution: run `deploy` commandSet in the work order's worktree with the environment's `env` values passed as `CommandRunner.run`'s `env` argument (literal + `SecretVault`-resolved `secretRef`; an unresolvable ref → `result: 'failed'` without running). If deploy exits 0 and `verify` exists, run `verify` the same way. Both exit 0 → `result: 'success'`; otherwise → `result: 'failed'`.
 - **E-13** After deploy execution, append one `deployment_attempted` event and one `gate_evaluated` event (using E-6). Environment values and secrets never appear in the event or the output tail.
 - **E-14** `pollRemoteChecks`: gate must be a pending `remote_checks` gate of the current stage. Resolve the forge via `ForgeResolver.forRepo`; if unavailable → `forge_unavailable`. Call `forge.checks(repo, branchRef)`.
 - **E-15** Match returned checks against `required`: if `required === 'all'`, use all returned checks; otherwise filter to those whose `name` is in the `required` array. Determine status: all `passed` → `all_passed`; any `failed`/`cancelled` → `has_failure`; otherwise → `pending`.
 - **E-16** If elapsed time since the gate entered `pending` exceeds `timeoutMinutes` → `timeout`.
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
-- **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process `remote_checks` gates by calling `pollRemoteChecks`. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
+- **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the workspace definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
 
 ---
