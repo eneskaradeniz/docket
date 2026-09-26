@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// v2 layer checks — mechanical enforcement of docs/v2/architecture.md and the module dependency map
-// in docs/v2/domain.md. Runs as part of `npm run check:boundaries`. Every violation names its rule.
+// v2 layer checks — mechanical enforcement of docs/v2/architecture.md, the module dependency map
+// in docs/v2/domain.md, and the infrastructure rules and module map in docs/v2/infrastructure.md.
+// Runs as part of `npm run check:boundaries`. Every violation names its rule.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -8,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SRC = join(ROOT, 'src');
+const INFRA = join(SRC, 'infrastructure');
+const INFRA_BARREL = join(INFRA, 'index.ts');
 
 const V2_LAYERS = ['domain', 'application', 'api', 'infrastructure', 'presentation'];
 const V1_DIRS = ['core', 'adapters', 'ui', 'renderer'];
@@ -44,6 +47,25 @@ const DOMAIN_MODULES = {
   roadmap: ['shared', 'flow'],
   // Cross-module scenario tests only (no production code): may import every module.
   scenarios: ['shared', 'definitions', 'quota', 'budget', 'proposal', 'resolver', 'gates', 'providers', 'library', 'flow', 'dispatch', 'roadmap'],
+};
+// Module dependency map inside src/infrastructure (docs/v2/infrastructure.md).
+const INFRA_MODULES = {
+  system: [],
+  'storage/sqlite': ['system'],
+  'storage/keychain': ['system', 'storage/sqlite'],
+  'storage/definitions-yaml': ['system'],
+  vcs: ['system'],
+  gates: ['system', 'vcs'],
+  providers: ['system'],
+  compose: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers'],
+  scenarios: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'compose'],
+};
+// Module id per docs/v2/infrastructure.md: storage/<x> under storage/, else the first folder
+// under src/infrastructure/. The layer barrel (src/infrastructure/index.ts) is handled separately.
+const infraModuleId = (absPath) => {
+  const parts = relative(INFRA, absPath).split(sep);
+  if (parts.length === 1) return parts[0];
+  return parts[0] === 'storage' && parts.length > 2 ? `storage/${parts[1]}` : parts[0];
 };
 const VENDOR_RE = /\b(claude|anthropic|codex|openai|gpt|gemini|antigravity|cursor|copilot)\b/i;
 const IMPURE_RE = /\bDate\.now\b|\bnew Date\b|\bMath\.random\b|\bcrypto\b|\bperformance\.now\b/;
@@ -95,11 +117,16 @@ for (const layer of V2_LAYERS) {
         if (V1_DIRS.includes(tl)) { report(file, ln, 'L2 v1-isolation', `v2 code imports v1 code (${tl}/): ${spec}`); continue; }
         if (!LAYER_ALLOW[layer].includes(tl)) { report(file, ln, 'L1 layer', `${layer} may not import ${tl}: ${spec}`); continue; }
         if (layer === 'domain') checkDomainModule(file, target, spec, ln);
+        else if (layer === 'infrastructure' && tl === 'infrastructure') checkInfraModule(file, target, spec, ln);
         else if (tl === 'domain' && target !== join(SRC, 'domain', 'index.ts')) {
           report(file, ln, 'D6 domain-barrel', `import the domain only through src/domain/index.ts: ${spec}`);
         }
       } else {
         if (test && spec === 'vitest') continue;
+        if (spec === 'electron' || spec.startsWith('electron/')) {
+          report(file, ln, 'N1 electron', 'v2 code never imports electron — Electron objects are injected by electron/main.ts');
+          continue;
+        }
         if (isNodeSpec(spec) && layer !== 'infrastructure') { report(file, ln, 'L3 node', `${layer} imports a Node builtin: ${spec}`); continue; }
         if (!PACKAGE_ALLOW[layer](spec)) report(file, ln, 'L4 package', `${layer} imports a package: ${spec}`);
       }
@@ -112,8 +139,13 @@ for (const layer of V2_LAYERS) {
       if (!test && (layer === 'domain' || layer === 'application') && !isCommentLine(t) && IMPURE_RE.test(t)) {
         report(file, ln, 'C3 purity', 'time/randomness/crypto come through the Clock / IdGen ports');
       }
-      if (!test && layer !== 'infrastructure' && VENDOR_RE.test(t)) {
-        report(file, ln, 'C4 vendor', `agent-vendor name outside src/infrastructure/providers/: "${t.trim().slice(0, 80)}"`);
+      if (!test && VENDOR_RE.test(t)) {
+        // Inside src/infrastructure/ the vendor-name ban holds everywhere but providers/ (N2);
+        // outside infrastructure it is C4 for every layer.
+        if (layer !== 'infrastructure' || relative(INFRA, file).split(sep)[0] !== 'providers') {
+          const rule = layer === 'infrastructure' ? 'N2 vendor-scope' : 'C4 vendor';
+          report(file, ln, rule, `agent-vendor name outside src/infrastructure/providers/: "${t.trim().slice(0, 80)}"`);
+        }
       }
     });
   }
@@ -136,6 +168,40 @@ function checkDomainModule(file, target, spec, ln) {
 // src/domain/scenarios holds cross-module scenario tests only.
 for (const file of walk(join(SRC, 'domain', 'scenarios'))) {
   if (!isTest(file)) report(file, 1, 'D5 scenarios', 'src/domain/scenarios may contain *.test.ts files only');
+}
+
+// src/infrastructure/scenarios holds cross-module scenario tests only.
+for (const file of walk(join(SRC, 'infrastructure', 'scenarios'))) {
+  if (!isTest(file)) report(file, 1, 'N5 infra-scenarios', 'src/infrastructure/scenarios may contain *.test.ts files only');
+}
+
+function checkInfraModule(file, target, spec, ln) {
+  if (target === INFRA_BARREL) {
+    if (file !== INFRA_BARREL) report(file, ln, 'N3 infra-module', 'modules must not import src/infrastructure/index.ts');
+    return;
+  }
+  const toId = infraModuleId(target);
+  if (!INFRA_MODULES[toId]) {
+    report(file, ln, 'N3 infra-module', `unknown infrastructure module "${toId}" — add it to docs/v2/infrastructure.md first`);
+    return;
+  }
+  if (file === INFRA_BARREL) return; // the layer barrel re-exports every module
+  const fromId = infraModuleId(file);
+  const allowed = INFRA_MODULES[fromId];
+  if (!allowed) {
+    report(file, ln, 'N3 infra-module', `unknown infrastructure module "${fromId}" — add it to docs/v2/infrastructure.md first`);
+    return;
+  }
+  if (fromId === toId) return;
+  if (!allowed.includes(toId)) {
+    report(file, ln, 'N3 infra-module', `infrastructure/${fromId} may not import infrastructure/${toId}: ${spec}`);
+    return;
+  }
+  const parts = relative(INFRA, target).split(sep);
+  const base = parts[parts.length - 1];
+  if (base !== 'index.ts' && base !== 'index.tsx') {
+    report(file, ln, 'N4 infra-index', `import infrastructure/${toId} through its index.ts only: ${spec}`);
+  }
 }
 
 // Domain modules must not import the top-level barrel.
