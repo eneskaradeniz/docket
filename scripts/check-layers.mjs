@@ -95,6 +95,9 @@ for (const layer of V2_LAYERS) {
         if (V1_DIRS.includes(tl)) { report(file, ln, 'L2 v1-isolation', `v2 code imports v1 code (${tl}/): ${spec}`); continue; }
         if (!LAYER_ALLOW[layer].includes(tl)) { report(file, ln, 'L1 layer', `${layer} may not import ${tl}: ${spec}`); continue; }
         if (layer === 'domain') checkDomainModule(file, target, spec, ln);
+        else if (tl === 'domain' && target !== join(SRC, 'domain', 'index.ts')) {
+          report(file, ln, 'D6 domain-barrel', `import the domain only through src/domain/index.ts: ${spec}`);
+        }
       } else {
         if (test && spec === 'vitest') continue;
         if (isNodeSpec(spec) && layer !== 'infrastructure') { report(file, ln, 'L3 node', `${layer} imports a Node builtin: ${spec}`); continue; }
