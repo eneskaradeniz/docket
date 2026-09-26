@@ -25,7 +25,7 @@ provider's chat app, IDE plugins) and Docket's own accounting is never authorita
 | Claude Code · Pro/Max | account; 5h + 7d; 7d per model family (Opus/Sonnet) | stream event + SDK `get_usage` | exact |
 | Claude Code · API key | per-minute throughput + monthly spend cap | own spend tracking | month start |
 | Codex · ChatGPT plans | primary ≈5h, secondary ≈weekly; read `windowDurationMins` | app-server `account/rateLimits/*` | exact |
-| Antigravity `agy` · Google AI Pro/Ultra | **per model group** ("Gemini models", "Claude and GPT models"), each 5h + weekly | `/usage` JSON in print mode (probe in Phase 0) | exact via query; relative in errors |
+| Antigravity `agy` · Google AI Pro/Ultra | **per model group** ("Gemini models", "Claude and GPT models"), each 5h + weekly | `/usage` JSON in print mode (verified, see below) | exact via query; relative in errors |
 | Gemini CLI · Code Assist Std/Ent | requests per day | none headless | unverified |
 | Copilot CLI | monthly AI credits; hidden session/weekly guardrails | SDK `account.getQuota` | monthly exact; weekly only retry-after |
 | opencode Go | per-model $ over 5h / week / month | the CLI waits itself; surface its retry time | exact |
@@ -52,3 +52,26 @@ Throughput (per-minute) limits are not quota: they show as "retrying", never as 
 Caps at three scopes — account (day, month), workspace (month), work order — each with a warn
 percent (default 80). The most restrictive status wins. `hard_stop` blocks new runs; running runs are
 never killed.
+
+## Observed: Antigravity `/usage` (agy 1.2.11, probe #138)
+
+`agy -p "/usage" --output-format json` returns at once without an agent turn (`num_turns: 0`, zero tokens).
+The quota lives in `command.data`; `response` is the same data as tab-separated text and is ignored.
+
+```json
+{ "status": "SUCCESS", "num_turns": 0,
+  "command": { "name": "usage", "data": { "description": "…", "groups": [
+    { "name": "Gemini Models", "description": "Models within this group: Gemini Flash, Gemini Pro",
+      "buckets": [
+        { "id": "gemini-weekly", "name": "Weekly Limit Remaining", "window": "weekly",
+          "remaining_fraction": 0.6869, "reset_time": "2026-09-29T15:24:06Z", "description": "…" },
+        { "id": "gemini-5h", "name": "Five Hour Limit Remaining", "window": "5h",
+          "remaining_fraction": 1, "reset_time": "2026-09-26T19:17:25Z" } ] },
+    { "name": "Claude and GPT models", "buckets": [ { "id": "3p-weekly", … }, { "id": "3p-5h", … } ] } ] } } }
+```
+
+Mapping: group → `Pool` (`label` = `name`, model matchers from the model list in `description`, verbatim
+text only); bucket → `Meter` (`label` = `name`, `unit: 'fraction'`, `remaining` = `remaining_fraction`,
+`resetsAt` = `reset_time`, `resetPrecision: 'exact'`, `source: 'polled'`). `window` (`weekly`, `5h`) is kept as
+data; `durationMs` is set only from a value the CLI states, never from the window name. The parser must
+read both stdout and stderr (the probe run showed the payload on stderr).
