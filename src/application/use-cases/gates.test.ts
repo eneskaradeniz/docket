@@ -1,12 +1,15 @@
 // gates use cases — rules A-8 (decideHumanGate), A-9 (evaluateMachineGates), A-9a
-// (submitAgentVerdict) from docs/v2/application.md, driven over the in-memory port fakes.
+// (submitAgentVerdict) and E-18 (evaluateMachineGates polling remote_checks gates; the GateContext
+// environments invariant) from docs/v2/application.md, driven over the in-memory port fakes.
 import { describe, expect, it } from 'vitest';
 
 import {
   parseSlug,
   parseUlid,
   isUlid,
+  err,
   type Actor,
+  type RepoRef,
   type Result,
   type RunId,
   type Slug,
@@ -16,7 +19,7 @@ import {
   type WorkspaceSlug,
 } from '../../domain/index';
 
-import type { AppDeps } from '../ports';
+import type { AppDeps, CheckRun, Forge, ForgeResolver } from '../ports';
 import {
   createFakeClock,
   createFakeCommandRunner,
@@ -24,6 +27,7 @@ import {
   createFakeDeps,
   createFakeEventLog,
   createFakeEvidenceChecker,
+  createFakeForge,
   createFakeSecretScanner,
   createFakeWorktrees,
   type FakeCommandRunner,
@@ -34,6 +38,7 @@ import {
   type FakeWorktrees,
 } from '../ports/fakes';
 
+import { approveAndDeploy } from './deploy-gate';
 import { decideHumanGate, evaluateMachineGates, submitAgentVerdict } from './gates';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -135,18 +140,78 @@ const DEFINITIONS_BODY = {
         ],
       }],
     },
+    {
+      id: 'remote-flow',
+      name: 'Remote checks',
+      stages: [{
+        id: 'verify',
+        name: 'Verify',
+        role: 'worker',
+        exit: [{ kind: 'remote_checks', id: 'ci', required: 'all', timeoutMinutes: 10 }],
+      }],
+    },
+    {
+      id: 'remote-after-commands',
+      name: 'Commands then remote checks',
+      stages: [{
+        id: 'build',
+        name: 'Build',
+        role: 'worker',
+        exit: [
+          { kind: 'command', id: 'run-checks', commandSet: 'checks' },
+          { kind: 'remote_checks', id: 'ci', required: 'all', timeoutMinutes: 10 },
+        ],
+      }],
+    },
+    {
+      id: 'two-remote-flow',
+      name: 'Two remote checks',
+      stages: [{
+        id: 'verify',
+        name: 'Verify',
+        role: 'worker',
+        exit: [
+          { kind: 'remote_checks', id: 'ci', required: 'all', timeoutMinutes: 10 },
+          { kind: 'remote_checks', id: 'qa', required: 'all', timeoutMinutes: 10 },
+        ],
+      }],
+    },
+    {
+      id: 'deploy-mixed-flow',
+      name: 'Command then deploy',
+      stages: [{
+        id: 'build',
+        name: 'Build',
+        role: 'worker',
+        exit: [
+          { kind: 'command', id: 'run-checks', commandSet: 'checks' },
+          { kind: 'deploy', id: 'deploy-stg', environment: 'stg' },
+        ],
+      }],
+    },
+    {
+      id: 'deploy-flow',
+      name: 'Deploy',
+      stages: [{ id: 'ship', name: 'Ship', role: 'worker', exit: [{ kind: 'deploy', id: 'ship-stg', environment: 'stg' }] }],
+    },
   ],
   capabilities: [],
   workspace: {
     id: 'ws',
     name: 'Workspace',
     repos: [],
-    flows: ['human-flow', 'two-gates', 'later-stage', 'page-flow', 'cmd-flow', 'scan-flow', 'both-flow', 'verdict-flow'],
+    flows: [
+      'human-flow', 'two-gates', 'later-stage', 'page-flow', 'cmd-flow', 'scan-flow', 'both-flow',
+      'verdict-flow', 'remote-flow', 'remote-after-commands', 'two-remote-flow', 'deploy-mixed-flow', 'deploy-flow',
+    ],
     defaultFlow: 'human-flow',
-    commandSets: { checks: [...CHECK_COMMANDS] },
+    commandSets: { checks: [...CHECK_COMMANDS], 'deploy-stg': ['docket-deploy stg'] },
     roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
+    environments: [
+      { id: 'stg', name: 'Staging', order: 1, deploy: 'deploy-stg', env: {}, protected: false },
+    ],
   },
 };
 
@@ -197,6 +262,44 @@ const runSucceededIn = async (h: Harness, stage: StageSlug): Promise<void> => {
 const eventsOf = (h: Harness): Promise<readonly unknown[]> => h.deps.workOrders.events(WORK_ORDER);
 
 const failingCommand = { exitCode: 1, durationMs: 4, outputTail: 'broken' };
+
+// --- remote-checks fixtures (E-18) -------------------------------------------------------------------
+
+const REPO: RepoRef = { id: 'repo-1', remote: 'https://forge.example/ws/app.git', defaultBranch: 'main' };
+const BRANCH_REF = 'feature/shine';
+
+const check = (name: string, status: CheckRun['status']): CheckRun => ({ name, status });
+
+/** The fake forge with its `checks` wrapped, so a test can see the repo and ref it was polled with. */
+const trackingForge = (checks: readonly CheckRun[]): {
+  readonly forge: Forge;
+  readonly seen: readonly { readonly repo: RepoRef; readonly ref: string }[];
+} => {
+  const base = createFakeForge({ checks });
+  const seen: { repo: RepoRef; ref: string }[] = [];
+  return {
+    seen,
+    forge: {
+      ...base,
+      checks: async (repo, ref) => {
+        seen.push({ repo, ref });
+        return base.checks(repo, ref);
+      },
+    },
+  };
+};
+
+/** A resolver that hands out `forge` for every repo and records what it was asked to resolve. */
+const resolverFor = (forge: Forge | undefined): {
+  readonly resolver: ForgeResolver;
+  readonly asked: readonly RepoRef[];
+} => {
+  const asked: RepoRef[] = [];
+  return { asked, resolver: { forRepo: async (repo) => { asked.push(repo); return forge; } } };
+};
+
+/** A forge whose checks call errors — any errored call reads as an unreachable forge. */
+const failingForge = (): Forge => ({ ...createFakeForge(), checks: async () => err('network') });
 
 // --- decideHumanGate (A-8) --------------------------------------------------------------------------
 
@@ -566,6 +669,209 @@ describe('evaluateMachineGates', () => {
     const events = await eventsOf(h);
     expect(events).toHaveLength(4);
     expect(events[3]).toMatchObject({ gate: 'run-checks' });
+  });
+
+  // --- E-18: remote_checks gates through evaluateMachineGates ---------------------------------------
+
+  it('E-18: processes a pending remote_checks gate through pollRemoteChecks when the input carries remote', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { forge, seen } = trackingForge([check('lint', 'passed'), check('test', 'passed')]);
+    const { resolver, asked } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    expect(asked).toEqual([REPO]);
+    expect(seen).toEqual([{ repo: REPO, ref: BRANCH_REF }]);
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toEqual({
+      type: 'gate_evaluated',
+      at: 1_000,
+      stage: slugOf('verify'),
+      gate: slugOf('ci'),
+      verdict: { status: 'passed' },
+    });
+  });
+
+  it('E-18: leaves remote_checks gates pending when the input carries no remote', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { forge, seen } = trackingForge([check('lint', 'passed')]);
+    const { asked } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, { id: WORK_ORDER });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+    });
+    expect(asked).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+
+  it('E-18: never evaluates deploy gates — they stay pending for approveAndDeploy even when every other gate passed', async () => {
+    const h = makeHarness();
+    await createIn(h, 'deploy-mixed-flow');
+    await runSucceededIn(h, slugOf('build'));
+    const { forge, seen } = trackingForge([check('lint', 'passed')]);
+    const { resolver, asked } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('build'), attempt: 1, pendingGates: ['deploy-stg'] },
+    });
+    expect(h.commands.calls()).toHaveLength(3); // the command gate's set ran; no deploy command did
+    expect(asked).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(4);
+    expect(events[3]).toMatchObject({ type: 'gate_evaluated', gate: 'run-checks', verdict: { status: 'passed' } });
+  });
+
+  it('E-18: processes command and secret_scan gates before polling the stage’s remote_checks gate', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-after-commands');
+    await runSucceededIn(h, slugOf('build'));
+    const { resolver } = resolverFor(trackingForge([check('lint', 'passed')]).forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(5);
+    expect(events[3]).toMatchObject({ type: 'gate_evaluated', gate: 'run-checks', verdict: { status: 'passed' } });
+    expect(events[4]).toMatchObject({ type: 'gate_evaluated', gate: 'ci', verdict: { status: 'passed' } });
+  });
+
+  it('E-18: polls every pending remote_checks gate of the stage once, in stage order', async () => {
+    const h = makeHarness();
+    await createIn(h, 'two-remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { forge, seen } = trackingForge([check('lint', 'passed'), check('e2e', 'passed')]);
+    const { resolver, asked } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    expect(asked).toEqual([REPO, REPO]);
+    expect(seen).toEqual([{ repo: REPO, ref: BRANCH_REF }, { repo: REPO, ref: BRANCH_REF }]);
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(5);
+    expect(events[3]).toMatchObject({ gate: 'ci', verdict: { status: 'passed' } });
+    expect(events[4]).toMatchObject({ gate: 'qa', verdict: { status: 'passed' } });
+  });
+
+  it('E-18: a poll that cannot conclude yet leaves the remote gate pending without failing the evaluation', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { forge, seen } = trackingForge([check('lint', 'running')]);
+    const { resolver, asked } = resolverFor(forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+    });
+    expect(asked).toEqual([REPO]); // polled exactly once — the dispatcher re-polls later
+    expect(seen).toHaveLength(1);
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+
+  it('E-18: a forge the poll cannot reach leaves the remote gate pending', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { resolver, asked } = resolverFor(failingForge());
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'gating', stage: slugOf('verify'), attempt: 1, pendingGates: ['ci'] },
+    });
+    expect(asked).toEqual([REPO]);
+    expect(await eventsOf(h)).toHaveLength(3);
+  });
+
+  it('E-18: a failed remote check fails its gate through the delegated poll', async () => {
+    const h = makeHarness();
+    await createIn(h, 'remote-flow');
+    await runSucceededIn(h, slugOf('verify'));
+    const { resolver } = resolverFor(trackingForge([check('lint', 'failed')]).forge);
+
+    const result = await evaluateMachineGates(h.deps, {
+      id: WORK_ORDER,
+      remote: { forges: resolver, repo: REPO, branchRef: BRANCH_REF },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('blocked');
+    expect(result.value.blockedReason).toBe('gate "ci" failed: remote check failed: lint');
+  });
+});
+
+// --- GateContext environments (E-18) ----------------------------------------------------------------
+
+describe('GateContext environments (E-18)', () => {
+  it('E-18: GateContext built by use cases carries environments from the workspace definition', async () => {
+    const h = makeHarness();
+    await createIn(h, 'deploy-flow');
+    await runSucceededIn(h, slugOf('ship'));
+
+    const result = await approveAndDeploy(h.deps, {
+      id: WORK_ORDER,
+      gate: slugOf('ship-stg'),
+      approver: USER,
+      commit: '9f86d081',
+    });
+
+    // A context without the workspace environments would judge the deploy gate unknown and block
+    // the work order instead of recording the deployment and advancing it.
+    expect(result).toEqual({
+      ok: true,
+      value: { status: 'done', stage: null, attempt: 1, pendingGates: [] },
+    });
+    const events = await eventsOf(h);
+    expect(events).toHaveLength(5);
+    expect(events[3]).toMatchObject({ type: 'deployment_attempted', environment: 'stg', result: 'success' });
+    expect(events[4]).toMatchObject({ type: 'gate_evaluated', gate: 'ship-stg', verdict: { status: 'passed' } });
   });
 });
 
