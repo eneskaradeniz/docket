@@ -64,6 +64,36 @@ describe('createFakeCommandRunner', () => {
       { cwd: '/w2', command: 'npm run lint', timeoutMs: 20 },
     ]);
   });
+
+  it('records the env a call passed', async () => {
+    const runner = createFakeCommandRunner();
+    const env: Readonly<Record<string, string>> = { DEPLOY_URL: 'https://stg.example' };
+
+    await runner.run('/w', 'deploy', 10, env);
+
+    expect(runner.calls()).toEqual([{ cwd: '/w', command: 'deploy', timeoutMs: 10, env }]);
+  });
+
+  it('records calls without env as having none', async () => {
+    const runner = createFakeCommandRunner();
+    await runner.run('/w', 'npm test', 10, { A: 'one' });
+    await runner.run('/w', 'npm run lint', 20);
+
+    const [first, second] = runner.calls();
+    expect(first?.env).toEqual({ A: 'one' });
+    expect(second?.env).toBeUndefined();
+  });
+
+  it('snapshots the env at call time; later caller mutations are not visible', async () => {
+    const runner = createFakeCommandRunner();
+    const env: Record<string, string> = { K: 'kept-value' };
+
+    await runner.run('/w', 'deploy', 10, env);
+    env.K = 'changed-after';
+
+    const [call] = runner.calls();
+    expect(call?.env).toEqual({ K: 'kept-value' });
+  });
 });
 
 describe('createFakeSecretScanner', () => {

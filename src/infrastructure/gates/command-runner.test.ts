@@ -175,4 +175,76 @@ describePosix('createCommandRunner', () => {
     const result = await runner.run(cwd, 'echo "$K"', RUN_TIMEOUT_MS);
     expect(result.outputTail).toBe('[env]\n');
   });
+
+  it('I-24: a call-only env variable is visible to the command', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "[$DOCKET_CALL_ONLY]"', RUN_TIMEOUT_MS, {
+      DOCKET_CALL_ONLY: 'here',
+    });
+    expect(result.exitCode).toBe(0);
+    expect(result.outputTail).toBe('[here]\n');
+  });
+
+  it('I-24: the call env adds to config.env — its entries stay visible', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { DOCKET_BASE: 'cfg' } });
+    const result = await runner.run(cwd, 'echo "$DOCKET_BASE-$DOCKET_EXTRA"', RUN_TIMEOUT_MS, {
+      DOCKET_EXTRA: 'x2',
+    });
+    expect(result.outputTail).toBe('cfg-x2\n');
+  });
+
+  it('I-24: on a name clash the call env wins, and only for that call', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { DOCKET_CLASH: 'cfg' } });
+    const withCall = await runner.run(cwd, 'echo "$DOCKET_CLASH"', RUN_TIMEOUT_MS, {
+      DOCKET_CLASH: 'call',
+    });
+    expect(withCall.outputTail).toBe('call\n');
+    const withoutCall = await runner.run(cwd, 'echo "$DOCKET_CLASH"', RUN_TIMEOUT_MS);
+    expect(withoutCall.outputTail).toBe('cfg\n');
+  });
+
+  it('I-24: nothing from process.env leaks in when only the call env is given', async () => {
+    const cwd = await tempDir();
+    process.env.DOCKET_RUNNER_CALL_LEAK = 'leak-call-value';
+    try {
+      const runner = createCommandRunner({ env: {} });
+      const result = await runner.run(cwd, 'echo "[$DOCKET_RUNNER_CALL_LEAK]"', RUN_TIMEOUT_MS, {
+        DOCKET_ONLY: 'cv',
+      });
+      expect(result.outputTail).toBe('[]\n');
+    } finally {
+      delete process.env.DOCKET_RUNNER_CALL_LEAK;
+    }
+  });
+
+  it('I-26: a call env value of at least 8 characters is replaced with [env]', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$T"', RUN_TIMEOUT_MS, { T: 't'.repeat(12) });
+    expect(result.outputTail).toBe('[env]\n');
+  });
+
+  it('I-26: a call env value shorter than 8 characters is kept', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$S"', RUN_TIMEOUT_MS, { S: 'tiny' });
+    expect(result.outputTail).toBe('tiny\n');
+  });
+
+  it('I-26: config and call env values are redacted in the same output', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: { B: 'b'.repeat(9) } });
+    const result = await runner.run(cwd, 'echo "$B-$C-$B"', RUN_TIMEOUT_MS, { C: 'c'.repeat(9) });
+    expect(result.outputTail).toBe('[env]-[env]-[env]\n');
+  });
+
+  it('I-26: a secret-shaped call env value is redacted as [env], not [redacted]', async () => {
+    const cwd = await tempDir();
+    const runner = createCommandRunner({ env: {} });
+    const result = await runner.run(cwd, 'echo "$K"', RUN_TIMEOUT_MS, { K: 'sk-' + 'c'.repeat(32) });
+    expect(result.outputTail).toBe('[env]\n');
+  });
 });
