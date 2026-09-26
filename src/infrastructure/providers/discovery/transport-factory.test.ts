@@ -1,0 +1,259 @@
+// Transport factory tests (docs/v2/providers.md → "Discovery" closing paragraph): the factory maps
+// an account's provider definition to a transport — the sdk kind to the real SDK transport bound to
+// the discovered binary, the other kinds to an `unsupported` report until their issues land.
+import { describe, expect, it } from 'vitest';
+import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+
+import { createFakeAccountRepo, createFakeClock, createFakeSecretVault } from '../../../application/ports/fakes/index';
+import type { AccountRecord, RunHandle, RunRequest, TransportError } from '../../../application/index';
+import type { Result, RoleDef, RunId } from '../../../domain/index';
+import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../domain/index';
+import type { ProviderDef } from '../defs/index';
+import type { QueryFn } from '../transports/sdk/transport';
+import { createProviderTransportFactory } from './transport-factory';
+
+const RUN_ID: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FBV');
+const ACCOUNT_SDK: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+const ACCOUNT_APP_SERVER: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FCV');
+const ACCOUNT_ACP: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FDV');
+const ACCOUNT_STREAM_JSON: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FEV');
+const ACCOUNT_UNKNOWN: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FFV');
+
+const ROLE: RoleDef = {
+  id: slugOf<'role'>('implementer'),
+  name: 'Implementer',
+  instructions: 'Follow the work order exactly.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
+
+function slugOf<B extends string>(input: string) {
+  const parsed = parseSlug<B>(input);
+  if (!parsed.ok) throw new Error('fixture slug must parse');
+  return parsed.value;
+}
+
+function ulidOf<B extends string>(input: string) {
+  const parsed = parseUlid<B>(input);
+  if (!parsed.ok) throw new Error('fixture ulid must parse');
+  return parsed.value;
+}
+
+function accountOf(id: AccountId, provider: string): AccountRecord {
+  return {
+    id,
+    provider,
+    label: 'main',
+    authMode: 'subscription',
+    limitPolicy: 'wait_resume',
+    caps: [],
+  };
+}
+
+function request(accountId: AccountId): RunRequest {
+  return {
+    runId: RUN_ID,
+    cwd: '/tmp/docket-transport-factory',
+    role: ROLE,
+    route: { accountId },
+    prompt: 'do the work',
+    capabilities: [],
+  };
+}
+
+function unwrap(started: Result<RunHandle, TransportError>): RunHandle {
+  if (!started.ok) throw new Error(`expected a started run, got ${started.error.code}`);
+  return started.value;
+}
+
+async function collect(events: AsyncIterable<AgentEvent>): Promise<readonly AgentEvent[]> {
+  const collected: AgentEvent[] = [];
+  for await (const event of events) collected.push(event);
+  return collected;
+}
+
+const defOf = (overrides: Pick<ProviderDef, 'id' | 'transport'> & { readonly streamDialect?: string }): ProviderDef => ({
+  displayName: 'Fake CLI',
+  bins: ['fake-cli'],
+  versionArgs: ['--version'],
+  helpArgs: ['--help'],
+  transport: overrides.transport,
+  config: { mechanism: 'env-var', name: 'FAKE_CLI_HOME' },
+  buildLaunch: () => ({ args: [], env: {}, stdin: 'prompt' }),
+  resume: 'none',
+  capabilities: {
+    structuredStream: true,
+    permissionAsk: false,
+    resume: false,
+    mcp: false,
+    hooks: 'unknown',
+    skills: 'unknown',
+    images: 'unknown',
+    quotaReport: 'none',
+    costReport: 'none',
+  },
+  installHint: { url: 'https://example.invalid/fake-cli' },
+  id: overrides.id,
+  ...(overrides.streamDialect === undefined ? {} : { streamDialect: overrides.streamDialect }),
+});
+
+// --- fake query (the transport must never reach a real agent CLI here) ---
+
+interface CapturedCall {
+  readonly prompt: string | AsyncIterable<SDKUserMessage>;
+  readonly options: Options;
+}
+
+type Script = (call: CapturedCall) => AsyncGenerator<SDKMessage, void>;
+
+/** Minimal Query: the generator drives the messages, every control request is explicitly unsupported. */
+function asQuery(generator: AsyncGenerator<SDKMessage, void>): Query {
+  const unsupported = (): Promise<never> => Promise.reject(new Error('fake query: control request not scripted'));
+  const query: Query = Object.assign(generator, {
+    interrupt: (): Promise<undefined> => Promise.resolve(undefined),
+    setPermissionMode: (): Promise<void> => Promise.resolve(),
+    setMcpPermissionModeOverride: (): Promise<{ warning?: string }> => Promise.resolve({}),
+    setModel: (): Promise<void> => Promise.resolve(),
+    setMaxThinkingTokens: (): Promise<void> => Promise.resolve(),
+    applyFlagSettings: (): Promise<void> => Promise.resolve(),
+    initializationResult: unsupported,
+    reinitialize: unsupported,
+    supportedCommands: unsupported,
+    supportedModels: unsupported,
+    supportedAgents: unsupported,
+    mcpServerStatus: unsupported,
+    getContextUsage: unsupported,
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: unsupported,
+    readFile: unsupported,
+    reloadPlugins: unsupported,
+    reloadSkills: unsupported,
+    accountInfo: unsupported,
+    rewindFiles: unsupported,
+    seedReadState: (): Promise<void> => Promise.resolve(),
+    reconnectMcpServer: (): Promise<void> => Promise.resolve(),
+    toggleMcpServer: (): Promise<void> => Promise.resolve(),
+    setMcpServers: unsupported,
+    streamInput: (): Promise<void> => Promise.resolve(),
+    stopTask: (): Promise<void> => Promise.resolve(),
+    backgroundTasks: (): Promise<boolean> => Promise.resolve(false),
+    // Required by a module augmentation active in this program, not by the SDK's own declarations;
+    // an extra member is harmless here because Object.assign's intersection is never fresh.
+    cancelAsyncMessage: (): Promise<boolean> => Promise.resolve(false),
+    close: (): void => {},
+  });
+  return query;
+}
+
+function scriptedQuery(script: Script): { readonly query: QueryFn; readonly calls: readonly CapturedCall[] } {
+  const calls: CapturedCall[] = [];
+  const query: QueryFn = (params) => {
+    const call: CapturedCall = { prompt: params.prompt, options: params.options ?? {} };
+    calls.push(call);
+    return asQuery(script(call));
+  };
+  return { query, calls };
+}
+
+// --- tests ---
+
+describe('provider transport factory', () => {
+  it('maps an sdk account to the SDK transport bound to its discovered binary', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_SDK, 'fake-sdk'));
+    const { query, calls } = scriptedQuery(() =>
+      (async function* generate(): AsyncGenerator<SDKMessage, void> {
+        // An empty script: the stream ends, the transport synthesises the finished event.
+      })(),
+    );
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-sdk', transport: 'sdk' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: { PATH: '/usr/bin:/bin' },
+      binPaths: { 'fake-sdk': '/toolchain/bin/fake-sdk' },
+      query,
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_SDK);
+    if (transport === undefined) throw new Error('expected a transport for the sdk provider');
+    const handle = unwrap(await transport.start(request(ACCOUNT_SDK)));
+    const events = await collect(handle.events);
+
+    expect(events.filter((event) => event.type === 'finished')).toHaveLength(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.options.pathToClaudeCodeExecutable).toBe('/toolchain/bin/fake-sdk');
+  });
+
+  it('resolves to undefined when the account is unknown or names no known provider definition', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_SDK, 'no-such-def'));
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-sdk', transport: 'sdk' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: {},
+    });
+
+    expect(await factory.forAccount(ACCOUNT_SDK)).toBeUndefined(); // provider definition missing
+    expect(await factory.forAccount(ACCOUNT_UNKNOWN)).toBeUndefined(); // account missing
+  });
+
+  it('reports unsupported for the app-server, acp and stream-json transports for now', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_APP_SERVER, 'fake-app-server'));
+    await accounts.save(accountOf(ACCOUNT_ACP, 'fake-acp'));
+    await accounts.save(accountOf(ACCOUNT_STREAM_JSON, 'fake-stream-json'));
+    const factory = createProviderTransportFactory({
+      defs: [
+        defOf({ id: 'fake-app-server', transport: 'app-server' }),
+        defOf({ id: 'fake-acp', transport: 'acp' }),
+        defOf({ id: 'fake-stream-json', transport: 'stream-json', streamDialect: 'fake' }),
+      ],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      // Even a discovered binary does not make these transports available yet.
+      binPaths: {
+        'fake-app-server': '/toolchain/bin/fake-app-server',
+        'fake-acp': '/toolchain/bin/fake-acp',
+        'fake-stream-json': '/toolchain/bin/fake-stream-json',
+      },
+    });
+
+    for (const accountId of [ACCOUNT_APP_SERVER, ACCOUNT_ACP, ACCOUNT_STREAM_JSON]) {
+      const transport = await factory.forAccount(accountId);
+      if (transport === undefined) throw new Error('expected a transport that reports unsupported');
+      const started = await transport.start(request(accountId));
+      expect(started.ok).toBe(false);
+      if (!started.ok) expect(started.error.code).toBe('unsupported');
+    }
+  });
+
+  it('creates the SDK transport with the SDK default when discovery found no binary', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_SDK, 'fake-sdk'));
+    const { query, calls } = scriptedQuery(() =>
+      (async function* generate(): AsyncGenerator<SDKMessage, void> {})(),
+    );
+    const factory = createProviderTransportFactory({
+      defs: [defOf({ id: 'fake-sdk', transport: 'sdk' })],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: { 'fake-sdk': null },
+      query,
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_SDK);
+    if (transport === undefined) throw new Error('expected a transport for the sdk provider');
+    const handle = unwrap(await transport.start(request(ACCOUNT_SDK)));
+    await collect(handle.events);
+    expect(calls[0]?.options.pathToClaudeCodeExecutable).toBeUndefined();
+  });
+});
