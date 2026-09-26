@@ -12,6 +12,7 @@ export * from './issue-tracker';
 export * from './notifier';
 export * from './proposal-repo';
 export * from './provider-discovery';
+export * from './quota-probe';
 export * from './queue-repo';
 export * from './run-repo';
 export * from './secret-vault';
