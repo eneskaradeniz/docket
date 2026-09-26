@@ -102,6 +102,7 @@ export const BUILTIN_FLOWS: readonly FlowDef[] = [
           { kind: 'agent_verdict', id: asGate('security-verdict'), role: asRole('security-auditor') },
           { kind: 'human', id: asGate('security-approval'), label: 'Güvenlik onayı' },
         ],
+        onFail: { goto: asStage('implement'), maxAttempts: 3 },
       },
       {
         id: asStage('review'),

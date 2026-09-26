@@ -75,6 +75,13 @@ const startFor = (item: QueueItem): DispatchDecision => ({ item: item.id, kind: 
 const waitFor = (item: QueueItem, reason: WaitReason, until?: EpochMs): DispatchDecision =>
   until === undefined ? { item: item.id, kind: 'wait', reason } : { item: item.id, kind: 'wait', reason, until };
 
+// Both directions must hold, so a union member can be neither added nor dropped silently.
+type UnionIsExactly<Actual, Expected> = [Actual] extends [Expected]
+  ? [Expected] extends [Actual]
+    ? true
+    : never
+  : never;
+
 const idsOf = (decisions: readonly DispatchDecision[]): readonly QueueItemId[] => decisions.map((d) => d.item);
 
 const deepFreeze = (value: unknown): void => {
@@ -272,6 +279,19 @@ describe('decideDispatch', () => {
     );
     expect(decisions).toEqual([{ item: qid(1), kind: 'wait', reason: 'budget' }]);
     expect('until' in decisions[0]).toBe(false);
+  });
+
+  it('R-34: the wait reasons are exactly the seven contract members', () => {
+    type ContractWaitReasons =
+      | 'not_before'
+      | 'work_order_busy'
+      | 'global_limit'
+      | 'workspace_limit'
+      | 'account_limit'
+      | 'quota'
+      | 'budget';
+    const exact: UnionIsExactly<WaitReason, ContractWaitReasons> = true;
+    expect(exact).toBe(true);
   });
 
   // --- R-35: starts inside this call consume capacity ------------------------------------------

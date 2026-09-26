@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MINUTE, type AccountId, type EpochMs, type PoolId } from '../shared/index';
 import { RESUME_JITTER_MS, decideOnLimit } from './limit-policy';
-import type { LimitContext, LimitPolicy } from './limit-policy';
+import type { LimitContext, LimitDecision, LimitPolicy } from './limit-policy';
 import type { AccountRoute, LimitClass, LimitHit } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
@@ -67,6 +67,13 @@ describe('RESUME_JITTER_MS', () => {
 });
 
 describe('decideOnLimit', () => {
+  // Both directions must hold, so a union member can be neither added nor dropped silently.
+  type UnionIsExactly<Actual, Expected> = [Actual] extends [Expected]
+    ? [Expected] extends [Actual]
+      ? true
+      : never
+    : never;
+
   it('R-30: a throughput hit schedules a resume at now + retryAfterMs', () => {
     const decision = decideOnLimit(hitOf({ class: 'throughput', retryAfterMs: 5 * MINUTE }), ctxOf());
     expect(decision).toEqual({ kind: 'schedule_resume', at: NOW + 5 * MINUTE, requeryFirst: true });
@@ -137,6 +144,13 @@ describe('decideOnLimit', () => {
       ctxOf({ policy: 'switch_pool', alternativePools: [POOL_FIRST] }),
     );
     expect(decision).toEqual({ kind: 'ask', reason: 'not_resumable' });
+  });
+
+  it('R-30: the ask reasons are exactly the four contract members', () => {
+    type ContractAskReasons = 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable';
+    type AskReason = Extract<LimitDecision, { kind: 'ask' }>['reason'];
+    const exact: UnionIsExactly<AskReason, ContractAskReasons> = true;
+    expect(exact).toBe(true);
   });
 
   it('R-30: policy ask asks with reason policy for resumable classes', () => {

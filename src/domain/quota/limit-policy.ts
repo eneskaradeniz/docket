@@ -19,7 +19,7 @@ export type LimitDecision =
   | { readonly kind: 'fallback'; readonly route: AccountRoute }
   | {
       readonly kind: 'ask';
-      readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' | 'no_alternative';
+      readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable';
     };
 
 /** Resumes are padded so a reset that lands slightly late does not cause an immediate re-hit. */
