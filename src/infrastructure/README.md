@@ -1,3 +1,1 @@
-# src/infrastructure
-
-v2 infrastructure layer. Rules: docs/v2/architecture.md. Populated from Phase 2 onward.
+The authoritative contract for this layer is `docs/v2/infrastructure.md`.
