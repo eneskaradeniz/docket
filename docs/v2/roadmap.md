@@ -42,9 +42,9 @@ Team features and off-LAN remote access are out of scope for now.
 ## Issue contract
 
 Every implementation issue has these sections (see `.github/ISSUE_TEMPLATE/v2-task.md`):
-Goal · Phase / Model / Wave · Depends on · Context · Scope · Out of scope · Interfaces · Acceptance ·
-Tests · Touches · Manual check · Done when. The **Interfaces** section is copied from
-[domain.md](domain.md) and is not to be changed by the implementer.
+Goal · Phase / Model / Wave · Depends on · Context · Scope · Out of scope · Test location · Interfaces ·
+Acceptance · Tests · Touches · Manual check · Done when. The **Interfaces** section is copied from
+[domain.md](domain.md) (or the phase's contract doc) and is not to be changed by the implementer.
 
 ## Batch mode (unattended runs)
 
