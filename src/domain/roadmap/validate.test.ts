@@ -173,6 +173,14 @@ describe('validateRoadmap', () => {
     expect(issueWithCode(issues, 'task_cycle')).toBeUndefined();
   });
 
+  it('R-39a: with a phase cycle present, only phase_cycle is reported — no cross_cycle noise', () => {
+    const issues = expectErr(
+      validateRoadmap(doc([phase('p-1', [task('t-a'), task('t-b')], ['p-2']), phase('p-2', [task('t-c')], ['p-1'])])),
+    );
+    expect(issueWithCode(issues, 'phase_cycle')).toBeDefined();
+    expect(issues.filter((issue) => issue.code === 'cross_cycle')).toHaveLength(0);
+  });
+
   it('R-39a: reports a pure task cycle only as task_cycle, never as cross_cycle', () => {
     const issues = expectErr(validateRoadmap(doc([phase('p-1', [task('t-a', ['t-b']), task('t-b', ['t-a'])])])));
     expect(issueWithCode(issues, 'task_cycle')).toBeDefined();

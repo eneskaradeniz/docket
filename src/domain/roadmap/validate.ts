@@ -353,7 +353,9 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
     );
   }
 
-  crossCycleCheck(issues, phaseDrafts, phaseEdges, taskEdges, taskPathById);
+  // A phase cycle makes every involved phase block itself, which would surface as noise here; the
+  // phase cycle is the root cause and is already reported on its own.
+  if (phaseCycles.length === 0) crossCycleCheck(issues, phaseDrafts, phaseEdges, taskEdges, taskPathById);
 };
 
 const buildTask = (draft: TaskDraft): TaskDef | undefined => {
