@@ -6,6 +6,7 @@ export * from './fake-clock';
 export * from './fake-definition-store';
 export * from './fake-deps';
 export * from './fake-event-log';
+export * from './fake-forge';
 export * from './fake-id-gen';
 export * from './fake-notifier';
 export * from './fake-proposal-repo';

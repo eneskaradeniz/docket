@@ -6,6 +6,7 @@ export * from './clock';
 export * from './definition-store';
 export * from './deps';
 export * from './event-log';
+export * from './forge';
 export * from './id-gen';
 export * from './notifier';
 export * from './proposal-repo';
