@@ -3,9 +3,10 @@
 // the discovered binary, the stream-json kind to the framing transport bound to its dialect and
 // binary (a fake node bin here), and the remaining kinds to an `unsupported` report until their
 // issues land.
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Options, Query, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
@@ -281,38 +282,74 @@ describe('provider transport factory', () => {
     expect(await factory.forAccount(ACCOUNT_UNKNOWN)).toBeUndefined(); // account missing
   });
 
-  it('reports unsupported for the app-server transport, and for a stream-json def whose dialect id has no implementation', async () => {
+  it('reports unsupported for a stream-json def whose dialect id has no implementation', async () => {
     const accounts = createFakeAccountRepo();
-    await accounts.save(accountOf(ACCOUNT_APP_SERVER, 'fake-app-server'));
     await accounts.save(accountOf(ACCOUNT_STREAM_JSON, 'fake-stream-json'));
     const factory = createProviderTransportFactory({
       defs: [
-        defOf({ id: 'fake-app-server', transport: 'app-server' }),
         defOf({ id: 'fake-stream-json', transport: 'stream-json', streamDialect: 'fake' }),
       ],
       accounts,
       secrets: createFakeSecretVault(),
       clock: createFakeClock(),
       baseEnv: {},
-      // Even a discovered binary does not make an unimplemented transport available.
+      // Even a discovered binary does not make an unimplemented dialect available.
       binPaths: {
-        'fake-app-server': '/toolchain/bin/fake-app-server',
         'fake-stream-json': '/toolchain/bin/fake-stream-json',
       },
     });
 
-    for (const accountId of [ACCOUNT_APP_SERVER, ACCOUNT_STREAM_JSON]) {
-      const transport = await factory.forAccount(accountId);
-      if (transport === undefined) throw new Error('expected a transport that reports unsupported');
-      const started = await transport.start(request(accountId));
-      expect(started.ok).toBe(false);
-      if (!started.ok) expect(started.error.code).toBe('unsupported');
-    }
     // An unimplemented dialect id is reported by name, never a crash.
     const transport = await factory.forAccount(ACCOUNT_STREAM_JSON);
     if (transport === undefined) throw new Error('expected a transport that reports unsupported');
     const started = await transport.start(request(ACCOUNT_STREAM_JSON));
+    expect(started.ok).toBe(false);
     if (!started.ok) expect(started.error.message).toContain('"fake"');
+  });
+
+  it('maps an app-server account to the app-server transport bound to its discovered binary', async () => {
+    // The shared scripted fake server from the transport's own tests: node is the binary, the
+    // fixture rides as the first launch argument (a checked-in script has no portable exec bit).
+    const fixture = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      'transports',
+      'app-server',
+      'fixtures',
+      'fake-app-server.cjs',
+    );
+    const cwd = join(root, 'app-server-run');
+    const logPath = join(cwd, 'rpc.log');
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_APP_SERVER, 'fake-app-server'));
+    const factory = createProviderTransportFactory({
+      defs: [
+        {
+          ...defOf({ id: 'fake-app-server', transport: 'app-server' }),
+          buildLaunch: () => ({ args: [fixture, 'happy', logPath], env: {}, stdin: 'none' }),
+        },
+      ],
+      accounts,
+      secrets: createFakeSecretVault(),
+      clock: createFakeClock(),
+      baseEnv: {},
+      binPaths: { 'fake-app-server': process.execPath },
+    });
+
+    const transport = await factory.forAccount(ACCOUNT_APP_SERVER);
+    if (transport === undefined) throw new Error('expected a transport for the app-server provider');
+    const handle = unwrap(await transport.start(request(ACCOUNT_APP_SERVER, cwd)));
+    const events = await collect(handle.events);
+
+    // The wire log proves the spawned binary spoke the app-server protocol end to end.
+    expect(events.map((event) => event.type)).toEqual(['session_started', 'text', 'usage', 'finished']);
+    const requests = readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { readonly dir: string; readonly msg: Record<string, unknown> })
+      .filter((entry) => entry.dir === 'in' && entry.msg['method'] !== undefined)
+      .map((entry) => entry.msg['method']);
+    expect(requests.slice(0, 4)).toEqual(['initialize', 'account/rateLimits/read', 'thread/start', 'turn/start']);
   });
 
   it('maps a stream-json account to the stream-json transport bound to its dialect and discovered binary', async () => {
