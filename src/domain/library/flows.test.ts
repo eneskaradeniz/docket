@@ -87,7 +87,7 @@ describe('BUILTIN_FLOWS', () => {
     ]);
   });
 
-  it('security-reviewed: inserts the security stage between implement and review', () => {
+  it('security-reviewed: the security stage sits between implement and review with the contract gates and onFail implement ×3', () => {
     expect(flowById('security-reviewed').stages.map((stage) => stage.id)).toEqual([
       'plan',
       'implement',
@@ -103,6 +103,7 @@ describe('BUILTIN_FLOWS', () => {
         { kind: 'agent_verdict', id: 'security-verdict', role: 'security-auditor' },
         { kind: 'human', id: 'security-approval', label: 'Güvenlik onayı' },
       ],
+      onFail: { goto: 'implement', maxAttempts: 3 },
     });
   });
 

@@ -42,7 +42,6 @@ export type WaitReason =
   | 'workspace_limit'
   | 'account_limit'
   | 'quota'
-  | 'quota_unknown'
   | 'budget';
 
 export type DispatchDecision =
@@ -111,8 +110,7 @@ export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSn
       decisions.push(wait(item.id, 'quota', room.earliestRelief));
       continue;
     }
-    // Unknown or absent headroom never blocks: the transport learns the truth on start,
-    // which is why `quota_unknown` is never emitted here.
+    // Unknown or absent headroom never blocks: the transport learns the truth on start.
 
     // A start in this call consumes capacity for every item considered after it.
     globalLoad += 1;
