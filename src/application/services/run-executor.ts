@@ -1,4 +1,5 @@
-// services/run-executor.ts — drives one run from start to finish (docs/v2/application.md A-15 … A-18).
+// services/run-executor.ts — drives one run from start to finish (docs/v2/application.md A-15 … A-18,
+// plus the executor-side resume fallback P-22 of docs/v2/providers.md).
 import type {
   AccountId,
   Actor,
@@ -8,6 +9,7 @@ import type {
   LimitDecision,
   Meter,
   QueueItem,
+  Result,
   RoleDef,
   RunId,
   RunOutcome,
@@ -15,7 +17,7 @@ import type {
 } from '../../domain/index';
 import { decideOnLimit, foldRun } from '../../domain/index';
 
-import type { AppDeps, AuditAction, RunRecord, TransportError } from '../ports';
+import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 export interface ExecuteRunInput {
   readonly item: QueueItem;
@@ -48,6 +50,8 @@ interface AttemptPlan {
   readonly attempt: number;
   readonly autoResumesUsed: number;
   readonly resume: { readonly sessionRef: string } | undefined;
+  /** The run whose stored events a resume-fallback summary is built from. */
+  readonly resumedRunId: RunId | undefined;
 }
 
 /** The queue item carries no attempt, so it is read from the stage's run history: a run that ended
@@ -59,12 +63,13 @@ const planAttempt = (previous: readonly RunRecord[]): AttemptPlan => {
     last !== undefined && last.outcome !== undefined && CONTINUING_OUTCOMES.includes(last.outcome);
   if (last === undefined || !continues) {
     const highest = previous.reduce((max, run) => Math.max(max, run.attempt), 0);
-    return { attempt: highest + 1, autoResumesUsed: 0, resume: undefined };
+    return { attempt: highest + 1, autoResumesUsed: 0, resume: undefined, resumedRunId: undefined };
   }
   return {
     attempt: last.attempt,
     autoResumesUsed: last.autoResumesUsed,
     resume: last.sessionRef !== undefined ? { sessionRef: last.sessionRef } : undefined,
+    resumedRunId: last.sessionRef !== undefined ? last.id : undefined,
   };
 };
 
@@ -130,6 +135,57 @@ const endRun = async (
   return endedAt;
 };
 
+/** One summarised event contributes at most this many characters, ellipsis included. */
+const SUMMARY_ENTRY_LIMIT = 400;
+/** The whole summary body contributes at most this many characters. */
+const SUMMARY_TOTAL_LIMIT = 2000;
+
+const SUMMARY_HEADER =
+  'The previous session could not be resumed, so this run starts fresh. A truncated summary of ' +
+  'the earlier conversation follows; treat it as context and continue with the new instructions after it.';
+
+/** Only the conversation itself is summarised; bookkeeping events (session, usage, quota,
+ *  permission, finish, unparsed lines) tell the fresh session nothing about the work. */
+const summarizeEvent = (event: AgentEvent): string | undefined => {
+  switch (event.type) {
+    case 'text':
+      return `[text] ${event.delta}`;
+    case 'thinking':
+      return `[thinking] ${event.delta}`;
+    case 'tool_call':
+      return `[tool] ${event.name}${event.target !== undefined ? ` ${event.target}` : ''}`;
+    case 'tool_result':
+      return `[tool result] ${event.ok ? 'ok' : 'failed'}`;
+    case 'error':
+      return `[error] ${event.message}`;
+    default:
+      return undefined;
+  }
+};
+
+/** P-22: the prompt a resume-fallback restart carries — the original prompt prefixed with a
+ *  bounded summary of the resumed run's stored events, so the fresh session keeps the earlier
+ *  context without the executor replaying the transcript in full. */
+const buildFallbackPrompt = async (
+  runs: Pick<RunRepo, 'events'>,
+  resumedRunId: RunId,
+  prompt: string,
+): Promise<string> => {
+  const lines: string[] = [SUMMARY_HEADER, ''];
+  let used = 0;
+  for (const event of await runs.events(resumedRunId)) {
+    if (used >= SUMMARY_TOTAL_LIMIT) break;
+    const line = summarizeEvent(event);
+    if (line === undefined) continue;
+    const room = Math.min(SUMMARY_ENTRY_LIMIT, SUMMARY_TOTAL_LIMIT - used);
+    const bounded = line.length > room ? `${line.slice(0, room - 1)}…` : line;
+    used += bounded.length;
+    lines.push(bounded);
+  }
+  lines.push('', '--- end of previous transcript ---', '', prompt);
+  return lines.join('\n');
+};
+
 export async function executeRun(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
   permissions: PermissionGate,
@@ -172,17 +228,38 @@ export async function executeRun(
   if (transport === undefined) {
     return failAsTransport({ code: 'not_installed', message: `no transport for account ${item.route.accountId}` });
   }
-  const started = await transport.start({
-    runId,
-    cwd: input.cwd,
-    role: input.role,
-    route: item.route,
-    prompt: input.prompt,
-    capabilities: input.capabilities,
-    ...(plan.resume !== undefined ? { resume: plan.resume } : {}),
-  });
-  if (!started.ok) return failAsTransport(started.error);
-  const handle = started.value;
+  const startAttempt = async (
+    resume: { readonly sessionRef: string } | undefined,
+    prompt: string,
+  ): Promise<Result<RunHandle, TransportError>> =>
+    transport.start({
+      runId,
+      cwd: input.cwd,
+      role: input.role,
+      route: item.route,
+      prompt,
+      capabilities: input.capabilities,
+      ...(resume !== undefined ? { resume } : {}),
+    });
+
+  // The port has no resume-specific error code, so a start that fails while a session reference
+  // was requested is the only contract-level sign the transport could not resume. One restart
+  // without resume is the remedy this executor owns; a restart that fails the same way is a
+  // transport error and fails the run — there is no third attempt.
+  const started = await startAttempt(plan.resume, input.prompt);
+  let handle: RunHandle;
+  if (started.ok) {
+    handle = started.value;
+  } else if (plan.resume === undefined || plan.resumedRunId === undefined) {
+    return failAsTransport(started.error);
+  } else {
+    const restart = await startAttempt(
+      undefined,
+      await buildFallbackPrompt(deps.runs, plan.resumedRunId, input.prompt),
+    );
+    if (!restart.ok) return failAsTransport(restart.error);
+    handle = restart.value;
+  }
 
   for await (const event of handle.events) {
     await deps.runs.appendEvents(runId, [event]);
