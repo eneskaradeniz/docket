@@ -28,6 +28,7 @@ export type RoadmapIssueCode =
   | 'unknown_phase'
   | 'task_cycle'
   | 'phase_cycle'
+  | 'cross_cycle'
   | 'missing_field'
   | 'wrong_type';
 

@@ -78,15 +78,15 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
     const cached = phaseStatusCache.get(phase.id);
     if (cached !== undefined) return cached;
     phaseVisiting.add(phase.id);
-    // The blocked branch is checked first; a running task inside it is the only thing that
-    // outranks waiting, per the rule's "unless it already has a running task" carve-out.
+    // First matching rule wins: running beats all-done beats blocked, so finished work is never
+    // reported as waiting even while a blocker is still open.
     let status: PhaseStatus;
-    if (phaseBlocked(phase)) {
-      status = phase.tasks.some((task) => taskStatus(task) === 'running') ? 'running' : 'waiting';
-    } else if (phase.tasks.some((task) => taskStatus(task) === 'running')) {
+    if (phase.tasks.some((task) => taskStatus(task) === 'running')) {
       status = 'running';
     } else if (phase.tasks.length > 0 && phase.tasks.every((task) => taskStatus(task) === 'done')) {
       status = 'done';
+    } else if (phaseBlocked(phase)) {
+      status = 'waiting';
     } else {
       status = 'planned';
     }

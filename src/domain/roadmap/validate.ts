@@ -1,6 +1,7 @@
 // roadmap/validate.ts — narrows untyped (parsed roadmap YAML/JSON) input into a typed Roadmap.
 // Field-by-field narrowing plus cross-reference and cycle checks; every issue is collected before
-// deciding (all-or-nothing), so one run reports a task cycle and a phase cycle together.
+// deciding (all-or-nothing), so one run reports a task cycle, a phase cycle, and the deadlocks that
+// only appear when both graphs are combined.
 import { err, ok, parseSlug, type PhaseSlug, type Result, type Slug, type TaskSlug } from '../shared';
 import type { PhaseDef, Roadmap, RoadmapIssue, RoadmapIssueCode, TaskDef } from './types';
 
@@ -216,6 +217,88 @@ const buildAdjacency = (
   return edges;
 };
 
+/**
+ * Cross-graph deadlock: dependsOn edges and phase-block edges meet in one graph over tasks. An edge
+ * T -> X is added for every task X of every phase T's phase is transitively blockedBy (the block can
+ * span several blockedBy hops, so the closure of the phase graph is walked). A closed walk made
+ * purely of dependsOn edges was already reported as task_cycle above and is skipped, so a task cycle
+ * is never reported twice.
+ */
+const crossCycleCheck = (
+  issues: RoadmapIssue[],
+  phaseDrafts: readonly PhaseDraft[],
+  phaseEdges: ReadonlyMap<string, readonly string[]>,
+  taskEdges: ReadonlyMap<string, readonly string[]>,
+  taskPathById: ReadonlyMap<string, string>,
+): void => {
+  const tasksOfPhase = new Map<string, readonly string[]>();
+  const phaseOfTask = new Map<string, string>();
+  phaseDrafts.forEach((draft) => {
+    // Duplicate phase ids were already reported; the first declaration defines the phase here.
+    if (draft.id === undefined || tasksOfPhase.has(draft.id)) return;
+    const phaseId = draft.id;
+    const declared: string[] = [];
+    draft.tasks?.forEach((task) => {
+      if (task === undefined || task.id === undefined || declared.includes(task.id)) return;
+      declared.push(task.id);
+      if (!phaseOfTask.has(task.id)) phaseOfTask.set(task.id, phaseId);
+    });
+    tasksOfPhase.set(phaseId, declared);
+  });
+
+  const closureCache = new Map<string, ReadonlySet<string>>();
+  const blockedClosure = (phaseId: string): ReadonlySet<string> => {
+    const cached = closureCache.get(phaseId);
+    if (cached !== undefined) return cached;
+    const reached = new Set<string>();
+    const walk = (current: string): void => {
+      for (const next of phaseEdges.get(current) ?? []) {
+        if (reached.has(next)) continue;
+        reached.add(next);
+        walk(next);
+      }
+    };
+    walk(phaseId);
+    closureCache.set(phaseId, reached);
+    return reached;
+  };
+
+  const depTargets = new Map<string, Set<string>>();
+  const combinedEdges = new Map<string, string[]>();
+  taskEdges.forEach((targets, from) => {
+    combinedEdges.set(from, [...targets]);
+    const pairs = depTargets.get(from) ?? new Set<string>();
+    targets.forEach((to) => pairs.add(to));
+    depTargets.set(from, pairs);
+  });
+  phaseOfTask.forEach((phaseId, task) => {
+    const out = combinedEdges.get(task) ?? [];
+    blockedClosure(phaseId).forEach((blocker) => {
+      (tasksOfPhase.get(blocker) ?? []).forEach((target) => {
+        if (out.includes(target)) return;
+        out.push(target);
+      });
+    });
+    combinedEdges.set(task, out);
+  });
+
+  const isDepStep = (from: string, to: string): boolean => depTargets.get(from)?.has(to) === true;
+  for (const cycle of findCycles(combinedEdges)) {
+    const steps = cycle.ids.slice(0, -1);
+    const pureTaskCycle = steps.every((id, index) => {
+      const next = cycle.ids[index + 1];
+      return next !== undefined && isDepStep(id, next);
+    });
+    if (pureTaskCycle) continue;
+    addIssue(
+      issues,
+      `${taskPathById.get(cycle.node)}`,
+      'cross_cycle',
+      `cross-graph deadlock: ${cycle.ids.join(' -> ')}`,
+    );
+  }
+};
+
 const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]): void => {
   const phaseIds = new Set<string>();
   const phasePathById = new Map<string, string>();
@@ -248,7 +331,8 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
     });
   });
 
-  const phaseCycles = findCycles(buildAdjacency(issues, phaseNodes, phaseIds, 'unknown_phase', 'a phase'));
+  const phaseEdges = buildAdjacency(issues, phaseNodes, phaseIds, 'unknown_phase', 'a phase');
+  const phaseCycles = findCycles(phaseEdges);
   for (const cycle of phaseCycles) {
     addIssue(
       issues,
@@ -258,7 +342,8 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
     );
   }
 
-  const taskCycles = findCycles(buildAdjacency(issues, taskNodes, taskIds, 'unknown_task', 'a task'));
+  const taskEdges = buildAdjacency(issues, taskNodes, taskIds, 'unknown_task', 'a task');
+  const taskCycles = findCycles(taskEdges);
   for (const cycle of taskCycles) {
     addIssue(
       issues,
@@ -267,6 +352,8 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
       `task dependency cycle: ${cycle.ids.join(' -> ')}`,
     );
   }
+
+  crossCycleCheck(issues, phaseDrafts, phaseEdges, taskEdges, taskPathById);
 };
 
 const buildTask = (draft: TaskDraft): TaskDef | undefined => {
