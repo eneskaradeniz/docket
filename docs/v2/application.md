@@ -146,6 +146,7 @@ export type BindingScope =
 export interface BindingRepo {
   save(scope: BindingScope, binding: RoleBinding): Promise<void>;
   get(scope: BindingScope, role: RoleSlug): Promise<RoleBinding | undefined>;
+  listAll(): Promise<readonly { readonly scope: BindingScope; readonly binding: RoleBinding }[]>;
 }
 
 // queue-repo.ts — the dispatcher's durable queue
