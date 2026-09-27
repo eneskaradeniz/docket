@@ -1,9 +1,11 @@
 // screens/detail.tsx — the work-order detail screen (U-4's window): the stage list with gate
 // states, the deploy approval flow whose typed confirmation mirrors E-8 at the button itself (the
 // store already blocks the intent — the screen keeps the button disabled so the refusal is never
-// the first feedback), permission asks with allow/deny, the secret-scan evidence view, the run
-// list and the environments section. Every decision is a store intent; the screen only renders
-// state and forwards clicks, and every user-visible string arrives through a label key (U-1).
+// the first feedback), permission asks with allow/deny fed by the store from `permissions.open`,
+// the live pane mounted while a run of this work order is still going, the secret-scan evidence
+// view, the run list and the environments section. Every decision is a store intent; the screen
+// only renders state and forwards clicks, and every user-visible string arrives through a label
+// key (U-1).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
@@ -17,25 +19,16 @@ import type {
   DeployGateView,
   GateView,
   StageGates,
+  WorkOrderAskView,
   WorkOrderDetailStore,
 } from '../stores/work-order-detail';
 import { failureKey } from '../stores/results';
-
-/** A permission ask this work order's run is waiting on. The store carries only the answer
- *  intent; composition feeds the asks from whatever stream it trusts (the live pane's fold or a
- *  later query). Rendering them topmost: an unanswered ask stops a run cold. */
-export interface WorkOrderAskView {
-  readonly runId: string;
-  readonly askId: string;
-  readonly tool: string;
-  readonly target: string | null;
-}
+import { LivePaneScreen } from './live';
 
 export interface WorkOrderDetailScreenProps {
   readonly store: WorkOrderDetailStore;
   readonly workOrderId: string;
   readonly locale: Locale;
-  readonly asks?: readonly WorkOrderAskView[];
 }
 
 const STATUS_TONE: Readonly<Record<WorkOrderStatus, BadgeTone>> = {
@@ -216,13 +209,17 @@ function GateRow({
   );
 }
 
-export function WorkOrderDetailScreen({ store, workOrderId, locale, asks = [] }: WorkOrderDetailScreenProps) {
+export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderDetailScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   useEffect(() => {
     void store.load(workOrderId);
   }, [store, workOrderId]);
 
   const view = state.view;
+  const asks = state.asks;
+  // The live pane exists for a run that is still going; a finished work order shows its history
+  // in the run list instead.
+  const livePaneVisible = view !== null && view.runs.some((run) => run.endedAt === undefined);
   const currentStage = state.stages.find((stage) => stage.current);
   // The environments the flow's deploy gates actually target, in flow order, deduplicated —
   // the read-only promotion facts (E-5) the operator needs before approving anything.
@@ -306,6 +303,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, asks = [] }:
           </ul>
         </SectionCard>
       ) : null}
+
+      {livePaneVisible ? <LivePaneScreen store={store.pane} locale={locale} /> : null}
 
       <SectionCard
         title={t(locale, 'detail.section.stages')}

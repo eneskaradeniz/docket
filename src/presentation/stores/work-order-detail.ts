@@ -3,10 +3,12 @@
 // environment, whether it is protected, and the read-only promoteFrom chain (E-5). The approve
 // intent enforces E-8 at the boundary: for a protected environment the typed confirmation must
 // equal the environment name before `deploy.approve` is issued. Every intent maps its
-// CommandResult through results.ts (U-8) and refreshes the detail query.
+// CommandResult through results.ts (U-8) and refreshes the detail query. Every detail load also
+// reads `permissions.open` for the asks section and mounts the live pane on the work order's
+// newest active run — composition creates that pane and hands it in.
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
-import type { Query } from '../../api/queries';
+import type { OpenAskView, Query } from '../../api/queries';
 import type {
   Actor,
   EnvSlug,
@@ -20,6 +22,7 @@ import type {
   WorkOrderState,
 } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
+import type { LivePaneStore } from './live-pane';
 import { commandResultKey, isQueryFailure } from './results';
 
 /** The coarse change events the api emits after any work-order or run change (docs/v2/ui.md,
@@ -37,6 +40,10 @@ export interface WorkOrderDetailStoreDeps {
   readonly changes: DetailChangeSignal;
   /** Every issued command travels as this actor — the detail screen acts as the user. */
   readonly actor: Actor;
+  /** The live pane this store mounts for the work order's newest active run. Composition
+   *  creates it; the screen renders it through the store, the only channel composition reaches
+   *  the screen by. */
+  readonly pane: LivePaneStore;
 }
 
 /** The detail reply narrowed to the fields the store reads (the api resolves `unknown`; this is
@@ -65,6 +72,17 @@ export interface WorkOrderDetailView {
    *  store needs no definitions loader of its own. */
   readonly flow: FlowDef;
   readonly environments: readonly EnvironmentDef[];
+}
+
+/** A permission ask shown in the detail's asks section, fed from `permissions.open` and scoped
+ *  to the loaded work order's runs. The owning work order's title stands in for the tool when
+ *  the ask still resolves to one, the ask id when it does not — never an invented tool name;
+ *  the read carries no target, so none is claimed. */
+export interface WorkOrderAskView {
+  readonly runId: string;
+  readonly askId: string;
+  readonly tool: string;
+  readonly target: string | null;
 }
 
 /** A gate's human-readable standing in this work order; label keys `gate.state.*` (U-1). */
@@ -110,6 +128,8 @@ export interface WorkOrderDetailState {
   readonly view: WorkOrderDetailView | null;
   /** The per-stage gate list (U-4), derived from the view's flow, environments and state. */
   readonly stages: readonly StageGates[];
+  /** The open asks of this work order's runs (from `permissions.open`), in the query's order. */
+  readonly asks: readonly WorkOrderAskView[];
   /** The failure code of the latest failed query (or definitions load); null while healthy. */
   readonly problem: string | null;
   /** The latest intent's U-8 mapping; null before the first intent. */
@@ -136,6 +156,8 @@ export interface DeployApproveInput {
 }
 
 export interface WorkOrderDetailStore {
+  /** The live pane this store mounts for the work order's newest active run. */
+  readonly pane: LivePaneStore;
   load(id: string): Promise<void>;
   state(): WorkOrderDetailState;
   decideGate(input: GateDecideInput): Promise<IntentOutcome>;
@@ -208,26 +230,71 @@ const stageGates = (
   }));
 };
 
+/** The honest map from a `permissions.open` row to what the asks section shows: the owning work
+ *  order's title when the ask still resolves to one, the ask id when it does not; the read
+ *  carries no target, so none is claimed. */
+const toAskView = (row: OpenAskView): WorkOrderAskView => ({
+  runId: row.runId,
+  askId: row.askId,
+  tool: row.title ?? row.askId,
+  target: null,
+});
+
+/** The asks section shows only the loaded work order's own asks — a run id the view knows is
+ *  the one honest link the open-asks read carries. */
+const asksFor = (
+  rows: readonly OpenAskView[],
+  view: WorkOrderDetailView | null,
+): readonly WorkOrderAskView[] => {
+  if (view === null) return [];
+  const ownRuns = new Set(view.runs.map((run) => run.id));
+  return rows.filter((row) => ownRuns.has(row.runId)).map(toAskView);
+};
+
+/** The work order's newest still-active run — the one the live pane mounts for. */
+const newestActiveRun = (view: WorkOrderDetailView): string | undefined => {
+  let newest: WorkOrderDetailRun | undefined;
+  for (const run of view.runs) {
+    if (run.endedAt !== undefined) continue;
+    if (newest === undefined || run.startedAt > newest.startedAt) newest = run;
+  }
+  return newest?.id;
+};
+
 export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): WorkOrderDetailStore => {
-  const { api, changes, actor } = deps;
+  const { api, changes, actor, pane } = deps;
 
   let state: WorkOrderDetailState = {
     loading: false,
     view: null,
     stages: [],
+    asks: [],
     problem: null,
     lastOutcome: null,
   };
   // The work order the store is bound to: change events re-query it, intents act on it.
   let workOrderId: string | null = null;
+  // The raw `permissions.open` rows; the state's asks derive from these plus the loaded view on
+  // every set, so whichever read lands second still shows a consistent section.
+  let askRows: readonly OpenAskView[] = [];
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher view when change events stack up.
   let attempts = 0;
 
   const set = (next: WorkOrderDetailState): void => {
-    state = next;
+    state = { ...next, asks: asksFor(askRows, next.view) };
     for (const listener of [...listeners]) listener();
+  };
+
+  /** The open asks ride every load: the section must exist the moment a work order opens, and
+   *  an intent's refresh re-reads it, so an answered ask leaves the section at once. A failed
+   *  read keeps the rows already shown — an error never blanks the section. */
+  const loadAsks = async (): Promise<void> => {
+    const reply: unknown = await api.query({ type: 'permissions.open' } satisfies Query);
+    if (isQueryFailure(reply)) return;
+    askRows = reply as readonly OpenAskView[];
+    set({ ...state });
   };
 
   const load = async (id: string): Promise<void> => {
@@ -235,7 +302,9 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     attempts = attempt;
     workOrderId = id;
     set({ ...state, loading: true, problem: null });
-    const reply: unknown = await api.query({ type: 'workOrder.detail', id } satisfies Query);
+    const detailRead = api.query({ type: 'workOrder.detail', id } satisfies Query);
+    void loadAsks();
+    const reply: unknown = await detailRead;
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The previous view and gate list stay exactly as they were; only the problem appears.
@@ -253,6 +322,9 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       stages: stageGates(view.flow, view.environments, view.state),
       problem: null,
     });
+    // A run still going is mounted into the live pane; the pane itself ignores a repeat attach.
+    const active = newestActiveRun(view);
+    if (active !== undefined) void pane.attach(active);
   };
 
   // Both event kinds concern the detail — gate decisions move the work order and runs move its
@@ -283,6 +355,7 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
   };
 
   return {
+    pane,
     load,
     state: () => state,
     subscribe: (listener) => {

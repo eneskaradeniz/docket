@@ -1,11 +1,14 @@
 // stores/live-pane.ts — the live pane store (U-5): it folds a run's AgentEvent stream into
 // display items in arrival order (thought, message, tool call with status, usage, quota signal),
 // keeps the earliest still-open permission ask with an answer intent, and marks the stream ended
-// on `finished` — events after it are ignored. The transport that feeds events in is
-// composition's concern (out of scope here): callers push arrived events; tests fake the stream.
+// on `finished` — events after it are ignored. The stream reaches it through `attach`: the store
+// reads the run's `run.events` tail (newest last, the fold order) and re-reads it on every
+// `run.updated` for the attached run — notifications carry no payloads, so the tail is the feed.
 import type { Api } from '../../api/api';
 import type { CommandResult } from '../../api/commands';
+import type { Query } from '../../api/queries';
 import type { Actor, AgentEvent, CostKind, Meter } from '../../domain/index';
+import { isQueryFailure } from './results';
 
 /** The meter a `quota_signal` event carries: the quota domain's Meter without its ids, plus the
  *  pool's label when the provider named one. */
@@ -43,6 +46,8 @@ export interface OpenPermissionAsk {
 export type AnswerDecision = 'allow' | 'deny';
 
 export interface LivePaneState {
+  /** The run this pane folds; null until a run is attached. Every answer command names it. */
+  readonly runId: string | null;
   readonly items: readonly LivePaneItem[];
   /** The earliest ask still open — the one the answer intent addresses. */
   readonly ask: OpenPermissionAsk | null;
@@ -50,33 +55,50 @@ export interface LivePaneState {
   readonly ended: boolean;
 }
 
+/** The coarse change events the api emits after any work-order or run change (docs/v2/ui.md,
+ *  U-12). Notifications carry no payloads — the store re-reads. Tests inject a fake, so the
+ *  type lives here, as in the sibling stores. */
+export type LivePaneChange =
+  | { readonly type: 'workOrders.changed' }
+  | { readonly type: 'run.updated'; readonly runId: string };
+
+/** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
+export type LivePaneChangeSignal = (listener: (change: LivePaneChange) => void) => () => void;
+
 export interface LivePaneStoreDeps {
-  /** The run whose stream this pane folds; every answer command names it. */
-  readonly runId: string;
-  readonly api: Pick<Api, 'command'>;
+  readonly api: Pick<Api, 'command' | 'query'>;
+  readonly changes: LivePaneChangeSignal;
   /** Every issued answer travels as this actor — the pane acts as the user. */
   readonly actor: Actor;
 }
 
 export interface LivePaneStore {
+  /** Bind the pane to a run: the fold resets and the run's event tail is read. Attaching the
+   *  already-attached run does nothing — the change signal keeps that fold fresh. */
+  attach(runId: string): Promise<void>;
   /** Fold one arrived event; arrival order is call order. */
   push(event: AgentEvent): void;
   state(): LivePaneState;
-  /** Answer the earliest open ask via `permission.answer`; with nothing open it issues nothing
-   *  and reports `not_found` — the api's own reply for an ask that is gone. */
+  /** Answer the earliest open ask of the attached run via `permission.answer`; with nothing
+   *  open (or no run attached) it issues nothing and reports `not_found` — the api's own reply
+   *  for an ask that is gone. */
   answer(decision: AnswerDecision): Promise<CommandResult>;
   subscribe(listener: () => void): () => void;
 }
 
 export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
-  const { runId, api, actor } = deps;
+  const { api, changes, actor } = deps;
 
+  let runId: string | null = null;
   let items: readonly LivePaneItem[] = [];
   // Ask ids in arrival order; an ask is open until a tool_result of its id — the same openness
   // notion as the domain's run fold (R-44).
   let openAsks: readonly OpenPermissionAsk[] = [];
   let ended = false;
   const listeners = new Set<() => void>();
+  // Only the newest tail read may apply its reply: a slow earlier read must not overwrite a
+  // fresher fold when change events stack up.
+  let attempts = 0;
 
   const notify = (): void => {
     for (const listener of [...listeners]) listener();
@@ -84,7 +106,7 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
 
   const earliestAsk = (): OpenPermissionAsk | null => (openAsks.length === 0 ? null : openAsks[0]);
 
-  const push = (event: AgentEvent): void => {
+  const fold = (event: AgentEvent): void => {
     // Once the stream has finished, every later event is ignored (U-5).
     if (ended) return;
     switch (event.type) {
@@ -165,19 +187,56 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
         openAsks = [];
         break;
     }
+  };
+
+  const push = (event: AgentEvent): void => {
+    fold(event);
     notify();
   };
 
-  const answer = async (decision: AnswerDecision): Promise<CommandResult> => {
-    const ask = earliestAsk();
-    if (ask === null) return { ok: false, code: 'not_found' };
-    return api.command(actor, { type: 'permission.answer', runId, askId: ask.askId, decision });
+  /** Re-read the attached run's tail and refold it from scratch — the tail is newest last, the
+   *  fold order, so a full refold is the same view an uninterrupted push stream would build.
+   *  A failed read keeps the fold already on screen: an error never blanks the pane. */
+  const refresh = async (): Promise<void> => {
+    const target = runId;
+    if (target === null) return;
+    const attempt = attempts + 1;
+    attempts = attempt;
+    const reply: unknown = await api.query({ type: 'run.events', runId: target } satisfies Query);
+    if (attempt !== attempts || runId !== target) return;
+    if (isQueryFailure(reply)) return;
+    items = [];
+    openAsks = [];
+    ended = false;
+    for (const event of reply as readonly AgentEvent[]) fold(event);
+    notify();
   };
 
+  // Only run updates concern the pane, and only its own run's; work-order changes move nothing
+  // in the fold.
+  changes((change) => {
+    if (change.type !== 'run.updated') return;
+    if (change.runId !== runId) return;
+    void refresh();
+  });
+
   return {
+    attach: (target) => {
+      if (runId === target) return Promise.resolve();
+      runId = target;
+      items = [];
+      openAsks = [];
+      ended = false;
+      notify();
+      return refresh();
+    },
     push,
-    state: () => ({ items, ask: earliestAsk(), ended }),
-    answer,
+    state: () => ({ runId, items, ask: earliestAsk(), ended }),
+    answer: async (decision) => {
+      const ask = earliestAsk();
+      if (ask === null || runId === null) return { ok: false, code: 'not_found' };
+      return api.command(actor, { type: 'permission.answer', runId, askId: ask.askId, decision });
+    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
