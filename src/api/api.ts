@@ -14,6 +14,7 @@ import type {
   StageSlug,
   Ulid,
   WorkOrderId,
+  WorkOrderEvent,
   WorkspaceSlug,
 } from '../domain/index';
 import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
@@ -54,9 +55,22 @@ import type {
   SettingsPoolView,
 } from './queries';
 
+/** The push channel's events (U-12 of docs/v2/ui.md): coarse by design and never a payload — a
+ *  store re-queries on receipt, so the channel survives every change of what the views show. */
+export type UiEvent =
+  | { readonly type: 'workOrders.changed' }
+  | { readonly type: 'run.updated'; readonly runId: string };
+
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
   query(query: Query): Promise<unknown>; // narrowed per query type by the caller helpers below
+  subscribe(listener: (e: UiEvent) => void): () => void;
+}
+
+/** Composition's feed for run-originated changes: the root hands this to the run executor as its
+ *  notify hook — the executor cannot know the api, so the api reaches it only through injection. */
+export interface RunEventFeed {
+  runUpdated(runId: string): void;
 }
 
 /** Queries report failure exactly the way commands do, so every boundary result reads the same. */
@@ -88,10 +102,49 @@ export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer'>,
   discovery?: ProviderDiscovery,
-): Api {
+): Api & RunEventFeed {
+  // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
+  // plain delete.
+  const listeners = new Set<(e: UiEvent) => void>();
+  const emit = (event: UiEvent): void => {
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch {
+        // Skipped by design: one broken listener must not silence the others or the command path.
+      }
+    }
+  };
+
   return {
-    command: (actor, command) => runCommand(deps, actor, command, board),
+    command: async (actor, command) => {
+      // workOrders.changed fires for a command that appended to the work order event log — the log
+      // the board, cockpit and detail views derive from. The append is observed through a
+      // per-command view, so the ports stay untouched for every other caller; the emission follows
+      // the whole command, after its last append has landed.
+      let appended = false;
+      const tracked: AppDeps = {
+        ...deps,
+        workOrders: {
+          ...deps.workOrders,
+          appendEvent: async (id: WorkOrderId, event: WorkOrderEvent) => {
+            await deps.workOrders.appendEvent(id, event);
+            appended = true;
+          },
+        },
+      };
+      const result = await runCommand(tracked, actor, command, board);
+      if (appended) emit({ type: 'workOrders.changed' });
+      return result;
+    },
     query: (query) => runQuery(deps, query, discovery),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    runUpdated: (runId) => emit({ type: 'run.updated', runId }),
   };
 }
 
