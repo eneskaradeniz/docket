@@ -25,6 +25,7 @@ export const LABEL_KEYS = [
   'error.stale',
   'error.self_approval',
   'error.invalid_after',
+  'error.binding_exists',
   // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
   // detail store's E-8 refusal, U-4).
   'error.not_a_deploy_gate',
@@ -122,6 +123,9 @@ export const LABEL_KEYS = [
   'success.proposal.decide',
   'success.permission.answer',
   'success.deploy.approve',
+  'success.account.save',
+  'success.account.remove',
+  'success.binding.save',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
