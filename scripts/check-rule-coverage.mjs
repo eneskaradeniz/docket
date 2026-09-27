@@ -4,16 +4,18 @@
 // defined there (`**R-n**` / `**R-n<letter>**` for the domain, `**A-n**` / `**A-n<letter>**` for the
 // application, `**I-n**` / `**I-n<letter>**` for the infrastructure, `**P-n**` for the provider
 // contracts, `**E-n**` / `**E-n<letter>**` for the environment rules in the domain and application
-// docs) must have at
+// docs, `**U-n**` for the UI rules in the ui doc) must have at
 // least one test titled after it (`it('R-n: …')` / `it('A-n: …')` / `it('I-n: …')` /
-// `it('P-n: …')` / `it('E-n: …')`) in the layer's test files.
+// `it('P-n: …')` / `it('E-n: …')` / `it('U-n: …')`) in the layer's test files.
 // A bold id in a Rules list is the definition; plain mentions in prose (`see R-16`) never define a
 // rule, and a title like `R-4 edge:` does not satisfy the `R-n:` convention. Each layer's results
 // are reported separately. The E rules span two docs, so each half carries its own search scope:
 // domain.md's E rules are tested under src/domain, application.md's under src/application and
 // src/api (the acceptance scenario lives there). The P rules are defined in providers.md and
 // tested wherever the provider contract they name lives — infrastructure (defs, transports,
-// forge, quota, scenarios), application (executor behaviour) and api. Runs as part of
+// forge, quota, scenarios), application (executor behaviour) and api. The U rules are defined in
+// ui.md and tested under src/presentation, except U-11..U-14 whose behaviour tests live under
+// src/api and src/application. Runs as part of
 // `npm run check:boundaries`.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -29,6 +31,7 @@ const SECTIONS = [
   { name: 'providers', prefix: 'P', doc: join(ROOT, 'docs', 'v2', 'providers.md'), dirs: [join(ROOT, 'src', 'infrastructure'), join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
   { name: 'domain environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'domain.md'), dirs: [join(ROOT, 'src', 'domain')] },
   { name: 'application environments', prefix: 'E', doc: join(ROOT, 'docs', 'v2', 'application.md'), dirs: [join(ROOT, 'src', 'application'), join(ROOT, 'src', 'api')] },
+  { name: 'ui', prefix: 'U', doc: join(ROOT, 'docs', 'v2', 'ui.md'), dirs: [join(ROOT, 'src', 'presentation'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'application')] },
 ];
 
 function walk(dir, acc = []) {
