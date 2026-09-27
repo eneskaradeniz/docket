@@ -44,6 +44,7 @@ export const LABEL_KEYS = [
   'success.gate.decide',
   'success.proposal.decide',
   'success.permission.answer',
+  'success.deploy.approve',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

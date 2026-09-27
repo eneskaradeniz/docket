@@ -38,4 +38,5 @@ export const EN: LabelBundle = {
   'success.gate.decide': 'Gate decision recorded.',
   'success.proposal.decide': 'Proposal decision recorded.',
   'success.permission.answer': 'Permission answer recorded.',
+  'success.deploy.approve': 'Deploy approved and executed.',
 };
