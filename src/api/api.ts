@@ -7,6 +7,7 @@ import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/i
 
 import type { AppDeps, PermissionBoard } from '../application';
 import {
+  approveAndDeploy,
   blockWorkOrder,
   closeWorkOrder,
   decideHumanGate,
@@ -159,6 +160,35 @@ const runCommand = async (
       if (board === undefined) return { ok: false, code: 'not_found' };
       const answered = board.answer(command.askId, command.decision);
       return answered.ok ? { ok: true } : { ok: false, code: answered.error };
+    }
+
+    case 'deploy.approve': {
+      const id = ulidValue<'work-order'>(command.workOrderId);
+      if (id === undefined) return invalidId();
+      const gate = slugValue<'gate'>(command.gate);
+      if (gate === undefined) return invalidId();
+      // The confirmation is user-typed text whose equality with the gate's environment is the
+      // whole point, so it travels verbatim: an unparseable value cannot equal one, and the use
+      // case then answers the E-8 surface (confirmation_mismatch) instead of a parse error.
+      const confirmedEnvironment =
+        command.confirmedEnvironment === undefined ? undefined : slugValue<'env'>(command.confirmedEnvironment);
+      // The actor passes through as the approver: the use case owns no_approval, so an agent
+      // caller is refused exactly where every other approver rule lives.
+      return commandOf(
+        await approveAndDeploy(
+          {
+            clock: deps.clock,
+            ids: deps.ids,
+            log: deps.log,
+            workOrders: deps.workOrders,
+            definitions: deps.definitions,
+            worktrees: deps.worktrees,
+            commands: deps.commands,
+            secrets: deps.secrets,
+          },
+          { id, gate, approver: actor, commit: command.commit, confirmedEnvironment },
+        ),
+      );
     }
   }
 };
