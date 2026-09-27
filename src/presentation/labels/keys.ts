@@ -113,6 +113,29 @@ export const LABEL_KEYS = [
   'live.usage.cost',
   'live.meter.used',
   'live.meter.limit',
+  // Screens A: the shell's brand, nav and workspace switcher (screens/shell.tsx).
+  'shell.title',
+  'nav.cockpit',
+  'nav.workspaces',
+  'nav.workspaces.empty',
+  // Cockpit screen: section titles, empty and loading states (screens/cockpit.tsx).
+  'cockpit.section.attention',
+  'cockpit.section.running',
+  'cockpit.attention.empty',
+  'cockpit.running.empty',
+  'cockpit.loading',
+  // Board screen: loading, done lane and the create-work-order form (screens/board.tsx).
+  'board.loading',
+  'board.section.done',
+  'board.create.title',
+  'board.create.titleLabel',
+  'board.create.titlePlaceholder',
+  'board.create.flowLabel',
+  'board.create.flowPlaceholder',
+  'board.create.submit',
+  // Decisions the screens offer.
+  'action.retry',
+  'action.open',
   // Success confirmations, one per command type (U-8).
   'success.workOrder.open',
   'success.workOrder.block',
