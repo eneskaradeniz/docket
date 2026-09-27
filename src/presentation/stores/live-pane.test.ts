@@ -498,4 +498,13 @@ describe('live pane store', () => {
     await pane.attach(RUN);
     expect(api.queries.length).toBe(1);
   });
+
+  it('U-5: state() returns a cached snapshot — a new reference only after a fold mutates', async () => {
+    const pane = await store(fakeApi());
+    const first = pane.state();
+    expect(pane.state()).toBe(first);
+
+    pane.push(thinking('yeni olay'));
+    expect(pane.state()).not.toBe(first);
+  });
 });
