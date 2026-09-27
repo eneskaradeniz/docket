@@ -1,0 +1,38 @@
+// labels/en.ts — English bundle. English is a peer locale, not a fallback: a key it misses falls
+// back to Turkish in the resolver (U-9).
+import type { LabelBundle } from './keys';
+
+export const EN: LabelBundle = {
+  'error.invalid_id': 'Invalid id.',
+  'error.definitions_invalid': 'Definitions are invalid; the workspace definition could not be read.',
+  'error.unknown_flow': 'Unknown flow.',
+  'error.flow_not_enabled': 'This flow is not enabled in the workspace.',
+  'error.unknown_task': 'Unknown task.',
+  'error.empty_title': 'The title cannot be empty.',
+  'error.not_found': 'The record was not found.',
+  'error.already_done': 'The work order is already done.',
+  'error.not_blocked': 'The work order is not blocked.',
+  'error.not_ready': 'The stage cannot be started yet.',
+  'error.unknown_role': 'Unknown role.',
+  'error.no_binding': 'No account binding exists for this role.',
+  'error.no_account': 'No account is available.',
+  'error.not_current_stage': 'The gate does not belong to the current stage.',
+  'error.not_pending': 'The gate is not pending.',
+  'error.not_a_human_gate': 'This gate is not decided by a human.',
+  'error.agent_cannot_decide': 'Only a human can make this decision.',
+  'error.stale': 'The proposal is stale; refresh the change first.',
+  'error.self_approval': 'You cannot approve your own proposal.',
+  'error.invalid_after': 'The proposal’s valid-after time is invalid.',
+  'error.unknown': 'An unexpected error occurred.',
+  'attention.permission_ask': 'Permission ask',
+  'attention.awaiting_human': 'Awaiting human',
+  'attention.limit_waiting': 'Waiting on limit',
+  'attention.blocked': 'Blocked',
+  'success.workOrder.open': 'Work order opened.',
+  'success.workOrder.block': 'Work order blocked.',
+  'success.workOrder.unblock': 'Work order unblocked.',
+  'success.workOrder.close': 'Work order closed.',
+  'success.workOrder.enqueue': 'Stage queued.',
+  'success.gate.decide': 'Gate decision recorded.',
+  'success.proposal.decide': 'Proposal decision recorded.',
+};
