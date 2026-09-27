@@ -1,23 +1,30 @@
 // screens/shell.tsx — the app shell (U-10's window): the navigation rail with the attention badge,
-// the workspace switcher, and the content area that mounts the cockpit, a workspace's board, or a
-// work order's detail. The badge mirrors the shell store: the cockpit's attention count, present
-// only while attention exists — zero renders nothing, never a zero. Every user-visible string
-// arrives through a label key (U-1).
+// the workspace switcher, and the content area that mounts the cockpit, a workspace's board, a
+// work order's detail, or the settings. The first-run wizard rides above it all as an overlay: the
+// shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The badge
+// mirrors the shell store: the cockpit's attention count, present only while attention exists —
+// zero renders nothing, never a zero. Every user-visible string arrives through a label key (U-1).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
+import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
+import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
+import { SettingsScreen } from './settings';
+import { WizardScreen } from './wizard';
 
 export interface ShellScreenProps {
   readonly shell: ShellStore;
   readonly cockpit: CockpitStore;
   readonly board: BoardStore;
   readonly detail: WorkOrderDetailStore;
+  readonly settings: SettingsStore;
+  readonly wizard: WizardStore;
   readonly locale: Locale;
 }
 
@@ -25,7 +32,8 @@ export interface ShellScreenProps {
 type ShellRoute =
   | { readonly name: 'cockpit' }
   | { readonly name: 'board'; readonly workspace: string }
-  | { readonly name: 'workOrder'; readonly id: string };
+  | { readonly name: 'workOrder'; readonly id: string }
+  | { readonly name: 'settings' };
 
 const NAV_BASE =
   'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors';
@@ -35,7 +43,7 @@ const NAV_BASE =
 const navClass = (current: boolean): string =>
   current ? `${NAV_BASE} bg-raised shadow-[inset_2px_0_0_0] shadow-signal text-ink` : `${NAV_BASE} text-inkdim hover:bg-raised hover:text-ink`;
 
-export function ShellScreen({ shell, cockpit, board, detail, locale }: ShellScreenProps) {
+export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, locale }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
   useEffect(() => {
@@ -60,6 +68,10 @@ export function ShellScreen({ shell, cockpit, board, detail, locale }: ShellScre
               {badge.count}
             </span>
           ) : null}
+        </button>
+
+        <button type="button" onClick={() => setRoute({ name: 'settings' })} className={navClass(route.name === 'settings')} aria-current={route.name === 'settings' ? 'page' : undefined}>
+          <span>{t(locale, 'nav.settings')}</span>
         </button>
 
         <p className="px-2.5 pb-1 pt-3 font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
@@ -95,7 +107,10 @@ export function ShellScreen({ shell, cockpit, board, detail, locale }: ShellScre
         {route.name === 'workOrder' ? (
           <WorkOrderDetailScreen store={detail} workOrderId={route.id} locale={locale} />
         ) : null}
+        {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} /> : null}
       </main>
+
+      <WizardScreen store={wizard} locale={locale} />
     </div>
   );
 }
