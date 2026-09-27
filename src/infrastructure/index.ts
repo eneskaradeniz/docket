@@ -6,5 +6,6 @@ export * from './storage/keychain/index';
 export * from './storage/definitions-yaml/index';
 export * from './vcs/index';
 export * from './gates/index';
+export * from './forge/index';
 export * from './providers/index';
 export * from './compose/index';

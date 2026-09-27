@@ -1,0 +1,4 @@
+{"event":"init","conversation_id":"4e62b6ca-5db0-4ac6-ab17-1af3f9d9a89e","init":{"cwd":"/tmp/agy-probe","tools":["read_file","write_to_file","list_dir"],"permission_mode":"request-review"}}
+{"event":"step_update","step_update":{"conversation_id":"4e62b6ca-5db0-4ac6-ab17-1af3f9d9a89e","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"4e62b6ca-5db0-4ac6-ab17-1af3f9d9a89e","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"hello\n","duration_seconds":2.988981,"usage":{"input_tokens":13389,"output_tokens":136,"thinking_tokens":135,"cache_read_tokens":0,"total_tokens":13525}}}
+{"event":"result","result":{"conversation_id":"4e62b6ca-5db0-4ac6-ab17-1af3f9d9a89e","status":"SUCCESS","response":"hello\n","duration_seconds":3.045238,"num_turns":1,"usage":{"input_tokens":13389,"output_tokens":136,"thinking_tokens":135,"cache_read_tokens":0,"total_tokens":13525}}}

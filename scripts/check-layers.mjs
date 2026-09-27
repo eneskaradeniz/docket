@@ -56,6 +56,7 @@ const INFRA_MODULES = {
   'storage/definitions-yaml': ['system'],
   vcs: ['system'],
   gates: ['system', 'vcs'],
+  forge: ['system'],
   providers: ['system'],
   compose: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers'],
   scenarios: ['system', 'storage/sqlite', 'storage/keychain', 'storage/definitions-yaml', 'vcs', 'gates', 'providers', 'compose'],
