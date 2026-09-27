@@ -3,7 +3,8 @@
 // (E-5, read-only), and gates the approve intent on the typed environment confirmation (E-8:
 // the input must equal the environment name before deploy.approve is issued — wrong or absent
 // never fires). Every intent maps its CommandResult through results.ts (U-8) and refreshes the
-// detail query. Api, change signal and definitions are injected fakes.
+// detail query. The flow and the environments ride the detail view itself; api and change
+// signal are injected fakes.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -11,7 +12,6 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type {
   Actor,
-  Definitions,
   EnvironmentDef,
   FlowDef,
   FlowAction,
@@ -88,24 +88,6 @@ const ENVIRONMENTS: readonly EnvironmentDef[] = [
   { id: ENV_PROD, name: 'Prod', order: 3, deploy: 'deploy-prod', env: {}, protected: true, promoteFrom: ENV_STAGING },
 ];
 
-const DEFINITIONS: Definitions = {
-  roles: [],
-  flows: [FLOW],
-  capabilities: [],
-  workspace: {
-    id: slugOf<'workspace'>('atolye'),
-    name: 'Atölye',
-    repos: [],
-    flows: [FLOW.id],
-    defaultFlow: FLOW.id,
-    commandSets: {},
-    roleOverrides: [],
-    docsRoot: 'docs',
-    testGlobs: [],
-    environments: ENVIRONMENTS,
-  },
-};
-
 const NONE: FlowAction = { kind: 'none' };
 
 const stateAt = (stage: StageSlug, pending: readonly GateSlug[]): WorkOrderState => ({
@@ -132,6 +114,10 @@ const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
       outcome: 'succeeded' satisfies RunOutcome,
     },
   ],
+  // The flow definition and the environments arrive inside the view, so the store needs no
+  // definitions loader of its own.
+  flow: FLOW,
+  environments: ENVIRONMENTS,
 });
 
 interface FakeApi extends Pick<Api, 'query' | 'command'> {
@@ -166,21 +152,6 @@ const fakeApi = (initialReply: unknown): FakeApi => {
   };
 };
 
-interface FakeDefinitions {
-  readonly load: (workspace: string) => Promise<Definitions | null>;
-  setDefinitions(next: Definitions | null): void;
-}
-
-const fakeDefinitions = (initial: Definitions | null): FakeDefinitions => {
-  let current = initial;
-  return {
-    load: () => Promise.resolve(current),
-    setDefinitions: (next) => {
-      current = next;
-    },
-  };
-};
-
 interface FakeSignal {
   readonly signal: DetailChangeSignal;
   emit(change: DetailChange): void;
@@ -207,18 +178,17 @@ const flush = (): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, 0);
 });
 
-const createStore = (api: FakeApi, defs: FakeDefinitions, signal: FakeSignal = fakeSignal()) =>
+const createStore = (api: FakeApi, signal: FakeSignal = fakeSignal()) =>
   createWorkOrderDetailStore({
     api,
     changes: signal.signal,
     actor: ACTOR,
-    definitions: defs.load,
   });
 
 describe('work-order detail store', () => {
   it('U-4: the store derives the per-stage gate list with human-readable states', async () => {
     const api = fakeApi(detailReply(AT_BUILD));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
 
     expect(store.state()).toEqual({ loading: false, view: null, stages: [], problem: null, lastOutcome: null });
     const loading = store.load(WO_ID);
@@ -261,7 +231,7 @@ describe('work-order detail store', () => {
   });
 
   it('U-4: a deploy gate exposes its environment, protection and the read-only promoteFrom chain', async () => {
-    const store = createStore(fakeApi(detailReply(AT_SHIP)), fakeDefinitions(DEFINITIONS));
+    const store = createStore(fakeApi(detailReply(AT_SHIP)));
     await store.load(WO_ID);
 
     const ship = store.state().stages.find((stage) => stage.stage === 'ship');
@@ -275,7 +245,7 @@ describe('work-order detail store', () => {
 
   it('U-4: a protected deploy gate with a wrong typed confirmation never fires the approve intent', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.approveDeploy({ gate: 'deploy-prod', commit: 'abc123', confirmedEnvironment: 'production' });
@@ -293,7 +263,7 @@ describe('work-order detail store', () => {
 
   it('U-4: a protected deploy gate with an absent confirmation never fires the approve intent', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.approveDeploy({ gate: 'deploy-prod', commit: 'abc123' });
@@ -306,7 +276,7 @@ describe('work-order detail store', () => {
 
   it('U-4: a matching typed confirmation fires deploy.approve verbatim and refreshes the detail query', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.approveDeploy({ gate: 'deploy-prod', commit: 'abc123', confirmedEnvironment: 'prod' });
@@ -320,7 +290,7 @@ describe('work-order detail store', () => {
 
   it('U-4: an unprotected deploy gate approves without a typed confirmation', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.approveDeploy({ gate: 'deploy-staging', commit: 'abc123' });
@@ -334,7 +304,7 @@ describe('work-order detail store', () => {
 
   it('U-4: gate decisions are intents mapped through U-8 that refresh the detail query', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const approved = await store.decideGate({ gate: 'ship-approval', decision: 'approved', note: 'looks good' });
@@ -356,7 +326,7 @@ describe('work-order detail store', () => {
 
   it('U-4: a stage enqueue is an intent mapped through U-8 that refreshes the detail query', async () => {
     const api = fakeApi(detailReply(AT_BUILD));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.enqueue();
@@ -368,7 +338,7 @@ describe('work-order detail store', () => {
 
   it('U-4: a permission answer is an intent mapped through U-8 that refreshes the detail query', async () => {
     const api = fakeApi(detailReply(AT_BUILD));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     const outcome = await store.answerPermission({ runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0', askId: 'ask-1', decision: 'allow' });
@@ -383,7 +353,7 @@ describe('work-order detail store', () => {
   it('U-4: a failed query keeps the previous view and stages, and exposes the problem', async () => {
     const good = detailReply(AT_SHIP);
     const api = fakeApi(good);
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
     await store.load(WO_ID);
 
     api.setReply({ ok: false, code: 'not_found' });
@@ -395,31 +365,29 @@ describe('work-order detail store', () => {
     expect(failed.stages.length).toBe(3); // the derived gate list stays on screen
 
     // A first failed load leaves no view but still reports the problem.
-    const fresh = createStore(fakeApi({ ok: false, code: 'invalid_id' }), fakeDefinitions(DEFINITIONS));
+    const fresh = createStore(fakeApi({ ok: false, code: 'invalid_id' }));
     await fresh.load(WO_ID);
     expect(fresh.state().view).toBeNull();
     expect(fresh.state().stages).toEqual([]);
     expect(fresh.state().problem).toBe('invalid_id');
   });
 
-  it('U-4: definitions the store cannot load surface the definitions problem without gate stages', async () => {
-    const defs = fakeDefinitions(DEFINITIONS);
-    const store = createStore(fakeApi(detailReply(AT_SHIP)), defs);
-    await store.load(WO_ID);
-    expect(store.state().problem).toBeNull();
-
-    defs.setDefinitions(null);
+  it('U-4: a definitions failure reply fails soft — problem state, no view, no gate stages', async () => {
+    // Definitions ride the detail query now, so an unloadable set arrives exactly like any other
+    // query failure: the problem shows and nothing crashes.
+    const store = createStore(fakeApi({ ok: false, code: 'definitions_invalid' }));
     await store.load(WO_ID);
     const state = store.state();
     expect(state.problem).toBe('definitions_invalid');
+    expect(state.view).toBeNull();
     expect(state.stages).toEqual([]);
-    expect(state.view).not.toBeNull(); // the work order itself still renders
+    expect(state.loading).toBe(false);
   });
 
   it('U-4: the store re-queries on the coarse change events', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
     const emitter = fakeSignal();
-    const store = createStore(api, fakeDefinitions(DEFINITIONS), emitter);
+    const store = createStore(api, emitter);
     await store.load(WO_ID);
     expect(api.queries.length).toBe(1);
 
@@ -433,7 +401,7 @@ describe('work-order detail store', () => {
   });
 
   it('U-4: a finished work order renders every gate as passed', async () => {
-    const store = createStore(fakeApi(detailReply(DONE)), fakeDefinitions(DEFINITIONS));
+    const store = createStore(fakeApi(detailReply(DONE)));
     await store.load(WO_ID);
 
     const stages = store.state().stages;
@@ -443,7 +411,7 @@ describe('work-order detail store', () => {
 
   it('U-4: an intent before any load answers not_found without issuing a command', async () => {
     const api = fakeApi(detailReply(AT_SHIP));
-    const store = createStore(api, fakeDefinitions(DEFINITIONS));
+    const store = createStore(api);
 
     const outcome = await store.decideGate({ gate: 'ship-approval', decision: 'approved' });
 

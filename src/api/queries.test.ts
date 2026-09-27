@@ -20,6 +20,7 @@ import type {
 import { parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps, DiscoveredProvider, ProviderDiscovery, RunRecord } from '../application';
+import type { FakeDefinitionStore } from '../application/ports/fakes';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
@@ -110,6 +111,8 @@ const DEFINITIONS_JSON = JSON.stringify({
 
 interface Harness {
   readonly deps: AppDeps;
+  /** The fake behind `deps.definitions`, exposed for tests that seed a workspace of their own. */
+  readonly definitions: FakeDefinitionStore;
 }
 
 const createHarness = (): Harness => {
@@ -118,7 +121,7 @@ const createHarness = (): Harness => {
   // A second workspace whose definitions no longer parse: its work orders must not break the
   // cockpit, they simply cannot be classified.
   definitions.seed({ kind: 'workspace', workspace: BROKEN_WORKSPACE }, 'defs.json', '{not json');
-  return { deps: createFakeDeps({ definitions }) };
+  return { deps: createFakeDeps({ definitions }), definitions };
 };
 
 const seedWorkOrder = async (
@@ -298,6 +301,51 @@ const seedBoardScenario = async (h: Harness): Promise<Harness> => {
   return h;
 };
 
+// --- the detail scenario: a flow with a deploy gate over a protected environment chain -------------
+
+const RELEASE_WORKSPACE = slugOf<'workspace'>('release');
+const RELEASE_FLOW = slugOf<'flow'>('release-flow');
+const WO_RELEASE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB6');
+
+const RELEASE_DEFINITIONS_JSON = JSON.stringify({
+  roles: [ROLE_JSON],
+  flows: [
+    {
+      id: 'release-flow',
+      name: 'Release Flow',
+      stages: [
+        { id: 'build', name: 'Build', role: 'worker', exit: [] },
+        {
+          id: 'ship',
+          name: 'Ship',
+          role: null,
+          exit: [
+            { kind: 'human', id: 'ship-approval', label: 'Ship approval' },
+            { kind: 'deploy', id: 'deploy-prod', environment: 'prod' },
+          ],
+        },
+      ],
+    },
+  ],
+  capabilities: [],
+  workspace: {
+    id: 'release',
+    name: 'Release',
+    repos: [],
+    flows: ['release-flow'],
+    defaultFlow: 'release-flow',
+    commandSets: { 'deploy-dev': ['true'], 'deploy-staging': ['true'], 'deploy-prod': ['true'] },
+    roleOverrides: [],
+    docsRoot: 'docs',
+    testGlobs: [],
+    environments: [
+      { id: 'dev', name: 'Dev', order: 1, deploy: 'deploy-dev', env: {}, protected: false },
+      { id: 'staging', name: 'Staging', order: 2, deploy: 'deploy-staging', env: {}, protected: false, promoteFrom: 'dev' },
+      { id: 'prod', name: 'Prod', order: 3, deploy: 'deploy-prod', env: {}, protected: true, promoteFrom: 'staging' },
+    ],
+  },
+});
+
 // --- the tests ---------------------------------------------------------------------------------------
 
 describe('cockpit', () => {
@@ -414,7 +462,47 @@ describe('workOrder.detail', () => {
       state: { status: 'awaiting_human', stage: 'plan', attempt: 1, pendingGates: ['plan-approval'] },
       next: { kind: 'await_human', stage: 'plan', gates: ['plan-approval'] },
       runs: [],
+      flow: { id: 'board-flow' },
+      // The acme workspace section carries no environments, so the list is empty, not absent.
+      environments: [],
     });
+  });
+
+  it('carries the work order own flow definition and the workspace environments, protection included', async () => {
+    const h = createHarness();
+    h.definitions.seed({ kind: 'workspace', workspace: RELEASE_WORKSPACE }, 'defs.json', RELEASE_DEFINITIONS_JSON);
+    await seedWorkOrder(h, WO_RELEASE, RELEASE_FLOW, 'Ship it', 100, RELEASE_WORKSPACE);
+
+    const result = await createApi(h.deps).query({ type: 'workOrder.detail', id: WO_RELEASE });
+
+    expect(result).toMatchObject({
+      flow: {
+        id: 'release-flow',
+        stages: [
+          { id: 'build', exit: [] },
+          {
+            id: 'ship',
+            exit: [
+              { kind: 'human', id: 'ship-approval', label: 'Ship approval' },
+              { kind: 'deploy', id: 'deploy-prod', environment: 'prod' },
+            ],
+          },
+        ],
+      },
+      environments: [
+        { id: 'dev', protected: false },
+        { id: 'staging', protected: false, promoteFrom: 'dev' },
+        { id: 'prod', protected: true, promoteFrom: 'staging' },
+      ],
+    });
+  });
+
+  it('fails soft with definitions_invalid for a work order whose definitions no longer parse', async () => {
+    const h = await seedCockpitScenario(createHarness());
+
+    const result = await createApi(h.deps).query({ type: 'workOrder.detail', id: WO_BROKEN });
+
+    expect(result).toEqual({ ok: false, code: 'definitions_invalid' });
   });
 
   it('returns not_found for an unknown id', async () => {

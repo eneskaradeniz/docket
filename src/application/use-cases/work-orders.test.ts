@@ -116,15 +116,23 @@ const WORKSPACE_JSON = {
   repos: [],
   flows: ['flow-a', 'flow-b', 'flow-fail'],
   defaultFlow: 'flow-a',
-  commandSets: {},
+  commandSets: { 'deploy-dev': ['true'], 'deploy-staging': ['true'], 'deploy-prod': ['true'] },
   roleOverrides: [],
   docsRoot: 'docs',
   testGlobs: [],
 };
 
+// dev ← staging ← prod: the protected prod promotes through staging, which promotes through dev (E-5).
+const ENVIRONMENTS_JSON = [
+  { id: 'dev', name: 'Dev', order: 1, deploy: 'deploy-dev', env: {}, protected: false },
+  { id: 'staging', name: 'Staging', order: 2, deploy: 'deploy-staging', env: {}, protected: false, promoteFrom: 'dev' },
+  { id: 'prod', name: 'Prod', order: 3, deploy: 'deploy-prod', env: {}, protected: true, promoteFrom: 'staging' },
+];
+
 const definitionsJson = (
   variants: {
     readonly withWorkspace?: boolean;
+    readonly withEnvironments?: boolean;
     readonly workspaceFlows?: readonly string[];
     readonly flows?: readonly string[];
     readonly defaultFlow?: string;
@@ -141,6 +149,7 @@ const definitionsJson = (
             ...WORKSPACE_JSON,
             flows: variants.workspaceFlows ?? WORKSPACE_JSON.flows,
             defaultFlow: variants.defaultFlow ?? WORKSPACE_JSON.defaultFlow,
+            ...(variants.withEnvironments ? { environments: ENVIRONMENTS_JSON } : {}),
           },
         }),
   });
@@ -418,6 +427,38 @@ describe('getWorkOrder', () => {
 
     const result = await getWorkOrder(h.viewDeps, id);
     expect(result).toEqual(err('unknown_flow'));
+  });
+
+  it('A-6: the view carries the work order own flow definition and the workspace environments', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    h.definitions.seed(
+      { kind: 'workspace', workspace: WORKSPACE },
+      'defs.json',
+      definitionsJson({ withEnvironments: true }),
+    );
+
+    const result = await getWorkOrder(h.viewDeps, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The flow is the whole definition the current definitions hold, gates included.
+    expect(result.value.flow).toEqual(FLOWS_JSON[0]);
+    // The environments keep their protection and promotion chain verbatim (E-5).
+    expect(result.value.environments).toEqual(ENVIRONMENTS_JSON);
+  });
+
+  it('A-6: definitions without a workspace section yield an empty environment list, flow intact', async () => {
+    const h = createHarness();
+    const id = await openedWorkOrder(h);
+    h.definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', definitionsJson({ withWorkspace: false }));
+
+    const result = await getWorkOrder(h.viewDeps, id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.flow.id).toBe(FLOW_A);
+    expect(result.value.environments).toEqual([]);
   });
 
   it('A-6: state and next equal the domain derivation over the stored events and the current definitions', async () => {

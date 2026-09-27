@@ -2,6 +2,7 @@
 // The use cases only orchestrate: validation lives in the domain, decisions in `deriveWorkOrderState`.
 import type {
   Actor,
+  EnvironmentDef,
   FlowAction,
   FlowDef,
   FlowSlug,
@@ -77,6 +78,11 @@ export interface WorkOrderView {
   readonly state: WorkOrderState;
   readonly next: FlowAction;
   readonly runs: readonly RunRecord[];
+  /** The work order own flow from the current definitions: the detail screen derives its stage
+   *  and gate list from it, so the renderer needs no definitions read of its own. */
+  readonly flow: FlowDef;
+  /** The workspace section's environments (protected, promoteFrom), same reason as `flow`. */
+  readonly environments: readonly EnvironmentDef[];
 }
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
 
@@ -95,7 +101,14 @@ export async function getWorkOrder(
   // Everything below is derived per read from the current definitions; none of it is stored.
   const state = deriveWorkOrderState(flow, await deps.workOrders.events(id));
   const runs = await deps.runs.listForWorkOrder(id);
-  return ok({ record, state, next: nextAction(flow, state), runs });
+  return ok({
+    record,
+    state,
+    next: nextAction(flow, state),
+    runs,
+    flow,
+    environments: loaded.value.workspace?.environments ?? [],
+  });
 }
 
 export type ControlError = 'not_found' | 'already_done' | 'not_blocked';
