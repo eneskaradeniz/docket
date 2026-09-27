@@ -75,35 +75,35 @@ Deploy approval passes the gate's `environment`; a protected environment without
 
 ## Stores
 
-- **U-2 (cockpit)** Attention items keep the API's order (A-22 rank, oldest first); the store
+- **U-2** (cockpit) Attention items keep the API's order (A-22 rank, oldest first); the store
   re-queries on `workOrders.changed` and `run.updated`; an item's age renders from `since` in
   the active locale. A failed query leaves the previous view and surfaces a retry intent — an
   error never blanks the cockpit.
-- **U-3 (board)** Columns mirror `BoardView` (stage order preserved, `done` as a separate lane);
+- **U-3** (board) Columns mirror `BoardView` (stage order preserved, `done` as a separate lane);
   a `definitions_invalid` result shows the workspace-problem state, not an empty board; the
   create-work-order intent validates title presence and flow choice before issuing
   `workOrder.open`.
-- **U-4 (work-order detail)** The store derives, per stage, the gate list with human-readable
+- **U-4** (work-order detail) The store derives, per stage, the gate list with human-readable
   states; for a `deploy` gate it exposes the environment, whether it is protected (typed
   `confirmedEnvironment` required — the input must equal the environment name before the
   approve intent is issued), and the prerequisite (E-5 chain, read-only). Gate decisions,
   stage enqueues, permission answers and deploy approvals are intents that map `CommandResult`
   through U-8 and refresh the detail query.
-- **U-5 (live pane)** The store folds a run's `AgentEvent` stream into display items
+- **U-5** (live pane) The store folds a run's `AgentEvent` stream into display items
   (thought, message, tool call with status, usage, quota signal) in arrival order, keeps the
   earliest still-open permission ask with an answer intent, and marks the stream ended on
   `finished`. Events after `finished` are ignored.
-- **U-6 (settings)** Accounts list with their pools/meters (label, remaining, unit, resets at
+- **U-6** (settings) Accounts list with their pools/meters (label, remaining, unit, resets at
   in locale format, source badge from `ObservationSource`), per-role bindings, and discovery
   results that stream in per provider (a slow provider delays only its row). Saving an account
   or binding maps through U-8; removing an account that a binding still references warns with
   the referencing roles before issuing the command.
-- **U-7 (wizard)** First-run state machine: definitions source → account → binding → done.
+- **U-7** (wizard) First-run state machine: definitions source → account → binding → done.
   `next` is enabled only when the step's validation passes (source reachable / at least one
   discovered+logged-in provider for the chosen account / at least one bound role); `back`
   preserves entered state; finishing leaves the wizard and does not reappear while a workspace
   exists.
-- **U-10 (shell)** The shell's attention badge count equals the cockpit's attention items,
+- **U-10** (shell) The shell's attention badge count equals the cockpit's attention items,
   ranked by kind (permission asks first); it updates on the same events; when the count is
   zero the badge is absent, never zero.
 
