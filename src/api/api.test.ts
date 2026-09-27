@@ -3,7 +3,7 @@
 // (docs/v2/application.md § 4).
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Actor, RoleDef, Slug, Ulid } from '../domain/index';
+import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps } from '../application';
@@ -1052,6 +1052,130 @@ describe('createApi', () => {
 
       expect(result).toEqual({ ok: true });
       expect(seen).toEqual([{ type: 'workOrders.changed' }]);
+    });
+  });
+
+  describe('the renderer feed queries', () => {
+    /** The composition wiring for one scripted run: the work order exists, the transport plays the
+     *  script, and the api's feed members ride along as the executor's notify hooks. */
+    const executeScripted = async (
+      h: Harness,
+      feed: { runUpdated(runId: string): void; workOrdersChanged(): void } | undefined,
+      script: readonly AgentEvent[],
+      ids: { readonly workOrder: Ulid<'work-order'>; readonly queueItem: Ulid<'queue-item'> },
+    ): Promise<RunId> => {
+      const transports = createFakeTransportResolver();
+      transports.register(ACCOUNT, createFakeTransport([...script]));
+      await h.deps.workOrders.create({
+        id: ids.workOrder,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ids.queueItem,
+            workOrderId: ids.workOrder,
+            workspace: slugOf<'workspace'>(WORKSPACE),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        feed?.runUpdated,
+        feed?.workOrdersChanged,
+      );
+      const runs = await h.deps.runs.listForWorkOrder(ids.workOrder);
+      const run = runs[runs.length - 1];
+      if (run === undefined) throw new Error('the executed run must exist');
+      return run.id;
+    };
+
+    it('run.events reads back the events the executor stored, newest last', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const script: readonly AgentEvent[] = [
+        { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+        { type: 'text', at: 1_650, delta: 'working' },
+        { type: 'finished', at: 1_700, reason: 'completed' },
+      ];
+
+      const runId = await executeScripted(h, undefined, script, {
+        workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE6'),
+        queueItem: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE8'),
+      });
+
+      expect(await api.query({ type: 'run.events', runId })).toEqual(script);
+    });
+
+    it("permissions.open maps the board's parked asks with the owning work order's title", async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FEA');
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await h.deps.runs.create({
+        id: RUN,
+        workOrderId,
+        stage: slugOf<'stage'>('plan'),
+        attempt: 1,
+        role: slugOf<'role'>('worker'),
+        route: { accountId: ACCOUNT },
+        startedAt: 1_400,
+        autoResumesUsed: 0,
+      });
+      board.register(RUN);
+      // What the executor's gate wiring does while the run streams.
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      expect(await api.query({ type: 'permissions.open' })).toEqual([
+        { runId: RUN, askId: 'ask-1', since: 1_500, title: 'Run it' },
+      ]);
+    });
+
+    it('the run-finished path also emits workOrders.changed through the feed', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const runId = await executeScripted(
+        h,
+        api,
+        [
+          { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+          { type: 'text', at: 1_650, delta: 'working' },
+          { type: 'finished', at: 1_700, reason: 'completed' },
+        ],
+        { workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE7'), queueItem: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE9') },
+      );
+
+      // One run.updated per appended event, then the work-order change of the run-finished append:
+      // the re-query it triggers is what clears a badge that the preceding run.updated left stale.
+      expect(seen).toEqual([
+        { type: 'run.updated', runId },
+        { type: 'run.updated', runId },
+        { type: 'run.updated', runId },
+        { type: 'workOrders.changed' },
+      ]);
     });
   });
 });

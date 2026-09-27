@@ -6,8 +6,9 @@
 //   1. Node deps (SQLite, YAML definitions, keychain, worktrees) — everything except Electron
 //      objects, which arrive as injected adapters (safeStorage, Notification).
 //   2. The permission board — in-process state beside the ports, never a port itself.
-//   3. The api over deps + board + discovery; its runUpdated member is the executor's notify
-//      hook, so run events reach the subscribed stores without the executor knowing the api.
+//   3. The api over deps + board + discovery; its runUpdated and workOrdersChanged members are
+//      the executor's notify hooks, so run events and the executor's run-finished append reach
+//      the subscribed stores without the executor knowing the api.
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
@@ -202,6 +203,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       { item, role, prompt: role.instructions, cwd: worktree.value.path, capabilities },
       board,
       api.runUpdated,
+      api.workOrdersChanged,
     );
 
     if (outcome.kind === 'limit') {
