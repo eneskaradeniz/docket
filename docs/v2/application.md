@@ -513,9 +513,9 @@ export function pollRemoteChecks(
 
 - **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `input.confirmedEnvironment` must equal the gate's environment (`confirmation_mismatch`). The environment must exist in the workspace definition (`unknown_environment`); the worktree comes from `Worktrees.ensure` (`no_repo`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
 - **E-12** Deploy execution: run `deploy` commandSet in the work order's worktree with the environment's `env` values passed as `CommandRunner.run`'s `env` argument (literal + `SecretVault`-resolved `secretRef`; an unresolvable ref → `result: 'failed'` without running). If deploy exits 0 and `verify` exists, run `verify` the same way. Both exit 0 → `result: 'success'`; otherwise → `result: 'failed'`.
-- **E-13** After deploy execution, append one `deployment_attempted` event and one `gate_evaluated` event (using E-6). Environment values and secrets never appear in the event or the output tail.
+- **E-13** After deploy execution, append one `deployment_attempted` event and one `gate_evaluated` event (using E-6). Environment values and secrets never appear in the event or the output tail. The event's output tail comes from the first failing command; when every command (including `verify`) succeeded, from the last one.
 - **E-14** `pollRemoteChecks`: gate must be a pending `remote_checks` gate of the current stage. Resolve the forge via `ForgeResolver.forRepo`; if unavailable → `forge_unavailable`. Call `forge.checks(repo, branchRef)`.
-- **E-15** Match returned checks against `required`: if `required === 'all'`, use all returned checks; otherwise filter to those whose `name` is in the `required` array. Determine status: all `passed` → `all_passed`; any `failed`/`cancelled` → `has_failure`; otherwise → `pending`.
+- **E-15** Match returned checks against `required`: if `required === 'all'`, use all returned checks; otherwise filter to those whose `name` is in the `required` array. A `required` name the forge did not return counts as not-passed (the gate stays pending; it never passes vacuously). Determine status: all `passed` → `all_passed`; any `failed`/`cancelled` → `has_failure`; otherwise → `pending`.
 - **E-16** If elapsed time since the gate entered `pending` exceeds `timeoutMinutes` → `timeout`.
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
 - **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the workspace definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
@@ -543,3 +543,33 @@ Asserts the state after every step, the queue is empty at the end, every run has
 the audit trail lists the expected actions in order. A second test: the implement run hits a
 limit with policy `wait_resume` → `limit_waiting` and a queue item with `notBefore = resetsAt +
 60 s` exists after the caller schedules it.
+
+---
+
+## 6. Quota polling — Phase 3
+
+Ports and use cases for Phase 3 are specified with their rules in
+[providers.md](providers.md) → "Phase 3 contracts" (**P-18 … P-21**). Signatures, for reference:
+
+```ts
+// ports/quota-probe.ts
+export type QuotaProbeError = 'not_installed' | 'not_logged_in' | 'probe_failed' | 'unknown_provider';
+export interface MeterReading {
+  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' };
+  readonly meter: Omit<Meter, 'id' | 'poolId'>;
+}
+export interface QuotaProbe {
+  poll(defId: string, binPath: string | null): Promise<Result<readonly MeterReading[], QuotaProbeError>>;
+}
+export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | undefined }
+
+// use-cases/quota-poll.ts
+export function pollQuota(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>,
+  probes: QuotaProbeResolver,
+  input: { readonly accountId: AccountId },
+): Promise<Result<readonly Meter[], QuotaProbeError>>;
+```
+
+The resume-fallback behaviour (**P-22**, providers.md) changes no signature: it lives inside the run
+executor's existing start path.

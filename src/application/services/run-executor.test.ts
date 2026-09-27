@@ -26,7 +26,7 @@ import {
   type WorkspaceSlug,
 } from '../../domain/index';
 
-import type { AccountRecord, AgentTransport, AuditEntry, RunRecord } from '../ports';
+import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, TransportError } from '../ports';
 import {
   createFakeAccountRepo,
   createFakeClock,
@@ -277,6 +277,30 @@ const theRequest = (transport: FakeTransport) => {
 
 const auditShape = (entries: readonly AuditEntry[]) =>
   entries.map((entry) => ({ action: entry.action, subject: entry.subject, actor: entry.actor, detail: entry.detail }));
+
+/** A transport whose first `failures` starts fail with `error`, then delegate to `inner`; every
+ *  request is recorded, failed ones included. Models a resume the transport cannot perform. */
+const flakyStart = (
+  inner: FakeTransport,
+  failures: number,
+  error: TransportError,
+): { readonly transport: AgentTransport; readonly requests: () => readonly RunRequest[] } => {
+  const seen: RunRequest[] = [];
+  let remaining = failures;
+  return {
+    transport: {
+      start: async (request) => {
+        seen.push(request);
+        if (remaining > 0) {
+          remaining -= 1;
+          return { ok: false, error };
+        }
+        return inner.start(request);
+      },
+    },
+    requests: () => [...seen],
+  };
+};
 
 const actionsOf = (log: FakeEventLog): readonly string[] => log.entries().map((entry) => entry.action);
 
@@ -738,5 +762,162 @@ describe('executeRun', () => {
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'failed' },
     ]);
+  });
+
+  it('P-22: a resume the transport accepts runs the resumed session unchanged (no fallback)', async () => {
+    const h = await harness({
+      script: [sessionStarted('sess-1'), finished('completed')],
+      priorRuns: [priorRun({ outcome: 'limit', sessionRef: 'sess-0' })],
+    });
+    await h.runs.appendEvents(PRIOR_RUN, [text('earlier answer'), finished('limit')]);
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+    const request = theRequest(h.transport);
+    expect(request.resume).toEqual({ sessionRef: 'sess-0' });
+    expect(request.prompt).toBe(INPUT.prompt);
+    expect((await theRun(h.runs)).sessionRef).toBe('sess-1');
+  });
+
+  it('P-22: a start error under a resume reference restarts once without resume, the prompt prefixed with a summary of the stored events', async () => {
+    const h = await harness({
+      script: [sessionStarted('sess-9'), finished('completed')],
+      priorRuns: [priorRun({ outcome: 'limit', sessionRef: 'sess-0' })],
+    });
+    await h.runs.appendEvents(PRIOR_RUN, [
+      sessionStarted('sess-0'),
+      text('the earlier answer'),
+      thinking('pondering'),
+      toolCall(),
+      toolResult(false),
+      finished('limit'),
+    ]);
+    const error: TransportError = { code: 'spawn_failed', message: 'the session is gone' };
+    const flaky = flakyStart(h.transport, 1, error);
+    h.transports.register(ACCOUNT, flaky.transport); // the last registration wins
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const requests = flaky.requests();
+    if (requests.length !== 2) throw new Error('the transport must have been started exactly twice');
+    const [resumed, restarted] = requests;
+    expect(resumed.resume).toEqual({ sessionRef: 'sess-0' });
+    expect(resumed.prompt).toBe(INPUT.prompt);
+    expect(restarted.resume).toBeUndefined();
+    expect(restarted.prompt.startsWith('The previous session could not be resumed')).toBe(true);
+    expect(restarted.prompt).toContain('[text] the earlier answer');
+    expect(restarted.prompt).toContain('[thinking] pondering');
+    expect(restarted.prompt).toContain('[tool] read src/a.ts');
+    expect(restarted.prompt).toContain('[tool result] failed');
+    // Bookkeeping events carry no conversation; the resumed session id never reaches the prompt.
+    expect(restarted.prompt).not.toContain('sess-0');
+    expect(restarted.prompt.endsWith(`--- end of previous transcript ---\n\n${INPUT.prompt}`)).toBe(true);
+    // The restart reuses the same run: one record, one started/finished pair.
+    expect(await h.runs.listForWorkOrder(WORK_ORDER)).toHaveLength(2);
+    const record = await theRun(h.runs);
+    expect(record.attempt).toBe(1);
+    expect(record.sessionRef).toBe('sess-9');
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([
+      { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
+      { type: 'run_finished', at: T0, runId: record.id, outcome: 'succeeded' },
+    ]);
+  });
+
+  it('P-22: the transcript summary is bounded per entry and in total', async () => {
+    const h = await harness({
+      script: [finished('completed')],
+      priorRuns: [priorRun({ outcome: 'limit', sessionRef: 'sess-0' })],
+    });
+    // Six oversized turns: five fill the summary budget, the sixth must never appear.
+    await h.runs.appendEvents(PRIOR_RUN, [
+      text('A'.repeat(5_000)),
+      text('A'.repeat(5_000)),
+      text('A'.repeat(5_000)),
+      text('A'.repeat(5_000)),
+      text('A'.repeat(5_000)),
+      text('B'.repeat(5_000)),
+    ]);
+    const flaky = flakyStart(h.transport, 1, { code: 'spawn_failed', message: 'resume failed' });
+    h.transports.register(ACCOUNT, flaky.transport);
+
+    await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    const requests = flaky.requests();
+    const restarted = requests[1];
+    if (restarted === undefined) throw new Error('the restart must have been started');
+    const lines = restarted.prompt.split('\n');
+    const marker = lines.indexOf('--- end of previous transcript ---');
+    if (marker < 0) throw new Error('the summary must end at its marker');
+    const summary = lines.slice(2, marker - 1); // header, blank … blank, marker
+    expect(summary.length).toBe(5);
+    for (const line of summary) expect(line.length).toBeLessThanOrEqual(400);
+    expect(summary.reduce((total, line) => total + line.length, 0)).toBe(2000);
+    // '[text] ' (7) + 392 kept characters + the ellipsis = the 400-character entry bound.
+    expect(restarted.prompt).toContain(`[text] ${'A'.repeat(392)}…`);
+    expect(restarted.prompt).not.toContain('A'.repeat(393));
+    expect(restarted.prompt).not.toContain('B');
+    // The original prompt stays intact after the bounded summary.
+    expect(restarted.prompt.endsWith(INPUT.prompt)).toBe(true);
+  });
+
+  it('P-22: a prior run with no stored events restarts with the bare summary frame around the prompt', async () => {
+    const h = await harness({
+      script: [finished('completed')],
+      priorRuns: [priorRun({ outcome: 'limit', sessionRef: 'sess-0' })],
+    });
+    const flaky = flakyStart(h.transport, 1, { code: 'spawn_failed', message: 'resume failed' });
+    h.transports.register(ACCOUNT, flaky.transport);
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const restarted = flaky.requests()[1];
+    if (restarted === undefined) throw new Error('the restart must have been started');
+    expect(restarted.prompt.startsWith('The previous session could not be resumed')).toBe(true);
+    expect(restarted.prompt).not.toContain('[text]');
+    expect(restarted.prompt).not.toContain('[tool]');
+    expect(restarted.prompt.endsWith(`--- end of previous transcript ---\n\n${INPUT.prompt}`)).toBe(true);
+  });
+
+  it('P-22: a restart without resume that also fails fails the run — exactly two starts, no loop', async () => {
+    const h = await harness({
+      script: [finished('completed')],
+      // The prior run ended when it hit its limit; only the executed run is ever active.
+      priorRuns: [priorRun({ outcome: 'limit', sessionRef: 'sess-0', endedAt: T0 - 500 })],
+    });
+    await h.runs.appendEvents(PRIOR_RUN, [text('earlier answer')]);
+    const error: TransportError = { code: 'spawn_failed', message: 'broken transport' };
+    const flaky = flakyStart(h.transport, 2, error);
+    h.transports.register(ACCOUNT, flaky.transport);
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'transport_error', error });
+    const requests = flaky.requests();
+    if (requests.length !== 2) throw new Error('the executor must stop after the single restart');
+    expect(requests[0]?.resume).toEqual({ sessionRef: 'sess-0' });
+    expect(requests[1]?.resume).toBeUndefined();
+    expect(requests[1]?.prompt).toContain('[text] earlier answer');
+    const record = await theRun(h.runs);
+    expect(record.outcome).toBe('failed');
+    expect(await h.runs.listActive()).toEqual([]);
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([
+      { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
+      { type: 'run_finished', at: T0, runId: record.id, outcome: 'failed' },
+    ]);
+  });
+
+  it('P-22: a start error without a resume reference fails immediately — never restarted', async () => {
+    const h = await harness({ script: [finished('completed')] });
+    h.transport.failStart({ code: 'spawn_failed', message: 'broken transport' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'transport_error', error: { code: 'spawn_failed', message: 'broken transport' } });
+    expect(h.transport.requests()).toHaveLength(1);
+    expect((await theRun(h.runs)).outcome).toBe('failed');
   });
 });

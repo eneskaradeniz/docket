@@ -5,4 +5,5 @@ export * from './routing';
 export * from './proposals';
 export * from './accounts';
 export * from './deploy-gate';
+export * from './quota-poll';
 export * from './remote-checks-gate';
