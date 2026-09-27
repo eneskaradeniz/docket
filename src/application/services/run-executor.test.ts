@@ -933,4 +933,46 @@ describe('executeRun', () => {
     // run_started / run_finished appends to the work order log never reach this hook.
     expect(notified).toEqual([record.id, record.id, record.id, record.id]);
   });
+
+  it('the run-finished path also notifies the workOrders.changed hook, after the append is visible', async () => {
+    const h = await harness({ script: [sessionStarted('sess-1'), finished('completed')] });
+    const calls: string[] = [];
+    const logAtChange: Promise<readonly string[]>[] = [];
+
+    const outcome = await executeRun(
+      h.deps,
+      permissionGate().permissions,
+      INPUT,
+      undefined,
+      (runId) => calls.push(`run ${runId}`),
+      () => {
+        calls.push('workOrders');
+        // A store re-queries the moment the change arrives, so the read that starts at delivery
+        // time must already see the run_finished append.
+        logAtChange.push(h.workOrders.events(WORK_ORDER).then((events) => events.map((event) => event.type)));
+      },
+    );
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const record = await theRun(h.runs);
+    // The per-event notifications keep their order and the work-order change lands exactly once,
+    // after the last of them; the run_started append stays silent on this channel.
+    expect(calls).toEqual([`run ${record.id}`, `run ${record.id}`, 'workOrders']);
+    const first = logAtChange[0];
+    if (first === undefined) throw new Error('workOrders.changed must have been delivered');
+    expect(await first).toEqual(['run_started', 'run_finished']);
+  });
+
+  it('a run that fails before any transport still notifies workOrders.changed — every run_finished append does', async () => {
+    const h = await harness({ withTransport: false });
+    let changed = 0;
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT, undefined, undefined, () => {
+      changed += 1;
+    });
+
+    expect(outcome.kind).toBe('transport_error');
+    expect(changed).toBe(1);
+    expect((await h.workOrders.events(WORK_ORDER)).map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+  });
 });

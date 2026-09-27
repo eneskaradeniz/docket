@@ -8,7 +8,9 @@ export type Query =
   | { readonly type: 'workspaces.list' }
   | { readonly type: 'cockpit' }
   | { readonly type: 'settings.accounts' }
-  | { readonly type: 'providers.discovered' };
+  | { readonly type: 'providers.discovered' }
+  | { readonly type: 'run.events'; readonly runId: string }
+  | { readonly type: 'permissions.open' };
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -104,4 +106,22 @@ export interface SettingsBindingView {
 export interface SettingsAccountsView {
   readonly accounts: readonly SettingsAccountView[];
   readonly bindings: readonly SettingsBindingView[];
+}
+
+// --- run.events ---------------------------------------------------------------------------------------
+
+/** The tail bound of `run.events`: a store re-queries on every `run.updated`, so an unbounded
+ *  reply would ship a long run's whole history per event. The pane renders the recent past. */
+export const RUN_EVENTS_TAIL_LIMIT = 500;
+
+// --- permissions.open ---------------------------------------------------------------------------------
+
+/** An ask still waiting for a human decision, as the feed surfaces it: the board's own row plus
+ *  the owning work order's title when the asking run still resolves to one (null when it does
+ *  not). */
+export interface OpenAskView {
+  readonly runId: string;
+  readonly askId: string;
+  readonly since: number;
+  readonly title: string | null;
 }

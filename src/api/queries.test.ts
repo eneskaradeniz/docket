@@ -20,12 +20,14 @@ import type {
 import { parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps, DiscoveredProvider, ProviderDiscovery, RunRecord } from '../application';
+import { createPermissionBoard } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
 import type { WorkspaceRegistryPort } from './api';
-import type { BoardView, CockpitView, SettingsAccountsView, WorkspaceListItem } from './queries';
+import type { BoardView, CockpitView, OpenAskView, SettingsAccountsView, WorkspaceListItem } from './queries';
+import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
   const parsed = parseSlug<B>(input);
@@ -799,5 +801,133 @@ describe('workspaces.list', () => {
     const h = createHarness();
 
     expect(await createApi(h.deps).query({ type: 'workspaces.list' })).toEqual({ ok: false, code: 'not_found' });
+  });
+});
+
+// --- run.events ----------------------------------------------------------------------------------------
+
+const WO_FEED = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB7');
+const RUN_FEED = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H31');
+const RUN_LONG = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H32');
+const RUN_GHOST = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H33');
+
+describe('run.events', () => {
+  it("returns the run's stored events in arrival order, newest last", async () => {
+    const h = createHarness();
+    await seedWorkOrder(h, WO_FEED, BOARD_FLOW, 'Feed me', 100);
+    const events: readonly AgentEvent[] = [
+      { type: 'session_started', at: 200, sessionRef: 'sess-1' },
+      { type: 'text', at: 300, delta: 'working' },
+      { type: 'tool_call', at: 400, id: 'tool-1', name: 'read', target: 'src/a.ts' },
+      { type: 'finished', at: 500, reason: 'completed' },
+    ];
+    await seedRun(h, activeRun(RUN_FEED, WO_FEED, PLAN, 200), events);
+
+    const view = (await createApi(h.deps).query({ type: 'run.events', runId: RUN_FEED })) as readonly AgentEvent[];
+
+    expect(view).toEqual(events);
+  });
+
+  it('bounds the tail: a run longer than the limit answers with only its newest events', async () => {
+    const h = createHarness();
+    await seedWorkOrder(h, WO_FEED, BOARD_FLOW, 'Feed me', 100);
+    const total = RUN_EVENTS_TAIL_LIMIT + 20;
+    const events: readonly AgentEvent[] = Array.from({ length: total }, (_, index) => ({
+      type: 'text' as const,
+      at: 200 + index,
+      delta: `line-${index}`,
+    }));
+    await seedRun(h, activeRun(RUN_LONG, WO_FEED, PLAN, 200), events);
+
+    const view = (await createApi(h.deps).query({ type: 'run.events', runId: RUN_LONG })) as readonly AgentEvent[];
+
+    expect(view.length).toBe(RUN_EVENTS_TAIL_LIMIT);
+    // The tail keeps arrival order (newest last) and drops the oldest overflow.
+    expect(view[0]).toEqual({ type: 'text', at: 200 + 20, delta: 'line-20' });
+    expect(view[view.length - 1]).toEqual({ type: 'text', at: 200 + total - 1, delta: `line-${total - 1}` });
+  });
+
+  it('returns not_found for a well-formed id that names no run', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'run.events', runId: '01ARZ3NDEKTSV4RRFFQ69G5FZZ' })).toEqual({
+      ok: false,
+      code: 'not_found',
+    });
+  });
+
+  it('returns invalid_id for an unparseable runId', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'run.events', runId: 'nope' })).toEqual({
+      ok: false,
+      code: 'invalid_id',
+    });
+  });
+});
+
+// --- permissions.open ----------------------------------------------------------------------------------
+
+const askEvent = (id: string, at: number, tool: string): Extract<AgentEvent, { readonly type: 'permission_ask' }> => ({
+  type: 'permission_ask',
+  at,
+  id,
+  tool,
+  options: ['allow', 'deny'],
+});
+
+describe('permissions.open', () => {
+  it("lists the board's open asks oldest first with the owning work order's title joined in", async () => {
+    const h = createHarness();
+    const board = createPermissionBoard();
+    await seedWorkOrder(h, WO_ASK, BOARD_FLOW, 'Waiting on a permission', 4_000);
+    await seedRun(h, activeRun(RUN_ASK, WO_ASK, PLAN, 4_000));
+    board.register(RUN_ASK);
+    void board.onAsk(RUN_ASK, askEvent('ask-1', 5_000, 'write'));
+    void board.onAsk(RUN_ASK, askEvent('ask-2', 5_500, 'shell'));
+
+    const view = (await createApi(h.deps, board).query({ type: 'permissions.open' })) as readonly OpenAskView[];
+
+    expect(view).toEqual([
+      { runId: RUN_ASK, askId: 'ask-1', since: 5_000, title: 'Waiting on a permission' },
+      { runId: RUN_ASK, askId: 'ask-2', since: 5_500, title: 'Waiting on a permission' },
+    ]);
+  });
+
+  it('keeps only what still waits: an answered ask and an ended run drop off the listing', async () => {
+    const h = createHarness();
+    const board = createPermissionBoard();
+    await seedWorkOrder(h, WO_ASK, BOARD_FLOW, 'Waiting on a permission', 4_000);
+    await seedRun(h, activeRun(RUN_ASK, WO_ASK, PLAN, 4_000));
+    await seedRun(h, activeRun(RUN_RUNNING, WO_ASK, PLAN, 4_500));
+    board.register(RUN_ASK);
+    board.register(RUN_RUNNING);
+    void board.onAsk(RUN_ASK, askEvent('ask-1', 5_000, 'write'));
+    void board.onAsk(RUN_RUNNING, askEvent('ask-2', 5_500, 'shell'));
+    const api = createApi(h.deps, board);
+
+    expect(board.answer('ask-1', 'deny')).toEqual({ ok: true, value: RUN_ASK });
+    board.unregister(RUN_RUNNING);
+
+    const view = (await api.query({ type: 'permissions.open' })) as readonly OpenAskView[];
+    expect(view).toEqual([]);
+  });
+
+  it('carries title null when the asking run resolves to no work order', async () => {
+    const h = createHarness();
+    const board = createPermissionBoard();
+    // The board holds the run, but no run record backs it, so no title can be attributed.
+    board.register(RUN_GHOST);
+    void board.onAsk(RUN_GHOST, askEvent('ask-1', 5_000, 'write'));
+
+    const view = (await createApi(h.deps, board).query({ type: 'permissions.open' })) as readonly OpenAskView[];
+
+    expect(view).toEqual([{ runId: RUN_GHOST, askId: 'ask-1', since: 5_000, title: null }]);
+  });
+
+  it('reports not_found without a board instead of throwing', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'permissions.open' })).toEqual({ ok: false, code: 'not_found' });
   });
 });

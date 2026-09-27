@@ -47,6 +47,7 @@ import type {
   AttentionItem,
   BoardView,
   CockpitView,
+  OpenAskView,
   Query,
   SettingsAccountsView,
   SettingsBindingScope,
@@ -55,6 +56,7 @@ import type {
   SettingsPoolView,
   WorkspaceListItem,
 } from './queries';
+import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 /** The push channel's events (U-12 of docs/v2/ui.md): coarse by design and never a payload — a
  *  store re-queries on receipt, so the channel survives every change of what the views show. */
@@ -68,10 +70,13 @@ export interface Api {
   subscribe(listener: (e: UiEvent) => void): () => void;
 }
 
-/** Composition's feed for run-originated changes: the root hands this to the run executor as its
- *  notify hook — the executor cannot know the api, so the api reaches it only through injection. */
+/** Composition's feed for run-originated changes: the root hands these to the run executor as its
+ *  notify hooks — the executor cannot know the api, so the api reaches it only through injection.
+ *  `workOrdersChanged` backs the executor's run-finished append to the work order log, the one
+ *  append no command ever observes. */
 export interface RunEventFeed {
   runUpdated(runId: string): void;
+  workOrdersChanged(): void;
 }
 
 /** Queries report failure exactly the way commands do, so every boundary result reads the same. */
@@ -103,14 +108,15 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
 /** The board is passed separately, like the executor's gate: it is in-process state, not a port.
- *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing.
- *  The discovery port is passed the same way: it is composed beside AppDeps at the root, and
- *  without it no provider can be reported, so `providers.discovered` answers not_found too. The
- *  workspace registry joins them: without it no workspace can be enumerated, so `workspaces.list`
- *  answers not_found as well. */
+ *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing
+ *  and `permissions.open` answers not_found instead of inventing an empty board. The discovery
+ *  port is passed the same way: it is composed beside AppDeps at the root, and without it no
+ *  provider can be reported, so `providers.discovered` answers not_found too. The workspace
+ *  registry joins them: without it no workspace can be enumerated, so `workspaces.list` answers
+ *  not_found as well. */
 export function createApi(
   deps: AppDeps,
-  board?: Pick<PermissionBoard, 'answer'>,
+  board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
   discovery?: ProviderDiscovery,
   registry?: WorkspaceRegistryPort,
 ): Api & RunEventFeed {
@@ -148,7 +154,7 @@ export function createApi(
       if (appended) emit({ type: 'workOrders.changed' });
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry),
+    query: (query) => runQuery(deps, query, discovery, registry, board),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -156,6 +162,7 @@ export function createApi(
       };
     },
     runUpdated: (runId) => emit({ type: 'run.updated', runId }),
+    workOrdersChanged: () => emit({ type: 'workOrders.changed' }),
   };
 }
 
@@ -369,6 +376,7 @@ const runQuery = async (
   query: Query,
   discovery: ProviderDiscovery | undefined,
   registry: WorkspaceRegistryPort | undefined,
+  board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -398,6 +406,27 @@ const runQuery = async (
 
     case 'providers.discovered':
       return discoveredProviders(discovery);
+
+    case 'run.events': {
+      const runId = ulidValue<'run'>(query.runId);
+      if (runId === undefined) return invalidId();
+      // The repo answers an empty stream for an unknown id too, so existence is checked first:
+      // a missing run is a failure, an eventless run is a legitimate empty tail.
+      if ((await deps.runs.get(runId)) === undefined) return { ok: false, code: 'not_found' };
+      // Arrival order is the fold order (newest last); the bound keeps the reply a tail.
+      return (await deps.runs.events(runId)).slice(-RUN_EVENTS_TAIL_LIMIT);
+    }
+
+    case 'permissions.open': {
+      if (board === undefined) return { ok: false, code: 'not_found' };
+      const asks: OpenAskView[] = [];
+      for (const ask of board.openAsks()) {
+        const run = await deps.runs.get(ask.runId);
+        const workOrder = run === undefined ? undefined : await deps.workOrders.get(run.workOrderId);
+        asks.push({ runId: ask.runId, askId: ask.askId, since: ask.since, title: workOrder?.title ?? null });
+      }
+      return asks;
+    }
   }
 };
 
