@@ -1,4 +1,4 @@
-// scenarios/providers.test.ts — the Phase 3 acceptance (docs/v2/providers.md → "Acceptance
+// infrastructure/scenarios/providers.test.ts — the Phase 3 acceptance (docs/v2/providers.md → "Acceptance
 // (P-24)"): the same work order runs to completion three times through the three real
 // transports — the sdk transport over a scripted SDK session, the app-server transport against
 // its checked-in fake server, and the acp transport against its checked-in fake agent. The
@@ -31,7 +31,7 @@ import {
   type WorkspaceSlug,
 } from '../../domain/index';
 
-import { createApi } from '../index';
+import { createApi } from '../../api/index';
 import type { AccountRecord, AgentTransport, AppDeps } from '../../application/index';
 import {
   dispatcherTick,
@@ -59,19 +59,19 @@ import {
   type FakeEvidenceChecker,
   type FakeTransportResolver,
 } from '../../application/ports/fakes/index';
-import { createSdkTransport, type QueryFn } from '../../infrastructure/providers/transports/sdk/transport';
-import { createAppServerTransport } from '../../infrastructure/providers/transports/app-server/index';
-import { createAcpTransport } from '../../infrastructure/providers/transports/acp/index';
-import type { ProviderDef } from '../../infrastructure/providers/defs/index';
+import { createSdkTransport, type QueryFn } from '../providers/index';
+import { createAppServerTransport } from '../providers/transports/app-server/index';
+import { createAcpTransport } from '../providers/transports/acp/index';
+import type { ProviderDef } from '../providers/defs/index';
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 // --- fixtures ---------------------------------------------------------------------------------------
 
 const APP_SERVER_FIXTURE = fileURLToPath(
-  new URL('../../infrastructure/providers/transports/app-server/fixtures/fake-app-server.cjs', import.meta.url),
+  new URL('../providers/transports/app-server/fixtures/fake-app-server.cjs', import.meta.url),
 );
 const ACP_AGENT_BIN = fileURLToPath(
-  new URL('../../infrastructure/providers/transports/acp/fake-agent.cjs', import.meta.url),
+  new URL('../providers/transports/acp/fake-agent.cjs', import.meta.url),
 );
 
 let root = '';
