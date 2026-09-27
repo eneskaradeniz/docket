@@ -9,8 +9,12 @@ export type Command =
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
   | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' }
   | { readonly type: 'permission.answer'; readonly runId: string; readonly askId: string; readonly decision: 'allow' | 'deny' }
-  | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string };
+  | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
+  | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string }
+  | { readonly type: 'account.remove'; readonly id: string }
+  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] };
 
 export type CommandResult =
   | { readonly ok: true; readonly id?: string }
-  | { readonly ok: false; readonly code: string };
+  /** `roles` rides only `binding_exists`: the roles whose bindings still reference the account. */
+  | { readonly ok: false; readonly code: string; readonly roles?: readonly string[] };

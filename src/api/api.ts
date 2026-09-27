@@ -2,10 +2,30 @@
 // every query onto one read model, all results plain JSON. Ids arrive here as strings and are
 // parsed once, at the edge, so nothing beyond this file ever sees an unvalidated id (A-21).
 // Phase 4 binds this same contract to Electron IPC.
-import type { Actor, FlowDef, Result, Slug, StageSlug, Ulid, WorkOrderId, WorkspaceSlug } from '../domain/index';
+import type {
+  AccountRoute,
+  Actor,
+  AuthMode,
+  FlowDef,
+  Meter,
+  Pool,
+  Result,
+  Slug,
+  StageSlug,
+  Ulid,
+  WorkOrderId,
+  WorkspaceSlug,
+} from '../domain/index';
 import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps, PermissionBoard } from '../application';
+import type {
+  AccountRecord,
+  AppDeps,
+  BindingScope,
+  DiscoveredProvider,
+  PermissionBoard,
+  ProviderDiscovery,
+} from '../application';
 import {
   approveAndDeploy,
   blockWorkOrder,
@@ -15,11 +35,24 @@ import {
   enqueueStage,
   getWorkOrder,
   openWorkOrder,
+  removeAccount,
+  saveAccount,
+  saveBinding,
   unblockWorkOrder,
 } from '../application';
 
 import type { Command, CommandResult } from './commands';
-import type { AttentionItem, BoardView, CockpitView, Query } from './queries';
+import type {
+  AttentionItem,
+  BoardView,
+  CockpitView,
+  Query,
+  SettingsAccountsView,
+  SettingsBindingScope,
+  SettingsBindingView,
+  SettingsMeterView,
+  SettingsPoolView,
+} from './queries';
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -48,11 +81,17 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
 /** The board is passed separately, like the executor's gate: it is in-process state, not a port.
- *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing. */
-export function createApi(deps: AppDeps, board?: Pick<PermissionBoard, 'answer'>): Api {
+ *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing.
+ *  The discovery port is passed the same way: it is composed beside AppDeps at the root, and
+ *  without it no provider can be reported, so `providers.discovered` answers not_found too. */
+export function createApi(
+  deps: AppDeps,
+  board?: Pick<PermissionBoard, 'answer'>,
+  discovery?: ProviderDiscovery,
+): Api {
   return {
     command: (actor, command) => runCommand(deps, actor, command, board),
-    query: (query) => runQuery(deps, query),
+    query: (query) => runQuery(deps, query, discovery),
   };
 }
 
@@ -190,10 +229,78 @@ const runCommand = async (
         ),
       );
     }
+
+    case 'account.save': {
+      const id = command.id === undefined ? undefined : ulidValue<'account'>(command.id);
+      if (id === undefined && command.id !== undefined) return invalidId();
+      // authMode is a closed set in the record but a plain string on the wire; an unknown value is
+      // rejected at the edge like a malformed id, because it must never reach a stored record.
+      const authMode = AUTH_MODES.find((mode) => mode === command.authMode);
+      if (authMode === undefined) return invalidId();
+
+      // The command owns only the editable surface; policy, caps and the secret ref belong to
+      // later surfaces and to the vault, so an update keeps whatever the store already holds.
+      const existing = id === undefined ? undefined : await deps.accounts.get(id);
+      const record: AccountRecord = {
+        id: id ?? deps.ids.next<'account'>(),
+        provider: command.provider,
+        label: command.label,
+        authMode,
+        plan: command.plan,
+        limitPolicy: existing?.limitPolicy ?? 'wait_resume',
+        caps: existing?.caps ?? [],
+        secretRef: existing?.secretRef,
+      };
+      const saved = await saveAccount(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts, secrets: deps.secrets },
+        { record, actor },
+      );
+      return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };
+    }
+
+    case 'account.remove': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      const removed = await removeAccount(
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          accounts: deps.accounts,
+          secrets: deps.secrets,
+          bindings: deps.bindings,
+        },
+        { id, actor },
+      );
+      if (removed.ok) return { ok: true };
+      // binding_exists carries the referencing roles so the surface can name what to rebind.
+      return typeof removed.error === 'string'
+        ? { ok: false, code: removed.error }
+        : { ok: false, code: removed.error.code, roles: removed.error.roles };
+    }
+
+    case 'binding.save': {
+      const role = slugValue<'role'>(command.role);
+      if (role === undefined) return invalidId();
+      const accounts: AccountRoute[] = [];
+      for (const entry of command.accounts) {
+        const accountId = ulidValue<'account'>(entry.accountId);
+        if (accountId === undefined) return invalidId();
+        accounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
+      }
+      // The settings command carries no scope: it edits the machine-global baseline that every
+      // workspace inherits unless a more specific level overrides it.
+      return commandOf(
+        await saveBinding(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, bindings: deps.bindings },
+          { scope: { level: 'global' }, binding: { role, accounts }, actor },
+        ),
+      );
+    }
   }
 };
 
-const runQuery = async (deps: AppDeps, query: Query): Promise<unknown> => {
+const runQuery = async (deps: AppDeps, query: Query, discovery: ProviderDiscovery | undefined): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
@@ -213,7 +320,89 @@ const runQuery = async (deps: AppDeps, query: Query): Promise<unknown> => {
       if (workspace === undefined) return invalidId();
       return boardView(deps, workspace);
     }
+
+    case 'settings.accounts':
+      return settingsAccountsView(deps);
+
+    case 'providers.discovered':
+      return discoveredProviders(discovery);
   }
+};
+
+/** The closed auth-mode set of the record; the wire type stays a plain string. */
+const AUTH_MODES: readonly AuthMode[] = ['subscription', 'api_key', 'cloud', 'byok'];
+
+/** A discovery pass kicks on every query; results arrive per provider and the promise of the pass
+ *  ending is the promise of the answer. A provider's failure is its own null fields, never the
+ *  query's, so one slow or broken CLI cannot blank the settings screen. */
+const discoveredProviders = async (
+  discovery: ProviderDiscovery | undefined,
+): Promise<readonly DiscoveredProvider[] | QueryFailure> => {
+  if (discovery === undefined) return { ok: false, code: 'not_found' };
+  const collected: DiscoveredProvider[] = [];
+  await discovery.discover((result) => {
+    collected.push(result);
+  });
+  return collected;
+};
+
+const poolView = (pool: Pool): SettingsPoolView => ({
+  id: pool.id,
+  label: pool.label,
+  kind: pool.kind,
+  appliesTo: pool.appliesTo,
+});
+
+const meterView = (meter: Meter): SettingsMeterView => ({
+  id: meter.id,
+  poolId: meter.poolId,
+  label: meter.label ?? null,
+  cadence: meter.cadence,
+  durationMs: meter.durationMs ?? null,
+  unit: meter.unit,
+  used: meter.used ?? null,
+  limit: meter.limit ?? null,
+  remaining: meter.remaining ?? null,
+  resetsAt: meter.resetsAt ?? null,
+  resetPrecision: meter.resetPrecision,
+  observedAt: meter.observedAt,
+  source: meter.source,
+  staleAfterMs: meter.staleAfterMs ?? null,
+});
+
+const bindingScopeView = (scope: BindingScope): SettingsBindingScope =>
+  scope.level === 'global'
+    ? { level: 'global' }
+    : scope.level === 'workspace'
+      ? { level: 'workspace', workspace: scope.workspace }
+      : { level: 'workOrder', workOrderId: scope.workOrderId };
+
+const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
+  const records = await deps.accounts.list();
+  const pools = await deps.accounts.pools();
+  const meters = await deps.accounts.meters();
+
+  const accounts = records.map((record) => {
+    const ownPools = pools.filter((pool) => pool.accountId === record.id);
+    const ownPoolIds = new Set(ownPools.map((pool) => pool.id));
+    return {
+      id: record.id,
+      provider: record.provider,
+      label: record.label,
+      authMode: record.authMode,
+      plan: record.plan ?? null,
+      pools: ownPools.map(poolView),
+      meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map(meterView),
+    };
+  });
+
+  const bindings: readonly SettingsBindingView[] = (await deps.bindings.listAll()).map(({ scope, binding }) => ({
+    scope: bindingScopeView(scope),
+    role: binding.role,
+    accounts: binding.accounts.map((route) => ({ accountId: route.accountId, model: route.model ?? null })),
+  }));
+
+  return { accounts, bindings };
 };
 
 /** Attention kinds in the order the cockpit shows them (A-22): what a human can answer fastest first. */

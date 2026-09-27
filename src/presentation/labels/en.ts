@@ -23,6 +23,7 @@ export const EN: LabelBundle = {
   'error.stale': 'The proposal is stale; refresh the change first.',
   'error.self_approval': 'You cannot approve your own proposal.',
   'error.invalid_after': 'The proposal’s valid-after time is invalid.',
+  'error.binding_exists': 'The account is still referenced by a role binding; update the binding first.',
   'error.not_a_deploy_gate': 'This gate is not a deploy gate.',
   'error.no_approval': 'Only a user can approve a deployment.',
   'error.confirmation_mismatch': 'The typed environment confirmation does not match; type the environment name exactly.',
@@ -105,4 +106,7 @@ export const EN: LabelBundle = {
   'success.proposal.decide': 'Proposal decision recorded.',
   'success.permission.answer': 'Permission answer recorded.',
   'success.deploy.approve': 'Deploy approved and executed.',
+  'success.account.save': 'Account saved.',
+  'success.account.remove': 'Account removed.',
+  'success.binding.save': 'Role binding saved.',
 };

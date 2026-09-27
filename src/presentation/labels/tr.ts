@@ -22,6 +22,7 @@ export const TR: LabelBundle = {
   'error.stale': 'Teklif güncel değil; önce değişikliği yenileyin.',
   'error.self_approval': 'Kendi teklifinizi onaylayamazsınız.',
   'error.invalid_after': 'Teklifin geçerlilik zamanı geçersiz.',
+  'error.binding_exists': 'Hesap bir rol bağlantısında kullanılıyor; önce bağlantıyı güncelleyin.',
   'error.not_a_deploy_gate': 'Bu kapı bir dağıtım kapısı değil.',
   'error.no_approval': 'Dağıtımı yalnızca kullanıcı onaylayabilir.',
   'error.confirmation_mismatch': 'Ortam adı doğrulaması eşleşmiyor; ortam adını aynen yazın.',
@@ -104,4 +105,7 @@ export const TR: LabelBundle = {
   'success.proposal.decide': 'Teklif kararı kaydedildi.',
   'success.permission.answer': 'İzin yanıtı kaydedildi.',
   'success.deploy.approve': 'Dağıtım onaylandı ve çalıştırıldı.',
+  'success.account.save': 'Hesap kaydedildi.',
+  'success.account.remove': 'Hesap kaldırıldı.',
+  'success.binding.save': 'Rol bağlantısı kaydedildi.',
 };

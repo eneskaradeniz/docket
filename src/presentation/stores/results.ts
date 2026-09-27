@@ -37,6 +37,7 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'stale',
   'self_approval',
   'invalid_after',
+  'binding_exists',
   'not_a_deploy_gate',
   'no_approval',
   'confirmation_mismatch',
@@ -60,6 +61,9 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'proposal.decide': 'success.proposal.decide',
   'permission.answer': 'success.permission.answer',
   'deploy.approve': 'success.deploy.approve',
+  'account.save': 'success.account.save',
+  'account.remove': 'success.account.remove',
+  'binding.save': 'success.binding.save',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;
