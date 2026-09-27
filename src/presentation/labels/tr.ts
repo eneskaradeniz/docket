@@ -202,6 +202,8 @@ export const TR: LabelBundle = {
   'discovery.loggedIn': 'giriş yapılmış',
   'discovery.loginRequired': 'giriş gerekli',
   'discovery.loginUnknown': 'giriş durumu bilinmiyor',
+  'errorBoundary.title': 'Uygulama beklenmeyen bir hatayla karşılaşt.',
+  'errorBoundary.reload': 'Yeniden yükle',
   'success.account.save': 'Hesap kaydedildi.',
   'success.account.remove': 'Hesap kaldırıldı.',
   'success.binding.save': 'Rol bağlantısı kaydedildi.',

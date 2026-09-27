@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import type { Api } from '../api/index';
 import type { WorkspaceListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
+import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
@@ -105,15 +106,17 @@ if (mount !== null) {
 
   createRoot(mount).render(
     <React.StrictMode>
-      <App
-        localeStore={locale}
-        shell={shell}
-        cockpit={cockpit}
-        board={board}
-        detail={detail}
-        settings={settings}
-        wizard={wizard}
-      />
+      <ErrorBoundary locale={locale.current}>
+        <App
+          localeStore={locale}
+          shell={shell}
+          cockpit={cockpit}
+          board={board}
+          detail={detail}
+          settings={settings}
+          wizard={wizard}
+        />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 }

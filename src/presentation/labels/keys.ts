@@ -221,6 +221,9 @@ export const LABEL_KEYS = [
   'discovery.loggedIn',
   'discovery.loginRequired',
   'discovery.loginUnknown',
+  // Renderer error boundary: the root crash screen's title and its one recovery action.
+  'errorBoundary.title',
+  'errorBoundary.reload',
   // Success confirmations, one per command type (U-8).
   'success.workOrder.open',
   'success.workOrder.block',
