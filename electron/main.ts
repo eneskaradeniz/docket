@@ -322,7 +322,9 @@ const startApp = async (): Promise<void> => {
   deps = nodeDeps;
 
   const board = createPermissionBoard();
-  const api = createApi(nodeDeps, board, discovery);
+  // The workspace registry rides beside deps (NodeDeps exposes it); the api reads it for
+  // `workspaces.list`, the enumeration the switcher and the wizard's re-appear guard live on.
+  const api = createApi(nodeDeps, board, discovery, node.workspaces);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).

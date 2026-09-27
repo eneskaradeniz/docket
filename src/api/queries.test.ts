@@ -24,7 +24,8 @@ import type { FakeDefinitionStore } from '../application/ports/fakes';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
-import type { BoardView, CockpitView, SettingsAccountsView } from './queries';
+import type { WorkspaceRegistryPort } from './api';
+import type { BoardView, CockpitView, SettingsAccountsView, WorkspaceListItem } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
   const parsed = parseSlug<B>(input);
@@ -753,5 +754,50 @@ describe('providers.discovered', () => {
     const h = createHarness();
 
     expect(await createApi(h.deps).query({ type: 'providers.discovered' })).toEqual({ ok: false, code: 'not_found' });
+  });
+});
+
+// --- workspaces.list ----------------------------------------------------------------------------------
+
+/** The registry's read side as the tests drive it: rows in slug order, exactly the machine
+ *  registry's reply. */
+const createFakeRegistry = (
+  rows: readonly { readonly slug: WorkspaceSlug; readonly path: string }[],
+): WorkspaceRegistryPort => ({
+  list: async () => rows,
+});
+
+describe('workspaces.list', () => {
+  it('lists every workspace the machine knows, read straight off the registry', async () => {
+    const h = createHarness();
+    const registry = createFakeRegistry([
+      { slug: WORKSPACE, path: '/repos/acme' },
+      { slug: BROKEN_WORKSPACE, path: '/repos/bozuk' },
+    ]);
+
+    const view = (await createApi(h.deps, undefined, undefined, registry).query({
+      type: 'workspaces.list',
+    })) as WorkspaceListItem[];
+
+    expect(view).toEqual([
+      { id: 'acme', path: '/repos/acme' },
+      { id: 'bozuk', path: '/repos/bozuk' },
+    ]);
+  });
+
+  it('returns an empty list when the machine knows no workspace', async () => {
+    const h = createHarness();
+
+    const view = (await createApi(h.deps, undefined, undefined, createFakeRegistry([])).query({
+      type: 'workspaces.list',
+    })) as WorkspaceListItem[];
+
+    expect(view).toEqual([]);
+  });
+
+  it('reports not_found without a registry port instead of throwing', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'workspaces.list' })).toEqual({ ok: false, code: 'not_found' });
   });
 });

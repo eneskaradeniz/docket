@@ -6,7 +6,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
-import type { CockpitView } from '../api/queries';
+import type { WorkspaceListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
 import { ShellScreen } from './screens/shell';
 import { createBoardStore } from './stores/board';
@@ -39,32 +39,24 @@ export const bridge = (): DocketBridge => {
 /** Every screen command travels as the machine's single local user. */
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
-/** The workspace switcher's entries. No api query enumerates workspaces (the same gap the wizard
- *  store's injected existence check hit), so until one lands the listing projects the distinct
- *  workspaces the cockpit reply already names — real data, no new api surface, and the injection
- *  point swaps to the real enumeration without touching the shell. */
+/** The workspace switcher's entries: every workspace the machine knows, read off `workspaces.list`.
+ *  The labels are the slugs — the registry holds no display copy. A failed read empties the
+ *  listing the same way the cockpit projection did; the shell's own load failure keeps whatever it
+ *  showed before. */
 const workspaceEntries = (api: DocketBridge) => async (): Promise<readonly ShellWorkspace[]> => {
-  const view: unknown = await api.query({ type: 'cockpit' });
-  if (isQueryFailure(view)) return [];
-  const named = new Map<string, ShellWorkspace>();
-  for (const item of (view as CockpitView).attention) {
-    if (!named.has(item.workspace)) named.set(item.workspace, { id: item.workspace, label: item.workspace });
-  }
-  return [...named.values()];
+  const reply: unknown = await api.query({ type: 'workspaces.list' });
+  if (isQueryFailure(reply)) return [];
+  return (reply as readonly WorkspaceListItem[]).map((row) => ({ id: row.id, label: row.id }));
 };
 
-/** The wizard's workspace-existence check answers only from what the bridge can know: the cockpit
- *  reply names workspaces solely through attention items and running runs, so a workspace whose
- *  work orders are all calm is invisible and the check answers false — the wizard may re-offer
- *  after a relaunch. Unknown and empty both answer false: an unverifiable existence must never
- *  suppress the first-run setup (fail-closed), and no command creates a workspace yet, so the
- *  machine's dismissal holds only until the next open. Needs an api read that enumerates
- *  workspaces; the injection point swaps without touching the wizard store. */
+/** The wizard's workspace-existence check: `workspaces.list` is the machine's registry, so any
+ *  known workspace counts — including one whose work orders are all calm — and a dismissed wizard
+ *  stays gone across relaunches. A failed read still answers false: an unverifiable existence must
+ *  never suppress the first-run setup (fail-closed). */
 const workspaceExists = (api: DocketBridge) => async (): Promise<boolean> => {
-  const view: unknown = await api.query({ type: 'cockpit' });
-  if (isQueryFailure(view)) return false;
-  const cockpit = view as CockpitView;
-  return cockpit.attention.length > 0 || cockpit.running.length > 0;
+  const reply: unknown = await api.query({ type: 'workspaces.list' });
+  if (isQueryFailure(reply)) return false;
+  return (reply as readonly WorkspaceListItem[]).length > 0;
 };
 
 /** The wizard's source probe rides the board read, the one read that loads definitions: a

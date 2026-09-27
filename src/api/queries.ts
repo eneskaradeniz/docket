@@ -5,6 +5,7 @@ import type { ModelMatcher } from '../domain/index';
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
   | { readonly type: 'workspace.board'; readonly workspace: string }
+  | { readonly type: 'workspaces.list' }
   | { readonly type: 'cockpit' }
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' };
@@ -39,6 +40,16 @@ export interface BoardView {
   readonly flow: string;
   readonly columns: readonly BoardColumn[];
   readonly done: readonly { readonly id: string; readonly title: string }[];
+}
+
+// --- workspaces.list --------------------------------------------------------------------------------
+
+/** A workspace this machine knows: the registry's row with the slug as a plain string id. `path`
+ *  is the checkout root the registry holds — the fact that makes the row machine-local rather than
+ *  merely a workspace some work order once named. */
+export interface WorkspaceListItem {
+  readonly id: string;
+  readonly path: string;
 }
 
 // --- settings.accounts (U-13) -----------------------------------------------------------------------

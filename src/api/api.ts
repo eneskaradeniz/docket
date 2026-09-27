@@ -53,6 +53,7 @@ import type {
   SettingsBindingView,
   SettingsMeterView,
   SettingsPoolView,
+  WorkspaceListItem,
 } from './queries';
 
 /** The push channel's events (U-12 of docs/v2/ui.md): coarse by design and never a payload — a
@@ -76,6 +77,13 @@ export interface RunEventFeed {
 /** Queries report failure exactly the way commands do, so every boundary result reads the same. */
 type QueryFailure = Extract<CommandResult, { readonly ok: false }>;
 
+/** The workspace registry's read side: the workspaces known to this machine. The registry is
+ *  composed beside AppDeps (the composition root holds it next to deps), like the board and the
+ *  discovery port, and the api sees only this structural slice of it. */
+export interface WorkspaceRegistryPort {
+  list(): Promise<readonly { readonly slug: WorkspaceSlug; readonly path: string }[]>;
+}
+
 /** A fresh literal every time: results are the caller's data, never shared module state. */
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
 
@@ -97,11 +105,14 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
 /** The board is passed separately, like the executor's gate: it is in-process state, not a port.
  *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing.
  *  The discovery port is passed the same way: it is composed beside AppDeps at the root, and
- *  without it no provider can be reported, so `providers.discovered` answers not_found too. */
+ *  without it no provider can be reported, so `providers.discovered` answers not_found too. The
+ *  workspace registry joins them: without it no workspace can be enumerated, so `workspaces.list`
+ *  answers not_found as well. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer'>,
   discovery?: ProviderDiscovery,
+  registry?: WorkspaceRegistryPort,
 ): Api & RunEventFeed {
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
@@ -137,7 +148,7 @@ export function createApi(
       if (appended) emit({ type: 'workOrders.changed' });
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery),
+    query: (query) => runQuery(deps, query, discovery, registry),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -353,7 +364,12 @@ const runCommand = async (
   }
 };
 
-const runQuery = async (deps: AppDeps, query: Query, discovery: ProviderDiscovery | undefined): Promise<unknown> => {
+const runQuery = async (
+  deps: AppDeps,
+  query: Query,
+  discovery: ProviderDiscovery | undefined,
+  registry: WorkspaceRegistryPort | undefined,
+): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
       const id = ulidValue<'work-order'>(query.id);
@@ -373,6 +389,9 @@ const runQuery = async (deps: AppDeps, query: Query, discovery: ProviderDiscover
       if (workspace === undefined) return invalidId();
       return boardView(deps, workspace);
     }
+
+    case 'workspaces.list':
+      return workspaceList(registry);
 
     case 'settings.accounts':
       return settingsAccountsView(deps);
@@ -397,6 +416,17 @@ const discoveredProviders = async (
     collected.push(result);
   });
   return collected;
+};
+
+/** The machine's known workspaces, read straight off the registry: the rows are already plain
+ *  JSON, only the branded slug travels as its string. No registry, no enumeration — the query
+ *  answers not_found instead of inventing an empty machine. */
+const workspaceList = async (
+  registry: WorkspaceRegistryPort | undefined,
+): Promise<readonly WorkspaceListItem[] | QueryFailure> => {
+  if (registry === undefined) return { ok: false, code: 'not_found' };
+  const rows = await registry.list();
+  return rows.map((row) => ({ id: row.slug, path: row.path }));
 };
 
 const poolView = (pool: Pool): SettingsPoolView => ({
