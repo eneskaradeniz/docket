@@ -44,6 +44,7 @@ const AGENT: Actor = {
 
 const WORKSPACE = 'acme';
 const ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAZ');
+const ACCOUNT_OTHER = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB8');
 const PROPOSAL = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
 const PROPOSAL_OTHER = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD2');
 const RUN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FE2');
@@ -721,6 +722,172 @@ describe('createApi', () => {
           commit: COMMIT,
         }),
       ).toEqual({ ok: false, code: 'no_repo' });
+    });
+
+    it('U-13: account.save creates an account with a fresh id, audited as account.saved', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'pro',
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.id === undefined) throw new Error('account.save must return an id');
+      expect(await h.deps.accounts.get(ulidOf<'account'>(result.id))).toEqual({
+        id: result.id,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'pro',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: result.id } });
+    });
+
+    it('U-13: account.save with an id updates the editable fields and keeps the stored policy, caps and secret ref', async () => {
+      const h = createHarness();
+      const secretRef = `account/${ACCOUNT}/api-key`;
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'starter',
+        limitPolicy: 'ask',
+        secretRef,
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      await h.deps.secrets.put(secretRef, 'sk-keep-me');
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      // The command owns only the editable surface; the rest of the record survives verbatim.
+      expect(await h.deps.accounts.get(ACCOUNT)).toEqual({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+        plan: undefined,
+        limitPolicy: 'ask',
+        secretRef,
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      expect(await h.deps.secrets.get(secretRef)).toBe('sk-keep-me');
+    });
+
+    it('U-13: an unknown authMode is rejected at the boundary and nothing is written', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const save = vi.spyOn(h.deps.accounts, 'save');
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'password',
+      });
+
+      expect(result).toEqual({ ok: false, code: 'invalid_id' });
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('U-13: account.remove removes an unreferenced account and its vault entry', async () => {
+      const h = createHarness();
+      const secretRef = `account/${ACCOUNT}/api-key`;
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        limitPolicy: 'wait_resume',
+        secretRef,
+        caps: [],
+      });
+      await h.deps.secrets.put(secretRef, 'sk-remove-me');
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.remove', id: ACCOUNT });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toBeUndefined();
+      expect(await h.deps.secrets.get(secretRef)).toBeUndefined();
+    });
+
+    it('U-13: account.remove of a referenced account fails with binding_exists and the referencing roles', async () => {
+      const h = createHarness();
+      await seedRouting(h); // a global worker binding to ACCOUNT
+      await h.deps.bindings.save(
+        { level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }, { accountId: ACCOUNT_OTHER }] },
+      );
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.remove', id: ACCOUNT });
+
+      expect(result).toEqual({ ok: false, code: 'binding_exists', roles: ['worker', 'reviewer'] });
+      expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    });
+
+    it('U-13: binding.save maps onto saveBinding at the global scope; an empty chain reports empty_chain', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'binding.save',
+        role: 'worker',
+        accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
+      });
+
+      expect(result).toEqual({ ok: true });
+      const role = slugOf<'role'>('worker');
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
+      });
+      // The settings surface edits the machine-global baseline; no workspace binding appears.
+      expect(await h.deps.bindings.get({ level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, role)).toBeUndefined();
+
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts: [] })).toEqual({
+        ok: false,
+        code: 'empty_chain',
+      });
+    });
+
+    it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const spies = [
+        vi.spyOn(h.deps.accounts, 'get'),
+        vi.spyOn(h.deps.accounts, 'save'),
+        vi.spyOn(h.deps.bindings, 'save'),
+        vi.spyOn(h.deps.log, 'append'),
+      ];
+
+      const commands: readonly Command[] = [
+        { type: 'account.save', id: 'not-a-ulid', provider: 'acme-prov', label: 'Main', authMode: 'api_key' },
+        { type: 'account.remove', id: 'not-a-ulid' },
+        { type: 'binding.save', role: 'Not A Role', accounts: [{ accountId: ACCOUNT }] },
+        { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'nope' }, { accountId: ACCOUNT }] },
+      ];
+      for (const command of commands) {
+        expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
+      }
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
   });
 });

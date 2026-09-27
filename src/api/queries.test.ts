@@ -19,11 +19,11 @@ import type {
 } from '../domain/index';
 import { parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps, RunRecord } from '../application';
+import type { AppDeps, DiscoveredProvider, ProviderDiscovery, RunRecord } from '../application';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
-import type { BoardView, CockpitView } from './queries';
+import type { BoardView, CockpitView, SettingsAccountsView } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
   const parsed = parseSlug<B>(input);
@@ -431,5 +431,239 @@ describe('workOrder.detail', () => {
     const result = await createApi(h.deps).query({ type: 'workOrder.detail', id: 'nope' });
 
     expect(result).toEqual({ ok: false, code: 'invalid_id' });
+  });
+});
+
+// --- settings.accounts and providers.discovered (U-13) ----------------------------------------------
+
+const ACCOUNT_OTHER = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB8');
+const POOL = ulidOf<'pool'>('01ARZ3NDEKTSV4RRFFQ69G5FC1');
+const METER_WINDOW = ulidOf<'meter'>('01ARZ3NDEKTSV4RRFFQ69G5FC2');
+const METER_USD = ulidOf<'meter'>('01ARZ3NDEKTSV4RRFFQ69G5FC3');
+
+/** Everything the settings surface lists: one full account, one bare account, bindings per level. */
+const seedSettingsScenario = async (h: Harness): Promise<void> => {
+  await h.deps.accounts.save({
+    id: ACCOUNT,
+    provider: 'acme-prov',
+    label: 'Main',
+    authMode: 'subscription',
+    plan: 'pro',
+    limitPolicy: 'wait_resume',
+    caps: [],
+  });
+  await h.deps.accounts.save({
+    id: ACCOUNT_OTHER,
+    provider: 'beta-prov',
+    label: 'Spare',
+    authMode: 'api_key',
+    limitPolicy: 'ask',
+    caps: [],
+  });
+  await h.deps.accounts.savePools(ACCOUNT, [
+    { id: POOL, accountId: ACCOUNT, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' },
+  ]);
+  await h.deps.accounts.saveMeter({
+    id: METER_WINDOW,
+    poolId: POOL,
+    label: 'Prompts',
+    cadence: 'rolling_from_first_use',
+    durationMs: 604_800_000,
+    unit: 'prompts',
+    used: 40,
+    limit: 100,
+    remaining: 60,
+    resetsAt: 9_000,
+    resetPrecision: 'exact',
+    observedAt: 8_000,
+    source: 'polled',
+  });
+  // The bare meter pins the null-normalisation: every absent optional reads null, not undefined.
+  await h.deps.accounts.saveMeter({
+    id: METER_USD,
+    poolId: POOL,
+    cadence: 'none',
+    unit: 'usd',
+    resetPrecision: 'unknown',
+    observedAt: 8_500,
+    source: 'pushed',
+  });
+  await h.deps.bindings.save(
+    { level: 'global' },
+    { role: slugOf<'role'>('worker'), accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
+  );
+  await h.deps.bindings.save(
+    { level: 'workspace', workspace: WORKSPACE },
+    { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT_OTHER }, { accountId: ACCOUNT }] },
+  );
+  await h.deps.bindings.save(
+    { level: 'workOrder', workOrderId: WO_AWAIT_EARLY },
+    { role: slugOf<'role'>('worker'), accounts: [{ accountId: ACCOUNT_OTHER }] },
+  );
+};
+
+describe('settings.accounts', () => {
+  it('U-13: returns every account with its pools and meters plus the per-role binding chains', async () => {
+    const h = createHarness();
+    await seedSettingsScenario(h);
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view.accounts).toEqual([
+      {
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        plan: 'pro',
+        pools: [{ id: POOL, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
+        meters: [
+          {
+            id: METER_WINDOW,
+            poolId: POOL,
+            label: 'Prompts',
+            cadence: 'rolling_from_first_use',
+            durationMs: 604_800_000,
+            unit: 'prompts',
+            used: 40,
+            limit: 100,
+            remaining: 60,
+            resetsAt: 9_000,
+            resetPrecision: 'exact',
+            observedAt: 8_000,
+            source: 'polled',
+            staleAfterMs: null,
+          },
+          {
+            id: METER_USD,
+            poolId: POOL,
+            label: null,
+            cadence: 'none',
+            durationMs: null,
+            unit: 'usd',
+            used: null,
+            limit: null,
+            remaining: null,
+            resetsAt: null,
+            resetPrecision: 'unknown',
+            observedAt: 8_500,
+            source: 'pushed',
+            staleAfterMs: null,
+          },
+        ],
+      },
+      {
+        id: ACCOUNT_OTHER,
+        provider: 'beta-prov',
+        label: 'Spare',
+        authMode: 'api_key',
+        plan: null,
+        pools: [],
+        meters: [],
+      },
+    ]);
+    expect(view.bindings).toEqual([
+      { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
+      {
+        scope: { level: 'workspace', workspace: WORKSPACE },
+        role: 'reviewer',
+        accounts: [
+          { accountId: ACCOUNT_OTHER, model: null },
+          { accountId: ACCOUNT, model: null },
+        ],
+      },
+      {
+        scope: { level: 'workOrder', workOrderId: WO_AWAIT_EARLY },
+        role: 'worker',
+        accounts: [{ accountId: ACCOUNT_OTHER, model: null }],
+      },
+    ]);
+  });
+
+  it('U-13: an empty store yields empty account and binding lists', async () => {
+    const h = createHarness();
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view).toEqual({ accounts: [], bindings: [] });
+  });
+});
+
+/** A discovery pass the test drives by hand: results are held back until the pass is ended. */
+const createScriptedDiscovery = (
+  results: readonly DiscoveredProvider[],
+): { readonly discovery: ProviderDiscovery; readonly passes: () => number; readonly endPass: () => void } => {
+  let passes = 0;
+  let endPass: () => void = () => {};
+  const discovery: ProviderDiscovery = {
+    discover: (onResult) =>
+      new Promise<void>((resolve) => {
+        passes += 1;
+        endPass = () => {
+          for (const result of results) onResult(result);
+          resolve();
+        };
+      }),
+  };
+  return { discovery, passes: () => passes, endPass: () => endPass() };
+};
+
+const drainMicrotasks = async (): Promise<void> => {
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+};
+
+describe('providers.discovered', () => {
+  it('U-13: kicks one pass per query and resolves only when the pass ends', async () => {
+    const h = createHarness();
+    const script = createScriptedDiscovery([
+      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
+    ]);
+    const api = createApi(h.deps, undefined, script.discovery);
+
+    const pending = api.query({ type: 'providers.discovered' });
+    let settled: boolean = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await drainMicrotasks();
+
+    // The pass is still running: no result is reported before it ends.
+    expect(settled).toBe(false);
+    expect(script.passes()).toBe(1);
+
+    script.endPass();
+    expect(await pending).toEqual([
+      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
+    ]);
+    // One query, one pass: answering does not kick another.
+    expect(script.passes()).toBe(1);
+  });
+
+  it('U-13: per-provider failures are null fields in the rows, not query failures', async () => {
+    const h = createHarness();
+    const script = createScriptedDiscovery([
+      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
+      { defId: 'beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+    ]);
+    const api = createApi(h.deps, undefined, script.discovery);
+
+    const first = api.query({ type: 'providers.discovered' });
+    script.endPass();
+    expect(await first).toEqual([
+      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
+      { defId: 'beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+    ]);
+
+    // Every query kicks a fresh pass.
+    const second = api.query({ type: 'providers.discovered' });
+    script.endPass();
+    await second;
+    expect(script.passes()).toBe(2);
+  });
+
+  it('U-13: without a discovery port the query reports not_found instead of throwing', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'providers.discovered' })).toEqual({ ok: false, code: 'not_found' });
   });
 });
