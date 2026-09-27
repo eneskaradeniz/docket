@@ -54,7 +54,8 @@ src/
     system/        clock · ulid · workspace-paths
     providers/     discovery · transports/{sdk, stream-json, app-server, acp} · defs/ · quota-probes/
     storage/       sqlite/ (one file per repository) · definitions-yaml/ · keychain/
-    vcs/           git · worktrees · evidence · forge
+    vcs/           git · worktrees · evidence
+    forge/         github (gh CLI Forge adapter)
     gates/         secret-patterns · secret-scanner · command-runner
     pages/         mcp-server · page-store
     compose/       create-node-deps (everything except Electron objects)

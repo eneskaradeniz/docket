@@ -42,7 +42,8 @@ Each module has an `index.ts`; other modules import it only through that file.
 | `storage/definitions-yaml/` | `targets.ts` · `store.ts` | `system` |
 | `vcs/` | `git.ts` · `worktrees.ts` · `evidence.ts` | `system` |
 | `gates/` | `secret-patterns.ts` · `secret-scanner.ts` · `command-runner.ts` | `system`, `vcs` |
-| `providers/` | `transports/sdk/{map-message.ts, transport.ts}` | `system` |
+| `providers/` | `defs/` · `discovery/` · `launch/` · `quota/` · `transports/{sdk, stream-json, app-server, acp}/` | `system` |
+| `forge/` | `github.ts` · `index.ts` | `system` |
 | `compose/` | `create-node-deps.ts` | every module above |
 | `scenarios/` | `*.test.ts` only | every module above |
 

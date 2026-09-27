@@ -40,6 +40,15 @@ interface ProviderDef {
   capabilities: ProviderCapabilities;           // declared; refined by probes at discovery
   installHint: { url: string };
 }
+
+`buildLaunch` receives a `LaunchInput`:
+
+```ts
+interface LaunchInput {
+  readonly prompt: string;                        // travels via stdin/envelope, never argv
+  readonly configDir: string;                     // the run-scoped config dir (launch module)
+  readonly resume?: { readonly sessionRef: string };
+}
 ```
 ```
 
@@ -54,7 +63,8 @@ interface ProviderDef {
 
 ## Launch rules
 
-1. **Prompt via stdin or a file, never argv** (argv limits break long prompts).
+1. **Prompt via stdin or a file, never argv** (argv limits break long prompts). The app-server and acp
+   transports carry the prompt inside their protocol envelope — still never argv.
 2. **Per-run isolated configuration.** MCP servers, skills and hooks for the run are written to a
    run-scoped directory and passed with the CLI's own mechanism (e.g. a config-dir environment
    variable, `--mcp-config`, `-c mcp_servers.*`, ACP `session/new.mcpServers`). The user's own
@@ -216,8 +226,9 @@ export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | u
 
 - **P-18** `pollQuota(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, probes, input:
   { accountId })` resolves the account's provider, polls, reconciles readings with the stored pools
-  (same pool label + meter duration reuses ids), persists via `savePools`/`saveMeter`, and returns the
-  saved meters. Every failure path is a `Result` error; the use case never throws.
+  (a reading reuses stored ids when pool label, meter label and meter duration all match — otherwise a
+  new id), persists via `savePools`/`saveMeter`, and returns the saved meters. Every failure path is a
+  `Result` error; the use case never throws.
 - **P-19** The `agy` probe parses `/usage` print-mode JSON exactly per [quota.md](quota.md): group →
   pool (`label` = name, model matchers only from the model list in the description, verbatim), bucket
   → meter (`unit: 'fraction'`, `remaining`, `resetsAt`, `resetPrecision: 'exact'`,
@@ -231,8 +242,9 @@ export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | u
 
 ### Resume fallback (P-22)
 
-- **P-22** When a run is started with a `resume` reference and the transport cannot resume (resume
-  error, or the session is gone), the executor restarts the run **once** without resume, prefixing the
+- **P-22** When a run is started with a `resume` reference and the transport cannot resume (detected
+  as a start that fails while a resume reference was passed — the fixed `TransportError` union has no
+  dedicated resume code), the executor restarts the run **once** without resume, prefixing the
   prompt with a bounded summary of the previous transcript (built from the stored events). A second
   resume-or-restart failure fails the run; there is no loop.
 
@@ -248,7 +260,11 @@ dependency; the command runner is injected so tests script it):
 
 ### Acceptance (P-24)
 
-- **P-24** The Phase 3 headless scenario (`src/api/scenarios/providers.test.ts`) runs the same work
-  order to completion three times — through the sdk transport, the app-server transport (fake server)
-  and the ACP transport (fake agent). The engine and use-case code path is identical; only the
-  transport differs; each run emits the same event kinds and one `finished`.
+- **P-24** The Phase 3 headless scenario (`src/infrastructure/scenarios/providers.test.ts`) runs the
+  same work order to completion three times — through the sdk transport (scripted SDK session), the
+  app-server transport (fake server) and the ACP transport (fake agent). The engine and use-case code
+  path is identical across the legs: the same audit-trail action sequence, the same succeeded stage
+  runs, the work order reaching `done`. Each leg emits the same **common** event kinds over the shared
+  `AgentEvent` stream (`session_started → text → usage → finished`) and exactly one `finished`
+  (reason `completed`, last event) per stage run; transport-specific kinds beyond the common set are
+  expected and do not count against equality.
