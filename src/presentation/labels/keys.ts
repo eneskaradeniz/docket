@@ -40,6 +40,7 @@ export const LABEL_KEYS = [
   'success.workOrder.enqueue',
   'success.gate.decide',
   'success.proposal.decide',
+  'success.permission.answer',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
