@@ -38,9 +38,9 @@ export interface WizardStoreDeps {
    *  surface yet; the wiring that supplies the real probe lands with the screens, tests inject a
    *  fake — the same stance as the detail store's injected definitions loader. */
   readonly sourceReachable: (source: string) => Promise<boolean>;
-  /** Whether a workspace exists on this machine. The workspace registry lives below the api (no
-   *  query enumerates workspaces), so the observation is injected the same way; `open` re-checks
-   *  it rather than trusting a remembered verdict. */
+  /** Whether a workspace exists on this machine — the wiring reads `workspaces.list`, the api's
+   *  one enumeration. The verdict stays injected so the store judges only the boolean; `open`
+   *  re-checks it rather than trusting a remembered verdict. */
   readonly workspaceExists: () => Promise<boolean>;
 }
 
