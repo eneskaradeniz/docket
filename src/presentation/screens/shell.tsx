@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
+import type { LocaleStore } from '../stores/locale';
 import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
@@ -25,6 +26,9 @@ export interface ShellScreenProps {
   readonly detail: WorkOrderDetailStore;
   readonly settings: SettingsStore;
   readonly wizard: WizardStore;
+  /** The locale store's handle for the settings screen's language control (U-9); the active
+   *  bundle itself travels as `locale`, refreshed by the root's subscription. */
+  readonly localeStore: LocaleStore;
   readonly locale: Locale;
 }
 
@@ -43,7 +47,7 @@ const NAV_BASE =
 const navClass = (current: boolean): string =>
   current ? `${NAV_BASE} bg-raised shadow-[inset_2px_0_0_0] shadow-signal text-ink` : `${NAV_BASE} text-inkdim hover:bg-raised hover:text-ink`;
 
-export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, locale }: ShellScreenProps) {
+export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, localeStore, locale }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
   useEffect(() => {
@@ -107,7 +111,7 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
         {route.name === 'workOrder' ? (
           <WorkOrderDetailScreen store={detail} workOrderId={route.id} locale={locale} />
         ) : null}
-        {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} /> : null}
+        {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
       </main>
 
       <WizardScreen store={wizard} locale={locale} />
