@@ -89,6 +89,20 @@ const RUN_OUTCOME_KEY: Readonly<Record<'running' | 'succeeded' | 'failed' | 'lim
   cancelled: 'run.outcome.cancelled',
 };
 
+/** The run lamp: green while going or finished well, red failed, amber hit a limit, dim ended by
+ *  a person — the row grammar the board and the cockpit already speak. */
+const RUN_OUTCOME_LAMP: Readonly<Record<'running' | 'succeeded' | 'failed' | 'limit' | 'cancelled', string>> = {
+  running: 'bg-proceed motion-safe:animate-pulse',
+  succeeded: 'bg-proceed',
+  failed: 'bg-error',
+  limit: 'bg-signal',
+  cancelled: 'bg-inkdim',
+};
+
+const INPUT_CLASS =
+  'rounded-sm border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
+
 /** Only a person opens these two kinds; every other gate is machine-evaluated, so only these
  *  carry approve/reject buttons. */
 const isHumanDecision = (gate: GateView): boolean => gate.kind === 'human' || gate.kind === 'page_approval';
@@ -120,7 +134,7 @@ function DeployApprovalForm({
     });
   };
   return (
-    <div className="mt-2 grid gap-2 rounded-md border border-hairline bg-raised p-3">
+    <div className="mt-2 grid gap-2 rounded-md border border-hairline bg-band p-3">
       <div className="flex flex-wrap items-center gap-2">
         <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
         {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
@@ -131,12 +145,12 @@ function DeployApprovalForm({
         ) : null}
       </div>
       <label className="grid gap-1">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">{t(locale, 'detail.deploy.commitLabel')}</span>
+        <span className={LABEL_CLASS}>{t(locale, 'detail.deploy.commitLabel')}</span>
         <input
           value={commit}
           onChange={(event) => setCommit(event.target.value)}
           placeholder={t(locale, 'detail.deploy.commitPlaceholder')}
-          className="rounded-md border border-hairline bg-raised px-2 py-1 font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
+          className={INPUT_CLASS}
         />
       </label>
       {deploy.protectedEnvironment ? (
@@ -146,7 +160,7 @@ function DeployApprovalForm({
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
             placeholder={t(locale, 'detail.deploy.confirmPlaceholder')}
-            className="rounded-md border border-hairline bg-raised px-2 py-1 font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
+            className={INPUT_CLASS}
           />
         </div>
       ) : null}
@@ -176,8 +190,11 @@ function GateRow({
   readonly onApproveDeploy: (input: DeployApproveInput) => void;
 }) {
   const actionable = current && gate.status === 'pending';
+  // A gate that waits on the operator tints its edge amber — the same attention edge the
+  // cockpit's rows carry; machine gates keep the plain hairline.
+  const edge = actionable && (isHumanDecision(gate) || gate.kind === 'deploy') ? 'border-signal/40' : 'border-hairline';
   return (
-    <li className="rounded-md border border-hairline bg-surface px-3 py-2">
+    <li className={`rounded-md border bg-surface px-3 py-2 ${edge}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="text-[13.5px] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
@@ -244,16 +261,16 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
   };
 
   return (
-    <div className="grid gap-4">
-      <header className="grid gap-1.5">
+    <div className="grid gap-5">
+      <header className="grid gap-1">
         {view === null ? (
           state.loading ? (
-            <p className="font-mono text-[12px] text-inkdim">{t(locale, 'detail.loading')}</p>
+            <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'detail.loading')}</p>
           ) : null
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-[19px] font-bold tracking-tight text-ink">{view.record.title}</h1>
+              <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{view.record.title}</h1>
               <StateBadge tone={STATUS_TONE[view.state.status]}>{t(locale, STATUS_KEY[view.state.status])}</StateBadge>
             </div>
             <p className="font-mono text-[11.5px] text-inkdim">
@@ -283,8 +300,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
           <ul className="grid gap-2">
             {asks.map((ask) => (
               <li key={ask.askId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-signal/40 bg-surface px-3 py-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
+                <div className="flex min-w-0 items-center gap-3">
+                  <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
                   <div className="min-w-0">
                     <span className="font-mono text-[13px] text-ink">{ask.tool}</span>
                     {ask.target !== null ? <code className="block truncate font-mono text-[11px] text-inkdim">{ask.target}</code> : null}
@@ -320,7 +337,9 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
           {state.stages.map((stage: StageGates, index: number) => (
             <li key={stage.stage} className="grid gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] text-inkdim">{String(index + 1).padStart(2, '0')}</span>
+                <span className={`font-mono text-[13px] ${stage.current ? 'text-signal' : 'text-inkdim'}`}>
+                  {String(index + 1).padStart(2, '0')}
+                </span>
                 <span className={`text-[14px] font-semibold ${stage.current ? 'text-ink' : 'text-inkdim'}`}>{stage.name}</span>
                 {stage.current ? <StateBadge tone="signal">{t(locale, 'detail.stage.current')}</StateBadge> : null}
               </div>
@@ -351,10 +370,11 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
             {view.runs.map((run) => {
               const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
               return (
-                <li key={run.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
+                <li key={run.id} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-hairline bg-surface px-3 py-2">
+                  <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
                   <div className="flex min-w-0 items-baseline gap-2">
-                    <code className="font-mono text-[12px] text-ink">{run.id}</code>
-                    <code className="font-mono text-[11px] text-inkdim">{run.stage}</code>
+                    <code className="truncate font-mono text-[12px] text-ink">{run.id}</code>
+                    <code className="truncate font-mono text-[11px] text-inkdim">{run.stage}</code>
                   </div>
                   <StateBadge tone={RUN_OUTCOME_TONE[outcome]}>{t(locale, RUN_OUTCOME_KEY[outcome])}</StateBadge>
                 </li>
@@ -369,7 +389,8 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
           <ul className="grid gap-1.5">
             {environments.map((deploy) => (
               <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
-                <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
                   <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
                   {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
                 </div>

@@ -7,6 +7,12 @@
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
+/* ===== v2 presentation tokens — the design-book layer =====
+   The v2 screens' single styling source: colors, surfaces and type voices declared in
+   src/presentation/styles/tokens.css, bridged into Tailwind's @theme there. Everything below
+   this import is the frozen v1 sheet and is not extended. */
+@import "./presentation/styles/tokens.css";
+
 /* ===== "Kontrol Konsolu" design tokens (WO-0031 / WO-0040) =====
    A dispatch console for one operator: calm layered surfaces, data in mono, and ONE lamp color that
    means "this needs you". Three faces — Sistem/Açık/Karanlık (WO-0040, reviving ADR-0007's theming

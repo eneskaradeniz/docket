@@ -1,5 +1,6 @@
-// components/state-badge.tsx — a status pill in the console's instrument voice: mono, uppercase,
-// one tinted hairline per tone. Purely presentational; the copy always arrives resolved.
+// components/state-badge.tsx — a status pill in the book's chip grammar: mono, lowercase (chips
+// carry words like copy, not instrument lines), one tinted edge per tone at the book's 45% mix.
+// Purely presentational; the copy always arrives resolved.
 import type { ReactNode } from 'react';
 
 /** The five state hues the console speaks; every badge picks one, never a raw color. */
@@ -21,7 +22,7 @@ export interface StateBadgeProps {
 export function StateBadge({ tone, children }: StateBadgeProps) {
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-px font-mono text-[10.5px] uppercase tracking-[0.04em] ${TONE_CLASS[tone]}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-[7px] py-px font-mono text-[10.5px] ${TONE_CLASS[tone]}`}
     >
       {children}
     </span>

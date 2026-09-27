@@ -1,7 +1,9 @@
 // screens/cockpit.tsx — the cockpit screen (U-2's window): the whole machine's attention list in
 // the api's order and the running runs, each row a straight path into its work order. The screen
 // renders the store's view and forwards clicks; ages render from `since` through the store's
-// injected clock, and every user-visible string arrives through a label key (U-1).
+// injected clock, and every user-visible string arrives through a label key (U-1). Rows speak the
+// design's work-row grammar: an 8px lamp naming the row's state (amber asks for you, green runs,
+// blue waits, red is blocked), the title, a mono meta line, and the age at the edge.
 import { useEffect, useSyncExternalStore } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
@@ -23,9 +25,27 @@ const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' 
 
 const KIND_TONE: Readonly<Record<AttentionItem['kind'], BadgeTone>> = {
   permission_ask: 'signal',
-  awaiting_human: 'info',
+  awaiting_human: 'signal',
   blocked: 'error',
   limit_waiting: 'info',
+};
+
+/** The lamp hue for a row's standing: amber = the operator is the next move, blue = a machine
+ *  waits on a clock or a limit, red = stopped. */
+const KIND_LAMP: Readonly<Record<AttentionItem['kind'], string>> = {
+  permission_ask: 'bg-signal',
+  awaiting_human: 'bg-signal',
+  blocked: 'bg-error',
+  limit_waiting: 'bg-info',
+};
+
+/** The row's edge joins the lamp: only the rows that ask for the operator tint their border, the
+ *  rest keep the plain hairline — attention is a color, not a default. */
+const KIND_EDGE: Readonly<Record<AttentionItem['kind'], string>> = {
+  permission_ask: 'border-signal/40',
+  awaiting_human: 'border-signal/40',
+  blocked: 'border-error/40',
+  limit_waiting: 'border-hairline',
 };
 
 const KIND_KEY: Readonly<Record<AttentionItem['kind'], LabelKey>> = {
@@ -58,13 +78,13 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder }: CockpitScreenP
   const running = view?.running ?? [];
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <header className="grid gap-1.5">
-        <h1 className="text-[19px] font-bold tracking-tight text-ink">{t(locale, 'nav.cockpit')}</h1>
+        <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
       </header>
 
       {state.loading && view === null ? (
-        <p className="font-mono text-[12px] text-inkdim">{t(locale, 'cockpit.loading')}</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'cockpit.loading')}</p>
       ) : null}
 
       {state.failed ? (
@@ -80,19 +100,20 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder }: CockpitScreenP
         {attention.length === 0 ? (
           <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.attention.empty')}</p>
         ) : (
-          <ul className="grid gap-1.5">
+          <ul className="grid gap-2">
             {attention.map((item) => (
               <li key={item.workOrderId}>
                 <button
                   type="button"
                   onClick={() => onOpenWorkOrder(item.workOrderId)}
-                  className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${
-                    item.kind === 'permission_ask' ? 'border-signal/40' : 'border-hairline'
-                  }`}
+                  className={`grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${KIND_EDGE[item.kind]}`}
                 >
-                  <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
+                  <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${KIND_LAMP[item.kind]}`} />
                   <span className="grid min-w-0 gap-0.5">
-                    <span className="truncate text-[13.5px] font-semibold text-ink">{item.title}</span>
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate text-[13.5px] font-semibold text-ink">{item.title}</span>
+                      <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
+                    </span>
                     <span className="truncate font-mono text-[11px] text-inkdim">
                       {item.workspace}
                       {item.stage !== null ? ` · ${item.stage}` : ''}
@@ -112,25 +133,23 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder }: CockpitScreenP
         {running.length === 0 ? (
           <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.running.empty')}</p>
         ) : (
-          <ul className="grid gap-1.5">
+          <ul className="grid gap-2">
             {running.map((run) => (
               <li key={`${run.workOrderId}:${run.stage}`}>
                 <button
                   type="button"
                   onClick={() => onOpenWorkOrder(run.workOrderId)}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:bg-raised"
+                  className="grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:bg-raised"
                 >
+                  <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-proceed motion-safe:animate-pulse" />
                   <span className="grid min-w-0 gap-0.5">
                     <span className="truncate font-mono text-[12.5px] text-ink">{run.workOrderId}</span>
                     <span className="truncate font-mono text-[11px] text-inkdim">
                       {run.stage} · {run.accountId}
                     </span>
                   </span>
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 flex-none rounded-full bg-proceed motion-safe:animate-pulse" />
-                    <span className="font-mono text-[11px] text-inkdim">
-                      {formatAge(locale, Math.max(0, Date.now() - run.startedAt))}
-                    </span>
+                  <span className="font-mono text-[11px] text-inkdim">
+                    {formatAge(locale, Math.max(0, Date.now() - run.startedAt))}
                   </span>
                 </button>
               </li>

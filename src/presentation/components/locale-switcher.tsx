@@ -1,8 +1,8 @@
-// components/locale-switcher.tsx — the language control (U-9's face): a two-option segment bound
-// to the locale store. The active option reads from the locale prop the reactive root hands down;
-// a selection travels straight to the store, whose set() swaps the bundle in memory and persists
-// the choice — no reload, no local copy of the state. The languages' names are native endonyms,
-// the same strings in both bundles.
+// components/locale-switcher.tsx — the language control (U-9's face) in the book's version-chip
+// grammar: one mono chip per option, the active one signed by the amber edge and ink rather than
+// a filled block. A selection travels straight to the store, whose set() swaps the bundle in
+// memory and persists the choice — no reload, no local copy of the state. The languages' names
+// are native endonyms, the same strings in both bundles.
 import { t, type Locale } from '../labels/t';
 import type { LocaleStore } from '../stores/locale';
 
@@ -18,11 +18,7 @@ const OPTIONS: readonly { readonly id: Locale; readonly nameKey: 'settings.langu
 
 export function LocaleSwitcher({ store, locale }: LocaleSwitcherProps) {
   return (
-    <div
-      role="group"
-      aria-label={t(locale, 'settings.language.label')}
-      className="flex w-fit items-center gap-1 rounded-md border border-hairline bg-raised p-1"
-    >
+    <div role="group" aria-label={t(locale, 'settings.language.label')} className="flex w-fit items-center gap-1">
       {OPTIONS.map((option) => {
         const active = option.id === locale;
         return (
@@ -33,8 +29,8 @@ export function LocaleSwitcher({ store, locale }: LocaleSwitcherProps) {
             onClick={() => store.set(option.id)}
             className={
               active
-                ? 'rounded-sm bg-signal px-3 py-1 text-[12.5px] font-semibold text-black'
-                : 'rounded-sm px-3 py-1 text-[12.5px] text-inkdim transition-colors hover:text-ink'
+                ? 'rounded-[5px] border border-signal px-[7px] py-px font-mono text-[11px] text-signal'
+                : 'rounded-[5px] border border-hairline px-[7px] py-px font-mono text-[11px] text-inkdim transition-colors hover:text-ink'
             }
           >
             {t(locale, option.nameKey)}

@@ -40,7 +40,7 @@ type ShellRoute =
   | { readonly name: 'settings' };
 
 const NAV_BASE =
-  'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors';
+  'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-[7px] text-left text-[13.5px] transition-colors';
 
 /** The rail entry's standing: the current route reads raised with an inset signal bar, the rest
  *  stay quiet — the same grammar as the design's sidebar. */
@@ -59,15 +59,20 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
 
   return (
     <div className="grid min-h-dvh grid-cols-[230px_minmax(0,1fr)] bg-bg text-ink max-[900px]:grid-cols-1">
-      <nav aria-label={t(locale, 'shell.title')} className="flex flex-col gap-1 border-r border-hairline bg-surface p-3 max-[900px]:border-b max-[900px]:border-r-0">
-        <p className="px-2.5 pb-2 text-[15px] font-bold tracking-tight text-ink">{t(locale, 'shell.title')}</p>
+      <nav
+        aria-label={t(locale, 'shell.title')}
+        className="flex flex-col gap-0.5 border-r border-hairline bg-surface px-2.5 py-4 max-[900px]:border-b max-[900px]:border-r-0 max-[900px]:px-3"
+      >
+        <p className="px-2.5 pb-3 font-mono text-[12px] font-medium uppercase tracking-[0.08em] text-inkdim">
+          {t(locale, 'shell.title')}
+        </p>
 
         <button type="button" onClick={() => setRoute({ name: 'cockpit' })} className={navClass(route.name === 'cockpit')} aria-current={route.name === 'cockpit' ? 'page' : undefined}>
           <span>{t(locale, 'nav.cockpit')}</span>
           {badge !== null ? (
             <span
               aria-label={t(locale, 'cockpit.section.attention')}
-              className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-signal px-1.5 font-mono text-[10.5px] font-semibold text-black"
+              className="font-mono text-[11px] font-medium text-signal"
             >
               {badge.count}
             </span>
@@ -78,11 +83,11 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
           <span>{t(locale, 'nav.settings')}</span>
         </button>
 
-        <p className="px-2.5 pb-1 pt-3 font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
+        <p className="px-2.5 pb-1 pt-4 font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
           {t(locale, 'nav.workspaces')}
         </p>
         {state.workspaces.length === 0 ? (
-          <p className="px-2.5 text-[12.5px] text-inkdim">{t(locale, 'nav.workspaces.empty')}</p>
+          <p className="px-2.5 py-1.5 text-[12.5px] text-inkdim">{t(locale, 'nav.workspaces.empty')}</p>
         ) : (
           state.workspaces.map((entry) => {
             const current = route.name === 'board' && route.workspace === entry.id;
@@ -94,14 +99,14 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
                 className={navClass(current)}
                 aria-current={current ? 'page' : undefined}
               >
-                <span className="truncate">{entry.label}</span>
+                <span className="truncate font-mono text-[13px]">{entry.label}</span>
               </button>
             );
           })
         )}
       </nav>
 
-      <main className="min-w-0 p-5 max-[900px]:p-3">
+      <main className="min-w-0 px-[22px] py-[18px] max-[900px]:p-3">
         {route.name === 'cockpit' ? (
           <CockpitScreen store={cockpit} locale={locale} onOpenWorkOrder={openWorkOrder} />
         ) : null}
