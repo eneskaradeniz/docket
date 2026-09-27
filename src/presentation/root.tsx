@@ -13,7 +13,9 @@ import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLocaleStore } from './stores/locale';
 import { isQueryFailure } from './stores/results';
+import { createSettingsStore } from './stores/settings';
 import { createShellStore, type ShellWorkspace } from './stores/shell';
+import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
 /** Exactly the surface the preload exposes under `window.docket` — the api's members, reached
@@ -51,6 +53,30 @@ const workspaceEntries = (api: DocketBridge) => async (): Promise<readonly Shell
   return [...named.values()];
 };
 
+/** The wizard's workspace-existence check answers only from what the bridge can know: the cockpit
+ *  reply names workspaces solely through attention items and running runs, so a workspace whose
+ *  work orders are all calm is invisible and the check answers false — the wizard may re-offer
+ *  after a relaunch. Unknown and empty both answer false: an unverifiable existence must never
+ *  suppress the first-run setup (fail-closed), and no command creates a workspace yet, so the
+ *  machine's dismissal holds only until the next open. Needs an api read that enumerates
+ *  workspaces; the injection point swaps without touching the wizard store. */
+const workspaceExists = (api: DocketBridge) => async (): Promise<boolean> => {
+  const view: unknown = await api.query({ type: 'cockpit' });
+  if (isQueryFailure(view)) return false;
+  const cockpit = view as CockpitView;
+  return cockpit.attention.length > 0 || cockpit.running.length > 0;
+};
+
+/** The wizard's source probe rides the board read, the one read that loads definitions: a
+ *  non-failure reply proves the entered workspace's definitions were found and parsed, which is
+ *  the whole question; every failure (a malformed slug, unreadable definitions) answers false —
+ *  fail-closed. No api query probes a source path directly yet; the injection point swaps when one
+ *  lands, without touching the wizard store. */
+const sourceReachable = (api: DocketBridge) => async (source: string): Promise<boolean> => {
+  const reply: unknown = await api.query({ type: 'workspace.board', workspace: source });
+  return !isQueryFailure(reply);
+};
+
 const mount = document.getElementById('root');
 if (mount !== null) {
   const api = bridge();
@@ -59,15 +85,34 @@ if (mount !== null) {
   // yet, so the loader reports unavailability and the detail shows its problem state for gates.
   const definitions = async () => null;
   const locale = createLocaleStore(window.localStorage);
+  // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const cockpit = createCockpitStore({ api, changes, now: () => Date.now() });
   const board = createBoardStore({ api, changes, actor: USER });
   const detail = createWorkOrderDetailStore({ api, changes, actor: USER, definitions });
+  const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
+  const wizard = createWizardStore({
+    api,
+    actor: USER,
+    sourceReachable: sourceReachable(api),
+    workspaceExists: workspaceExists(api),
+  });
   const shell = createShellStore({ api, changes, workspaces: workspaceEntries(api) });
+  // The first-run machine's entry point: it shows the wizard only when no workspace exists (U-7).
+  void wizard.open();
 
   createRoot(mount).render(
     <React.StrictMode>
-      <ShellScreen shell={shell} cockpit={cockpit} board={board} detail={detail} locale={locale.current()} />
+      <ShellScreen
+        shell={shell}
+        cockpit={cockpit}
+        board={board}
+        detail={detail}
+        settings={settings}
+        wizard={wizard}
+        locale={locale.current()}
+      />
     </React.StrictMode>,
   );
 }
