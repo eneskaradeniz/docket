@@ -475,6 +475,28 @@ Rules:
 - **A-22** `cockpit.attention` is ordered by kind (`permission_ask`, `awaiting_human`, `blocked`, `limit_waiting`), then `since` ascending.
 - **A-23** `workspace.board` has one column per stage of the workspace's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
 
+### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
+
+The Phase 4 commands, queries and the `subscribe` member are specified in
+[ui.md](ui.md) → "API additions", with their rules (**U-11 … U-14**) — the U prefix, like the
+providers' P prefix, keeps the rule-coverage gate green until the coverage-extension issue
+(the batch's last wave) wires it up. Signatures, for reference:
+
+```ts
+// commands
+| { type: 'permission.answer'; runId: string; askId: string; decision: 'allow' | 'deny' }
+| { type: 'deploy.approve'; workOrderId: string; gate: string; commit: string; confirmedEnvironment?: string }
+| { type: 'account.save'; id?: string; provider: string; label: string; authMode: string; plan?: string }
+| { type: 'account.remove'; id: string }
+| { type: 'binding.save'; role: string; accounts: { accountId: string; model?: string }[] }
+// queries
+| { type: 'settings.accounts' }        → accounts with pools/meters and per-role bindings
+| { type: 'providers.discovered' }     → DiscoveredProvider[]
+// Api member
+subscribe(listener: (e: UiEvent) => void): () => void;
+type UiEvent = { type: 'workOrders.changed' } | { type: 'run.updated'; runId: string };
+```
+
 ### Deploy and remote-checks use cases — Phase 2c
 
 ```ts

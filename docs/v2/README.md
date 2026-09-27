@@ -17,6 +17,7 @@ until an architect change updates them.
 | [integrations.md](integrations.md) | Design (not yet contract): code hosting, issue trackers, environments, deployment, remote CI |
 | [providers.md](providers.md) | Agent CLI integration: transports, the common event stream, support tiers, isolation |
 | [quota.md](quota.md) | Accounts, pools, windows, limit policies, budgets |
+| [ui.md](ui.md) | Phase 4 presentation layer: labels, stores, API additions, the operator gate |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |
 | [roadmap.md](roadmap.md) | Phases, milestones, issue contract, model routing, batch mode |
 
