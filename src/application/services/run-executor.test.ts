@@ -920,4 +920,17 @@ describe('executeRun', () => {
     expect(h.transport.requests()).toHaveLength(1);
     expect((await theRun(h.runs)).outcome).toBe('failed');
   });
+
+  it('U-12: every appended run event notifies the injected hook with the run id', async () => {
+    const h = await harness({ script: [sessionStarted('sess-1'), text('working'), ask(), finished('completed')] });
+    const notified: RunId[] = [];
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT, undefined, (runId) => notified.push(runId));
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    const record = await theRun(h.runs);
+    // Exactly one notification per appended event, the run's own id each time: the executor's
+    // run_started / run_finished appends to the work order log never reach this hook.
+    expect(notified).toEqual([record.id, record.id, record.id, record.id]);
+  });
 });

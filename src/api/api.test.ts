@@ -3,16 +3,18 @@
 // (docs/v2/application.md § 4).
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Actor, Slug, Ulid } from '../domain/index';
+import type { Actor, RoleDef, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps } from '../application';
-import { createPermissionBoard } from '../application';
+import { createPermissionBoard, executeRun } from '../application';
 import {
   createFakeCommandRunner,
   createFakeDefinitionStore,
   createFakeDeps,
   createFakeEventLog,
+  createFakeTransport,
+  createFakeTransportResolver,
   createFakeWorktrees,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -20,7 +22,7 @@ import {
   type FakeWorktrees,
 } from '../application/ports/fakes';
 
-import { createApi } from './api';
+import { createApi, type UiEvent } from './api';
 import type { Command } from './commands';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -50,6 +52,16 @@ const PROPOSAL_OTHER = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD2');
 const RUN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FE2');
 const UNKNOWN_WORK_ORDER = '01ARZ3NDEKTSV4RRFFQ69G5FB9';
 const COMMIT = '9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c';
+
+/** The role a scripted run executes as; only its shape matters to the executor. */
+const RUN_ROLE: RoleDef = {
+  id: slugOf<'role'>('worker'),
+  name: 'Worker',
+  instructions: 'Do the work.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
 
 const ROLE_JSON = {
   id: 'worker',
@@ -888,6 +900,158 @@ describe('createApi', () => {
         expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
       }
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('subscribe', () => {
+    it('U-12: a command that appends to the event log emits workOrders.changed after the append', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      // A store re-queries the moment the event arrives, so the read that starts at delivery time
+      // must already see the appended event.
+      const logAtDelivery: Promise<readonly string[]>[] = [];
+      api.subscribe((event) => {
+        if (event.type !== 'workOrders.changed') return;
+        logAtDelivery.push(
+          h.deps.workOrders.events(ulidOf<'work-order'>(id)).then((events) => events.map((entry) => entry.type)),
+        );
+      });
+
+      await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+
+      expect(logAtDelivery.length).toBe(1);
+      const first = logAtDelivery[0];
+      if (first === undefined) throw new Error('workOrders.changed must have been delivered');
+      expect(await first).toEqual(['created', 'blocked']);
+    });
+
+    it('U-12: a command that writes nothing emits nothing', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      // Failing commands append nothing anywhere: an unknown target and a malformed id stay silent,
+      // while the very next appending command proves the listener was live all along.
+      const id = await openViaApi(h);
+      expect(await api.command(ACTOR, { type: 'workOrder.block', id: UNKNOWN_WORK_ORDER, reason: 'r' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+      expect(await api.command(ACTOR, { type: 'workOrder.close', id: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(seen).toEqual([]);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'workOrders.changed' }]);
+    });
+
+    it('U-12: an audit-only write emits nothing — the channel tracks the work order event log', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const saved = await api.command(ACTOR, { type: 'account.save', provider: 'acme-prov', label: 'Main', authMode: 'api_key' });
+
+      // The account is stored and audited, but no work order changed, so no event may fire.
+      expect(saved.ok).toBe(true);
+      expect(h.log.entries().length).toBeGreaterThan(0);
+      expect(seen).toEqual([]);
+    });
+
+    it('U-12: run executor events arrive as run.updated with the runId through the injected notify hook', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const transports = createFakeTransportResolver();
+      transports.register(
+        ACCOUNT,
+        createFakeTransport([
+          { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+          { type: 'text', at: 1_650, delta: 'working' },
+          { type: 'finished', at: 1_700, reason: 'completed' },
+        ]),
+      );
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE4');
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+
+      // The composition wiring, verbatim: the executor's notify hook is the api's feed.
+      const outcome = await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE5'),
+            workOrderId,
+            workspace: slugOf<'workspace'>(WORKSPACE),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        api.runUpdated,
+      );
+
+      expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+      const runs = await h.deps.runs.listForWorkOrder(workOrderId);
+      const run = runs[runs.length - 1];
+      if (run === undefined) throw new Error('the executed run must exist');
+      // One run.updated per appended event and only those: the executor's own run_started /
+      // run_finished appends reach the work order log directly, never this channel.
+      expect(seen).toEqual([
+        { type: 'run.updated', runId: run.id },
+        { type: 'run.updated', runId: run.id },
+        { type: 'run.updated', runId: run.id },
+      ]);
+    });
+
+    it('U-12: unsubscribe stops delivery', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      const seenFirst: UiEvent[] = [];
+      const seenSecond: UiEvent[] = [];
+      const unsubscribe = api.subscribe((event) => seenFirst.push(event));
+      api.subscribe((event) => seenSecond.push(event));
+
+      await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+      unsubscribe();
+      await api.command(ACTOR, { type: 'workOrder.unblock', id });
+
+      expect(seenFirst).toEqual([{ type: 'workOrders.changed' }]);
+      expect(seenSecond).toEqual([{ type: 'workOrders.changed' }, { type: 'workOrders.changed' }]);
+    });
+
+    it('U-12: a throwing listener is skipped and does not break delivery to the others', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      const seen: UiEvent[] = [];
+      api.subscribe(() => {
+        throw new Error('a broken listener');
+      });
+      api.subscribe((event) => seen.push(event));
+
+      const result = await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+
+      expect(result).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'workOrders.changed' }]);
     });
   });
 });

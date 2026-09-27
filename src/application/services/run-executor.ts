@@ -38,6 +38,11 @@ export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
 }
 
+/** The push channel's feed (U-12 of docs/v2/ui.md): one call per event appended to the run's log.
+ *  The executor cannot know the api, so composition injects the adapter that turns each call into
+ *  a `run.updated` for the subscribed stores. */
+export type RunEventNotify = (runId: RunId) => void;
+
 // The executor runs unattended on the dispatcher's behalf; its audit entries name the component.
 const RUN_EXECUTOR_ACTOR: Actor = { kind: 'system', component: 'run-executor' };
 // LimitContext documents 3 as the default; nothing in this service's deps configures it.
@@ -197,6 +202,7 @@ export async function executeRun(
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
+  notify?: RunEventNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
   const plan = planAttempt(
@@ -272,6 +278,7 @@ export async function executeRun(
 
   for await (const event of handle.events) {
     await deps.runs.appendEvents(runId, [event]);
+    notify?.(runId);
     switch (event.type) {
       case 'session_started':
         await deps.runs.update(runId, { sessionRef: event.sessionRef });
