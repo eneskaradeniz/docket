@@ -1,0 +1,4 @@
+{"event":"init","conversation_id":"7d1f0c3e-2b9a-4c58-8e11-64a2f90b7d33","init":{"cwd":"/tmp/agy-probe","tools":["read_file","write_to_file","list_dir"],"permission_mode":"request-review"}}
+{"event":"step_update","step_update":{"conversation_id":"7d1f0c3e-2b9a-4c58-8e11-64a2f90b7d33","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"7d1f0c3e-2b9a-4c58-8e11-64a2f90b7d33","step_index":1,"state":"DONE","step_type":"agent_response","text_delta":"I could not read that input.\n","duration_seconds":1.102344,"usage":{"input_tokens":4821,"output_tokens":64,"thinking_tokens":12,"cache_read_tokens":0,"total_tokens":4885}}}
+{"event":"result","result":{"conversation_id":"7d1f0c3e-2b9a-4c58-8e11-64a2f90b7d33","status":"ERROR","response":"","duration_seconds":1.152001,"num_turns":1,"usage":{"input_tokens":4821,"output_tokens":64,"thinking_tokens":12,"cache_read_tokens":0,"total_tokens":4885}}}

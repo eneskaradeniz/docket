@@ -18,6 +18,9 @@ export interface StreamDialect {
   /** One parsed stdout object → its events. `null` = the dialect does not recognise the
    * object (the transport degrades the line to a raw event); `[]` = recognised but silent. */
   parse(line: unknown): readonly AgentEvent[] | null;
+  /** CLIs whose stdin speaks NDJSON need the prompt wrapped in their input envelope; without
+   * this the prompt is written as one bare text line (print-mode semantics). */
+  readonly wrapInput?: (prompt: string) => string;
 }
 
 /** Single-consumer push channel: buffers events between await points, ends after a finish. */
@@ -255,7 +258,9 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
 
       const stdin = child.stdin;
       if (launch.stdin === 'prompt') {
-        stdin.write(request.prompt.endsWith('\n') ? request.prompt : `${request.prompt}\n`);
+        const payload =
+          dialect.wrapInput === undefined ? request.prompt : dialect.wrapInput(request.prompt);
+        stdin.write(payload.endsWith('\n') ? payload : `${payload}\n`);
       }
       // One-shot prompt protocol: the CLI reads stdin to EOF, so EOF must arrive right away.
       stdin.end();
