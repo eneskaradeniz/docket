@@ -11,6 +11,7 @@ import type { Actor } from '../domain/index';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
+import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
@@ -87,7 +88,10 @@ if (mount !== null) {
 
   const cockpit = createCockpitStore({ api, changes, now: () => Date.now() });
   const board = createBoardStore({ api, changes, actor: USER });
-  const detail = createWorkOrderDetailStore({ api, changes, actor: USER });
+  // The live pane has no run at composition time — the detail store attaches it to the active
+  // run of whichever work order loads.
+  const pane = createLivePaneStore({ api, changes, actor: USER });
+  const detail = createWorkOrderDetailStore({ api, changes, actor: USER, pane });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   const wizard = createWizardStore({
     api,

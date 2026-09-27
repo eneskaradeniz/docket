@@ -3,8 +3,9 @@
 // (E-5, read-only), and gates the approve intent on the typed environment confirmation (E-8:
 // the input must equal the environment name before deploy.approve is issued — wrong or absent
 // never fires). Every intent maps its CommandResult through results.ts (U-8) and refreshes the
-// detail query. The flow and the environments ride the detail view itself; api and change
-// signal are injected fakes.
+// detail query. The asks section is fed from `permissions.open`, scoped to the loaded work
+// order's runs, and the live pane mounts on the work order's newest active run. The flow and
+// the environments ride the detail view itself; api, change signal and pane are injected fakes.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -23,10 +24,12 @@ import type {
 } from '../../domain/index';
 import { parseSlug } from '../../domain/index';
 
+import type { LivePaneStore } from './live-pane';
 import {
   createWorkOrderDetailStore,
   type DetailChange,
   type DetailChangeSignal,
+  type WorkOrderDetailRun,
   type WorkOrderDetailView,
 } from './work-order-detail';
 
@@ -38,6 +41,8 @@ function slugOf<B extends string>(input: string): Slug<B> {
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 const WO_ID = '01ARZ3NDEKTSV4RRFFQ69G5FZZ';
+const RUN_ID = '01ARZ3NDEKTSV4RRFFQ69G5FA0';
+const ACTIVE_RUN_ID = '01ARZ3NDEKTSV4RRFFQ69G5FB1';
 
 const STAGE_PLAN = slugOf<'stage'>('plan');
 const STAGE_BUILD = slugOf<'stage'>('build');
@@ -107,7 +112,7 @@ const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
   next: NONE,
   runs: [
     {
-      id: '01ARZ3NDEKTSV4RRFFQ69G5FA0',
+      id: RUN_ID,
       stage: 'build',
       startedAt: 1_000,
       endedAt: 2_000,
@@ -120,17 +125,25 @@ const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
   environments: ENVIRONMENTS,
 });
 
+const detailReplyWithRuns = (state: WorkOrderState, runs: readonly WorkOrderDetailRun[]): WorkOrderDetailView => ({
+  ...detailReply(state),
+  runs,
+});
+
 interface FakeApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   readonly commands: Command[];
   setReply(reply: unknown): void;
+  setAsks(reply: unknown): void;
   setCommandResult(result: CommandResult): void;
 }
 
+/** The detail query and the open-asks query are answered separately; both calls are recorded. */
 const fakeApi = (initialReply: unknown): FakeApi => {
   const queries: Query[] = [];
   const commands: Command[] = [];
   let reply: unknown = initialReply;
+  let asksReply: unknown = [];
   let commandResult: CommandResult = { ok: true };
   return {
     queries,
@@ -138,12 +151,15 @@ const fakeApi = (initialReply: unknown): FakeApi => {
     setReply: (next) => {
       reply = next;
     },
+    setAsks: (next) => {
+      asksReply = next;
+    },
     setCommandResult: (next) => {
       commandResult = next;
     },
     query: (query) => {
       queries.push(query);
-      return Promise.resolve(reply);
+      return Promise.resolve(query.type === 'permissions.open' ? asksReply : reply);
     },
     command: (_actor, command) => {
       commands.push(command);
@@ -178,11 +194,34 @@ const flush = (): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, 0);
 });
 
-const createStore = (api: FakeApi, signal: FakeSignal = fakeSignal()) =>
+interface FakePane extends LivePaneStore {
+  readonly attached: readonly string[];
+}
+
+/** Records every attach so tests can pin which run the store mounts the pane for. */
+const fakePane = (): FakePane => {
+  const attached: string[] = [];
+  let runId: string | null = null;
+  return {
+    attached,
+    push: () => {},
+    state: () => ({ runId, items: [], ask: null, ended: false }),
+    answer: () => Promise.resolve({ ok: false, code: 'not_found' }),
+    subscribe: () => () => {},
+    attach: (id) => {
+      attached.push(id);
+      runId = id;
+      return Promise.resolve();
+    },
+  };
+};
+
+const createStore = (api: FakeApi, signal: FakeSignal = fakeSignal(), pane: FakePane = fakePane()) =>
   createWorkOrderDetailStore({
     api,
     changes: signal.signal,
     actor: ACTOR,
+    pane,
   });
 
 describe('work-order detail store', () => {
@@ -190,12 +229,19 @@ describe('work-order detail store', () => {
     const api = fakeApi(detailReply(AT_BUILD));
     const store = createStore(api);
 
-    expect(store.state()).toEqual({ loading: false, view: null, stages: [], problem: null, lastOutcome: null });
+    expect(store.state()).toEqual({
+      loading: false,
+      view: null,
+      stages: [],
+      asks: [],
+      problem: null,
+      lastOutcome: null,
+    });
     const loading = store.load(WO_ID);
     expect(store.state().loading).toBe(true);
     await loading;
 
-    expect(api.queries).toEqual([{ type: 'workOrder.detail', id: WO_ID }]);
+    expect(api.queries[0]).toEqual({ type: 'workOrder.detail', id: WO_ID });
     // Before the ship stage is reached its gates — deploy gates included — are upcoming.
     expect(store.state().stages).toEqual([
       { stage: 'plan', name: 'Plan', current: false, gates: [{ id: 'plan-approval', kind: 'human', status: 'passed' }] },
@@ -250,9 +296,9 @@ describe('work-order detail store', () => {
 
     const outcome = await store.approveDeploy({ gate: 'deploy-prod', commit: 'abc123', confirmedEnvironment: 'production' });
 
-    // The command is never issued and nothing could have changed, so the detail is not re-queried.
+    // The command is never issued and nothing could have changed, so no refresh follows.
     expect(api.commands).toEqual([]);
-    expect(api.queries.length).toBe(1);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(1);
     expect(outcome).toEqual({
       command: 'deploy.approve',
       result: { ok: false, code: 'confirmation_mismatch' },
@@ -269,7 +315,7 @@ describe('work-order detail store', () => {
     const outcome = await store.approveDeploy({ gate: 'deploy-prod', commit: 'abc123' });
 
     expect(api.commands).toEqual([]);
-    expect(api.queries.length).toBe(1);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(1);
     expect(outcome.result).toEqual({ ok: false, code: 'confirmation_mismatch' });
     expect(outcome.labelKey).toBe('error.confirmation_mismatch');
   });
@@ -284,7 +330,7 @@ describe('work-order detail store', () => {
     expect(api.commands).toEqual([
       { type: 'deploy.approve', workOrderId: WO_ID, gate: 'deploy-prod', commit: 'abc123', confirmedEnvironment: 'prod' },
     ]);
-    expect(api.queries.length).toBe(2); // the intent refreshes the detail query
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2); // the intent refreshes the detail query
     expect(outcome).toEqual({ command: 'deploy.approve', result: { ok: true }, labelKey: 'success.deploy.approve' });
   });
 
@@ -311,7 +357,7 @@ describe('work-order detail store', () => {
     expect(api.commands).toEqual([
       { type: 'gate.decide', workOrderId: WO_ID, gate: 'ship-approval', decision: 'approved', note: 'looks good' },
     ]);
-    expect(api.queries.length).toBe(2);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
     expect(approved).toEqual({ command: 'gate.decide', result: { ok: true }, labelKey: 'success.gate.decide' });
 
     api.setCommandResult({ ok: false, code: 'not_pending' });
@@ -332,7 +378,7 @@ describe('work-order detail store', () => {
     const outcome = await store.enqueue();
 
     expect(api.commands).toEqual([{ type: 'workOrder.enqueue', id: WO_ID }]);
-    expect(api.queries.length).toBe(2);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
     expect(outcome).toEqual({ command: 'workOrder.enqueue', result: { ok: true }, labelKey: 'success.workOrder.enqueue' });
   });
 
@@ -341,12 +387,12 @@ describe('work-order detail store', () => {
     const store = createStore(api);
     await store.load(WO_ID);
 
-    const outcome = await store.answerPermission({ runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0', askId: 'ask-1', decision: 'allow' });
+    const outcome = await store.answerPermission({ runId: RUN_ID, askId: 'ask-1', decision: 'allow' });
 
     expect(api.commands).toEqual([
-      { type: 'permission.answer', runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0', askId: 'ask-1', decision: 'allow' },
+      { type: 'permission.answer', runId: RUN_ID, askId: 'ask-1', decision: 'allow' },
     ]);
-    expect(api.queries.length).toBe(2);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
     expect(outcome).toEqual({ command: 'permission.answer', result: { ok: true }, labelKey: 'success.permission.answer' });
   });
 
@@ -389,15 +435,15 @@ describe('work-order detail store', () => {
     const emitter = fakeSignal();
     const store = createStore(api, emitter);
     await store.load(WO_ID);
-    expect(api.queries.length).toBe(1);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(1);
 
     emitter.emit({ type: 'workOrders.changed' });
     await flush();
-    expect(api.queries.length).toBe(2);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(2);
 
-    emitter.emit({ type: 'run.updated', runId: '01ARZ3NDEKTSV4RRFFQ69G5FA0' });
+    emitter.emit({ type: 'run.updated', runId: RUN_ID });
     await flush();
-    expect(api.queries.length).toBe(3);
+    expect(api.queries.filter((query) => query.type === 'workOrder.detail')).toHaveLength(3);
   });
 
   it('U-4: a finished work order renders every gate as passed', async () => {
@@ -421,5 +467,81 @@ describe('work-order detail store', () => {
       result: { ok: false, code: 'not_found' },
       labelKey: 'error.not_found',
     });
+  });
+
+  it('U-4: the asks section is fed from permissions.open, scoped to the loaded work order\'s runs', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setAsks([
+      { runId: RUN_ID, askId: 'ask-1', since: 5, title: 'Ship the thing' },
+      { runId: '01ARZ3NDEKTSV4RRFFQ69G5FC2', askId: 'ask-2', since: 6, title: null },
+      { runId: RUN_ID, askId: 'ask-3', since: 7, title: null },
+    ]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+
+    // Only this work order's runs are shown. The title stands in for the tool when the ask still
+    // resolves to one, the ask id when it does not; the read carries no target, so none is claimed.
+    expect(store.state().asks).toEqual([
+      { runId: RUN_ID, askId: 'ask-1', tool: 'Ship the thing', target: null },
+      { runId: RUN_ID, askId: 'ask-3', tool: 'ask-3', target: null },
+    ]);
+  });
+
+  it('U-4: a permissions.open failure keeps the asks already shown', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setAsks([{ runId: RUN_ID, askId: 'ask-1', since: 5, title: 'Ship the thing' }]);
+    const emitter = fakeSignal();
+    const store = createStore(api, emitter);
+    await store.load(WO_ID);
+    const shown = store.state().asks;
+    expect(shown).toHaveLength(1);
+
+    api.setAsks({ ok: false, code: 'not_found' });
+    emitter.emit({ type: 'run.updated', runId: RUN_ID });
+    await flush();
+
+    expect(store.state().asks).toEqual(shown);
+  });
+
+  it('U-4: the open asks ride every detail load and refresh when an ask is answered', async () => {
+    const api = fakeApi(detailReply(AT_BUILD));
+    api.setAsks([{ runId: RUN_ID, askId: 'ask-1', since: 5, title: 'Ship the thing' }]);
+    const store = createStore(api);
+    await store.load(WO_ID);
+    expect(store.state().asks).toHaveLength(1);
+
+    api.setAsks([]);
+    await store.answerPermission({ runId: RUN_ID, askId: 'ask-1', decision: 'allow' });
+
+    // The answer intent's refresh carries both reads: the detail and the open asks.
+    expect(api.queries.filter((query) => query.type === 'permissions.open')).toHaveLength(2);
+    expect(store.state().asks).toEqual([]);
+  });
+
+  it('U-4: the live pane mounts on the newest active run, never on a finished one', async () => {
+    const pane = fakePane();
+    const api = fakeApi(
+      detailReplyWithRuns(AT_BUILD, [
+        { id: RUN_ID, stage: 'build', startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
+        { id: ACTIVE_RUN_ID, stage: 'build', startedAt: 3_000 },
+      ]),
+    );
+    const store = createStore(api, fakeSignal(), pane);
+    await store.load(WO_ID);
+    expect(pane.attached).toEqual([ACTIVE_RUN_ID]);
+
+    // A work order whose runs have all ended mounts nothing.
+    const idlePane = fakePane();
+    const idle = createStore(
+      fakeApi(
+        detailReplyWithRuns(AT_SHIP, [
+          { id: RUN_ID, stage: 'ship', startedAt: 1_000, endedAt: 2_000, outcome: 'succeeded' },
+        ]),
+      ),
+      fakeSignal(),
+      idlePane,
+    );
+    await idle.load(WO_ID);
+    expect(idlePane.attached).toEqual([]);
   });
 });

@@ -1,14 +1,22 @@
 // live-pane.test.ts — U-5: the live pane store folds a run's AgentEvent stream into display
 // items in arrival order (thought, message, tool call with status, usage, quota signal), keeps
 // the earliest still-open permission ask with an answer intent, and marks the stream ended on
-// `finished` — events after it are ignored. The stream is faked: tests push synthetic events;
-// no transport, no DOM.
+// `finished` — events after it are ignored. The stream has one feed: `attach` binds the pane to
+// a run, reads its `run.events` tail (newest last) and re-reads it on every `run.updated` for
+// that run; tests fake the query and the change signal, and push synthetic events on top.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
+import type { Query } from '../../api/queries';
 import type { Actor, AgentEvent, CostKind } from '../../domain/index';
-import { createLivePaneStore, type LivePaneStore, type QuotaSignalMeter } from './live-pane';
+import {
+  createLivePaneStore,
+  type LivePaneChange,
+  type LivePaneChangeSignal,
+  type LivePaneStore,
+  type QuotaSignalMeter,
+} from './live-pane';
 
 const RUN = 'run-1';
 const ACTOR: Actor = { kind: 'user', id: 'user-1' };
@@ -71,28 +79,77 @@ const meterShape = (overrides: Partial<QuotaSignalMeter> = {}): QuotaSignalMeter
   ...overrides,
 });
 
-interface FakeCommandApi extends Pick<Api, 'command'> {
+interface FakePaneApi extends Pick<Api, 'command' | 'query'> {
   readonly issued: Command[];
   readonly actors: Actor[];
+  readonly queries: Query[];
+  setEvents(events: readonly AgentEvent[]): void;
+  failQueries(code: string): void;
 }
 
-/** Every issued command and its actor are recorded; replies come back in issue order. */
-const fakeApi = (replies: readonly CommandResult[] = []): FakeCommandApi => {
+/** Every issued command, actor and query call is recorded; the tail read answers the scripted
+ *  events until failQueries swaps in a failure reply. */
+const fakeApi = (replies: readonly CommandResult[] = []): FakePaneApi => {
   const issued: Command[] = [];
   const actors: Actor[] = [];
+  const queries: Query[] = [];
+  let events: readonly AgentEvent[] = [];
+  let failure: string | null = null;
   return {
     issued,
     actors,
+    queries,
+    setEvents: (next) => {
+      events = next;
+      failure = null;
+    },
+    failQueries: (code) => {
+      failure = code;
+    },
     command: async (actor, command) => {
       actors.push(actor);
       issued.push(command);
       const reply = replies[issued.length - 1];
       return reply ?? { ok: true };
     },
+    query: (query) => {
+      queries.push(query);
+      return Promise.resolve(failure !== null ? { ok: false, code: failure } : events);
+    },
   };
 };
 
-const store = (api: FakeCommandApi): LivePaneStore => createLivePaneStore({ runId: RUN, api, actor: ACTOR });
+interface FakeSignal {
+  readonly signal: LivePaneChangeSignal;
+  emit(change: LivePaneChange): void;
+}
+
+/** The change-signal fake: records the subscription and lets tests emit events by hand. */
+const fakeSignal = (): FakeSignal => {
+  const listeners: ((change: LivePaneChange) => void)[] = [];
+  return {
+    signal: (listener) => {
+      listeners.push(listener);
+      return () => {
+        const at = listeners.indexOf(listener);
+        if (at >= 0) listeners.splice(at, 1);
+      };
+    },
+    emit: (change) => {
+      for (const listener of [...listeners]) listener(change);
+    },
+  };
+};
+
+/** Lets the store's fire-and-forget tail re-read finish before assertions read the state. */
+const flush = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
+
+/** A pane attached to RUN against an empty tail read; tests push further events on top. */
+const store = async (api: FakePaneApi, signal = fakeSignal()): Promise<LivePaneStore> => {
+  const pane = createLivePaneStore({ api, changes: signal.signal, actor: ACTOR });
+  await pane.attach(RUN);
+  return pane;
+};
 
 /** Deep-freezes an event so any input mutation throws in the strict-mode test runtime. */
 const freezeEvent = (event: AgentEvent): AgentEvent => {
@@ -112,10 +169,10 @@ const freezeEvent = (event: AgentEvent): AgentEvent => {
 };
 
 describe('live pane store', () => {
-  it('U-5: display items fold in arrival order — thought, message, tool call, usage, quota signal', () => {
+  it('U-5: display items fold in arrival order — thought, message, tool call, usage, quota signal', async () => {
     const api = fakeApi();
-    const pane = store(api);
-    expect(pane.state()).toEqual({ items: [], ask: null, ended: false });
+    const pane = await store(api);
+    expect(pane.state()).toEqual({ runId: RUN, items: [], ask: null, ended: false });
 
     const shape = meterShape();
     pane.push(thinking('planı kuruyorum'));
@@ -146,8 +203,8 @@ describe('live pane store', () => {
     expect(state.items[4]).toEqual({ kind: 'quotaSignal', meter: shape });
   });
 
-  it('U-5: consecutive thinking and text deltas merge into the trailing item of their kind', () => {
-    const pane = store(fakeApi());
+  it('U-5: consecutive thinking and text deltas merge into the trailing item of their kind', async () => {
+    const pane = await store(fakeApi());
     pane.push(thinking('Bir '));
     pane.push(thinking('düşünce.'));
     pane.push(text('Mer'));
@@ -163,8 +220,8 @@ describe('live pane store', () => {
     ]);
   });
 
-  it('U-5: a tool_result flips its call\'s status in place — ok, failed, and target-less calls', () => {
-    const pane = store(fakeApi());
+  it('U-5: a tool_result flips its call\'s status in place — ok, failed, and target-less calls', async () => {
+    const pane = await store(fakeApi());
     pane.push(toolCall('t1', 'read_file', 'a.ts'));
     pane.push(toolCall('t2', 'shell', 'npm test'));
     pane.push(toolCall('t3', 'list_dir'));
@@ -177,8 +234,8 @@ describe('live pane store', () => {
     expect(items[2]).toEqual({ kind: 'toolCall', id: 't3', name: 'list_dir', target: null, status: 'running' });
   });
 
-  it('U-5: usage and quota signal items snapshot their event — absent fields normalize', () => {
-    const pane = store(fakeApi());
+  it('U-5: usage and quota signal items snapshot their event — absent fields normalize', async () => {
+    const pane = await store(fakeApi());
     pane.push(usageEvent({ inputTokens: 10, outputTokens: 5 }));
     pane.push(usageEvent({ inputTokens: 30, outputTokens: 12, cachedInputTokens: 8, costUsd: 0.5, costKind: 'computed' }));
     const shape = meterShape({ unit: 'tokens', used: 900, limit: 2000, remaining: 1100, source: 'polled' });
@@ -206,7 +263,7 @@ describe('live pane store', () => {
 
   it('U-5: the earliest still-open ask carries the answer intent — allow and deny', async () => {
     const api = fakeApi([{ ok: true }, { ok: false, code: 'stale' }]);
-    const pane = store(api);
+    const pane = await store(api);
     pane.push(permissionAsk('a1', 'shell', ['allow', 'deny'], 'rm -rf build'));
     pane.push(permissionAsk('a2', 'write_file', ['allow', 'deny']));
 
@@ -235,8 +292,8 @@ describe('live pane store', () => {
     expect(api.issued[1]).toEqual({ type: 'permission.answer', runId: RUN, askId: 'a2', decision: 'deny' });
   });
 
-  it('U-5: an ask stays open until a tool_result of its id — a repeated ask id does not double-open', () => {
-    const pane = store(fakeApi());
+  it('U-5: an ask stays open until a tool_result of its id — a repeated ask id does not double-open', async () => {
+    const pane = await store(fakeApi());
     pane.push(permissionAsk('a1', 'shell', ['allow', 'deny']));
     pane.push(permissionAsk('a1', 'shell', ['allow', 'deny']));
     expect(pane.state().ask?.askId).toBe('a1');
@@ -247,15 +304,24 @@ describe('live pane store', () => {
 
   it('U-5: answering with no open ask issues nothing and reports not_found', async () => {
     const api = fakeApi();
-    const pane = store(api);
+    const pane = await store(api);
 
     const result = await pane.answer('allow');
     expect(result).toEqual({ ok: false, code: 'not_found' });
     expect(api.issued).toEqual([]);
   });
 
-  it('U-5: session_started, error, limit_hit and raw events create no display item', () => {
-    const pane = store(fakeApi());
+  it('U-5: answering before any run is attached issues nothing and reports not_found', async () => {
+    const api = fakeApi();
+    const pane = createLivePaneStore({ api, changes: fakeSignal().signal, actor: ACTOR });
+
+    const result = await pane.answer('allow');
+    expect(result).toEqual({ ok: false, code: 'not_found' });
+    expect(api.issued).toEqual([]);
+  });
+
+  it('U-5: session_started, error, limit_hit and raw events create no display item', async () => {
+    const pane = await store(fakeApi());
     pane.push({ type: 'session_started', at: at(), sessionRef: 's-1' });
     pane.push({ type: 'error', at: at(), class: 'network', message: 'bağlantı koptu' });
     pane.push(limitHit());
@@ -268,7 +334,7 @@ describe('live pane store', () => {
 
   it('U-5: finished marks the stream ended and drops the open ask', async () => {
     const api = fakeApi();
-    const pane = store(api);
+    const pane = await store(api);
     pane.push(permissionAsk('a1', 'shell', ['allow', 'deny']));
     pane.push(finished('completed'));
 
@@ -281,8 +347,8 @@ describe('live pane store', () => {
     expect(api.issued).toEqual([]);
   });
 
-  it('U-5: events after finished are ignored', () => {
-    const pane = store(fakeApi());
+  it('U-5: events after finished are ignored', async () => {
+    const pane = await store(fakeApi());
     pane.push(text('son mesaj'));
     pane.push(finished('completed'));
     const ended = pane.state();
@@ -298,8 +364,8 @@ describe('live pane store', () => {
     expect(pane.state()).toEqual(ended);
   });
 
-  it('U-5: input events are handled immutably', () => {
-    const pane = store(fakeApi());
+  it('U-5: input events are handled immutably', async () => {
+    const pane = await store(fakeApi());
     const stream = [
       thinking('a'),
       text('b'),
@@ -323,8 +389,8 @@ describe('live pane store', () => {
     expect(pane.state().ended).toBe(true);
   });
 
-  it('U-5: subscribers hear each fold until they unsubscribe', () => {
-    const pane = store(fakeApi());
+  it('U-5: subscribers hear each fold until they unsubscribe', async () => {
+    const pane = await store(fakeApi());
     let heard = 0;
     const unsubscribe = pane.subscribe(() => {
       heard += 1;
@@ -337,5 +403,99 @@ describe('live pane store', () => {
     unsubscribe();
     pane.push(text('z'));
     expect(heard).toBe(2);
+  });
+
+  it('U-5: attaching reads the run.events tail and folds it newest last', async () => {
+    const api = fakeApi();
+    api.setEvents([
+      thinking('plan'),
+      toolCall('t1', 'shell', 'ls'),
+      toolResult('t1', true),
+      finished('completed'),
+    ]);
+    const pane = createLivePaneStore({ api, changes: fakeSignal().signal, actor: ACTOR });
+    expect(pane.state().runId).toBeNull();
+
+    await pane.attach(RUN);
+
+    expect(api.queries).toEqual([{ type: 'run.events', runId: RUN }]);
+    const state = pane.state();
+    expect(state.runId).toBe(RUN);
+    expect(state.items.map((item) => item.kind)).toEqual(['thought', 'toolCall']);
+    expect(state.items[1]).toEqual({ kind: 'toolCall', id: 't1', name: 'shell', target: 'ls', status: 'ok' });
+    expect(state.ended).toBe(true);
+  });
+
+  it('U-5: a run.updated for the attached run re-reads the tail and refolds from scratch', async () => {
+    const api = fakeApi();
+    const emitter = fakeSignal();
+    const pane = createLivePaneStore({ api, changes: emitter.signal, actor: ACTOR });
+    await pane.attach(RUN);
+    expect(pane.state().items).toEqual([]);
+
+    api.setEvents([thinking('bir'), thinking('iki')]);
+    emitter.emit({ type: 'run.updated', runId: RUN });
+    await flush();
+    expect(api.queries.length).toBe(2);
+    expect(pane.state().items).toEqual([{ kind: 'thought', text: 'biriki' }]);
+
+    // The same tail arriving again must not stack: the refold resets before folding.
+    emitter.emit({ type: 'run.updated', runId: RUN });
+    await flush();
+    expect(api.queries.length).toBe(3);
+    expect(pane.state().items).toEqual([{ kind: 'thought', text: 'biriki' }]);
+  });
+
+  it('U-5: a run.updated for another run and a workOrders.changed do not re-read the tail', async () => {
+    const api = fakeApi();
+    const emitter = fakeSignal();
+    const pane = createLivePaneStore({ api, changes: emitter.signal, actor: ACTOR });
+    await pane.attach(RUN);
+    expect(api.queries.length).toBe(1);
+
+    emitter.emit({ type: 'run.updated', runId: 'run-2' });
+    emitter.emit({ type: 'workOrders.changed' });
+    await flush();
+    expect(api.queries.length).toBe(1);
+  });
+
+  it('U-5: a failed tail read keeps the fold already on screen', async () => {
+    const api = fakeApi();
+    const emitter = fakeSignal();
+    api.setEvents([text('kayıt'), finished('completed')]);
+    const pane = createLivePaneStore({ api, changes: emitter.signal, actor: ACTOR });
+    await pane.attach(RUN);
+    const before = pane.state();
+
+    api.failQueries('not_found');
+    emitter.emit({ type: 'run.updated', runId: RUN });
+    await flush();
+
+    expect(pane.state()).toEqual(before);
+  });
+
+  it('U-5: attaching another run resets the fold to the new run', async () => {
+    const api = fakeApi();
+    api.setEvents([text('eski koşu')]);
+    const pane = createLivePaneStore({ api, changes: fakeSignal().signal, actor: ACTOR });
+    await pane.attach(RUN);
+    expect(pane.state().items).toEqual([{ kind: 'message', text: 'eski koşu' }]);
+
+    // run-2's tail is empty: the reset fold shows nothing of the old run.
+    api.setEvents([]);
+    await pane.attach('run-2');
+    expect(api.queries).toEqual([
+      { type: 'run.events', runId: RUN },
+      { type: 'run.events', runId: 'run-2' },
+    ]);
+    expect(pane.state()).toEqual({ runId: 'run-2', items: [], ask: null, ended: false });
+  });
+
+  it('U-5: attaching the already-attached run does not re-read the tail', async () => {
+    const api = fakeApi();
+    const pane = createLivePaneStore({ api, changes: fakeSignal().signal, actor: ACTOR });
+    await pane.attach(RUN);
+    await pane.attach(RUN);
+    expect(api.queries.length).toBe(1);
   });
 });
