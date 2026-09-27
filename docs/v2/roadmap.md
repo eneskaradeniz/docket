@@ -8,7 +8,7 @@
 | **v2 · Phase 1 — Domain core** | `src/domain/` per [domain.md](domain.md) | Every R-rule has a test; v1 parity scenarios pass |
 | **v2 · Phase 2 — Application & storage** | Use cases, ports + fakes, SQLite repositories, YAML definition store, keychain, event log, API boundary, Claude SDK transport; 2c: environments, deploy and remote-check gates, `Forge`/`IssueTracker` ports ([integrations.md](integrations.md)) | A headless test runs a work order end to end |
 | **v2 · Phase 3 — Providers** | Discovery, stream-json, Codex app-server, ACP, quota probes, per-run isolated capabilities, GitHub `Forge` adapter | Claude, Codex and one ACP agent run the same work order |
-| **v2 · Phase 4 — UI & parity** | Shell, wizard, cockpit, workspace board, work-order detail, live pane, settings, secret-scan gate, environments and deploy approval. TODO: remove v1 module augmentations that widen SDK interfaces (unblocks SDK transport test stub cleanup). | v1 parity → v1 code removed |
+| **v2 · Phase 4 — UI & parity** | [ui.md](ui.md): shell, wizard, cockpit, workspace board, work-order detail, live pane, settings, secret-scan gate, environments and deploy approval. TODO: remove v1 module augmentations that widen SDK interfaces (unblocks SDK transport test stub cleanup). | v1 parity → v1 code removed |
 | **v2 · Phase 5 — Roadmap & dispatcher** | Task dependencies, "run phase", auto-resume after quota, pool switching, fallback chain, remote-check polling, tracker import and write-back | A phase advances unattended |
 | **v2 · Phase 6 — Pages & chat** | Docket MCP server, page viewer, page-approval gate, chat at three scopes, proposals | "Add a test role" approved from chat as a diff |
 | **v2 · Phase 7 — Companion & library** | New project from scratch, role/flow library, security gates | From an empty machine to a running project |
@@ -68,3 +68,5 @@ morning. Rules:
 7. At the end: open (or update) a PR `v2 → main` titled "v2: batch run <date>" with the list of merged
    issues, skipped issues and reasons. The operator merges it after review.
 8. On a usage-limit error: finish the current step, write the progress comment on the PR, and stop.
+9. UI phases: UI work merges into `v2` normally; the numbered manual scenario lands on the tracker PR;
+   the `v2 → main` merge waits for the operator's verdict (the operator gate in CLAUDE.md).
