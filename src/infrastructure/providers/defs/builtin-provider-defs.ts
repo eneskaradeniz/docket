@@ -117,7 +117,8 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
-      permissionAsk: 'unknown',
+      // probe #139: asks and blocks out-of-cwd; in-cwd edits auto-allowed (copilot asks for those too).
+      permissionAsk: true,
       resume: true,
       mcp: true,
       hooks: 'unknown',
@@ -141,7 +142,8 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
-      permissionAsk: 'unknown',
+      // probe #139: asks and blocks out-of-cwd; in-cwd edits auto-allowed (copilot asks for those too).
+      permissionAsk: true,
       resume: true,
       mcp: true,
       hooks: 'unknown',
@@ -164,7 +166,8 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
-      permissionAsk: 'unknown',
+      // probe #139: asks and blocks out-of-cwd; in-cwd edits auto-allowed (copilot asks for those too).
+      permissionAsk: true,
       resume: true,
       mcp: true,
       hooks: 'unknown',
