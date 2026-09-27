@@ -9,7 +9,6 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { Query } from '../../api/queries';
 import type {
   Actor,
-  Definitions,
   EnvSlug,
   EnvironmentDef,
   FlowAction,
@@ -38,10 +37,6 @@ export interface WorkOrderDetailStoreDeps {
   readonly changes: DetailChangeSignal;
   /** Every issued command travels as this actor — the detail screen acts as the user. */
   readonly actor: Actor;
-  /** The workspace's definitions: the flow's gate list and the environment defs (protected,
-   *  promoteFrom) live there. The api surface that will serve this lands with the screens
-   *  wiring; tests inject a fake, so the type lives here until then. */
-  readonly definitions: (workspace: string) => Promise<Definitions | null>;
 }
 
 /** The detail reply narrowed to the fields the store reads (the api resolves `unknown`; this is
@@ -66,6 +61,10 @@ export interface WorkOrderDetailView {
   readonly state: WorkOrderState;
   readonly next: FlowAction;
   readonly runs: readonly WorkOrderDetailRun[];
+  /** The work order own flow and the workspace environments, carried by the detail query — the
+   *  store needs no definitions loader of its own. */
+  readonly flow: FlowDef;
+  readonly environments: readonly EnvironmentDef[];
 }
 
 /** A gate's human-readable standing in this work order; label keys `gate.state.*` (U-1). */
@@ -109,7 +108,7 @@ export interface WorkOrderDetailState {
   /** The last successful query's view; null only before the first success. A failed query
    *  leaves it verbatim on screen. */
   readonly view: WorkOrderDetailView | null;
-  /** The per-stage gate list (U-4), derived from the definitions and the derived state. */
+  /** The per-stage gate list (U-4), derived from the view's flow, environments and state. */
   readonly stages: readonly StageGates[];
   /** The failure code of the latest failed query (or definitions load); null while healthy. */
   readonly problem: string | null;
@@ -210,7 +209,7 @@ const stageGates = (
 };
 
 export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): WorkOrderDetailStore => {
-  const { api, changes, actor, definitions } = deps;
+  const { api, changes, actor } = deps;
 
   let state: WorkOrderDetailState = {
     loading: false,
@@ -243,24 +242,15 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
       set({ ...state, loading: false, problem: reply.code });
       return;
     }
-    // The contract of the detail query: a reply that is not a failure is the detail view.
+    // The contract of the detail query: a reply that is not a failure is the detail view, and
+    // the query has already resolved the definitions server-side — the flow and the environments
+    // ride the reply, so the stage list derives without a second read.
     const view = reply as WorkOrderDetailView;
-    const defs = await definitions(view.record.workspace);
-    if (attempt !== attempts) return;
-    if (defs === null) {
-      set({ ...state, loading: false, view, stages: [], problem: 'definitions_invalid' });
-      return;
-    }
-    const flow = defs.flows.find((candidate) => candidate.id === view.record.flow);
-    if (flow === undefined) {
-      set({ ...state, loading: false, view, stages: [], problem: 'unknown_flow' });
-      return;
-    }
     set({
       ...state,
       loading: false,
       view,
-      stages: stageGates(flow, defs.workspace?.environments ?? [], view.state),
+      stages: stageGates(view.flow, view.environments, view.state),
       problem: null,
     });
   };

@@ -1,5 +1,8 @@
 // main.ts — the v2 composition root: the only place where Electron, the Node adapters and the
 // core meet. Wiring order is load-bearing, and each step says why:
+//   0. The data dir: DOCKET_DATA_DIR, when set, is the whole storage root — database, YAML
+//      definitions root, worktrees; unset, the root is <homedir>/.docket. It is the app's only
+//      storage-location seam, so an isolated run points it at a temp dir and nothing else moves.
 //   1. Node deps (SQLite, YAML definitions, keychain, worktrees) — everything except Electron
 //      objects, which arrive as injected adapters (safeStorage, Notification).
 //   2. The permission board — in-process state beside the ports, never a port itself.
@@ -292,6 +295,9 @@ function createWindow(): BrowserWindow {
 const startApp = async (): Promise<void> => {
   const baseEnv = childEnv();
   const env = parentEnv();
+  // The one storage seam, read before composition: setting the variable moves the whole root,
+  // and the unset default stays the documented <homedir>/.docket.
+  const dataDir = process.env.DOCKET_DATA_DIR ?? join(homedir(), '.docket');
   const discovery = createPathDiscovery(
     BUILTIN_PROVIDER_DEFS,
     (command, args, options) => spawn(command, [...args], options),
@@ -300,7 +306,7 @@ const startApp = async (): Promise<void> => {
   );
 
   const opened = createNodeDeps({
-    dataDir: join(homedir(), '.docket'),
+    dataDir,
     cipher: safeStorageCipher(),
     transports: discoveredTransports(baseEnv, env),
     notifier: electronNotifier(),

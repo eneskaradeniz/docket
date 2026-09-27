@@ -3,10 +3,10 @@
 // shell → cockpit → board → work-order detail → a permission ask raised by a REAL scripted
 // transport run → the answer → the badge clearing to absence.
 //
-// How the launched instance is pointed at the seed (there is no db-path override in the app):
-// the app resolves its data dir as <homedir>/.docket and homedir follows $HOME on POSIX, so the
-// harness launches Electron with HOME set to the seed's temp home. The app then boots through its
-// own, only data-dir mechanism — nothing patched, the operator's real ~/.docket untouched.
+// How the launched instance is pointed at the seed: the app's one storage-location seam is the
+// DOCKET_DATA_DIR variable, so the harness launches Electron with it aimed at the temp data dir
+// the seed wrote the database into. The app then boots through its own, only override mechanism
+// — nothing patched, the operator's real ~/.docket untouched.
 //
 // How the open ask is produced: the seed registers an account for the provider whose CLI the
 // smoke impersonates (an ACP transport), and the discovery override variable names the scripted
@@ -69,7 +69,7 @@ const OPERATOR = { kind: 'user', id: 'duman-operatoru', label: 'Duman operatör�
 
 const app = await electron.launch({
   args: [join(ROOT, 'dist-electron', 'main.js')],
-  env: { ...process.env, HOME: SEED.home, DOCKET_OPENCODE_BIN: SEED.agentBin },
+  env: { ...process.env, DOCKET_DATA_DIR: SEED.dataDir, DOCKET_OPENCODE_BIN: SEED.agentBin },
 });
 const page = await app.firstWindow();
 

@@ -73,16 +73,13 @@ const mount = document.getElementById('root');
 if (mount !== null) {
   const api = bridge();
   const changes = api.subscribe;
-  // The workspace registry below the api has no read that serves the detail screen's gate list
-  // yet, so the loader reports unavailability and the detail shows its problem state for gates.
-  const definitions = async () => null;
   const locale = createLocaleStore(window.localStorage);
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const cockpit = createCockpitStore({ api, changes, now: () => Date.now() });
   const board = createBoardStore({ api, changes, actor: USER });
-  const detail = createWorkOrderDetailStore({ api, changes, actor: USER, definitions });
+  const detail = createWorkOrderDetailStore({ api, changes, actor: USER });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
   const wizard = createWizardStore({
     api,

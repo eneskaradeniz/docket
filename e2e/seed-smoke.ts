@@ -2,8 +2,8 @@
 // with `npx tsx`; it prints a `SEED={json}` manifest line the harness parses.
 //
 // What it builds, and why each piece exists:
-//   <home>/                     the temp HOME the launched app boots from (the app resolves its
-//                               data dir as <homedir>/.docket, and homedir follows $HOME on POSIX)
+//   <home>/                     a throwaway tree staging everything the walk needs
+//   <home>/.docket/             the launched app's data dir, handed over as DOCKET_DATA_DIR
 //   <home>/.docket/docket.db    seeded through the REAL createNodeDeps + use-cases/repos, so the
 //                               rows are encoded exactly the way the app writes them
 //   <home>/duman-repo/          a real git repo (the run's worktree anchors to its HEAD) carrying
@@ -27,7 +27,7 @@ import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 const here = dirname(fileURLToPath(import.meta.url));
 
 if (process.platform === 'win32') {
-  throw new Error('the smoke seed relies on POSIX HOME redirection and script shebangs');
+  throw new Error('the smoke seed relies on POSIX paths and script shebangs');
 }
 
 const WORKSPACE = 'duman' as WorkspaceSlug;
@@ -45,6 +45,7 @@ const run = (command: string, args: readonly string[], cwd: string): void => {
 };
 
 const home = mkdtempSync(join(tmpdir(), 'docket-smoke-home-'));
+const dataDir = join(home, '.docket');
 const repo = join(home, 'duman-repo');
 mkdirSync(repo, { recursive: true });
 
@@ -122,7 +123,7 @@ writeFileSync(
 
 // --- the database, written through the app's own composition and use-cases ---------------------------
 const node = createNodeDeps({
-  dataDir: join(home, '.docket'),
+  dataDir,
   // Cipher and transport stubs: the smoke seeds no secrets and starts no run from here — the
   // launched app brings the real ones.
   cipher: {
@@ -186,6 +187,7 @@ chmodSync(agentBin, 0o755);
 
 const manifest = {
   home,
+  dataDir,
   repo,
   agentBin,
   workOrderId,
