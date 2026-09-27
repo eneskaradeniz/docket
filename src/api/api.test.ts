@@ -7,6 +7,7 @@ import type { Actor, Slug, Ulid } from '../domain/index';
 import { parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps } from '../application';
+import { createPermissionBoard } from '../application';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
@@ -317,6 +318,66 @@ describe('createApi', () => {
 
       const rejected = await api.command(ACTOR, { type: 'proposal.decide', id: PROPOSAL_OTHER, decision: 'rejected' });
       expect(rejected).toEqual({ ok: true, id: PROPOSAL_OTHER });
+    });
+
+    it('U-11: maps permission.answer onto the board and resolves the buffered ask', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      board.register(RUN);
+      // What the executor's gate wiring does while the run streams.
+      const waiting = board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      const result = await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' });
+
+      expect(result).toEqual({ ok: true });
+      expect(await waiting).toBe('allow');
+      expect(board.openAsks()).toEqual([]);
+      // The ask is answered and gone; answering it again is the not_found of an unknown askId.
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+    });
+
+    it('U-11: an unknown or ended askId answers not_found and never throws', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-x', decision: 'deny' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+
+      // A run that has ended takes its asks with it.
+      board.register(RUN);
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+      board.unregister(RUN);
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+
+      // An api built without a board has no open ask at all, so the answer stays a plain not_found.
+      expect(await createApi(h.deps).command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+    });
+
+    it('U-11: an invalid runId returns invalid_id and leaves the buffered ask unanswered', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      board.register(RUN);
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: 'not-a-ulid', askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'invalid_id',
+      });
+      expect(board.openAsks()).toEqual([{ runId: RUN, askId: 'ask-1', since: 1_500 }]);
     });
   });
 });

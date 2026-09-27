@@ -35,4 +35,5 @@ export const EN: LabelBundle = {
   'success.workOrder.enqueue': 'Stage queued.',
   'success.gate.decide': 'Gate decision recorded.',
   'success.proposal.decide': 'Proposal decision recorded.',
+  'success.permission.answer': 'Permission answer recorded.',
 };

@@ -34,4 +34,5 @@ export const TR: LabelBundle = {
   'success.workOrder.enqueue': 'Aşama kuyruğa alındı.',
   'success.gate.decide': 'Kapı kararı kaydedildi.',
   'success.proposal.decide': 'Teklif kararı kaydedildi.',
+  'success.permission.answer': 'İzin yanıtı kaydedildi.',
 };

@@ -50,6 +50,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.enqueue': 'success.workOrder.enqueue',
   'gate.decide': 'success.gate.decide',
   'proposal.decide': 'success.proposal.decide',
+  'permission.answer': 'success.permission.answer',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;
