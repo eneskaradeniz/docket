@@ -203,6 +203,8 @@ export const EN: LabelBundle = {
   'discovery.loggedIn': 'logged in',
   'discovery.loginRequired': 'login required',
   'discovery.loginUnknown': 'login state unknown',
+  'errorBoundary.title': 'The app hit an unexpected error.',
+  'errorBoundary.reload': 'Reload',
   'success.account.save': 'Account saved.',
   'success.account.remove': 'Account removed.',
   'success.binding.save': 'Role binding saved.',
