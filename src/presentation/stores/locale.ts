@@ -14,6 +14,9 @@ export interface LocalePersistence {
 export interface LocaleStore {
   current(): Locale;
   set(next: Locale): void;
+  /** The store idiom every screen consumes with useSyncExternalStore: the renderer's root holds
+   *  one subscription, so a set() re-renders the tree with the swapped bundle — no reload. */
+  subscribe(listener: () => void): () => void;
 }
 
 const isLocale = (value: string): value is Locale => value === 'tr' || value === 'en';
@@ -26,11 +29,19 @@ const storedLocale = (persistence: LocalePersistence): Locale => {
 
 export const createLocaleStore = (persistence: LocalePersistence): LocaleStore => {
   let current = storedLocale(persistence);
+  const listeners = new Set<() => void>();
   return {
     current: () => current,
     set: (next) => {
       current = next;
       persistence.setItem(LOCALE_STORAGE_KEY, next);
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 };

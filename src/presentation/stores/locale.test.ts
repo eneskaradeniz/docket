@@ -48,4 +48,17 @@ describe('locale store', () => {
     const foreign = fakePersistence({ 'other.setting': 'en' });
     expect(createLocaleStore(foreign).current()).toBe('tr');
   });
+
+  it('subscribe notifies listeners on set until they unsubscribe', () => {
+    const store = createLocaleStore(fakePersistence());
+    const seen: string[] = [];
+    const unsubscribe = store.subscribe(() => seen.push(store.current()));
+
+    store.set('en');
+    expect(seen).toEqual(['en']);
+
+    unsubscribe();
+    store.set('tr');
+    expect(seen).toEqual(['en']);
+  });
 });

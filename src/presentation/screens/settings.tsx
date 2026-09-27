@@ -9,10 +9,12 @@ import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
 import { DiscoveryBadges } from '../components/discovery-badges';
 import { countedLabel } from '../components/counted-label';
+import { LocaleSwitcher } from '../components/locale-switcher';
 import { OutcomeNotice } from '../components/outcome-notice';
 import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
+import type { LocaleStore } from '../stores/locale';
 import type {
   AccountDisplay,
   BindingSaveInput,
@@ -26,6 +28,9 @@ import type { SettingsBindingScope } from '../../api/queries';
 export interface SettingsScreenProps {
   readonly store: SettingsStore;
   readonly locale: Locale;
+  /** The language control binds straight to the locale store: a selection swaps the bundle for the
+   *  whole app through the root's subscription and persists the choice (U-9). */
+  readonly localeStore: LocaleStore;
 }
 
 const AUTH_MODE_KEY: Readonly<Record<string, LabelKey>> = {
@@ -155,7 +160,7 @@ const chainFor = (
   return [...kept, ...added];
 };
 
-export function SettingsScreen({ store, locale }: SettingsScreenProps) {
+export function SettingsScreen({ store, locale, localeStore }: SettingsScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   useEffect(() => {
     void store.load();
@@ -210,6 +215,10 @@ export function SettingsScreen({ store, locale }: SettingsScreenProps) {
       <header className="grid gap-1.5">
         <h1 className="text-[19px] font-bold tracking-tight text-ink">{t(locale, 'nav.settings')}</h1>
       </header>
+
+      <SectionCard title={t(locale, 'settings.language.label')}>
+        <LocaleSwitcher store={localeStore} locale={locale} />
+      </SectionCard>
 
       {state.problem !== null ? (
         <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
