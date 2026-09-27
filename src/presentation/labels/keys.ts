@@ -165,6 +165,11 @@ export const LABEL_KEYS = [
   'settings.discovery.failed',
   'settings.discovery.empty',
   'settings.discovery.flags',
+  // Language switcher (U-9): the control's own name and the languages' names — the names stay
+  // native endonyms in both bundles, never translated.
+  'settings.language.label',
+  'settings.language.tr',
+  'settings.language.en',
   // Meter observation sources (U-6; the closed ObservationSource set of the domain).
   'source.pushed',
   'source.polled',

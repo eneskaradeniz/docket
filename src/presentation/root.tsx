@@ -2,17 +2,17 @@
 // from that bridge alone, and mounts React into the page's root element. The bridge is the only
 // api access here; every store takes its deps by injection, so composition stays the single place
 // where the real sources are named.
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
 import type { WorkspaceListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
-import { ShellScreen } from './screens/shell';
+import { ShellScreen, type ShellScreenProps } from './screens/shell';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
-import { createLocaleStore } from './stores/locale';
+import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
 import { createShellStore, type ShellWorkspace } from './stores/shell';
@@ -70,6 +70,14 @@ const sourceReachable = (api: DocketBridge) => async (source: string): Promise<b
   return !isQueryFailure(reply);
 };
 
+/** The root component: it subscribes to the locale store, so a selection in the settings' language
+ *  control re-renders the shell with the swapped bundle — the flip stays in memory, never a
+ *  reload (U-9). */
+function App({ localeStore, ...screens }: Omit<ShellScreenProps, 'locale'> & { readonly localeStore: LocaleStore }) {
+  const locale = useSyncExternalStore(localeStore.subscribe, localeStore.current);
+  return <ShellScreen {...screens} localeStore={localeStore} locale={locale} />;
+}
+
 const mount = document.getElementById('root');
 if (mount !== null) {
   const api = bridge();
@@ -97,14 +105,14 @@ if (mount !== null) {
 
   createRoot(mount).render(
     <React.StrictMode>
-      <ShellScreen
+      <App
+        localeStore={locale}
         shell={shell}
         cockpit={cockpit}
         board={board}
         detail={detail}
         settings={settings}
         wizard={wizard}
-        locale={locale.current()}
       />
     </React.StrictMode>,
   );
