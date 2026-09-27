@@ -99,8 +99,13 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
   // Only the newest tail read may apply its reply: a slow earlier read must not overwrite a
   // fresher fold when change events stack up.
   let attempts = 0;
+  // useSyncExternalStore compares snapshots by reference: a fresh object per state() call reads
+  // as a change and loops re-renders. The snapshot is rebuilt only when a fold mutates, and
+  // state() hands out the stored reference.
+  let snapshot: LivePaneState = { runId: null, items: [], ask: null, ended: false };
 
   const notify = (): void => {
+    snapshot = { runId, items, ask: earliestAsk(), ended };
     for (const listener of [...listeners]) listener();
   };
 
@@ -231,7 +236,7 @@ export const createLivePaneStore = (deps: LivePaneStoreDeps): LivePaneStore => {
       return refresh();
     },
     push,
-    state: () => ({ runId, items, ask: earliestAsk(), ended }),
+    state: () => snapshot,
     answer: async (decision) => {
       const ask = earliestAsk();
       if (ask === null || runId === null) return { ok: false, code: 'not_found' };
