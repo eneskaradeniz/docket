@@ -12,7 +12,9 @@ export const GENERIC_FAILURE_KEY: LabelKey = 'error.unknown';
 /**
  * Every failure code the current api can return, per docs/v2/application.md § 4:
  * invalid_id from the boundary parse (A-21); the work-order open/control/enqueue errors, the
- * human-gate and proposal decision errors, and definitions_invalid from the board/detail reads.
+ * human-gate and proposal decision errors, definitions_invalid from the board/detail reads, and
+ * the deploy-gate errors (deploy-gate.ts; confirmation_mismatch is also the detail store's
+ * E-8 refusal code for a blocked approve intent).
  */
 export const KNOWN_FAILURE_CODES: readonly string[] = [
   'invalid_id',
@@ -35,6 +37,12 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'stale',
   'self_approval',
   'invalid_after',
+  'not_a_deploy_gate',
+  'no_approval',
+  'confirmation_mismatch',
+  'promote_prerequisite_missing',
+  'unknown_environment',
+  'no_repo',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(

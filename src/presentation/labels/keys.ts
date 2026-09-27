@@ -25,6 +25,14 @@ export const LABEL_KEYS = [
   'error.stale',
   'error.self_approval',
   'error.invalid_after',
+  // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
+  // detail store's E-8 refusal, U-4).
+  'error.not_a_deploy_gate',
+  'error.no_approval',
+  'error.confirmation_mismatch',
+  'error.promote_prerequisite_missing',
+  'error.unknown_environment',
+  'error.no_repo',
   // Generic failure for an unknown code (U-8).
   'error.unknown',
   // Attention kinds (api/queries.ts AttentionItem).
@@ -35,6 +43,13 @@ export const LABEL_KEYS = [
   // Store-side create-intent validation reasons (U-3, stores/board.ts).
   'validate.title_required',
   'validate.flow_required',
+  // Gate states on the work-order detail (U-4, stores/work-order-detail.ts).
+  'gate.state.pending',
+  'gate.state.passed',
+  'gate.state.upcoming',
+  // Deploy-gate copy (U-4): protection marker and the read-only promotion chain (E-5).
+  'gate.deploy.protected',
+  'gate.deploy.prerequisite',
   // Success confirmations, one per command type (U-8).
   'success.workOrder.open',
   'success.workOrder.block',
