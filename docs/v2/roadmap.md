@@ -4,7 +4,7 @@
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |
-| **v2 · Phase 0 — Preparation** | Design docs, layer checks, folder scaffold, probes, rename (later) | Scaffold passes CI; probe results recorded |
+| **v2 · Phase 0 — Preparation** | Design docs, layer checks, folder scaffold, probes | Scaffold passes CI; probe results recorded |
 | **v2 · Phase 1 — Domain core** | `src/domain/` per [domain.md](domain.md) | Every R-rule has a test; v1 parity scenarios pass |
 | **v2 · Phase 2 — Application & storage** | Use cases, ports + fakes, SQLite repositories, YAML definition store, keychain, event log, API boundary, Claude SDK transport; 2c: environments, deploy and remote-check gates, `Forge`/`IssueTracker` ports ([integrations.md](integrations.md)) | A headless test runs a work order end to end |
 | **v2 · Phase 3 — Providers** | Discovery, stream-json, Codex app-server, ACP, quota probes, per-run isolated capabilities, GitHub `Forge` adapter | Claude, Codex and one ACP agent run the same work order |
