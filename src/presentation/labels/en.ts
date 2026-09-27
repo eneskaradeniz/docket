@@ -28,6 +28,8 @@ export const EN: LabelBundle = {
   'attention.awaiting_human': 'Awaiting human',
   'attention.limit_waiting': 'Waiting on limit',
   'attention.blocked': 'Blocked',
+  'validate.title_required': 'Enter a title.',
+  'validate.flow_required': 'Choose a flow.',
   'success.workOrder.open': 'Work order opened.',
   'success.workOrder.block': 'Work order blocked.',
   'success.workOrder.unblock': 'Work order unblocked.',

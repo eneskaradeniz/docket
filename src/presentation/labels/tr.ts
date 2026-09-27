@@ -27,6 +27,8 @@ export const TR: LabelBundle = {
   'attention.awaiting_human': 'İnsan yanıtı bekleniyor',
   'attention.limit_waiting': 'Limit bekleniyor',
   'attention.blocked': 'Engellendi',
+  'validate.title_required': 'Bir başlık yazın.',
+  'validate.flow_required': 'Bir akış seçin.',
   'success.workOrder.open': 'İş emri açıldı.',
   'success.workOrder.block': 'İş emri engellendi.',
   'success.workOrder.unblock': 'İş emrinin engeli kaldırıldı.',

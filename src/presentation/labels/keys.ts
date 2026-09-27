@@ -32,6 +32,9 @@ export const LABEL_KEYS = [
   'attention.awaiting_human',
   'attention.limit_waiting',
   'attention.blocked',
+  // Store-side create-intent validation reasons (U-3, stores/board.ts).
+  'validate.title_required',
+  'validate.flow_required',
   // Success confirmations, one per command type (U-8).
   'success.workOrder.open',
   'success.workOrder.block',
