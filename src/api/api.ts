@@ -5,7 +5,7 @@
 import type { Actor, FlowDef, Result, Slug, StageSlug, Ulid, WorkOrderId, WorkspaceSlug } from '../domain/index';
 import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps } from '../application';
+import type { AppDeps, PermissionBoard } from '../application';
 import {
   blockWorkOrder,
   closeWorkOrder,
@@ -46,14 +46,21 @@ const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
-export function createApi(deps: AppDeps): Api {
+/** The board is passed separately, like the executor's gate: it is in-process state, not a port.
+ *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing. */
+export function createApi(deps: AppDeps, board?: Pick<PermissionBoard, 'answer'>): Api {
   return {
-    command: (actor, command) => runCommand(deps, actor, command),
+    command: (actor, command) => runCommand(deps, actor, command, board),
     query: (query) => runQuery(deps, query),
   };
 }
 
-const runCommand = async (deps: AppDeps, actor: Actor, command: Command): Promise<CommandResult> => {
+const runCommand = async (
+  deps: AppDeps,
+  actor: Actor,
+  command: Command,
+  board: Pick<PermissionBoard, 'answer'> | undefined,
+): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
       const workspace = slugValue<'workspace'>(command.workspace);
@@ -142,6 +149,16 @@ const runCommand = async (deps: AppDeps, actor: Actor, command: Command): Promis
         { id, decision: command.decision, actor },
       );
       return decided.ok ? { ok: true, id: decided.value.id } : { ok: false, code: decided.error };
+    }
+
+    case 'permission.answer': {
+      const runId = ulidValue<'run'>(command.runId);
+      if (runId === undefined) return invalidId();
+      // runId is validated at the edge (A-21); the board routes by askId, because it knows which
+      // run still owns the ask.
+      if (board === undefined) return { ok: false, code: 'not_found' };
+      const answered = board.answer(command.askId, command.decision);
+      return answered.ok ? { ok: true } : { ok: false, code: answered.error };
     }
   }
 };

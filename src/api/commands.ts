@@ -7,7 +7,8 @@ export type Command =
   | { readonly type: 'workOrder.close'; readonly id: string }
   | { readonly type: 'workOrder.enqueue'; readonly id: string }
   | { readonly type: 'gate.decide'; readonly workOrderId: string; readonly gate: string; readonly decision: 'approved' | 'rejected'; readonly note?: string }
-  | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' };
+  | { readonly type: 'proposal.decide'; readonly id: string; readonly decision: 'approved' | 'rejected' }
+  | { readonly type: 'permission.answer'; readonly runId: string; readonly askId: string; readonly decision: 'allow' | 'deny' };
 
 export type CommandResult =
   | { readonly ok: true; readonly id?: string }

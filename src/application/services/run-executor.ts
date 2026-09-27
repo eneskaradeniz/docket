@@ -19,6 +19,8 @@ import { decideOnLimit, foldRun } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
+import type { BoardHooks } from './permission-board';
+
 export interface ExecuteRunInput {
   readonly item: QueueItem;
   readonly role: RoleDef;
@@ -119,10 +121,13 @@ const audit = async (
   });
 };
 
-/** Closes the run record and appends the matching `run_finished` event to the work order. */
+/** Closes the run record and appends the matching `run_finished` event to the work order. Every
+ *  path that ends a run funnels through here, so this is also where the run leaves the board:
+ *  nothing of an ended run stays answerable. */
 const endRun = async (
   deps: Pick<AppDeps, 'clock' | 'workOrders' | 'runs'>,
   input: { readonly runId: RunId; readonly workOrderId: WorkOrderId; readonly outcome: RunOutcome },
+  board?: BoardHooks,
 ): Promise<EpochMs> => {
   const endedAt = deps.clock.now();
   await deps.runs.update(input.runId, { endedAt, outcome: input.outcome });
@@ -132,6 +137,7 @@ const endRun = async (
     runId: input.runId,
     outcome: input.outcome,
   });
+  board?.unregister(input.runId);
   return endedAt;
 };
 
@@ -190,6 +196,7 @@ export async function executeRun(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
+  board?: BoardHooks,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
   const plan = planAttempt(
@@ -216,11 +223,13 @@ export async function executeRun(
     attempt: plan.attempt,
   });
   await audit(deps, { at: startedAt, action: 'run.started', runId });
+  // From here the run is answerable through the board, until its record closes.
+  board?.register(runId);
 
   // A transport that never comes up still ends the run: leaving it open would wedge the work
   // order in `running` forever.
   const failAsTransport = async (error: TransportError): Promise<ExecuteOutcome> => {
-    await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' });
+    await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, board);
     return { kind: 'transport_error', error };
   };
 
@@ -306,13 +315,13 @@ export async function executeRun(
             now: deps.clock.now(),
           },
         );
-        await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'limit' });
+        await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'limit' }, board);
         return { kind: 'limit', decision };
       }
       case 'finished': {
         const outcome = foldRun([event]).outcome;
         if (outcome !== undefined) {
-          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome });
+          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board);
           await audit(deps, { at: endedAt, action: 'run.finished', runId, detail: { outcome } });
           return { kind: 'finished', outcome };
         }
