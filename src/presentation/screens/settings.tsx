@@ -56,12 +56,15 @@ const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
 const scopeName = (scope: SettingsBindingScope): string =>
   scope.level === 'workspace' ? scope.workspace : scope.level === 'workOrder' ? scope.workOrderId : '';
 
-/** One meter line: the store already resolved the meter's naming context; remaining and reset
- *  segments render only when the meter carries them — absence is omitted, never faked. */
+/** One meter line, in the design's pool grammar: a quiet line under the account's parting
+ *  hairline — label, mono reading, and the provenance chip at the edge; no box of its own, a
+ *  pool is a list, not a stack of cards. The store already resolved the meter's naming context;
+ *  remaining and reset segments render only when the meter carries them — absence is omitted,
+ *  never faked. */
 function MeterRow({ meter, locale, store }: { readonly meter: MeterDisplay; readonly locale: Locale; readonly store: SettingsStore }) {
   const resetsAt = store.resetsAtLabel(meter.resetsAt);
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-md border border-hairline bg-raised px-2.5 py-1.5">
+    <li className="flex flex-wrap items-baseline gap-2">
       <span className="text-[13px] text-ink">{meter.label}</span>
       <span className="font-mono text-[11.5px] text-inkdim">
         {meter.remaining !== null ? `${t(locale, 'settings.meter.remaining')} ${meter.remaining} ${meter.unit}` : meter.unit}
@@ -86,7 +89,7 @@ function AccountRow({
   readonly onRemove: (accountId: string) => void;
 }) {
   return (
-    <li className="grid gap-1.5 rounded-md border border-hairline bg-surface px-3 py-2">
+    <li className="grid gap-2.5 rounded-[10px] border border-hairline bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span className="text-[13.5px] font-semibold text-ink">{account.label}</span>
@@ -101,7 +104,7 @@ function AccountRow({
       {account.meters.length === 0 ? (
         <p className="text-[12.5px] text-inkdim">{t(locale, 'settings.meters.empty')}</p>
       ) : (
-        <ul className="grid gap-1">
+        <ul className="grid gap-2 border-t border-hairline pt-2.5">
           {account.meters.map((meter) => (
             <MeterRow key={meter.id} meter={meter} locale={locale} store={store} />
           ))}
@@ -126,7 +129,7 @@ function AccountPicker({
     <ul className="grid gap-1">
       {accounts.map((account) => (
         <li key={account.id}>
-          <label className="flex w-full items-center gap-2 rounded-md border border-hairline bg-raised px-2.5 py-1.5 text-left text-[13px] text-ink">
+          <label className="flex w-full items-center gap-2.5 rounded-sm border border-hairline bg-raised px-2.5 py-1.5 text-left text-[13px] text-ink">
             <input
               type="checkbox"
               checked={selected.includes(account.id)}
@@ -211,9 +214,9 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
   const showRemoveWarning = removeWarning !== null && removeWarning.accountId !== warningDismissedFor;
 
   return (
-    <div className="grid gap-4">
-      <header className="grid gap-1.5">
-        <h1 className="text-[19px] font-bold tracking-tight text-ink">{t(locale, 'nav.settings')}</h1>
+    <div className="grid gap-5">
+      <header className="grid gap-1">
+        <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{t(locale, 'nav.settings')}</h1>
       </header>
 
       <SectionCard title={t(locale, 'settings.language.label')}>
@@ -235,7 +238,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
       ) : null}
 
       {showRemoveWarning && removeWarning !== null ? (
-        <div role="alert" className="grid gap-2 rounded-md border border-signal/45 bg-surface px-3 py-2.5">
+        <div role="alert" className="grid gap-2 rounded-md border border-signal/40 bg-signal/10 px-3 py-2.5">
           <p className="text-[13px] text-ink">
             {t(locale, 'settings.remove.warning')}{' '}
             <span className="font-mono text-[12.5px] text-signal">{removeWarning.roles.join(', ')}</span>
@@ -255,7 +258,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
         {accounts.length === 0 ? (
           <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p>
         ) : (
-          <ul className="grid gap-1.5">
+          <ul className="grid gap-2">
             {accounts.map((account) => (
               <AccountRow key={account.id} account={account} locale={locale} store={store} onRemove={remove} />
             ))}
@@ -268,7 +271,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
           {view === null || view.bindings.length === 0 ? (
             <p className="text-[13px] text-inkdim">{t(locale, 'settings.binding.empty')}</p>
           ) : (
-            <ul className="grid gap-1.5">
+            <ul className="grid gap-2">
               {view.bindings.map((binding) => {
                 const editable = binding.scope.level === 'global';
                 const editing = editRole === binding.role;
@@ -327,7 +330,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
           )}
 
           {editRole === null ? (
-            <div className="grid gap-2 rounded-md border border-hairline bg-raised p-3">
+            <div className="grid gap-2.5 rounded-md border border-hairline bg-band p-3">
               <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
                 {t(locale, 'settings.binding.add')}
               </span>
@@ -340,7 +343,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
                     value={newRole}
                     onChange={(event) => setNewRole(event.target.value)}
                     placeholder={t(locale, 'settings.binding.rolePlaceholder')}
-                    className="rounded-md border border-hairline bg-raised px-2 py-1 font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
+                    className="rounded-sm border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
                   />
                 </label>
                 <ActionButton variant="primary" size="md" disabled={newRole.trim() === '' || newAccounts.length === 0} onClick={saveNew}>
@@ -380,7 +383,7 @@ export function SettingsScreen({ store, locale, localeStore }: SettingsScreenPro
               <p className="text-[13px] text-inkdim">{t(locale, 'settings.discovery.empty')}</p>
             )
           ) : (
-            <ul className="grid gap-1.5">
+            <ul className="grid gap-2">
               {state.discovery.rows.map((row: DiscoveryRow) => (
                 <li key={row.defId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">

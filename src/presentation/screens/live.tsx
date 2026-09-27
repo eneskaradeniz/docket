@@ -115,10 +115,10 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
   };
 
   return (
-    <aside className="grid gap-3 content-start">
+    <aside className="grid content-start gap-3">
       <header className="flex items-center gap-2.5">
-        <span className={`h-[5px] w-[5px] flex-none rounded-full ${state.ended ? 'bg-hairline' : 'bg-proceed motion-safe:animate-pulse'}`} />
-        <h2 className="text-[15px] font-bold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
+        <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${state.ended ? 'bg-hairline' : 'bg-proceed motion-safe:animate-pulse'}`} />
+        <h2 className="text-[15px] font-semibold tracking-tight text-ink">{t(locale, 'live.title')}</h2>
       </header>
 
       {state.ask !== null ? (
@@ -148,8 +148,8 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       ) : null}
 
       {state.items.length === 0 ? (
-        <p className="flex items-center gap-2 font-mono text-[11px] text-inkdim">
-          <span className="h-[5px] w-[5px] flex-none rounded-full bg-info" />
+        <p className="flex items-center gap-2.5 font-mono text-[11px] text-inkdim">
+          <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info motion-safe:animate-pulse" />
           {t(locale, 'live.empty')}
         </p>
       ) : (

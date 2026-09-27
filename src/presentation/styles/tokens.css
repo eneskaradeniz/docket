@@ -1,0 +1,60 @@
+/* tokens.css — the design-book token layer, the single source of the v2 presentation styling.
+   The book is dark-only: these variables are the palette, the surfaces and the two type voices
+   (sans for prose, mono for ids, codes, counts and instrument lines). Values are the book's own;
+   nothing else in the presentation layer defines a color or font from scratch — components reach
+   everything through the Tailwind utilities the @theme bridge below generates. */
+
+:root {
+  color-scheme: dark;
+  --bg: #000;
+  --surface: #0a0a0a;
+  --raised: #161616;
+  --band: #0c0c0c;
+  --hair: #262626;
+  --bord: #3a3a3a;
+  --ink: #f2f2f2;
+  --dim: #8f8f8f;
+  --signal: #f5b544;
+  --signal-ink: #000;
+  --proceed: #4cc38a;
+  --info: #6ca0ce;
+  --error: #e5484d;
+  --write: #a371f7;
+  --exec: #4ac3ce;
+  --sans: "Manrope", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The Tailwind bridge: every book variable becomes a theme token, so utilities (bg-surface,
+   text-dim through the legacy inkdim alias, border-bord, text-signal-ink, …) are generated from
+   this layer alone. The alias keeps the historical utility names usable while the book's own
+   short names (--dim) stay the source of truth. */
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-band: var(--band);
+  --color-hairline: var(--hair);
+  --color-bord: var(--bord);
+  --color-ink: var(--ink);
+  --color-inkdim: var(--dim);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-proceed: var(--proceed);
+  --color-info: var(--info);
+  --color-error: var(--error);
+  --color-write: var(--write);
+  --color-exec: var(--exec);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+/* The frozen v1 sheet loaded after this file re-declares a few of the same theme tokens with its
+   own literals. Unlayered custom properties outrank anything a @layer declares, so these three
+   re-statements pin the contested names (raised's shade, both font stacks) to the book regardless
+   of how the two @theme blocks merge. */
+:root {
+  --color-raised: var(--raised);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
