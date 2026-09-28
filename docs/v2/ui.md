@@ -11,8 +11,8 @@ stack (React, Tailwind, Radix primitives, dnd-kit, vite-plugin-electron) is alre
 ```
 src/presentation/
   labels/       tr.ts · en.ts · keys.ts (typed keys) · t.ts (resolver)
-  stores/       cockpit · board · work-order-detail · live-pane · settings · wizard · results
-  screens/      shell · cockpit · board · detail · settings · wizard
+  stores/       cockpit · board · work-order-detail · live-pane · settings · wizard · results · project-tree · roadmap · account
+  screens/      shell · cockpit · board · detail · roadmap · account · settings · wizard
   components/   shared presentational components (no stores, props only)
 ```
 
@@ -80,9 +80,9 @@ Deploy approval passes the gate's `environment`; a protected environment without
   the active locale. A failed query leaves the previous view and surfaces a retry intent — an
   error never blanks the cockpit.
 - **U-3** (board) Columns mirror `BoardView` (stage order preserved, `done` as a separate lane);
-  a `definitions_invalid` result shows the workspace-problem state, not an empty board; the
+  a `definitions_invalid` result shows the repo-problem state, not an empty board; the
   create-work-order intent validates title presence and flow choice before issuing
-  `workOrder.open`.
+  `workOrder.open` with the board's project and repo.
 - **U-4** (work-order detail) The store derives, per stage, the gate list with human-readable
   states; for a `deploy` gate it exposes the environment, whether it is protected (typed
   `confirmedEnvironment` required — the input must equal the environment name before the
@@ -101,11 +101,70 @@ Deploy approval passes the gate's `environment`; a protected environment without
 - **U-7** (wizard) First-run state machine: definitions source → account → binding → done.
   `next` is enabled only when the step's validation passes (source reachable / at least one
   discovered+logged-in provider for the chosen account / at least one bound role); `back`
-  preserves entered state; finishing leaves the wizard and does not reappear while a workspace
+  preserves entered state; finishing leaves the wizard and does not reappear while a project
   exists.
 - **U-10** (shell) The shell's attention badge count equals the cockpit's attention items,
   ranked by kind (permission asks first); it updates on the same events; when the count is
   zero the badge is absent, never zero.
+
+## Phase 3.5 — the rev-7 shell (U-15 … U-21)
+
+Visual source of truth: the operator-approved OpenDesign prototype "Docket v2" → `index.html`
+(rev 7) — the same standing as the design book for tokens. The information architecture is fixed
+by the main-screen decisions (K-1…K-8, 2026-09-28/29): the Pano navigation item is gone — a board
+is a repo's view; the app opens on the Kokpit; project row → roadmap, repo row → board.
+
+### API additions (Phase 3.5)
+
+The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.attach`,
+`repo.register`, `repo.unregister`) and queries (`project.tree`, `roadmap.byProject`, `repo.board`,
+`cockpit` with an optional `project` filter, `account.detail`, `project.spend`) are specified in
+[application.md](application.md) → "API contracts"; their A-rules are **A-24 … A-28** there.
+
+### Stores (U-15 … U-21)
+
+- **U-15** (project tree / shell) The tree store is fed by `project.tree` and re-queries on
+  `workOrders.changed`. Selection semantics (K-2/K-3/K-7): a project row opens the roadmap, a repo
+  row opens that repo's board; while a repo row is active its project row keeps the pale-selected
+  state; a single-repo project renders as one flat row opening the board, with a "Yol haritası ↗"
+  link in the board header. ★ marks the main repo. A project's status dot mirrors its most urgent
+  repo (`waiting > running > idle`, A-27) and its pill the total active work orders; a zero count
+  hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
+  kept for the session. The search field is focused with ⌘K. The sort control cycles stored
+  order → A→Z → recently used; the choice persists locally (manual reordering arrives later).
+- **U-16** (accounts frame) The frame collapses and expands; at most two account cards are visible,
+  the rest scroll. A card shows the label plus one mini bar per window (window label and normalized
+  percent) and spend meta where the account carries it; a bar at or above its warn percent
+  (default 80) renders warn, a `hard_stop` status renders critical; the refresh intent re-polls
+  quota per account (a slow provider delays only its card — U-6). A card opens the account view
+  (K-5:A).
+- **U-17** (roadmap page) Fed by `roadmap.byProject`. Phases collapse and expand (grid-rows
+  animation) with the done/total count right-aligned in mono; on entry the first phase is open and
+  the rest closed. A task row shows its status glyph (✓ done · ● running, amber outline · ○
+  remaining), the title, and one mono tag per target repo; expanding a cross-repo task lists its
+  work orders per repo with navigation to the board and detail; a task turns ✓ only when every
+  linked work order is done (R-40). No editing on this page (Phase 5).
+- **U-18** (board) Columns are the flow's stages (A-23) and `done` is a separate strip. A
+  Kanban ⇄ Liste segmented control switches views; the choice persists per repo in local storage
+  and survives reload. Cards are not draggable — a work order advances only through its gates. A
+  card click opens the in-place detail (K-8:A); no hover preview. The list view is a stage rail
+  plus the selected stage and one row per work order (İE, title, stage progress, status, account,
+  duration/cost, date).
+- **U-19** (in-place detail) The detail opens in place of the board — no overlay; ‹ Geri returns to
+  the board with its view state (Kanban/Liste, scroll) intact. The flow strip marks pending gates
+  amber and dashed; the "bu aşamada senden beklenen" section and its actions map U-4's intents;
+  the live pane follows U-5 and opens only from the card/detail (K-8:A).
+- **U-20** (account view) Fed by `account.detail`. Window blocks: one large labelled bar per window
+  with the used percent and the reset time ("…'de sıfırlanır · … kaldı"); the limit-behaviour band
+  shows the account's policy label; `activeWork` rows navigate to the work-order detail. Information
+  is inspectable (ⓘ); editing stays in the Settings window (K-5's rule: bilgi → ⓘ,
+  düzenleme → Ayarlar penceresi).
+- **U-21** (cockpit) The app opens on the cockpit, which has four sections: Senden bekleyenler
+  (U-2's order, inline actions), Koşanlar (account badge, stage, duration; queued items dimmed),
+  Proje kartları (K-4:B — each card is a shortcut to the project's default view: multi-repo →
+  roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
+  (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
+  cockpit — that intent lives on the board header (IA-3).
 
 ## Electron bridge (no U-rules — structural)
 

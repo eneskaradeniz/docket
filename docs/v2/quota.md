@@ -49,9 +49,13 @@ Throughput (per-minute) limits are not quota: they show as "retrying", never as 
 
 ## Budgets (API accounts)
 
-Caps at three scopes — account (day, month), workspace (month), work order — each with a warn
-percent (default 80). The most restrictive status wins. `hard_stop` blocks new runs; running runs are
-never killed.
+Caps at six scopes — account (day, week, month), project (month — the **ceiling**, the sum over all
+repos of the project), repo (month — one repo's **limit**), work order (Phase 5) — each with a warn
+percent (default 80). Checks run in order repo limit → project ceiling and the most restrictive
+status wins (R-48 in [domain.md](domain.md)). `hard_stop` blocks new runs: a project-ceiling stop in
+every repo of the project, a repo stop only in that repo; running runs are never killed. Project and
+repo caps live in `project.yaml` / `repo.yaml` (versioned, S1); account caps stay in the
+machine-local account record.
 
 ## Observed: Antigravity `/usage` (agy 1.2.11, probe #138)
 

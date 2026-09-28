@@ -34,6 +34,20 @@ const SECTIONS = [
   { name: 'ui', prefix: 'U', doc: join(ROOT, 'docs', 'v2', 'ui.md'), dirs: [join(ROOT, 'src', 'presentation'), join(ROOT, 'src', 'api'), join(ROOT, 'src', 'application')] },
 ];
 
+// Rules whose definition landed in the docs ahead of their implementing wave (Phase 3.5 —
+// Project & Repo model). An id may sit here only while no test carries it: the PR that lands
+// its test removes the id in the same commit (a covered-but-still-pending id fails the check),
+// and an id still pending after its issue closes is a review blocker. This list must be empty
+// when the phase closes.
+const PENDING = new Map([
+  ['domain:R-46', '#373'], ['domain:R-47', '#373'], ['domain:R-48', '#376'],
+  ['application:A-24', '#374'], ['application:A-25', '#374'], ['application:A-26', '#374'],
+  ['application:A-27', '#374'], ['application:A-28', '#374'],
+  ['infrastructure:I-32', '#375'], ['infrastructure:I-33', '#375'],
+  ['ui:U-15', '#377'], ['ui:U-16', '#377'], ['ui:U-17', '#378'],
+  ['ui:U-18', '#379'], ['ui:U-19', '#379'], ['ui:U-20', '#379'], ['ui:U-21', '#379'],
+]);
+
 function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -75,23 +89,32 @@ const checkSection = (section) => {
     return { failures, defined: defined.length, missing: defined };
   }
 
-  const missing = defined.filter((id) => !covered.has(id));
+  const pending = [...PENDING].filter(([key]) => key.startsWith(`${section.name}:`)).map(([key, issue]) => [key.slice(section.name.length + 1), issue]);
+  const pendingIds = new Set(pending.map(([id]) => id));
+  for (const [id, issue] of pending) {
+    if (!defined.includes(id)) failures.push(`${id} is listed as pending (${issue}) but not defined in ${docRel} — fix PENDING`);
+    if (covered.has(id)) failures.push(`${id} is listed as pending (${issue}) but already has a test — remove it from PENDING in the same PR`);
+  }
+
+  const missing = defined.filter((id) => !covered.has(id) && !pendingIds.has(id));
   if (missing.length) {
     failures.push(`${missing.length} of ${defined.length} rules defined in ${docRel} have no test titled after them:`);
     for (const id of missing) failures.push(`  ${id}`);
     failures.push(`add an it('${prefix}-n: …') in the owning module's colocated test file, or fix the title of the test that meant to carry the rule`);
   }
-  return { failures, defined: defined.length, missing };
+  return { failures, defined: defined.length, missing, pending: pendingIds.size };
 };
 
 let failed = false;
 for (const section of SECTIONS) {
   const prefix = section.prefix;
-  const { failures, defined } = checkSection(section);
+  const { failures, defined, pending } = checkSection(section);
   if (failures.length) {
     failed = true;
     console.error(`rule coverage (${section.name}): ${failures[0]}`);
     for (const failure of failures.slice(1)) console.error(failure);
+  } else if (pending > 0) {
+    console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)}, ${defined - pending} tested, ${pending} pending (PENDING list)`);
   } else {
     console.log(`rule coverage (${section.name}) clean — ${defined} rules in ${relative(ROOT, section.doc)} all have an it('${prefix}-n: …') test`);
   }

@@ -50,13 +50,16 @@ export interface IdGen { next<B extends string>(): Ulid<B> }
 export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
-  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved';
+  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved'
+  | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
   | { readonly kind: 'run'; readonly id: RunId }
   | { readonly kind: 'proposal'; readonly id: ProposalId }
   | { readonly kind: 'account'; readonly id: AccountId }
-  | { readonly kind: 'binding'; readonly role: RoleSlug };
+  | { readonly kind: 'binding'; readonly role: RoleSlug }
+  | { readonly kind: 'project'; readonly id: ProjectSlug }
+  | { readonly kind: 'repo'; readonly id: RepoSlug };
 export interface AuditEntry {
   readonly id: Ulid<'audit'>;
   readonly at: EpochMs;
@@ -74,7 +77,8 @@ export interface EventLog {
 // work-order-repo.ts
 export interface WorkOrderRecord {
   readonly id: WorkOrderId;
-  readonly workspace: WorkspaceSlug;
+  readonly project: ProjectSlug;
+  readonly repo: RepoSlug;
   readonly flow: FlowSlug;
   readonly title: string;
   readonly task?: TaskSlug;
@@ -84,7 +88,7 @@ export interface WorkOrderRecord {
 export interface WorkOrderRepo {
   create(record: WorkOrderRecord): Promise<void>;
   get(id: WorkOrderId): Promise<WorkOrderRecord | undefined>;
-  list(filter: { readonly workspace?: WorkspaceSlug }): Promise<readonly WorkOrderRecord[]>;  // createdAt asc
+  list(filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]>;  // createdAt asc
   appendEvent(id: WorkOrderId, event: WorkOrderEvent): Promise<void>;
   events(id: WorkOrderId): Promise<readonly WorkOrderEvent[]>;                                 // append order
 }
@@ -134,14 +138,24 @@ export interface AccountRepo {
   saveMeter(meter: Meter): Promise<void>;                                     // upsert by id
   pools(accountId?: AccountId): Promise<readonly Pool[]>;
   meters(accountId?: AccountId): Promise<readonly Meter[]>;
-  recordSpend(entry: { readonly accountId: AccountId; readonly workspace: WorkspaceSlug; readonly workOrderId: WorkOrderId; readonly at: EpochMs; readonly usd: number }): Promise<void>;
-  spend(filter: { readonly accountId?: AccountId; readonly workspace?: WorkspaceSlug; readonly workOrderId?: WorkOrderId; readonly from: EpochMs; readonly to: EpochMs }): Promise<number>;
+  recordSpend(entry: { readonly accountId: AccountId; readonly project: ProjectSlug; readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly at: EpochMs; readonly usd: number }): Promise<void>;
+  spend(filter: { readonly accountId?: AccountId; readonly project?: ProjectSlug; readonly repo?: RepoSlug; readonly workOrderId?: WorkOrderId; readonly from: EpochMs; readonly to: EpochMs }): Promise<number>;
+}
+
+// project-repo.ts — the persisted mirror of every attached project's project.yaml (query joins)
+export interface ProjectRepo {
+  save(def: ProjectDef): Promise<void>;                       // upsert (attach / project.yaml change)
+  get(project: ProjectSlug): Promise<ProjectDef | undefined>;
+  list(): Promise<readonly ProjectDef[]>;                     // id asc
+  projectOfRepo(repo: RepoSlug): Promise<ProjectDef | undefined>;
+  remove(project: ProjectSlug): Promise<void>;
 }
 
 // binding-repo.ts — machine-local role → account chain, per level
 export type BindingScope =
   | { readonly level: 'global' }
-  | { readonly level: 'workspace'; readonly workspace: WorkspaceSlug }
+  | { readonly level: 'project'; readonly project: ProjectSlug }
+  | { readonly level: 'repo'; readonly repo: RepoSlug }
   | { readonly level: 'workOrder'; readonly workOrderId: WorkOrderId };
 export interface BindingRepo {
   save(scope: BindingScope, binding: RoleBinding): Promise<void>;
@@ -157,16 +171,22 @@ export interface QueueRepo {
 }
 
 // definition-store.ts
-export type DefinitionScope = { readonly kind: 'global' } | { readonly kind: 'workspace'; readonly workspace: WorkspaceSlug };
+export type DefinitionScope =
+  | { readonly kind: 'global' }
+  | { readonly kind: 'project'; readonly project: ProjectSlug }
+  | { readonly kind: 'repo'; readonly repo: RepoSlug };
 export interface DefinitionFile { readonly content: string; readonly hash: string }
 export interface DefinitionStore {
-  /** Global definitions merged with the workspace's (workspace ids override global ids of the same kind). */
-  load(workspace: WorkspaceSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>>;
-  loadRoadmap(workspace: WorkspaceSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined>;  // undefined = no roadmap
+  /** Global definitions merged with the repo's project defaults and the repo's own (repo ids win — S3). */
+  load(repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>>;
+  /** Reads and validates `project.yaml` at an arbitrary checkout path (the attach flow). */
+  readProjectAt(path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>>;
+  /** The project's roadmap, read from the main repo's `.docket/roadmap.yaml`; undefined = no roadmap. */
+  loadRoadmap(project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined>;
   readFile(scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined>;
   /** Writes only if the current hash equals `expectedHash` ('' = file must not exist). */
   writeFile(scope: DefinitionScope, target: string, content: string, expectedHash: string): Promise<Result<{ readonly hash: string }, 'stale'>>;
-  workspacePath(workspace: WorkspaceSlug): Promise<string | undefined>;   // repo checkout root on this machine
+  repoPath(repo: RepoSlug): Promise<string | undefined>;   // repo checkout root on this machine
   /** Parses the candidate content and validates the definitions as they WOULD be with it; writes nothing. */
   validateCandidate(scope: DefinitionScope, target: string, content: string): Promise<Result<void, readonly DefinitionIssue[]>>;
 }
@@ -206,7 +226,7 @@ export type TransportError = { readonly code: 'not_installed' | 'not_logged_in' 
 export interface AgentTransport { start(request: RunRequest): Promise<Result<RunHandle, TransportError>> }
 export interface TransportResolver { forAccount(accountId: AccountId): Promise<AgentTransport | undefined> }
 
-// workspace-tools.ts — what gates and runs need from the machine
+// repo-tools.ts — what gates and runs need from the machine
 export interface CommandResult { readonly exitCode: number; readonly durationMs: number; readonly outputTail: string }
 export interface CommandRunner {
   /** `env` (Phase 2c) is added to the runner's base environment for this call only; its values are redacted from `outputTail`. */
@@ -218,7 +238,15 @@ export interface EvidenceChecker {
   resolvePointers(cwd: string, pointers: readonly string[]): Promise<boolean>;
 }
 export interface Worktrees {
-  ensure(workspace: WorkspaceSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
+  ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
+}
+
+// repo-registry.ts — machine-local pointers only (S1): where each repo is cloned on this machine
+export interface RepoRegistry {
+  path(slug: RepoSlug): Promise<string | undefined>;
+  register(slug: RepoSlug, path: string): Promise<void>;          // upsert; `path` absolute
+  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>;   // slug asc
+  remove(slug: RepoSlug): Promise<void>;
 }
 
 // notifier.ts
@@ -228,6 +256,7 @@ export interface Notifier { notify(title: string, body: string): void }
 export interface AppDeps {
   readonly clock: Clock; readonly ids: IdGen; readonly log: EventLog;
   readonly workOrders: WorkOrderRepo; readonly runs: RunRepo; readonly accounts: AccountRepo;
+  readonly projects: ProjectRepo; readonly repos: RepoRegistry;
   readonly bindings: BindingRepo; readonly queue: QueueRepo; readonly definitions: DefinitionStore;
   readonly proposals: ProposalRepo; readonly secrets: SecretVault; readonly transports: TransportResolver;
   readonly commands: CommandRunner; readonly secretScanner: SecretScanner; readonly worktrees: Worktrees;
@@ -306,10 +335,10 @@ All inputs carry `actor: Actor` when they change state.
 
 ```ts
 // work-orders.ts
-export type OpenError = 'definitions_invalid' | 'unknown_flow' | 'flow_not_enabled' | 'unknown_task' | 'empty_title';
+export type OpenError = 'definitions_invalid' | 'unknown_project' | 'unknown_repo' | 'unknown_flow' | 'flow_not_enabled' | 'unknown_task' | 'empty_title';
 export function openWorkOrder(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
-  input: { readonly workspace: WorkspaceSlug; readonly title: string; readonly flow?: FlowSlug; readonly task?: TaskSlug; readonly actor: Actor },
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
+  input: { readonly project: ProjectSlug; readonly repo: RepoSlug; readonly title: string; readonly flow?: FlowSlug; readonly task?: TaskSlug; readonly actor: Actor },
 ): Promise<Result<WorkOrderId, OpenError>>;
 
 export interface WorkOrderView {
@@ -352,8 +381,8 @@ export function submitAgentVerdict(
 export type RouteError = 'unknown_role' | 'no_binding' | 'no_account';
 /** Resolves the role definition (with overrides) and the account chain for a stage run. */
 export function resolveRoute(
-  deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts'>,
-  input: { readonly workspace: WorkspaceSlug; readonly workOrderId: WorkOrderId; readonly role: RoleSlug },
+  deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts' | 'projects'>,
+  input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly role: RoleSlug },
 ): Promise<Result<{ readonly role: RoleDef; readonly chain: readonly AccountRoute[] }, RouteError>>;
 
 // proposals.ts
@@ -372,20 +401,47 @@ export function decideProposalUseCase(
 export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref'>>;
 export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
+
+// projects.ts — the Project & Repo layer (Phase 3.5, S1/S3/S4)
+export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid';
+export function attachProject(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions'>,
+  input: { readonly path: string; readonly actor: Actor; readonly repos?: readonly { readonly repo: RepoSlug; readonly path: string }[] },
+): Promise<Result<ProjectDef, AttachError>>;
+
+export type RepoRegistrationError = 'unknown_project' | 'repo_not_in_project' | 'repo_in_use';
+export function registerRepo(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'workOrders'>,
+  input: { readonly project: ProjectSlug; readonly repo: RepoSlug; readonly path: string; readonly actor: Actor },
+): Promise<Result<void, RepoRegistrationError>>;
+export function unregisterRepo(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'workOrders'>,
+  input: { readonly project: ProjectSlug; readonly repo: RepoSlug; readonly actor: Actor },
+): Promise<Result<void, RepoRegistrationError>>;
+
+/** S4: one work order per target repo of a task; the task completes when all of them close (R-40). */
+export type TaskOpenError = OpenError | 'unknown_task';
+export function openTaskWorkOrders(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
+  input: { readonly project: ProjectSlug; readonly task: TaskSlug; readonly actor: Actor },
+): Promise<Result<readonly WorkOrderId[], TaskOpenError>>;
 ```
 
 Rules:
-- **A-5** `openWorkOrder`: title is trimmed and must be non-empty; `flow` defaults to `workspace.defaultFlow`; the flow must exist and be listed in `workspace.flows`; if `task` is given, the workspace roadmap must contain it. On success: create the record, append one `created` event (`at = clock.now()`, `by = actor`), append audit `work_order.opened`.
+- **A-5** `openWorkOrder`: title is trimmed and must be non-empty; the project must exist and list `repo` in its `repos` (`unknown_project` / `unknown_repo`); `flow` defaults to `repo.defaultFlow`; the flow must exist and be listed in `repo.flows`; if `task` is given, the project's roadmap must contain it. On success: create the record, append one `created` event (`at = clock.now()`, `by = actor`), append audit `work_order.opened`.
 - **A-6** `getWorkOrder` derives `state` with `deriveWorkOrderState` and `next` with `nextAction` from the **current** definitions; nothing derived is stored.
 - **A-7** `blockWorkOrder`/`unblockWorkOrder`/`closeWorkOrder` append the matching event only when it changes something: closing a `done` work order → `already_done`; unblocking one that is not `blocked` → `not_blocked`. Each success appends one audit entry.
 - **A-8** `decideHumanGate`: the gate must belong to the **current** stage and be in `pendingGates`; it must be `human` or `page_approval`; an `agent` actor → `agent_cannot_decide`. The verdict comes from the domain's `evaluateGate` with `approval`/`pageApproval` evidence, appended as one `gate_evaluated` event; audit `gate.decided` with `detail: { gate, decision }`.
 - **A-9** `evaluateMachineGates`: only when status is `gating`. For each pending `command` and `secret_scan` gate of the current stage, in stage order: `command` → run every command of the set in order in the work order's worktree (timeout 10 min each) and pass all results as evidence; `secret_scan` → `SecretScanner.scan`. Append one `gate_evaluated` per evaluated gate, then return the re-derived state. `agent_verdict` gates are not touched here (see A-9a).
 - **A-9a** `submitAgentVerdict`: the gate must be a pending `agent_verdict` gate of the current stage; the actor must be `kind: 'agent'` with `role` equal to the gate's `role` (`wrong_role` otherwise). `pointersResolved = pointers.length > 0 && EvidenceChecker.resolvePointers(worktree, pointers)`. The verdict comes from the domain `evaluateGate`; append one `gate_evaluated`; audit `gate.decided` with `detail: { gate, decision: approve ? 'approved' : 'rejected' }`.
-- **A-10** `resolveRoute`: role = the definition with workspace overrides applied (`applyRoleOverrides`); must exist and be active. Binding layers are read for `workOrder`, `workspace`, `global` and resolved with `resolveBinding`; the chain keeps only accounts that exist in `AccountRepo`, in order. Empty after filtering → `no_account`; no binding at any level → `no_binding`.
+- **A-10** `resolveRoute`: role = the definition with repo overrides applied (`applyRoleOverrides`); must exist and be active. Binding layers are read for `workOrder`, `repo`, `project` (via `projectOfRepo`) and `global`, and resolved with `resolveBinding`; the chain keeps only accounts that exist in `AccountRepo`, in order. Empty after filtering → `no_account`; no binding at any level → `no_binding`.
 - **A-11** `createProposal`: reads the target's current file (hash `''` if absent); `after === before` → `no_change`; stores a `pending` proposal with `baseHash`; audit `proposal.created`.
 - **A-12** `decideProposalUseCase`, in this order: (1) load the proposal (`not_found`); (2) read the target's current hash (`''` if absent); (3) on `approved` only: `DefinitionStore.validateCandidate(scope, target, after)` — issues → `invalid_after`, proposal stays `pending`; (4) domain `decideProposal(p, decision, actor, currentHash, now)` — `stale` → save the proposal with status `stale` and return `stale`; `not_pending`/`self_approval` → return as is; (5) on `approved`: `writeFile(scope, target, after, baseHash)` — `err('stale')` → save as `stale`, return `stale`; (6) save the decided proposal; audit `proposal.decided` with `detail: { decision }`. Rejection never touches files.
 - **A-13** `saveAccount`: a `secret` requires `record.secretRef` (`secret_without_ref` otherwise) and is stored only through `SecretVault.put`; the secret never appears in the record, the audit entry, or any return value. `removeAccount` removes the vault entry too.
 - **A-14** `saveBinding`: an empty account chain → `empty_chain`; audit `binding.saved` naming the role.
+- **A-24** `attachProject`: `path` must be an existing git work tree (`not_a_repo`); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
+- **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
+- **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
 
 ---
 
@@ -419,7 +475,7 @@ export function applyLimitDecision(
   input: { readonly runId: RunId; readonly decision: LimitDecision },
 ): Promise<Result<{ readonly queued?: QueueItemId }, 'not_found'>>;
 export function enqueueStage(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts' | 'projects'>,
   input: { readonly id: WorkOrderId; readonly priority?: number },
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>>;
 ```
@@ -431,7 +487,7 @@ Rules:
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
 - **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced).
-- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the workspace, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_month` = UTC calendar month of `now`; workspace and work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
+- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` / `account_month` = UTC calendar week/month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
 
 ---
 
@@ -444,7 +500,11 @@ to use cases; Phase 4 binds it to Electron IPC.
 ```ts
 // commands.ts
 export type Command =
-  | { readonly type: 'workOrder.open'; readonly workspace: string; readonly title: string; readonly flow?: string; readonly task?: string }
+  | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
+  | { readonly type: 'task.open'; readonly project: string; readonly task: string }
+  | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
+  | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
+  | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -456,12 +516,35 @@ export type CommandResult = { readonly ok: true; readonly id?: string } | { read
 // queries.ts
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
-  | { readonly type: 'workspace.board'; readonly workspace: string }
-  | { readonly type: 'cockpit' };
-export interface AttentionItem { readonly workOrderId: string; readonly workspace: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
-export interface CockpitView { readonly attention: readonly AttentionItem[]; readonly running: readonly { readonly workOrderId: string; readonly stage: string; readonly accountId: string; readonly startedAt: number }[] }
+  | { readonly type: 'project.tree' }
+  | { readonly type: 'roadmap.byProject'; readonly project: string }
+  | { readonly type: 'repo.board'; readonly repo: string }
+  | { readonly type: 'cockpit'; readonly project?: string }
+  | { readonly type: 'account.detail'; readonly id: string }
+  | { readonly type: 'project.spend'; readonly project: string };
+export interface AttentionItem { readonly workOrderId: string; readonly project: string; readonly repo: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
+export interface CockpitView {
+  readonly attention: readonly AttentionItem[];
+  readonly running: readonly { readonly workOrderId: string; readonly stage: string; readonly accountId: string; readonly startedAt: number }[];
+  /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */
+  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number }[];
+  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[];   // closedAt desc, max 5
+}
+export interface RepoNode { readonly repo: string; readonly name: string; readonly main: boolean; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
+export interface ProjectTreeItem { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repos: readonly RepoNode[]; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
+export type ProjectTree = readonly ProjectTreeItem[];
+export interface RoadmapPageView {
+  readonly phases: readonly { readonly id: string; readonly name: string; readonly status: string; readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[] }[] }[];
+  readonly runnable: readonly string[];
+}
+export interface AccountDetailView {
+  readonly account: { readonly id: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string; readonly limitPolicy: string };
+  readonly windows: readonly { readonly label?: string; readonly unit: string; readonly used?: number; readonly limit?: number; readonly remaining?: number; readonly resetsAt?: number; readonly resetPrecision: string; readonly source: string }[];
+  readonly activeWork: readonly { readonly workOrderId: string; readonly title: string; readonly stage: string | null; readonly status: string }[];   // non-done work orders with a run on this account, oldest active first
+}
+export interface ProjectSpendView { readonly totalUsd: number; readonly perRepo: readonly { readonly repo: string; readonly usd: number }[]; readonly cap?: { readonly amountUsd: number; readonly warnPercent: number } }
 export interface BoardColumn { readonly stage: string; readonly name: string; readonly workOrders: readonly { readonly id: string; readonly title: string; readonly status: string }[] }
-export interface BoardView { readonly workspace: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly title: string }[] }
+export interface BoardView { readonly project: string; readonly repo: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly title: string }[] }
 
 // api.ts
 export interface Api {
@@ -474,7 +557,9 @@ export function createApi(deps: AppDeps): Api;
 Rules:
 - **A-21** Every string id in a command is parsed with `parseSlug`/`parseUlid` before reaching a use case; a parse failure returns `{ ok: false, code: 'invalid_id' }` without calling any port.
 - **A-22** `cockpit.attention` is ordered by kind (`permission_ask`, `awaiting_human`, `blocked`, `limit_waiting`), then `since` ascending.
-- **A-23** `workspace.board` has one column per stage of the workspace's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
+- **A-23** `repo.board` has one column per stage of the repo's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
+- **A-27** `project.tree`: one item per attached project (id asc), repos in `project.repos` order. Per repo: `active` = non-done work orders, `waiting` = attention items of kinds `permission_ask` / `awaiting_human` / `blocked`, `running` = runs without `endedAt`; status precedence `waiting > running > idle`; the project aggregates its repos' counts and takes its status the same way. One call serves the whole sidebar (K-7).
+- **A-28** `cockpit`: the `project` filter narrows `attention`, `running` and `recentlyClosed` to that project; `projects` always lists every project (K-4:B). `recentlyClosed` = the five most recent `done` work orders, `closedAt` desc. `account.detail` returns the account with its windows (from pools/meters) and `activeWork` = non-done work orders with a run on the account.
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 
@@ -534,14 +619,14 @@ export function pollRemoteChecks(
 ): Promise<Result<WorkOrderState, RemoteChecksError>>;
 ```
 
-- **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `input.confirmedEnvironment` must equal the gate's environment (`confirmation_mismatch`). The environment must exist in the workspace definition (`unknown_environment`); the worktree comes from `Worktrees.ensure` (`no_repo`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
+- **E-11** `approveAndDeploy`: gate must be a pending `deploy` gate of the current stage; `approver.kind` must be `'user'` (`no_approval`). For `protected` environments, `input.confirmedEnvironment` must equal the gate's environment (`confirmation_mismatch`). The environment must exist in the repo definition (`unknown_environment`); the worktree comes from `Worktrees.ensure` (`no_repo`). When `promoteFrom` is set, a `deployment_attempted` with `result: 'success'` for the same `commit` on the prerequisite environment must exist in the event history (`promote_prerequisite_missing`).
 - **E-12** Deploy execution: run `deploy` commandSet in the work order's worktree with the environment's `env` values passed as `CommandRunner.run`'s `env` argument (literal + `SecretVault`-resolved `secretRef`; an unresolvable ref → `result: 'failed'` without running). If deploy exits 0 and `verify` exists, run `verify` the same way. Both exit 0 → `result: 'success'`; otherwise → `result: 'failed'`.
 - **E-13** After deploy execution, append one `deployment_attempted` event and one `gate_evaluated` event (using E-6). Environment values and secrets never appear in the event or the output tail. The event's output tail comes from the first failing command; when every command (including `verify`) succeeded, from the last one.
 - **E-14** `pollRemoteChecks`: gate must be a pending `remote_checks` gate of the current stage. Resolve the forge via `ForgeResolver.forRepo`; if unavailable → `forge_unavailable`. Call `forge.checks(repo, branchRef)`.
 - **E-15** Match returned checks against `required`: if `required === 'all'`, use all returned checks; otherwise filter to those whose `name` is in the `required` array. A `required` name the forge did not return counts as not-passed (the gate stays pending; it never passes vacuously). Determine status: all `passed` → `all_passed`; any `failed`/`cancelled` → `has_failure`; otherwise → `pending`.
 - **E-16** If elapsed time since the gate entered `pending` exceeds `timeoutMinutes` → `timeout`.
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
-- **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the workspace definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
+- **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the repo definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
 
 ---
