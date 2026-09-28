@@ -3,13 +3,26 @@
 // (docs/v2/application.md § 4).
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Actor, Slug, Ulid } from '../domain/index';
-import { parseSlug, parseUlid } from '../domain/index';
+import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
+import { ok, parseSlug, parseUlid } from '../domain/index';
 
 import type { AppDeps } from '../application';
-import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
+import { createPermissionBoard, executeRun } from '../application';
+import {
+  createFakeCommandRunner,
+  createFakeDefinitionStore,
+  createFakeDeps,
+  createFakeEventLog,
+  createFakeTransport,
+  createFakeTransportResolver,
+  createFakeWorktrees,
+  type FakeCommandRunner,
+  type FakeDefinitionStore,
+  type FakeEventLog,
+  type FakeWorktrees,
+} from '../application/ports/fakes';
 
-import { createApi } from './api';
+import { createApi, type UiEvent } from './api';
 import type { Command } from './commands';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -33,10 +46,22 @@ const AGENT: Actor = {
 
 const WORKSPACE = 'acme';
 const ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAZ');
+const ACCOUNT_OTHER = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB8');
 const PROPOSAL = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
 const PROPOSAL_OTHER = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD2');
 const RUN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FE2');
 const UNKNOWN_WORK_ORDER = '01ARZ3NDEKTSV4RRFFQ69G5FB9';
+const COMMIT = '9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c';
+
+/** The role a scripted run executes as; only its shape matters to the executor. */
+const RUN_ROLE: RoleDef = {
+  id: slugOf<'role'>('worker'),
+  name: 'Worker',
+  instructions: 'Do the work.',
+  writeScope: { kind: 'repo' },
+  capabilities: [],
+  active: true,
+};
 
 const ROLE_JSON = {
   id: 'worker',
@@ -62,32 +87,85 @@ const FLOW_JSON = {
   ],
 };
 
+const SHIP_FLOW_JSON = {
+  id: 'ship-flow',
+  name: 'Ship',
+  stages: [
+    {
+      id: 'ship',
+      name: 'Ship',
+      role: null,
+      // The signoff keeps the stage current after the deploy gate is decided, so a decided deploy
+      // gate is not_pending rather than a finished work order.
+      exit: [
+        { kind: 'deploy', id: 'ship-stg', environment: 'stg' },
+        { kind: 'human', id: 'signoff', label: 'Signoff' },
+      ],
+    },
+  ],
+};
+
+const SHIP_PRD_FLOW_JSON = {
+  id: 'ship-prd-flow',
+  name: 'Ship to production',
+  stages: [{ id: 'ship', name: 'Ship', role: null, exit: [{ kind: 'deploy', id: 'ship-prd', environment: 'prd' }] }],
+};
+
 const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
-  flows: [FLOW_JSON],
+  flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON],
   capabilities: [],
   workspace: {
     id: WORKSPACE,
     name: 'Acme',
     repos: [],
-    flows: ['board-flow'],
+    flows: ['board-flow', 'ship-flow', 'ship-prd-flow'],
     defaultFlow: 'board-flow',
-    commandSets: {},
+    commandSets: {
+      'deploy-stg': ['docket-deploy stg'],
+      'deploy-prd': ['docket-deploy prd'],
+    },
     roleOverrides: [],
     docsRoot: 'docs',
     testGlobs: [],
+    environments: [
+      {
+        id: 'stg',
+        name: 'Staging',
+        order: 1,
+        deploy: 'deploy-stg',
+        env: { RELEASE_CHANNEL: { literal: 'internal-canary' } },
+        protected: false,
+      },
+      {
+        id: 'prd',
+        name: 'Production',
+        order: 2,
+        deploy: 'deploy-prd',
+        env: { REGION: { literal: 'eu-west-1' } },
+        protected: true,
+        promoteFrom: 'stg',
+      },
+    ],
   },
 });
 
 interface Harness {
   readonly deps: AppDeps;
-  readonly definitions: ReturnType<typeof createFakeDefinitionStore>;
+  readonly definitions: FakeDefinitionStore;
+  readonly commands: FakeCommandRunner;
+  readonly worktrees: FakeWorktrees;
+  readonly log: FakeEventLog;
 }
 
 const createHarness = (): Harness => {
+  const commands = createFakeCommandRunner();
+  const worktrees = createFakeWorktrees();
   const definitions = createFakeDefinitionStore();
+  const log = createFakeEventLog();
   definitions.seed({ kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, 'defs.json', DEFINITIONS_JSON);
-  return { deps: createFakeDeps({ definitions }), definitions };
+  const deps = createFakeDeps({ commands, worktrees, definitions, log });
+  return { deps, definitions, commands, worktrees, log };
 };
 
 /** Everything a routed command needs: one existing account and a global binding to it. */
@@ -106,8 +184,13 @@ const seedRouting = async (h: Harness): Promise<void> => {
   );
 };
 
-const openViaApi = async (h: Harness, title = 'Fix the login flow'): Promise<string> => {
-  const result = await createApi(h.deps).command(ACTOR, { type: 'workOrder.open', workspace: WORKSPACE, title });
+const openViaApi = async (h: Harness, title = 'Fix the login flow', flow?: string): Promise<string> => {
+  const result = await createApi(h.deps).command(ACTOR, {
+    type: 'workOrder.open',
+    workspace: WORKSPACE,
+    title,
+    ...(flow === undefined ? {} : { flow }),
+  });
   if (!result.ok || result.id === undefined) throw new Error('fixture open must succeed');
   return result.id;
 };
@@ -118,6 +201,20 @@ const driveToAwaitingHuman = async (h: Harness, id: string): Promise<void> => {
   const stage = slugOf<'stage'>('plan');
   await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_started', at: 1_100, runId: RUN, stage, attempt: 1 });
   await h.deps.workOrders.appendEvent(workOrderId, { type: 'run_finished', at: 1_200, runId: RUN, outcome: 'succeeded' });
+};
+
+/** A prior successful staging deploy of the exact commit — the promotion prerequisite for prd. */
+const deployOnStg = async (h: Harness, id: string): Promise<void> => {
+  await h.deps.workOrders.appendEvent(ulidOf<'work-order'>(id), {
+    type: 'deployment_attempted',
+    at: 1_300,
+    stage: slugOf<'stage'>('ship'),
+    gate: slugOf<'gate'>('ship-stg'),
+    environment: slugOf<'env'>('stg'),
+    commit: COMMIT,
+    approvedBy: ACTOR,
+    result: 'success',
+  });
 };
 
 // Proposal fixtures must hold whole, valid definition files: an approved candidate is validated
@@ -158,6 +255,9 @@ describe('createApi', () => {
         vi.spyOn(h.deps.log, 'append'),
         vi.spyOn(h.deps.queue, 'put'),
         vi.spyOn(h.deps.proposals, 'get'),
+        vi.spyOn(h.deps.worktrees, 'ensure'),
+        vi.spyOn(h.deps.commands, 'run'),
+        vi.spyOn(h.deps.secrets, 'get'),
       ];
 
       const commands: readonly Command[] = [
@@ -167,6 +267,7 @@ describe('createApi', () => {
         { type: 'workOrder.enqueue', id: 'not-a-ulid' },
         { type: 'gate.decide', workOrderId: 'not-a-ulid', gate: 'plan-approval', decision: 'approved' },
         { type: 'proposal.decide', id: 'not-a-ulid', decision: 'approved' },
+        { type: 'deploy.approve', workOrderId: 'not-a-ulid', gate: 'ship-stg', commit: COMMIT },
       ];
       for (const command of commands) {
         expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
@@ -317,6 +418,764 @@ describe('createApi', () => {
 
       const rejected = await api.command(ACTOR, { type: 'proposal.decide', id: PROPOSAL_OTHER, decision: 'rejected' });
       expect(rejected).toEqual({ ok: true, id: PROPOSAL_OTHER });
+    });
+
+    it('U-11: maps permission.answer onto the board and resolves the buffered ask', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      board.register(RUN);
+      // What the executor's gate wiring does while the run streams.
+      const waiting = board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      const result = await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' });
+
+      expect(result).toEqual({ ok: true });
+      expect(await waiting).toBe('allow');
+      expect(board.openAsks()).toEqual([]);
+      // The ask is answered and gone; answering it again is the not_found of an unknown askId.
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+    });
+
+    it('U-11: an unknown or ended askId answers not_found and never throws', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-x', decision: 'deny' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+
+      // A run that has ended takes its asks with it.
+      board.register(RUN);
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+      board.unregister(RUN);
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+
+      // An api built without a board has no open ask at all, so the answer stays a plain not_found.
+      expect(await createApi(h.deps).command(ACTOR, { type: 'permission.answer', runId: RUN, askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+    });
+
+    it('U-11: an invalid runId returns invalid_id and leaves the buffered ask unanswered', async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      board.register(RUN);
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      expect(await api.command(ACTOR, { type: 'permission.answer', runId: 'not-a-ulid', askId: 'ask-1', decision: 'allow' })).toEqual({
+        ok: false,
+        code: 'invalid_id',
+      });
+      expect(board.openAsks()).toEqual([{ runId: RUN, askId: 'ask-1', since: 1_500 }]);
+    });
+
+    it('A-21: an invalid gate slug in deploy.approve is rejected before any port call', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const get = vi.spyOn(h.deps.workOrders, 'get');
+
+      const result = await api.command(ACTOR, {
+        type: 'deploy.approve',
+        workOrderId: UNKNOWN_WORK_ORDER,
+        gate: 'Ship-Stg',
+        commit: COMMIT,
+      });
+
+      expect(result).toEqual({ ok: false, code: 'invalid_id' });
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    it('U-14: maps deploy.approve onto approveAndDeploy and deploys with the user actor', async () => {
+      const h = createHarness();
+      const id = await openViaApi(h, 'Ship it', 'ship-flow');
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'deploy.approve', workOrderId: id, gate: 'ship-stg', commit: COMMIT });
+
+      expect(result).toEqual({ ok: true });
+      expect(h.commands.calls().map((call) => call.command)).toEqual(['docket-deploy stg']);
+      const types = (await h.deps.workOrders.events(ulidOf<'work-order'>(id))).map((event) => event.type);
+      expect(types.slice(-2)).toEqual(['deployment_attempted', 'gate_evaluated']);
+    });
+
+    it('U-14: an agent actor mirrors no_approval and nothing is executed', async () => {
+      const h = createHarness();
+      const id = await openViaApi(h, 'Ship it', 'ship-flow');
+      const api = createApi(h.deps);
+      const auditBefore = h.log.entries().length;
+
+      const result = await api.command(AGENT, { type: 'deploy.approve', workOrderId: id, gate: 'ship-stg', commit: COMMIT });
+
+      expect(result).toEqual({ ok: false, code: 'no_approval' });
+      expect(h.commands.calls()).toHaveLength(0);
+      // The refusal leaves no audit trail of its own beyond the work order's creation entry.
+      expect(h.log.entries().length).toBe(auditBefore);
+    });
+
+    it('U-14: confirmedEnvironment travels verbatim and unlocks a protected environment', async () => {
+      const h = createHarness();
+      const id = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
+      await deployOnStg(h, id);
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'deploy.approve',
+        workOrderId: id,
+        gate: 'ship-prd',
+        commit: COMMIT,
+        confirmedEnvironment: 'prd',
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(h.commands.calls().map((call) => call.command)).toEqual(['docket-deploy prd']);
+    });
+
+    it('U-14: a protected environment without, with a wrong or an untypable confirmation is confirmation_mismatch', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+
+      const without = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
+      await deployOnStg(h, without);
+      expect(
+        await api.command(ACTOR, { type: 'deploy.approve', workOrderId: without, gate: 'ship-prd', commit: COMMIT }),
+      ).toEqual({ ok: false, code: 'confirmation_mismatch' });
+
+      const wrong = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
+      await deployOnStg(h, wrong);
+      expect(
+        await api.command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: wrong,
+          gate: 'ship-prd',
+          commit: COMMIT,
+          confirmedEnvironment: 'stg',
+        }),
+      ).toEqual({ ok: false, code: 'confirmation_mismatch' });
+
+      // The confirmation is user-typed text compared for equality, not an id: a value that is not
+      // even a slug cannot equal the environment, so the answer stays the E-8 surface.
+      const untypable = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
+      await deployOnStg(h, untypable);
+      expect(
+        await api.command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: untypable,
+          gate: 'ship-prd',
+          commit: COMMIT,
+          confirmedEnvironment: 'PRD',
+        }),
+      ).toEqual({ ok: false, code: 'confirmation_mismatch' });
+
+      expect(h.commands.calls()).toHaveLength(0);
+    });
+
+    it('U-14: every DeployGateError kind maps to its own CommandResult code', async () => {
+      // not_found — a well-formed id that names no work order.
+      const missing = createHarness();
+      expect(
+        await createApi(missing.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: UNKNOWN_WORK_ORDER,
+          gate: 'ship-stg',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'not_found' });
+
+      // not_current_stage — the gate id belongs to another flow's deploy stage.
+      const otherStage = createHarness();
+      const otherId = await openViaApi(otherStage, 'Ship it', 'ship-flow');
+      expect(
+        await createApi(otherStage.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: otherId,
+          gate: 'ship-prd',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'not_current_stage' });
+      expect(otherStage.commands.calls()).toHaveLength(0);
+
+      // not_pending — the gate already carries a verdict in the work order's history.
+      const decided = createHarness();
+      const decidedId = await openViaApi(decided, 'Ship it', 'ship-flow');
+      await decided.deps.workOrders.appendEvent(ulidOf<'work-order'>(decidedId), {
+        type: 'gate_evaluated',
+        at: 1_400,
+        stage: slugOf<'stage'>('ship'),
+        gate: slugOf<'gate'>('ship-stg'),
+        verdict: { status: 'passed' },
+      });
+      expect(
+        await createApi(decided.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: decidedId,
+          gate: 'ship-stg',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'not_pending' });
+
+      // not_a_deploy_gate — the current stage's pending gate is a human gate.
+      const human = createHarness();
+      const humanId = await openViaApi(human);
+      await driveToAwaitingHuman(human, humanId);
+      expect(
+        await createApi(human.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: humanId,
+          gate: 'plan-approval',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'not_a_deploy_gate' });
+
+      // no_approval — an agent may never approve a deploy (asserted in detail above).
+
+      // confirmation_mismatch — a protected environment needs the typed confirmation (above).
+
+      // promote_prerequisite_missing — the confirmation is right, but stg never saw this commit.
+      const unpromoted = createHarness();
+      const unpromotedId = await openViaApi(unpromoted, 'Promote to production', 'ship-prd-flow');
+      expect(
+        await createApi(unpromoted.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: unpromotedId,
+          gate: 'ship-prd',
+          commit: COMMIT,
+          confirmedEnvironment: 'prd',
+        }),
+      ).toEqual({ ok: false, code: 'promote_prerequisite_missing' });
+
+      // definitions_invalid — the workspace's definitions no longer load.
+      const broken = createHarness();
+      const brokenId = await openViaApi(broken, 'Ship it', 'ship-flow');
+      broken.definitions.seed(
+        { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        'broken.json',
+        '{ not json',
+      );
+      expect(
+        await createApi(broken.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: brokenId,
+          gate: 'ship-stg',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'definitions_invalid' });
+
+      // unknown_environment — validated definitions cannot name a missing environment, so this arm
+      // is reached only with definitions that were never validated: a store stub answers with
+      // hand-built ones.
+      const ghost = createHarness();
+      const ghostId = await openViaApi(ghost, 'Ship it', 'ship-flow');
+      const ghostDeps = {
+        ...ghost.deps,
+        definitions: {
+          ...ghost.deps.definitions,
+          load: async () =>
+            ok({
+              roles: [],
+              flows: [
+                {
+                  id: slugOf<'flow'>('ship-flow'),
+                  name: 'Ship',
+                  stages: [
+                    {
+                      id: slugOf<'stage'>('ship'),
+                      name: 'Ship',
+                      role: null,
+                      exit: [{ kind: 'deploy' as const, id: slugOf<'gate'>('ship-stg'), environment: slugOf<'env'>('ghost') }],
+                    },
+                  ],
+                },
+              ],
+              capabilities: [],
+              workspace: {
+                id: slugOf<'workspace'>(WORKSPACE),
+                name: 'Acme',
+                repos: [],
+                flows: [slugOf<'flow'>('ship-flow')],
+                defaultFlow: slugOf<'flow'>('ship-flow'),
+                commandSets: {},
+                roleOverrides: [],
+                docsRoot: 'docs',
+                testGlobs: [],
+                environments: [],
+              },
+            }),
+        },
+      };
+      expect(
+        await createApi(ghostDeps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: ghostId,
+          gate: 'ship-stg',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'unknown_environment' });
+
+      // no_repo — the machine has no checkout of this workspace.
+      const noCheckout = createHarness();
+      const noCheckoutId = await openViaApi(noCheckout, 'Ship it', 'ship-flow');
+      noCheckout.worktrees.markNoRepo(slugOf<'workspace'>(WORKSPACE));
+      expect(
+        await createApi(noCheckout.deps).command(ACTOR, {
+          type: 'deploy.approve',
+          workOrderId: noCheckoutId,
+          gate: 'ship-stg',
+          commit: COMMIT,
+        }),
+      ).toEqual({ ok: false, code: 'no_repo' });
+    });
+
+    it('U-13: account.save creates an account with a fresh id, audited as account.saved', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'pro',
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.id === undefined) throw new Error('account.save must return an id');
+      expect(await h.deps.accounts.get(ulidOf<'account'>(result.id))).toEqual({
+        id: result.id,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'pro',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: result.id } });
+    });
+
+    it('U-13: account.save with an id updates the editable fields and keeps the stored policy, caps and secret ref', async () => {
+      const h = createHarness();
+      const secretRef = `account/${ACCOUNT}/api-key`;
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        plan: 'starter',
+        limitPolicy: 'ask',
+        secretRef,
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      await h.deps.secrets.put(secretRef, 'sk-keep-me');
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      // The command owns only the editable surface; the rest of the record survives verbatim.
+      expect(await h.deps.accounts.get(ACCOUNT)).toEqual({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+        plan: undefined,
+        limitPolicy: 'ask',
+        secretRef,
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      expect(await h.deps.secrets.get(secretRef)).toBe('sk-keep-me');
+    });
+
+    it('U-13: an unknown authMode is rejected at the boundary and nothing is written', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const save = vi.spyOn(h.deps.accounts, 'save');
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'password',
+      });
+
+      expect(result).toEqual({ ok: false, code: 'invalid_id' });
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('U-13: account.remove removes an unreferenced account and its vault entry', async () => {
+      const h = createHarness();
+      const secretRef = `account/${ACCOUNT}/api-key`;
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'api_key',
+        limitPolicy: 'wait_resume',
+        secretRef,
+        caps: [],
+      });
+      await h.deps.secrets.put(secretRef, 'sk-remove-me');
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.remove', id: ACCOUNT });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toBeUndefined();
+      expect(await h.deps.secrets.get(secretRef)).toBeUndefined();
+    });
+
+    it('U-13: account.remove of a referenced account fails with binding_exists and the referencing roles', async () => {
+      const h = createHarness();
+      await seedRouting(h); // a global worker binding to ACCOUNT
+      await h.deps.bindings.save(
+        { level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }, { accountId: ACCOUNT_OTHER }] },
+      );
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.remove', id: ACCOUNT });
+
+      expect(result).toEqual({ ok: false, code: 'binding_exists', roles: ['worker', 'reviewer'] });
+      expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    });
+
+    it('U-13: binding.save maps onto saveBinding at the global scope; an empty chain reports empty_chain', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'binding.save',
+        role: 'worker',
+        accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
+      });
+
+      expect(result).toEqual({ ok: true });
+      const role = slugOf<'role'>('worker');
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).toEqual({
+        role,
+        accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
+      });
+      // The settings surface edits the machine-global baseline; no workspace binding appears.
+      expect(await h.deps.bindings.get({ level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, role)).toBeUndefined();
+
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts: [] })).toEqual({
+        ok: false,
+        code: 'empty_chain',
+      });
+    });
+
+    it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const spies = [
+        vi.spyOn(h.deps.accounts, 'get'),
+        vi.spyOn(h.deps.accounts, 'save'),
+        vi.spyOn(h.deps.bindings, 'save'),
+        vi.spyOn(h.deps.log, 'append'),
+      ];
+
+      const commands: readonly Command[] = [
+        { type: 'account.save', id: 'not-a-ulid', provider: 'acme-prov', label: 'Main', authMode: 'api_key' },
+        { type: 'account.remove', id: 'not-a-ulid' },
+        { type: 'binding.save', role: 'Not A Role', accounts: [{ accountId: ACCOUNT }] },
+        { type: 'binding.save', role: 'worker', accounts: [{ accountId: 'nope' }, { accountId: ACCOUNT }] },
+      ];
+      for (const command of commands) {
+        expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
+      }
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('subscribe', () => {
+    it('U-12: a command that appends to the event log emits workOrders.changed after the append', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      // A store re-queries the moment the event arrives, so the read that starts at delivery time
+      // must already see the appended event.
+      const logAtDelivery: Promise<readonly string[]>[] = [];
+      api.subscribe((event) => {
+        if (event.type !== 'workOrders.changed') return;
+        logAtDelivery.push(
+          h.deps.workOrders.events(ulidOf<'work-order'>(id)).then((events) => events.map((entry) => entry.type)),
+        );
+      });
+
+      await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+
+      expect(logAtDelivery.length).toBe(1);
+      const first = logAtDelivery[0];
+      if (first === undefined) throw new Error('workOrders.changed must have been delivered');
+      expect(await first).toEqual(['created', 'blocked']);
+    });
+
+    it('U-12: a command that writes nothing emits nothing', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      // Failing commands append nothing anywhere: an unknown target and a malformed id stay silent,
+      // while the very next appending command proves the listener was live all along.
+      const id = await openViaApi(h);
+      expect(await api.command(ACTOR, { type: 'workOrder.block', id: UNKNOWN_WORK_ORDER, reason: 'r' })).toEqual({
+        ok: false,
+        code: 'not_found',
+      });
+      expect(await api.command(ACTOR, { type: 'workOrder.close', id: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(seen).toEqual([]);
+
+      expect(await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'workOrders.changed' }]);
+    });
+
+    it('U-12: an audit-only write emits nothing — the channel tracks the work order event log', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const saved = await api.command(ACTOR, { type: 'account.save', provider: 'acme-prov', label: 'Main', authMode: 'api_key' });
+
+      // The account is stored and audited, but no work order changed, so no event may fire.
+      expect(saved.ok).toBe(true);
+      expect(h.log.entries().length).toBeGreaterThan(0);
+      expect(seen).toEqual([]);
+    });
+
+    it('U-12: run executor events arrive as run.updated with the runId through the injected notify hook', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const transports = createFakeTransportResolver();
+      transports.register(
+        ACCOUNT,
+        createFakeTransport([
+          { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+          { type: 'text', at: 1_650, delta: 'working' },
+          { type: 'finished', at: 1_700, reason: 'completed' },
+        ]),
+      );
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE4');
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+
+      // The composition wiring, verbatim: the executor's notify hook is the api's feed.
+      const outcome = await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE5'),
+            workOrderId,
+            workspace: slugOf<'workspace'>(WORKSPACE),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        api.runUpdated,
+      );
+
+      expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+      const runs = await h.deps.runs.listForWorkOrder(workOrderId);
+      const run = runs[runs.length - 1];
+      if (run === undefined) throw new Error('the executed run must exist');
+      // One run.updated per appended event and only those: the executor's own run_started /
+      // run_finished appends reach the work order log directly, never this channel.
+      expect(seen).toEqual([
+        { type: 'run.updated', runId: run.id },
+        { type: 'run.updated', runId: run.id },
+        { type: 'run.updated', runId: run.id },
+      ]);
+    });
+
+    it('U-12: unsubscribe stops delivery', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      const seenFirst: UiEvent[] = [];
+      const seenSecond: UiEvent[] = [];
+      const unsubscribe = api.subscribe((event) => seenFirst.push(event));
+      api.subscribe((event) => seenSecond.push(event));
+
+      await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+      unsubscribe();
+      await api.command(ACTOR, { type: 'workOrder.unblock', id });
+
+      expect(seenFirst).toEqual([{ type: 'workOrders.changed' }]);
+      expect(seenSecond).toEqual([{ type: 'workOrders.changed' }, { type: 'workOrders.changed' }]);
+    });
+
+    it('U-12: a throwing listener is skipped and does not break delivery to the others', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const id = await openViaApi(h);
+      const seen: UiEvent[] = [];
+      api.subscribe(() => {
+        throw new Error('a broken listener');
+      });
+      api.subscribe((event) => seen.push(event));
+
+      const result = await api.command(ACTOR, { type: 'workOrder.block', id, reason: 'waiting on upstream' });
+
+      expect(result).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'workOrders.changed' }]);
+    });
+  });
+
+  describe('the renderer feed queries', () => {
+    /** The composition wiring for one scripted run: the work order exists, the transport plays the
+     *  script, and the api's feed members ride along as the executor's notify hooks. */
+    const executeScripted = async (
+      h: Harness,
+      feed: { runUpdated(runId: string): void; workOrdersChanged(): void } | undefined,
+      script: readonly AgentEvent[],
+      ids: { readonly workOrder: Ulid<'work-order'>; readonly queueItem: Ulid<'queue-item'> },
+    ): Promise<RunId> => {
+      const transports = createFakeTransportResolver();
+      transports.register(ACCOUNT, createFakeTransport([...script]));
+      await h.deps.workOrders.create({
+        id: ids.workOrder,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await executeRun(
+        { ...h.deps, transports },
+        { onAsk: async () => 'allow' },
+        {
+          item: {
+            id: ids.queueItem,
+            workOrderId: ids.workOrder,
+            workspace: slugOf<'workspace'>(WORKSPACE),
+            stage: slugOf<'stage'>('plan'),
+            route: { accountId: ACCOUNT },
+            priority: 0,
+            enqueuedAt: 1_000,
+          },
+          role: RUN_ROLE,
+          prompt: 'do the work',
+          cwd: '/wt/acme/wo',
+          capabilities: [],
+        },
+        undefined,
+        feed?.runUpdated,
+        feed?.workOrdersChanged,
+      );
+      const runs = await h.deps.runs.listForWorkOrder(ids.workOrder);
+      const run = runs[runs.length - 1];
+      if (run === undefined) throw new Error('the executed run must exist');
+      return run.id;
+    };
+
+    it('run.events reads back the events the executor stored, newest last', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const script: readonly AgentEvent[] = [
+        { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+        { type: 'text', at: 1_650, delta: 'working' },
+        { type: 'finished', at: 1_700, reason: 'completed' },
+      ];
+
+      const runId = await executeScripted(h, undefined, script, {
+        workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE6'),
+        queueItem: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE8'),
+      });
+
+      expect(await api.query({ type: 'run.events', runId })).toEqual(script);
+    });
+
+    it("permissions.open maps the board's parked asks with the owning work order's title", async () => {
+      const h = createHarness();
+      const board = createPermissionBoard();
+      const api = createApi(h.deps, board);
+      const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FEA');
+      await h.deps.workOrders.create({
+        id: workOrderId,
+        workspace: slugOf<'workspace'>(WORKSPACE),
+        flow: slugOf<'flow'>('board-flow'),
+        title: 'Run it',
+        createdAt: 1_000,
+        createdBy: ACTOR,
+      });
+      await h.deps.runs.create({
+        id: RUN,
+        workOrderId,
+        stage: slugOf<'stage'>('plan'),
+        attempt: 1,
+        role: slugOf<'role'>('worker'),
+        route: { accountId: ACCOUNT },
+        startedAt: 1_400,
+        autoResumesUsed: 0,
+      });
+      board.register(RUN);
+      // What the executor's gate wiring does while the run streams.
+      void board.onAsk(RUN, { type: 'permission_ask', at: 1_500, id: 'ask-1', tool: 'shell', options: ['allow', 'deny'] });
+
+      expect(await api.query({ type: 'permissions.open' })).toEqual([
+        { runId: RUN, askId: 'ask-1', since: 1_500, title: 'Run it' },
+      ]);
+    });
+
+    it('the run-finished path also emits workOrders.changed through the feed', async () => {
+      const h = createHarness();
+      const api = createApi(h.deps);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      const runId = await executeScripted(
+        h,
+        api,
+        [
+          { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
+          { type: 'text', at: 1_650, delta: 'working' },
+          { type: 'finished', at: 1_700, reason: 'completed' },
+        ],
+        { workOrder: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE7'), queueItem: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE9') },
+      );
+
+      // One run.updated per appended event, then the work-order change of the run-finished append:
+      // the re-query it triggers is what clears a badge that the preceding run.updated left stale.
+      expect(seen).toEqual([
+        { type: 'run.updated', runId },
+        { type: 'run.updated', runId },
+        { type: 'run.updated', runId },
+        { type: 'workOrders.changed' },
+      ]);
     });
   });
 });

@@ -186,6 +186,52 @@ describe('removeAccount', () => {
     expect(result).toEqual({ ok: true, value: undefined });
     expect(await h.deps.accounts.list()).toEqual([]);
   });
+
+  it('U-13: removing an account referenced by any binding fails with binding_exists listing the referencing roles', async () => {
+    const h = makeHarness();
+    await saveAccount(h.deps, { record: accountRecord(), actor: USER });
+    await saveAccount(h.deps, { record: accountRecord({ id: OTHER_ACCOUNT, label: 'Spare' }), actor: USER });
+    await saveBinding(h.deps, { scope: GLOBAL_SCOPE, binding: bindingFor('worker'), actor: USER });
+    await saveBinding(h.deps, {
+      scope: WORKSPACE_SCOPE,
+      binding: bindingFor('reviewer', [{ accountId: ACCOUNT }, { accountId: OTHER_ACCOUNT }]),
+      actor: USER,
+    });
+    // Same role as the global binding, but routed elsewhere: it must not add a duplicate role.
+    await saveBinding(h.deps, {
+      scope: WORK_ORDER_SCOPE,
+      binding: bindingFor('worker', [{ accountId: OTHER_ACCOUNT }]),
+      actor: USER,
+    });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'binding_exists', roles: [slugOf<'role'>('worker'), slugOf<'role'>('reviewer')] },
+    });
+    // The refusal happens before any write: the account stays, no removal is audited.
+    expect(await h.deps.accounts.get(ACCOUNT)).toBeDefined();
+    const audit = h.log.entries();
+    expect(audit).toHaveLength(5); // two account saves and three binding saves, nothing else
+    expect(audit.some((entry) => entry.action === 'account.removed')).toBe(false);
+  });
+
+  it('U-13: bindings that route only to other accounts do not block the removal', async () => {
+    const h = makeHarness();
+    await saveAccount(h.deps, { record: accountRecord(), actor: USER });
+    await saveAccount(h.deps, { record: accountRecord({ id: OTHER_ACCOUNT, label: 'Spare' }), actor: USER });
+    await saveBinding(h.deps, {
+      scope: GLOBAL_SCOPE,
+      binding: bindingFor('worker', [{ accountId: OTHER_ACCOUNT }]),
+      actor: USER,
+    });
+
+    const result = await removeAccount(h.deps, { id: ACCOUNT, actor: USER });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.get(ACCOUNT)).toBeUndefined();
+  });
 });
 
 // --- saveBinding (A-14) -----------------------------------------------------------------------------

@@ -1,10 +1,16 @@
 // use-cases/accounts.ts — exact contract from docs/v2/application.md § 2 (rules A-13, A-14).
 // Secrets cross this boundary in one direction only: into the vault. A secret is stored through
 // SecretVault.put and is never written into a record, an audit entry, or a return value.
-import type { Actor, RoleBinding } from '../../domain/index';
+import type { Actor, RoleBinding, RoleSlug } from '../../domain/index';
 import { err, ok, type AccountId, type Result } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, BindingScope } from '../ports';
+
+/** The account is still routed to by bindings; removal stays refused until they are rebound. */
+export interface BindingExists {
+  readonly code: 'binding_exists';
+  readonly roles: readonly RoleSlug[];
+}
 
 export async function saveAccount(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>,
@@ -28,11 +34,20 @@ export async function saveAccount(
 }
 
 export async function removeAccount(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings'>,
   input: { readonly id: AccountId; readonly actor: Actor },
-): Promise<Result<void, 'not_found'>> {
+): Promise<Result<void, 'not_found' | BindingExists>> {
   const record = await deps.accounts.get(input.id);
   if (record === undefined) return err('not_found');
+
+  // A binding routing to a removed account would send runs into a dead chain, so the removal is
+  // refused while any binding still references the account. The roles name what must be rebound.
+  const referencing: RoleSlug[] = [];
+  for (const { binding } of await deps.bindings.listAll()) {
+    if (!binding.accounts.some((route) => route.accountId === input.id)) continue;
+    if (!referencing.includes(binding.role)) referencing.push(binding.role);
+  }
+  if (referencing.length > 0) return err({ code: 'binding_exists', roles: referencing });
 
   if (record.secretRef !== undefined) await deps.secrets.remove(record.secretRef);
   await deps.accounts.remove(input.id);

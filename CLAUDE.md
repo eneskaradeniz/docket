@@ -10,7 +10,8 @@ ask; do not pick one yourself.
   be extended, imported by v2 code, or treated as the design.
 - The product is local, single-user, free and open source (Apache-2.0), built team-ready
   (`docs/v2/architecture.md` → "Team-ready rules").
-- Product name: "Docket" until a rename issue says otherwise.
+- Product name: "Docket" — final. (A rename was considered and cancelled on 2026-09-27; no rename work
+  is planned. See the closed rename issue for the decision record.)
 
 ## Who does what
 - **Architect session**: writes `docs/v2/`, fixes interfaces, opens issues, reviews PRs. Only the

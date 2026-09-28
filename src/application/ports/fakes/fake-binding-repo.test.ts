@@ -71,4 +71,39 @@ describe('createFakeBindingRepo', () => {
 
     expect(await repo.get(GLOBAL, ROLE)).toEqual(replacement);
   });
+
+  it('listAll returns nothing when no binding was saved', async () => {
+    const repo = createFakeBindingRepo();
+
+    expect(await repo.listAll()).toEqual([]);
+  });
+
+  it('listAll enumerates every saved scope and role with its scope, in save order', async () => {
+    const repo = createFakeBindingRepo();
+    const global = routeFor(U1);
+    const workspace = routeFor(U2);
+    const workOrder = routeFor(U3);
+    await repo.save(GLOBAL, global);
+    await repo.save(WORKSPACE, workspace);
+    await repo.save(WORK_ORDER, workOrder);
+
+    expect(await repo.listAll()).toEqual([
+      { scope: GLOBAL, binding: global },
+      { scope: WORKSPACE, binding: workspace },
+      { scope: WORK_ORDER, binding: workOrder },
+    ]);
+  });
+
+  it('listAll keeps one entry per scope and role; a replacement updates it in place', async () => {
+    const repo = createFakeBindingRepo();
+    await repo.save(GLOBAL, routeFor(U1));
+    await repo.save(WORKSPACE, routeFor(U2));
+    const replacement = routeFor(U3);
+    await repo.save(GLOBAL, replacement);
+
+    const all = await repo.listAll();
+    expect(all).toHaveLength(2);
+    expect(all[0]).toEqual({ scope: GLOBAL, binding: replacement });
+    expect(all[1]).toEqual({ scope: WORKSPACE, binding: routeFor(U2) });
+  });
 });

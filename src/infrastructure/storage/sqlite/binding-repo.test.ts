@@ -141,6 +141,41 @@ describe('createSqliteBindingRepo', () => {
       await repo.save(WORK_ORDER, chain);
       expect(await repo.get(WORK_ORDER, ROLE)).toStrictEqual(chain);
     });
+
+    it('I-5: listAll enumerates every saved scope and role with its scope, in save order', async () => {
+      const repo = makeRepo();
+      const global = routeFor(A1);
+      const workspace = routeFor(A2);
+      const workOrder = routeFor(A3, 'sonar-mini');
+      await repo.save(GLOBAL, global);
+      await repo.save(WORKSPACE, workspace);
+      await repo.save(WORK_ORDER, workOrder);
+
+      expect(await repo.listAll()).toEqual([
+        { scope: GLOBAL, binding: global },
+        { scope: WORKSPACE, binding: workspace },
+        { scope: WORK_ORDER, binding: workOrder },
+      ]);
+    });
+
+    it('I-5: listAll keeps one entry per scope and role; a replacement updates it in place', async () => {
+      const repo = makeRepo();
+      await repo.save(GLOBAL, routeFor(A1));
+      await repo.save(OTHER_WORKSPACE, routeFor(A2));
+      const replacement = routeFor(A3);
+      await repo.save(GLOBAL, replacement);
+
+      const all = await repo.listAll();
+      expect(all).toHaveLength(2);
+      expect(all[0]).toEqual({ scope: GLOBAL, binding: replacement });
+      expect(all[1]).toEqual({ scope: OTHER_WORKSPACE, binding: routeFor(A2) });
+    });
+
+    it('I-5: listAll returns nothing when no binding was saved', async () => {
+      const repo = makeRepo();
+
+      expect(await repo.listAll()).toEqual([]);
+    });
   });
 
   describe('sqlite on a file', () => {
@@ -161,6 +196,11 @@ describe('createSqliteBindingRepo', () => {
       expect(await reopened.get(GLOBAL, ROLE)).toStrictEqual(global);
       expect(await reopened.get(WORKSPACE, ROLE)).toStrictEqual(workspace);
       expect(await reopened.get(WORK_ORDER, ROLE)).toStrictEqual(workOrder);
+      expect(await reopened.listAll()).toEqual([
+        { scope: GLOBAL, binding: global },
+        { scope: WORKSPACE, binding: workspace },
+        { scope: WORK_ORDER, binding: workOrder },
+      ]);
     });
   });
 });

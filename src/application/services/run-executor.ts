@@ -19,6 +19,8 @@ import { decideOnLimit, foldRun } from '../../domain/index';
 
 import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
+import type { BoardHooks } from './permission-board';
+
 export interface ExecuteRunInput {
   readonly item: QueueItem;
   readonly role: RoleDef;
@@ -35,6 +37,16 @@ export type ExecuteOutcome =
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
 }
+
+/** The push channel's feed (U-12 of docs/v2/ui.md): one call per event appended to the run's log.
+ *  The executor cannot know the api, so composition injects the adapter that turns each call into
+ *  a `run.updated` for the subscribed stores. */
+export type RunEventNotify = (runId: RunId) => void;
+
+/** The push channel's feed for the run-finished append: one call after the executor writes
+ *  `run_finished` to the work order's log. That append happens outside any command, so without
+ *  this hook nothing would ever signal the work-order change the views re-query on. */
+export type WorkOrdersChangedNotify = () => void;
 
 // The executor runs unattended on the dispatcher's behalf; its audit entries name the component.
 const RUN_EXECUTOR_ACTOR: Actor = { kind: 'system', component: 'run-executor' };
@@ -119,10 +131,14 @@ const audit = async (
   });
 };
 
-/** Closes the run record and appends the matching `run_finished` event to the work order. */
+/** Closes the run record and appends the matching `run_finished` event to the work order. Every
+ *  path that ends a run funnels through here, so this is also where the run leaves the board:
+ *  nothing of an ended run stays answerable. */
 const endRun = async (
   deps: Pick<AppDeps, 'clock' | 'workOrders' | 'runs'>,
   input: { readonly runId: RunId; readonly workOrderId: WorkOrderId; readonly outcome: RunOutcome },
+  board?: BoardHooks,
+  workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<EpochMs> => {
   const endedAt = deps.clock.now();
   await deps.runs.update(input.runId, { endedAt, outcome: input.outcome });
@@ -132,6 +148,9 @@ const endRun = async (
     runId: input.runId,
     outcome: input.outcome,
   });
+  board?.unregister(input.runId);
+  // After the append, not before: a store re-querying at delivery time already sees it.
+  workOrdersChanged?.();
   return endedAt;
 };
 
@@ -190,6 +209,9 @@ export async function executeRun(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
+  board?: BoardHooks,
+  notify?: RunEventNotify,
+  workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
   const plan = planAttempt(
@@ -216,11 +238,13 @@ export async function executeRun(
     attempt: plan.attempt,
   });
   await audit(deps, { at: startedAt, action: 'run.started', runId });
+  // From here the run is answerable through the board, until its record closes.
+  board?.register(runId);
 
   // A transport that never comes up still ends the run: leaving it open would wedge the work
   // order in `running` forever.
   const failAsTransport = async (error: TransportError): Promise<ExecuteOutcome> => {
-    await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' });
+    await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, board, workOrdersChanged);
     return { kind: 'transport_error', error };
   };
 
@@ -263,6 +287,7 @@ export async function executeRun(
 
   for await (const event of handle.events) {
     await deps.runs.appendEvents(runId, [event]);
+    notify?.(runId);
     switch (event.type) {
       case 'session_started':
         await deps.runs.update(runId, { sessionRef: event.sessionRef });
@@ -306,13 +331,13 @@ export async function executeRun(
             now: deps.clock.now(),
           },
         );
-        await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'limit' });
+        await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'limit' }, board, workOrdersChanged);
         return { kind: 'limit', decision };
       }
       case 'finished': {
         const outcome = foldRun([event]).outcome;
         if (outcome !== undefined) {
-          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome });
+          const endedAt = await endRun(deps, { runId, workOrderId: item.workOrderId, outcome }, board, workOrdersChanged);
           await audit(deps, { at: endedAt, action: 'run.finished', runId, detail: { outcome } });
           return { kind: 'finished', outcome };
         }
@@ -325,6 +350,6 @@ export async function executeRun(
 
   // The port promises a stream that ends after `finished`; one that dries up any other way cannot
   // be waited on, so the run is closed as failed instead of staying active forever.
-  await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' });
+  await endRun(deps, { runId, workOrderId: item.workOrderId, outcome: 'failed' }, undefined, workOrdersChanged);
   return { kind: 'finished', outcome: 'failed' };
 }

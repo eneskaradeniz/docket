@@ -142,6 +142,12 @@ describe('provider definitions (P-1)', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
 
+  it('P-1: copilot, cursor and opencode declare permissionAsk true', () => {
+    for (const id of ['copilot', 'cursor', 'opencode'] as const) {
+      expect(defById(id).capabilities.permissionAsk, id).toBe(true);
+    }
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');

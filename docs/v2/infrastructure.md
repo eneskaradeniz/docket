@@ -36,8 +36,8 @@ Each module has an `index.ts`; other modules import it only through that file.
 
 | Module | Files | May import (infrastructure modules) |
 | --- | --- | --- |
-| `system/` | `clock.ts` · `ulid.ts` · `workspace-paths.ts` | — |
-| `storage/sqlite/` | `database.ts` · `schema.ts` · one file per repository · `workspace-registry.ts` | `system` |
+| `system/` | `clock.ts` · `ulid.ts` · `repo-paths.ts` | — |
+| `storage/sqlite/` | `database.ts` · `schema.ts` · one file per repository · `repo-registry.ts` | `system` |
 | `storage/keychain/` | `vault.ts` | `system`, `storage/sqlite` |
 | `storage/definitions-yaml/` | `targets.ts` · `store.ts` | `system` |
 | `vcs/` | `git.ts` · `worktrees.ts` · `evidence.ts` | `system` |
@@ -65,8 +65,9 @@ export function createUlidGen(clock: Clock, random?: RandomBytes): IdGen;
 /** 48-bit time + 80-bit randomness → 26 Crockford base32 chars. */
 export function encodeUlid(timeMs: number, random: Uint8Array): string;
 
-// workspace-paths.ts — the one thing path-based adapters need from the workspace registry
-export interface WorkspacePaths { path(slug: WorkspaceSlug): Promise<string | undefined> }
+// repo-paths.ts — the narrow path views other adapters need from the registries
+export interface RepoPaths { path(slug: RepoSlug): Promise<string | undefined> }
+export interface ProjectPaths { mainRepoPath(project: ProjectSlug): Promise<string | undefined> }
 ```
 
 Rules:
@@ -104,14 +105,15 @@ export function createSqliteAccountRepo(db: DocketDb): AccountRepo;
 export function createSqliteBindingRepo(db: DocketDb): BindingRepo;
 export function createSqliteQueueRepo(db: DocketDb): QueueRepo;
 export function createSqliteProposalRepo(db: DocketDb): ProposalRepo;
+export function createSqliteProjectRepo(db: DocketDb): ProjectRepo;
 
-// workspace-registry.ts — machine-local: which checkout holds which workspace
-export interface WorkspaceRegistry extends WorkspacePaths {
-  register(slug: WorkspaceSlug, path: string): Promise<void>;          // upsert; `path` absolute
-  list(): Promise<readonly { readonly slug: WorkspaceSlug; readonly path: string }[]>;   // slug asc
-  remove(slug: WorkspaceSlug): Promise<void>;
+// repo-registry.ts — machine-local pointers only (S1): where each repo is cloned
+export interface RepoRegistry extends RepoPaths {
+  register(slug: RepoSlug, path: string): Promise<void>;          // upsert; `path` absolute
+  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>;   // slug asc
+  remove(slug: RepoSlug): Promise<void>;
 }
-export function createSqliteWorkspaceRegistry(db: DocketDb): WorkspaceRegistry;
+export function createSqliteRepoRegistry(db: DocketDb): RepoRegistry;
 ```
 
 Migration 1 (`MIGRATIONS[0]`, exact):
@@ -140,9 +142,33 @@ CREATE TABLE secrets (ref TEXT PRIMARY KEY, blob BLOB NOT NULL);
 CREATE TABLE workspaces (slug TEXT PRIMARY KEY, path TEXT NOT NULL);
 ```
 
+Migration 2 (`MIGRATIONS[1]`, exact — the Project layer, S1/S2; every existing workspace becomes a
+"project ≡ repo" record, main repo = itself):
+
+```sql
+ALTER TABLE workspaces RENAME TO repos;
+ALTER TABLE work_orders RENAME COLUMN workspace TO repo;
+ALTER TABLE work_orders ADD COLUMN project TEXT NOT NULL DEFAULT '';
+ALTER TABLE spend RENAME COLUMN workspace TO repo;
+ALTER TABLE spend ADD COLUMN project TEXT NOT NULL DEFAULT '';
+CREATE TABLE projects (slug TEXT PRIMARY KEY, name TEXT NOT NULL, main_repo TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE project_repos (project TEXT NOT NULL REFERENCES projects (slug), repo TEXT NOT NULL, PRIMARY KEY (project, repo));
+INSERT INTO projects (slug, name, main_repo, data)
+  SELECT slug, slug, slug, json_object('id', slug, 'name', slug, 'mainRepo', slug, 'repos', json_array(slug)) FROM repos;
+INSERT INTO project_repos (project, repo) SELECT slug, slug FROM repos;
+UPDATE work_orders SET project = repo;
+UPDATE work_orders SET data = json_set(json_remove(data, '$.workspace'), '$.project', repo, '$.repo', repo);
+UPDATE spend SET project = repo;
+CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);
+CREATE INDEX project_repos_by_repo ON project_repos (repo);
+```
+
+`projects.data` stores the full `ProjectDef` JSON; `project_repos` carries the membership joins.
+There are no roadmap tables today (the roadmap is YAML in the main repo) — nothing else to move.
+
 Key columns: `audit.subject_key` = the subject's `id` (or `role` for `binding`); `bindings.scope_key` =
-`''` for `global`, the workspace slug, or the work-order id. Ordering where a port promises none:
-`queue_items` by `id` asc, `proposals` by `id` asc.
+`''` for `global`, the project slug, the repo slug, or the work-order id by level. Ordering where a
+port promises none: `queue_items` by `id` asc, `proposals` by `id` asc, `projects` by `slug` asc.
 
 Rules:
 - **I-3** `openDatabase`: creates the parent folder of a file path; sets `foreign_keys = ON`, `busy_timeout = 5000`, and for file databases `journal_mode = WAL` and `synchronous = NORMAL`; applies every migration whose `version` is greater than `PRAGMA user_version`, in order, each in one transaction that also sets `user_version`. Opening again is a no-op. A file whose `user_version` is greater than the last migration → `err({ code: 'too_new', found, supported })` and the handle is closed.
@@ -151,6 +177,7 @@ Rules:
 - **I-6** A record read back deep-equals the record written: optional fields that were absent stay absent, `readonly` arrays keep their order, numbers stay numbers. Index columns are rewritten from the record on every update (e.g. `RunRepo.update` with `endedAt` removes the run from `listActive`).
 - **I-7** `appendEvent` / `appendEvents` give each event `seq = previous max + 1` inside one transaction; `appendEvents` of N events stores all N or none; `events()` returns `seq` order. Appending to an unknown work order or run throws (foreign key).
 - **I-8** Durability: everything written through the repositories and the registry is visible through a second `openDatabase` on the same file after the first handle is closed.
+- **I-33** Migration 2: opening a database left at version 1 applies migration 2 exactly once, in one transaction. Afterwards the registry reads `repos`, `work_orders` / `spend` carry `repo` and `project` (every old workspace a project≡repo row in `projects` / `project_repos`, its work orders and spend pointing at it), and records read back deep-equal the new shapes (`data` rewritten — I-6). A database already at version 2 is a no-op; `too_new` (I-3) is unchanged.
 
 ---
 
@@ -175,14 +202,16 @@ Rules:
 
 ## 4. YAML definition store — `storage/definitions-yaml/`
 
-Layout. Global root = `<dataDir>` (`~/.docket`); workspace root = `<workspace path>/.docket`.
+Layout. Global root = `<dataDir>` (`~/.docket`); project root = `<main-repo>/.docket`; repo root =
+`<repo>/.docket`.
 
 ```
-<root>/roles/<slug>.yaml          one RoleDef per file        (global and workspace)
-<root>/flows/<slug>.yaml          one FlowDef per file        (global and workspace)
-<root>/capabilities/<slug>.yaml   one CapabilityDef per file  (global and workspace)
-<root>/workspace.yaml             the WorkspaceDef            (workspace only)
-<root>/roadmap.yaml               the Roadmap                 (workspace only)
+<root>/roles/<slug>.yaml          one RoleDef per file        (global, project and repo roots)
+<root>/flows/<slug>.yaml          one FlowDef per file        (global, project and repo roots)
+<root>/capabilities/<slug>.yaml   one CapabilityDef per file  (global, project and repo roots)
+<project-root>/project.yaml       the ProjectDef              (project root only)
+<project-root>/roadmap.yaml       the Roadmap                 (project root = the main repo only)
+<repo-root>/repo.yaml             the RepoDef                 (repo root only)
 ```
 
 ```ts
@@ -190,13 +219,14 @@ Layout. Global root = `<dataDir>` (`~/.docket`); workspace root = `<workspace pa
 export type DefinitionKind = 'roles' | 'flows' | 'capabilities';
 export type ParsedTarget =
   | { readonly kind: DefinitionKind; readonly id: string }
-  | { readonly kind: 'workspace' }
+  | { readonly kind: 'project' }
+  | { readonly kind: 'repo' }
   | { readonly kind: 'roadmap' };
 export function parseTarget(scope: DefinitionScope, target: string): ParsedTarget | undefined;
 export function hashContent(content: string): string;          // sha256 of the UTF-8 bytes, lowercase hex
 
 // store.ts
-export interface YamlStoreConfig { readonly globalRoot: string; readonly workspaces: WorkspacePaths }
+export interface YamlStoreConfig { readonly globalRoot: string; readonly repos: RepoPaths; readonly projects: ProjectPaths }
 export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionStore;
 ```
 
@@ -204,14 +234,15 @@ Every file is parsed with `yaml`'s `parse(text, { schema: 'core', uniqueKeys: tr
 (no custom tags) and must hold one mapping.
 
 Rules:
-- **I-11** `parseTarget` accepts exactly `roles|flows|capabilities/<slug>.yaml` (the stem passes the domain's `parseSlug`) in both scopes, and `workspace.yaml` / `roadmap.yaml` in the workspace scope only. Everything else → `undefined`: absolute paths, `..`, `./`, backslashes, other extensions, deeper folders, upper case.
-- **I-12** `load(workspace)`: the workspace path comes from `WorkspacePaths` (unknown → `err([{ path: 'workspace', code: 'missing_field', … }])`, as does a missing `workspace.yaml`). Missing kind folders are empty; only `*.yaml` files that pass `parseTarget` are read, in file-name order. Merge per kind: global entries first; a workspace entry with the same `id` replaces the global one in its position; other workspace entries follow. The result is exactly `validateDefinitions({ roles, flows, capabilities, workspace })`.
-- **I-13** File problems, collected for **every** file before validation: unparsable YAML or a non-mapping document → `{ path: '<global|workspace>:<target>', code: 'wrong_type', message: 'yaml: ' + first line of the parser message }`; a `roles/flows/capabilities` file whose `id` differs from its file stem → `{ path: same, code: 'invalid_slug', message: 'id does not match file name' }`. If any exist, `load` returns all of them and does not call `validateDefinitions`.
-- **I-14** `loadRoadmap`: unknown workspace or no `roadmap.yaml` → `undefined`; otherwise `validateRoadmap(parsed)`, with a parse failure reported as a `RoadmapIssue` `{ path: 'roadmap.yaml', code: 'wrong_type', … }`.
-- **I-15** `readFile`: an invalid target, an unknown workspace or a missing file → `undefined`; otherwise `{ content, hash: hashContent(content) }`.
-- **I-16** `writeFile`: an invalid target or an unknown workspace throws (the application validates first — A-12). The current hash (`''` when the file is absent) must equal `expectedHash`, else `err('stale')` and nothing changes. The write goes to a temporary file in the same folder and is renamed over the target (folders created as needed); writes to the same file are serialized inside the process, so of two writers with the same `expectedHash` exactly one succeeds. Returns the new hash.
-- **I-17** `validateCandidate` writes nothing (the folder listing and every file are unchanged afterwards). An invalid target → `err([{ path: target, code: 'wrong_type', message: 'not a definition file' }])`. Otherwise the candidate content replaces (or adds) the target in memory and the same pipeline as I-12/I-13 runs — workspace scope: that workspace's merged definitions; global scope: the global files alone, validated as `validateDefinitions({ roles, flows, capabilities })`. A `roadmap.yaml` target runs `validateRoadmap` and maps each issue to `{ path: 'roadmap.' + i.path, code: 'wrong_type', message: i.code + ': ' + i.message }`.
-- **I-18** `workspacePath` returns `WorkspacePaths.path(workspace)`.
+- **I-11** `parseTarget` accepts exactly `roles|flows|capabilities/<slug>.yaml` (the stem passes the domain's `parseSlug`) in all three scopes, `project.yaml` / `roadmap.yaml` in the project scope only, and `repo.yaml` in the repo scope only. Everything else → `undefined`: absolute paths, `..`, `./`, backslashes, other extensions, deeper folders, upper case.
+- **I-12** `load(repo)`: the repo path comes from `RepoPaths` (unknown → `err([{ path: 'repo', code: 'missing_field', … }])`, as does a missing `repo.yaml`); the project defaults come from the repo's project (via `ProjectPaths.mainRepoPath`; a repo whose project is unknown loads global + repo only). Missing kind folders are empty; only `*.yaml` files that pass `parseTarget` are read, in file-name order. Merge per kind (S3): global entries first; a project entry with the same `id` replaces the global one in its position; a repo entry replaces both; other entries follow in root order global → project → repo. The result is exactly `validateDefinitions({ roles, flows, capabilities, project, repo })` with `repo` present and `project` carried alongside.
+- **I-13** File problems, collected for **every** file before validation: unparsable YAML or a non-mapping document → `{ path: '<global|project|repo>:<target>', code: 'wrong_type', message: 'yaml: ' + first line of the parser message }`; a `roles/flows/capabilities` file whose `id` differs from its file stem → `{ path: same, code: 'invalid_slug', message: 'id does not match file name' }`. If any exist, `load` returns all of them and does not call `validateDefinitions`.
+- **I-14** `loadRoadmap(project)`: unknown project or no `roadmap.yaml` in its main repo → `undefined`; otherwise `validateRoadmap(parsed, projectDef)`, with a parse failure reported as a `RoadmapIssue` `{ path: 'roadmap.yaml', code: 'wrong_type', … }`.
+- **I-15** `readFile`: an invalid target, an unknown scope subject (project/repo) or a missing file → `undefined`; otherwise `{ content, hash: hashContent(content) }`.
+- **I-16** `writeFile`: an invalid target or an unknown scope subject throws (the application validates first — A-12). The current hash (`''` when the file is absent) must equal `expectedHash`, else `err('stale')` and nothing changes. The write goes to a temporary file in the same folder and is renamed over the target (folders created as needed); writes to the same file are serialized inside the process, so of two writers with the same `expectedHash` exactly one succeeds. Returns the new hash.
+- **I-17** `validateCandidate` writes nothing (the folder listing and every file are unchanged afterwards). An invalid target → `err([{ path: target, code: 'wrong_type', message: 'not a definition file' }])`. Otherwise the candidate content replaces (or adds) the target in memory and the same pipeline as I-12/I-13 runs — repo scope: that repo's merged definitions; project scope: the project root merged over the global files, validated as `validateDefinitions({ roles, flows, capabilities, project })`; global scope: the global files alone, validated as `validateDefinitions({ roles, flows, capabilities })`. A `roadmap.yaml` target runs `validateRoadmap` (with the project when resolvable) and maps each issue to `{ path: 'roadmap.' + i.path, code: 'wrong_type', message: i.code + ': ' + i.message }`.
+- **I-18** `repoPath` returns `RepoPaths.path(repo)`.
+- **I-32** project.yaml loading: `readProjectAt(path)` reads `<path>/.docket/project.yaml` — absent → `err([{ path: 'project.yaml', code: 'missing_field' }])`; unparsable or a non-mapping document → `{ path: 'project.yaml', code: 'wrong_type', message: 'yaml: …' }`; otherwise the parsed mapping is validated with R-46 (project rules only — roles/flows are not required) and returned as a `ProjectDef`. `load`'s project arm uses the same reader on the main repo path.
 
 ---
 
@@ -223,7 +254,7 @@ export interface GitResult { readonly exitCode: number; readonly stdout: string;
 export function runGit(cwd: string, args: readonly string[], options?: { readonly timeoutMs?: number }): Promise<GitResult>;
 
 // worktrees.ts
-export interface WorktreesConfig { readonly root: string; readonly workspaces: WorkspacePaths }   // root = <dataDir>/worktrees
+export interface WorktreesConfig { readonly root: string; readonly repos: RepoPaths }   // root = <dataDir>/worktrees
 export function createWorktrees(config: WorktreesConfig): Worktrees;
 export function worktreeBranch(id: WorkOrderId): string;      // 'docket/wo-' + id.toLowerCase()
 export const BASE_REF_PREFIX = 'refs/docket/bases/';          // + work-order id → the commit the worktree started from
@@ -234,7 +265,7 @@ export function createEvidenceChecker(): EvidenceChecker;
 
 Rules:
 - **I-19** `runGit` spawns `git` directly (no shell) with an environment of only `PATH`, `HOME` (plus `SystemRoot` on Windows) from `process.env` and `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0`; default timeout 60 s (then the process is killed and `exitCode` is 124). A non-zero exit is a result, not a throw; `git` missing → `exitCode: 127`.
-- **I-20** `ensure(workspace, id)`: unknown workspace, a path that is not a git work tree, or a repository without commits → `err('no_repo')`. The worktree path is `<root>/<workspace>/<id>`. If `git worktree list --porcelain` already lists it → `ok({ path })` and nothing changes. Otherwise: base = `git rev-parse HEAD` of the workspace checkout; `git worktree add -b <worktreeBranch(id)> <path> <base>` (or without `-b` when the branch already exists); `git update-ref <BASE_REF_PREFIX><id> <base>` unless that ref exists. Concurrent calls for the same id share one creation. The workspace checkout's working tree and current branch are never changed.
+- **I-20** `ensure(repo, id)`: unknown repo, a path that is not a git work tree, or a repository without commits → `err('no_repo')`. The worktree path is `<root>/<repo>/<id>`. If `git worktree list --porcelain` already lists it → `ok({ path })` and nothing changes. Otherwise: base = `git rev-parse HEAD` of the repo checkout; `git worktree add -b <worktreeBranch(id)> <path> <base>` (or without `-b` when the branch already exists); `git update-ref <BASE_REF_PREFIX><id> <base>` unless that ref exists. Concurrent calls for the same id share one creation. The repo checkout's working tree and current branch are never changed.
 - **I-21** `resolvePointers(cwd, pointers)`: every pointer is `<path>:<line>` or `<path>:<start>-<end>` (1-based, `start ≤ end`); the path is relative and, after resolving symlinks, stays inside `cwd`; the file exists and has at least `end` lines. Any malformed, escaping or missing pointer → `false`; an empty list → `false`.
 
 ---
@@ -335,23 +366,25 @@ export interface NodeDepsConfig {
 }
 export interface NodeDeps {
   readonly deps: AppDeps;
-  readonly workspaces: WorkspaceRegistry;
+  readonly repos: RepoRegistry;
+  readonly projects: ProjectRepo;
   close(): void;
 }
 export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbError>;
 ```
 
 Rules:
-- **I-31** `createNodeDeps` opens `<dataDir>/docket.db`, uses `<dataDir>` as the global definitions root and `<dataDir>/worktrees` as the worktree root, and wires every `AppDeps` member to the adapters above (clock, `createUlidGen`, SQLite repositories and event log, YAML store over the registry, keychain vault, worktrees, command runner with `commandEnv`, secret scanner, evidence checker) plus the injected transports and notifier. A too-new database → the `openDatabase` error. `close()` closes the database.
+- **I-31** `createNodeDeps` opens `<dataDir>/docket.db`, uses `<dataDir>` as the global definitions root and `<dataDir>/worktrees` as the worktree root, and wires every `AppDeps` member to the adapters above (clock, `createUlidGen`, SQLite repositories and event log, project repo, YAML store over the repo registry and project paths, keychain vault, worktrees, command runner with `commandEnv`, secret scanner, evidence checker) plus the injected transports and notifier. A too-new database → the `openDatabase` error. `close()` closes the database.
 
 ## 9. Phase 2b acceptance — headless end to end on real storage
 
 `src/infrastructure/scenarios/standard-flow-node.test.ts` repeats the Phase 2a scenario
 ([application.md §5](application.md#5-phase-2a-acceptance--headless-end-to-end)) through `createApi` and the
 application services, but on `createNodeDeps` over a temporary data folder: the built-in roles and flows
-written as YAML files under the global root, a throw-away git repository registered as the workspace
-(its `.docket/workspace.yaml` enables `standard` with command sets that run `node -e "process.exit(0)"`),
+written as YAML files under the global root, a throw-away git repository registered as a project≡repo
+(its `.docket/project.yaml` naming itself `mainRepo`, its `.docket/repo.yaml` enabling `standard` with
+command sets that run `node -e "process.exit(0)"`),
 the real command runner, secret scanner and worktrees, a fake transport and a test cipher. It asserts
-the same states as 2a, that the worktree exists at `<dataDir>/worktrees/<workspace>/<id>`, and — after
+the same states as 2a, that the worktree exists at `<dataDir>/worktrees/<repo>/<id>`, and — after
 `close()` and a fresh `createNodeDeps` on the same folder — that `workOrder.detail` returns the same
 state and runs.
