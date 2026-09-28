@@ -36,15 +36,17 @@ The UI speaks Turkish; code uses the English term.
 | Flow | Akış | Ordered stages a work order goes through |
 | Stage | Aşama | One step of a flow; a role acts, then exit gates are checked |
 | Gate | Kapı | An exit condition: human approval, command, agent verdict, secret scan, page approval |
-| Workspace | Çalışma alanı | A project: repos, enabled flows, overrides, environments |
-| Roadmap / Phase / Task | Yol haritası / Faz / Görev | The plan; a task is a planning unit |
-| Work order | İş emri | One execution of a flow, usually for a task |
+| Project | Proje | A set of repos with one main repo: the roadmap, project-level defaults, the project budget ceiling |
+| Repo | Depo | One repository of a project: overrides, enabled flows, environments, the repo budget limit |
+| Main repo | Ana depo | The project's central repo: `.docket/project.yaml` and the roadmap live there |
+| Roadmap / Phase / Task | Yol haritası / Faz / Görev | The plan, owned by the project; a task is a planning unit targeting one or more repos |
+| Work order | İş emri | One execution of a flow in one repo, usually for a task |
 | Run | Koşu | One execution of one stage by one role on one account (one agent session) |
 | Record | Kayıt | Transcript, usage, quota observations, gate results, evidence |
 | Dispatcher | Dağıtıcı | The single service every run passes through: queue, limits, resume |
-| Conversation | Sohbet | Chat at global / workspace / work-order scope; can only propose |
+| Conversation | Sohbet | Chat at global / repo / work-order scope; can only propose |
 | Proposal | Öneri | The only way AI changes configuration: a diff the user approves |
-| Environment | Ortam | A deployment target of a workspace (dev, stg, prd, …) |
+| Environment | Ortam | A deployment target of a repo (dev, stg, prd, …) |
 | Deployment | Yayına alma | One run of an environment's deploy commands for a commit, after human approval |
 | Forge | Kod platformu | Where repositories are hosted: pull requests, CI checks (GitHub, Bitbucket, Azure, …) |
 | Issue tracker | İş takip sistemi | External task system (Jira, Azure Boards, …) linked to roadmap tasks |
@@ -68,7 +70,8 @@ Everything else is configurable. These five are not.
 
 | Place | Content | Shared? |
 | --- | --- | --- |
-| `~/.docket/` | Global definitions: roles, flows, capabilities | Machine-local |
-| `<repo>/.docket/` | Workspace definition, overrides, roadmap | Versioned with the repo |
-| `~/.docket/docket.db` | Providers, accounts, role bindings, work orders, runs, records, quota observations, pages, proposals | Machine-local |
+| `~/.docket/` | Global definitions (roles, flows, capabilities), `docket.db`, and the machine-local registry: which project's repos are cloned where | Machine-local |
+| `<main-repo>/.docket/` | `project.yaml` (the project, incl. its budget ceiling), project-level role/flow defaults, `roadmap.yaml` | Versioned with the main repo |
+| `<repo>/.docket/` | `repo.yaml` (the repo definition) and repo-level overrides | Versioned with the repo |
+| `~/.docket/docket.db` | Projects, repo registrations, providers, accounts, role bindings, work orders, runs, records, quota observations, pages, proposals | Machine-local |
 | OS keychain | API keys, tokens | Never written to files or the DB |

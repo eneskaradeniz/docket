@@ -51,7 +51,7 @@ src/
   application/     use-cases/ · ports/ · dispatcher.ts
   api/             commands.ts · queries.ts · events.ts
   infrastructure/   module map and contracts: infrastructure.md
-    system/        clock · ulid · workspace-paths
+    system/        clock · ulid · repo-paths
     providers/     discovery · transports/{sdk, stream-json, app-server, acp} · defs/ · quota-probes/
     storage/       sqlite/ (one file per repository) · definitions-yaml/ · keychain/
     vcs/           git · worktrees · evidence
@@ -60,11 +60,25 @@ src/
     pages/         mcp-server · page-store
     compose/       create-node-deps (everything except Electron objects)
     scenarios/     cross-module scenario tests only
-  presentation/    shell · cockpit · workspace-board · work-order · roadmap · settings · wizard · pages-viewer
+  presentation/    shell · cockpit · board · work-order · roadmap · account · settings · wizard · pages-viewer
 electron/          main.ts (composition root) · preload.ts (API bridge)
 ```
 
 Tests sit next to the code: `derive.ts` → `derive.test.ts`.
+
+## Where things live
+
+| Place | Content | Shared? |
+| --- | --- | --- |
+| `~/.docket/` | Global definitions (roles, flows, capabilities), `docket.db`, the machine-local registry (which project's repos are cloned where), worktrees | Machine-local |
+| `<main-repo>/.docket/` | `project.yaml` (the ProjectDef: name, main repo, repos, project budget ceiling), project-level role/flow/capability defaults, `roadmap.yaml` | Versioned with the main repo |
+| `<repo>/.docket/` | `repo.yaml` (the RepoDef) and repo-level overrides; the repo budget limit | Versioned with the repo |
+
+Definition precedence: global ← project ← repo — the repo's `.docket/` overrides the project,
+the project overrides `~/.docket`; the work-order level resolves above all three
+([domain.md §3](domain.md#3-resolver--the-precedence-chain)). The roadmap belongs to the project
+and is read from the main repo's `.docket/roadmap.yaml`; changing the main repo moves where the
+roadmap lives.
 
 ## Ports (defined in `src/application/ports/`)
 
@@ -73,8 +87,9 @@ Tests sit next to the code: `derive.ts` → `derive.test.ts`.
 | `AgentTransport` | Start a run, return an async stream of `AgentEvent`, deliver permission answers and steer notes, stop |
 | `ProviderCatalog` | Discover CLIs: path, version, login state, capabilities, models |
 | `QuotaProbe` | Query an account's pools and windows |
-| `DefinitionStore` | Read roles, flows, capabilities, workspace, roadmap; apply an approved proposal |
-| `WorkOrderRepo`, `RunRepo`, `PageRepo`, `ProposalRepo`, `AccountRepo` | Runtime state, one repository per aggregate |
+| `DefinitionStore` | Read roles, flows, capabilities, project, repo, roadmap; apply an approved proposal |
+| `WorkOrderRepo`, `RunRepo`, `PageRepo`, `ProposalRepo`, `AccountRepo`, `ProjectRepo` | Runtime state, one repository per aggregate |
+| `RepoRegistry` | Machine-local pointers: where each repo is cloned on this machine |
 | `EventLog` | Append-only audit: who, what, when, on which subject |
 | `SecretVault` | API keys and tokens |
 | `Vcs`, `Forge` | Worktrees, branches, diff, merge · pull requests and issues |
@@ -86,8 +101,8 @@ Every port has an in-memory fake in `src/application/ports/fakes/` used by appli
 ## API boundary (team-ready)
 
 The presentation layer reaches the core only through `src/api/`: **commands** (e.g. `openWorkOrder`,
-`decideGate`, `answerPermission`, `applyProposal`), **queries** (e.g. `cockpit`, `workspaceBoard`,
-`workOrderDetail`), and an **event subscription**. Today the transport is Electron IPC via
+`decideGate`, `answerPermission`, `attachProject`), **queries** (e.g. `cockpit`, `projectTree`,
+`repoBoard`, `workOrderDetail`), and an **event subscription**. Today the transport is Electron IPC via
 `electron/preload.ts`; later the same contract can be served over HTTP for a team server or the
 mobile app. Contracts are plain JSON-serialisable types — no class instances, no functions.
 
@@ -98,7 +113,8 @@ mobile app. Contracts are plain JSON-serialisable types — no class instances, 
    edges. Two machines' data can be merged without collisions.
 3. Storage is behind ports; the domain never knows it is SQLite.
 4. An approval records who approved; a gate may later declare who is allowed to approve.
-5. Definitions live in git, so sharing them with a team already works.
+5. Project and repo definitions live in git (the main repo's and each repo's `.docket/`), so sharing
+   them with a team already works; `~/.docket` holds only registrations and machine-local records.
 
 ## Security rules
 

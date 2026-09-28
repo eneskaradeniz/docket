@@ -22,7 +22,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | Module | May import from |
 | --- | --- |
 | `shared` | — |
-| `definitions` | `shared` |
+| `definitions` | `shared`, `budget` |
 | `quota` | `shared` |
 | `budget` | `shared` |
 | `proposal` | `shared` |
@@ -32,7 +32,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `library` | `shared`, `definitions` |
 | `flow` | `shared`, `definitions`, `gates` |
 | `dispatch` | `shared`, `quota`, `budget` |
-| `roadmap` | `shared`, `flow` |
+| `roadmap` | `shared`, `flow`, `definitions` |
 | `scenarios` | every module above — **test files only**, no production code, no `index.ts` |
 
 Each module folder has an `index.ts` that re-exports its public API; `src/domain/index.ts` re-exports
@@ -65,7 +65,8 @@ export type FlowSlug = Slug<'flow'>;
 export type StageSlug = Slug<'stage'>;
 export type GateSlug = Slug<'gate'>;
 export type CapabilitySlug = Slug<'capability'>;
-export type WorkspaceSlug = Slug<'workspace'>;
+export type RepoSlug = Slug<'repo'>;
+export type ProjectSlug = Slug<'project'>;
 export type PhaseSlug = Slug<'phase'>;
 export type TaskSlug = Slug<'task'>;
 export type EnvSlug = Slug<'env'>;
@@ -103,14 +104,14 @@ Rules:
 
 ---
 
-## 2. `definitions/` — roles, flows, gates, capabilities, workspace
+## 2. `definitions/` — roles, flows, gates, capabilities, project, repo
 
 ```ts
 // definitions/types.ts
 export type WriteScope =
   | { readonly kind: 'none' }                                   // read-only role
-  | { readonly kind: 'docs' }                                    // the workspace docs root only
-  | { readonly kind: 'tests' }                                   // test folders only (globs from workspace)
+  | { readonly kind: 'docs' }                                    // the repo's docs root only
+  | { readonly kind: 'tests' }                                   // test folders only (globs from the repo)
   | { readonly kind: 'repo' }                                    // the work order's worktree
   | { readonly kind: 'paths'; readonly globs: readonly string[] };
 
@@ -160,6 +161,31 @@ export type EnvValue = { readonly literal: string } | { readonly secretRef: stri
 export type HookEvent = 'before_tool' | 'after_tool' | 'after_write' | 'run_end';
 
 export interface RepoRef { readonly id: string; readonly remote: string; readonly defaultBranch: string }
+// RepoRef is no longer declared in YAML: adapters build it from the repo checkout (git remote,
+// default branch) when a forge or remote-checks operation needs it.
+
+/** <main-repo>/.docket/project.yaml — the project layer above repos (S1). */
+export interface ProjectDef {
+  readonly id: ProjectSlug;
+  readonly name: string;
+  readonly mainRepo: RepoSlug;            // the roadmap and project.yaml live in this repo's .docket/
+  readonly repos: readonly RepoSlug[];    // at least mainRepo; unique
+  readonly budget?: SpendCap;             // project spend ceiling (S5): the sum over all repos
+}
+
+/** <repo>/.docket/repo.yaml — one repository's configuration. */
+export interface RepoDef {
+  readonly id: RepoSlug;
+  readonly name: string;
+  readonly flows: readonly FlowSlug[];              // enabled flows
+  readonly defaultFlow: FlowSlug;
+  readonly commandSets: Readonly<Record<string, readonly string[]>>;  // name → shell commands, run in order
+  readonly roleOverrides: readonly RoleOverride[];
+  readonly docsRoot: string;                         // default "docs"
+  readonly testGlobs: readonly string[];             // used by WriteScope 'tests'
+  readonly environments?: readonly EnvironmentDef[]; // default []
+  readonly budget?: SpendCap;                        // repo spend limit (S5)
+}
 
 export interface EnvironmentDef {
   readonly id: EnvSlug;
@@ -172,26 +198,14 @@ export interface EnvironmentDef {
   readonly promoteFrom?: EnvSlug;                     // same commit must have a successful deploy there first
 }
 
-export interface WorkspaceDef {
-  readonly id: WorkspaceSlug;
-  readonly name: string;
-  readonly repos: readonly RepoRef[];
-  readonly flows: readonly FlowSlug[];              // enabled flows
-  readonly defaultFlow: FlowSlug;
-  readonly commandSets: Readonly<Record<string, readonly string[]>>;  // name → shell commands, run in order
-  readonly roleOverrides: readonly RoleOverride[];
-  readonly docsRoot: string;                         // default "docs"
-  readonly testGlobs: readonly string[];             // used by WriteScope 'tests'
-  readonly environments?: readonly EnvironmentDef[]; // default []
-}
-
 export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;
 
 export interface Definitions {
   readonly roles: readonly RoleDef[];
   readonly flows: readonly FlowDef[];
   readonly capabilities: readonly CapabilityDef[];
-  readonly workspace?: WorkspaceDef;
+  readonly project?: ProjectDef;   // present in the project scope
+  readonly repo?: RepoDef;         // present in the repo scope
 }
 
 // definitions/validate.ts
@@ -205,7 +219,8 @@ export type DefinitionIssueCode =
   | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
-  | 'env_command_set_missing' | 'duplicate_env_order';
+  | 'env_command_set_missing' | 'duplicate_env_order'
+  | 'empty_repos' | 'main_repo_not_listed';
 
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
@@ -216,13 +231,16 @@ Rules:
 - **R-4** Ids are unique per kind (roles, flows, capabilities); stage ids unique within a flow; gate ids unique within a stage.
 - **R-5** `stage.role` must exist and be `active`; `agent_verdict.role` must exist.
 - **R-6** `onFail.goto` must name a stage at the same index or earlier (`forward_goto` otherwise); `maxAttempts` is an integer 1..10.
-- **R-7** `command` gates must name a `commandSet` present in `workspace.commandSets` when a workspace is given.
+- **R-7** `command` gates must name a `commandSet` present in `repo.commandSets` when a repo definition is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
-- **R-9** `workspace.defaultFlow` must be listed in `workspace.flows`, and every listed flow must exist.
+- **R-9** `repo.defaultFlow` must be listed in `repo.flows`, and every listed flow must exist.
+- **R-46** `ProjectDef`: `repos` is non-empty (`empty_repos`), has no duplicates (`duplicate_id`), and
+  contains `mainRepo` (`main_repo_not_listed`); a `budget`, when present, must be a valid `SpendCap`
+  (`wrong_type` otherwise). Validated whenever a project is validated (project scope load, attach).
 - **E-1** `EnvSlug` follows the same `parseSlug` rules as other slugs.
-- **E-2** Environment ids are unique within a workspace; `order` values are unique within a workspace (`duplicate_env_order`).
-- **E-3** `EnvironmentDef.deploy` and `verify` (when present) must name a `commandSet` present in `workspace.commandSets` (`env_command_set_missing`).
-- **E-4** A `deploy` gate's `environment` must name an environment in `workspace.environments` (`unknown_environment`).
+- **E-2** Environment ids are unique within a repo; `order` values are unique within a repo (`duplicate_env_order`).
+- **E-3** `EnvironmentDef.deploy` and `verify` (when present) must name a `commandSet` present in `repo.commandSets` (`env_command_set_missing`).
+- **E-4** A `deploy` gate's `environment` must name an environment in `repo.environments` (`unknown_environment`).
 - **E-5** A `protected` environment must have `promoteFrom` set (`missing_promote_from`). `promoteFrom` must name another environment with a lower `order` value; an equal- or higher-order target reports `promote_cycle` — with unique `order` values (E-2), a non-descending chain and a cyclic one are the same defect class. The `promoteFrom` chain must be acyclic (`promote_cycle`).
 
 ---
@@ -230,8 +248,8 @@ Rules:
 ## 3. `resolver/` — the precedence chain
 
 ```ts
-export type Level = 'workOrder' | 'workspace' | 'global' | 'builtin';
-export const LEVEL_ORDER: readonly Level[];   // ['workOrder', 'workspace', 'global', 'builtin']
+export type Level = 'workOrder' | 'repo' | 'project' | 'global' | 'builtin';
+export const LEVEL_ORDER: readonly Level[];   // ['workOrder', 'repo', 'project', 'global', 'builtin']
 export interface Layer<T> { readonly level: Level; readonly value: T | undefined }
 export interface Resolved<T> { readonly value: T; readonly from: Level }
 
@@ -250,6 +268,9 @@ export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<
 Rules:
 - **R-10** `resolve` ignores `undefined` layers and picks by `LEVEL_ORDER`, not array position.
 - **R-11** `applyRoleOverrides` never changes `id`; an override with a different id is ignored.
+
+Project defaults sit between global and repo (S3): a repo's `.docket/` overrides the project, the
+project overrides `~/.docket`; the work-order level resolves above all three.
 
 ---
 
@@ -477,7 +498,7 @@ Rules:
 ```ts
 export interface SpendCap { readonly amountUsd: number; readonly warnPercent: number }   // warnPercent 1..100, default 80
 export type SpendStatus = 'ok' | 'warn' | 'hard_stop';
-export type CapScope = 'account_day' | 'account_month' | 'workspace_month' | 'work_order';
+export type CapScope = 'account_day' | 'account_week' | 'account_month' | 'project_month' | 'repo_month' | 'work_order';
 export interface ScopedSpend { readonly scope: CapScope; readonly observedUsd: number; readonly cap?: SpendCap }
 export function spendStatus(observedUsd: number, cap: SpendCap | undefined): SpendStatus;
 /** The most restrictive status across all scopes, with the scope that caused it. */
@@ -487,6 +508,13 @@ export function combinedSpendStatus(spends: readonly ScopedSpend[]): { readonly 
 Rules:
 - **R-31** No cap or `amountUsd <= 0` → `ok`. `observed >= amount` → `hard_stop`. `observed >= ceil(amount * warnPercent) / 100` (cent-exact, float-safe) → `warn`.
 - **R-32** `combinedSpendStatus` ranks `hard_stop > warn > ok`; ties keep the first scope in input order.
+- **R-48** Two-layer budget (S5): a run in repo `R` of project `P` is checked against the account's
+  own caps (`account_day` / `account_week` / `account_month`), the repo cap (`repo_month`) and the
+  project ceiling (`project_month` — observed spend is the sum over **all** repos of the project,
+  so a repo with no spend of its own is still stopped when the ceiling is exhausted). Checks run
+  in order repo limit → project ceiling; `combinedSpendStatus` decides (R-32). A `hard_stop` at
+  `project_month` blocks new runs in every repo of the project; a `repo_month` stop blocks only
+  that repo. Running runs are never killed (invariant 3). Work-order caps arrive in Phase 5.
 
 ---
 
@@ -496,17 +524,17 @@ Rules:
 export interface QueueItem {
   readonly id: QueueItemId;
   readonly workOrderId: WorkOrderId;
-  readonly workspace: WorkspaceSlug;
+  readonly repo: RepoSlug;
   readonly stage: StageSlug;
   readonly route: AccountRoute;
   readonly priority: number;            // higher first
   readonly enqueuedAt: EpochMs;
   readonly notBefore?: EpochMs;         // e.g. a scheduled resume
 }
-export interface RunningRun { readonly workOrderId: WorkOrderId; readonly workspace: WorkspaceSlug; readonly accountId: AccountId }
+export interface RunningRun { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug; readonly accountId: AccountId }
 export interface DispatchLimits {
   readonly global: number;                              // default 4
-  readonly perWorkspace: number;                        // default 3
+  readonly perRepo: number;                             // default 3
   readonly perAccount: Readonly<Record<string, number>>; // AccountId → max concurrent; absent = no extra limit
 }
 export interface DispatchSnapshot {
@@ -516,7 +544,7 @@ export interface DispatchSnapshot {
   readonly headroom: Readonly<Record<string, Headroom>>;          // QueueItemId → headroom for its route
   readonly spend: Readonly<Record<string, SpendStatus>>;          // QueueItemId → combined spend status
 }
-export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'workspace_limit' | 'account_limit' | 'quota' | 'budget';
+export type WaitReason = 'not_before' | 'work_order_busy' | 'global_limit' | 'repo_limit' | 'account_limit' | 'quota' | 'budget';
 export type DispatchDecision =
   | { readonly item: QueueItemId; readonly kind: 'start' }
   | { readonly item: QueueItemId; readonly kind: 'wait'; readonly reason: WaitReason; readonly until?: EpochMs };
@@ -525,7 +553,7 @@ export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSn
 
 Rules:
 - **R-33** Items are considered by `priority` desc, then `enqueuedAt` asc, then `id` asc. Output has one decision per queue item, in that order.
-- **R-34** Checks in this order, first failing wins: `notBefore > now` (`until` = notBefore) → a run for the same work order is running or already started in this decision → global limit → workspace limit → account limit → spend `hard_stop` (`budget`) → headroom `ok:false` (`quota`, `until` = earliestRelief) → headroom `'unknown'` is allowed (does **not** wait; the transport will learn) → `start`.
+- **R-34** Checks in this order, first failing wins: `notBefore > now` (`until` = notBefore) → a run for the same work order is running or already started in this decision → global limit → repo limit → account limit → spend `hard_stop` (`budget`; a project-ceiling stop waits every item of that project — R-48) → headroom `ok:false` (`quota`, `until` = earliestRelief) → headroom `'unknown'` is allowed (does **not** wait; the transport will learn) → `start`.
 - **R-35** Starting an item counts toward the limits for the items after it in the same call.
 
 ---
@@ -560,13 +588,18 @@ Rules:
 
 ## 10. `roadmap/` — phases, tasks, dependencies
 
+The roadmap belongs to a **project** and is loaded from the main repo's `.docket/roadmap.yaml`;
+changing the main repo moves where the roadmap is read from (it is never copied). Task completion
+is unchanged (R-40): a task is done when all its linked work orders are done — which is how
+"one work order per target repo" composes into a cross-repo task (S4).
+
 ```ts
 export interface TaskDef {
   readonly id: TaskSlug;
   readonly title: string;
   readonly dependsOn: readonly TaskSlug[];     // any task in the roadmap
   readonly acceptance: readonly string[];
-  readonly repo?: string;
+  readonly targets: readonly RepoSlug[];       // repos the task's work runs in; empty → [project.mainRepo] at load
 }
 export interface PhaseDef {
   readonly id: PhaseSlug;
@@ -575,9 +608,9 @@ export interface PhaseDef {
   readonly tasks: readonly TaskDef[];
 }
 export interface Roadmap { readonly phases: readonly PhaseDef[] }
-export type RoadmapIssueCode = 'invalid_slug' | 'duplicate_id' | 'unknown_task' | 'unknown_phase' | 'task_cycle' | 'phase_cycle' | 'cross_cycle' | 'missing_field' | 'wrong_type';
+export type RoadmapIssueCode = 'invalid_slug' | 'duplicate_id' | 'unknown_task' | 'unknown_phase' | 'task_cycle' | 'phase_cycle' | 'cross_cycle' | 'missing_field' | 'wrong_type' | 'unknown_repo';
 export interface RoadmapIssue { readonly path: string; readonly code: RoadmapIssueCode; readonly message: string }
-export function validateRoadmap(input: unknown): Result<Roadmap, readonly RoadmapIssue[]>;
+export function validateRoadmap(input: unknown, project?: ProjectDef): Result<Roadmap, readonly RoadmapIssue[]>;
 
 export type TaskStatus = 'planned' | 'waiting' | 'running' | 'done';
 export type PhaseStatus = 'planned' | 'waiting' | 'running' | 'done';
@@ -592,6 +625,9 @@ export function deriveRoadmap(roadmap: Roadmap, workOrders: readonly LinkedWorkO
 
 Rules:
 - **R-39** Task ids are unique across the whole roadmap; phase ids unique; all references resolve; cycles are reported with the ids involved in the message.
+- **R-47** Every task's `targets` entries must be valid slugs; when a `ProjectDef` is passed to
+  `validateRoadmap`, each target must be listed in `project.repos` (`unknown_repo`). Absent or empty
+  `targets` default to `[project.mainRepo]` in the validated roadmap.
 - **R-39a** Cross-graph deadlock → `cross_cycle`. Build a graph over tasks: an edge T → D for every `D` in `T.dependsOn`, and an edge T → X for every task X of every phase that T's phase is (transitively) `blockedBy`. A cycle in this graph that is not already reported as `task_cycle` is reported once as `cross_cycle`, naming its task ids. This check runs only when there is no `phase_cycle` (a phase cycle makes phases block themselves; it is the root cause and is reported on its own). (Example: task a in phase P1 depends on task b in phase P2, while P2 is blocked by P1.)
 - **R-40** Task status: any linked work order not `done` → `running`; linked and all `done` → `done`; no linked work orders → `waiting` if any dependency is not `done` or the phase is blocked, else `planned`.
 - **R-41** Phase status, first matching rule wins: (1) any task `running` → `running`; (2) at least one task and all tasks `done` → `done`; (3) blocked by a phase that is not `done` → `waiting` (this includes a blocked zero-task phase); (4) otherwise `planned` (including an unblocked zero-task phase). Finished work is never reported as waiting.
@@ -682,12 +718,12 @@ Flows:
 ```ts
 export const BUILTIN_ROLES: readonly RoleDef[];
 export const BUILTIN_FLOWS: readonly FlowDef[];
-/** Command sets the built-in flows reference; a workspace must define them to use those flows. */
+/** Command sets the built-in flows reference; a repo must define them to use those flows. */
 export const BUILTIN_COMMAND_SET_NAMES: readonly string[];   // ['tests']
 ```
 
 Rule:
-- **R-45** `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], workspace: <fixture with commandSets.tests> })` is `ok`.
+- **R-45** `validateDefinitions({ roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS, capabilities: [], repo: <fixture with commandSets.tests> })` is `ok`.
 
 ---
 
