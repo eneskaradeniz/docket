@@ -168,6 +168,7 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
   cockpit — that intent lives on the board header (IA-3).
+- **U-22** (work-order code) A work order is shown by its code: the locale's prefix (TR `İE-`, EN `WO-`, label key `workOrder.codePrefix`) plus its A-29 number left-padded with zeros to four digits (`İE-0014`); a number above 9999 is shown in full, never truncated. The code is set in the mono face. One pure helper formats it; no screen builds a code itself.
 
 ### Prototype vs rules (2026-09-29)
 
