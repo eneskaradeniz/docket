@@ -3,7 +3,8 @@
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The app target adds one more line per size × theme for the search palette, measured open on the
 // cockpit screen (⌘K): the panel must sit in the window's centre over a scrim that covers the
-// window and blurs what is behind it:
+// window and blurs what is behind it, the empty standing must show the input row alone and a
+// typed standing must grow the body under it:
 //   palette: kokpit <WxH> <theme> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
@@ -49,6 +50,7 @@ const APP_SELECTORS = {
   closedHeading: { css: 'h2', text: 'Son kapananlar' },
   palette: '[data-search-palette]',
   paletteScrim: '[data-search-scrim]',
+  paletteBody: '[data-search-body]',
 };
 
 const parseArgs = (argv) => {
@@ -82,19 +84,52 @@ async function openPrototype(path) {
 }
 
 /** The palette's own measurement: ⌘K opens it, the panel must sit centred in the window over a
- *  scrim that covers the whole window and blurs what is behind it. Esc closes it again. */
+ *  scrim that covers the whole window and blurs what is behind it. The palette eases in and out
+ *  (backdrop 200ms; panel 220ms, 40ms behind; the body folds in 180ms), so each measurement
+ *  waits for the running transition to settle instead of sleeping. It measures both standings:
+ *  the empty one shows the input row alone (zero body), a typed one grows the body under it.
+ *  Esc closes it again. */
 async function paletteCheck(target) {
   const { page, selectors } = target;
+  const panelSettled = () =>
+    page.waitForFunction(
+      (sel) => {
+        const panel = document.querySelector(sel);
+        if (panel === null) return false;
+        // Opacity is the longest leg of both the open and the close — at 1 every other
+        // property of the same transition has landed too.
+        return parseFloat(getComputedStyle(panel).opacity) > 0.999;
+      },
+      selectors.palette,
+      { timeout: 4000 },
+    );
+  const bodySettled = (open) =>
+    page.waitForFunction(
+      ([bodySel, listSel, open]) => {
+        const body = document.querySelector(bodySel);
+        const list = document.querySelector(listSel);
+        if (body === null || list === null) return false;
+        // A running fold still animates; once nothing animates, the body's height is final.
+        const idle = body.getAnimations().length === 0 && list.getAnimations().length === 0;
+        const grown = body.getBoundingClientRect().height > 1;
+        return open ? grown && idle : !grown && idle;
+      },
+      [selectors.paletteBody, `${selectors.palette} [role="listbox"]`, open],
+      { timeout: 4000 },
+    );
+
   await page.keyboard.press('Meta+K');
   await page.waitForFunction(
     (sel) => document.activeElement?.closest(sel) !== null,
     selectors.palette,
     { timeout: 4000 },
   );
-  const m = await page.evaluate(([panelSel, scrimSel]) => {
+  await panelSettled();
+  const m = await page.evaluate(([panelSel, scrimSel, bodySel]) => {
     const panel = document.querySelector(panelSel);
     const scrim = document.querySelector(scrimSel);
-    if (panel === null || scrim === null) return null;
+    const body = document.querySelector(bodySel);
+    if (panel === null || scrim === null || body === null) return null;
     const r = panel.getBoundingClientRect();
     const s = scrim.getBoundingClientRect();
     const cs = getComputedStyle(scrim);
@@ -107,19 +142,30 @@ async function paletteCheck(target) {
       ih: innerHeight,
       covers: s.left <= 0 && s.top <= 0 && s.right >= innerWidth && s.bottom >= innerHeight,
       blurs: cs.backdropFilter !== '' && cs.backdropFilter !== 'none',
+      emptyBody: body.getBoundingClientRect().height,
     };
-  }, [selectors.palette, selectors.paletteScrim]);
+  }, [selectors.palette, selectors.paletteScrim, selectors.paletteBody]);
+  // A typed standing grows the body under the input — measured settled, like the empty one.
+  await page.keyboard.type('antero');
+  await bodySettled(true);
+  const typedBody = await page.evaluate(
+    (bodySel) => document.querySelector(bodySel)?.getBoundingClientRect().height ?? null,
+    selectors.paletteBody,
+  );
   await page.keyboard.press('Escape');
   await page.locator(selectors.palette).waitFor({ state: 'detached', timeout: 4000 });
   if (m === null) return { ok: false, detail: 'palette elements not found' };
+  if (typedBody === null) return { ok: false, detail: 'palette body not found' };
   const dx = Math.abs(m.cx - m.iw / 2);
   const dy = Math.abs(m.cy - m.ih / 2);
-  const ok = dx <= 0.5 && dy <= 0.5 && m.covers && m.blurs && m.w > 0;
+  // Sub-1px body is the fold's subpixel dust, not a body; a typed one clears it by an order.
+  const ok =
+    dx <= 0.5 && dy <= 0.5 && m.covers && m.blurs && m.w > 0 && m.emptyBody < 1 && typedBody > 1;
   return {
     ok,
-    detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} scrim ${
-      m.covers ? 'covers' : 'gaps'
-    } blur ${m.blurs ? 'yes' : 'no'}`,
+    detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} body ${
+      Math.round(m.emptyBody)
+    }→${Math.round(typedBody)}px scrim ${m.covers ? 'covers' : 'gaps'} blur ${m.blurs ? 'yes' : 'no'}`,
   };
 }
 
