@@ -19,6 +19,7 @@ import {
   type PaletteState,
 } from '../stores/search-palette';
 import { ACTIVE_CLASS } from './active-state';
+import { MOTION, motionVars } from './motion';
 import { SearchIcon } from './title-bar';
 
 export interface SearchPaletteProps {
@@ -35,12 +36,48 @@ export interface SearchPaletteProps {
 const LIST_ID = 'docket-palette-options';
 const optionId = (index: number): string => `docket-palette-option-${index}`;
 
+// The motion numbers as custom properties on the overlay's root — the classes below consume
+// them, the constants above own them.
+const MOTION_STYLE = motionVars();
+
+// The rows' transition is one language; only the stagger delay differs, and only while the
+// rows are arriving — a hiding row must not lag behind its neighbours.
+const ROW_FADE =
+  'transition-opacity duration-[var(--motion-results-fade)] [transition-timing-function:var(--motion-ease)] motion-reduce:transition-none';
+const staggerDelay = (index: number): string =>
+  `${Math.min(index, MOTION.results.staggerRows - 1) * MOTION.results.staggerMs}ms`;
+
 /** A row's standing: the keyboard's row carries the one active-state language, the rest stay
  *  quiet — the same grammar as the sidebar's rows. */
-const rowClass = (selected: boolean): string =>
-  selected
-    ? `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
-    : 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink hover:bg-raised';
+const rowClass = (selected: boolean, shown: boolean): string =>
+  [
+    selected
+      ? `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
+      : 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink hover:bg-raised',
+    ROW_FADE,
+    shown ? 'opacity-100' : 'opacity-0',
+  ].join(' ');
+
+/** Flips to true only once `active` has survived a painted frame — the browser needs the
+ *  hidden start state on screen before a transition has something to chase. */
+function usePaintedFlip(active: boolean): boolean {
+  const [flipped, setFlipped] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setFlipped(false);
+      return;
+    }
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setFlipped(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [active]);
+  return flipped;
+}
 
 export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose }: SearchPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,7 +90,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   // hidden, flip only after the hidden frame is painted — the browser needs a start state to
   // animate from.
   const [mounted, setMounted] = useState(state.open);
-  const [entered, setEntered] = useState(false);
+  const entered = usePaintedFlip(mounted && state.open);
 
   useEffect(() => {
     if (state.open) {
@@ -76,22 +113,8 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   useEffect(() => {
     if (state.open) {
       setMounted(true);
-    } else {
-      setEntered(false);
     }
   }, [state.open]);
-
-  useEffect(() => {
-    if (!mounted || !state.open) return;
-    let inner = 0;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setEntered(true));
-    });
-    return () => {
-      cancelAnimationFrame(outer);
-      cancelAnimationFrame(inner);
-    };
-  }, [mounted, state.open]);
 
   // Safety net for the exit: if the end event never comes (transitions off elsewhere), the
   // overlay still leaves the DOM — after the longest close, so a real transition always wins.
@@ -103,6 +126,9 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
 
   const body = paletteBody(state.query, state.results.length);
   const hasBody = body !== 'none';
+  // The rows stagger in with the body's first growth; once the body stands, later rows join
+  // at full opacity so retyping never replays the cascade.
+  const rowsIn = usePaintedFlip(hasBody);
 
   // The keyboard's row must stay in view when the list outgrows its cap.
   useEffect(() => {
@@ -153,6 +179,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   return (
     <div
       data-search-scrim
+      style={MOTION_STYLE}
       // A press that begins on the scrim itself (never on the panel it wraps) closes.
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -166,12 +193,12 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
       }}
       className={[
         'fixed inset-0 z-40 grid place-items-center bg-bg/60 p-6',
-        'transition-[opacity,backdrop-filter] ease-out',
+        'transition-[opacity,backdrop-filter] [transition-timing-function:var(--motion-ease)]',
         entered
-          ? 'opacity-100 backdrop-blur-md duration-[200ms]'
-          : 'opacity-0 backdrop-blur-[0px] duration-[140ms] delay-[40ms]',
+          ? 'opacity-100 backdrop-blur-md duration-[var(--motion-open-backdrop)]'
+          : 'opacity-0 backdrop-blur-[0px] duration-[var(--motion-close)] delay-[var(--motion-close-backdrop-delay)]',
         // Reduced motion: a quick fade, no blur travel.
-        'motion-reduce:transition-[opacity] motion-reduce:duration-[80ms] motion-reduce:delay-0',
+        'motion-reduce:transition-[opacity] motion-reduce:duration-[var(--motion-reduced)] motion-reduce:delay-0',
       ].join(' ')}
     >
       <section
@@ -183,12 +210,12 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
         onKeyDown={onKeyDown}
         className={[
           'flex w-full max-w-[560px] flex-col overflow-hidden rounded-lg border border-bord bg-surface shadow-2xl',
-          'transition-[opacity,translate,scale] ease-out',
+          'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
-            ? 'opacity-100 translate-y-0 scale-100 duration-[220ms] delay-[40ms]'
-            : 'opacity-0 translate-y-2 scale-[0.98] duration-[140ms]',
+            ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'
+            : 'opacity-0 translate-y-[var(--motion-open-rise)] scale-[var(--motion-open-scale)] duration-[var(--motion-close)]',
           // Reduced motion: a quick fade, the panel rises and scales not at all.
-          'motion-reduce:transition-[opacity] motion-reduce:duration-[80ms] motion-reduce:delay-0 motion-reduce:translate-y-0 motion-reduce:scale-100',
+          'motion-reduce:transition-[opacity] motion-reduce:duration-[var(--motion-reduced)] motion-reduce:delay-0 motion-reduce:translate-y-0 motion-reduce:scale-100',
         ].join(' ')}
       >
         <div
@@ -221,7 +248,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
         <div
           data-search-body
           className={[
-            'grid transition-[grid-template-rows] duration-[180ms] ease-out',
+            'grid transition-[grid-template-rows] duration-[var(--motion-results)] [transition-timing-function:var(--motion-ease)]',
             'motion-reduce:transition-none',
             hasBody ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
           ].join(' ')}
@@ -232,7 +259,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
               role="listbox"
               aria-label={t(locale, 'palette.title')}
               className={[
-                'p-1.5 transition-opacity duration-[180ms] ease-out motion-reduce:duration-[80ms]',
+                'p-1.5 transition-opacity duration-[var(--motion-results-fade)] [transition-timing-function:var(--motion-ease)] motion-reduce:duration-[var(--motion-reduced)]',
                 hasBody ? 'opacity-100' : 'opacity-0',
               ].join(' ')}
             >
@@ -244,7 +271,8 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
                   role="option"
                   aria-selected={index === state.selected}
                   onClick={() => onOpen(result)}
-                  className={rowClass(index === state.selected)}
+                  style={rowsIn ? { transitionDelay: staggerDelay(index) } : undefined}
+                  className={rowClass(index === state.selected, rowsIn)}
                 >
                   <span title={result.name} className="min-w-0 flex-1 truncate">
                     {result.name}
