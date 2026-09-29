@@ -154,12 +154,30 @@ describe('accounts frame store', () => {
     ]);
   });
 
-  it('U-16: the frame collapses and expands', async () => {
+  it('U-16: the frame starts collapsed and toggles open and back', async () => {
     const store = createAccountsFrameStore({ api: fakeFrameApi(frameView()), changes: fakeSignal().signal });
-    expect(store.state().open).toBe(true);
+    expect(store.state().open).toBe(false);
 
     store.toggle();
+    expect(store.state().open).toBe(true);
+    store.toggle();
     expect(store.state().open).toBe(false);
+  });
+
+  it('U-16: the refresh intent leaves the collapsed state alone', async () => {
+    const api = fakeFrameApi(frameView());
+    const store = createAccountsFrameStore({ api, changes: fakeSignal().signal });
+    expect(store.state().open).toBe(false);
+
+    const gate = api.gate();
+    const pending = store.refresh();
+    expect(store.state().refreshing).toBe(true);
+    expect(store.state().open).toBe(false);
+    gate.release();
+    await pending;
+    expect(store.state().refreshing).toBe(false);
+    expect(store.state().open).toBe(false);
+
     store.toggle();
     expect(store.state().open).toBe(true);
   });

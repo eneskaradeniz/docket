@@ -31,10 +31,11 @@ const PROTOTYPE_SELECTORS = {
 
 // Hooks the app carries: its nav landmark, <main>, and the stable hooks of the rev-8 screens —
 // the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
-// the accounts frame's collapsible body (#377), and the cockpit's closed-list heading.
+// the accounts frame and its collapsible body (#377), and the cockpit's closed-list heading.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
+  accountsFrame: '[data-accounts-frame]',
   accountsBody: '[data-accounts-body]',
   kanbanWrap: '[data-board-kanban]',
   kanbanScroller: '[data-board-cols]',

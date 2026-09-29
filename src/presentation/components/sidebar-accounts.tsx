@@ -1,8 +1,11 @@
 // components/sidebar-accounts.tsx — the sidebar's accounts frame (U-16): the one collapsible
-// part of the sidebar, with the usage refresh beside its header. A card carries the account
-// label plus one mini bar per window — a short cadence label, the normalized percent, warn
-// from the warn percent — and the spend line where the account carries money. A card opens the
-// account view; the refresh intent re-polls usage through the store while the icon spins.
+// part of the sidebar, collapsed when the session starts, with the usage refresh beside its
+// header. Collapsed, the header row's padding is symmetric so the frame reads as header plus
+// even breathing room. The header buttons carry a hairline border that raises on hover. A card
+// carries the account label plus one mini bar per window — a short cadence label, the
+// normalized percent, warn from the warn percent — and the spend line where the account carries
+// money. A card opens the account view; the refresh intent re-polls usage through the store
+// while the icon spins.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { t, type Locale } from '../labels/t';
@@ -140,8 +143,10 @@ export function SidebarAccounts({
   }, [spinning]);
 
   return (
-    <div className="mt-2.5 flex-none rounded-[10px] border border-hairline bg-band p-2">
-      <div className="flex items-center gap-1 px-1 pb-2 pt-0.5">
+    <div data-accounts-frame="" className="mt-2.5 flex-none rounded-[10px] border border-hairline bg-band p-2">
+      {/* Collapsed, the row's padding mirrors its top padding so the frame holds no dead space
+          below the header; open, the larger bottom padding separates header from cards. */}
+      <div className={`flex items-center gap-1 px-1 pt-0.5 ${state.open ? 'pb-2' : 'pb-0.5'}`}>
         <button
           type="button"
           onClick={() => store.toggle()}
@@ -161,8 +166,8 @@ export function SidebarAccounts({
           }}
           aria-label={t(locale, 'accounts.refresh')}
           title={t(locale, 'accounts.refresh')}
-          className={`grid h-5 w-5 flex-none place-items-center rounded text-inkdim hover:text-ink ${
-            spinning ? 'animate-spin' : ''
+          className={`grid h-[26px] w-[26px] flex-none place-items-center rounded border border-hairline text-inkdim hover:border-bord hover:text-ink ${
+            spinning || state.refreshing ? 'animate-spin' : ''
           }`}
         >
           <RefreshIcon />
@@ -172,7 +177,7 @@ export function SidebarAccounts({
           onClick={() => store.toggle()}
           aria-label={t(locale, 'accounts.toggle')}
           title={t(locale, 'accounts.toggle')}
-          className="grid h-5 w-5 flex-none place-items-center rounded text-inkdim hover:text-ink"
+          className="grid h-[26px] w-[26px] flex-none place-items-center rounded border border-hairline text-inkdim hover:border-bord hover:text-ink"
         >
           <Chevron open={state.open} />
         </button>
