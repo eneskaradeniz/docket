@@ -133,8 +133,17 @@ export const LABEL_KEYS = [
   'account.window.five_hour',
   'account.window.week',
   'account.window.month',
-  // Roadmap screen title (the project row's target; the page itself is the roadmap screen's).
+  // Roadmap screen: title, caption, loading and problem states, task row and expansion
+  // (screens/roadmap.tsx).
   'roadmap.title',
+  'roadmap.caption',
+  'roadmap.loading',
+  'roadmap.task.repoMany',
+  'roadmap.task.noWorkOrders',
+  'roadmap.task.openRepoBoard',
+  'roadmap.task.done',
+  'roadmap.task.current',
+  'roadmap.task.remaining',
   // Cockpit screen: section titles, empty and loading states (screens/cockpit.tsx).
   'cockpit.section.attention',
   'cockpit.section.running',

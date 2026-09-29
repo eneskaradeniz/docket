@@ -542,7 +542,7 @@ export interface RepoNode { readonly repo: string; readonly name: string; readon
 export interface ProjectTreeItem { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repos: readonly RepoNode[]; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
 export type ProjectTree = readonly ProjectTreeItem[];
 export interface RoadmapPageView {
-  readonly phases: readonly { readonly id: string; readonly name: string; readonly status: string; readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[] }[] }[];
+  readonly phases: readonly { readonly id: string; readonly name: string; readonly status: string; readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[]; readonly workOrders: readonly { readonly repo: string; readonly id: string; readonly number: number; readonly title: string; readonly status: string }[] }[] }[];
   readonly runnable: readonly string[];
 }
 export interface AccountDetailView {
