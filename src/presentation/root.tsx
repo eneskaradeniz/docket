@@ -6,17 +6,18 @@ import React, { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
-import type { RepoListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
+import { createAccountsFrameStore } from './stores/accounts-frame';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
+import { createProjectTreeStore } from './stores/project-tree';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
-import { createShellStore, type ShellRepo } from './stores/shell';
+import { createShellStore } from './stores/shell';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
@@ -40,16 +41,6 @@ export const bridge = (): DocketBridge => {
 
 /** Every screen command travels as the machine's single local user. */
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
-
-/** The repo switcher's entries: every repo the machine knows, read off `repos.list`.
- *  The labels are the slugs — the registry holds no display copy. A failed read empties the
- *  listing the same way the cockpit projection did; the shell's own load failure keeps whatever it
- *  showed before. */
-const repoEntries = (api: DocketBridge) => async (): Promise<readonly ShellRepo[]> => {
-  const reply: unknown = await api.query({ type: 'repos.list' });
-  if (isQueryFailure(reply)) return [];
-  return (reply as readonly RepoListItem[]).map((row) => ({ id: row.id, label: row.id }));
-};
 
 /** The wizard's source probe rides the board read, the one read that loads definitions: a
  *  non-failure reply proves the entered repo's definitions were found and parsed, which is
@@ -89,7 +80,13 @@ if (mount !== null) {
     actor: USER,
     sourceReachable: sourceReachable(api),
   });
-  const shell = createShellStore({ api, changes, repos: repoEntries(api) });
+  const shell = createShellStore({ api, changes });
+  // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
+  // persists where the locale choice does.
+  const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
+  const accountsFrame = createAccountsFrameStore({ api, changes });
+  void tree.load();
+  void accountsFrame.load();
   // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
   void wizard.open();
 
@@ -99,6 +96,8 @@ if (mount !== null) {
         <App
           localeStore={locale}
           shell={shell}
+          tree={tree}
+          accounts={accountsFrame}
           cockpit={cockpit}
           board={board}
           detail={detail}
