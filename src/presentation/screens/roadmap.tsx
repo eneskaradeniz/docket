@@ -242,7 +242,7 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
   const view = state.view;
 
   return (
-    <div className="mx-auto grid max-w-[960px] gap-4">
+    <div className="grid max-w-[960px] gap-4">
       <header className="grid gap-1">
         <div className="flex items-center gap-3">
           <h1 className="min-w-0 truncate text-[20px] font-bold tracking-[-0.01em] text-ink" title={name}>

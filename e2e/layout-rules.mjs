@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-9 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-10 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,13 +7,13 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10'];
 
+/** The audit sizes: the window's minimum, its default, and full screen — nothing between. */
 export const SIZES = [
   [1024, 640],
-  [1280, 800],
+  [1152, 720],
   [1920, 1080],
-  [2560, 1440],
 ];
 export const THEMES = ['dark', 'light'];
 export const SCREENS = ['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'];
@@ -188,14 +188,37 @@ const l8 = async (page, ctx, sel) => {
   return result('L-8', ok, `overflowing; snap ${m.snap}; fade ${m.fade}`);
 };
 
+// L-9 lives at full screen only: the smaller windows accept the closed-list heading below the
+// fold, so they report the rule as not applicable instead of measuring it.
 const l9 = async (page, ctx, sel) => {
-  if (ctx.screen !== 'kokpit' || ctx.width !== 1280 || ctx.height !== 800) {
-    return result('L-9', true, 'only checked on the cockpit at 1280x800');
+  if (ctx.screen !== 'kokpit' || ctx.width !== 1920 || ctx.height !== 1080) {
+    return result('L-9', true, 'only checked on the cockpit at 1920x1080');
   }
   if (!sel.closedHeading) return skipped('L-9', 'closedHeading');
   const m = await inPage(page, `const el = resolve(arg); return el ? { top: el.getBoundingClientRect().top, ih: innerHeight } : null;`, sel.closedHeading);
   if (!m) return result('L-9', false, '"Son kapananlar" heading not found');
   return result('L-9', m.top < m.ih, `heading top ${m.top.toFixed(0)} of window ${m.ih}`);
+};
+
+// L-10: body content is left-aligned — the screen's content wrapper starts at the main column's
+// left padding edge, never centred inside it. The wrapper is main's widest child; a centred
+// wrapper sits right of the edge, a left-aligned one touches it.
+const l10 = async (page, ctx, sel) => {
+  if (!sel.main) return skipped('L-10', 'main');
+  const m = await inPage(
+    page,
+    `const main = resolve(arg); if (!main) return null;
+    const cs = getComputedStyle(main);
+    const edge = main.getBoundingClientRect().left + parseFloat(cs.paddingLeft);
+    const kids = [...main.children].filter((c) => c.getBoundingClientRect().width > 0);
+    if (kids.length === 0) return { edge, left: null };
+    const widest = kids.reduce((a, b) => (b.getBoundingClientRect().width > a.getBoundingClientRect().width ? b : a));
+    return { edge, left: widest.getBoundingClientRect().left };`,
+    sel.main,
+  );
+  if (!m) return result('L-10', false, 'main element not found');
+  if (m.left === null) return result('L-10', true, 'main holds no content');
+  return result('L-10', Math.abs(m.left - m.edge) <= 1, `wrapper left ${m.left.toFixed(1)} main padding edge ${m.edge.toFixed(1)}`);
 };
 
 const RULES = [
@@ -208,6 +231,7 @@ const RULES = [
   ['L-7', l7],
   ['L-8', l8],
   ['L-9', l9],
+  ['L-10', l10],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */

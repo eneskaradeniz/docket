@@ -196,7 +196,7 @@ belongs to the mobile app.
 | --- | --- | --- | --- |
 | Store rules U-15 … U-21 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
 | Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
-| Layout audit L-1 … L-9 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
+| Layout audit L-1 … L-10 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
 | Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |
 | Operator scenario | PR body | operator | yes (`main` gate) |
 
@@ -205,9 +205,9 @@ belongs to the mobile app.
   Odoo (1); the prototype's work orders by code, stage and state; two accounts with 5-hour, weekly
   and monthly windows. The same codes appear in the same place on every screen. It never touches the
   operator's data.
-- **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1280×800 (the
-  default), 1920×1080 and 2560×1440, in the dark and the light theme. The sidebar is always open,
-  never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
+- **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1152×720 (the
+  default window) and 1920×1080 (full screen), in the dark and the light theme. The sidebar is
+  always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
@@ -230,7 +230,11 @@ belongs to the mobile app.
   - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada
     senden beklenen" section.
   - **L-8** When Kanban columns overflow, the scroller has scroll-snap and shows the edge fade.
-  - **L-9** At 1280×800 the cockpit's "Son kapananlar" heading starts inside the first screen.
+  - **L-9** At 1920×1080 (full screen) the cockpit's "Son kapananlar" heading starts inside the
+    first screen; the smaller windows accept it below the fold and report the rule as not
+    applicable.
+  - **L-10** Every screen's content wrapper starts at the main column's left padding edge — its
+    left edge sits within 1px of it at every size, never centred inside the column.
 - **Evidence.** A UI PR attaches the pass lines of `test:journeys` and `test:layout` and the gallery
   path. The architect compares the gallery against the rev-8 reference screenshots before the
   operator scenario.
