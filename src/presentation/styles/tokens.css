@@ -73,11 +73,14 @@
 }
 
 /* The frozen v1 sheet loaded after this file re-declares a few of the same theme tokens with its
-   own literals. Unlayered custom properties outrank anything a @layer declares, so these three
-   re-statements pin the contested names (raised's shade, both font stacks) to the book regardless
-   of how the two @theme blocks merge. */
+   own literals. Unlayered custom properties outrank anything a @layer declares, so these
+   re-statements pin the contested names (raised's shade, the page/signal/exec colors, both font
+   stacks) to the book regardless of how the two @theme blocks merge. */
 :root {
+  --color-bg: var(--bg);
   --color-raised: var(--raised);
+  --color-signal: var(--signal);
+  --color-exec: var(--exec);
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 }
