@@ -39,9 +39,12 @@ export async function launchDesignApp() {
 export function screenNavigator(page) {
   const click = (text) =>
     page.locator('nav button, main button, main a, nav a').filter({ hasText: text }).first().click({ timeout: 1500 });
+  // The sidebar's Kokpit entry is gone: the cockpit is reached through the title bar's Anasayfa
+  // button, and the board routes start from it exactly as they did from the nav entry.
+  const home = () => page.getByRole('button', { name: 'Anasayfa' }).first().click({ timeout: 1500 });
   const goto = {
-    kokpit: () => click('Kokpit'),
-    pano: async () => { await click('Kokpit'); await click('antreo-api'); },
+    kokpit: home,
+    pano: async () => { await home(); await click('antreo-api'); },
     liste: async () => { await goto.pano(); await click('Liste'); },
     // The code is the seed's derived one — the prototype's İE-0014 numbers 6 (manifest in seed-design.ts).
     detay: async () => { await goto.pano(); await click('İE-0006'); },
