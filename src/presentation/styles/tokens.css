@@ -15,14 +15,36 @@
   --ink: #f2f2f2;
   --dim: #8f8f8f;
   --signal: #f5b544;
+  --signal-soft: #f5b544;
   --signal-ink: #000;
   --proceed: #4cc38a;
   --info: #6ca0ce;
   --error: #e5484d;
   --write: #a371f7;
   --exec: #4ac3ce;
-  --sans: "Manrope", system-ui, -apple-system, sans-serif;
+  --sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The light face: rev-8 values, selected by the same data-theme attribute the app already sets.
+   --exec has no light value in the book, so it keeps its root value. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #fafaf8;
+  --surface: #fff;
+  --raised: #f2f2f0;
+  --band: #f5f5f2;
+  --hair: #e3e3e0;
+  --bord: #c9c9c4;
+  --ink: #191917;
+  --dim: #6e6e69;
+  --signal: #f5b544;
+  --signal-soft: #9a6700;
+  --signal-ink: #1c1300;
+  --proceed: #1a7f37;
+  --info: #0969da;
+  --error: #cf222e;
+  --write: #8250df;
 }
 
 /* The Tailwind bridge: every book variable becomes a theme token, so utilities (bg-surface,
@@ -39,6 +61,7 @@
   --color-ink: var(--ink);
   --color-inkdim: var(--dim);
   --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
   --color-signal-ink: var(--signal-ink);
   --color-proceed: var(--proceed);
   --color-info: var(--info);
