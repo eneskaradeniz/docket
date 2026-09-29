@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { titleBarOptionsFor } from './window-options';
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, titleBarOptionsFor } from './window-options';
+
+describe('window minimum size', () => {
+  it('is 1024x640 so the fixed 240px sidebar still leaves a 784px body column', () => {
+    expect(WINDOW_MIN_WIDTH).toBe(1024);
+    expect(WINDOW_MIN_HEIGHT).toBe(640);
+  });
+});
 
 describe('titleBarOptionsFor', () => {
   it('darwin hides the native title strip and insets the traffic lights into the app bar', () => {
