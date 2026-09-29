@@ -51,16 +51,6 @@ const repoEntries = (api: DocketBridge) => async (): Promise<readonly ShellRepo[
   return (reply as readonly RepoListItem[]).map((row) => ({ id: row.id, label: row.id }));
 };
 
-/** The wizard's repo-existence check: `repos.list` is the machine's registry, so any
- *  known repo counts — including one whose work orders are all calm — and a dismissed wizard
- *  stays gone across relaunches. A failed read still answers false: an unverifiable existence must
- *  never suppress the first-run setup (fail-closed). */
-const repoExists = (api: DocketBridge) => async (): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'repos.list' });
-  if (isQueryFailure(reply)) return false;
-  return (reply as readonly RepoListItem[]).length > 0;
-};
-
 /** The wizard's source probe rides the board read, the one read that loads definitions: a
  *  non-failure reply proves the entered repo's definitions were found and parsed, which is
  *  the whole question; every failure (a malformed slug, unreadable definitions) answers false —
@@ -98,10 +88,9 @@ if (mount !== null) {
     api,
     actor: USER,
     sourceReachable: sourceReachable(api),
-    repoExists: repoExists(api),
   });
   const shell = createShellStore({ api, changes, repos: repoEntries(api) });
-  // The first-run machine's entry point: it shows the wizard only when no repo exists (U-7).
+  // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
   void wizard.open();
 
   createRoot(mount).render(
