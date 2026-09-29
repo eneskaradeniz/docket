@@ -115,11 +115,26 @@ export const LABEL_KEYS = [
   'live.usage.cost',
   'live.meter.used',
   'live.meter.limit',
-  // Screens A: the shell's brand, nav and workspace switcher (screens/shell.tsx).
-  'shell.title',
+  // Screens A: the shell's nav landmark, search field, project tree and accounts frame
+  // (screens/shell.tsx, components/sidebar-tree.tsx, components/sidebar-accounts.tsx).
+  'shell.nav',
+  'shell.search.placeholder',
+  'shell.search.kbd',
   'nav.cockpit',
-  'nav.workspaces',
-  'nav.workspaces.empty',
+  'nav.projects',
+  'nav.projects.empty',
+  'nav.projects.sort',
+  'nav.projects.new',
+  'tree.open',
+  'accounts.title',
+  'accounts.refresh',
+  'accounts.toggle',
+  'accounts.empty',
+  'account.window.five_hour',
+  'account.window.week',
+  'account.window.month',
+  // Roadmap screen title (the project row's target; the page itself is the roadmap screen's).
+  'roadmap.title',
   // Cockpit screen: section titles, empty and loading states (screens/cockpit.tsx).
   'cockpit.section.attention',
   'cockpit.section.running',
