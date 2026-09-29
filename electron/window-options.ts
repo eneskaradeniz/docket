@@ -1,0 +1,19 @@
+// Window options that depend on the platform, split out of the composition root so they are a
+// pure function of the platform string: a test can cover every branch without importing the
+// electron runtime (importing main.ts would boot the app).
+import type { BrowserWindowConstructorOptions } from 'electron';
+
+/** The platform-varying slice of the BrowserWindow constructor options. */
+export type TitleBarOptions = Pick<
+  BrowserWindowConstructorOptions,
+  'titleBarStyle' | 'trafficLightPosition'
+>;
+
+/** The traffic lights are inset into the app bar's 92px gap on darwin: the native title strip is
+ *  hidden and the buttons are placed at the bar's own padding. Anywhere else a non-default
+ *  titleBarStyle would hide the native menu bar together with the title bar, so the default
+ *  frame stays — the other platforms add nothing. */
+export const titleBarOptionsFor = (platform: NodeJS.Platform): TitleBarOptions =>
+  platform === 'darwin'
+    ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 16 } }
+    : {};

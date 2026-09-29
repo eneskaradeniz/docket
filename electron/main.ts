@@ -36,6 +36,7 @@ import {
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
+import { titleBarOptionsFor } from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -274,6 +275,9 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 760,
     minHeight: 480,
+    // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere
+    // else this spreads nothing and the default frame applies.
+    ...titleBarOptionsFor(process.platform),
     webPreferences: {
       // The renderer reaches the core only through the preload's one bridge; everything else
       // about this window is deliberately the Electron default-secure set.
