@@ -1,9 +1,9 @@
 // wizard.test.ts — U-7: the first-run wizard store walks source → account → binding → done,
 // gates `next` on each step's validation (source reachable / chosen provider discovered and
 // logged in / at least one bound role), preserves entered state across `back`, and dismisses on
-// finishing — reappearing on open only while no repo exists. The api, the source probe and
-// the repo observation are injected fakes; both observations sit below today's api surface
-// and land with the screens wiring (the work-order detail store's injected-definitions stance).
+// finishing — reappearing on open only while no project exists (the `project.tree` read). The api and the source probe are
+// injected fakes; the source probe sits below today's api surface and lands with the screens
+// wiring (the work-order detail store's injected-definitions stance).
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -34,6 +34,7 @@ interface FakeWizardApi extends Pick<Api, 'query' | 'command'> {
   readonly queries: Query[];
   readonly commands: RecordedCommand[];
   setDiscoveryReply(reply: unknown): void;
+  setProjectTree(reply: unknown): void;
   setCommandResult(type: WizardCommandType, result: CommandResult): void;
 }
 
@@ -47,18 +48,22 @@ const fakeWizardApi = (discoveryReply: unknown = []): FakeWizardApi => {
     'binding.save': { ok: true },
   };
   let reply: unknown = discoveryReply;
+  let tree: unknown = [];
   return {
     queries,
     commands,
     setDiscoveryReply: (next) => {
       reply = next;
     },
+    setProjectTree: (next) => {
+      tree = next;
+    },
     setCommandResult: (type, result) => {
       results[type] = result;
     },
     query: (query) => {
       queries.push(query);
-      return Promise.resolve(reply);
+      return Promise.resolve(query.type === 'project.tree' ? tree : reply);
     },
     command: (actor, command) => {
       commands.push({ actor, command });
@@ -69,38 +74,30 @@ const fakeWizardApi = (discoveryReply: unknown = []): FakeWizardApi => {
 
 interface FakeProbes {
   readonly probed: readonly string[];
-  readonly repoChecks: number[];
   readonly sourceReachable: (source: string) => Promise<boolean>;
-  readonly repoExists: () => Promise<boolean>;
   setSourceOk(ok: boolean): void;
-  setRepoExists(exists: boolean): void;
 }
 
-/** Both below-api observations are scripted and counted so tests can assert they were consulted. */
-const fakeProbes = (sourceOk: boolean, repoExists: boolean): FakeProbes => {
+/** The below-api source observation is scripted and counted so tests can assert it was consulted. */
+const fakeProbes = (sourceOk: boolean): FakeProbes => {
   const probed: string[] = [];
-  const repoChecks: number[] = [];
   let reachable = sourceOk;
-  let exists = repoExists;
   return {
     probed,
-    repoChecks,
     setSourceOk: (ok) => {
       reachable = ok;
-    },
-    setRepoExists: (next) => {
-      exists = next;
     },
     sourceReachable: (source: string) => {
       probed.push(source);
       return Promise.resolve(reachable);
     },
-    repoExists: () => {
-      repoChecks.push(repoChecks.length);
-      return Promise.resolve(exists);
-    },
   };
 };
+
+/** How many times the store asked the api whether any project exists. */
+const treeReads = (api: FakeWizardApi): number => api.queries.filter((query) => query.type === 'project.tree').length;
+
+const oneProject = [{ project: 'atolye', name: 'atolye', mainRepo: 'atolye', repos: [] }];
 
 interface Setup {
   readonly api: FakeWizardApi;
@@ -110,12 +107,11 @@ interface Setup {
 
 const setup = (discoveryReply: unknown = [alphaReady]): Setup => {
   const api = fakeWizardApi(discoveryReply);
-  const probes = fakeProbes(true, false);
+  const probes = fakeProbes(true);
   const store = createWizardStore({
     api,
     actor: userActor,
     sourceReachable: probes.sourceReachable,
-    repoExists: probes.repoExists,
   });
   return { api, probes, store };
 };
@@ -136,12 +132,12 @@ const toBinding = async (bundle: Setup): Promise<void> => {
 };
 
 describe('wizard store', () => {
-  it('U-7: open with no repo runs the wizard; the machine walks source → account → binding → done as each step validates', async () => {
+  it('U-7: open with no project runs the wizard; the machine walks source → account → binding → done as each step validates', async () => {
     const bundle = setup();
     expect(bundle.store.state()).toMatchObject({ visible: false, step: 'source' });
 
     await bundle.store.open();
-    expect(bundle.probes.repoChecks.length).toBe(1);
+    expect(treeReads(bundle.api)).toBe(1);
     expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
 
     bundle.store.enterSource('/repos/atolye');
@@ -151,7 +147,7 @@ describe('wizard store', () => {
     await bundle.store.next();
     // Entering the account step kicks a discovery pass, so the step can validate the choice.
     expect(bundle.store.state()).toMatchObject({ step: 'account' });
-    expect(bundle.api.queries).toEqual([{ type: 'providers.discovered' }]);
+    expect(bundle.api.queries).toEqual([{ type: 'project.tree' }, { type: 'providers.discovered' }]);
     expect(bundle.store.state().discovered).toEqual([alphaReady]);
     expect(bundle.store.nextEnabled()).toBe(false); // nothing chosen yet
 
@@ -371,17 +367,17 @@ describe('wizard store', () => {
     });
   });
 
-  it('U-7: finishing dismisses the wizard; it does not reappear while a repo exists (re-check on open)', async () => {
+  it('U-7: finishing dismisses the wizard; it does not reappear while a project exists (re-check on open)', async () => {
     const bundle = setup();
     await toBinding(bundle);
     await bundle.store.bind('coder');
     await bundle.store.next();
     expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
 
-    // The re-check on open consults the observation again — a repo means no re-run.
-    bundle.probes.setRepoExists(true);
+    // The re-check on open consults the observation again — a project means no re-run.
+    bundle.api.setProjectTree(oneProject);
     await bundle.store.open();
-    expect(bundle.probes.repoChecks.length).toBe(2);
+    expect(treeReads(bundle.api)).toBe(2);
     expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
 
     // A dismissed wizard has no intents: next and back change nothing.
@@ -391,7 +387,21 @@ describe('wizard store', () => {
     expect(bundle.api.commands.length).toBe(2);
   });
 
-  it('U-7: re-open without a repo runs the wizard again from the source step', async () => {
+  it('U-7: a failed project read never suppresses the first-run setup', async () => {
+    const bundle = setup();
+    bundle.api.setProjectTree({ ok: false, code: 'internal' });
+    await bundle.store.open();
+    expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
+  });
+
+  it('U-7: open with an existing project keeps the wizard hidden from the first launch', async () => {
+    const bundle = setup();
+    bundle.api.setProjectTree(oneProject);
+    await bundle.store.open();
+    expect(bundle.store.state()).toMatchObject({ visible: false, checking: false });
+  });
+
+  it('U-7: re-open without a project runs the wizard again from the source step', async () => {
     const bundle = setup();
     await toBinding(bundle);
     await bundle.store.bind('coder');
