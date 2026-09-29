@@ -29,11 +29,18 @@ const PROTOTYPE_SELECTORS = {
   closedHeading: { css: 'h2.r7-sect', text: 'Son kapananlar' },
 };
 
-// Hooks the app has today: its nav landmark and <main>. The rest wait for the rev-8 shell
-// (#377–#379) to add stable hooks; until then the rules report them as skipped.
+// Hooks the app carries: its nav landmark, <main>, and the stable hooks of the rev-8 screens —
+// the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
+// the accounts frame's collapsible body (#377), and the cockpit's closed-list heading.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
+  accountsBody: '[data-accounts-body]',
+  kanbanWrap: '[data-board-kanban]',
+  kanbanScroller: '[data-board-cols]',
+  detailAsk: '[data-detail-ask]',
+  livePane: '[data-detail-live]',
+  closedHeading: { css: 'h2', text: 'Son kapananlar' },
 };
 
 const parseArgs = (argv) => {
@@ -79,6 +86,12 @@ async function openApp() {
     async show(screen, theme, size) {
       await setWindow(handle, size, theme);
       await goto[screen]();
+      // The board's view choice persists per repo (U-18), so an earlier `liste` measurement
+      // would otherwise leave the Kanban hidden for this run's `pano` — every screen enters
+      // from its own standing.
+      if (screen === 'pano') {
+        await page.getByRole('button', { name: 'Kanban' }).first().click({ timeout: 1500 });
+      }
       await page.waitForTimeout(450);
     },
   };

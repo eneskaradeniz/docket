@@ -23,15 +23,18 @@ export interface ActionButtonProps {
   readonly size?: ButtonSize;
   readonly disabled?: boolean;
   readonly onClick?: () => void;
+  /** The quiet hint a screen offers beside the label (the ⓘ grammar's hover text). */
+  readonly title?: string;
   readonly children: ReactNode;
 }
 
-export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, children }: ActionButtonProps) {
+export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, children }: ActionButtonProps) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
+      title={title}
       className={`inline-flex items-center justify-center gap-1.5 rounded-[7px] border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]}`}
     >
       {children}

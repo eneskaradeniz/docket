@@ -178,6 +178,7 @@ export function SidebarAccounts({
         </button>
       </div>
       <div
+        data-accounts-body=""
         className={`grid transition-all duration-200 ${state.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="min-h-0 overflow-hidden">
