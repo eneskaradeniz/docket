@@ -18,6 +18,8 @@ export type Query =
 
 export interface AttentionItem {
   readonly workOrderId: string;
+  /** The work order's A-29 display number. */
+  readonly number: number;
   readonly project: string;
   readonly repo: string;
   readonly title: string;
@@ -30,6 +32,7 @@ export interface CockpitView {
   readonly attention: readonly AttentionItem[];
   readonly running: readonly {
     readonly workOrderId: string;
+    readonly number: number;
     readonly stage: string;
     readonly accountId: string;
     readonly startedAt: number;
@@ -45,6 +48,7 @@ export interface CockpitView {
   }[];
   readonly recentlyClosed: readonly {
     readonly workOrderId: string;
+    readonly number: number;
     readonly title: string;
     readonly project: string;
     readonly repo: string;
@@ -88,7 +92,7 @@ export interface RoadmapPageView {
 export interface AccountDetailView {
   readonly account: { readonly id: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string; readonly limitPolicy: string };
   readonly windows: readonly { readonly label?: string; readonly unit: string; readonly used?: number; readonly limit?: number; readonly remaining?: number; readonly resetsAt?: number; readonly resetPrecision: string; readonly source: string }[];
-  readonly activeWork: readonly { readonly workOrderId: string; readonly title: string; readonly stage: string | null; readonly status: string }[]; // non-done work orders with a run on this account, oldest active first
+  readonly activeWork: readonly { readonly workOrderId: string; readonly number: number; readonly title: string; readonly stage: string | null; readonly status: string }[]; // non-done work orders with a run on this account, oldest active first
 }
 
 export interface ProjectSpendView {
@@ -100,14 +104,14 @@ export interface ProjectSpendView {
 export interface BoardColumn {
   readonly stage: string;
   readonly name: string;
-  readonly workOrders: readonly { readonly id: string; readonly title: string; readonly status: string }[];
+  readonly workOrders: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string }[];
 }
 
 export interface BoardView {
   readonly repo: string;
   readonly flow: string;
   readonly columns: readonly BoardColumn[];
-  readonly done: readonly { readonly id: string; readonly title: string }[];
+  readonly done: readonly { readonly id: string; readonly number: number; readonly title: string }[];
 }
 
 // --- repos.list --------------------------------------------------------------------------------

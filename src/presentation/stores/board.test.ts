@@ -17,10 +17,10 @@ const boardView: BoardView = {
   flow: 'bakim',
   // Deliberately not in slug order: the store mirrors the api's stage order untouched.
   columns: [
-    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-2', title: 'Book binding', status: 'ready' }] },
+    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-2', number: 2, title: 'Book binding', status: 'ready' }] },
     { stage: 'planla', name: 'Planla', workOrders: [] },
   ],
-  done: [{ id: 'wo-1', title: 'Paper marbling' }],
+  done: [{ id: 'wo-1', number: 1, title: 'Paper marbling' }],
 };
 
 interface RecordedCommand {
@@ -108,7 +108,7 @@ describe('board store', () => {
     expect(state.problem).toBeNull();
     expect(state.view).toEqual(boardView);
     expect(state.view?.columns.map((column) => column.stage)).toEqual(['test', 'planla']);
-    expect(state.view?.done).toEqual([{ id: 'wo-1', title: 'Paper marbling' }]);
+    expect(state.view?.done).toEqual([{ id: 'wo-1', number: 1, title: 'Paper marbling' }]);
   });
 
   it('U-3: a definitions_invalid reply shows the repo-problem state, not an empty board', async () => {

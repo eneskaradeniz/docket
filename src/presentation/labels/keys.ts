@@ -59,6 +59,8 @@ export const LABEL_KEYS = [
   'wo.status.limit_waiting',
   'wo.status.blocked',
   'wo.status.done',
+  // The work-order code prefix of the locale (U-22): TR İE-, EN WO-.
+  'workOrder.codePrefix',
   // Detail screen: sections, stage marker, loading and the run list.
   'detail.section.stages',
   'detail.section.runs',

@@ -19,6 +19,14 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
     'INSERT INTO work_orders (id, project, repo, created_at, data) VALUES (?, ?, ?, ?, ?)',
   );
   const byId = db.raw.prepare('SELECT data FROM work_orders WHERE id = ?');
+  // A-29 in one statement: the outer row fixes the target, the correlated count is the number of
+  // work orders before it in (created_at, id) order. An unknown id answers no row, which is the
+  // undefined of the port. No dedicated index is added: the planner already serves the count as a
+  // covering scan over work_orders_by_project, and a local machine's work-order count keeps even
+  // the full scan sub-millisecond.
+  const numberById = db.raw.prepare(
+    'SELECT (SELECT COUNT(*) FROM work_orders t WHERE (t.created_at, t.id) < (w.created_at, w.id)) + 1 AS rank FROM work_orders w WHERE w.id = ?',
+  );
   // The composite indexes cover both orderings; ties break by id asc, matching the fake's
   // insertion order for the monotonic ids the application generates.
   const byProject = db.raw.prepare(
@@ -49,6 +57,11 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => {
       const row = byId.get(id);
       return row === undefined ? undefined : decodeRecord(row['data']);
+    },
+
+    number: async (id: WorkOrderId): Promise<number | undefined> => {
+      const row = numberById.get(id);
+      return row === undefined ? undefined : Number(row['rank']);
     },
 
     list: async (filter: {

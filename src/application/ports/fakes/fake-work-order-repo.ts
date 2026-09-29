@@ -19,6 +19,16 @@ export const createFakeWorkOrderRepo = (): FakeWorkOrderRepo => {
 
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => byId.get(id),
 
+    // A-29: the rank is the port's own rule — the id tiebreak is explicit, so the number never
+    // rides the map's insertion order.
+    number: async (id: WorkOrderId): Promise<number | undefined> => {
+      if (!byId.has(id)) return undefined;
+      const ranked = [...byId.values()].sort(
+        (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      );
+      return ranked.findIndex((record) => record.id === id) + 1;
+    },
+
     // Stable sort keeps insertion order on createdAt ties.
     list: async (filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]> =>
       [...byId.values()]

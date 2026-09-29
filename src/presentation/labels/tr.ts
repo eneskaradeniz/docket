@@ -48,6 +48,7 @@ export const TR: LabelBundle = {
   'wo.status.limit_waiting': 'Limit bekleniyor',
   'wo.status.blocked': 'Engellendi',
   'wo.status.done': 'Tamamlandı',
+  'workOrder.codePrefix': 'İE-',
   'detail.section.stages': 'Aşamalar ve kapılar',
   'detail.section.runs': 'Koşular',
   'detail.section.environments': 'Ortamlar',
