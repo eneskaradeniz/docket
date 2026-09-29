@@ -45,7 +45,12 @@ export function screenNavigator(page) {
     liste: async () => { await goto.pano(); await click('Liste'); },
     // The code is the seed's derived one — the prototype's İE-0014 numbers 6 (manifest in seed-design.ts).
     detay: async () => { await goto.pano(); await click('İE-0006'); },
-    'yol-haritasi': async () => { await click('Kokpit'); await click('Yol haritası'); },
+    // The project row's target is the roadmap (U-15); the phase cards are the page's readiness
+    // signal — the first entry waits the query out, later ones pass on the cached view.
+    'yol-haritasi': async () => {
+      await click('Antero');
+      await page.locator('main section button[aria-expanded]').first().waitFor({ state: 'visible', timeout: 1500 });
+    },
     hesap: async () => { await click('Claude Max'); },
   };
   return goto;
