@@ -15,6 +15,7 @@ import {
   type ProjectTreeStore,
   type TreeSelection,
 } from '../stores/project-tree';
+import { ACTIVE_CLASS, ACTIVE_SOFT_CLASS } from './active-state';
 
 export interface SidebarTreeProps {
   readonly store: ProjectTreeStore;
@@ -42,11 +43,11 @@ const pill = (count: number | null, selected: boolean): string => {
   return `inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border px-1.5 font-mono text-[11px] ${tone}`;
 };
 
-/** A row's standing grammar: the active row reads raised with an inset signal bar, a project
- *  whose repo is active reads raised without the bar (psel), the rest stay quiet. */
+/** A row's standing grammar: the active row carries the one active-state language, a project
+ *  whose repo is active carries its soft variant (psel), the rest stay quiet. */
 const rowState = (state: 'sel' | 'psel' | null): string => {
-  if (state === 'sel') return 'bg-raised shadow-[inset_2px_0_0_0] shadow-signal';
-  if (state === 'psel') return 'bg-raised';
+  if (state === 'sel') return ACTIVE_CLASS;
+  if (state === 'psel') return ACTIVE_SOFT_CLASS;
   return '';
 };
 
@@ -144,7 +145,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
   return (
     <>
       <div className="mb-1.5 mt-3.5 flex h-7 flex-none items-center gap-1 pl-2 pr-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-inkdim">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] font-medium text-inkdim">
           {t(locale, 'nav.projects')}
         </span>
         <button

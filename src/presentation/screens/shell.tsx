@@ -14,6 +14,7 @@
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
+import { ACTIVE_CLASS } from '../components/active-state';
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarTree } from '../components/sidebar-tree';
@@ -26,7 +27,12 @@ import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
 import type { RoadmapStore } from '../stores/roadmap';
-import { CLOSED_PALETTE, paletteReducer, type PaletteResult } from '../stores/search-palette';
+import {
+  CLOSED_PALETTE,
+  paletteReducer,
+  type PaletteOrigin,
+  type PaletteResult,
+} from '../stores/search-palette';
 import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
@@ -149,16 +155,19 @@ export function ShellScreen({
   // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
   // open beneath the wizard's overlay and steal its focus.
   const wizardUp = wizardState.visible && !wizardState.checking;
-  const openPalette = useCallback((): void => {
-    if (wizardUp) return;
-    dispatchPalette({ type: 'open' });
-  }, [wizardUp]);
+  const openPalette = useCallback(
+    (origin: PaletteOrigin): void => {
+      if (wizardUp) return;
+      dispatchPalette({ type: 'open', origin });
+    },
+    [wizardUp],
+  );
   // ⌘K (or Ctrl+K) opens the search palette (U-15) — the same door the title bar's Ara button is.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        openPalette();
+        openPalette('keyboard');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -234,6 +243,7 @@ export function ShellScreen({
         locale={locale}
         platform={navigator.platform}
         homeCurrent={route.name === 'cockpit'}
+        searchCurrent={palette.open}
         badge={badge}
         onHome={() => setRoute({ name: 'cockpit' })}
         onSearch={openPalette}
@@ -264,8 +274,10 @@ export function ShellScreen({
               onClick={() => setRoute({ name: 'settings' })}
               aria-label={t(locale, 'nav.settings')}
               title={t(locale, 'nav.settings')}
-              className={`grid h-8 w-8 flex-none place-items-center rounded-lg border border-bord ${
-                route.name === 'settings' ? 'bg-raised text-ink' : 'text-inkdim hover:border-inkdim hover:text-ink'
+              className={`grid h-8 w-8 flex-none place-items-center rounded-lg border ${
+                route.name === 'settings'
+                  ? `text-ink ${ACTIVE_CLASS}`
+                  : 'border-bord text-inkdim hover:border-inkdim hover:text-ink'
               }`}
             >
               <GearIcon />

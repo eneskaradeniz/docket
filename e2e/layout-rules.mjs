@@ -129,9 +129,12 @@ const l5 = async (page, ctx, sel) => {
   return result('L-5', m.widest <= cap + 0.5, `content ${m.widest.toFixed(0)} cap ${cap}`);
 };
 
-// L-6 reads the accounts frame's collapsed geometry (U-16): on a short window the body must be
-// collapsed, and whenever the body is collapsed the frame is the header row plus symmetric
-// padding — no dead space below the header.
+// L-6 reads the accounts frame's geometry (U-16): on a short window the body must be collapsed,
+// and whenever the body is collapsed the frame is the header row plus symmetric padding — no
+// dead space below the header. The header row must also sit identically in both states: the same
+// top offset and the same row height expanded and collapsed, so expanding only adds the body
+// below and the header never moves. The frame is toggled through its own control and put back
+// collapsed, so a run leaves the frame the way it found it.
 const l6 = async (page, ctx, sel) => {
   if (!sel.accountsBody) return skipped('L-6', 'accountsBody');
   const h = await inPage(page, `const el = resolve(arg); return el ? el.getBoundingClientRect().height : null;`, sel.accountsBody);
@@ -141,18 +144,41 @@ const l6 = async (page, ctx, sel) => {
     return result('L-6', false, `accounts body height ${h.toFixed(1)} at window height ${ctx.height}`);
   }
   if (!sel.accountsFrame) return skipped('L-6', 'accountsFrame');
-  const m = await inPage(
-    page,
-    `const frame = resolve(arg); if (!frame) return null;
+  const GEOMETRY = `
+    const frame = resolve(arg); if (!frame) return null;
     const f = frame.getBoundingClientRect();
     const header = frame.firstElementChild.getBoundingClientRect();
     return { top: header.top - f.top - frame.clientTop,
-             bottom: f.bottom - header.bottom - (f.height - frame.clientHeight - frame.clientTop) };`,
-    sel.accountsFrame,
+             bottom: f.bottom - header.bottom - (f.height - frame.clientHeight - frame.clientTop),
+             rowH: header.height };`;
+  const collapsed = await inPage(page, GEOMETRY, sel.accountsFrame);
+  if (collapsed === null) return result('L-6', false, 'accounts frame not found');
+  const symmetric = Math.abs(collapsed.top - collapsed.bottom) <= 1;
+  const toggle = page.locator(sel.accountsFrame).locator('button[aria-expanded]').first();
+  const bodySettled = (open) =>
+    page.waitForFunction(
+      ([bodySel, open]) => {
+        const body = document.querySelector(bodySel);
+        if (body === null) return false;
+        const grown = body.getBoundingClientRect().height > 1;
+        return grown === open && body.getAnimations().length === 0;
+      },
+      [sel.accountsBody, open],
+      { timeout: 4000 },
+    );
+  await toggle.click();
+  await bodySettled(true);
+  const expanded = await inPage(page, GEOMETRY, sel.accountsFrame);
+  await toggle.click();
+  await bodySettled(false);
+  if (expanded === null) return result('L-6', false, 'accounts frame not found expanded');
+  const parity = Math.abs(expanded.top - collapsed.top) <= 1 && Math.abs(expanded.rowH - collapsed.rowH) <= 1;
+  const ok = symmetric && parity;
+  return result(
+    'L-6',
+    ok,
+    `collapsed padding top ${collapsed.top.toFixed(1)} bottom ${collapsed.bottom.toFixed(1)}; header top ${collapsed.top.toFixed(1)}→${expanded.top.toFixed(1)} rowH ${collapsed.rowH.toFixed(1)}→${expanded.rowH.toFixed(1)}`,
   );
-  if (m === null) return result('L-6', false, 'accounts frame not found');
-  const ok = Math.abs(m.top - m.bottom) <= 1;
-  return result('L-6', ok, `collapsed padding top ${m.top.toFixed(1)} bottom ${m.bottom.toFixed(1)}`);
 };
 
 const l7 = async (page, ctx, sel) => {
