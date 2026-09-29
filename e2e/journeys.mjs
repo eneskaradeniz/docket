@@ -6,7 +6,9 @@
 // what the seed holds (an answered ask, an approved gate), so a shared seed would make later
 // combinations start from a different world. `--quick` runs the default 1280x800 dark only.
 //
-// Copy asserted here is the rev-8 prototype's Turkish, which the seed's world is built to match.
+// Copy asserted here is the rev-8 prototype's Turkish, which the seed's world is built to match —
+// except the work-order codes: the prototype's sparse İE-nnnn exist nowhere as numbers, so the
+// assertions use the seed's derived codes (A-29 number, U-22 format; the seed manifest maps them).
 import { strict as assert } from 'node:assert';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -78,12 +80,12 @@ for (const [size, theme] of combos) {
     await see('Rol matrisi');
     await shot('board-kanban');
     await button('Liste');
-    await see('İE-0034');
+    await see('İE-0016');
     await shot('board-liste');
     await page.reload();
     await page.waitForSelector('nav');
     await click('antreo-api');
-    await see('İE-0034');
+    await see('İE-0016');
     assert.equal(await page.getByText('ANALİZ', { exact: true }).count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
@@ -98,7 +100,7 @@ for (const [size, theme] of combos) {
     await see('Onaylandı');
     await shot('approved');
     await click('‹ Geri');
-    await see('İE-0034');
+    await see('İE-0016');
     assert.equal(await page.getByText('ANALİZ', { exact: true }).count(), 0, 'Liste must still be the active view');
     await shot('back-on-board');
   });
@@ -108,10 +110,10 @@ for (const [size, theme] of combos) {
     await see('Yol haritası');
     await shot('roadmap');
     await click('Mobil login');
-    await see('İE-0044');
-    await see('İE-0045');
+    await see('İE-0026');
+    await see('İE-0027');
     await shot('task-expanded');
-    await click('İE-0044');
+    await click('İE-0026');
     await see('Mobil login');
     await see('Bu aşamada senden beklenen');
     await shot('detail');
