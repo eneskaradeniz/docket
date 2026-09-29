@@ -199,9 +199,9 @@ belongs to the mobile app.
   Odoo (1); the prototype's work orders by code, stage and state; two accounts with 5-hour, weekly
   and monthly windows. The same codes appear in the same place on every screen. It never touches the
   operator's data.
-- **Window sizes.** Every journey and every audit runs at 760×480 (the minimum), 1280×800 (the
-  default), 1920×1080 and 2560×1440, in the dark and the light theme. The harness resizes the
-  `BrowserWindow`; it does not scale the page.
+- **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1280×800 (the
+  default), 1920×1080 and 2560×1440, in the dark and the light theme. The sidebar is always open,
+  never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
@@ -210,8 +210,8 @@ belongs to the mobile app.
   Settings · J-7 ⌘K focuses the search. Each step asserts visible text and saves a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
-  - **L-1** The sidebar's left edge is 0 and its width is 240px at a window width ≥ 1000 and 208px
-    below that, identical (±0.5px) on every screen.
+  - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
+    narrows — identical (±0.5px) on every screen.
   - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
   - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
     clipping ancestor, except inside the declared Kanban scroller.
@@ -219,7 +219,8 @@ belongs to the mobile app.
     `text-overflow: ellipsis` and carries its full text in `title`.
   - **L-5** The main column's content width is at most 1200px (cockpit), 1280px (detail) or 960px
     (roadmap, account); the board uses the full main width.
-  - **L-6** At a window height below 640 the accounts frame is collapsed to its header.
+  - **L-6** The accounts frame is never collapsed: at the 1024×640 minimum its body stays visible
+    under its header.
   - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada
     senden beklenen" section.
   - **L-8** When Kanban columns overflow, the scroller has scroll-snap and shows the edge fade.
