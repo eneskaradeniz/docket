@@ -848,6 +848,94 @@ describe('dispatcherTick', () => {
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
   });
 
+  it('R-48: a project ceiling at hard_stop holds every queued item of that project, even a repo with no spend, while another project still starts, and a running run stays', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    const OTHER_PROJ = slugOf<'project'>('other-proj');
+    const FOREIGN: RepoSlug = slugOf('foreign');
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await h.deps.projects.save({
+      id: OTHER_PROJ,
+      name: 'Other',
+      mainRepo: FOREIGN,
+      repos: [FOREIGN],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await createWorkOrder(h, WO3, FOREIGN);
+    await createWorkOrder(h, WO4, OTHER);
+    // 6 + 4 spread over the two repos of PROJ; REPO itself spent nothing.
+    for (const [at, usd] of [[OTHER, 6], [OTHER, 4]] as const) {
+      await h.deps.accounts.recordSpend({
+        accountId: A1,
+        project: PROJ,
+        repo: at,
+        workOrderId: WO2,
+        at: h.clock.now(),
+        usd,
+      });
+    }
+    await createRun(h, RUN1, WO4, route(A1));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+    await h.deps.queue.put({ ...queueItem(Q3, WO3, route(A1)), repo: FOREIGN });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'wait', reason: 'budget' },
+      { item: Q3, kind: 'start' },
+    ]);
+    expect((await h.deps.runs.listActive()).map((run) => run.id)).toStrictEqual([RUN1]);
+  });
+
+  it('R-48: a repo limit at hard_stop holds only that repo — its sibling under the same project starts', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    h.definitions.seed(
+      { kind: 'global' },
+      'definitions.json',
+      JSON.stringify({
+        ...DEFINITIONS_BODY,
+        repo: { ...DEFINITIONS_BODY.repo, budget: { amountUsd: 5, warnPercent: 80 } },
+      }),
+    );
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 100, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await h.deps.accounts.recordSpend({
+      accountId: A1,
+      project: PROJ,
+      repo: REPO,
+      workOrderId: WO1,
+      at: h.clock.now(),
+      usd: 5,
+    });
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'start' },
+    ]);
+  });
+
   it('A-20: an empty queue ticks with no decisions and no starts', async () => {
     const h = makeHarness();
     const recorder = startRecorder();

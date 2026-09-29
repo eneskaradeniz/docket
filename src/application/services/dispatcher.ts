@@ -84,7 +84,7 @@ const spendWindow = (
     : { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
 
 export async function dispatcherTick(
-  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders'>,
+  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects'>,
   config: DispatcherConfig,
   start: (item: QueueItem) => void,
 ): Promise<TickResult> {
@@ -125,6 +125,22 @@ export async function dispatcherTick(
         to: window.to,
       });
       scoped.push({ scope: cap.scope, observedUsd, cap: cap.cap });
+    }
+
+    // Repo limit first, then project ceiling: the order decides which scope a tie reports (R-32).
+    // Both read spend across every account, and the ceiling across every repo of the project, so
+    // a repo with no spend of its own is still held once the ceiling is used up.
+    const month = spendWindow('account_month', now);
+    const loaded = await deps.definitions.load(item.repo);
+    const repoBudget = loaded.ok ? loaded.value.repo?.budget : undefined;
+    if (repoBudget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ repo: item.repo, from: month.from, to: month.to });
+      scoped.push({ scope: 'repo_month', observedUsd, cap: repoBudget });
+    }
+    const project = await deps.projects.projectOfRepo(item.repo);
+    if (project?.budget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ project: project.id, from: month.from, to: month.to });
+      scoped.push({ scope: 'project_month', observedUsd, cap: project.budget });
     }
     spendByItem[item.id] = combinedSpendStatus(scoped).status;
   }
