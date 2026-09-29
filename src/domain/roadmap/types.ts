@@ -1,13 +1,13 @@
 // roadmap/types.ts — exact contract from docs/v2/domain.md section 10.
 import type { WorkOrderStatus } from '../flow';
-import type { PhaseSlug, TaskSlug } from '../shared';
+import type { PhaseSlug, RepoSlug, TaskSlug } from '../shared';
 
 export interface TaskDef {
   readonly id: TaskSlug;
   readonly title: string;
   readonly dependsOn: readonly TaskSlug[]; // any task in the roadmap
   readonly acceptance: readonly string[];
-  readonly repo?: string;
+  readonly targets: readonly RepoSlug[]; // repos the task's work runs in; empty → [project.mainRepo] at load
 }
 
 export interface PhaseDef {
@@ -30,7 +30,8 @@ export type RoadmapIssueCode =
   | 'phase_cycle'
   | 'cross_cycle'
   | 'missing_field'
-  | 'wrong_type';
+  | 'wrong_type'
+  | 'unknown_repo';
 
 export interface RoadmapIssue {
   readonly path: string;

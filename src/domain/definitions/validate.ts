@@ -1,6 +1,7 @@
 // definitions/validate.ts — narrows untyped (parsed YAML/JSON) input into typed Definitions.
 // Field-by-field narrowing only; every issue is collected before deciding (all-or-nothing).
-import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type RoleSlug, type StageSlug, type WorkspaceSlug } from '../shared';
+import type { SpendCap } from '../budget';
+import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type WorkspaceSlug } from '../shared';
 import type {
   CapabilityDef,
   Definitions,
@@ -9,6 +10,7 @@ import type {
   FlowDef,
   GateDef,
   HookEvent,
+  ProjectDef,
   RepoRef,
   RoleDef,
   RoleOverride,
@@ -27,7 +29,8 @@ export type DefinitionIssueCode =
   | 'forward_goto' | 'bad_attempts' | 'empty_flow' | 'unknown_capability' | 'unknown_flow'
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
-  | 'env_command_set_missing' | 'duplicate_env_order';
+  | 'env_command_set_missing' | 'duplicate_env_order'
+  | 'empty_repos' | 'main_repo_not_listed';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -91,6 +94,14 @@ interface WorkspaceDraft {
   readonly docsRoot: string | undefined;
   readonly testGlobs: readonly string[] | undefined;
   readonly environments: readonly (EnvironmentDraft | undefined)[] | undefined;
+}
+
+interface ProjectDraft {
+  readonly id: ProjectSlug | undefined;
+  readonly name: string | undefined;
+  readonly mainRepo: RepoSlug | undefined;
+  readonly repoSlots: readonly (RepoSlug | undefined)[] | undefined;
+  readonly budget: SpendCap | undefined;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -654,6 +665,39 @@ const parseWorkspace = (issues: DefinitionIssue[], container: UnknownRecord): Wo
   return { id, name, repos, flowSlots, defaultFlow, commandSets, roleOverrides, docsRoot, testGlobs, environments: parseEnvironments(issues, container) };
 };
 
+/** R-46: a project budget must be a valid SpendCap; anything else is wrong_type. */
+const parseSpendCap = (issues: DefinitionIssue[], value: unknown, path: string): SpendCap | undefined => {
+  if (!isRecord(value)) {
+    addIssue(issues, path, 'wrong_type', `${path} must be a SpendCap ({ amountUsd, warnPercent })`);
+    return undefined;
+  }
+  let valid = true;
+  const amountRaw: unknown = value['amountUsd'];
+  const amountUsd = typeof amountRaw === 'number' && Number.isFinite(amountRaw) ? amountRaw : undefined;
+  if (amountUsd === undefined) {
+    addIssue(issues, `${path}.amountUsd`, 'wrong_type', `${path}.amountUsd must be a number`);
+    valid = false;
+  }
+  const warnRaw: unknown = value['warnPercent'];
+  const warnPercent = typeof warnRaw === 'number' && Number.isFinite(warnRaw) && warnRaw >= 1 && warnRaw <= 100 ? warnRaw : undefined;
+  if (warnPercent === undefined) {
+    addIssue(issues, `${path}.warnPercent`, 'wrong_type', `${path}.warnPercent must be a number between 1 and 100`);
+    valid = false;
+  }
+  if (!valid || amountUsd === undefined || warnPercent === undefined) return undefined;
+  return { amountUsd, warnPercent };
+};
+
+const parseProject = (issues: DefinitionIssue[], container: UnknownRecord): ProjectDraft => {
+  const id = readSlugField<'project'>(issues, container, 'id', 'project.id');
+  const name = readStringField(issues, container, 'name', 'project.name');
+  const mainRepo = readSlugField<'repo'>(issues, container, 'mainRepo', 'project.mainRepo');
+  const repoSlots = readSlugSlots<'repo'>(issues, container['repos'], 'project.repos');
+  const budgetRaw: unknown = container['budget'];
+  const budget = budgetRaw === undefined ? undefined : parseSpendCap(issues, budgetRaw, 'project.budget');
+  return { id, name, mainRepo, repoSlots, budget };
+};
+
 const parseRoles = (issues: DefinitionIssue[], input: UnknownRecord): readonly (RoleDraft | undefined)[] => {
   const raw: unknown = input['roles'];
   if (raw === undefined) {
@@ -742,6 +786,7 @@ const crossCheck = (
   capabilityDrafts: readonly (CapabilityDef | undefined)[],
   flowDrafts: readonly (FlowDraft | undefined)[],
   workspace: WorkspaceDraft | undefined,
+  project: ProjectDraft | undefined,
 ): void => {
   const roleById = new Map<string, RoleDraft>();
   const seenRoleIds = new Set<string>();
@@ -926,6 +971,24 @@ const crossCheck = (
       }
     });
   }
+
+  if (project !== undefined) {
+    if (project.repoSlots !== undefined && project.repoSlots.length === 0) {
+      addIssue(issues, 'project.repos', 'empty_repos', 'project.repos must list at least the main repo');
+    }
+    const seenRepos = new Set<string>();
+    project.repoSlots?.forEach((slot, index) => {
+      if (slot === undefined) return;
+      if (seenRepos.has(slot)) {
+        addIssue(issues, `project.repos[${index}]`, 'duplicate_id', `project.repos[${index}] "${slot}" duplicates an earlier repo`);
+      } else {
+        seenRepos.add(slot);
+      }
+    });
+    if (project.mainRepo !== undefined && project.repoSlots !== undefined && !project.repoSlots.some((slot) => slot === project.mainRepo)) {
+      addIssue(issues, 'project.mainRepo', 'main_repo_not_listed', `main repo "${project.mainRepo}" is not listed in project.repos`);
+    }
+  }
 };
 
 const buildStageDef = (stage: StageDraft): StageDef | undefined => {
@@ -1010,6 +1073,16 @@ const buildWorkspaceDef = (workspace: WorkspaceDraft): WorkspaceDef | undefined 
   };
 };
 
+const buildProjectDef = (project: ProjectDraft): ProjectDef | undefined => {
+  if (project.id === undefined || project.name === undefined || project.mainRepo === undefined || project.repoSlots === undefined) {
+    return undefined;
+  }
+  const repos = project.repoSlots.filter((slot): slot is RepoSlug => slot !== undefined);
+  return project.budget === undefined
+    ? { id: project.id, name: project.name, mainRepo: project.mainRepo, repos }
+    : { id: project.id, name: project.name, mainRepo: project.mainRepo, repos, budget: project.budget };
+};
+
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]> {
   const issues: DefinitionIssue[] = [];
@@ -1033,7 +1106,18 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
     workspace = parseWorkspace(issues, workspaceRaw);
   }
 
-  crossCheck(issues, roleDrafts, capabilityDrafts, flowDrafts, workspace);
+  const projectRaw: unknown = input['project'];
+  let project: ProjectDraft | undefined;
+  if (projectRaw === undefined) {
+    project = undefined;
+  } else if (!isRecord(projectRaw)) {
+    addIssue(issues, 'project', 'wrong_type', 'project must be an object');
+    project = undefined;
+  } else {
+    project = parseProject(issues, projectRaw);
+  }
+
+  crossCheck(issues, roleDrafts, capabilityDrafts, flowDrafts, workspace, project);
 
   if (issues.length > 0) return err(issues);
 
@@ -1067,14 +1151,17 @@ export function validateDefinitions(input: unknown): Result<Definitions, readonl
     });
   }
 
-  const base: Omit<Definitions, 'workspace'> = {
+  const base: Omit<Definitions, 'workspace' | 'project'> = {
     roles,
     flows,
     capabilities: capabilityDrafts.filter((draft): draft is CapabilityDef => draft !== undefined),
   };
 
-  if (workspace === undefined) return ok(base);
-  const workspaceDef = buildWorkspaceDef(workspace);
-  if (workspaceDef === undefined) return ok(base);
-  return ok({ ...base, workspace: workspaceDef });
+  const workspaceDef = workspace === undefined ? undefined : buildWorkspaceDef(workspace);
+  const projectDef = project === undefined ? undefined : buildProjectDef(project);
+  return ok({
+    ...base,
+    ...(workspaceDef !== undefined ? { workspace: workspaceDef } : {}),
+    ...(projectDef !== undefined ? { project: projectDef } : {}),
+  });
 }

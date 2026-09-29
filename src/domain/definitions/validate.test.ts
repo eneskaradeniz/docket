@@ -42,6 +42,14 @@ const workspace = (over: Obj = {}): Obj => ({
   ...over,
 });
 
+const project = (over: Obj = {}): Obj => ({
+  id: 'atolye',
+  name: 'Atölye',
+  mainRepo: 'docket',
+  repos: ['docket', 'docs'],
+  ...over,
+});
+
 const doc = (over: Obj = {}): Obj => ({
   roles: [role()],
   flows: [flow()],
@@ -398,6 +406,83 @@ describe('validateDefinitions', () => {
         issue('workspace.defaultFlow', 'default_flow_not_enabled'),
       ]),
     );
+  });
+
+  it('R-46: a valid project lands in Definitions.project, with or without a budget', () => {
+    const bare = expectOk(validateDefinitions(doc({ project: project() })));
+    expect(bare.project).toEqual({ id: 'atolye', name: 'Atölye', mainRepo: 'docket', repos: ['docket', 'docs'] });
+    expect('budget' in (bare.project ?? {})).toBe(false);
+
+    const capped = expectOk(validateDefinitions(doc({ project: project({ budget: { amountUsd: 25, warnPercent: 80 } }) })));
+    expect(capped.project?.budget).toEqual({ amountUsd: 25, warnPercent: 80 });
+
+    const without = expectOk(validateDefinitions(doc()));
+    expect(without.project).toBeUndefined();
+  });
+
+  it('R-46: repos must be non-empty (empty_repos)', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ repos: [] }) })));
+    expect(codesOf(issues)).toEqual(['empty_repos', 'main_repo_not_listed']);
+    expect(issues[0]?.path).toBe('project.repos');
+  });
+
+  it('R-46: duplicate repo entries are reported as duplicate_id', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ repos: ['docket', 'docs', 'docket'] }) })));
+    expect(codesOf(issues)).toEqual(['duplicate_id']);
+    expect(issues[0]?.path).toBe('project.repos[2]');
+  });
+
+  it('R-46: mainRepo must be listed in repos (main_repo_not_listed)', () => {
+    const issues = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'ghost', repos: ['docket', 'docs'] }) })));
+    expect(codesOf(issues)).toEqual(['main_repo_not_listed']);
+    expect(issues[0]?.path).toBe('project.mainRepo');
+    expect(issues[0]?.message).toContain('ghost');
+  });
+
+  it('R-46: a budget that is not a valid SpendCap is wrong_type', () => {
+    const notObject = expectErr(validateDefinitions(doc({ project: project({ budget: 5 }) })));
+    expect(codesOf(notObject)).toEqual(['wrong_type']);
+    expect(notObject[0]?.path).toBe('project.budget');
+
+    const badAmount = expectErr(
+      validateDefinitions(doc({ project: project({ budget: { amountUsd: '25', warnPercent: 80 } }) })),
+    );
+    expect(codesOf(badAmount)).toEqual(['wrong_type']);
+    expect(badAmount[0]?.path).toBe('project.budget.amountUsd');
+
+    const missingWarn = expectErr(validateDefinitions(doc({ project: project({ budget: { amountUsd: 25 } }) })));
+    expect(codesOf(missingWarn)).toEqual(['wrong_type']);
+    expect(missingWarn[0]?.path).toBe('project.budget.warnPercent');
+
+    const outOfRange = expectErr(
+      validateDefinitions(doc({ project: project({ budget: { amountUsd: 25, warnPercent: 101 } }) })),
+    );
+    expect(codesOf(outOfRange)).toEqual(['wrong_type']);
+    expect(outOfRange[0]?.path).toBe('project.budget.warnPercent');
+  });
+
+  it('R-46 edge: project fields are type- and slug-checked like every other definition', () => {
+    const notObject = expectErr(validateDefinitions(doc({ project: 'x' })));
+    expect(codesOf(notObject)).toEqual(['wrong_type']);
+    expect(notObject[0]?.path).toBe('project');
+
+    const badId = expectErr(validateDefinitions(doc({ project: project({ id: 'Atölye' }) })));
+    expect(codesOf(badId)).toEqual(['invalid_slug']);
+    expect(badId[0]?.path).toBe('project.id');
+
+    const badMainRepo = expectErr(validateDefinitions(doc({ project: project({ mainRepo: 'Docket' }) })));
+    expect(codesOf(badMainRepo)).toEqual(['invalid_slug']);
+    expect(badMainRepo[0]?.path).toBe('project.mainRepo');
+
+    const badRepoEntry = expectErr(validateDefinitions(doc({ project: project({ repos: ['docket', 'Docs'] }) })));
+    expect(codesOf(badRepoEntry)).toEqual(['invalid_slug']);
+    expect(badRepoEntry[0]?.path).toBe('project.repos[1]');
+
+    const noRepos = project() as Obj;
+    delete noRepos.repos;
+    const missing = expectErr(validateDefinitions(doc({ project: noRepos })));
+    expect(codesOf(missing)).toEqual(['missing_field']);
+    expect(missing[0]?.path).toBe('project.repos');
   });
 
   it('reports missing_field for absent required fields at any depth', () => {

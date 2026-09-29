@@ -1,5 +1,6 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
-import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, RoleSlug, StageSlug, WorkspaceSlug } from '../shared';
+import type { SpendCap } from '../budget';
+import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, WorkspaceSlug } from '../shared';
 
 export type WriteScope =
   | { readonly kind: 'none' } // read-only role
@@ -63,6 +64,15 @@ export interface RepoRef {
   readonly defaultBranch: string;
 }
 
+/** <main-repo>/.docket/project.yaml — the project layer above repos (S1). */
+export interface ProjectDef {
+  readonly id: ProjectSlug;
+  readonly name: string;
+  readonly mainRepo: RepoSlug; // the roadmap and project.yaml live in this repo's .docket/
+  readonly repos: readonly RepoSlug[]; // at least mainRepo; unique
+  readonly budget?: SpendCap; // project spend ceiling (S5): the sum over all repos
+}
+
 export interface EnvironmentDef {
   readonly id: EnvSlug;
   readonly name: string;
@@ -93,5 +103,6 @@ export interface Definitions {
   readonly roles: readonly RoleDef[];
   readonly flows: readonly FlowDef[];
   readonly capabilities: readonly CapabilityDef[];
+  readonly project?: ProjectDef; // present in the project scope
   readonly workspace?: WorkspaceDef;
 }

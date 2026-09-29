@@ -2,7 +2,8 @@
 // Field-by-field narrowing plus cross-reference and cycle checks; every issue is collected before
 // deciding (all-or-nothing), so one run reports a task cycle, a phase cycle, and the deadlocks that
 // only appear when both graphs are combined.
-import { err, ok, parseSlug, type PhaseSlug, type Result, type Slug, type TaskSlug } from '../shared';
+import type { ProjectDef } from '../definitions';
+import { err, ok, parseSlug, type PhaseSlug, type RepoSlug, type Result, type Slug, type TaskSlug } from '../shared';
 import type { PhaseDef, Roadmap, RoadmapIssue, RoadmapIssueCode, TaskDef } from './types';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
@@ -14,7 +15,7 @@ interface TaskDraft {
   readonly title: string | undefined;
   readonly dependsOnSlots: readonly (TaskSlug | undefined)[] | undefined;
   readonly acceptance: readonly string[] | undefined;
-  readonly repo: string | undefined;
+  readonly targetSlots: readonly (RepoSlug | undefined)[] | undefined; // undefined = targets absent
 }
 
 interface PhaseDraft {
@@ -37,16 +38,6 @@ const readStringField = (issues: RoadmapIssue[], container: UnknownRecord, field
     addIssue(issues, path, 'missing_field', `${path} is required`);
     return undefined;
   }
-  if (typeof value !== 'string') {
-    addIssue(issues, path, 'wrong_type', `${path} must be a string`);
-    return undefined;
-  }
-  return value;
-};
-
-const readOptionalStringField = (issues: RoadmapIssue[], container: UnknownRecord, field: string, path: string): string | undefined => {
-  const value: unknown = container[field];
-  if (value === undefined) return undefined;
   if (typeof value !== 'string') {
     addIssue(issues, path, 'wrong_type', `${path} must be a string`);
     return undefined;
@@ -117,12 +108,23 @@ const readSlugSlots = <B extends string>(issues: RoadmapIssue[], value: unknown,
   return slots;
 };
 
+/** R-47: targets are optional in the file; each entry is slug-checked, and a project checks membership. */
+const parseTargetSlots = (
+  issues: RoadmapIssue[],
+  container: UnknownRecord,
+  path: string,
+): readonly (RepoSlug | undefined)[] | undefined => {
+  const raw: unknown = container['targets'];
+  if (raw === undefined) return undefined;
+  return readSlugSlots<'repo'>(issues, raw, `${path}.targets`);
+};
+
 const parseTask = (issues: RoadmapIssue[], container: UnknownRecord, path: string): TaskDraft => ({
   id: readSlugField<'task'>(issues, container, 'id', `${path}.id`),
   title: readStringField(issues, container, 'title', `${path}.title`),
   dependsOnSlots: readSlugSlots<'task'>(issues, container['dependsOn'], `${path}.dependsOn`),
   acceptance: readStringArrayField(issues, container, 'acceptance', `${path}.acceptance`),
-  repo: readOptionalStringField(issues, container, 'repo', `${path}.repo`),
+  targetSlots: parseTargetSlots(issues, container, path),
 });
 
 const parsePhase = (issues: RoadmapIssue[], container: UnknownRecord, path: string): PhaseDraft => {
@@ -358,24 +360,30 @@ const crossCheck = (issues: RoadmapIssue[], phaseDrafts: readonly PhaseDraft[]):
   if (phaseCycles.length === 0) crossCycleCheck(issues, phaseDrafts, phaseEdges, taskEdges, taskPathById);
 };
 
-const buildTask = (draft: TaskDraft): TaskDef | undefined => {
+const buildTask = (draft: TaskDraft, defaultTargets: readonly RepoSlug[]): TaskDef | undefined => {
   if (draft.id === undefined || draft.title === undefined || draft.acceptance === undefined || draft.dependsOnSlots === undefined) {
     return undefined;
   }
   const dependsOn = draft.dependsOnSlots.filter((slot): slot is TaskSlug => slot !== undefined);
-  return draft.repo === undefined
-    ? { id: draft.id, title: draft.title, dependsOn, acceptance: draft.acceptance }
-    : { id: draft.id, title: draft.title, dependsOn, acceptance: draft.acceptance, repo: draft.repo };
+  // R-47: absent or empty targets default to the project's main repo; without a project they stay empty.
+  const written = draft.targetSlots === undefined ? [] : draft.targetSlots.filter((slot): slot is RepoSlug => slot !== undefined);
+  return {
+    id: draft.id,
+    title: draft.title,
+    dependsOn,
+    acceptance: draft.acceptance,
+    targets: written.length > 0 ? written : defaultTargets,
+  };
 };
 
-const buildPhase = (draft: PhaseDraft): PhaseDef | undefined => {
+const buildPhase = (draft: PhaseDraft, defaultTargets: readonly RepoSlug[]): PhaseDef | undefined => {
   if (draft.id === undefined || draft.name === undefined || draft.tasks === undefined || draft.blockedBySlots === undefined) {
     return undefined;
   }
   const tasks: TaskDef[] = [];
   for (const task of draft.tasks) {
     if (task === undefined) return undefined;
-    const built = buildTask(task);
+    const built = buildTask(task, defaultTargets);
     if (built === undefined) return undefined;
     tasks.push(built);
   }
@@ -383,8 +391,9 @@ const buildPhase = (draft: PhaseDraft): PhaseDef | undefined => {
   return { id: draft.id, name: draft.name, blockedBy, tasks };
 };
 
-/** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
-export function validateRoadmap(input: unknown): Result<Roadmap, readonly RoadmapIssue[]> {
+/** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues.
+ *  With a project, every written target must be one of its repos (R-47). */
+export function validateRoadmap(input: unknown, project?: ProjectDef): Result<Roadmap, readonly RoadmapIssue[]> {
   const issues: RoadmapIssue[] = [];
 
   if (!isRecord(input)) {
@@ -412,12 +421,31 @@ export function validateRoadmap(input: unknown): Result<Roadmap, readonly Roadma
 
   crossCheck(issues, phaseDrafts);
 
+  if (project !== undefined) {
+    const knownRepos = new Set<string>(project.repos);
+    phaseDrafts.forEach((phase, phaseIndex) => {
+      phase.tasks?.forEach((task, taskIndex) => {
+        if (task === undefined || task.targetSlots === undefined) return;
+        task.targetSlots.forEach((slot, slotIndex) => {
+          if (slot === undefined || knownRepos.has(slot)) return;
+          addIssue(
+            issues,
+            `phases[${phaseIndex}].tasks[${taskIndex}].targets[${slotIndex}]`,
+            'unknown_repo',
+            `"${slot}" is not a repo of project "${project.id}"`,
+          );
+        });
+      });
+    });
+  }
+
   if (issues.length > 0) return err(issues);
 
+  const defaultTargets: readonly RepoSlug[] = project === undefined ? [] : [project.mainRepo];
   // With zero issues every draft parsed completely, so the builders never drop an entry here.
   const phases: PhaseDef[] = [];
   for (const draft of phaseDrafts) {
-    const built = buildPhase(draft);
+    const built = buildPhase(draft, defaultTargets);
     if (built !== undefined) phases.push(built);
   }
   return ok({ phases });
