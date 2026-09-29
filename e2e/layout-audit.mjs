@@ -1,4 +1,4 @@
-// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-9 rules of e2e/layout-rules.mjs
+// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-10 rules of e2e/layout-rules.mjs
 // for every screen × window size × theme and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The app target adds one more line per size × theme for the search palette, measured open on the
@@ -129,18 +129,6 @@ async function openApp() {
   const handle = await launchDesignApp();
   const { page } = handle;
   const goto = screenNavigator(page);
-  // The sidebar's Kokpit entry is gone: the cockpit is reached through the title bar's Anasayfa
-  // button, and the board routes start from it exactly as they did from the nav entry. The
-  // shared navigator's own kokpit/pano still point at the removed entry, so the audit reroutes
-  // them here (liste and detay reach the board through pano and pick this up with it).
-  const home = () => page.getByRole('button', { name: 'Anasayfa' }).first().click({ timeout: 1500 });
-  const treeRow = (text) =>
-    page.locator('nav button, main button, main a, nav a').filter({ hasText: text }).first().click({ timeout: 1500 });
-  goto.kokpit = home;
-  goto.pano = async () => {
-    await home();
-    await treeRow('antreo-api');
-  };
   return {
     selectors: APP_SELECTORS,
     page,
