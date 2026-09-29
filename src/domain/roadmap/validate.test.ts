@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Result } from '../shared';
+import type { ProjectDef } from '../definitions';
+import type { ProjectSlug, RepoSlug, Result } from '../shared';
 import type { Roadmap } from './types';
 import type { RoadmapIssue } from './types';
 import { validateRoadmap } from './validate';
@@ -23,6 +24,17 @@ const phase = (id: string, tasks: readonly Obj[] = [], blockedBy: readonly strin
 });
 
 const doc = (phases: readonly Obj[]): Obj => ({ phases });
+
+const repoSlug = (id: string): RepoSlug => id as RepoSlug;
+const projectSlug = (id: string): ProjectSlug => id as ProjectSlug;
+
+const project = (over: Partial<ProjectDef> = {}): ProjectDef => ({
+  id: projectSlug('atolye'),
+  name: 'Atölye',
+  mainRepo: repoSlug('docket'),
+  repos: [repoSlug('docket'), repoSlug('docs')],
+  ...over,
+});
 
 const expectOk = (result: Result<Roadmap, readonly RoadmapIssue[]>): Roadmap => {
   if (!result.ok) throw new Error(`expected ok, got issues: ${JSON.stringify(result.error)}`);
@@ -50,7 +62,7 @@ const deepFreeze = <T>(value: T): T => {
 // Two phases, three tasks, dependencies across the phase border — the shape every rule below hangs on.
 const validInput: Obj = doc([
   phase('p-1', [task('t-1'), task('t-2', ['t-1'])]),
-  phase('p-2', [task('t-3', ['t-2'], { repo: 'docket' })], ['p-1']),
+  phase('p-2', [task('t-3', ['t-2'], { targets: ['docket'] })], ['p-1']),
 ]);
 
 describe('validateRoadmap', () => {
@@ -60,7 +72,7 @@ describe('validateRoadmap', () => {
     expect(value.phases[0]?.id).toBe('p-1');
     expect(value.phases[0]?.tasks[1]?.dependsOn).toEqual(['t-1']);
     expect(value.phases[1]?.blockedBy).toEqual(['p-1']);
-    expect(value.phases[1]?.tasks[0]?.repo).toBe('docket');
+    expect(value.phases[1]?.tasks[0]?.targets).toEqual(['docket']);
     expect(value.phases[0]?.tasks[0]?.acceptance).toEqual(['acceptance of t-1']);
   });
 
@@ -215,6 +227,56 @@ describe('validateRoadmap', () => {
     expect(validateRoadmap(validInput).ok).toBe(true);
   });
 
+  it('R-47: every targets entry must be a valid slug', () => {
+    const badSlug = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['docket', 'NOPE'] })])])));
+    expect(issueWithCode(badSlug, 'invalid_slug')?.path).toBe('phases[0].tasks[0].targets[1]');
+
+    const notString = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: [7] })])])));
+    expect(issueWithCode(notString, 'wrong_type')?.path).toBe('phases[0].tasks[0].targets[0]');
+
+    const notArray = expectErr(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: 'docket' })])])));
+    expect(issueWithCode(notArray, 'wrong_type')?.path).toBe('phases[0].tasks[0].targets');
+  });
+
+  it('R-47: a target outside project.repos is unknown_repo; without a project there is nothing to check against', () => {
+    const issues = expectErr(
+      validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['docket', 'ghost'] })])]), project()),
+    );
+    const unknown = issueWithCode(issues, 'unknown_repo');
+    expect(unknown).toBeDefined();
+    expect(unknown?.path).toBe('phases[0].tasks[0].targets[1]');
+    expect(unknown?.message).toContain('ghost');
+    expect(unknown?.message).toContain('atolye');
+
+    expect(validateRoadmap(doc([phase('p-1', [task('t-1', [], { targets: ['docket', 'ghost'] })])])).ok).toBe(true);
+  });
+
+  it('R-47: absent or empty targets default to [project.mainRepo]; written targets survive', () => {
+    const value = expectOk(
+      validateRoadmap(
+        doc([phase('p-1', [task('t-1'), task('t-2', [], { targets: [] }), task('t-3', [], { targets: ['docs'] })])]),
+        project(),
+      ),
+    );
+    expect(value.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
+    expect(value.phases[0]?.tasks[1]?.targets).toEqual(['docket']);
+    expect(value.phases[0]?.tasks[2]?.targets).toEqual(['docs']);
+  });
+
+  it('R-47: changing the project mainRepo moves the default target with it', () => {
+    const input = doc([phase('p-1', [task('t-1')])]);
+    const withDocket = expectOk(validateRoadmap(input, project()));
+    expect(withDocket.phases[0]?.tasks[0]?.targets).toEqual(['docket']);
+
+    const withDocs = expectOk(validateRoadmap(input, project({ mainRepo: repoSlug('docs') })));
+    expect(withDocs.phases[0]?.tasks[0]?.targets).toEqual(['docs']);
+  });
+
+  it('R-47 edge: without a project, absent targets stay empty', () => {
+    const value = expectOk(validateRoadmap(doc([phase('p-1', [task('t-1')])])));
+    expect(value.phases[0]?.tasks[0]?.targets).toEqual([]);
+  });
+
   it('R-39: reports invalid task and phase slugs', () => {
     const issues = expectErr(
       validateRoadmap(doc([phase('P_1', [task('Bad Slug')])])),
@@ -279,8 +341,8 @@ describe('validateRoadmap', () => {
     const acceptanceNotString = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ acceptance: [7] })] })])));
     expect(issueWithCode(acceptanceNotString, 'wrong_type')?.path).toBe('phases[0].tasks[0].acceptance[0]');
 
-    const repoNotString = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ repo: 7 })] })])));
-    expect(issueWithCode(repoNotString, 'wrong_type')?.path).toBe('phases[0].tasks[0].repo');
+    const repoNotString = expectErr(validateRoadmap(doc([rawPhase({ tasks: [rawTask({ targets: 7 })] })])));
+    expect(issueWithCode(repoNotString, 'wrong_type')?.path).toBe('phases[0].tasks[0].targets');
   });
 
   it('R-39: collects every issue in one result instead of stopping at the first', () => {
