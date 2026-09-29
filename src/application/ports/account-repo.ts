@@ -20,7 +20,7 @@ export interface AccountRecord {
   readonly plan?: string;
   readonly limitPolicy: LimitPolicy;
   readonly secretRef?: string; // key into SecretVault; never the secret itself
-  readonly caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[];
+  readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 
 export interface AccountRepo {

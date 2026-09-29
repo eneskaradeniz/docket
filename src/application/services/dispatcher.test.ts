@@ -142,7 +142,7 @@ const route = (accountId: AccountId, model?: string): AccountRoute =>
 
 const account = (
   id: AccountId,
-  caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[] = [],
+  caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[] = [],
 ): AccountRecord => ({
   id,
   provider: 'provider-x',
@@ -687,6 +687,32 @@ describe('dispatcherTick', () => {
     await beforeBoundary.deps.queue.put(queueItem(Q1, WO1, route(A1)));
     const previous = await dispatcherTick(beforeBoundary.deps, { limits: LIMITS() }, startRecorder().callback);
     expect(previous.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('A-20: the week cap window is the UTC ISO week of now, from Monday 00:00 UTC; the previous Sunday 23:59 does not count', async () => {
+    const capped = account(A1, [{ scope: 'account_week', cap: { amountUsd: 10, warnPercent: 80 } }]);
+    // MID_MONTH is Saturday 2026-09-26; its ISO week starts Monday 2026-09-21T00:00:00.000Z.
+    const MONDAY_START: EpochMs = 1_789_948_800_000;
+    const SUNDAY_LATE: EpochMs = MONDAY_START - 60_000; // 2026-09-20T23:59:00.000Z
+
+    const runWith = async (spentAt: EpochMs) => {
+      const h = makeHarness(MID_MONTH);
+      await createWorkOrder(h, WO1);
+      await h.deps.accounts.save(capped);
+      await h.deps.accounts.recordSpend({
+        project: slugOf<'project'>('proj'),
+        accountId: A1,
+        repo: REPO,
+        workOrderId: WO1,
+        at: spentAt,
+        usd: 10,
+      });
+      await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+      return dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+    };
+
+    expect((await runWith(MONDAY_START)).decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'budget' }]);
+    expect((await runWith(SUNDAY_LATE)).decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
   });
 
   it('A-20: the month cap window is the UTC calendar month of now, inclusive of its first millisecond', async () => {

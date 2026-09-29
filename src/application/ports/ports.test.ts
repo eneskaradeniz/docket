@@ -151,7 +151,7 @@ describe('port shapes', () => {
     expectTypeOf<Parameters<AgentTransport['start']>[0]>().toEqualTypeOf<RunRequest>();
     expectTypeOf<ReturnType<RunHandle['stop']>>().toEqualTypeOf<Promise<void>>();
     expectTypeOf<AccountRecord['caps'][number]['scope']>().toEqualTypeOf<
-      'account_day' | 'account_month'
+      'account_day' | 'account_week' | 'account_month'
     >();
   });
 });

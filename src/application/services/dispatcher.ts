@@ -64,6 +64,12 @@ const daysFromCivilMonth = (year: number, month: number): number => {
 
 const startOfUtcDay = (at: EpochMs): EpochMs => Math.floor(at / MS_PER_DAY) * MS_PER_DAY;
 
+/** Monday 00:00 UTC of the ISO week; the epoch day 0 is a Thursday, hence the +3 shift. */
+const startOfUtcIsoWeek = (at: EpochMs): EpochMs => {
+  const days = Math.floor(at / MS_PER_DAY);
+  return (Math.floor((days + 3) / 7) * 7 - 3) * MS_PER_DAY;
+};
+
 const startOfUtcMonth = (at: EpochMs): EpochMs => {
   const { year, month } = civilFromDays(Math.floor(at / MS_PER_DAY));
   return daysFromCivilMonth(year, month) * MS_PER_DAY;
@@ -76,12 +82,16 @@ const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
 
 /** Both bounds inclusive: the spend port's window is `[from, to]`, so a boundary entry counts. */
 const spendWindow = (
-  scope: 'account_day' | 'account_month',
+  scope: 'account_day' | 'account_week' | 'account_month',
   now: EpochMs,
-): { readonly from: EpochMs; readonly to: EpochMs } =>
-  scope === 'account_day'
-    ? { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 }
-    : { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+): { readonly from: EpochMs; readonly to: EpochMs } => {
+  if (scope === 'account_day') return { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 };
+  if (scope === 'account_week') {
+    const from = startOfUtcIsoWeek(now);
+    return { from, to: from + 7 * MS_PER_DAY - 1 };
+  }
+  return { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+};
 
 export async function dispatcherTick(
   deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects'>,
