@@ -88,6 +88,8 @@ export interface WorkOrderRecord {
 export interface WorkOrderRepo {
   create(record: WorkOrderRecord): Promise<void>;
   get(id: WorkOrderId): Promise<WorkOrderRecord | undefined>;
+  /** Display number (A-29): 1-based rank of `id` by (createdAt asc, id asc) on this machine; undefined for an unknown id. */
+  number(id: WorkOrderId): Promise<number | undefined>;
   list(filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]>;  // createdAt asc
   appendEvent(id: WorkOrderId, event: WorkOrderEvent): Promise<void>;
   events(id: WorkOrderId): Promise<readonly WorkOrderEvent[]>;                                 // append order
@@ -566,6 +568,7 @@ Rules:
 - **A-23** `repo.board` has one column per stage of the repo's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
 - **A-27** `project.tree`: one item per attached project (id asc), repos in `project.repos` order. Per repo: `active` = non-done work orders, `waiting` = attention items of kinds `permission_ask` / `awaiting_human` / `blocked`, `running` = runs without `endedAt`; status precedence `waiting > running > idle`; the project aggregates its repos' counts and takes its status the same way. One call serves the whole sidebar (K-7).
 - **A-28** `cockpit`: the `project` filter narrows `attention`, `running` and `recentlyClosed` to that project; `projects` always lists every project (K-4:B). `recentlyClosed` = the five most recent `done` work orders, `closedAt` desc. `account.detail` returns the account with its windows (from pools/meters) and `activeWork` = non-done work orders with a run on the account.
+- **A-29** Work-order display number: `WorkOrderRepo.number(id)` is the 1-based position of the work order in (`createdAt` asc, `id` asc) order over every work order on this machine. Work orders are never deleted, so a number, once shown, never changes and is never reused; a converted old database numbers its work orders the same way. The ULID stays the identity; the number is display only (machine-local; team sync revisits it). Every query view item that names a work order (`workOrderId` or `id` of a work order) also carries `number: number` — attention, running and recentlyClosed items, board cards and done strip, the detail, `account.detail.activeWork`, and the per-repo work orders of a roadmap task.
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 
