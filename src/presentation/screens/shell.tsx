@@ -1,17 +1,21 @@
-// screens/shell.tsx — the app shell (U-10's window): a fixed 240px sidebar that is always open —
-// the search field (⌘K focuses it), the Kokpit entry with the attention badge, the project →
-// repo tree, the accounts frame (its own disclosure) and the foot's settings control — next to
-// the content area that mounts the cockpit, a repo's board, a project's roadmap, a work order's
-// detail, an account's view, or the settings. The detail and the account view open in place of
-// the screen they were reached from (U-19): ‹ Geri returns to that screen with its scroll where
-// the operator left it. The first-run wizard rides above it all as an overlay: the shell mounts
-// it, the wizard store's `open` decides whether it shows at all (U-7). The badge mirrors the
-// shell store: the cockpit's attention count, present only while attention exists — zero renders
-// nothing, never a zero (U-10). Every user-visible string arrives through a label key (U-1).
+// screens/shell.tsx — the app shell (U-10's window): on darwin a 40px drag bar runs across the
+// top above everything (the native title strip is hidden there; the bar carries the traffic
+// lights' lane, the signal accent and the wordmark), then a fixed 240px sidebar that is always
+// open — the search field (⌘K focuses it), the Kokpit entry with the attention badge, the
+// project → repo tree, the accounts frame (its own disclosure) and the foot's settings control —
+// next to the content area that mounts the cockpit, a repo's board, a project's roadmap, a work
+// order's detail, an account's view, or the settings. The detail and the account view open in
+// place of the screen they were reached from (U-19): ‹ Geri returns to that screen with its
+// scroll where the operator left it. The first-run wizard rides above it all as an overlay: the
+// shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The badge
+// mirrors the shell store: the cockpit's attention count, present only while attention exists —
+// zero renders nothing, never a zero (U-10). Every user-visible string arrives through a label
+// key (U-1).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarTree } from '../components/sidebar-tree';
+import { TitleBar } from '../components/title-bar';
 import { t, type Locale } from '../labels/t';
 import type { AccountsFrameStore } from '../stores/accounts-frame';
 import type { AccountViewStore } from '../stores/account-view';
@@ -212,128 +216,131 @@ export function ShellScreen({
   };
 
   return (
-    <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)] overflow-hidden bg-bg text-ink">
-      <nav
-        aria-label={t(locale, 'shell.nav')}
-        className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
-      >
-        <div className="flex h-[30px] flex-none items-center gap-2 rounded-md border border-bord bg-raised px-2.5 text-xs text-inkdim focus-within:border-signal">
-          <SearchIcon />
-          <input
-            ref={searchRef}
-            type="text"
-            aria-label={t(locale, 'shell.search.placeholder')}
-            placeholder={t(locale, 'shell.search.placeholder')}
-            className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-inkdim"
-          />
-          <span aria-hidden="true" className="flex-none font-mono text-[10.5px]">
-            {t(locale, 'shell.search.kbd')}
-          </span>
-        </div>
-
-        <div className="mt-2.5 flex flex-none flex-col gap-1">
-          <button
-            type="button"
-            onClick={() => setRoute({ name: 'cockpit' })}
-            className={navClass(route.name === 'cockpit')}
-            aria-current={route.name === 'cockpit' ? 'page' : undefined}
-          >
-            <span>{t(locale, 'nav.cockpit')}</span>
-            {badge !== null ? (
-              <span
-                aria-label={t(locale, 'cockpit.section.attention')}
-                className="inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border border-hairline px-1.5 font-mono text-[11px] text-inkdim"
-              >
-                {badge.count}
-              </span>
-            ) : null}
-          </button>
-        </div>
-
-        <SidebarTree
-          store={tree}
-          selection={selection}
-          locale={locale}
-          onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
-          onOpenRepo={(_project, repo) => setRoute({ name: 'board', repo })}
-        />
-
-        <SidebarAccounts
-          store={accounts}
-          locale={locale}
-          activeAccountId={route.name === 'account' ? route.id : null}
-          onOpenAccount={openAccount}
-        />
-
-        <div className="mt-2.5 flex flex-none items-center justify-end px-0.5">
-          <button
-            type="button"
-            onClick={() => setRoute({ name: 'settings' })}
-            aria-label={t(locale, 'nav.settings')}
-            title={t(locale, 'nav.settings')}
-            className={`grid h-8 w-8 flex-none place-items-center rounded-lg border border-bord ${
-              route.name === 'settings' ? 'bg-raised text-ink' : 'text-inkdim hover:border-inkdim hover:text-ink'
-            }`}
-          >
-            <GearIcon />
-          </button>
-        </div>
-      </nav>
-
-      <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
-        {route.name === 'cockpit' ? (
-          <CockpitScreen
-            store={cockpit}
+    <div className="flex h-dvh flex-col overflow-hidden bg-bg text-ink">
+      <TitleBar locale={locale} platform={navigator.platform} />
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
+        <nav
+          aria-label={t(locale, 'shell.nav')}
+          className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
+        >
+          <div className="flex h-[30px] flex-none items-center gap-2 rounded-md border border-bord bg-raised px-2.5 text-xs text-inkdim focus-within:border-signal">
+            <SearchIcon />
+            <input
+              ref={searchRef}
+              type="text"
+              aria-label={t(locale, 'shell.search.placeholder')}
+              placeholder={t(locale, 'shell.search.placeholder')}
+              className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-inkdim"
+            />
+            <span aria-hidden="true" className="flex-none font-mono text-[10.5px]">
+              {t(locale, 'shell.search.kbd')}
+            </span>
+          </div>
+  
+          <div className="mt-2.5 flex flex-none flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => setRoute({ name: 'cockpit' })}
+              className={navClass(route.name === 'cockpit')}
+              aria-current={route.name === 'cockpit' ? 'page' : undefined}
+            >
+              <span>{t(locale, 'nav.cockpit')}</span>
+              {badge !== null ? (
+                <span
+                  aria-label={t(locale, 'cockpit.section.attention')}
+                  className="inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border border-hairline px-1.5 font-mono text-[11px] text-inkdim"
+                >
+                  {badge.count}
+                </span>
+              ) : null}
+            </button>
+          </div>
+  
+          <SidebarTree
+            store={tree}
+            selection={selection}
             locale={locale}
-            onOpenWorkOrder={openWorkOrder}
             onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
-            onOpenBoard={(repo) => setRoute({ name: 'board', repo })}
-            accounts={accountsState.cards}
+            onOpenRepo={(_project, repo) => setRoute({ name: 'board', repo })}
           />
-        ) : null}
-        {route.name === 'board' ? (
-          <BoardScreen
-            store={board}
-            repo={route.repo}
+  
+          <SidebarAccounts
+            store={accounts}
             locale={locale}
-            onOpenWorkOrder={openWorkOrder}
-            roadmapProject={roadmapProjectOf(route.repo)}
-            onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
-            onOpenSettings={() => setRoute({ name: 'settings' })}
+            activeAccountId={route.name === 'account' ? route.id : null}
+            onOpenAccount={openAccount}
           />
-        ) : null}
-        {route.name === 'roadmap' ? (
-          <RoadmapScreen
-            store={roadmap}
-            project={route.project}
-            name={treeState.tree.find((item) => item.project === route.project)?.name ?? route.project}
-            locale={locale}
-            onOpenRepo={(repo) => setRoute({ name: 'board', repo })}
-            onOpenWorkOrder={openWorkOrder}
-          />
-        ) : null}
-        {route.name === 'account' ? (
-          <AccountViewScreen
-            store={accountView}
-            accountId={route.id}
-            locale={locale}
-            timeZone={timeZone}
-            onOpenWorkOrder={openWorkOrder}
-            onOpenSettings={() => setRoute({ name: 'settings' })}
-            onBack={() => setRoute(backRouteRef.current)}
-          />
-        ) : null}
-        {route.name === 'workOrder' ? (
-          <WorkOrderDetailScreen
-            store={detail}
-            workOrderId={route.id}
-            locale={locale}
-            backKey={backKindOf(backRouteRef.current)}
-            onBack={() => setRoute(backRouteRef.current)}
-          />
-        ) : null}
-        {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
-      </main>
+  
+          <div className="mt-2.5 flex flex-none items-center justify-end px-0.5">
+            <button
+              type="button"
+              onClick={() => setRoute({ name: 'settings' })}
+              aria-label={t(locale, 'nav.settings')}
+              title={t(locale, 'nav.settings')}
+              className={`grid h-8 w-8 flex-none place-items-center rounded-lg border border-bord ${
+                route.name === 'settings' ? 'bg-raised text-ink' : 'text-inkdim hover:border-inkdim hover:text-ink'
+              }`}
+            >
+              <GearIcon />
+            </button>
+          </div>
+        </nav>
+  
+        <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
+          {route.name === 'cockpit' ? (
+            <CockpitScreen
+              store={cockpit}
+              locale={locale}
+              onOpenWorkOrder={openWorkOrder}
+              onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
+              onOpenBoard={(repo) => setRoute({ name: 'board', repo })}
+              accounts={accountsState.cards}
+            />
+          ) : null}
+          {route.name === 'board' ? (
+            <BoardScreen
+              store={board}
+              repo={route.repo}
+              locale={locale}
+              onOpenWorkOrder={openWorkOrder}
+              roadmapProject={roadmapProjectOf(route.repo)}
+              onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
+              onOpenSettings={() => setRoute({ name: 'settings' })}
+            />
+          ) : null}
+          {route.name === 'roadmap' ? (
+            <RoadmapScreen
+              store={roadmap}
+              project={route.project}
+              name={treeState.tree.find((item) => item.project === route.project)?.name ?? route.project}
+              locale={locale}
+              onOpenRepo={(repo) => setRoute({ name: 'board', repo })}
+              onOpenWorkOrder={openWorkOrder}
+            />
+          ) : null}
+          {route.name === 'account' ? (
+            <AccountViewScreen
+              store={accountView}
+              accountId={route.id}
+              locale={locale}
+              timeZone={timeZone}
+              onOpenWorkOrder={openWorkOrder}
+              onOpenSettings={() => setRoute({ name: 'settings' })}
+              onBack={() => setRoute(backRouteRef.current)}
+            />
+          ) : null}
+          {route.name === 'workOrder' ? (
+            <WorkOrderDetailScreen
+              store={detail}
+              workOrderId={route.id}
+              locale={locale}
+              backKey={backKindOf(backRouteRef.current)}
+              onBack={() => setRoute(backRouteRef.current)}
+            />
+          ) : null}
+          {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
+        </main>
+      </div>
 
       <WizardScreen store={wizard} locale={locale} />
     </div>

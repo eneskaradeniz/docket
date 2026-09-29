@@ -15,11 +15,12 @@ export type TitleBarOptions = Pick<
   'titleBarStyle' | 'trafficLightPosition'
 >;
 
-/** The traffic lights are inset into the app bar's 92px gap on darwin: the native title strip is
- *  hidden and the buttons are placed at the bar's own padding. Anywhere else a non-default
- *  titleBarStyle would hide the native menu bar together with the title bar, so the default
- *  frame stays — the other platforms add nothing. */
+/** The traffic lights are inset into the shell's own 40px drag bar on darwin: the native title
+ *  strip is hidden, the buttons sit inside the lane the bar reserves at its left, and y 14
+ *  centres a 12px button on the bar's midline. Anywhere else a non-default titleBarStyle would
+ *  hide the native menu bar together with the title bar, so the default frame stays — the other
+ *  platforms add nothing. */
 export const titleBarOptionsFor = (platform: NodeJS.Platform): TitleBarOptions =>
   platform === 'darwin'
-    ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 16 } }
+    ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } }
     : {};
