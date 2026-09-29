@@ -4,7 +4,7 @@
 //
 // Each size × theme combination gets its own app launch on its own fresh seed: J-1 and J-3 change
 // what the seed holds (an answered ask, an approved gate), so a shared seed would make later
-// combinations start from a different world. `--quick` runs the default 1280x800 dark only.
+// combinations start from a different world. `--quick` runs the default 1152x720 dark only.
 //
 // Copy asserted here is the rev-8 prototype's Turkish, which the seed's world is built to match —
 // except the work-order codes: the prototype's sparse İE-nnnn exist nowhere as numbers, so the
@@ -21,7 +21,7 @@ mkdirSync(OUT, { recursive: true });
 await acquireE2eLock(ROOT);
 
 const quick = process.argv.includes('--quick');
-const combos = quick ? [[[1280, 800], 'dark']] : THEMES.flatMap((theme) => SIZES.map((size) => [size, theme]));
+const combos = quick ? [[[1152, 720], 'dark']] : THEMES.flatMap((theme) => SIZES.map((size) => [size, theme]));
 const WAIT = 4000; // a step that is going to pass does so in well under a second
 
 const failures = [];

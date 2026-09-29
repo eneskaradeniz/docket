@@ -51,7 +51,7 @@ console.log(`seed home: ${SEED.home}`);
 // Turkish is the app's default locale and the seed ran with a fresh profile, so every label the
 // walk asserts is the default bundle's copy.
 const L = {
-  cockpitNav: 'Kokpit',
+  home: 'Anasayfa',
   badge: 'Senden bekleyenler',
   awaiting: 'İnsan yanıtı bekleniyor',
   ask: 'İzin bekleniyor',
@@ -97,8 +97,13 @@ const query = (body) => page.evaluate((q) => window.docket.query(q), body);
 const command = (body) =>
   page.evaluate(([actor, c]) => window.docket.command(actor, c), [OPERATOR, body]);
 
-const badge = () => page.locator(`nav [aria-label="${L.badge}"]`);
-const navButton = (text) => page.locator('nav button').filter({ hasText: text });
+// The attention badge and the cockpit's door moved out of the sidebar: the badge rides the title
+// bar's Anasayfa button, and the cockpit is reached through that button.
+const badge = () => page.locator(`[aria-label="${L.badge}"]`);
+const homeButton = () => page.getByRole('button', { name: L.home });
+// The tree's repo row: the project row above it spells the workspace's display name
+// ('Duman çalışma alanı'), the repo row the bare slug 'duman' — hasNotText tells them apart.
+const repoRow = () => page.locator('nav button').filter({ hasText: 'duman', hasNotText: 'çalışma alanı' });
 
 const cockpitAttention = async () => {
   const view = await query({ type: 'cockpit' });
@@ -131,8 +136,8 @@ const spec = async (name, fn) => {
 // --- the walk ----------------------------------------------------------------------------------------
 
 await spec('shell renders with the seeded attention badge (1)', async () => {
-  await waitFor('the cockpit nav entry', () => present(navButton(L.cockpitNav)), 30_000);
-  await waitFor('the workspace switcher entry', () => present(navButton('duman')));
+  await waitFor('the title bar home button', () => present(homeButton()), 30_000);
+  await waitFor('the tree repo row', () => present(repoRow()));
   const count = await waitFor('the badge', async () => {
     if (!(await present(badge()))) return undefined;
     return (await badge().textContent())?.trim();
@@ -148,7 +153,7 @@ await spec('cockpit lists the seeded work order as awaiting a human', async () =
 });
 
 await spec('board renders the columns of the seeded definitions', async () => {
-  await navButton('duman').click();
+  await repoRow().click();
   await waitFor('the board heading', () => present(page.locator('main h1').filter({ hasText: 'duman' })));
   const flow = await page.locator('main header p').textContent();
   assert.ok(flow?.includes('duman-akisi'), `board header missing the flow: ${flow}`);
@@ -204,7 +209,7 @@ await spec('the scripted transport run opens a real permission ask', async () =>
   // Dispatcher cadence (a tick every 5 s) plus the first transport factory build and the ACP
   // handshake set the pace; the budget covers all of it with wide margin.
   await waitFor('the permission ask in attention', () => attentionKind('permission_ask'), 45_000);
-  await navButton(L.cockpitNav).click();
+  await homeButton().click();
   const card = page.locator('main button').filter({ hasText: TITLE }).filter({ hasText: L.ask });
   await waitFor('the ask card', () => present(card));
   await waitFor('the badge to read 1', async () => {
@@ -257,7 +262,7 @@ await spec('the badge clears to absence and the work order is done', async () =>
   await waitFor('the succeeded run badge', () =>
     present(page.locator('main li').filter({ hasText: L.succeededRun })),
   );
-  await navButton(L.cockpitNav).click();
+  await homeButton().click();
   await waitFor('the empty attention copy', () => present(page.getByText(L.attentionEmpty, { exact: true })));
   // The badge renders nothing at zero — absence is the cleared state, never a printed 0.
   await waitFor('the badge to vanish', async () => ((await present(badge())) ? undefined : true), 15_000);
