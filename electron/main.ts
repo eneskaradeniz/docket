@@ -36,7 +36,7 @@ import {
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
-import { titleBarOptionsFor } from './window-options';
+import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, titleBarOptionsFor } from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -273,8 +273,8 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 760,
-    minHeight: 480,
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
     // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere
     // else this spreads nothing and the default frame applies.
     ...titleBarOptionsFor(process.platform),
