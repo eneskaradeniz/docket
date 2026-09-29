@@ -19,8 +19,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import assert from 'node:assert';
-import type { AccountId, Actor, RoleSlug, RepoSlug } from '../src/domain/index';
+import type { AccountId, Actor, ProjectSlug, RoleSlug, RepoSlug } from '../src/domain/index';
 import { deriveWorkOrderState } from '../src/domain/index';
+import { attachProject } from '../src/application/use-cases/projects';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
 
@@ -31,6 +32,9 @@ if (process.platform === 'win32') {
 }
 
 const REPO = 'duman' as RepoSlug;
+// Project ≡ repo: the project.yaml names the same slug as its main repo, the shape the walk's
+// single-repo tree can carry.
+const PROJECT = 'duman' as ProjectSlug;
 const ROLE = 'isci' as RoleSlug;
 const WORK_ORDER_TITLE = 'Duman testi iş emri';
 // 'HESAP' (account) stays inside the ULID alphabet; the repeat keeps the id at exactly 26 chars.
@@ -69,11 +73,24 @@ const defs = join(repo, '.docket');
 mkdirSync(join(defs, 'roles'), { recursive: true });
 mkdirSync(join(defs, 'flows'), { recursive: true });
 
+// The project layer above the repo: without it no work order can open (the project is the
+// membership authority between the work order and its repo).
+writeFileSync(
+  join(defs, 'project.yaml'),
+  [
+    'id: duman',
+    'name: Duman projesi',
+    'mainRepo: duman',
+    'repos: [duman]',
+    '',
+  ].join('\n'),
+);
+
 // The flow the whole walk rides on: a human-only review stage (its pending gate is what surfaces
 // the work order in the cockpit at boot, before any run exists), then a runnable stage whose run
 // is the one that asks.
 writeFileSync(
-  join(defs, 'workspace.yaml'),
+  join(defs, 'repo.yaml'),
   [
     'id: duman',
     'name: Duman çalışma alanı',
@@ -140,7 +157,10 @@ const node = createNodeDeps({
 assert(node.ok, `seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
 
-await node.value.repos.register(REPO, repo);
+// Attach the way the app does — the use case persists the project def, registers the main repo
+// and writes the audit entry — so the rows match a real attach, not a hand-made mirror.
+const attached = await attachProject(deps, { path: repo, actor: OPERATOR });
+assert(attached.ok, `seed could not attach the project: ${attached.error}`);
 
 // The account names the provider whose CLI definition the smoke impersonates: an ACP transport
 // with an env-var config mechanism and no auth probe, so a scripted binary is enough.
@@ -156,7 +176,7 @@ await deps.bindings.save({ level: 'global' }, { role: ROLE, accounts: [{ account
 
 const opened = await openWorkOrder(
   deps,
-  { repo: REPO, title: WORK_ORDER_TITLE, actor: OPERATOR },
+  { project: PROJECT, repo: REPO, title: WORK_ORDER_TITLE, actor: OPERATOR },
 );
 assert(opened.ok, `seed could not open the work order: ${opened.error}`);
 const workOrderId = opened.value;
