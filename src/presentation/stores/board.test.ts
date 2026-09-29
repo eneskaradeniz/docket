@@ -1,6 +1,6 @@
 // board.test.ts — U-3: the board store mirrors BoardView (columns in stage order, done as its
-// own lane), shows the workspace-problem state on a failed query instead of an empty board,
-// validates the create intent before issuing workOrder.open, and re-queries the loaded workspace
+// own lane), shows the repo-problem state on a failed query instead of an empty board,
+// validates the create intent before issuing workOrder.open, and re-queries the loaded repo
 // on workOrders.changed. Api and change signal are injected fakes; the events wiring lands with U-12.
 import { describe, expect, it } from 'vitest';
 
@@ -13,7 +13,7 @@ import { createBoardStore, type BoardChange, type BoardChangeSignal } from './bo
 const userActor: Actor = { kind: 'user', id: 'user-1' };
 
 const boardView: BoardView = {
-  workspace: 'atolye',
+  repo: 'atolye',
   flow: 'bakim',
   // Deliberately not in slug order: the store mirrors the api's stage order untouched.
   columns: [
@@ -93,7 +93,7 @@ describe('board store', () => {
 
     await store.load('atolye');
 
-    expect(api.queries).toEqual([{ type: 'workspace.board', workspace: 'atolye' }]);
+    expect(api.queries).toEqual([{ type: 'repo.board', repo: 'atolye' }]);
     const state = store.state();
     expect(state.loading).toBe(false);
     expect(state.problem).toBeNull();
@@ -102,7 +102,7 @@ describe('board store', () => {
     expect(state.view?.done).toEqual([{ id: 'wo-1', title: 'Paper marbling' }]);
   });
 
-  it('U-3: a definitions_invalid reply shows the workspace-problem state, not an empty board', async () => {
+  it('U-3: a definitions_invalid reply shows the repo-problem state, not an empty board', async () => {
     const api = fakeBoardApi({ ok: false, code: 'definitions_invalid' });
     const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor });
 
@@ -120,27 +120,27 @@ describe('board store', () => {
     await store.load('atolye');
 
     // No title — nothing is issued.
-    const noTitle = await store.create({ workspace: 'atolye', title: '   ', flow: 'bakim' });
+    const noTitle = await store.create({ repo: 'atolye', title: '   ', flow: 'bakim' });
     expect(noTitle).toEqual({ ok: false, validation: 'title_required' });
     expect(api.commands.length).toBe(0);
 
     // No flow choice — nothing is issued.
-    const noFlow = await store.create({ workspace: 'atolye', title: 'Oil change', flow: '  ' });
+    const noFlow = await store.create({ repo: 'atolye', title: 'Oil change', flow: '  ' });
     expect(noFlow).toEqual({ ok: false, validation: 'flow_required' });
     expect(api.commands.length).toBe(0);
 
-    // Valid — the command carries the actor, the workspace, the trimmed title and the chosen flow.
-    const opened = await store.create({ workspace: 'atolye', title: '  Oil change  ', flow: 'bakim' });
+    // Valid — the command carries the actor, the repo, the trimmed title and the chosen flow.
+    const opened = await store.create({ repo: 'atolye', title: '  Oil change  ', flow: 'bakim' });
     expect(opened).toEqual({ ok: true, id: 'wo-new' });
     expect(api.commands).toEqual([
       {
         actor: userActor,
-        command: { type: 'workOrder.open', workspace: 'atolye', title: 'Oil change', flow: 'bakim' },
+        command: { type: 'workOrder.open', repo: 'atolye', title: 'Oil change', flow: 'bakim' },
       },
     ]);
-    // The board mirrors its own mutation: a successful create re-queries the workspace.
+    // The board mirrors its own mutation: a successful create re-queries the repo.
     expect(api.queries.length).toBe(2);
-    expect(api.queries[1]).toEqual({ type: 'workspace.board', workspace: 'atolye' });
+    expect(api.queries[1]).toEqual({ type: 'repo.board', repo: 'atolye' });
   });
 
   it('U-3: a rejected workOrder.open surfaces the api code and leaves the board untouched', async () => {
@@ -148,7 +148,7 @@ describe('board store', () => {
     const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor });
     await store.load('atolye');
 
-    const outcome = await store.create({ workspace: 'atolye', title: 'Oil change', flow: 'yok' });
+    const outcome = await store.create({ repo: 'atolye', title: 'Oil change', flow: 'yok' });
 
     expect(outcome).toEqual({ ok: false, code: 'unknown_flow' });
     const state = store.state();
@@ -158,12 +158,12 @@ describe('board store', () => {
     expect(api.queries.length).toBe(1);
   });
 
-  it('U-3: workOrders.changed re-queries the loaded workspace; run.updated does not', async () => {
+  it('U-3: workOrders.changed re-queries the loaded repo; run.updated does not', async () => {
     const api = fakeBoardApi(boardView);
     const emitter = fakeSignal();
     const store = createBoardStore({ api, changes: emitter.signal, actor: userActor });
 
-    // A change before any load has no workspace to re-query.
+    // A change before any load has no repo to re-query.
     emitter.emit({ type: 'workOrders.changed' });
     await flush();
     expect(api.queries.length).toBe(0);
@@ -172,7 +172,7 @@ describe('board store', () => {
     emitter.emit({ type: 'workOrders.changed' });
     await flush();
     expect(api.queries.length).toBe(2);
-    expect(api.queries[1]).toEqual({ type: 'workspace.board', workspace: 'atolye' });
+    expect(api.queries[1]).toEqual({ type: 'repo.board', repo: 'atolye' });
 
     // Run events do not move cards; only the cockpit listens to them.
     emitter.emit({ type: 'run.updated', runId: 'run-1' });

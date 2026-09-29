@@ -50,7 +50,7 @@ export interface WorkOrderDetailStoreDeps {
  *  the projection of the application's view the presentation is allowed to see). */
 export interface WorkOrderDetailRecord {
   readonly id: string;
-  readonly workspace: string;
+  readonly repo: string;
   readonly flow: string;
   readonly title: string;
 }
@@ -68,7 +68,7 @@ export interface WorkOrderDetailView {
   readonly state: WorkOrderState;
   readonly next: FlowAction;
   readonly runs: readonly WorkOrderDetailRun[];
-  /** The work order own flow and the workspace environments, carried by the detail query — the
+  /** The work order own flow and the repo environments, carried by the detail query — the
    *  store needs no definitions loader of its own. */
   readonly flow: FlowDef;
   readonly environments: readonly EnvironmentDef[];
@@ -89,7 +89,7 @@ export interface WorkOrderAskView {
 export type GateStatus = 'pending' | 'passed' | 'upcoming';
 
 /** Deploy-gate facts (U-4): the target environment, its protection, and the promoteFrom chain —
- *  read-only, from the workspace definitions (E-5). */
+ *  read-only, from the repo definitions (E-5). */
 export interface DeployGateView {
   readonly environment: EnvSlug;
   readonly protectedEnvironment: boolean;

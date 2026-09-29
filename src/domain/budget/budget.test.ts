@@ -95,7 +95,7 @@ describe('combinedSpendStatus', () => {
 
   it('R-32: hard_stop wins regardless of input position', () => {
     const spends = [
-      spend('workspace_month', 1),
+      spend('repo_month', 1),
       spend('account_day', 12, cap(10)),
       spend('work_order', 1),
     ];
@@ -105,7 +105,7 @@ describe('combinedSpendStatus', () => {
   it('R-32: a warn tie keeps the first scope in input order', () => {
     const spends = [
       spend('account_day', 8, cap(10, 80)),
-      spend('workspace_month', 4, cap(5, 80)),
+      spend('repo_month', 4, cap(5, 80)),
     ];
     expect(combinedSpendStatus(spends)).toEqual({ status: 'warn', scope: 'account_day' });
   });

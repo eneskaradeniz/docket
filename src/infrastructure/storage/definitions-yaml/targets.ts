@@ -8,7 +8,7 @@ export type DefinitionKind = 'roles' | 'flows' | 'capabilities';
 
 export type ParsedTarget =
   | { readonly kind: DefinitionKind; readonly id: string }
-  | { readonly kind: 'workspace' }
+  | { readonly kind: 'repo' }
   | { readonly kind: 'roadmap' };
 
 const KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities'];
@@ -29,9 +29,9 @@ export function parseTarget(scope: DefinitionScope, target: string): ParsedTarge
   if (target.includes('\\')) return undefined;
 
   if ((WORKSPACE_ONLY_FILES as readonly string[]).includes(target)) {
-    return scope.kind === 'workspace'
+    return scope.kind === 'repo'
       ? target === 'workspace.yaml'
-        ? { kind: 'workspace' }
+        ? { kind: 'repo' }
         : { kind: 'roadmap' }
       : undefined;
   }

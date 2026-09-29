@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AccountRecord } from '../account-repo';
-import { parseUlid, type AccountId, type Meter, type MeterId, type Pool, type PoolId, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseUlid, type AccountId, type Meter, type MeterId, type Pool, type PoolId, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 
@@ -28,8 +28,8 @@ const woIdOf = (s: string): WorkOrderId => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
-const OTHER_WS = 'other' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
+const OTHER_REPO = 'other' as RepoSlug;
 
 const account = (id: string, label: string): AccountRecord => ({
   id: idOf(id),
@@ -112,19 +112,19 @@ describe('createFakeAccountRepo', () => {
     expect(await repo.meters(idOf(U2))).toHaveLength(1);
   });
 
-  it('spend sums entries filtered by account, workspace and work order over an inclusive range', async () => {
+  it('spend sums entries filtered by account, repo and work order over an inclusive range', async () => {
     const repo = createFakeAccountRepo();
     const wo1 = woIdOf(U1);
     const wo2 = woIdOf(U2);
-    await repo.recordSpend({ accountId: idOf(U1), workspace: WS, workOrderId: wo1, at: 10, usd: 1 });
-    await repo.recordSpend({ accountId: idOf(U1), workspace: WS, workOrderId: wo1, at: 20, usd: 2 });
-    await repo.recordSpend({ accountId: idOf(U1), workspace: OTHER_WS, workOrderId: wo2, at: 30, usd: 4 });
-    await repo.recordSpend({ accountId: idOf(U2), workspace: WS, workOrderId: wo1, at: 40, usd: 8 });
+    await repo.recordSpend({ accountId: idOf(U1), repo: REPO, workOrderId: wo1, at: 10, usd: 1 });
+    await repo.recordSpend({ accountId: idOf(U1), repo: REPO, workOrderId: wo1, at: 20, usd: 2 });
+    await repo.recordSpend({ accountId: idOf(U1), repo: OTHER_REPO, workOrderId: wo2, at: 30, usd: 4 });
+    await repo.recordSpend({ accountId: idOf(U2), repo: REPO, workOrderId: wo1, at: 40, usd: 8 });
 
     expect(await repo.spend({ from: 0, to: 100 })).toBe(15);
     expect(await repo.spend({ from: 20, to: 30 })).toBe(6);
     expect(await repo.spend({ accountId: idOf(U1), from: 0, to: 100 })).toBe(7);
-    expect(await repo.spend({ workspace: OTHER_WS, from: 0, to: 100 })).toBe(4);
+    expect(await repo.spend({ repo: OTHER_REPO, from: 0, to: 100 })).toBe(4);
     expect(await repo.spend({ workOrderId: wo1, from: 0, to: 100 })).toBe(11);
     expect(await repo.spend({ from: 100, to: 200 })).toBe(0);
   });
@@ -134,7 +134,7 @@ describe('createFakeAccountRepo', () => {
     await repo.save(account(U1, 'first'));
     await repo.savePools(idOf(U1), [pool(U3, U1)]);
     await repo.saveMeter(meter(U4, U3));
-    await repo.recordSpend({ accountId: idOf(U1), workspace: WS, workOrderId: woIdOf(U2), at: 1, usd: 3 });
+    await repo.recordSpend({ accountId: idOf(U1), repo: REPO, workOrderId: woIdOf(U2), at: 1, usd: 3 });
 
     await repo.remove(idOf(U1));
 

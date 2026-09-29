@@ -1,11 +1,11 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
 import type { SpendCap } from '../budget';
-import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, WorkspaceSlug } from '../shared';
+import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug } from '../shared';
 
 export type WriteScope =
   | { readonly kind: 'none' } // read-only role
-  | { readonly kind: 'docs' } // the workspace docs root only
-  | { readonly kind: 'tests' } // test folders only (globs from workspace)
+  | { readonly kind: 'docs' } // the repo docs root only
+  | { readonly kind: 'tests' } // test folders only (globs from repo)
   | { readonly kind: 'repo' } // the work order's worktree
   | { readonly kind: 'paths'; readonly globs: readonly string[] };
 
@@ -63,6 +63,8 @@ export interface RepoRef {
   readonly remote: string;
   readonly defaultBranch: string;
 }
+// RepoRef is no longer declared in YAML: adapters build it from the repo checkout (git remote,
+// default branch) when a forge or remote-checks operation needs it.
 
 /** <main-repo>/.docket/project.yaml — the project layer above repos (S1). */
 export interface ProjectDef {
@@ -84,10 +86,10 @@ export interface EnvironmentDef {
   readonly promoteFrom?: EnvSlug; // same commit must have a successful deploy there first
 }
 
-export interface WorkspaceDef {
-  readonly id: WorkspaceSlug;
+/** <repo>/.docket/workspace.yaml — one repository's configuration. */
+export interface RepoDef {
+  readonly id: RepoSlug;
   readonly name: string;
-  readonly repos: readonly RepoRef[];
   readonly flows: readonly FlowSlug[]; // enabled flows
   readonly defaultFlow: FlowSlug;
   readonly commandSets: Readonly<Record<string, readonly string[]>>; // name → shell commands, run in order
@@ -95,6 +97,7 @@ export interface WorkspaceDef {
   readonly docsRoot: string; // default "docs"
   readonly testGlobs: readonly string[]; // used by WriteScope 'tests'
   readonly environments?: readonly EnvironmentDef[]; // default []
+  readonly budget?: SpendCap; // repo spend limit (S5)
 }
 
 export type RoleOverride = { readonly id: RoleSlug } & Partial<Omit<RoleDef, 'id'>>;
@@ -104,5 +107,5 @@ export interface Definitions {
   readonly flows: readonly FlowDef[];
   readonly capabilities: readonly CapabilityDef[];
   readonly project?: ProjectDef; // present in the project scope
-  readonly workspace?: WorkspaceDef;
+  readonly repo?: RepoDef;
 }

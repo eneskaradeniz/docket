@@ -1,8 +1,8 @@
 // wizard.test.ts — U-7: the first-run wizard store walks source → account → binding → done,
 // gates `next` on each step's validation (source reachable / chosen provider discovered and
 // logged in / at least one bound role), preserves entered state across `back`, and dismisses on
-// finishing — reappearing on open only while no workspace exists. The api, the source probe and
-// the workspace observation are injected fakes; both observations sit below today's api surface
+// finishing — reappearing on open only while no repo exists. The api, the source probe and
+// the repo observation are injected fakes; both observations sit below today's api surface
 // and land with the screens wiring (the work-order detail store's injected-definitions stance).
 import { describe, expect, it } from 'vitest';
 
@@ -69,34 +69,34 @@ const fakeWizardApi = (discoveryReply: unknown = []): FakeWizardApi => {
 
 interface FakeProbes {
   readonly probed: readonly string[];
-  readonly workspaceChecks: number[];
+  readonly repoChecks: number[];
   readonly sourceReachable: (source: string) => Promise<boolean>;
-  readonly workspaceExists: () => Promise<boolean>;
+  readonly repoExists: () => Promise<boolean>;
   setSourceOk(ok: boolean): void;
-  setWorkspaceExists(exists: boolean): void;
+  setRepoExists(exists: boolean): void;
 }
 
 /** Both below-api observations are scripted and counted so tests can assert they were consulted. */
-const fakeProbes = (sourceOk: boolean, workspaceExists: boolean): FakeProbes => {
+const fakeProbes = (sourceOk: boolean, repoExists: boolean): FakeProbes => {
   const probed: string[] = [];
-  const workspaceChecks: number[] = [];
+  const repoChecks: number[] = [];
   let reachable = sourceOk;
-  let exists = workspaceExists;
+  let exists = repoExists;
   return {
     probed,
-    workspaceChecks,
+    repoChecks,
     setSourceOk: (ok) => {
       reachable = ok;
     },
-    setWorkspaceExists: (next) => {
+    setRepoExists: (next) => {
       exists = next;
     },
     sourceReachable: (source: string) => {
       probed.push(source);
       return Promise.resolve(reachable);
     },
-    workspaceExists: () => {
-      workspaceChecks.push(workspaceChecks.length);
+    repoExists: () => {
+      repoChecks.push(repoChecks.length);
       return Promise.resolve(exists);
     },
   };
@@ -115,7 +115,7 @@ const setup = (discoveryReply: unknown = [alphaReady]): Setup => {
     api,
     actor: userActor,
     sourceReachable: probes.sourceReachable,
-    workspaceExists: probes.workspaceExists,
+    repoExists: probes.repoExists,
   });
   return { api, probes, store };
 };
@@ -136,12 +136,12 @@ const toBinding = async (bundle: Setup): Promise<void> => {
 };
 
 describe('wizard store', () => {
-  it('U-7: open with no workspace runs the wizard; the machine walks source → account → binding → done as each step validates', async () => {
+  it('U-7: open with no repo runs the wizard; the machine walks source → account → binding → done as each step validates', async () => {
     const bundle = setup();
     expect(bundle.store.state()).toMatchObject({ visible: false, step: 'source' });
 
     await bundle.store.open();
-    expect(bundle.probes.workspaceChecks.length).toBe(1);
+    expect(bundle.probes.repoChecks.length).toBe(1);
     expect(bundle.store.state()).toMatchObject({ visible: true, step: 'source' });
 
     bundle.store.enterSource('/repos/atolye');
@@ -371,17 +371,17 @@ describe('wizard store', () => {
     });
   });
 
-  it('U-7: finishing dismisses the wizard; it does not reappear while a workspace exists (re-check on open)', async () => {
+  it('U-7: finishing dismisses the wizard; it does not reappear while a repo exists (re-check on open)', async () => {
     const bundle = setup();
     await toBinding(bundle);
     await bundle.store.bind('coder');
     await bundle.store.next();
     expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
 
-    // The re-check on open consults the observation again — a workspace means no re-run.
-    bundle.probes.setWorkspaceExists(true);
+    // The re-check on open consults the observation again — a repo means no re-run.
+    bundle.probes.setRepoExists(true);
     await bundle.store.open();
-    expect(bundle.probes.workspaceChecks.length).toBe(2);
+    expect(bundle.probes.repoChecks.length).toBe(2);
     expect(bundle.store.state()).toMatchObject({ step: 'done', visible: false });
 
     // A dismissed wizard has no intents: next and back change nothing.
@@ -391,7 +391,7 @@ describe('wizard store', () => {
     expect(bundle.api.commands.length).toBe(2);
   });
 
-  it('U-7: re-open without a workspace runs the wizard again from the source step', async () => {
+  it('U-7: re-open without a repo runs the wizard again from the source step', async () => {
     const bundle = setup();
     await toBinding(bundle);
     await bundle.store.bind('coder');

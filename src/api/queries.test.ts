@@ -1,4 +1,4 @@
-// api/queries.test.ts — the read models behind createApi: the cockpit (A-22) and the workspace
+// api/queries.test.ts — the read models behind createApi: the cockpit (A-22) and the repo
 // board (A-23), plus the workOrder.detail pass-through. Scenarios are seeded straight into the
 // fakes; only the query under test goes through the api.
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,7 @@ import type {
   Ulid,
   WorkOrderEvent,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../domain/index';
 import { parseSlug, parseUlid } from '../domain/index';
 
@@ -25,8 +25,8 @@ import type { FakeDefinitionStore } from '../application/ports/fakes';
 import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
 
 import { createApi } from './api';
-import type { WorkspaceRegistryPort } from './api';
-import type { BoardView, CockpitView, OpenAskView, SettingsAccountsView, WorkspaceListItem } from './queries';
+import type { RepoRegistryPort } from './api';
+import type { BoardView, CockpitView, OpenAskView, SettingsAccountsView, RepoListItem } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -43,8 +43,8 @@ function ulidOf<B extends string>(input: string): Ulid<B> {
 
 const ACTOR: Actor = { kind: 'user', id: 'u-1' };
 
-const WORKSPACE = slugOf<'workspace'>('acme');
-const BROKEN_WORKSPACE = slugOf<'workspace'>('bozuk');
+const REPO = slugOf<'repo'>('acme');
+const BROKEN_REPO = slugOf<'repo'>('bozuk');
 const ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAZ');
 
 const PLAN = slugOf<'stage'>('plan');
@@ -99,7 +99,7 @@ const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
   flows: FLOWS_JSON,
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'acme',
     name: 'Acme',
     repos: [],
@@ -114,16 +114,16 @@ const DEFINITIONS_JSON = JSON.stringify({
 
 interface Harness {
   readonly deps: AppDeps;
-  /** The fake behind `deps.definitions`, exposed for tests that seed a workspace of their own. */
+  /** The fake behind `deps.definitions`, exposed for tests that seed a repo of their own. */
   readonly definitions: FakeDefinitionStore;
 }
 
 const createHarness = (): Harness => {
   const definitions = createFakeDefinitionStore();
-  definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', DEFINITIONS_JSON);
-  // A second workspace whose definitions no longer parse: its work orders must not break the
+  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', DEFINITIONS_JSON);
+  // A second repo whose definitions no longer parse: its work orders must not break the
   // cockpit, they simply cannot be classified.
-  definitions.seed({ kind: 'workspace', workspace: BROKEN_WORKSPACE }, 'defs.json', '{not json');
+  definitions.seed({ kind: 'repo', repo: BROKEN_REPO }, 'defs.json', '{not json');
   return { deps: createFakeDeps({ definitions }), definitions };
 };
 
@@ -133,9 +133,9 @@ const seedWorkOrder = async (
   flow: FlowSlug,
   title: string,
   createdAt: number,
-  workspace: WorkspaceSlug = WORKSPACE,
+  repo: RepoSlug = REPO,
 ): Promise<void> => {
-  await h.deps.workOrders.create({ id, workspace, flow, title, createdAt, createdBy: ACTOR });
+  await h.deps.workOrders.create({ id, repo, flow, title, createdAt, createdBy: ACTOR });
   await h.deps.workOrders.appendEvent(id, { type: 'created', at: createdAt, by: ACTOR, flow });
 };
 
@@ -244,7 +244,7 @@ const seedCockpitScenario = async (h: Harness): Promise<Harness> => {
   await seedWorkOrder(h, WO_BLOCKED, BOARD_FLOW, 'Explicitly blocked', 9_700);
   await seedEvents(h, WO_BLOCKED, [{ type: 'blocked', at: 9_900, by: ACTOR, reason: 'waiting on upstream' }]);
 
-  await seedWorkOrder(h, WO_BROKEN, BOARD_FLOW, 'Underivable state', 50, BROKEN_WORKSPACE);
+  await seedWorkOrder(h, WO_BROKEN, BOARD_FLOW, 'Underivable state', 50, BROKEN_REPO);
   return h;
 };
 
@@ -306,7 +306,7 @@ const seedBoardScenario = async (h: Harness): Promise<Harness> => {
 
 // --- the detail scenario: a flow with a deploy gate over a protected environment chain -------------
 
-const RELEASE_WORKSPACE = slugOf<'workspace'>('release');
+const RELEASE_REPO = slugOf<'repo'>('release');
 const RELEASE_FLOW = slugOf<'flow'>('release-flow');
 const WO_RELEASE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB6');
 
@@ -331,7 +331,7 @@ const RELEASE_DEFINITIONS_JSON = JSON.stringify({
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'release',
     name: 'Release',
     repos: [],
@@ -365,7 +365,7 @@ describe('cockpit', () => {
     ]);
     expect(view.attention[0]).toEqual({
       workOrderId: WO_ASK,
-      workspace: 'acme',
+      repo: 'acme',
       title: 'Waiting on a permission',
       kind: 'permission_ask',
       stage: 'plan',
@@ -386,7 +386,7 @@ describe('cockpit', () => {
     const h = await seedCockpitScenario(createHarness());
     const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
 
-    // ready, running, done, an answered ask and an underivable workspace all stay out of attention.
+    // ready, running, done, an answered ask and an underivable repo all stay out of attention.
     const listed = view.attention.map((item) => item.workOrderId);
     expect(listed).not.toContain(WO_READY);
     expect(listed).not.toContain(WO_RUNNING);
@@ -402,12 +402,12 @@ describe('cockpit', () => {
   });
 });
 
-describe('workspace.board', () => {
-  it('A-23: has one column per stage of the workspace default flow, in flow order', async () => {
+describe('repo.board', () => {
+  it('A-23: has one column per stage of the repo default flow, in flow order', async () => {
     const h = await seedBoardScenario(createHarness());
-    const view = (await createApi(h.deps).query({ type: 'workspace.board', workspace: 'acme' })) as BoardView;
+    const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
 
-    expect(view.workspace).toBe('acme');
+    expect(view.repo).toBe('acme');
     expect(view.flow).toBe('board-flow');
     expect(view.columns.map((column) => [column.stage, column.name])).toEqual([
       ['plan', 'Plan'],
@@ -418,7 +418,7 @@ describe('workspace.board', () => {
 
   it('A-23: each work order sits in the column of its current stage and done work orders go to done', async () => {
     const h = await seedBoardScenario(createHarness());
-    const view = (await createApi(h.deps).query({ type: 'workspace.board', workspace: 'acme' })) as BoardView;
+    const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
 
     expect(view.columns[0]?.workOrders).toEqual([{ id: WO_B_PLAN, title: 'Board plan', status: 'awaiting_human' }]);
     expect(view.columns[1]?.workOrders).toEqual([
@@ -437,18 +437,18 @@ describe('workspace.board', () => {
     expect(shown).not.toContain(WO_B_SOLO);
   });
 
-  it('returns invalid_id for a workspace that is not a slug', async () => {
+  it('returns invalid_id for a repo that is not a slug', async () => {
     const h = createHarness();
 
-    const result = await createApi(h.deps).query({ type: 'workspace.board', workspace: 'Acme' });
+    const result = await createApi(h.deps).query({ type: 'repo.board', repo: 'Acme' });
 
     expect(result).toEqual({ ok: false, code: 'invalid_id' });
   });
 
-  it('returns definitions_invalid when the workspace has no loadable definitions', async () => {
+  it('returns definitions_invalid when the repo has no loadable definitions', async () => {
     const h = createHarness();
 
-    const result = await createApi(h.deps).query({ type: 'workspace.board', workspace: 'lonely' });
+    const result = await createApi(h.deps).query({ type: 'repo.board', repo: 'lonely' });
 
     expect(result).toEqual({ ok: false, code: 'definitions_invalid' });
   });
@@ -461,20 +461,20 @@ describe('workOrder.detail', () => {
     const result = await createApi(h.deps).query({ type: 'workOrder.detail', id: WO_AWAIT_EARLY });
 
     expect(result).toMatchObject({
-      record: { id: WO_AWAIT_EARLY, workspace: 'acme', flow: 'board-flow', title: 'Waiting early' },
+      record: { id: WO_AWAIT_EARLY, repo: 'acme', flow: 'board-flow', title: 'Waiting early' },
       state: { status: 'awaiting_human', stage: 'plan', attempt: 1, pendingGates: ['plan-approval'] },
       next: { kind: 'await_human', stage: 'plan', gates: ['plan-approval'] },
       runs: [],
       flow: { id: 'board-flow' },
-      // The acme workspace section carries no environments, so the list is empty, not absent.
+      // The acme repo section carries no environments, so the list is empty, not absent.
       environments: [],
     });
   });
 
-  it('carries the work order own flow definition and the workspace environments, protection included', async () => {
+  it('carries the work order own flow definition and the repo environments, protection included', async () => {
     const h = createHarness();
-    h.definitions.seed({ kind: 'workspace', workspace: RELEASE_WORKSPACE }, 'defs.json', RELEASE_DEFINITIONS_JSON);
-    await seedWorkOrder(h, WO_RELEASE, RELEASE_FLOW, 'Ship it', 100, RELEASE_WORKSPACE);
+    h.definitions.seed({ kind: 'repo', repo: RELEASE_REPO }, 'defs.json', RELEASE_DEFINITIONS_JSON);
+    await seedWorkOrder(h, WO_RELEASE, RELEASE_FLOW, 'Ship it', 100, RELEASE_REPO);
 
     const result = await createApi(h.deps).query({ type: 'workOrder.detail', id: WO_RELEASE });
 
@@ -584,7 +584,7 @@ const seedSettingsScenario = async (h: Harness): Promise<void> => {
     { role: slugOf<'role'>('worker'), accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
   );
   await h.deps.bindings.save(
-    { level: 'workspace', workspace: WORKSPACE },
+    { level: 'repo', repo: REPO },
     { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT_OTHER }, { accountId: ACCOUNT }] },
   );
   await h.deps.bindings.save(
@@ -656,7 +656,7 @@ describe('settings.accounts', () => {
     expect(view.bindings).toEqual([
       { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
       {
-        scope: { level: 'workspace', workspace: WORKSPACE },
+        scope: { level: 'repo', repo: REPO },
         role: 'reviewer',
         accounts: [
           { accountId: ACCOUNT_OTHER, model: null },
@@ -759,27 +759,27 @@ describe('providers.discovered', () => {
   });
 });
 
-// --- workspaces.list ----------------------------------------------------------------------------------
+// --- repos.list ----------------------------------------------------------------------------------
 
 /** The registry's read side as the tests drive it: rows in slug order, exactly the machine
  *  registry's reply. */
 const createFakeRegistry = (
-  rows: readonly { readonly slug: WorkspaceSlug; readonly path: string }[],
-): WorkspaceRegistryPort => ({
+  rows: readonly { readonly slug: RepoSlug; readonly path: string }[],
+): RepoRegistryPort => ({
   list: async () => rows,
 });
 
-describe('workspaces.list', () => {
-  it('lists every workspace the machine knows, read straight off the registry', async () => {
+describe('repos.list', () => {
+  it('lists every repo the machine knows, read straight off the registry', async () => {
     const h = createHarness();
     const registry = createFakeRegistry([
-      { slug: WORKSPACE, path: '/repos/acme' },
-      { slug: BROKEN_WORKSPACE, path: '/repos/bozuk' },
+      { slug: REPO, path: '/repos/acme' },
+      { slug: BROKEN_REPO, path: '/repos/bozuk' },
     ]);
 
     const view = (await createApi(h.deps, undefined, undefined, registry).query({
-      type: 'workspaces.list',
-    })) as WorkspaceListItem[];
+      type: 'repos.list',
+    })) as RepoListItem[];
 
     expect(view).toEqual([
       { id: 'acme', path: '/repos/acme' },
@@ -787,12 +787,12 @@ describe('workspaces.list', () => {
     ]);
   });
 
-  it('returns an empty list when the machine knows no workspace', async () => {
+  it('returns an empty list when the machine knows no repo', async () => {
     const h = createHarness();
 
     const view = (await createApi(h.deps, undefined, undefined, createFakeRegistry([])).query({
-      type: 'workspaces.list',
-    })) as WorkspaceListItem[];
+      type: 'repos.list',
+    })) as RepoListItem[];
 
     expect(view).toEqual([]);
   });
@@ -800,7 +800,7 @@ describe('workspaces.list', () => {
   it('reports not_found without a registry port instead of throwing', async () => {
     const h = createHarness();
 
-    expect(await createApi(h.deps).query({ type: 'workspaces.list' })).toEqual({ ok: false, code: 'not_found' });
+    expect(await createApi(h.deps).query({ type: 'repos.list' })).toEqual({ ok: false, code: 'not_found' });
   });
 });
 

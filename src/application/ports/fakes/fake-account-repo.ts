@@ -7,14 +7,14 @@ import type {
   Pool,
   PoolId,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../../domain/index';
 
 import type { AccountRecord, AccountRepo } from '../account-repo';
 
 interface SpendEntry {
   readonly accountId: AccountId;
-  readonly workspace: WorkspaceSlug;
+  readonly repo: RepoSlug;
   readonly workOrderId: WorkOrderId;
   readonly at: EpochMs;
   readonly usd: number;
@@ -80,7 +80,7 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
     // `from`/`to` are inclusive on purpose: a window [t, t] still sees the entry at t.
     spend: async (filter: {
       readonly accountId?: AccountId;
-      readonly workspace?: WorkspaceSlug;
+      readonly repo?: RepoSlug;
       readonly workOrderId?: WorkOrderId;
       readonly from: EpochMs;
       readonly to: EpochMs;
@@ -89,7 +89,7 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
         .filter(
           (entry) =>
             (filter.accountId === undefined || entry.accountId === filter.accountId) &&
-            (filter.workspace === undefined || entry.workspace === filter.workspace) &&
+            (filter.repo === undefined || entry.repo === filter.repo) &&
             (filter.workOrderId === undefined || entry.workOrderId === filter.workOrderId) &&
             entry.at >= filter.from &&
             entry.at <= filter.to,

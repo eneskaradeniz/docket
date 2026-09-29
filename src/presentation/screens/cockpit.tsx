@@ -115,7 +115,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder }: CockpitScreenP
                       <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
                     </span>
                     <span className="truncate font-mono text-[11px] text-inkdim">
-                      {item.workspace}
+                      {item.repo}
                       {item.stage !== null ? ` · ${item.stage}` : ''}
                     </span>
                   </span>

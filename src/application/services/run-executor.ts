@@ -310,7 +310,7 @@ export async function executeRun(
         if (event.costUsd !== undefined) {
           await deps.accounts.recordSpend({
             accountId: item.route.accountId,
-            workspace: item.workspace,
+            repo: item.repo,
             workOrderId: item.workOrderId,
             at: event.at,
             usd: event.costUsd,

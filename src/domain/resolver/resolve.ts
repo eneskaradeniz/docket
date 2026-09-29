@@ -1,19 +1,20 @@
-// The setting precedence chain: work order → workspace → global → built-in.
+// The setting precedence chain: work order → repo → project → global → built-in.
 // Contract: docs/v2/domain.md section 3.
 import type { RoleDef, RoleOverride } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
 import type { RoleSlug } from '../shared/index';
 
-export type Level = 'workOrder' | 'workspace' | 'global' | 'builtin';
+export type Level = 'workOrder' | 'repo' | 'project' | 'global' | 'builtin';
 
-export const LEVEL_ORDER: readonly Level[] = ['workOrder', 'workspace', 'global', 'builtin'];
+export const LEVEL_ORDER: readonly Level[] = ['workOrder', 'repo', 'project', 'global', 'builtin'];
 
 /** Lower rank = more specific. */
 const LEVEL_RANK: Readonly<Record<Level, number>> = {
   workOrder: 0,
-  workspace: 1,
-  global: 2,
-  builtin: 3,
+  repo: 1,
+  project: 2,
+  global: 3,
+  builtin: 4,
 };
 
 export interface Layer<T> {

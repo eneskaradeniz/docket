@@ -11,7 +11,7 @@ import type {
   WorkOrderEvent,
   WorkOrderId,
   WorkOrderState,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 import { deriveWorkOrderState, err, nextAction, ok } from '../../domain/index';
 
@@ -22,7 +22,7 @@ export type OpenError = 'definitions_invalid' | 'unknown_flow' | 'flow_not_enabl
 export async function openWorkOrder(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
   input: {
-    readonly workspace: WorkspaceSlug;
+    readonly repo: RepoSlug;
     readonly title: string;
     readonly flow?: FlowSlug;
     readonly task?: TaskSlug;
@@ -32,19 +32,19 @@ export async function openWorkOrder(
   const title = input.title.trim();
   if (title === '') return err('empty_title');
 
-  const loaded = await deps.definitions.load(input.workspace);
+  const loaded = await deps.definitions.load(input.repo);
   if (!loaded.ok) return err('definitions_invalid');
-  const workspace = loaded.value.workspace;
-  // Opening needs a default flow and an enabled-flow list; definitions without a workspace
+  const repo = loaded.value.repo;
+  // Opening needs a default flow and an enabled-flow list; definitions without a repo
   // section cannot supply either.
-  if (workspace === undefined) return err('definitions_invalid');
+  if (repo === undefined) return err('definitions_invalid');
 
-  const flow = input.flow ?? workspace.defaultFlow;
+  const flow = input.flow ?? repo.defaultFlow;
   if (!loaded.value.flows.some((candidate) => candidate.id === flow)) return err('unknown_flow');
-  if (!workspace.flows.includes(flow)) return err('flow_not_enabled');
+  if (!repo.flows.includes(flow)) return err('flow_not_enabled');
 
   if (input.task !== undefined) {
-    const roadmap = await deps.definitions.loadRoadmap(input.workspace);
+    const roadmap = await deps.definitions.loadRoadmap(input.repo);
     if (roadmap === undefined) return err('unknown_task');
     if (!roadmap.ok) return err('definitions_invalid');
     const known = roadmap.value.phases.some((phase) => phase.tasks.some((task) => task.id === input.task));
@@ -55,7 +55,7 @@ export async function openWorkOrder(
   const at = deps.clock.now();
   await deps.workOrders.create({
     id,
-    workspace: input.workspace,
+    repo: input.repo,
     flow,
     title,
     ...(input.task !== undefined ? { task: input.task } : {}),
@@ -81,7 +81,7 @@ export interface WorkOrderView {
   /** The work order own flow from the current definitions: the detail screen derives its stage
    *  and gate list from it, so the renderer needs no definitions read of its own. */
   readonly flow: FlowDef;
-  /** The workspace section's environments (protected, promoteFrom), same reason as `flow`. */
+  /** The repo section's environments (protected, promoteFrom), same reason as `flow`. */
   readonly environments: readonly EnvironmentDef[];
 }
 export type ViewError = 'not_found' | 'definitions_invalid' | 'unknown_flow';
@@ -93,7 +93,7 @@ export async function getWorkOrder(
   const record = await deps.workOrders.get(id);
   if (record === undefined) return err('not_found');
 
-  const loaded = await deps.definitions.load(record.workspace);
+  const loaded = await deps.definitions.load(record.repo);
   if (!loaded.ok) return err('definitions_invalid');
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   if (flow === undefined) return err('unknown_flow');
@@ -107,7 +107,7 @@ export async function getWorkOrder(
     next: nextAction(flow, state),
     runs,
     flow,
-    environments: loaded.value.workspace?.environments ?? [],
+    environments: loaded.value.repo?.environments ?? [],
   });
 }
 
@@ -148,7 +148,7 @@ export async function unblockWorkOrder(
   // `blocked` is a derived status (a failed gate blocks without any `blocked` event), so the
   // precondition can only be established by deriving the real state. When the state cannot be
   // derived at all, the precondition does not verifiably hold and nothing is written.
-  const loaded = await deps.definitions.load(record.workspace);
+  const loaded = await deps.definitions.load(record.repo);
   if (loaded.ok) {
     const flow: FlowDef | undefined = loaded.value.flows.find((candidate) => candidate.id === record.flow);
     if (flow !== undefined) {

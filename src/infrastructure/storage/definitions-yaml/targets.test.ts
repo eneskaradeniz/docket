@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import type { DefinitionScope } from '../../../application/index';
-import type { WorkspaceSlug } from '../../../domain/index';
+import type { RepoSlug } from '../../../domain/index';
 
 import { hashContent, parseTarget } from './targets';
 
 const GLOBAL_SCOPE: DefinitionScope = { kind: 'global' };
-const WORKSPACE_SCOPE: DefinitionScope = { kind: 'workspace', workspace: 'acme' as WorkspaceSlug };
+const REPO_SCOPE: DefinitionScope = { kind: 'repo', repo: 'acme' as RepoSlug };
 
 describe('parseTarget', () => {
   it('I-11: accepts roles|flows|capabilities/<slug>.yaml in the global scope', () => {
@@ -20,68 +20,68 @@ describe('parseTarget', () => {
     });
   });
 
-  it('I-11: accepts roles|flows|capabilities/<slug>.yaml in the workspace scope', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner.yaml')).toEqual({ kind: 'roles', id: 'planner' });
-    expect(parseTarget(WORKSPACE_SCOPE, 'flows/standard.yaml')).toEqual({ kind: 'flows', id: 'standard' });
-    expect(parseTarget(WORKSPACE_SCOPE, 'capabilities/web-search.yaml')).toEqual({
+  it('I-11: accepts roles|flows|capabilities/<slug>.yaml in the repo scope', () => {
+    expect(parseTarget(REPO_SCOPE, 'roles/planner.yaml')).toEqual({ kind: 'roles', id: 'planner' });
+    expect(parseTarget(REPO_SCOPE, 'flows/standard.yaml')).toEqual({ kind: 'flows', id: 'standard' });
+    expect(parseTarget(REPO_SCOPE, 'capabilities/web-search.yaml')).toEqual({
       kind: 'capabilities',
       id: 'web-search',
     });
   });
 
-  it('I-11: accepts workspace.yaml and roadmap.yaml in the workspace scope only', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'workspace.yaml')).toEqual({ kind: 'workspace' });
-    expect(parseTarget(WORKSPACE_SCOPE, 'roadmap.yaml')).toEqual({ kind: 'roadmap' });
+  it('I-11: accepts workspace.yaml and roadmap.yaml in the repo scope only', () => {
+    expect(parseTarget(REPO_SCOPE, 'workspace.yaml')).toEqual({ kind: 'repo' });
+    expect(parseTarget(REPO_SCOPE, 'roadmap.yaml')).toEqual({ kind: 'roadmap' });
     expect(parseTarget(GLOBAL_SCOPE, 'workspace.yaml')).toBeUndefined();
     expect(parseTarget(GLOBAL_SCOPE, 'roadmap.yaml')).toBeUndefined();
   });
 
   it('I-11: rejects absolute paths', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, '/etc/roles/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, '/etc/roles/planner.yaml')).toBeUndefined();
     expect(parseTarget(GLOBAL_SCOPE, '/roles/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, '/workspace.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, '/workspace.yaml')).toBeUndefined();
   });
 
   it('I-11: rejects parent and current directory segments', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, '../roles/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/../planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, './roles/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, '../../etc/passwd')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, '../roles/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/../planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, './roles/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, '../../etc/passwd')).toBeUndefined();
   });
 
   it('I-11: rejects backslash-separated targets', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles\\planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles\\planner.yaml')).toBeUndefined();
     expect(parseTarget(GLOBAL_SCOPE, 'flows\\standard.yaml')).toBeUndefined();
   });
 
   it('I-11: rejects other extensions and extension-less names', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner.yml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner.json')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner.yaml.bak')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'workspace.yml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner.yml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner.json')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner.yaml.bak')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'repo.yml')).toBeUndefined();
   });
 
   it('I-11: rejects deeper folders and folder-less file names', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/inner/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'docs/roles/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, '')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/inner/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'docs/roles/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, '')).toBeUndefined();
   });
 
   it('I-11: rejects upper-case folder names, stems and extensions', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'Roles/planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/Planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner.YAML')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'Workspace.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'Roles/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/Planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner.YAML')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'Repo.yaml')).toBeUndefined();
   });
 
   it('I-11: rejects stems outside the domain slug pattern', () => {
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/-planner.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/planner_.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'roles/.yaml')).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, `roles/${'a'.repeat(64)}.yaml`)).toBeUndefined();
-    expect(parseTarget(WORKSPACE_SCOPE, 'unknown-kind/planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/-planner.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/planner_.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'roles/.yaml')).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, `roles/${'a'.repeat(64)}.yaml`)).toBeUndefined();
+    expect(parseTarget(REPO_SCOPE, 'unknown-kind/planner.yaml')).toBeUndefined();
   });
 });
 

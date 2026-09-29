@@ -15,10 +15,10 @@ import {
   createSqliteQueueRepo,
   createSqliteRunRepo,
   createSqliteWorkOrderRepo,
-  createSqliteWorkspaceRegistry,
+  createSqliteRepoRegistry,
   openDatabase,
   type OpenDbError,
-  type WorkspaceRegistry,
+  type RepoRegistry,
 } from '../storage/sqlite/index';
 import { createSystemClock, createUlidGen, type RandomBytes } from '../system/index';
 import { createEvidenceChecker, createWorktrees } from '../vcs/index';
@@ -35,7 +35,7 @@ export interface NodeDepsConfig {
 
 export interface NodeDeps {
   readonly deps: AppDeps;
-  readonly workspaces: WorkspaceRegistry;
+  readonly repos: RepoRegistry;
   close(): void;
 }
 
@@ -45,7 +45,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const db = opened.value;
 
   const clock = config.clock ?? createSystemClock();
-  const workspaces = createSqliteWorkspaceRegistry(db);
+  const repos = createSqliteRepoRegistry(db);
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
@@ -55,16 +55,16 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     accounts: createSqliteAccountRepo(db),
     bindings: createSqliteBindingRepo(db),
     queue: createSqliteQueueRepo(db),
-    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, workspaces }),
+    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos }),
     proposals: createSqliteProposalRepo(db),
     secrets: createKeychainVault(db, config.cipher),
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
-    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), workspaces }),
+    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos }),
     evidence: createEvidenceChecker(),
     notifier: config.notifier,
   };
 
-  return ok({ deps, workspaces, close: (): void => db.close() });
+  return ok({ deps, repos, close: (): void => db.close() });
 }

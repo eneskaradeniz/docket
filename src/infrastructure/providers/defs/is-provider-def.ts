@@ -1,4 +1,4 @@
-// Structural guard for untrusted definition data (workspace overrides, tests, fixtures).
+// Structural guard for untrusted definition data (repo overrides, tests, fixtures).
 // It checks one definition in isolation; id uniqueness across a set is checked where the set is built.
 import type { ProviderCapabilities, Tri } from '../../../domain/index';
 import type { LaunchInput, ProviderDef, ProviderLaunch, ProviderTransport } from './provider-def';

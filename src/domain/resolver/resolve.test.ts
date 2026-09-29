@@ -29,9 +29,9 @@ function permutations<T>(items: readonly T[]): T[][] {
 }
 
 describe('LEVEL_ORDER', () => {
-  it('orders the chain most specific first: workOrder → workspace → global → builtin', () => {
-    expect(LEVEL_ORDER).toEqual(['workOrder', 'workspace', 'global', 'builtin']);
-    expectTypeOf<Level>().toEqualTypeOf<'workOrder' | 'workspace' | 'global' | 'builtin'>();
+  it('orders the chain most specific first: workOrder → repo → project → global → builtin', () => {
+    expect(LEVEL_ORDER).toEqual(['workOrder', 'repo', 'project', 'global', 'builtin']);
+    expectTypeOf<Level>().toEqualTypeOf<'workOrder' | 'repo' | 'project' | 'global' | 'builtin'>();
   });
 });
 
@@ -40,7 +40,7 @@ describe('resolve', () => {
     // The most specific level is listed LAST; the most specific *defined* value still wins.
     const layers: Layer<string>[] = [
       { level: 'builtin', value: 'builtin-value' },
-      { level: 'workspace', value: undefined },
+      { level: 'repo', value: undefined },
       { level: 'global', value: 'global-value' },
       { level: 'workOrder', value: 'work-order-value' },
     ];
@@ -50,7 +50,7 @@ describe('resolve', () => {
   it('R-10: a defined less-specific layer wins when every more-specific layer is undefined', () => {
     const layers: Layer<string>[] = [
       { level: 'workOrder', value: undefined },
-      { level: 'workspace', value: undefined },
+      { level: 'repo', value: undefined },
       { level: 'global', value: 'global-value' },
       { level: 'builtin', value: 'builtin-value' },
     ];
@@ -60,7 +60,7 @@ describe('resolve', () => {
   it('R-10: a builtin-only fallback is used when all specificity above it is undefined', () => {
     const layers: Layer<number>[] = [
       { level: 'workOrder', value: undefined },
-      { level: 'workspace', value: undefined },
+      { level: 'repo', value: undefined },
       { level: 'global', value: undefined },
       { level: 'builtin', value: 7 },
     ];
@@ -69,7 +69,7 @@ describe('resolve', () => {
 
   it('returns the same result for any permutation of the input layers (acceptance 1)', () => {
     const all: Layer<string>[] = [
-      { level: 'workspace', value: 'ws' },
+      { level: 'repo', value: 'ws' },
       { level: 'builtin', value: 'b' },
       { level: 'workOrder', value: 'wo' },
       { level: 'global', value: 'g' },
@@ -81,7 +81,7 @@ describe('resolve', () => {
 
   it('is permutation-invariant when undefined layers are mixed in', () => {
     const sparse: Layer<string>[] = [
-      { level: 'workspace', value: undefined },
+      { level: 'repo', value: undefined },
       { level: 'builtin', value: 'b' },
       { level: 'workOrder', value: undefined },
       { level: 'global', value: 'g' },
@@ -96,7 +96,7 @@ describe('resolve', () => {
     expect(
       resolve<string>([
         { level: 'workOrder', value: undefined },
-        { level: 'workspace', value: undefined },
+        { level: 'repo', value: undefined },
         { level: 'global', value: undefined },
         { level: 'builtin', value: undefined },
       ]),
@@ -109,10 +109,10 @@ describe('resolve', () => {
 
   it('keeps the first layer of equal specificity, deterministically', () => {
     const layers: Layer<string>[] = [
-      { level: 'workspace', value: 'first' },
-      { level: 'workspace', value: 'second' },
+      { level: 'repo', value: 'first' },
+      { level: 'repo', value: 'second' },
     ];
-    expect(resolve(layers)).toEqual({ value: 'first', from: 'workspace' });
+    expect(resolve(layers)).toEqual({ value: 'first', from: 'repo' });
   });
 
   it('does not mutate the input layers or reorder the array', () => {
@@ -148,20 +148,20 @@ describe('applyRoleOverrides', () => {
     expect(result.name).toBe('Renamed');
   });
 
-  it('applies overrides least-specific → most-specific: workOrder wins per field over workspace (acceptance 2)', () => {
-    const workspaceOverride: RoleOverride = {
+  it('applies overrides least-specific → most-specific: workOrder wins per field over repo (acceptance 2)', () => {
+    const repoOverride: RoleOverride = {
       id: asRole('reviewer'),
-      name: 'Workspace Name',
-      instructions: 'workspace instructions',
+      name: 'Repo Name',
+      instructions: 'repo instructions',
     };
     const workOrderOverride: RoleOverride = {
       id: asRole('reviewer'),
       name: 'WorkOrder Name',
     };
-    const result = applyRoleOverrides(BASE, [workspaceOverride, workOrderOverride]);
+    const result = applyRoleOverrides(BASE, [repoOverride, workOrderOverride]);
     expect(result.id).toBe(asRole('reviewer'));
     expect(result.name).toBe('WorkOrder Name');
-    expect(result.instructions).toBe('workspace instructions');
+    expect(result.instructions).toBe('repo instructions');
     // untouched fields keep the base values
     expect(result.writeScope).toEqual({ kind: 'none' });
     expect(result.active).toBe(true);
@@ -217,7 +217,7 @@ describe('resolveBinding', () => {
   it('resolves the machine-local binding by LEVEL_ORDER and ignores undefined layers (R-10 semantics)', () => {
     const layers: Layer<RoleBinding>[] = [
       { level: 'builtin', value: binding('reviewer', ['acc-1']) },
-      { level: 'workspace', value: undefined },
+      { level: 'repo', value: undefined },
       { level: 'workOrder', value: binding('coder', ['acc-2', 'acc-3']) },
     ];
     expect(resolveBinding(layers)).toEqual({
@@ -229,10 +229,10 @@ describe('resolveBinding', () => {
   it('falls through undefined layers to the most specific defined binding', () => {
     const layers: Layer<RoleBinding>[] = [
       { level: 'workOrder', value: undefined },
-      { level: 'workspace', value: binding('reviewer', ['acc-9']) },
+      { level: 'repo', value: binding('reviewer', ['acc-9']) },
       { level: 'builtin', value: undefined },
     ];
-    expect(resolveBinding(layers)).toEqual({ value: binding('reviewer', ['acc-9']), from: 'workspace' });
+    expect(resolveBinding(layers)).toEqual({ value: binding('reviewer', ['acc-9']), from: 'repo' });
   });
 
   it('returns undefined for an empty list and is permutation-invariant', () => {

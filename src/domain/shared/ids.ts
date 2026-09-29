@@ -10,7 +10,6 @@ export type FlowSlug = Slug<'flow'>;
 export type StageSlug = Slug<'stage'>;
 export type GateSlug = Slug<'gate'>;
 export type CapabilitySlug = Slug<'capability'>;
-export type WorkspaceSlug = Slug<'workspace'>;
 export type RepoSlug = Slug<'repo'>;
 export type ProjectSlug = Slug<'project'>;
 export type PhaseSlug = Slug<'phase'>;

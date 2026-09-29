@@ -1,6 +1,6 @@
 // SQLite-backed work order repository; the full record rides in `data`, plus derived index columns.
 import type { WorkOrderRecord, WorkOrderRepo } from '../../../application/index';
-import type { WorkOrderEvent, WorkOrderId, WorkspaceSlug } from '../../../domain/index';
+import type { WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { DocketDb } from './database';
 
@@ -21,7 +21,7 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
   const byId = db.raw.prepare('SELECT data FROM work_orders WHERE id = ?');
   // The composite indexes cover both orderings; ties break by id asc, matching the fake's
   // insertion order for the monotonic ids the application generates.
-  const byWorkspace = db.raw.prepare(
+  const byRepo = db.raw.prepare(
     'SELECT data FROM work_orders WHERE workspace = ? ORDER BY created_at ASC, id ASC',
   );
   const everything = db.raw.prepare('SELECT data FROM work_orders ORDER BY created_at ASC, id ASC');
@@ -37,7 +37,7 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
 
   return {
     create: async (record: WorkOrderRecord): Promise<void> => {
-      insert.run(record.id, record.workspace, record.createdAt, JSON.stringify(record));
+      insert.run(record.id, record.repo, record.createdAt, JSON.stringify(record));
     },
 
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => {
@@ -45,9 +45,9 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
       return row === undefined ? undefined : decodeRecord(row['data']);
     },
 
-    list: async (filter: { readonly workspace?: WorkspaceSlug }): Promise<readonly WorkOrderRecord[]> => {
+    list: async (filter: { readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]> => {
       const rows =
-        filter.workspace === undefined ? everything.all() : byWorkspace.all(filter.workspace);
+        filter.repo === undefined ? everything.all() : byRepo.all(filter.repo);
       return rows.map((row) => decodeRecord(row['data']));
     },
 

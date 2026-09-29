@@ -14,7 +14,7 @@ export const BUILTIN_ROLES: readonly RoleDef[] = [
     instructions:
       'You plan work before any code is written. Read the request, inspect the relevant parts of the ' +
       'repository, and produce a short, ordered implementation plan. Write the plan and its notes under ' +
-      'the workspace docs root only. You do not modify source code, tests, or configuration. Keep the ' +
+      'the repo docs root only. You do not modify source code, tests, or configuration. Keep the ' +
       'plan small enough to finish in one work order.',
     writeScope: { kind: 'docs' },
     capabilities: [],
@@ -26,7 +26,7 @@ export const BUILTIN_ROLES: readonly RoleDef[] = [
     instructions:
       'You investigate a question and report what you find. Read the repository, the documents, and any ' +
       'pages attached to the work order, then write a concise answer with evidence and open questions. ' +
-      'You write only under the workspace docs root. You do not change code, tests, or configuration. ' +
+      'You write only under the repo docs root. You do not change code, tests, or configuration. ' +
       'Say clearly when the evidence is not enough to decide.',
     writeScope: { kind: 'docs' },
     capabilities: [],
@@ -48,9 +48,9 @@ export const BUILTIN_ROLES: readonly RoleDef[] = [
     id: asRole('test-writer'),
     name: 'Test yazarı',
     instructions:
-      'You write and improve automated tests. Work only in the test folders the workspace lists; never ' +
+      'You write and improve automated tests. Work only in the test folders the repo lists; never ' +
       'change production code. Make the behaviour under test visible in a small, deterministic test that ' +
-      'stands on its own. Run the workspace test commands to confirm each test behaves as described. ' +
+      'stands on its own. Run the repo test commands to confirm each test behaves as described. ' +
       'Prefer focused tests over broad ones.',
     writeScope: { kind: 'tests' },
     capabilities: [],
@@ -85,7 +85,7 @@ export const BUILTIN_ROLES: readonly RoleDef[] = [
     id: asRole('documenter'),
     name: 'Belgeci',
     instructions:
-      'You keep the documentation truthful. Update or write documents under the workspace docs root so ' +
+      'You keep the documentation truthful. Update or write documents under the repo docs root so ' +
       'they match what the code now does. You do not modify source code, tests, or configuration. Prefer ' +
       'small, concrete edits with examples over long prose. Note anything you could not verify as an ' +
       'open question.',

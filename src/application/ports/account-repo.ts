@@ -8,7 +8,7 @@ import type {
   Pool,
   SpendCap,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 
 export interface AccountRecord {
@@ -33,14 +33,14 @@ export interface AccountRepo {
   meters(accountId?: AccountId): Promise<readonly Meter[]>;
   recordSpend(entry: {
     readonly accountId: AccountId;
-    readonly workspace: WorkspaceSlug;
+    readonly repo: RepoSlug;
     readonly workOrderId: WorkOrderId;
     readonly at: EpochMs;
     readonly usd: number;
   }): Promise<void>;
   spend(filter: {
     readonly accountId?: AccountId;
-    readonly workspace?: WorkspaceSlug;
+    readonly repo?: RepoSlug;
     readonly workOrderId?: WorkOrderId;
     readonly from: EpochMs;
     readonly to: EpochMs;

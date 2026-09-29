@@ -1,13 +1,13 @@
 // The dispatcher's decision rule: which queued items start now, and why the others wait.
 // Contract: docs/v2/domain.md section 8.
-import type { AccountId, EpochMs, QueueItemId, StageSlug, WorkOrderId, WorkspaceSlug } from '../shared/index';
+import type { AccountId, EpochMs, QueueItemId, StageSlug, WorkOrderId, RepoSlug } from '../shared/index';
 import type { AccountRoute, Headroom } from '../quota/index';
 import type { SpendStatus } from '../budget/index';
 
 export interface QueueItem {
   readonly id: QueueItemId;
   readonly workOrderId: WorkOrderId;
-  readonly workspace: WorkspaceSlug;
+  readonly repo: RepoSlug;
   readonly stage: StageSlug;
   readonly route: AccountRoute;
   readonly priority: number; // higher first
@@ -17,13 +17,13 @@ export interface QueueItem {
 
 export interface RunningRun {
   readonly workOrderId: WorkOrderId;
-  readonly workspace: WorkspaceSlug;
+  readonly repo: RepoSlug;
   readonly accountId: AccountId;
 }
 
 export interface DispatchLimits {
   readonly global: number; // default 4
-  readonly perWorkspace: number; // default 3
+  readonly perRepo: number; // default 3
   readonly perAccount: Readonly<Record<string, number>>; // AccountId → max concurrent; absent = no extra limit
 }
 
@@ -39,7 +39,7 @@ export type WaitReason =
   | 'not_before'
   | 'work_order_busy'
   | 'global_limit'
-  | 'workspace_limit'
+  | 'repo_limit'
   | 'account_limit'
   | 'quota'
   | 'budget';
@@ -71,7 +71,7 @@ function countBy<K extends string>(runs: readonly RunningRun[], keyOf: (run: Run
 
 export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSnapshot): readonly DispatchDecision[] {
   const busyWorkOrders = new Set<WorkOrderId>(snapshot.running.map((run) => run.workOrderId));
-  const workspaceLoad = countBy(snapshot.running, (run) => run.workspace);
+  const repoLoad = countBy(snapshot.running, (run) => run.repo);
   const accountLoad = countBy(snapshot.running, (run) => run.accountId);
   let globalLoad = snapshot.running.length;
 
@@ -91,8 +91,8 @@ export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSn
       decisions.push(wait(item.id, 'global_limit'));
       continue;
     }
-    if ((workspaceLoad.get(item.workspace) ?? 0) >= snapshot.limits.perWorkspace) {
-      decisions.push(wait(item.id, 'workspace_limit'));
+    if ((repoLoad.get(item.repo) ?? 0) >= snapshot.limits.perRepo) {
+      decisions.push(wait(item.id, 'repo_limit'));
       continue;
     }
     // Record indexing reports `number` while an absent key is undefined at runtime.
@@ -115,7 +115,7 @@ export function decideDispatch(queue: readonly QueueItem[], snapshot: DispatchSn
     // A start in this call consumes capacity for every item considered after it.
     globalLoad += 1;
     busyWorkOrders.add(item.workOrderId);
-    workspaceLoad.set(item.workspace, (workspaceLoad.get(item.workspace) ?? 0) + 1);
+    repoLoad.set(item.repo, (repoLoad.get(item.repo) ?? 0) + 1);
     accountLoad.set(item.route.accountId, (accountLoad.get(item.route.accountId) ?? 0) + 1);
     decisions.push({ item: item.id, kind: 'start' });
   }

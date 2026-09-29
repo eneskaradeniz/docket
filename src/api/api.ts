@@ -15,7 +15,7 @@ import type {
   Ulid,
   WorkOrderId,
   WorkOrderEvent,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../domain/index';
 import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
 
@@ -54,7 +54,7 @@ import type {
   SettingsBindingView,
   SettingsMeterView,
   SettingsPoolView,
-  WorkspaceListItem,
+  RepoListItem,
 } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
@@ -82,11 +82,11 @@ export interface RunEventFeed {
 /** Queries report failure exactly the way commands do, so every boundary result reads the same. */
 type QueryFailure = Extract<CommandResult, { readonly ok: false }>;
 
-/** The workspace registry's read side: the workspaces known to this machine. The registry is
+/** The repo registry's read side: the repos known to this machine. The registry is
  *  composed beside AppDeps (the composition root holds it next to deps), like the board and the
  *  discovery port, and the api sees only this structural slice of it. */
-export interface WorkspaceRegistryPort {
-  list(): Promise<readonly { readonly slug: WorkspaceSlug; readonly path: string }[]>;
+export interface RepoRegistryPort {
+  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>;
 }
 
 /** A fresh literal every time: results are the caller's data, never shared module state. */
@@ -111,14 +111,14 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  Without one no ask can be open, so `permission.answer` answers not_found instead of throwing
  *  and `permissions.open` answers not_found instead of inventing an empty board. The discovery
  *  port is passed the same way: it is composed beside AppDeps at the root, and without it no
- *  provider can be reported, so `providers.discovered` answers not_found too. The workspace
- *  registry joins them: without it no workspace can be enumerated, so `workspaces.list` answers
+ *  provider can be reported, so `providers.discovered` answers not_found too. The repo
+ *  registry joins them: without it no repo can be enumerated, so `repos.list` answers
  *  not_found as well. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
   discovery?: ProviderDiscovery,
-  registry?: WorkspaceRegistryPort,
+  registry?: RepoRegistryPort,
 ): Api & RunEventFeed {
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
@@ -174,8 +174,8 @@ const runCommand = async (
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
-      const workspace = slugValue<'workspace'>(command.workspace);
-      if (workspace === undefined) return invalidId();
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
       const flow = command.flow === undefined ? undefined : slugValue<'flow'>(command.flow);
       if (flow === undefined && command.flow !== undefined) return invalidId();
       const task = command.task === undefined ? undefined : slugValue<'task'>(command.task);
@@ -183,7 +183,7 @@ const runCommand = async (
 
       const opened = await openWorkOrder(
         { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
-        { workspace, title: command.title, flow, task, actor },
+        { repo, title: command.title, flow, task, actor },
       );
       return opened.ok ? { ok: true, id: opened.value } : { ok: false, code: opened.error };
     }
@@ -360,7 +360,7 @@ const runCommand = async (
         accounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
       }
       // The settings command carries no scope: it edits the machine-global baseline that every
-      // workspace inherits unless a more specific level overrides it.
+      // repo inherits unless a more specific level overrides it.
       return commandOf(
         await saveBinding(
           { clock: deps.clock, ids: deps.ids, log: deps.log, bindings: deps.bindings },
@@ -375,7 +375,7 @@ const runQuery = async (
   deps: AppDeps,
   query: Query,
   discovery: ProviderDiscovery | undefined,
-  registry: WorkspaceRegistryPort | undefined,
+  registry: RepoRegistryPort | undefined,
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
@@ -392,14 +392,14 @@ const runQuery = async (
     case 'cockpit':
       return cockpitView(deps);
 
-    case 'workspace.board': {
-      const workspace = slugValue<'workspace'>(query.workspace);
-      if (workspace === undefined) return invalidId();
-      return boardView(deps, workspace);
+    case 'repo.board': {
+      const repo = slugValue<'repo'>(query.repo);
+      if (repo === undefined) return invalidId();
+      return boardView(deps, repo);
     }
 
-    case 'workspaces.list':
-      return workspaceList(registry);
+    case 'repos.list':
+      return repoList(registry);
 
     case 'settings.accounts':
       return settingsAccountsView(deps);
@@ -447,12 +447,12 @@ const discoveredProviders = async (
   return collected;
 };
 
-/** The machine's known workspaces, read straight off the registry: the rows are already plain
+/** The machine's known repos, read straight off the registry: the rows are already plain
  *  JSON, only the branded slug travels as its string. No registry, no enumeration — the query
  *  answers not_found instead of inventing an empty machine. */
-const workspaceList = async (
-  registry: WorkspaceRegistryPort | undefined,
-): Promise<readonly WorkspaceListItem[] | QueryFailure> => {
+const repoList = async (
+  registry: RepoRegistryPort | undefined,
+): Promise<readonly RepoListItem[] | QueryFailure> => {
   if (registry === undefined) return { ok: false, code: 'not_found' };
   const rows = await registry.list();
   return rows.map((row) => ({ id: row.slug, path: row.path }));
@@ -485,8 +485,8 @@ const meterView = (meter: Meter): SettingsMeterView => ({
 const bindingScopeView = (scope: BindingScope): SettingsBindingScope =>
   scope.level === 'global'
     ? { level: 'global' }
-    : scope.level === 'workspace'
-      ? { level: 'workspace', workspace: scope.workspace }
+    : scope.level === 'repo'
+      ? { level: 'repo', repo: scope.repo }
       : { level: 'workOrder', workOrderId: scope.workOrderId };
 
 const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
@@ -525,15 +525,15 @@ const KIND_RANK: Readonly<Record<AttentionItem['kind'], number>> = {
   limit_waiting: 3,
 };
 
-/** The flows of one workspace, loaded once per query no matter how many work orders sit in it. */
+/** The flows of one repo, loaded once per query no matter how many work orders sit in it. */
 const flowCache = (deps: AppDeps) => {
-  const byWorkspace = new Map<WorkspaceSlug, readonly FlowDef[]>();
-  return async (workspace: WorkspaceSlug): Promise<readonly FlowDef[]> => {
-    const cached = byWorkspace.get(workspace);
+  const byRepo = new Map<RepoSlug, readonly FlowDef[]>();
+  return async (repo: RepoSlug): Promise<readonly FlowDef[]> => {
+    const cached = byRepo.get(repo);
     if (cached !== undefined) return cached;
-    const loaded = await deps.definitions.load(workspace);
+    const loaded = await deps.definitions.load(repo);
     const flows = loaded.ok ? loaded.value.flows : [];
-    byWorkspace.set(workspace, flows);
+    byRepo.set(repo, flows);
     return flows;
   };
 };
@@ -559,9 +559,9 @@ const cockpitView = async (deps: AppDeps): Promise<CockpitView> => {
 
   const attention: AttentionItem[] = [];
   for (const record of await deps.workOrders.list({})) {
-    const flow = (await flowsOf(record.workspace)).find((candidate) => candidate.id === record.flow);
+    const flow = (await flowsOf(record.repo)).find((candidate) => candidate.id === record.flow);
     // A work order whose definitions no longer load has no derivable state and so no attention
-    // kind; one broken workspace must not blank the whole cockpit.
+    // kind; one broken repo must not blank the whole cockpit.
     if (flow === undefined) continue;
     const events = await deps.workOrders.events(record.id);
     const state = deriveWorkOrderState(flow, events);
@@ -585,7 +585,7 @@ const cockpitView = async (deps: AppDeps): Promise<CockpitView> => {
     const since = askSince ?? (lastEvent === undefined ? record.createdAt : lastEvent.at);
     attention.push({
       workOrderId: record.id,
-      workspace: record.workspace,
+      repo: record.repo,
       title: record.title,
       kind,
       stage: state.stage,
@@ -606,18 +606,18 @@ const cockpitView = async (deps: AppDeps): Promise<CockpitView> => {
   };
 };
 
-const boardView = async (deps: AppDeps, workspace: WorkspaceSlug): Promise<BoardView | QueryFailure> => {
-  const loaded = await deps.definitions.load(workspace);
+const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | QueryFailure> => {
+  const loaded = await deps.definitions.load(repo);
   if (!loaded.ok) return { ok: false, code: 'definitions_invalid' };
-  // Without a workspace section there is no default flow to build columns from.
-  const def = loaded.value.workspace;
+  // Without a repo section there is no default flow to build columns from.
+  const def = loaded.value.repo;
   if (def === undefined) return { ok: false, code: 'definitions_invalid' };
   const flow = loaded.value.flows.find((candidate) => candidate.id === def.defaultFlow);
   if (flow === undefined) return { ok: false, code: 'definitions_invalid' };
 
   const placed = new Map<StageSlug, { readonly id: string; readonly title: string; readonly status: string }[]>();
   const done: { readonly id: string; readonly title: string }[] = [];
-  for (const record of await deps.workOrders.list({ workspace })) {
+  for (const record of await deps.workOrders.list({ repo })) {
     // State derives from the work order's own flow; the columns come from the default flow.
     const ownFlow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
     if (ownFlow === undefined) continue;
@@ -637,7 +637,7 @@ const boardView = async (deps: AppDeps, workspace: WorkspaceSlug): Promise<Board
   }
 
   return {
-    workspace,
+    repo,
     flow: def.defaultFlow,
     columns: flow.stages.map((stage) => ({ stage: stage.id, name: stage.name, workOrders: placed.get(stage.id) ?? [] })),
     done,

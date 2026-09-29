@@ -4,8 +4,8 @@ import type { ModelMatcher } from '../domain/index';
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
-  | { readonly type: 'workspace.board'; readonly workspace: string }
-  | { readonly type: 'workspaces.list' }
+  | { readonly type: 'repo.board'; readonly repo: string }
+  | { readonly type: 'repos.list' }
   | { readonly type: 'cockpit' }
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' }
@@ -14,7 +14,7 @@ export type Query =
 
 export interface AttentionItem {
   readonly workOrderId: string;
-  readonly workspace: string;
+  readonly repo: string;
   readonly title: string;
   readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked';
   readonly stage: string | null;
@@ -38,18 +38,18 @@ export interface BoardColumn {
 }
 
 export interface BoardView {
-  readonly workspace: string;
+  readonly repo: string;
   readonly flow: string;
   readonly columns: readonly BoardColumn[];
   readonly done: readonly { readonly id: string; readonly title: string }[];
 }
 
-// --- workspaces.list --------------------------------------------------------------------------------
+// --- repos.list --------------------------------------------------------------------------------
 
-/** A workspace this machine knows: the registry's row with the slug as a plain string id. `path`
+/** A repo this machine knows: the registry's row with the slug as a plain string id. `path`
  *  is the checkout root the registry holds — the fact that makes the row machine-local rather than
- *  merely a workspace some work order once named. */
-export interface WorkspaceListItem {
+ *  merely a repo some work order once named. */
+export interface RepoListItem {
   readonly id: string;
   readonly path: string;
 }
@@ -94,7 +94,7 @@ export interface SettingsAccountView {
 
 export type SettingsBindingScope =
   | { readonly level: 'global' }
-  | { readonly level: 'workspace'; readonly workspace: string }
+  | { readonly level: 'repo'; readonly repo: string }
   | { readonly level: 'workOrder'; readonly workOrderId: string };
 
 export interface SettingsBindingView {

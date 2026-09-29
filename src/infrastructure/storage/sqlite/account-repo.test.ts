@@ -14,7 +14,7 @@ import {
   type Pool,
   type PoolId,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../../domain/index';
 
 import { createSqliteAccountRepo } from './account-repo';
@@ -55,8 +55,8 @@ const workOrderId = (s: string): WorkOrderId => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
-const OTHER_WS = 'other' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
+const OTHER_REPO = 'other' as RepoSlug;
 
 const account = (id: string, label: string): AccountRecord => ({
   id: accountId(id),
@@ -160,7 +160,7 @@ describe('createSqliteAccountRepo', () => {
       await repo.save(account(A1, 'first'));
       await repo.savePools(accountId(A1), [pool(P1, A1)]);
       await repo.saveMeter(meter(M1, P1));
-      await repo.recordSpend({ accountId: accountId(A1), workspace: WS, workOrderId: workOrderId(W2), at: 1, usd: 3 });
+      await repo.recordSpend({ accountId: accountId(A1), repo: REPO, workOrderId: workOrderId(W2), at: 1, usd: 3 });
 
       await repo.remove(accountId(A1));
 
@@ -176,14 +176,14 @@ describe('createSqliteAccountRepo', () => {
       await expect(repo.remove(accountId(A3))).resolves.toBeUndefined();
     });
 
-    it('I-5: spend sums entries filtered by account, workspace and work order over inclusive bounds from ≤ at ≤ to', async () => {
+    it('I-5: spend sums entries filtered by account, repo and work order over inclusive bounds from ≤ at ≤ to', async () => {
       const repo = makeRepo();
       const wo1 = workOrderId(W1);
       const wo2 = workOrderId(W2);
-      await repo.recordSpend({ accountId: accountId(A1), workspace: WS, workOrderId: wo1, at: 10, usd: 1 });
-      await repo.recordSpend({ accountId: accountId(A1), workspace: WS, workOrderId: wo1, at: 20, usd: 2 });
-      await repo.recordSpend({ accountId: accountId(A1), workspace: OTHER_WS, workOrderId: wo2, at: 30, usd: 4 });
-      await repo.recordSpend({ accountId: accountId(A2), workspace: WS, workOrderId: wo1, at: 40, usd: 8 });
+      await repo.recordSpend({ accountId: accountId(A1), repo: REPO, workOrderId: wo1, at: 10, usd: 1 });
+      await repo.recordSpend({ accountId: accountId(A1), repo: REPO, workOrderId: wo1, at: 20, usd: 2 });
+      await repo.recordSpend({ accountId: accountId(A1), repo: OTHER_REPO, workOrderId: wo2, at: 30, usd: 4 });
+      await repo.recordSpend({ accountId: accountId(A2), repo: REPO, workOrderId: wo1, at: 40, usd: 8 });
 
       expect(await repo.spend({ from: 0, to: 100 })).toBe(15);
       expect(await repo.spend({ from: 20, to: 30 })).toBe(6);
@@ -191,7 +191,7 @@ describe('createSqliteAccountRepo', () => {
       expect(await repo.spend({ from: 11, to: 19 })).toBe(0);
       expect(await repo.spend({ from: 21, to: 29 })).toBe(0);
       expect(await repo.spend({ accountId: accountId(A1), from: 0, to: 100 })).toBe(7);
-      expect(await repo.spend({ workspace: OTHER_WS, from: 0, to: 100 })).toBe(4);
+      expect(await repo.spend({ repo: OTHER_REPO, from: 0, to: 100 })).toBe(4);
       expect(await repo.spend({ workOrderId: wo1, from: 0, to: 100 })).toBe(11);
       expect(await repo.spend({ from: 100, to: 200 })).toBe(0);
     });
@@ -269,7 +269,7 @@ describe('createSqliteAccountRepo', () => {
       await repo.save(account(A1, 'first'));
       await repo.savePools(accountId(A1), [pool(P1, A1)]);
       await repo.saveMeter(meter(M1, P1));
-      await repo.recordSpend({ accountId: accountId(A1), workspace: WS, workOrderId: workOrderId(W1), at: 5, usd: 2.5 });
+      await repo.recordSpend({ accountId: accountId(A1), repo: REPO, workOrderId: workOrderId(W1), at: 5, usd: 2.5 });
       closeDb(first);
 
       const second = openDb(path);

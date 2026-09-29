@@ -58,7 +58,7 @@ const bindingFor = (role: string, accounts: readonly AccountRoute[] = [{ account
 });
 
 const GLOBAL_SCOPE: BindingScope = { level: 'global' };
-const WORKSPACE_SCOPE: BindingScope = { level: 'workspace', workspace: slugOf<'workspace'>('ws') };
+const REPO_SCOPE: BindingScope = { level: 'repo', repo: slugOf<'repo'>('ws') };
 const WORK_ORDER_SCOPE: BindingScope = { level: 'workOrder', workOrderId: ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV') };
 
 interface Harness {
@@ -193,7 +193,7 @@ describe('removeAccount', () => {
     await saveAccount(h.deps, { record: accountRecord({ id: OTHER_ACCOUNT, label: 'Spare' }), actor: USER });
     await saveBinding(h.deps, { scope: GLOBAL_SCOPE, binding: bindingFor('worker'), actor: USER });
     await saveBinding(h.deps, {
-      scope: WORKSPACE_SCOPE,
+      scope: REPO_SCOPE,
       binding: bindingFor('reviewer', [{ accountId: ACCOUNT }, { accountId: OTHER_ACCOUNT }]),
       actor: USER,
     });
@@ -252,10 +252,10 @@ describe('saveBinding', () => {
     const role = slugOf<'role'>('reviewer');
     const binding = bindingFor('reviewer', [{ accountId: ACCOUNT }, { accountId: OTHER_ACCOUNT }]);
 
-    const result = await saveBinding(h.deps, { scope: WORKSPACE_SCOPE, binding, actor: USER });
+    const result = await saveBinding(h.deps, { scope: REPO_SCOPE, binding, actor: USER });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(await h.deps.bindings.get(WORKSPACE_SCOPE, role)).toEqual(binding);
+    expect(await h.deps.bindings.get(REPO_SCOPE, role)).toEqual(binding);
     const audit = h.log.entries();
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({
@@ -267,7 +267,7 @@ describe('saveBinding', () => {
     });
   });
 
-  it('saves per scope, so global, workspace and work-order levels stay independent', async () => {
+  it('saves per scope, so global, repo and work-order levels stay independent', async () => {
     const h = makeHarness();
     const role = slugOf<'role'>('worker');
 

@@ -9,7 +9,7 @@ import type {
   TaskSlug,
   Ulid,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid } from '../../domain/index';
 
@@ -46,7 +46,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WORKSPACE: WorkspaceSlug = slugOf<'workspace'>('acme');
+const REPO: RepoSlug = slugOf<'repo'>('acme');
 const FLOW_A: FlowSlug = slugOf<'flow'>('flow-a');
 const FLOW_B: FlowSlug = slugOf<'flow'>('flow-b');
 const FLOW_FAIL: FlowSlug = slugOf<'flow'>('flow-fail');
@@ -110,7 +110,7 @@ const FLOWS_JSON = [
   },
 ];
 
-const WORKSPACE_JSON = {
+const REPO_JSON = {
   id: 'acme',
   name: 'Acme',
   repos: [],
@@ -131,9 +131,9 @@ const ENVIRONMENTS_JSON = [
 
 const definitionsJson = (
   variants: {
-    readonly withWorkspace?: boolean;
+    readonly withRepo?: boolean;
     readonly withEnvironments?: boolean;
-    readonly workspaceFlows?: readonly string[];
+    readonly repoFlows?: readonly string[];
     readonly flows?: readonly string[];
     readonly defaultFlow?: string;
   } = {},
@@ -142,13 +142,13 @@ const definitionsJson = (
     roles: [ROLE_JSON],
     flows: FLOWS_JSON.filter((flow) => (variants.flows ?? FLOWS_JSON.map((candidate) => candidate.id)).includes(flow.id)),
     capabilities: [],
-    ...(variants.withWorkspace === false
+    ...(variants.withRepo === false
       ? {}
       : {
-          workspace: {
-            ...WORKSPACE_JSON,
-            flows: variants.workspaceFlows ?? WORKSPACE_JSON.flows,
-            defaultFlow: variants.defaultFlow ?? WORKSPACE_JSON.defaultFlow,
+          repo: {
+            ...REPO_JSON,
+            flows: variants.repoFlows ?? REPO_JSON.flows,
+            defaultFlow: variants.defaultFlow ?? REPO_JSON.defaultFlow,
             ...(variants.withEnvironments ? { environments: ENVIRONMENTS_JSON } : {}),
           },
         }),
@@ -187,8 +187,8 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
   const workOrders = createFakeWorkOrderRepo();
   const runs = createFakeRunRepo();
   const definitions = createFakeDefinitionStore();
-  definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', definitionsJson());
-  if (withRoadmap) definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'roadmap.json', ROADMAP_JSON);
+  definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson());
+  if (withRoadmap) definitions.seed({ kind: 'repo', repo: REPO }, 'roadmap.json', ROADMAP_JSON);
   configure?.(definitions);
 
   return {
@@ -209,7 +209,7 @@ const openedWorkOrder = async (
   overrides: { readonly flow?: FlowSlug; readonly task?: TaskSlug; readonly title?: string } = {},
 ): Promise<WorkOrderId> => {
   const result = await openWorkOrder(h.openDeps, {
-    workspace: WORKSPACE,
+    repo: REPO,
     title: overrides.title ?? 'Fix the login flow',
     flow: overrides.flow,
     task: overrides.task,
@@ -249,7 +249,7 @@ describe('openWorkOrder', () => {
     const h = createHarness();
 
     for (const title of ['', '   ', ' \t ']) {
-      const result = await openWorkOrder(h.openDeps, { workspace: WORKSPACE, title, actor: ACTOR });
+      const result = await openWorkOrder(h.openDeps, { repo: REPO, title, actor: ACTOR });
       expect(result).toEqual(err('empty_title'));
     }
 
@@ -265,7 +265,7 @@ describe('openWorkOrder', () => {
     expect(record?.title).toBe('Fix the login');
   });
 
-  it('A-5: the flow defaults to the workspace defaultFlow', async () => {
+  it('A-5: the flow defaults to the repo defaultFlow', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
 
@@ -286,7 +286,7 @@ describe('openWorkOrder', () => {
   it('A-5: an unknown flow returns unknown_flow and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
-      workspace: WORKSPACE,
+      repo: REPO,
       title: 'Fix the login flow',
       flow: slugOf<'flow'>('no-such-flow'),
       actor: ACTOR,
@@ -297,10 +297,10 @@ describe('openWorkOrder', () => {
     expect(h.log.entries()).toEqual([]);
   });
 
-  it('A-5: a flow that is not enabled in the workspace returns flow_not_enabled and writes nothing', async () => {
+  it('A-5: a flow that is not enabled in the repo returns flow_not_enabled and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
-      workspace: WORKSPACE,
+      repo: REPO,
       title: 'Fix the login flow',
       flow: FLOW_DISABLED,
       actor: ACTOR,
@@ -313,29 +313,29 @@ describe('openWorkOrder', () => {
 
   it('A-5: definitions that do not validate return definitions_invalid and write nothing', async () => {
     const h = createHarness((definitions) => {
-      definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', BROKEN_DEFS);
+      definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', BROKEN_DEFS);
     });
-    const result = await openWorkOrder(h.openDeps, { workspace: WORKSPACE, title: 'Fix the login flow', actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', actor: ACTOR });
 
     expect(result).toEqual(err('definitions_invalid'));
     expect(await h.workOrders.list({})).toEqual([]);
     expect(h.log.entries()).toEqual([]);
   });
 
-  it('A-5: definitions without a workspace section return definitions_invalid', async () => {
+  it('A-5: definitions without a repo section return definitions_invalid', async () => {
     const h = createHarness((definitions) => {
-      definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', definitionsJson({ withWorkspace: false }));
+      definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ withRepo: false }));
     });
-    const result = await openWorkOrder(h.openDeps, { workspace: WORKSPACE, title: 'Fix the login flow', actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', actor: ACTOR });
 
     expect(result).toEqual(err('definitions_invalid'));
     expect(await h.workOrders.list({})).toEqual([]);
   });
 
-  it('A-5: a task missing from the workspace roadmap returns unknown_task and writes nothing', async () => {
+  it('A-5: a task missing from the repo roadmap returns unknown_task and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
-      workspace: WORKSPACE,
+      repo: REPO,
       title: 'Fix the login flow',
       task: slugOf<'task'>('no-such-task'),
       actor: ACTOR,
@@ -349,7 +349,7 @@ describe('openWorkOrder', () => {
   it('A-5: a task given with no roadmap at all returns unknown_task', async () => {
     const h = createHarness(undefined, false);
     const result = await openWorkOrder(h.openDeps, {
-      workspace: WORKSPACE,
+      repo: REPO,
       title: 'Fix the login flow',
       task: KNOWN_TASK,
       actor: ACTOR,
@@ -369,7 +369,7 @@ describe('openWorkOrder', () => {
 
   it('A-5: success creates the record, appends one created event and audits work_order.opened', async () => {
     const h = createHarness();
-    const result = await openWorkOrder(h.openDeps, { workspace: WORKSPACE, title: 'Fix the login flow', task: KNOWN_TASK, actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', task: KNOWN_TASK, actor: ACTOR });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -378,7 +378,7 @@ describe('openWorkOrder', () => {
     const record = await h.workOrders.get(result.value);
     expect(record).toEqual({
       id: result.value,
-      workspace: WORKSPACE,
+      repo: REPO,
       flow: FLOW_A,
       title: 'Fix the login flow',
       task: KNOWN_TASK,
@@ -410,7 +410,7 @@ describe('getWorkOrder', () => {
   it('A-6: definitions that do not validate return definitions_invalid', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
-    h.definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', BROKEN_DEFS);
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', BROKEN_DEFS);
 
     const result = await getWorkOrder(h.viewDeps, id);
     expect(result).toEqual(err('definitions_invalid'));
@@ -420,20 +420,20 @@ describe('getWorkOrder', () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
     h.definitions.seed(
-      { kind: 'workspace', workspace: WORKSPACE },
+      { kind: 'repo', repo: REPO },
       'defs.json',
-      definitionsJson({ flows: ['flow-b', 'flow-fail', 'flow-c'], workspaceFlows: ['flow-b', 'flow-fail'], defaultFlow: 'flow-b' }),
+      definitionsJson({ flows: ['flow-b', 'flow-fail', 'flow-c'], repoFlows: ['flow-b', 'flow-fail'], defaultFlow: 'flow-b' }),
     );
 
     const result = await getWorkOrder(h.viewDeps, id);
     expect(result).toEqual(err('unknown_flow'));
   });
 
-  it('A-6: the view carries the work order own flow definition and the workspace environments', async () => {
+  it('A-6: the view carries the work order own flow definition and the repo environments', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
     h.definitions.seed(
-      { kind: 'workspace', workspace: WORKSPACE },
+      { kind: 'repo', repo: REPO },
       'defs.json',
       definitionsJson({ withEnvironments: true }),
     );
@@ -448,10 +448,10 @@ describe('getWorkOrder', () => {
     expect(result.value.environments).toEqual(ENVIRONMENTS_JSON);
   });
 
-  it('A-6: definitions without a workspace section yield an empty environment list, flow intact', async () => {
+  it('A-6: definitions without a repo section yield an empty environment list, flow intact', async () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
-    h.definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', definitionsJson({ withWorkspace: false }));
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ withRepo: false }));
 
     const result = await getWorkOrder(h.viewDeps, id);
     expect(result.ok).toBe(true);
@@ -470,7 +470,7 @@ describe('getWorkOrder', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const loaded = await h.definitions.load(WORKSPACE);
+    const loaded = await h.definitions.load(REPO);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     const flow = loaded.value.flows.find((candidate) => candidate.id === FLOW_A);
@@ -489,7 +489,7 @@ describe('getWorkOrder', () => {
     const h = createHarness();
     const id = await openedWorkOrder(h);
     h.definitions.seed(
-      { kind: 'workspace', workspace: WORKSPACE },
+      { kind: 'repo', repo: REPO },
       'defs.json',
       JSON.stringify({
         roles: [ROLE_JSON],
@@ -512,7 +512,7 @@ describe('getWorkOrder', () => {
           },
         ],
         capabilities: [],
-        workspace: { ...WORKSPACE_JSON, flows: ['flow-a'] },
+        repo: { ...REPO_JSON, flows: ['flow-a'] },
       }),
     );
 
@@ -679,7 +679,7 @@ describe('unblockWorkOrder', () => {
     // simply cannot be established, so unblock refuses to write.
     const h = createHarness();
     const id = await openedWorkOrder(h);
-    h.definitions.seed({ kind: 'workspace', workspace: WORKSPACE }, 'defs.json', BROKEN_DEFS);
+    h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', BROKEN_DEFS);
 
     const result = await unblockWorkOrder(h.unblockDeps, { id, actor: ACTOR });
     expect(result).toEqual(err('not_blocked'));

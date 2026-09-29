@@ -1,4 +1,4 @@
-// Definition store over YAML files: global root merged with per-workspace overrides.
+// Definition store over YAML files: global root merged with per-repo overrides.
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -6,14 +6,14 @@ import { parse as parseYaml } from 'yaml';
 import type { DefinitionScope, DefinitionStore } from '../../../application/index';
 import type { DefinitionIssue, Definitions, Result, RoadmapIssue } from '../../../domain/index';
 import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
-import type { WorkspacePaths } from '../../system/index';
+import type { RepoPaths } from '../../system/index';
 
 import type { DefinitionKind } from './targets';
 import { hashContent, parseTarget } from './targets';
 
 export interface YamlStoreConfig {
   readonly globalRoot: string;
-  readonly workspaces: WorkspacePaths;
+  readonly repos: RepoPaths;
 }
 
 const YAML_OPTIONS = { schema: 'core', uniqueKeys: true, maxAliasCount: 100 } as const;
@@ -23,7 +23,7 @@ const EXTENSION = '.yaml';
 const WORKSPACE_FILE = 'workspace.yaml';
 const ROADMAP_FILE = 'roadmap.yaml';
 
-type ScopeLabel = 'global' | 'workspace';
+type ScopeLabel = 'global' | 'repo';
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -144,11 +144,11 @@ const loadKind = async (
   return { entries, problems };
 };
 
-/** Global entries first; a workspace entry with the same id takes the global's position; the rest follow. */
-const mergeKind = (globals: readonly KindEntry[], workspaceEntries: readonly KindEntry[]): readonly UnknownRecord[] => {
+/** Global entries first; a repo entry with the same id takes the global's position; the rest follow. */
+const mergeKind = (globals: readonly KindEntry[], repoEntries: readonly KindEntry[]): readonly UnknownRecord[] => {
   const merged = [...globals];
   const indexById = new Map(merged.map((entry, index) => [entry.id, index] as const));
-  for (const entry of workspaceEntries) {
+  for (const entry of repoEntries) {
     const index = indexById.get(entry.id);
     if (index === undefined) {
       indexById.set(entry.id, merged.length);
@@ -161,11 +161,11 @@ const mergeKind = (globals: readonly KindEntry[], workspaceEntries: readonly Kin
 };
 
 interface PipelineInput {
-  /** Workspace scope under which the workspace folder is listed; a global-scope run passes `{ kind: 'global' }`. */
+  /** Repo scope under which the repo folder is listed; a global-scope run passes `{ kind: 'global' }`. */
   readonly scope: DefinitionScope;
-  readonly workspaceRoot: string | undefined;
-  /** True when a workspace is required: `load` and workspace-scope candidates; a global run has none. */
-  readonly expectWorkspace: boolean;
+  readonly repoRoot: string | undefined;
+  /** True when a repo is required: `load` and repo-scope candidates; a global run has none. */
+  readonly expectRepo: boolean;
   readonly candidate: CandidateFile | undefined;
 }
 
@@ -200,8 +200,8 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
   const runDefinitionsPipeline = async (
     input: PipelineInput,
   ): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
-    if (input.expectWorkspace && input.workspaceRoot === undefined) {
-      return err([{ path: 'workspace', code: 'missing_field', message: 'workspace is not registered' }]);
+    if (input.expectRepo && input.repoRoot === undefined) {
+      return err([{ path: 'repo', code: 'missing_field', message: 'repo is not registered' }]);
     }
 
     const problems: DefinitionIssue[] = [];
@@ -217,32 +217,32 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       );
       problems.push(...globalLoad.problems);
 
-      let workspaceLoad: KindLoad | undefined;
-      if (input.workspaceRoot !== undefined) {
-        workspaceLoad = await loadKind(
-          input.workspaceRoot,
-          'workspace',
+      let repoLoad: KindLoad | undefined;
+      if (input.repoRoot !== undefined) {
+        repoLoad = await loadKind(
+          input.repoRoot,
+          'repo',
           input.scope,
           kind,
-          input.candidate?.label === 'workspace' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
+          input.candidate?.label === 'repo' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
         );
-        problems.push(...workspaceLoad.problems);
+        problems.push(...repoLoad.problems);
       }
 
-      merged[kind] = [...mergeKind(globalLoad.entries, workspaceLoad?.entries ?? [])];
+      merged[kind] = [...mergeKind(globalLoad.entries, repoLoad?.entries ?? [])];
     }
 
-    let workspaceMapping: UnknownRecord | undefined;
-    if (input.workspaceRoot !== undefined) {
-      if (input.candidate?.label === 'workspace' && input.candidate.target === WORKSPACE_FILE) {
-        const parsed = parseDocument('workspace', WORKSPACE_FILE, input.candidate.text);
-        if (parsed.ok) workspaceMapping = parsed.mapping;
+    let repoMapping: UnknownRecord | undefined;
+    if (input.repoRoot !== undefined) {
+      if (input.candidate?.label === 'repo' && input.candidate.target === WORKSPACE_FILE) {
+        const parsed = parseDocument('repo', WORKSPACE_FILE, input.candidate.text);
+        if (parsed.ok) repoMapping = parsed.mapping;
         else problems.push(parsed.problem);
       } else {
         try {
-          const text = await readFile(join(input.workspaceRoot, WORKSPACE_FILE), 'utf8');
-          const parsed = parseDocument('workspace', WORKSPACE_FILE, text);
-          if (parsed.ok) workspaceMapping = parsed.mapping;
+          const text = await readFile(join(input.repoRoot, WORKSPACE_FILE), 'utf8');
+          const parsed = parseDocument('repo', WORKSPACE_FILE, text);
+          if (parsed.ok) repoMapping = parsed.mapping;
           else problems.push(parsed.problem);
         } catch (error) {
           if (!isMissing(error)) throw error;
@@ -251,8 +251,8 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     }
 
     if (problems.length > 0) return err(problems);
-    if (input.expectWorkspace && workspaceMapping === undefined) {
-      return err([{ path: 'workspace', code: 'missing_field', message: `${WORKSPACE_FILE} is required` }]);
+    if (input.expectRepo && repoMapping === undefined) {
+      return err([{ path: 'repo', code: 'missing_field', message: `${WORKSPACE_FILE} is required` }]);
     }
 
     const definitionsInput: Record<string, unknown> = {
@@ -260,7 +260,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       flows: merged.flows,
       capabilities: merged.capabilities,
     };
-    if (workspaceMapping !== undefined) definitionsInput['workspace'] = workspaceMapping;
+    if (repoMapping !== undefined) definitionsInput['repo'] = repoMapping;
     return validateDefinitions(definitionsInput);
   };
 
@@ -297,25 +297,25 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return ok({ hash: hashContent(content) });
   };
 
-  const resolveWorkspaceRoot = async (scope: DefinitionScope): Promise<string | undefined> => {
+  const resolveRepoRoot = async (scope: DefinitionScope): Promise<string | undefined> => {
     if (scope.kind === 'global') return config.globalRoot;
-    const path = await config.workspaces.path(scope.workspace);
+    const path = await config.repos.path(scope.repo);
     return path === undefined ? undefined : join(path, WORKSPACE_DIR);
   };
 
   return {
-    load: async (workspace) => {
-      const path = await config.workspaces.path(workspace);
+    load: async (repo) => {
+      const path = await config.repos.path(repo);
       return runDefinitionsPipeline({
-        scope: { kind: 'workspace', workspace },
-        workspaceRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
-        expectWorkspace: true,
+        scope: { kind: 'repo', repo },
+        repoRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
+        expectRepo: true,
         candidate: undefined,
       });
     },
 
-    loadRoadmap: async (workspace) => {
-      const path = await config.workspaces.path(workspace);
+    loadRoadmap: async (repo) => {
+      const path = await config.repos.path(repo);
       if (path === undefined) return undefined;
 
       let text: string;
@@ -340,7 +340,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
 
     readFile: async (scope, target) => {
       if (parseTarget(scope, target) === undefined) return undefined;
-      const root = await resolveWorkspaceRoot(scope);
+      const root = await resolveRepoRoot(scope);
       if (root === undefined) return undefined;
       try {
         const content = await readFile(join(root, target), 'utf8');
@@ -355,15 +355,15 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       if (parseTarget(scope, target) === undefined) {
         throw new Error(`not a definition file: ${target}`);
       }
-      const root = await resolveWorkspaceRoot(scope);
+      const root = await resolveRepoRoot(scope);
       if (root === undefined) {
-        throw new Error(scope.kind === 'global' ? 'no global root' : `unknown workspace: ${scope.workspace}`);
+        throw new Error(scope.kind === 'global' ? 'no global root' : `unknown repo: ${scope.repo}`);
       }
       const file = join(root, target);
       return enqueue(file, () => writeAtomic(file, content, expectedHash));
     },
 
-    workspacePath: async (workspace) => config.workspaces.path(workspace),
+    repoPath: async (repo) => config.repos.path(repo),
 
     validateCandidate: async (scope, target, content) => {
       if (parseTarget(scope, target) === undefined) {
@@ -371,12 +371,12 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       }
       if (target === ROADMAP_FILE) return validateRoadmapCandidate(content);
 
-      const path = scope.kind === 'global' ? undefined : await config.workspaces.path(scope.workspace);
+      const path = scope.kind === 'global' ? undefined : await config.repos.path(scope.repo);
       const result = await runDefinitionsPipeline({
         scope,
-        workspaceRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
-        expectWorkspace: scope.kind === 'workspace',
-        candidate: { label: scope.kind === 'global' ? 'global' : 'workspace', target, text: content },
+        repoRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
+        expectRepo: scope.kind === 'repo',
+        candidate: { label: scope.kind === 'global' ? 'global' : 'repo', target, text: content },
       });
       return result.ok ? ok(undefined) : err(result.error);
     },

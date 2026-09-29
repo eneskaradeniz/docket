@@ -1,5 +1,5 @@
 // Machine-side ports — what gates and runs need from the local machine.
-import type { Result, WorkOrderId, WorkspaceSlug } from '../../domain/index';
+import type { Result, WorkOrderId, RepoSlug } from '../../domain/index';
 
 export interface CommandResult {
   readonly exitCode: number;
@@ -22,5 +22,5 @@ export interface EvidenceChecker {
 }
 
 export interface Worktrees {
-  ensure(workspace: WorkspaceSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
+  ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
 }

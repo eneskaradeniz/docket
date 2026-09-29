@@ -91,7 +91,7 @@ export async function dispatcherTick(
   const now = deps.clock.now();
   const queue = await deps.queue.list();
 
-  // The join with the work orders names each run's workspace; a run whose work order is gone
+  // The join with the work orders names each run's repo; a run whose work order is gone
   // cannot be attributed and therefore takes part in no limit.
   const running: RunningRun[] = [];
   for (const run of await deps.runs.listActive()) {
@@ -99,7 +99,7 @@ export async function dispatcherTick(
     if (workOrder === undefined) continue;
     running.push({
       workOrderId: run.workOrderId,
-      workspace: workOrder.workspace,
+      repo: workOrder.repo,
       accountId: run.route.accountId,
     });
   }
@@ -178,7 +178,7 @@ export async function applyLimitDecision(
   await deps.queue.put({
     id: queued,
     workOrderId: run.workOrderId,
-    workspace: workOrder.workspace,
+    repo: workOrder.repo,
     stage: run.stage,
     route,
     priority: 0,
@@ -200,7 +200,7 @@ export async function enqueueStage(
   const record = await deps.workOrders.get(input.id);
   if (record === undefined) return err('not_found');
 
-  const loaded = await deps.definitions.load(record.workspace);
+  const loaded = await deps.definitions.load(record.repo);
   if (!loaded.ok) return err('definitions_invalid');
   const flow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
   // Without the flow the state machine has nothing to say, so `start_run` is unreachable.
@@ -210,7 +210,7 @@ export async function enqueueStage(
   const next = nextAction(flow, state);
   if (next.kind !== 'start_run') return err('not_ready');
 
-  const routed = await resolveRoute(deps, { workspace: record.workspace, workOrderId: input.id, role: next.role });
+  const routed = await resolveRoute(deps, { repo: record.repo, workOrderId: input.id, role: next.role });
   if (!routed.ok) return routed;
 
   const queued = deps.ids.next<'queue-item'>();
@@ -221,7 +221,7 @@ export async function enqueueStage(
   await deps.queue.put({
     id: queued,
     workOrderId: input.id,
-    workspace: record.workspace,
+    repo: record.repo,
     stage: next.stage,
     route: { ...routed.value.chain[0] },
     priority: input.priority ?? 0,

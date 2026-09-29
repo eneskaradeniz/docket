@@ -23,7 +23,7 @@ import {
   type StageSlug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, TransportError } from '../ports';
@@ -63,7 +63,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAA');
 const POOL: PoolId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAB');
@@ -92,7 +92,7 @@ const CAPABILITY = {
 const ITEM: QueueItem = {
   id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAD'),
   workOrderId: WORK_ORDER,
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: ACCOUNT },
   priority: 0,
@@ -103,13 +103,13 @@ const INPUT = {
   item: ITEM,
   role: ROLE,
   prompt: 'implement the stage',
-  cwd: `/wt/${WS}/${WORK_ORDER}`,
+  cwd: `/wt/${REPO}/${WORK_ORDER}`,
   capabilities: [CAPABILITY],
 };
 
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
-  workspace: WS,
+  repo: REPO,
   flow: slugOf<'flow'>('standard'),
   title: 'The work order',
   createdAt: T0,
@@ -509,7 +509,7 @@ describe('executeRun', () => {
     expect(gateResult.asked.length).toBe(1);
     expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'allow' }]);
     expect((await h.accounts.meters(ACCOUNT)).length).toBe(1);
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
     expect(await h.workOrders.events(WORK_ORDER)).toEqual([
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'succeeded' },
@@ -619,14 +619,14 @@ describe('executeRun', () => {
     expect(isUlid(meter.poolId)).toBe(true);
   });
 
-  it('A-16: usage with a cost records spend for the run account, workspace and work order', async () => {
+  it('A-16: usage with a cost records spend for the run account, repo and work order', async () => {
     const h = await harness({ script: [usage(0.25), usage(1.5), usage(), finished('completed')] });
 
     await executeRun(h.deps, permissionGate().permissions, INPUT);
 
     const window = { from: 0, to: T0 + 10_000 };
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
-    expect(await h.accounts.spend({ workspace: slugOf<'workspace'>('elsewhere'), ...window })).toBe(0);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
+    expect(await h.accounts.spend({ repo: slugOf<'repo'>('elsewhere'), ...window })).toBe(0);
   });
 
   it('A-16: a usage event without a cost records no spend', async () => {

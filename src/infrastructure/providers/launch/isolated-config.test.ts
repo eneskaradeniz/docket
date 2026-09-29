@@ -88,7 +88,7 @@ const RUN_CAPABILITIES: readonly RunCapability[] = [
     name: 'Filesystem',
     command: 'npx',
     args: ['-y', 'fs-server'],
-    env: { ROOT: '/workspace/main' },
+    env: { ROOT: '/repo/main' },
   },
   { kind: 'mcp', id: 'github', name: 'GitHub', command: 'gh-mcp', args: [], env: {} },
   { kind: 'skill', id: 'review', name: 'Review skill', path: '/library/skills/review' },
@@ -166,7 +166,7 @@ describe('run-scoped config writer (P-7)', () => {
     expect(mcp.mcpServers.filesystem).toEqual({
       command: 'npx',
       args: ['-y', 'fs-server'],
-      env: { ROOT: '/workspace/main' },
+      env: { ROOT: '/repo/main' },
     });
 
     const skills = JSON.parse(await readFile(join(fragment.configDir, 'skills.json'), 'utf8')) as {
