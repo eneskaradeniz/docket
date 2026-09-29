@@ -177,6 +177,58 @@ the main-repo ★ row opens the board, not the roadmap (U-15); a single-repo boa
 view shows the limit policy read-only with ⓘ (U-20); Son kapananlar lists five (U-21); copy says
 proje / repo, never çalışma alanı (the Workspace→Repo rename).
 
+## Verifying the shell — E2E layers (Phase 3.5)
+
+The shell is verified against the frozen prototype **rev 8** (`~/source/docket-tasarim/rev8/`:
+`index.html` + reference screenshots). Every check below drives the **built Electron app** through
+Playwright's Electron mode, the same way `e2e/ui.mjs` does: launch, click, read the DOM. There is no
+browser-only harness and no second transport. Maestro is out of scope for the desktop app; it
+belongs to the mobile app.
+
+| Layer | File | Runs | Blocks merge |
+| --- | --- | --- | --- |
+| Store rules U-15 … U-21 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
+| Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
+| Layout audit L-1 … L-9 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
+| Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |
+| Operator scenario | PR body | operator | yes (`main` gate) |
+
+- **Seed.** `e2e/seed-design.ts` writes a throwaway data dir holding exactly the prototype's world:
+  projects Antero (7 repos, main `antreo-docs`), Docket (2), date-app (3), telerelay (1), Kadife
+  Odoo (1); the prototype's work orders by code, stage and state; two accounts with 5-hour, weekly
+  and monthly windows. The same codes appear in the same place on every screen. It never touches the
+  operator's data.
+- **Window sizes.** Every journey and every audit runs at 760×480 (the minimum), 1280×800 (the
+  default), 1920×1080 and 2560×1440, in the dark and the light theme. The harness resizes the
+  `BrowserWindow`; it does not scale the page.
+- **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
+  the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
+  J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
+  roadmap → expand a cross-repo task → its work order opens the detail · J-5 single-repo project →
+  board → "Yol haritası ↗" · J-6 account card → account view → "Ayarlar'da düzenle ↗" opens
+  Settings · J-7 ⌘K focuses the search. Each step asserts visible text and saves a screenshot.
+- **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
+  screen × size × theme):
+  - **L-1** The sidebar's left edge is 0 and its width is 240px at a window width ≥ 1000 and 208px
+    below that, identical (±0.5px) on every screen.
+  - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
+  - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
+    clipping ancestor, except inside the declared Kanban scroller.
+  - **L-4** Text whose `scrollWidth` exceeds its `clientWidth` by more than 1px uses
+    `text-overflow: ellipsis` and carries its full text in `title`.
+  - **L-5** The main column's content width is at most 1200px (cockpit), 1280px (detail) or 960px
+    (roadmap, account); the board uses the full main width.
+  - **L-6** At a window height below 640 the accounts frame is collapsed to its header.
+  - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada
+    senden beklenen" section.
+  - **L-8** When Kanban columns overflow, the scroller has scroll-snap and shows the edge fade.
+  - **L-9** At 1280×800 the cockpit's "Son kapananlar" heading starts inside the first screen.
+- **Evidence.** A UI PR attaches the pass lines of `test:journeys` and `test:layout` and the gallery
+  path. The architect compares the gallery against the rev-8 reference screenshots before the
+  operator scenario.
+- J-n and L-n are E2E assertions, not coverage-checked rules: `check-rule-coverage.mjs` does not
+  list them.
+
 ## Electron bridge (no U-rules — structural)
 
 `electron/main.ts` composes `createNodeDeps` + the api, starts the dispatcher/executor loops,
