@@ -10,6 +10,7 @@ import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
 import { createAccountsFrameStore } from './stores/accounts-frame';
+import { createAccountViewStore } from './stores/account-view';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
@@ -69,8 +70,8 @@ if (mount !== null) {
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const cockpit = createCockpitStore({ api, changes, now: () => Date.now() });
-  const board = createBoardStore({ api, changes, actor: USER });
+  const cockpit = createCockpitStore({ api, changes, now: () => Date.now(), actor: USER });
+  const board = createBoardStore({ api, changes, actor: USER, persistence: window.localStorage });
   // The live pane has no run at composition time — the detail store attaches it to the active
   // run of whichever work order loads.
   const pane = createLivePaneStore({ api, changes, actor: USER });
@@ -86,6 +87,8 @@ if (mount !== null) {
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
   const accountsFrame = createAccountsFrameStore({ api, changes });
+  // The account view (U-20) shares the shell's coarse events and the machine's clock.
+  const accountView = createAccountViewStore({ api, changes, now: () => Date.now() });
   const roadmap = createRoadmapStore({ api, changes });
   void tree.load();
   void accountsFrame.load();
@@ -104,8 +107,10 @@ if (mount !== null) {
           board={board}
           roadmap={roadmap}
           detail={detail}
+          accountView={accountView}
           settings={settings}
           wizard={wizard}
+          timeZone={timeZone}
         />
       </ErrorBoundary>
     </React.StrictMode>,

@@ -2,17 +2,19 @@
 // the search field (⌘K focuses it), the Kokpit entry with the attention badge, the project →
 // repo tree, the accounts frame (its own disclosure) and the foot's settings control — next to
 // the content area that mounts the cockpit, a repo's board, a project's roadmap, a work order's
-// detail, an account's view, or the settings. The first-run wizard rides above it all as an
-// overlay: the shell mounts it, the wizard store's `open` decides whether it shows at all (U-7).
-// The badge mirrors the shell store: the cockpit's attention count, present only while attention
-// exists — zero renders nothing, never a zero (U-10). Every user-visible string arrives through
-// a label key (U-1).
+// detail, an account's view, or the settings. The detail and the account view open in place of
+// the screen they were reached from (U-19): ‹ Geri returns to that screen with its scroll where
+// the operator left it. The first-run wizard rides above it all as an overlay: the shell mounts
+// it, the wizard store's `open` decides whether it shows at all (U-7). The badge mirrors the
+// shell store: the cockpit's attention count, present only while attention exists — zero renders
+// nothing, never a zero (U-10). Every user-visible string arrives through a label key (U-1).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarTree } from '../components/sidebar-tree';
 import { t, type Locale } from '../labels/t';
 import type { AccountsFrameStore } from '../stores/accounts-frame';
+import type { AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
@@ -22,6 +24,7 @@ import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
+import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
@@ -37,17 +40,19 @@ export interface ShellScreenProps {
   readonly board: BoardStore;
   readonly roadmap: RoadmapStore;
   readonly detail: WorkOrderDetailStore;
+  readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
   readonly wizard: WizardStore;
   /** The locale store's handle for the settings screen's language control (U-9); the active
    *  bundle itself travels as `locale`, refreshed by the root's subscription. */
   readonly localeStore: LocaleStore;
   readonly locale: Locale;
+  /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
+  readonly timeZone: string;
 }
 
 /** Where the shell can be. Routes carry only ids; the screens load their own data. The roadmap
- *  route is the project row's target and the account route an account card's; until the account
- *  screen lands it renders the page title alone. */
+ *  route is the project row's and the board header's target; the page itself is its own screen. */
 type ShellRoute =
   | { readonly name: 'cockpit' }
   | { readonly name: 'board'; readonly repo: string }
@@ -55,6 +60,10 @@ type ShellRoute =
   | { readonly name: 'workOrder'; readonly id: string }
   | { readonly name: 'account'; readonly id: string }
   | { readonly name: 'settings' };
+
+/** The label the detail's back row carries — it names the screen the detail was opened from
+ *  (U-19). */
+type BackKind = 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap';
 
 const NAV_BASE =
   'flex h-[34px] w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-[13px] transition-colors';
@@ -98,14 +107,18 @@ const placeOf = (route: ShellRoute): TreePlace => {
   }
 };
 
-const AccountTitle = ({ accounts, id }: { readonly accounts: AccountsFrameStore; readonly id: string }) => {
-  const state = useSyncExternalStore(accounts.subscribe, accounts.state);
-  const label = state.cards?.find((card) => card.id === id)?.label;
-  return (
-    <h1 className="max-w-[960px] truncate font-mono text-[15px] font-bold tracking-tight text-ink">
-      {label ?? ''}
-    </h1>
-  );
+/** The back row's label for a detail opened from a route (U-19). */
+const backKindOf = (route: ShellRoute): BackKind => {
+  switch (route.name) {
+    case 'board':
+      return 'detail.back.board';
+    case 'roadmap':
+      return 'detail.back.roadmap';
+    case 'account':
+      return 'detail.back.account';
+    default:
+      return 'detail.back.cockpit';
+  }
 };
 
 export function ShellScreen({
@@ -116,16 +129,23 @@ export function ShellScreen({
   board,
   roadmap,
   detail,
+  accountView,
   settings,
   wizard,
   localeStore,
   locale,
+  timeZone,
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
+  // The route a detail or an account view replaces (U-19): ‹ Geri returns to it.
+  const backRouteRef = useRef<ShellRoute>({ name: 'cockpit' });
+  // The board's scroll, kept for the return from a detail opened on it (U-19).
+  const boardScrollRef = useRef(0);
+  const mainRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     void shell.load();
@@ -144,14 +164,52 @@ export function ShellScreen({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  // The board keeps its scroll across a detail round-trip: leaving a board for a detail or an
+  // account view stamps it, returning restores it once the board has painted again (U-19).
+  const prevRouteRef = useRef<ShellRoute>(route);
+  useEffect(() => {
+    const prev = prevRouteRef.current;
+    prevRouteRef.current = route;
+    if (prev.name === 'board' && (route.name === 'workOrder' || route.name === 'account')) {
+      boardScrollRef.current = mainRef.current?.scrollTop ?? 0;
+      return undefined;
+    }
+    if (prev.name !== 'board' && route.name === 'board') {
+      const restore = boardScrollRef.current;
+      const frame = requestAnimationFrame(() => {
+        if (mainRef.current !== null) mainRef.current.scrollTop = restore;
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    return undefined;
+  }, [route]);
 
   const badge = state.badge;
   const treeState = useSyncExternalStore(tree.subscribe, tree.state);
+  const accountsState = useSyncExternalStore(accounts.subscribe, accounts.state);
   const selection = treeSelection(
     treeState.tree,
     route.name === 'workOrder' || route.name === 'account' ? placeRef.current : placeOf(route),
   );
-  const openWorkOrder = (id: string): void => setRoute({ name: 'workOrder', id });
+
+  /** Opens a work order in place of the current screen (U-19): the current route becomes the
+   *  back row's target, the tree's selection stays where it was. */
+  const openWorkOrder = (id: string): void => {
+    backRouteRef.current = route.name === 'workOrder' ? backRouteRef.current : route;
+    setRoute({ name: 'workOrder', id });
+  };
+  /** Opens an account view in place; the cockpit or account card is where it returns to. */
+  const openAccount = (id: string): void => {
+    backRouteRef.current = route;
+    setRoute({ name: 'account', id });
+  };
+
+  // The board header's roadmap shortcut exists only for a single-repo project (U-15): the tree
+  // knows which project owns the repo and how many repos it has.
+  const roadmapProjectOf = (repo: string): string | null => {
+    const owner = treeState.tree.find((item) => item.repos.some((node) => node.repo === repo));
+    return owner !== undefined && owner.repos.length === 1 ? owner.project : null;
+  };
 
   return (
     <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)] overflow-hidden bg-bg text-ink">
@@ -204,7 +262,7 @@ export function ShellScreen({
           store={accounts}
           locale={locale}
           activeAccountId={route.name === 'account' ? route.id : null}
-          onOpenAccount={(id) => setRoute({ name: 'account', id })}
+          onOpenAccount={openAccount}
         />
 
         <div className="mt-2.5 flex flex-none items-center justify-end px-0.5">
@@ -222,12 +280,27 @@ export function ShellScreen({
         </div>
       </nav>
 
-      <main className="min-w-0 overflow-y-auto px-[22px] py-[18px]">
+      <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
         {route.name === 'cockpit' ? (
-          <CockpitScreen store={cockpit} locale={locale} onOpenWorkOrder={openWorkOrder} />
+          <CockpitScreen
+            store={cockpit}
+            locale={locale}
+            onOpenWorkOrder={openWorkOrder}
+            onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
+            onOpenBoard={(repo) => setRoute({ name: 'board', repo })}
+            accounts={accountsState.cards}
+          />
         ) : null}
         {route.name === 'board' ? (
-          <BoardScreen store={board} repo={route.repo} locale={locale} onOpenWorkOrder={openWorkOrder} />
+          <BoardScreen
+            store={board}
+            repo={route.repo}
+            locale={locale}
+            onOpenWorkOrder={openWorkOrder}
+            roadmapProject={roadmapProjectOf(route.repo)}
+            onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
+            onOpenSettings={() => setRoute({ name: 'settings' })}
+          />
         ) : null}
         {route.name === 'roadmap' ? (
           <RoadmapScreen
@@ -239,9 +312,25 @@ export function ShellScreen({
             onOpenWorkOrder={openWorkOrder}
           />
         ) : null}
-        {route.name === 'account' ? <AccountTitle accounts={accounts} id={route.id} /> : null}
+        {route.name === 'account' ? (
+          <AccountViewScreen
+            store={accountView}
+            accountId={route.id}
+            locale={locale}
+            timeZone={timeZone}
+            onOpenWorkOrder={openWorkOrder}
+            onOpenSettings={() => setRoute({ name: 'settings' })}
+            onBack={() => setRoute(backRouteRef.current)}
+          />
+        ) : null}
         {route.name === 'workOrder' ? (
-          <WorkOrderDetailScreen store={detail} workOrderId={route.id} locale={locale} />
+          <WorkOrderDetailScreen
+            store={detail}
+            workOrderId={route.id}
+            locale={locale}
+            backKey={backKindOf(backRouteRef.current)}
+            onBack={() => setRoute(backRouteRef.current)}
+          />
         ) : null}
         {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
       </main>
