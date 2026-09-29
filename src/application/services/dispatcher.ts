@@ -64,6 +64,12 @@ const daysFromCivilMonth = (year: number, month: number): number => {
 
 const startOfUtcDay = (at: EpochMs): EpochMs => Math.floor(at / MS_PER_DAY) * MS_PER_DAY;
 
+/** Monday 00:00 UTC of the ISO week; the epoch day 0 is a Thursday, hence the +3 shift. */
+const startOfUtcIsoWeek = (at: EpochMs): EpochMs => {
+  const days = Math.floor(at / MS_PER_DAY);
+  return (Math.floor((days + 3) / 7) * 7 - 3) * MS_PER_DAY;
+};
+
 const startOfUtcMonth = (at: EpochMs): EpochMs => {
   const { year, month } = civilFromDays(Math.floor(at / MS_PER_DAY));
   return daysFromCivilMonth(year, month) * MS_PER_DAY;
@@ -76,15 +82,19 @@ const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
 
 /** Both bounds inclusive: the spend port's window is `[from, to]`, so a boundary entry counts. */
 const spendWindow = (
-  scope: 'account_day' | 'account_month',
+  scope: 'account_day' | 'account_week' | 'account_month',
   now: EpochMs,
-): { readonly from: EpochMs; readonly to: EpochMs } =>
-  scope === 'account_day'
-    ? { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 }
-    : { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+): { readonly from: EpochMs; readonly to: EpochMs } => {
+  if (scope === 'account_day') return { from: startOfUtcDay(now), to: startOfUtcDay(now) + MS_PER_DAY - 1 };
+  if (scope === 'account_week') {
+    const from = startOfUtcIsoWeek(now);
+    return { from, to: from + 7 * MS_PER_DAY - 1 };
+  }
+  return { from: startOfUtcMonth(now), to: startOfNextUtcMonth(now) - 1 };
+};
 
 export async function dispatcherTick(
-  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders'>,
+  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects'>,
   config: DispatcherConfig,
   start: (item: QueueItem) => void,
 ): Promise<TickResult> {
@@ -125,6 +135,22 @@ export async function dispatcherTick(
         to: window.to,
       });
       scoped.push({ scope: cap.scope, observedUsd, cap: cap.cap });
+    }
+
+    // Repo limit first, then project ceiling: the order decides which scope a tie reports (R-32).
+    // Both read spend across every account, and the ceiling across every repo of the project, so
+    // a repo with no spend of its own is still held once the ceiling is used up.
+    const month = spendWindow('account_month', now);
+    const loaded = await deps.definitions.load(item.repo);
+    const repoBudget = loaded.ok ? loaded.value.repo?.budget : undefined;
+    if (repoBudget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ repo: item.repo, from: month.from, to: month.to });
+      scoped.push({ scope: 'repo_month', observedUsd, cap: repoBudget });
+    }
+    const project = await deps.projects.projectOfRepo(item.repo);
+    if (project?.budget !== undefined) {
+      const observedUsd = await deps.accounts.spend({ project: project.id, from: month.from, to: month.to });
+      scoped.push({ scope: 'project_month', observedUsd, cap: project.budget });
     }
     spendByItem[item.id] = combinedSpendStatus(scoped).status;
   }

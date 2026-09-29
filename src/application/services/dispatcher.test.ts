@@ -142,7 +142,7 @@ const route = (accountId: AccountId, model?: string): AccountRoute =>
 
 const account = (
   id: AccountId,
-  caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[] = [],
+  caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[] = [],
 ): AccountRecord => ({
   id,
   provider: 'provider-x',
@@ -689,6 +689,32 @@ describe('dispatcherTick', () => {
     expect(previous.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
   });
 
+  it('A-20: the week cap window is the UTC ISO week of now, from Monday 00:00 UTC; the previous Sunday 23:59 does not count', async () => {
+    const capped = account(A1, [{ scope: 'account_week', cap: { amountUsd: 10, warnPercent: 80 } }]);
+    // MID_MONTH is Saturday 2026-09-26; its ISO week starts Monday 2026-09-21T00:00:00.000Z.
+    const MONDAY_START: EpochMs = 1_789_948_800_000;
+    const SUNDAY_LATE: EpochMs = MONDAY_START - 60_000; // 2026-09-20T23:59:00.000Z
+
+    const runWith = async (spentAt: EpochMs) => {
+      const h = makeHarness(MID_MONTH);
+      await createWorkOrder(h, WO1);
+      await h.deps.accounts.save(capped);
+      await h.deps.accounts.recordSpend({
+        project: slugOf<'project'>('proj'),
+        accountId: A1,
+        repo: REPO,
+        workOrderId: WO1,
+        at: spentAt,
+        usd: 10,
+      });
+      await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+      return dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+    };
+
+    expect((await runWith(MONDAY_START)).decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'budget' }]);
+    expect((await runWith(SUNDAY_LATE)).decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
   it('A-20: the month cap window is the UTC calendar month of now, inclusive of its first millisecond', async () => {
     const capped = account(A1, [{ scope: 'account_month', cap: { amountUsd: 10, warnPercent: 80 } }]);
 
@@ -846,6 +872,94 @@ describe('dispatcherTick', () => {
     const result = await dispatcherTick(h.deps, { limits: LIMITS({ global: 1, perAccount: { [A1]: 1 } }) }, startRecorder().callback);
 
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('R-48: a project ceiling at hard_stop holds every queued item of that project, even a repo with no spend, while another project still starts, and a running run stays', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    const OTHER_PROJ = slugOf<'project'>('other-proj');
+    const FOREIGN: RepoSlug = slugOf('foreign');
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await h.deps.projects.save({
+      id: OTHER_PROJ,
+      name: 'Other',
+      mainRepo: FOREIGN,
+      repos: [FOREIGN],
+      budget: { amountUsd: 10, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await createWorkOrder(h, WO3, FOREIGN);
+    await createWorkOrder(h, WO4, OTHER);
+    // 6 + 4 spread over the two repos of PROJ; REPO itself spent nothing.
+    for (const [at, usd] of [[OTHER, 6], [OTHER, 4]] as const) {
+      await h.deps.accounts.recordSpend({
+        accountId: A1,
+        project: PROJ,
+        repo: at,
+        workOrderId: WO2,
+        at: h.clock.now(),
+        usd,
+      });
+    }
+    await createRun(h, RUN1, WO4, route(A1));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+    await h.deps.queue.put({ ...queueItem(Q3, WO3, route(A1)), repo: FOREIGN });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'wait', reason: 'budget' },
+      { item: Q3, kind: 'start' },
+    ]);
+    expect((await h.deps.runs.listActive()).map((run) => run.id)).toStrictEqual([RUN1]);
+  });
+
+  it('R-48: a repo limit at hard_stop holds only that repo — its sibling under the same project starts', async () => {
+    const h = makeHarness();
+    const PROJ = slugOf<'project'>('proj');
+    h.definitions.seed(
+      { kind: 'global' },
+      'definitions.json',
+      JSON.stringify({
+        ...DEFINITIONS_BODY,
+        repo: { ...DEFINITIONS_BODY.repo, budget: { amountUsd: 5, warnPercent: 80 } },
+      }),
+    );
+    await h.deps.projects.save({
+      id: PROJ,
+      name: 'Proj',
+      mainRepo: REPO,
+      repos: [REPO, OTHER],
+      budget: { amountUsd: 100, warnPercent: 80 },
+    });
+    await createWorkOrder(h, WO1, REPO);
+    await createWorkOrder(h, WO2, OTHER);
+    await h.deps.accounts.recordSpend({
+      accountId: A1,
+      project: PROJ,
+      repo: REPO,
+      workOrderId: WO1,
+      at: h.clock.now(),
+      usd: 5,
+    });
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+    await h.deps.queue.put({ ...queueItem(Q2, WO2, route(A1)), repo: OTHER });
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([
+      { item: Q1, kind: 'wait', reason: 'budget' },
+      { item: Q2, kind: 'start' },
+    ]);
   });
 
   it('A-20: an empty queue ticks with no decisions and no starts', async () => {
