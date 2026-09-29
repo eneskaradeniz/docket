@@ -9,6 +9,12 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 export const WINDOW_MIN_WIDTH = 1024;
 export const WINDOW_MIN_HEIGHT = 640;
 
+/** The size the window opens at: 16:10, a step down from the previous 1280x800 so the fresh
+ *  window fits smaller laptop screens. The cockpit's last section then needs a short scroll —
+ *  accepted; the minimums above are untouched. Lives here for the same reason the minimums do. */
+export const WINDOW_DEFAULT_WIDTH = 1152;
+export const WINDOW_DEFAULT_HEIGHT = 720;
+
 /** The platform-varying slice of the BrowserWindow constructor options. */
 export type TitleBarOptions = Pick<
   BrowserWindowConstructorOptions,
