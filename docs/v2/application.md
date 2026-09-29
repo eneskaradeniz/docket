@@ -241,6 +241,12 @@ export interface Worktrees {
   ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
 }
 
+// git-probe.ts — the one git question the attach flow asks (A-24); kept apart from Worktrees so a
+// use case can ask it without gaining worktree powers
+export interface GitProbe {
+  isWorkTree(path: string): Promise<boolean>;   // an existing checkout, not a bare repository
+}
+
 // repo-registry.ts — machine-local pointers only (S1): where each repo is cloned on this machine
 export interface RepoRegistry {
   path(slug: RepoSlug): Promise<string | undefined>;
@@ -256,7 +262,7 @@ export interface Notifier { notify(title: string, body: string): void }
 export interface AppDeps {
   readonly clock: Clock; readonly ids: IdGen; readonly log: EventLog;
   readonly workOrders: WorkOrderRepo; readonly runs: RunRepo; readonly accounts: AccountRepo;
-  readonly projects: ProjectRepo; readonly repos: RepoRegistry;
+  readonly projects: ProjectRepo; readonly repos: RepoRegistry; readonly git: GitProbe;
   readonly bindings: BindingRepo; readonly queue: QueueRepo; readonly definitions: DefinitionStore;
   readonly proposals: ProposalRepo; readonly secrets: SecretVault; readonly transports: TransportResolver;
   readonly commands: CommandRunner; readonly secretScanner: SecretScanner; readonly worktrees: Worktrees;
@@ -403,9 +409,9 @@ export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'acc
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
 
 // projects.ts — the Project & Repo layer (Phase 3.5, S1/S3/S4)
-export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid';
+export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
 export function attachProject(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git'>,
   input: { readonly path: string; readonly actor: Actor; readonly repos?: readonly { readonly repo: RepoSlug; readonly path: string }[] },
 ): Promise<Result<ProjectDef, AttachError>>;
 
@@ -439,7 +445,7 @@ Rules:
 - **A-12** `decideProposalUseCase`, in this order: (1) load the proposal (`not_found`); (2) read the target's current hash (`''` if absent); (3) on `approved` only: `DefinitionStore.validateCandidate(scope, target, after)` — issues → `invalid_after`, proposal stays `pending`; (4) domain `decideProposal(p, decision, actor, currentHash, now)` — `stale` → save the proposal with status `stale` and return `stale`; `not_pending`/`self_approval` → return as is; (5) on `approved`: `writeFile(scope, target, after, baseHash)` — `err('stale')` → save as `stale`, return `stale`; (6) save the decided proposal; audit `proposal.decided` with `detail: { decision }`. Rejection never touches files.
 - **A-13** `saveAccount`: a `secret` requires `record.secretRef` (`secret_without_ref` otherwise) and is stored only through `SecretVault.put`; the secret never appears in the record, the audit entry, or any return value. `removeAccount` removes the vault entry too.
 - **A-14** `saveBinding`: an empty account chain → `empty_chain`; audit `binding.saved` naming the role.
-- **A-24** `attachProject`: `path` must be an existing git work tree (`not_a_repo`); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
+- **A-24** `attachProject`: `path` must be an existing git work tree per `git.isWorkTree` (`not_a_repo`, nothing written); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
 

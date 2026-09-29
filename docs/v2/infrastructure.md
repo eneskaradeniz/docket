@@ -159,6 +159,7 @@ INSERT INTO project_repos (project, repo) SELECT slug, slug FROM repos;
 UPDATE work_orders SET project = repo;
 UPDATE work_orders SET data = json_set(json_remove(data, '$.workspace'), '$.project', repo, '$.repo', repo);
 UPDATE spend SET project = repo;
+UPDATE bindings SET level = 'repo' WHERE level = 'workspace';
 CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);
 CREATE INDEX project_repos_by_repo ON project_repos (repo);
 ```

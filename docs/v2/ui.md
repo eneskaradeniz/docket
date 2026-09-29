@@ -127,7 +127,8 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   `workOrders.changed`. Selection semantics (K-2/K-3/K-7): a project row opens the roadmap, a repo
   row opens that repo's board; while a repo row is active its project row keeps the pale-selected
   state; a single-repo project renders as one flat row opening the board, with a "Yol haritası ↗"
-  link in the board header. ★ marks the main repo. A project's status dot mirrors its most urgent
+  link in the board header. ★ marks the main repo; the main-repo row is a repo row like any other and
+  opens its board — the roadmap is reached only through the project row (one rule per row kind). A project's status dot mirrors its most urgent
   repo (`waiting > running > idle`, A-27) and its pill the total active work orders; a zero count
   hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
   kept for the session. The search field is focused with ⌘K. The sort control cycles stored
@@ -149,14 +150,16 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   and survives reload. Cards are not draggable — a work order advances only through its gates. A
   card click opens the in-place detail (K-8:A); no hover preview. The list view is a stage rail
   plus the selected stage and one row per work order (İE, title, stage progress, status, account,
-  duration/cost, date).
+  duration/cost, date). The header's "Akışı düzenle" is a shortcut that opens the Settings window
+  at this repo's flow; the board itself never edits definitions (K-5).
 - **U-19** (in-place detail) The detail opens in place of the board — no overlay; ‹ Geri returns to
   the board with its view state (Kanban/Liste, scroll) intact. The flow strip marks pending gates
   amber and dashed; the "bu aşamada senden beklenen" section and its actions map U-4's intents;
   the live pane follows U-5 and opens only from the card/detail (K-8:A).
 - **U-20** (account view) Fed by `account.detail`. Window blocks: one large labelled bar per window
   with the used percent and the reset time ("…'de sıfırlanır · … kaldı"); the limit-behaviour band
-  shows the account's policy label; `activeWork` rows navigate to the work-order detail. Information
+  shows the account's policy label with ⓘ and an "Ayarlar'da düzenle" link — no control on this page
+  changes the policy; `activeWork` rows navigate to the work-order detail. Information
   is inspectable (ⓘ); editing stays in the Settings window (K-5's rule: bilgi → ⓘ,
   düzenleme → Ayarlar penceresi).
 - **U-21** (cockpit) The app opens on the cockpit, which has four sections: Senden bekleyenler
@@ -165,6 +168,14 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
   cockpit — that intent lives on the board header (IA-3).
+
+### Prototype vs rules (2026-09-29)
+
+Where the rev-7 prototype and U-15 … U-21 disagree, the rules win and the prototype is corrected:
+the main-repo ★ row opens the board, not the roadmap (U-15); a single-repo board header carries
+"Yol haritası ↗" (U-15); a cross-repo task expands to its per-repo work orders (U-17); the account
+view shows the limit policy read-only with ⓘ (U-20); Son kapananlar lists five (U-21); copy says
+proje / repo, never çalışma alanı (the Workspace→Repo rename).
 
 ## Electron bridge (no U-rules — structural)
 
