@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectTree } from '../../api/queries';
-import { CLOSED_PALETTE, paletteReducer, searchTree } from './search-palette';
+import { CLOSED_PALETTE, paletteBody, paletteReducer, searchTree } from './search-palette';
 
 const TREE: ProjectTree = [
   {
@@ -50,6 +50,24 @@ describe('searchTree', () => {
 
   it('a query no name contains returns no results', () => {
     expect(searchTree(TREE, 'zzz')).toStrictEqual([]);
+  });
+});
+
+describe('paletteBody', () => {
+  it('an empty or blank query shows no body — the palette is the input row only', () => {
+    expect(paletteBody('', 0)).toBe('none');
+    expect(paletteBody('   ', 0)).toBe('none');
+    // The query alone decides: even a stray count cannot open a body under an empty input.
+    expect(paletteBody('', 2)).toBe('none');
+  });
+
+  it('a typed query with results shows the list', () => {
+    expect(paletteBody('odoo', 2)).toBe('results');
+    expect(paletteBody(' odoo ', 1)).toBe('results');
+  });
+
+  it('a typed query without results shows the no-results line', () => {
+    expect(paletteBody('zzz', 0)).toBe('no-results');
   });
 });
 

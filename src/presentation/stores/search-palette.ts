@@ -20,6 +20,17 @@ export interface PaletteState {
   readonly selected: number;
 }
 
+/** What the palette shows under the input: nothing while the query is empty (the palette is the
+ *  input row alone), the rows once a typed query matches, the no-results line once it does not. */
+export type PaletteBody = 'none' | 'results' | 'no-results';
+
+/** The visible body is a pure function of the query and the result count — the component renders
+ *  it and nothing else decides it. */
+export const paletteBody = (query: string, resultCount: number): PaletteBody => {
+  if (query.trim() === '') return 'none';
+  return resultCount > 0 ? 'results' : 'no-results';
+};
+
 export type PaletteAction =
   | { readonly type: 'open' }
   | { readonly type: 'close' }

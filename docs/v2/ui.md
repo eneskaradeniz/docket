@@ -134,7 +134,9 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   repo (`waiting > running > idle`, A-27) and its pill the total active work orders; a zero count
   hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
   kept for the session. The sidebar carries no search field: ⌘K or the title bar's Ara button
-  opens the centered search palette over a blurred, dimmed backdrop — it searches projects and
+  opens the centered search palette over a blurred, dimmed backdrop — while the query is empty the
+  palette is the input row alone, the results (or the no-results line) appearing with the first
+  typed character and folding away when it is cleared — it searches projects and
   repos by name (no other query types), ↑/↓ move, Enter opens the selected result (project →
   roadmap, repo → board, as the tree's rows do), Esc or a backdrop click closes, focus is
   trapped while open and restored on close. The sort control cycles stored

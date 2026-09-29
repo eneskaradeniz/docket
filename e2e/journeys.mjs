@@ -145,6 +145,35 @@ for (const [size, theme] of combos) {
   });
 
   await journey('J-7', '⌘K opens the palette and focuses its input', async () => {
+    // The palette eases in and out (backdrop 200ms; panel 220ms, 40ms behind it; the body folds
+    // in 180ms) — the waits below ride the transitions themselves, no fixed sleeps.
+    const panelSettled = () =>
+      page.waitForFunction(
+        () => {
+          const panel = document.querySelector('[data-search-palette]');
+          // Opacity is the longest leg of the open — at 1 the rise and scale have landed too.
+          return panel !== null && parseFloat(getComputedStyle(panel).opacity) > 0.999;
+        },
+        undefined,
+        { timeout: WAIT },
+      );
+    const bodySettled = (open) =>
+      page.waitForFunction(
+        (open) => {
+          const body = document.querySelector('[data-search-body]');
+          const list = document.querySelector('[data-search-palette] [role="listbox"]');
+          if (body === null || list === null) return false;
+          // A running fold still animates; once nothing animates, the body's height is final.
+          const idle = body.getAnimations().length === 0 && list.getAnimations().length === 0;
+          const grown = body.getBoundingClientRect().height > 1;
+          return open ? grown && idle : !grown && idle;
+        },
+        open,
+        { timeout: WAIT },
+      );
+    const bodyHeight = () =>
+      page.evaluate(() => document.querySelector('[data-search-body]')?.getBoundingClientRect().height ?? -1);
+
     await page.keyboard.press('Meta+K');
     await page.waitForFunction(
       () => document.activeElement?.closest('[data-search-palette]') !== null,
@@ -156,19 +185,32 @@ for (const [size, theme] of combos) {
       return el ? `${el.tagName} ${el.getAttribute('placeholder') ?? el.getAttribute('aria-label') ?? ''}` : '';
     });
     assert.match(focused, /^INPUT (Proje|Search)/i, `focus is on ${focused}`);
+    await panelSettled();
+    // An empty query leaves the panel as the input row alone — no body under it (sub-1px is
+    // the fold's subpixel dust, not a body).
+    const emptyBody = await bodyHeight();
+    assert.ok(emptyBody < 1, `empty palette shows a ${emptyBody}px body under the input`);
     await shot('palette-open');
     // The palette's index is the tree's own names: 'antero' finds the project, Enter opens its roadmap.
     await page.keyboard.type('antero');
+    await bodySettled(true);
     await page.locator('[data-search-palette]').getByText('Antero').waitFor({ state: 'visible', timeout: WAIT });
     await shot('palette-results');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
     await see('Yol haritası');
     await shot('palette-opened-roadmap');
-    // The title bar's Ara button opens the same door; Esc closes it. Its accessible name is the
-    // icon's aria-label, the bundle's search label with the shortcut hint.
+    // The title bar's Ara button opens the same door; clearing the text folds the body away
+    // again, and Esc eases the palette out. Its accessible name is the icon's aria-label, the
+    // bundle's search label with the shortcut hint.
     await page.getByRole('button', { name: 'Ara ⌘K', exact: true }).click({ timeout: WAIT });
     await page.waitForSelector('[data-search-palette]', { timeout: WAIT });
+    await page.keyboard.type('antero');
+    await bodySettled(true);
+    for (let i = 0; i < 7; i += 1) await page.keyboard.press('Backspace');
+    await bodySettled(false);
+    const clearedBody = await bodyHeight();
+    assert.ok(clearedBody < 1, `cleared palette keeps a ${clearedBody}px body under the input`);
     await page.keyboard.press('Escape');
     await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
     await shot('palette-closed');
