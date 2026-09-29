@@ -133,6 +133,7 @@ export const LABEL_KEYS = [
   // Screens A: the shell's nav landmark, search field, project tree and accounts frame
   // (screens/shell.tsx, components/sidebar-tree.tsx, components/sidebar-accounts.tsx).
   'shell.nav',
+  'shell.wordmark',
   'shell.search.placeholder',
   'shell.search.kbd',
   'nav.cockpit',

@@ -10,10 +10,10 @@ describe('window minimum size', () => {
 });
 
 describe('titleBarOptionsFor', () => {
-  it('darwin hides the native title strip and insets the traffic lights into the app bar', () => {
+  it('darwin hides the native title strip and insets the traffic lights into the shell drag bar', () => {
     expect(titleBarOptionsFor('darwin')).toStrictEqual({
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 14, y: 16 },
+      trafficLightPosition: { x: 14, y: 14 },
     });
   });
 

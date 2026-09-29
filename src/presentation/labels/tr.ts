@@ -111,6 +111,7 @@ export const TR: LabelBundle = {
   'live.meter.used': 'kullanılan',
   'live.meter.limit': 'limit',
   'shell.nav': 'Gezinme',
+  'shell.wordmark': 'Docket',
   'shell.search.placeholder': 'İş emri, proje…',
   'shell.search.kbd': '⌘K',
   'nav.cockpit': 'Kokpit',
