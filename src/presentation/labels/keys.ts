@@ -136,10 +136,10 @@ export const LABEL_KEYS = [
   // components/sidebar-accounts.tsx).
   'shell.nav',
   'shell.wordmark',
+  'shell.search',
   'nav.home',
   'nav.cockpit',
   'palette.title',
-  'palette.kbd',
   'palette.kbd.esc',
   'palette.placeholder',
   'palette.empty',

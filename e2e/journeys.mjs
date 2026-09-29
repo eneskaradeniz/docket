@@ -55,7 +55,12 @@ for (const [size, theme] of combos) {
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
-      await click('Anasayfa').catch(() => undefined); // every journey starts at the cockpit
+      // The title bar buttons are icon-only — reach them by their aria-label, not text.
+      await page
+        .getByRole('button', { name: 'Anasayfa' })
+        .first()
+        .click({ timeout: WAIT })
+        .catch(() => undefined); // every journey starts at the cockpit
       await fn();
       console.log(`  ok   ${title}`);
     } catch (error) {
@@ -160,8 +165,9 @@ for (const [size, theme] of combos) {
     await page.keyboard.press('Enter');
     await see('Yol haritası');
     await shot('palette-opened-roadmap');
-    // The title bar's Ara button opens the same door; Esc closes it.
-    await page.getByRole('button', { name: 'Ara', exact: true }).click({ timeout: WAIT });
+    // The title bar's Ara button opens the same door; Esc closes it. Its accessible name is the
+    // icon's aria-label, the bundle's search label with the shortcut hint.
+    await page.getByRole('button', { name: 'Ara ⌘K', exact: true }).click({ timeout: WAIT });
     await page.waitForSelector('[data-search-palette]', { timeout: WAIT });
     await page.keyboard.press('Escape');
     await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
