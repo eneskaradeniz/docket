@@ -130,13 +130,21 @@ export const LABEL_KEYS = [
   'live.usage.cost',
   'live.meter.used',
   'live.meter.limit',
-  // Screens A: the shell's nav landmark, search field, project tree and accounts frame
-  // (screens/shell.tsx, components/sidebar-tree.tsx, components/sidebar-accounts.tsx).
+  // Screens A: the shell's nav landmark, the title bar's home and search buttons, the centered
+  // search palette, the project tree and the accounts frame (screens/shell.tsx,
+  // components/title-bar.tsx, components/search-palette.tsx, components/sidebar-tree.tsx,
+  // components/sidebar-accounts.tsx).
   'shell.nav',
   'shell.wordmark',
-  'shell.search.placeholder',
-  'shell.search.kbd',
+  'nav.home',
   'nav.cockpit',
+  'palette.title',
+  'palette.kbd',
+  'palette.kbd.esc',
+  'palette.placeholder',
+  'palette.empty',
+  'palette.kind.project',
+  'palette.kind.repo',
   'nav.projects',
   'nav.projects.empty',
   'nav.projects.sort',

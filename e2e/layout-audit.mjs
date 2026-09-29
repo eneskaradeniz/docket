@@ -1,6 +1,10 @@
 // e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-9 rules of e2e/layout-rules.mjs
 // for every screen × window size × theme and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
+// The app target adds one more line per size × theme for the search palette, measured open on the
+// cockpit screen (⌘K): the panel must sit in the window's centre over a scrim that covers the
+// window and blurs what is behind it:
+//   palette: kokpit <WxH> <theme> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // Two targets share the same rules and differ only in their selector map:
@@ -31,7 +35,8 @@ const PROTOTYPE_SELECTORS = {
 
 // Hooks the app carries: its nav landmark, <main>, and the stable hooks of the rev-8 screens —
 // the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
-// the accounts frame and its collapsible body (#377), and the cockpit's closed-list heading.
+// the accounts frame and its collapsible body (#377), the cockpit's closed-list heading, and
+// the search palette's panel and scrim.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
@@ -42,6 +47,8 @@ const APP_SELECTORS = {
   detailAsk: '[data-detail-ask]',
   livePane: '[data-detail-live]',
   closedHeading: { css: 'h2', text: 'Son kapananlar' },
+  palette: '[data-search-palette]',
+  paletteScrim: '[data-search-scrim]',
 };
 
 const parseArgs = (argv) => {
@@ -74,12 +81,66 @@ async function openPrototype(path) {
   };
 }
 
+/** The palette's own measurement: ⌘K opens it, the panel must sit centred in the window over a
+ *  scrim that covers the whole window and blurs what is behind it. Esc closes it again. */
+async function paletteCheck(target) {
+  const { page, selectors } = target;
+  await page.keyboard.press('Meta+K');
+  await page.waitForFunction(
+    (sel) => document.activeElement?.closest(sel) !== null,
+    selectors.palette,
+    { timeout: 4000 },
+  );
+  const m = await page.evaluate(([panelSel, scrimSel]) => {
+    const panel = document.querySelector(panelSel);
+    const scrim = document.querySelector(scrimSel);
+    if (panel === null || scrim === null) return null;
+    const r = panel.getBoundingClientRect();
+    const s = scrim.getBoundingClientRect();
+    const cs = getComputedStyle(scrim);
+    return {
+      cx: (r.left + r.right) / 2,
+      cy: (r.top + r.bottom) / 2,
+      w: r.width,
+      h: r.height,
+      iw: innerWidth,
+      ih: innerHeight,
+      covers: s.left <= 0 && s.top <= 0 && s.right >= innerWidth && s.bottom >= innerHeight,
+      blurs: cs.backdropFilter !== '' && cs.backdropFilter !== 'none',
+    };
+  }, [selectors.palette, selectors.paletteScrim]);
+  await page.keyboard.press('Escape');
+  await page.locator(selectors.palette).waitFor({ state: 'detached', timeout: 4000 });
+  if (m === null) return { ok: false, detail: 'palette elements not found' };
+  const dx = Math.abs(m.cx - m.iw / 2);
+  const dy = Math.abs(m.cy - m.ih / 2);
+  const ok = dx <= 0.5 && dy <= 0.5 && m.covers && m.blurs && m.w > 0;
+  return {
+    ok,
+    detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} scrim ${
+      m.covers ? 'covers' : 'gaps'
+    } blur ${m.blurs ? 'yes' : 'no'}`,
+  };
+}
+
 // --- app target --------------------------------------------------------------------------------------
 async function openApp() {
   await acquireE2eLock(ROOT);
   const handle = await launchDesignApp();
   const { page } = handle;
   const goto = screenNavigator(page);
+  // The sidebar's Kokpit entry is gone: the cockpit is reached through the title bar's Anasayfa
+  // button, and the board routes start from it exactly as they did from the nav entry. The
+  // shared navigator's own kokpit/pano still point at the removed entry, so the audit reroutes
+  // them here (liste and detay reach the board through pano and pick this up with it).
+  const home = () => page.getByRole('button', { name: 'Anasayfa' }).first().click({ timeout: 1500 });
+  const treeRow = (text) =>
+    page.locator('nav button, main button, main a, nav a').filter({ hasText: text }).first().click({ timeout: 1500 });
+  goto.kokpit = home;
+  goto.pano = async () => {
+    await home();
+    await treeRow('antreo-api');
+  };
   return {
     selectors: APP_SELECTORS,
     page,
@@ -128,6 +189,18 @@ for (const theme of THEMES) {
         if (status === 'FAIL') failures += 1;
         lines += 1;
         console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+      }
+      // The palette is measured open once per size × theme, on the cockpit screen.
+      if (screen === 'kokpit' && target.selectors.palette) {
+        let r;
+        try {
+          r = await paletteCheck(target);
+        } catch (error) {
+          r = { ok: false, detail: `palette unreachable: ${String(error).split('\n')[0]}` };
+        }
+        if (!r.ok) failures += 1;
+        lines += 1;
+        console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       }
     }
   }

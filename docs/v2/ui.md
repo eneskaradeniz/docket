@@ -110,9 +110,11 @@ Deploy approval passes the gate's `environment`; a protected environment without
 ## Phase 3.5 — the rev-7 shell (U-15 … U-21)
 
 Visual source of truth: the operator-approved OpenDesign prototype "Docket v2" → `index.html`
-(rev 7) — the same standing as the design book for tokens. The information architecture is fixed
+(rev 7) — the same standing as the design book for tokens. From 2026-09-30 the running app itself
+is the visual source; the rev-8 prototype is historical and is not updated. The information architecture is fixed
 by the main-screen decisions (K-1…K-8, 2026-09-28/29): the Pano navigation item is gone — a board
-is a repo's view; the app opens on the Kokpit; project row → roadmap, repo row → board.
+is a repo's view; the app opens on the Kokpit, reached through the title bar's Anasayfa;
+project row → roadmap, repo row → board.
 
 ### API additions (Phase 3.5)
 
@@ -131,7 +133,11 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   opens its board — the roadmap is reached only through the project row (one rule per row kind). A project's status dot mirrors its most urgent
   repo (`waiting > running > idle`, A-27) and its pill the total active work orders; a zero count
   hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
-  kept for the session. The search field is focused with ⌘K. The sort control cycles stored
+  kept for the session. The sidebar carries no search field: ⌘K or the title bar's Ara button
+  opens the centered search palette over a blurred, dimmed backdrop — it searches projects and
+  repos by name (no other query types), ↑/↓ move, Enter opens the selected result (project →
+  roadmap, repo → board, as the tree's rows do), Esc or a backdrop click closes, focus is
+  trapped while open and restored on close. The sort control cycles stored
   order → A→Z → recently used; the choice persists locally (manual reordering arrives later).
 - **U-16** (accounts frame) The frame collapses and expands and starts collapsed; at most two account cards are visible,
   the rest scroll. A card shows the label plus one mini bar per window (window label and normalized
@@ -207,7 +213,7 @@ belongs to the mobile app.
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
   roadmap → expand a cross-repo task → its work order opens the detail · J-5 single-repo project →
   board → "Yol haritası ↗" · J-6 account card → account view → "Ayarlar'da düzenle ↗" opens
-  Settings · J-7 ⌘K focuses the search. Each step asserts visible text and saves a screenshot.
+  Settings · J-7 ⌘K opens the search palette and focuses its input. Each step asserts visible text and saves a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
