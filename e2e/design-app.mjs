@@ -43,7 +43,8 @@ export function screenNavigator(page) {
     kokpit: () => click('Kokpit'),
     pano: async () => { await click('Kokpit'); await click('antreo-api'); },
     liste: async () => { await goto.pano(); await click('Liste'); },
-    detay: async () => { await goto.pano(); await click('İE-0014'); },
+    // The code is the seed's derived one — the prototype's İE-0014 numbers 6 (manifest in seed-design.ts).
+    detay: async () => { await goto.pano(); await click('İE-0006'); },
     'yol-haritasi': async () => { await click('Kokpit'); await click('Yol haritası'); },
     hesap: async () => { await click('Claude Max'); },
   };
