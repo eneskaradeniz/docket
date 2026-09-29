@@ -55,7 +55,7 @@ for (const [size, theme] of combos) {
     total += 1;
     const title = `${id}: ${name} [${tag}]`;
     try {
-      await click('Kokpit').catch(() => undefined); // every journey starts at the cockpit
+      await click('Anasayfa').catch(() => undefined); // every journey starts at the cockpit
       await fn();
       console.log(`  ok   ${title}`);
     } catch (error) {
@@ -139,14 +139,33 @@ for (const [size, theme] of combos) {
     await shot('settings');
   });
 
-  await journey('J-7', '⌘K focuses the search', async () => {
+  await journey('J-7', '⌘K opens the palette and focuses its input', async () => {
     await page.keyboard.press('Meta+K');
+    await page.waitForFunction(
+      () => document.activeElement?.closest('[data-search-palette]') !== null,
+      undefined,
+      { timeout: WAIT },
+    );
     const focused = await page.evaluate(() => {
       const el = document.activeElement;
       return el ? `${el.tagName} ${el.getAttribute('placeholder') ?? el.getAttribute('aria-label') ?? ''}` : '';
     });
-    assert.match(focused, /^INPUT .*(İş emri|Ara)/i, `focus is on ${focused}`);
-    await shot('search-focused');
+    assert.match(focused, /^INPUT (Proje|Search)/i, `focus is on ${focused}`);
+    await shot('palette-open');
+    // The palette's index is the tree's own names: 'antero' finds the project, Enter opens its roadmap.
+    await page.keyboard.type('antero');
+    await page.locator('[data-search-palette]').getByText('Antero').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('palette-results');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await see('Yol haritası');
+    await shot('palette-opened-roadmap');
+    // The title bar's Ara button opens the same door; Esc closes it.
+    await page.getByRole('button', { name: 'Ara', exact: true }).click({ timeout: WAIT });
+    await page.waitForSelector('[data-search-palette]', { timeout: WAIT });
+    await page.keyboard.press('Escape');
+    await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
+    await shot('palette-closed');
   });
 
   await handle.app.close();

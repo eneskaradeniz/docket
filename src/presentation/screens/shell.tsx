@@ -1,18 +1,20 @@
 // screens/shell.tsx — the app shell (U-10's window): on darwin a 40px drag bar runs across the
 // top above everything (the native title strip is hidden there; the bar carries the traffic
-// lights' lane, the signal accent and the wordmark), then a fixed 240px sidebar that is always
-// open — the search field (⌘K focuses it), the Kokpit entry with the attention badge, the
-// project → repo tree, the accounts frame (its own disclosure) and the foot's settings control —
-// next to the content area that mounts the cockpit, a repo's board, a project's roadmap, a work
-// order's detail, an account's view, or the settings. The detail and the account view open in
-// place of the screen they were reached from (U-19): ‹ Geri returns to that screen with its
-// scroll where the operator left it. The first-run wizard rides above it all as an overlay: the
-// shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The badge
-// mirrors the shell store: the cockpit's attention count, present only while attention exists —
-// zero renders nothing, never a zero (U-10). Every user-visible string arrives through a label
-// key (U-1).
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+// lights' lane, the signal accent, the wordmark and the bar's two buttons — Anasayfa, the
+// cockpit's route with the attention badge, and Ara, the search palette's door), then a fixed
+// 240px sidebar that is always open — the project → repo tree, the accounts frame (its own
+// disclosure) and the foot's settings control — next to the content area that mounts the
+// cockpit, a repo's board, a project's roadmap, a work order's detail, an account's view, or
+// the settings. The detail and the account view open in place of the screen they were reached
+// from (U-19): ‹ Geri returns to that screen with its scroll where the operator left it. The
+// centered search palette rides over it all: it searches the tree's own names and opens what a
+// tree row opens. The first-run wizard rides above everything: the shell mounts it, the wizard
+// store's `open` decides whether it shows at all (U-7). The badge mirrors the shell store: the
+// cockpit's attention count, present only while attention exists — zero renders nothing, never
+// a zero (U-10). Every user-visible string arrives through a label key (U-1).
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
+import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
 import { SidebarTree } from '../components/sidebar-tree';
 import { TitleBar } from '../components/title-bar';
@@ -24,6 +26,7 @@ import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
 import type { RoadmapStore } from '../stores/roadmap';
+import { CLOSED_PALETTE, paletteReducer, type PaletteResult } from '../stores/search-palette';
 import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
@@ -68,23 +71,6 @@ type ShellRoute =
 /** The label the detail's back row carries — it names the screen the detail was opened from
  *  (U-19). */
 type BackKind = 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap';
-
-const NAV_BASE =
-  'flex h-[34px] w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-[13px] transition-colors';
-
-/** The nav entry's standing: the current route reads raised with an inset signal bar, the rest
- *  stay quiet — the same grammar as the design's sidebar. */
-const navClass = (current: boolean): string =>
-  current
-    ? `${NAV_BASE} bg-raised shadow-[inset_2px_0_0_0] shadow-signal text-ink`
-    : `${NAV_BASE} text-ink hover:bg-raised`;
-
-const SearchIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="h-3.5 w-3.5 flex-none">
-    <circle cx="11" cy="11" r="7" />
-    <path d="m21 21-4.3-4.3" />
-  </svg>
-);
 
 const GearIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="block h-[15px] w-[15px]">
@@ -142,6 +128,9 @@ export function ShellScreen({
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
+  // The search palette's whole standing lives in the pure reducer; the shell only feeds it the
+  // tree and routes what it opens (U-15).
+  const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
@@ -150,24 +139,31 @@ export function ShellScreen({
   // The board's scroll, kept for the return from a detail opened on it (U-19).
   const boardScrollRef = useRef(0);
   const mainRef = useRef<HTMLElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     void shell.load();
   }, [shell]);
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
   }, [route]);
-  // ⌘K (or Ctrl+K) puts the caret in the sidebar's search field (U-15).
+  const wizardState = useSyncExternalStore(wizard.subscribe, wizard.state);
+  // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
+  // open beneath the wizard's overlay and steal its focus.
+  const wizardUp = wizardState.visible && !wizardState.checking;
+  const openPalette = useCallback((): void => {
+    if (wizardUp) return;
+    dispatchPalette({ type: 'open' });
+  }, [wizardUp]);
+  // ⌘K (or Ctrl+K) opens the search palette (U-15) — the same door the title bar's Ara button is.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        searchRef.current?.focus();
+        openPalette();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [openPalette]);
   // The board keeps its scroll across a detail round-trip: leaving a board for a detail or an
   // account view stamps it, returning restores it once the board has painted again (U-19).
   const prevRouteRef = useRef<ShellRoute>(route);
@@ -191,6 +187,14 @@ export function ShellScreen({
   const badge = state.badge;
   const treeState = useSyncExternalStore(tree.subscribe, tree.state);
   const accountsState = useSyncExternalStore(accounts.subscribe, accounts.state);
+  // A tree that loads or refreshes under an open palette must re-derive its results: the query
+  // alone would keep the results of the tree it was typed over. Only the tree's identity is a
+  // trigger — the palette's own fields are read as they stand in this render, so a keystroke
+  // still dispatches exactly once, from the input's own change.
+  useEffect(() => {
+    if (!palette.open) return;
+    dispatchPalette({ type: 'query', value: palette.query, tree: treeState.tree });
+  }, [treeState.tree]);
   const selection = treeSelection(
     treeState.tree,
     route.name === 'workOrder' || route.name === 'account' ? placeRef.current : placeOf(route),
@@ -208,6 +212,15 @@ export function ShellScreen({
     setRoute({ name: 'account', id });
   };
 
+  /** Opens a palette result the way the tree's row does (U-15): the project is stamped as used,
+   *  then the roadmap or the board mounts. */
+  const openFromPalette = (result: PaletteResult): void => {
+    dispatchPalette({ type: 'close' });
+    tree.recordUse(result.project);
+    if (result.kind === 'project') setRoute({ name: 'roadmap', project: result.project });
+    else setRoute({ name: 'board', repo: result.repo });
+  };
+
   // The board header's roadmap shortcut exists only for a single-repo project (U-15): the tree
   // knows which project owns the repo and how many repos it has.
   const roadmapProjectOf = (repo: string): string | null => {
@@ -217,45 +230,19 @@ export function ShellScreen({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-bg text-ink">
-      <TitleBar locale={locale} platform={navigator.platform} />
+      <TitleBar
+        locale={locale}
+        platform={navigator.platform}
+        homeCurrent={route.name === 'cockpit'}
+        badge={badge}
+        onHome={() => setRoute({ name: 'cockpit' })}
+        onSearch={openPalette}
+      />
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
         <nav
           aria-label={t(locale, 'shell.nav')}
           className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
         >
-          <div className="flex h-[30px] flex-none items-center gap-2 rounded-md border border-bord bg-raised px-2.5 text-xs text-inkdim focus-within:border-signal">
-            <SearchIcon />
-            <input
-              ref={searchRef}
-              type="text"
-              aria-label={t(locale, 'shell.search.placeholder')}
-              placeholder={t(locale, 'shell.search.placeholder')}
-              className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-inkdim"
-            />
-            <span aria-hidden="true" className="flex-none font-mono text-[10.5px]">
-              {t(locale, 'shell.search.kbd')}
-            </span>
-          </div>
-  
-          <div className="mt-2.5 flex flex-none flex-col gap-1">
-            <button
-              type="button"
-              onClick={() => setRoute({ name: 'cockpit' })}
-              className={navClass(route.name === 'cockpit')}
-              aria-current={route.name === 'cockpit' ? 'page' : undefined}
-            >
-              <span>{t(locale, 'nav.cockpit')}</span>
-              {badge !== null ? (
-                <span
-                  aria-label={t(locale, 'cockpit.section.attention')}
-                  className="inline-flex h-[18px] min-w-5 flex-none items-center justify-center rounded-full border border-hairline px-1.5 font-mono text-[11px] text-inkdim"
-                >
-                  {badge.count}
-                </span>
-              ) : null}
-            </button>
-          </div>
-  
           <SidebarTree
             store={tree}
             selection={selection}
@@ -341,6 +328,15 @@ export function ShellScreen({
           {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
         </main>
       </div>
+
+      <SearchPalette
+        state={palette}
+        locale={locale}
+        onQuery={(value) => dispatchPalette({ type: 'query', value, tree: treeState.tree })}
+        onMove={(delta) => dispatchPalette({ type: 'move', delta })}
+        onOpen={openFromPalette}
+        onClose={() => dispatchPalette({ type: 'close' })}
+      />
 
       <WizardScreen store={wizard} locale={locale} />
     </div>
