@@ -14,10 +14,11 @@
 // dispatcher starts it; the agent runs one permission round-trip over the real ACP transport and
 // the executor parks the run on the in-process permission board — the badge counts a real ask.
 //
-// Answer surface declaration: no screen affords answering an ask yet (the detail's asks feed and
-// gate list are unfed by composition), so BOTH the human-gate decision and the permission answer
-// are driven through the real bridge (window.docket.command) in the page — the same command a
-// button would issue. Everything else is real clicks on real DOM. The answer path
+// Answer surface declaration: the screens now afford both decisions (the detail's gate rows and
+// asks feed carry approve/reject, the cockpit's ask row carries Reddet/İzin ver), but the walk
+// still drives BOTH the human-gate decision and the permission answer through the real bridge
+// (window.docket.command) in the page — the exact command those buttons issue, kept independent
+// of button layout. Everything else is real clicks on real DOM. The answer path
 // bridge → api → permission board → executor → transport → agent → finished → UiEvent →
 // re-query → badge is the full pipeline, honestly measured.
 //
@@ -101,9 +102,9 @@ const command = (body) =>
 // bar's Anasayfa button, and the cockpit is reached through that button.
 const badge = () => page.locator(`[aria-label="${L.badge}"]`);
 const homeButton = () => page.getByRole('button', { name: L.home });
-// The tree's repo row: the project row above it spells the workspace's display name
-// ('Duman çalışma alanı'), the repo row the bare slug 'duman' — hasNotText tells them apart.
-const repoRow = () => page.locator('nav button').filter({ hasText: 'duman', hasNotText: 'çalışma alanı' });
+// The sidebar's project row: the seed attaches one single-repo project, which the tree renders as
+// one flat row carrying the project's display name, and clicking it opens the main repo's board.
+const repoRow = () => page.locator('nav button').filter({ hasText: 'Duman projesi' });
 
 const cockpitAttention = async () => {
   const view = await query({ type: 'cockpit' });
@@ -148,7 +149,8 @@ await spec('shell renders with the seeded attention badge (1)', async () => {
 await spec('cockpit lists the seeded work order as awaiting a human', async () => {
   const kinds = await waitFor('the attention item', () => attentionKind('awaiting_human'));
   assert.ok(kinds);
-  const card = page.locator('main button').filter({ hasText: TITLE }).filter({ hasText: L.awaiting });
+  // The attention row is a list item with an Aç button, not a button itself.
+  const card = page.locator('main li').filter({ hasText: TITLE }).filter({ hasText: L.awaiting });
   await waitFor('the attention card', () => present(card));
 });
 
@@ -157,9 +159,10 @@ await spec('board renders the columns of the seeded definitions', async () => {
   await waitFor('the board heading', () => present(page.locator('main h1').filter({ hasText: 'duman' })));
   const flow = await page.locator('main header p').textContent();
   assert.ok(flow?.includes('duman-akisi'), `board header missing the flow: ${flow}`);
-  // one work order waiting in review, none running yet
-  await waitFor("the 'İnceleme · 1' column", () => present(page.getByText('İnceleme · 1', { exact: true })));
-  await waitFor("the empty 'Uygulama' column", () => present(page.getByText('Uygulama', { exact: true })));
+  // one work order waiting in review, none running yet — a filled column heads with the stage
+  // name, an empty one is the slim vertical rail carrying the same name.
+  await waitFor("the 'İnceleme' column", () => present(page.locator('main section h2').filter({ hasText: 'İnceleme' })));
+  await waitFor("the empty 'Uygulama' column", () => present(page.locator('main section h2').filter({ hasText: 'Uygulama' })));
   const card = page.locator('main section button').filter({ hasText: TITLE });
   await waitFor('the seeded card', () => present(card));
   assert.ok((await card.textContent())?.includes(L.awaiting), 'the card status is not awaiting_human');
@@ -210,7 +213,9 @@ await spec('the scripted transport run opens a real permission ask', async () =>
   // handshake set the pace; the budget covers all of it with wide margin.
   await waitFor('the permission ask in attention', () => attentionKind('permission_ask'), 45_000);
   await homeButton().click();
-  const card = page.locator('main button').filter({ hasText: TITLE }).filter({ hasText: L.ask });
+  // The ask row speaks the ask itself — the target and the İzin bekleniyor badge — in place of
+  // the work order's title, so the row is found by the badge copy alone.
+  const card = page.locator('main li').filter({ hasText: L.ask });
   await waitFor('the ask card', () => present(card));
   await waitFor('the badge to read 1', async () => {
     if (!(await present(badge()))) return undefined;
@@ -219,7 +224,9 @@ await spec('the scripted transport run opens a real permission ask', async () =>
 });
 
 await spec('the detail shows the waiting run', async () => {
-  await page.locator('main button').filter({ hasText: TITLE }).filter({ hasText: L.ask }).click();
+  // The ask row carries Reddet/İzin ver, no Aç — the detail is reached through the running row,
+  // which names the run's stage.
+  await page.locator('main button').filter({ hasText: 'uygulama' }).click();
   await waitFor('the detail heading', () => present(page.locator('main h1').filter({ hasText: TITLE })));
   const view = await waitFor('an active run', async () => {
     const detail = await detailView();
