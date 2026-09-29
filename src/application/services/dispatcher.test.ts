@@ -22,7 +22,7 @@ import type {
   StageSlug,
   Ulid,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../domain/index';
 import { deriveWorkOrderState, isUlid, parseSlug, parseUlid } from '../../domain/index';
 
@@ -51,8 +51,8 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
-const OTHER: WorkspaceSlug = slugOf('other');
+const REPO: RepoSlug = slugOf('ws');
+const OTHER: RepoSlug = slugOf('other');
 const IMPLEMENT: StageSlug = slugOf('implement');
 const IMPLEMENTER = slugOf<'role'>('implementer');
 
@@ -110,9 +110,9 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'ws',
-    name: 'Workspace',
+    name: 'Repo',
     repos: [],
     flows: ['standard', 'manual'],
     defaultFlow: 'standard',
@@ -174,7 +174,7 @@ const meter = (id: MeterId, poolId: PoolId, at: EpochMs): Meter => ({
 
 const LIMITS = (over: Partial<DispatchLimits> = {}): DispatchLimits => ({
   global: 4,
-  perWorkspace: 3,
+  perRepo: 3,
   perAccount: {},
   ...over,
 });
@@ -183,13 +183,13 @@ const LIMITS = (over: Partial<DispatchLimits> = {}): DispatchLimits => ({
 const createWorkOrder = async (
   h: Harness,
   id: WorkOrderId,
-  workspace: WorkspaceSlug = WS,
+  repo: RepoSlug = REPO,
   flow = 'standard',
 ): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id,
-    workspace,
+    repo,
     flow: flowId,
     title: `fixture ${id}`,
     createdAt: h.clock.now(),
@@ -225,7 +225,7 @@ const queueItem = (
 ): QueueItem => ({
   id,
   workOrderId,
-  workspace: WS,
+  repo: REPO,
   stage: IMPLEMENT,
   route: itemRoute,
   priority: over.priority ?? 0,
@@ -276,7 +276,7 @@ describe('enqueueStage', () => {
     expect(items[0]).toStrictEqual({
       id: result.value,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A2, model: 'model-x' },
       priority: 0,
@@ -318,7 +318,7 @@ describe('enqueueStage', () => {
 
   it('A-19: a work order whose next action is not start_run is rejected with not_ready', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS, 'manual'); // first stage has no role → awaiting_human
+    await createWorkOrder(h, WO1, REPO, 'manual'); // first stage has no role → awaiting_human
 
     const result = await enqueueStage(h.deps, { id: WO1 });
 
@@ -374,12 +374,12 @@ describe('enqueueStage', () => {
     h.definitions.seed({ kind: 'global' }, 'definitions.json', JSON.stringify({
       ...DEFINITIONS_BODY,
       flows: [DEFINITIONS_BODY.flows[0]], // only 'standard' remains
-      workspace: { ...DEFINITIONS_BODY.workspace, flows: ['standard'] },
+      repo: { ...DEFINITIONS_BODY.repo, flows: ['standard'] },
     }));
     const flowId = slugOf<'flow'>('manual');
     await h.deps.workOrders.create({
       id: WO1,
-      workspace: WS,
+      repo: REPO,
       flow: flowId,
       title: 'fixture',
       createdAt: h.clock.now(),
@@ -453,7 +453,7 @@ describe('applyLimitDecision', () => {
     expect(items[0]).toStrictEqual({
       id: queued,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A1, model: 'model-x' },
       priority: 0,
@@ -483,7 +483,7 @@ describe('applyLimitDecision', () => {
     expect(items[0]).toStrictEqual({
       id: result.value.queued,
       workOrderId: WO1,
-      workspace: WS,
+      repo: REPO,
       stage: IMPLEMENT,
       route: { accountId: A1 },
       priority: 0,
@@ -528,7 +528,7 @@ describe('applyLimitDecision', () => {
 
     expect(result).toStrictEqual({ ok: true, value: {} });
     expect(await queueAfter(h)).toHaveLength(0);
-    const loaded = await h.deps.definitions.load(WS);
+    const loaded = await h.deps.definitions.load(REPO);
     if (!loaded.ok) throw new Error('definitions must load');
     const flow = loaded.value.flows.find((candidate) => candidate.id === slugOf<'flow'>('standard'));
     if (flow === undefined) throw new Error('flow must exist');
@@ -584,7 +584,7 @@ describe('dispatcherTick', () => {
     expect(await queueAfter(h)).toStrictEqual([]);
   });
 
-  it('A-20: three queued work orders in one workspace with perWorkspace 2 — two start, one waits workspace_limit', async () => {
+  it('A-20: three queued work orders in one repo with perRepo 2 — two start, one waits repo_limit', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);
     await createWorkOrder(h, WO2);
@@ -594,12 +594,12 @@ describe('dispatcherTick', () => {
     await h.deps.queue.put(queueItem(Q3, WO3, route(A1), { enqueuedAt: 1_200 }));
     const recorder = startRecorder();
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 2 }) }, recorder.callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 2 }) }, recorder.callback);
 
     expect(result.decisions).toStrictEqual([
       { item: Q1, kind: 'start' },
       { item: Q2, kind: 'start' },
-      { item: Q3, kind: 'wait', reason: 'workspace_limit' },
+      { item: Q3, kind: 'wait', reason: 'repo_limit' },
     ] satisfies readonly DispatchDecision[]);
     expect(result.started).toStrictEqual([Q1, Q2]);
     expect(recorder.items.map((item) => item.id)).toStrictEqual([Q1, Q2]);
@@ -614,7 +614,7 @@ describe('dispatcherTick', () => {
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: h.clock.now(),
       usd: 10,
@@ -638,7 +638,7 @@ describe('dispatcherTick', () => {
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: h.clock.now(),
       usd: 8, // exactly the 80 % warn threshold
@@ -659,7 +659,7 @@ describe('dispatcherTick', () => {
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: UTC_DAY_START,
       usd: 10,
@@ -673,7 +673,7 @@ describe('dispatcherTick', () => {
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: PREV_DAY_NOON, // inside the month, outside the UTC day
       usd: 10,
@@ -691,7 +691,7 @@ describe('dispatcherTick', () => {
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: UTC_MONTH_START,
       usd: 10,
@@ -705,7 +705,7 @@ describe('dispatcherTick', () => {
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
       accountId: A1,
-      workspace: WS,
+      repo: REPO,
       workOrderId: WO1,
       at: PREV_MONTH_END, // the last millisecond of August
       usd: 10,
@@ -767,22 +767,22 @@ describe('dispatcherTick', () => {
     expect(result.started).toStrictEqual([]);
   });
 
-  it('A-20: running runs of another workspace do not consume this workspace limit', async () => {
+  it('A-20: running runs of another repo do not consume this repo limit', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS);
+    await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO4, OTHER);
     await createRun(h, RUN1, WO4, route(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 1 }) }, startRecorder().callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 1 }) }, startRecorder().callback);
 
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
     expect(result.started).toStrictEqual([Q1]);
   });
 
-  it('A-20: the global limit counts the runs of every workspace', async () => {
+  it('A-20: the global limit counts the runs of every repo', async () => {
     const h = makeHarness();
-    await createWorkOrder(h, WO1, WS);
+    await createWorkOrder(h, WO1, REPO);
     await createWorkOrder(h, WO4, OTHER);
     await createRun(h, RUN1, WO4, route(A2));
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
@@ -819,17 +819,17 @@ describe('dispatcherTick', () => {
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1), { priority: 0, enqueuedAt: 1_000 }));
     await h.deps.queue.put(queueItem(Q2, WO2, route(A2), { priority: 5, enqueuedAt: 2_000 }));
 
-    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perWorkspace: 1 }) }, startRecorder().callback);
+    const result = await dispatcherTick(h.deps, { limits: LIMITS({ perRepo: 1 }) }, startRecorder().callback);
 
-    // higher priority is considered first and takes the only workspace slot
+    // higher priority is considered first and takes the only repo slot
     expect(result.decisions).toStrictEqual([
       { item: Q2, kind: 'start' },
-      { item: Q1, kind: 'wait', reason: 'workspace_limit' },
+      { item: Q1, kind: 'wait', reason: 'repo_limit' },
     ]);
     expect(result.started).toStrictEqual([Q2]);
   });
 
-  it('A-20: an active run whose work order no longer exists cannot be attributed to a workspace and counts nowhere', async () => {
+  it('A-20: an active run whose work order no longer exists cannot be attributed to a repo and counts nowhere', async () => {
     const h = makeHarness();
     await createRun(h, RUN1, WO4, route(A1)); // no work order record behind it
     await createWorkOrder(h, WO1);

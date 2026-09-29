@@ -26,7 +26,7 @@ export function createSdkGetUsage(config: SdkUsageSourceConfig = {}): GetUsage {
   return async (binPath) => {
     const abortController = new AbortController();
     const options: Options = {
-      // The probe session owns no workspace; a scratch directory keeps it away from real ones.
+      // The probe session owns no repo; a scratch directory keeps it away from real ones.
       cwd: tmpdir(),
       settingSources: [], // the user's own settings files are never read or written
       abortController,

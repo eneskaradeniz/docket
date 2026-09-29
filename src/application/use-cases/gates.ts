@@ -42,7 +42,7 @@ const loadWorkOrder = async (
 ): Promise<Result<LoadedWorkOrder, LoadError>> => {
   const record = await deps.workOrders.get(id);
   if (record === undefined) return err('not_found');
-  const definitions = await deps.definitions.load(record.workspace);
+  const definitions = await deps.definitions.load(record.repo);
   if (!definitions.ok) return err('definitions_invalid');
   const flow = definitions.value.flows.find((candidate) => candidate.id === record.flow);
   if (flow === undefined) return err('not_found');
@@ -71,8 +71,8 @@ const findCurrentGate = (
 };
 
 const gateContext = (definitions: Definitions): GateContext => ({
-  commandSets: definitions.workspace?.commandSets ?? {},
-  environments: definitions.workspace?.environments,
+  commandSets: definitions.repo?.commandSets ?? {},
+  environments: definitions.repo?.environments,
 });
 
 /** Records one decided gate — the event on the work order plus its audit entry — and returns the
@@ -187,7 +187,7 @@ export async function evaluateMachineGates(
   if (!loaded.ok) return err(loaded.error);
   const { record, definitions, flow, events, state } = loaded.value;
   if (state.status !== 'gating') return err('not_gating');
-  const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+  const worktree = await deps.worktrees.ensure(record.repo, record.id);
   if (!worktree.ok) return err('no_repo');
   const ctx = gateContext(definitions);
 
@@ -274,7 +274,7 @@ export async function submitAgentVerdict(
   if (!state.pendingGates.includes(input.gate)) return err('not_pending');
   if (current.gate.kind !== 'agent_verdict') return err('not_an_agent_gate');
   if (input.actor.kind !== 'agent' || input.actor.role !== current.gate.role) return err('wrong_role');
-  const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+  const worktree = await deps.worktrees.ensure(record.repo, record.id);
   if (!worktree.ok) return err('no_repo');
 
   // An empty pointer list proves nothing, whatever a checker would say about the empty set.

@@ -85,7 +85,7 @@ const VIEW: SettingsAccountsView = {
   bindings: [
     { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
     {
-      scope: { level: 'workspace', workspace: 'atolye' },
+      scope: { level: 'repo', repo: 'atolye' },
       role: 'reviewer',
       accounts: [
         { accountId: 'acc-2', model: null },
@@ -299,7 +299,7 @@ describe('settings store', () => {
     expect(h.store.state().view?.bindings).toEqual([
       { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: 'acc-1', model: 'atlas-max' }] },
       {
-        scope: { level: 'workspace', workspace: 'atolye' },
+        scope: { level: 'repo', repo: 'atolye' },
         role: 'reviewer',
         accounts: [
           { accountId: 'acc-2', model: null },

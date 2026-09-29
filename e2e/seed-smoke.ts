@@ -7,7 +7,7 @@
 //   <home>/.docket/docket.db    seeded through the REAL createNodeDeps + use-cases/repos, so the
 //                               rows are encoded exactly the way the app writes them
 //   <home>/duman-repo/          a real git repo (the run's worktree anchors to its HEAD) carrying
-//                               the workspace's YAML definitions under .docket/
+//                               the repo's YAML definitions under .docket/
 //   <home>/bin/duman-agent      the scripted ACP agent the discovery override points at
 //
 // Determinism: a fixed clock plus a zero random source — the ULID generator is monotonic within
@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import assert from 'node:assert';
-import type { AccountId, Actor, RoleSlug, WorkspaceSlug } from '../src/domain/index';
+import type { AccountId, Actor, RoleSlug, RepoSlug } from '../src/domain/index';
 import { deriveWorkOrderState } from '../src/domain/index';
 import { openWorkOrder } from '../src/application/use-cases/work-orders';
 import { createNodeDeps } from '../src/infrastructure/compose/create-node-deps';
@@ -30,7 +30,7 @@ if (process.platform === 'win32') {
   throw new Error('the smoke seed relies on POSIX paths and script shebangs');
 }
 
-const WORKSPACE = 'duman' as WorkspaceSlug;
+const REPO = 'duman' as RepoSlug;
 const ROLE = 'isci' as RoleSlug;
 const WORK_ORDER_TITLE = 'Duman testi iş emri';
 // 'HESAP' (account) stays inside the ULID alphabet; the repeat keeps the id at exactly 26 chars.
@@ -49,7 +49,7 @@ const dataDir = join(home, '.docket');
 const repo = join(home, 'duman-repo');
 mkdirSync(repo, { recursive: true });
 
-// --- the workspace repo with its definitions ---------------------------------------------------------
+// --- the repo with its definitions ---------------------------------------------------------
 try {
   run('git', ['init', '--quiet', '--initial-branch=main'], repo);
 } catch {
@@ -57,7 +57,7 @@ try {
   // worktree to, which is all the run needs.
   run('git', ['init', '--quiet'], repo);
 }
-writeFileSync(join(repo, 'README.md'), '# duman\n\nThe smoke workspace repo.\n');
+writeFileSync(join(repo, 'README.md'), '# duman\n\nThe smoke repo.\n');
 run('git', ['-c', 'user.name=Docket Smoke', '-c', 'user.email=smoke@docket.local', 'add', '-A'], repo);
 run(
   'git',
@@ -140,7 +140,7 @@ const node = createNodeDeps({
 assert(node.ok, `seed could not open deps: ${JSON.stringify(node.error)}`);
 const deps = node.value.deps;
 
-await node.value.workspaces.register(WORKSPACE, repo);
+await node.value.repos.register(REPO, repo);
 
 // The account names the provider whose CLI definition the smoke impersonates: an ACP transport
 // with an env-var config mechanism and no auth probe, so a scripted binary is enough.
@@ -156,13 +156,13 @@ await deps.bindings.save({ level: 'global' }, { role: ROLE, accounts: [{ account
 
 const opened = await openWorkOrder(
   deps,
-  { workspace: WORKSPACE, title: WORK_ORDER_TITLE, actor: OPERATOR },
+  { repo: REPO, title: WORK_ORDER_TITLE, actor: OPERATOR },
 );
 assert(opened.ok, `seed could not open the work order: ${opened.error}`);
 const workOrderId = opened.value;
 
 // --- self-checks: the seed refuses to hand the harness a state the walk cannot ride ------------------
-const loaded = await deps.definitions.load(WORKSPACE);
+const loaded = await deps.definitions.load(REPO);
 assert(loaded.ok, `definitions did not load: ${JSON.stringify(loaded.error)}`);
 const flow = loaded.value.flows.find((candidate) => candidate.id === 'duman-akisi');
 assert(flow !== undefined, 'the seeded flow is missing from the definitions');
@@ -195,6 +195,6 @@ const manifest = {
   title: WORK_ORDER_TITLE,
   fixedNow: FIXED_NOW,
 };
-console.log(`# workspace ${repo}`);
+console.log(`# repo ${repo}`);
 console.log(`# work order ${workOrderId}`);
 console.log(`SEED=${JSON.stringify(manifest)}`);

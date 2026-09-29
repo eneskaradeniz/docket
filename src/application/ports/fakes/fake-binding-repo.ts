@@ -10,8 +10,8 @@ export interface FakeBindingRepo extends BindingRepo {}
 const scopeKey = (scope: BindingScope): string =>
   scope.level === 'global'
     ? 'global'
-    : scope.level === 'workspace'
-      ? `workspace:${scope.workspace}`
+    : scope.level === 'repo'
+      ? `repo:${scope.repo}`
       : `workOrder:${scope.workOrderId}`;
 
 export const createFakeBindingRepo = (): FakeBindingRepo => {

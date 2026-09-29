@@ -29,10 +29,9 @@ const capability = (over: Obj = {}): Obj => ({
   ...over,
 });
 
-const workspace = (over: Obj = {}): Obj => ({
+const repo = (over: Obj = {}): Obj => ({
   id: 'ws',
-  name: 'Workspace',
-  repos: [{ id: 'repo', remote: 'git@example:docket/repo.git', defaultBranch: 'main' }],
+  name: 'Repo',
   flows: ['main'],
   defaultFlow: 'main',
   commandSets: { build: ['npm run build'] },
@@ -137,10 +136,9 @@ describe('validateDefinitions', () => {
         { kind: 'hook', id: 'hook-log', name: 'Log', event: 'after_write', command: 'echo done' },
         { kind: 'context', id: 'ctx-arch', name: 'Architecture', path: 'docs/architecture.md' },
       ],
-      workspace: {
+      repo: {
         id: 'main',
         name: 'Main',
-        repos: [{ id: 'docket', remote: 'git@example:docket/docket.git', defaultBranch: 'v2' }],
         flows: ['default'],
         defaultFlow: 'default',
         commandSets: { build: ['npm run build', 'npm test'] },
@@ -156,13 +154,13 @@ describe('validateDefinitions', () => {
     expect(expectOk(result)).toEqual(input);
   });
 
-  it('accepts a document without a workspace', () => {
+  it('accepts a document without a repo', () => {
     const result = validateDefinitions(doc());
-    expect(expectOk(result).workspace).toBeUndefined();
+    expect(expectOk(result).repo).toBeUndefined();
   });
 
   it('does not mutate its input', () => {
-    const input = doc({ workspace: workspace() });
+    const input = doc({ repo: repo() });
     deepFreeze(input);
     const result = validateDefinitions(input);
     expect(result.ok).toBe(true);
@@ -182,7 +180,7 @@ describe('validateDefinitions', () => {
           ],
         }),
       ],
-      workspace: workspace({ defaultFlow: 'other' }),
+      repo: repo({ defaultFlow: 'other' }),
     });
 
     const issues = expectErr(validateDefinitions(input));
@@ -195,7 +193,7 @@ describe('validateDefinitions', () => {
         issue('flows[0].stages[0].role', 'unknown_role'),
         issue('flows[0].stages[0].onFail.goto', 'forward_goto'),
         issue('flows[0].stages[0].onFail.maxAttempts', 'bad_attempts'),
-        issue('workspace.defaultFlow', 'default_flow_not_enabled'),
+        issue('repo.defaultFlow', 'default_flow_not_enabled'),
       ]),
     );
   });
@@ -319,23 +317,23 @@ describe('validateDefinitions', () => {
     }
   });
 
-  it('R-7: command gates must name a commandSet present in workspace.commandSets', () => {
+  it('R-7: command gates must name a commandSet present in repo.commandSets', () => {
     const okInput = doc({
       flows: [flow({ stages: [stage({ exit: [gate({ kind: 'command', commandSet: 'build' })] })] })],
-      workspace: workspace(),
+      repo: repo(),
     });
     expect(validateDefinitions(okInput).ok).toBe(true);
 
     const badInput = doc({
       flows: [flow({ stages: [stage({ exit: [gate({ kind: 'command', commandSet: 'test' })] })] })],
-      workspace: workspace(),
+      repo: repo(),
     });
     const issues = expectErr(validateDefinitions(badInput));
     expect(codesOf(issues)).toEqual(['unknown_command_set']);
     expect(issues[0]?.path).toBe('flows[0].stages[0].exit[0].commandSet');
   });
 
-  it('R-7 edge: command gates pass when no workspace is given', () => {
+  it('R-7 edge: command gates pass when no repo is given', () => {
     const input = doc({
       flows: [flow({ stages: [stage({ exit: [gate({ kind: 'command', commandSet: 'test' })] })] })],
     });
@@ -386,24 +384,24 @@ describe('validateDefinitions', () => {
     }
   });
 
-  it('R-9: defaultFlow must be listed in workspace.flows and every listed flow must exist', () => {
-    const notListed = doc({ workspace: workspace({ defaultFlow: 'other' }) });
+  it('R-9: defaultFlow must be listed in repo.flows and every listed flow must exist', () => {
+    const notListed = doc({ repo: repo({ defaultFlow: 'other' }) });
     const notListedIssues = expectErr(validateDefinitions(notListed));
     expect(codesOf(notListedIssues)).toEqual(['default_flow_not_enabled']);
-    expect(notListedIssues[0]?.path).toBe('workspace.defaultFlow');
+    expect(notListedIssues[0]?.path).toBe('repo.defaultFlow');
 
-    const ghost = doc({ workspace: workspace({ flows: ['main', 'ghost'] }) });
+    const ghost = doc({ repo: repo({ flows: ['main', 'ghost'] }) });
     const ghostIssues = expectErr(validateDefinitions(ghost));
     expect(codesOf(ghostIssues)).toEqual(['unknown_flow']);
-    expect(ghostIssues[0]?.path).toBe('workspace.flows[1]');
+    expect(ghostIssues[0]?.path).toBe('repo.flows[1]');
 
-    const both = doc({ workspace: workspace({ flows: ['main', 'ghost'], defaultFlow: 'other' }) });
+    const both = doc({ repo: repo({ flows: ['main', 'ghost'], defaultFlow: 'other' }) });
     const bothIssues = expectErr(validateDefinitions(both));
     expect(bothIssues).toHaveLength(2);
     expect(bothIssues).toEqual(
       expect.arrayContaining([
-        issue('workspace.flows[1]', 'unknown_flow'),
-        issue('workspace.defaultFlow', 'default_flow_not_enabled'),
+        issue('repo.flows[1]', 'unknown_flow'),
+        issue('repo.defaultFlow', 'default_flow_not_enabled'),
       ]),
     );
   });
@@ -529,13 +527,15 @@ describe('validateDefinitions', () => {
     const mcpNoEnv = doc({ capabilities: [capability({ kind: 'mcp', command: 'run', args: [] })] });
     expect(codesOf(expectErr(validateDefinitions(mcpNoEnv)))).toContain('missing_field');
 
-    const ws: Obj = { ...workspace() };
+    const ws: Obj = { ...repo() };
     delete ws.docsRoot;
-    expect(codesOf(expectErr(validateDefinitions(doc({ workspace: ws }))))).toContain('missing_field');
+    expect(codesOf(expectErr(validateDefinitions(doc({ repo: ws }))))).toContain('missing_field');
 
-    const repoNoRemote = doc({ workspace: workspace({ repos: [{ id: 'repo', defaultBranch: 'main' }] }) });
-    const repoIssues = expectErr(validateDefinitions(repoNoRemote));
-    expect(repoIssues).toEqual([issue('workspace.repos[0].remote', 'missing_field')]);
+    const envNoProtected = doc({
+      repo: repo({ environments: [{ id: 'stg', name: 'Staging', order: 1, deploy: 'build', env: {} }] }),
+    });
+    const envIssues = expectErr(validateDefinitions(envNoProtected));
+    expect(envIssues).toEqual([issue('repo.environments[0].protected', 'missing_field')]);
   });
 
   it('reports wrong_type for mistyped required fields at any depth', () => {
@@ -568,10 +568,10 @@ describe('validateDefinitions', () => {
       codesOf(expectErr(validateDefinitions(doc({ capabilities: [capability({ kind: 'mcp', command: 'x', env: {} })] })))),
     ).toContain('missing_field');
     expect(
-      codesOf(expectErr(validateDefinitions(doc({ workspace: workspace({ commandSets: { build: 'npm run build' } }) })))),
+      codesOf(expectErr(validateDefinitions(doc({ repo: repo({ commandSets: { build: 'npm run build' } }) })))),
     ).toContain('wrong_type');
     expect(
-      codesOf(expectErr(validateDefinitions(doc({ workspace: workspace({ commandSets: { build: [42] } }) })))),
+      codesOf(expectErr(validateDefinitions(doc({ repo: repo({ commandSets: { build: [42] } }) })))),
     ).toContain('wrong_type');
   });
 
@@ -580,7 +580,7 @@ describe('validateDefinitions', () => {
       roles: [role({ id: 'Bad' }), role()],
       flows: [flow({ stages: [stage({ onFail: { goto: 'Nope', maxAttempts: 2 } })] })],
       capabilities: [capability()],
-      workspace: workspace({ id: 'WS' }),
+      repo: repo({ id: 'REPO' }),
     });
 
     const issues = expectErr(validateDefinitions(input));
@@ -589,7 +589,7 @@ describe('validateDefinitions', () => {
       expect.arrayContaining([
         issue('roles[0].id', 'invalid_slug'),
         issue('flows[0].stages[0].onFail.goto', 'invalid_slug'),
-        issue('workspace.id', 'invalid_slug'),
+        issue('repo.id', 'invalid_slug'),
       ]),
     );
   });
@@ -601,14 +601,14 @@ describe('validateDefinitions', () => {
     expect(issues[0]?.path).toBe('flows[0].stages');
   });
 
-  it('validates workspace roleOverrides against known roles', () => {
-    const unknown = doc({ workspace: workspace({ roleOverrides: [{ id: 'ghost' }] }) });
+  it('validates repo roleOverrides against known roles', () => {
+    const unknown = doc({ repo: repo({ roleOverrides: [{ id: 'ghost' }] }) });
     const unknownIssues = expectErr(validateDefinitions(unknown));
     expect(codesOf(unknownIssues)).toEqual(['unknown_role']);
-    expect(unknownIssues[0]?.path).toBe('workspace.roleOverrides[0].id');
+    expect(unknownIssues[0]?.path).toBe('repo.roleOverrides[0].id');
 
     const applies = doc({
-      workspace: workspace({ roleOverrides: [{ id: 'dev', writeScope: { kind: 'docs' }, active: false }] }),
+      repo: repo({ roleOverrides: [{ id: 'dev', writeScope: { kind: 'docs' }, active: false }] }),
     });
     expect(validateDefinitions(applies).ok).toBe(true);
   });

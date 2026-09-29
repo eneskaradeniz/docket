@@ -274,7 +274,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale }: WorkOrderD
               <StateBadge tone={STATUS_TONE[view.state.status]}>{t(locale, STATUS_KEY[view.state.status])}</StateBadge>
             </div>
             <p className="font-mono text-[11.5px] text-inkdim">
-              {view.record.workspace} · {view.record.flow}
+              {view.record.repo} · {view.record.flow}
               {currentStage !== undefined ? ` · ${currentStage.name}` : ''}
             </p>
           </>

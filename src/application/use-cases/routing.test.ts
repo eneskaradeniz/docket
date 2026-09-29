@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AccountRoute, RoleBinding, RoleOverride } from '../../domain/index';
-import { parseSlug, parseUlid, type AccountId, type RoleSlug, type WorkOrderId, type WorkspaceSlug } from '../../domain/index';
+import { parseSlug, parseUlid, type AccountId, type RoleSlug, type WorkOrderId, type RepoSlug } from '../../domain/index';
 
 import type { AccountRecord } from '../ports/account-repo';
 import type { BindingScope } from '../ports/binding-repo';
@@ -23,7 +23,7 @@ const ulidOf = <B extends string>(s: string) => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf<'workspace'>('acme');
+const REPO: RepoSlug = slugOf<'repo'>('acme');
 const WO: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FBV');
 
 const A1: AccountId = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
@@ -37,7 +37,7 @@ const REVIEWER: RoleSlug = slugOf<'role'>('reviewer');
 const RETIRED: RoleSlug = slugOf<'role'>('retired');
 
 const GLOBAL: BindingScope = { level: 'global' };
-const WORKSPACE: BindingScope = { level: 'workspace', workspace: WS };
+const REPO_SCOPE: BindingScope = { level: 'repo', repo: REPO };
 const WORK_ORDER: BindingScope = { level: 'workOrder', workOrderId: WO };
 
 const rolesFile = JSON.stringify({
@@ -79,9 +79,9 @@ const flowFile = JSON.stringify({
   ],
 });
 
-const workspaceFile = (overrides: readonly RoleOverride[]): string =>
+const repoFile = (overrides: readonly RoleOverride[]): string =>
   JSON.stringify({
-    workspace: {
+    repo: {
       id: 'acme',
       name: 'Acme',
       repos: [],
@@ -118,7 +118,7 @@ interface Harness {
   readonly accounts: ReturnType<typeof createFakeAccountRepo>;
 }
 
-/** Valid definitions for `acme`; pass workspace overrides to also seed the workspace definition. */
+/** Valid definitions for `acme`; pass repo overrides to also seed the repo definition. */
 const harness = async (options: {
   readonly overrides?: readonly RoleOverride[];
   readonly accountIds?: readonly AccountId[];
@@ -130,7 +130,7 @@ const harness = async (options: {
   definitions.seed({ kind: 'global' }, 'roles/main.json', rolesFile);
   definitions.seed({ kind: 'global' }, 'flows/standard.json', flowFile);
   if (options.overrides !== undefined) {
-    definitions.seed({ kind: 'workspace', workspace: WS }, 'workspace/acme.json', workspaceFile(options.overrides));
+    definitions.seed({ kind: 'repo', repo: REPO }, 'repo/acme.json', repoFile(options.overrides));
   }
   for (const id of options.accountIds ?? [A1, A2, A3, A4]) await accounts.save(account(id));
 
@@ -140,7 +140,7 @@ const harness = async (options: {
 const call = (h: Harness, role: RoleSlug) =>
   resolveRoute(
     { definitions: h.definitions, bindings: h.bindings, accounts: h.accounts },
-    { workspace: WS, workOrderId: WO, role },
+    { repo: REPO, workOrderId: WO, role },
   );
 
 const expectErr = (result: Awaited<ReturnType<typeof resolveRoute>>, code: string): void => {
@@ -149,10 +149,10 @@ const expectErr = (result: Awaited<ReturnType<typeof resolveRoute>>, code: strin
 };
 
 describe('resolveRoute', () => {
-  it('A-10: a work-order-level binding beats workspace and global', async () => {
+  it('A-10: a work-order-level binding beats repo and global', async () => {
     const h = await harness();
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));
-    await h.bindings.save(WORKSPACE, binding(IMPLEMENTER, [route(A2)]));
+    await h.bindings.save(REPO_SCOPE, binding(IMPLEMENTER, [route(A2)]));
     await h.bindings.save(WORK_ORDER, binding(IMPLEMENTER, [route(A3), route(A4)]));
 
     const result = await call(h, IMPLEMENTER);
@@ -161,10 +161,10 @@ describe('resolveRoute', () => {
     if (result.ok) expect(result.value.chain).toEqual([route(A3), route(A4)]);
   });
 
-  it('A-10: a workspace-level binding beats global', async () => {
+  it('A-10: a repo-level binding beats global', async () => {
     const h = await harness();
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));
-    await h.bindings.save(WORKSPACE, binding(IMPLEMENTER, [route(A2)]));
+    await h.bindings.save(REPO_SCOPE, binding(IMPLEMENTER, [route(A2)]));
 
     const result = await call(h, IMPLEMENTER);
 
@@ -172,7 +172,7 @@ describe('resolveRoute', () => {
     if (result.ok) expect(result.value.chain).toEqual([route(A2)]);
   });
 
-  it('A-10: the global binding is used when neither the work order nor the workspace has one', async () => {
+  it('A-10: the global binding is used when neither the work order nor the repo has one', async () => {
     const h = await harness();
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));
 
@@ -182,7 +182,7 @@ describe('resolveRoute', () => {
     if (result.ok) expect(result.value.chain).toEqual([route(A1)]);
   });
 
-  it('A-10: the role comes back with the workspace overrides applied', async () => {
+  it('A-10: the role comes back with the repo overrides applied', async () => {
     const h = await harness({ overrides: OVERRIDES });
     await h.bindings.save(GLOBAL, binding(IMPLEMENTER, [route(A1)]));
 
@@ -213,7 +213,7 @@ describe('resolveRoute', () => {
     expectErr(await call(h, RETIRED), 'unknown_role');
   });
 
-  it('A-10: a workspace override that deactivates the role is rejected with unknown_role', async () => {
+  it('A-10: a repo override that deactivates the role is rejected with unknown_role', async () => {
     const h = await harness({ overrides: [{ id: REVIEWER, active: false }] });
 
     expectErr(await call(h, REVIEWER), 'unknown_role');

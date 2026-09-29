@@ -107,7 +107,7 @@ const AT_SHIP = stateAt(STAGE_SHIP, [GATE_SHIP_APPROVAL, GATE_DEPLOY_PROD, GATE_
 const DONE: WorkOrderState = { status: 'done', stage: null, attempt: 1, pendingGates: [] };
 
 const detailReply = (state: WorkOrderState): WorkOrderDetailView => ({
-  record: { id: WO_ID, workspace: 'atolye', flow: 'release-flow', title: 'Ship the thing' },
+  record: { id: WO_ID, repo: 'atolye', flow: 'release-flow', title: 'Ship the thing' },
   state,
   next: NONE,
   runs: [

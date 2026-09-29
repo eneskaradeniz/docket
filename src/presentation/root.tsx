@@ -6,7 +6,7 @@ import React, { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
-import type { WorkspaceListItem } from '../api/queries';
+import type { RepoListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
@@ -16,7 +16,7 @@ import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
-import { createShellStore, type ShellWorkspace } from './stores/shell';
+import { createShellStore, type ShellRepo } from './stores/shell';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
@@ -41,33 +41,33 @@ export const bridge = (): DocketBridge => {
 /** Every screen command travels as the machine's single local user. */
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
-/** The workspace switcher's entries: every workspace the machine knows, read off `workspaces.list`.
+/** The repo switcher's entries: every repo the machine knows, read off `repos.list`.
  *  The labels are the slugs — the registry holds no display copy. A failed read empties the
  *  listing the same way the cockpit projection did; the shell's own load failure keeps whatever it
  *  showed before. */
-const workspaceEntries = (api: DocketBridge) => async (): Promise<readonly ShellWorkspace[]> => {
-  const reply: unknown = await api.query({ type: 'workspaces.list' });
+const repoEntries = (api: DocketBridge) => async (): Promise<readonly ShellRepo[]> => {
+  const reply: unknown = await api.query({ type: 'repos.list' });
   if (isQueryFailure(reply)) return [];
-  return (reply as readonly WorkspaceListItem[]).map((row) => ({ id: row.id, label: row.id }));
+  return (reply as readonly RepoListItem[]).map((row) => ({ id: row.id, label: row.id }));
 };
 
-/** The wizard's workspace-existence check: `workspaces.list` is the machine's registry, so any
- *  known workspace counts — including one whose work orders are all calm — and a dismissed wizard
+/** The wizard's repo-existence check: `repos.list` is the machine's registry, so any
+ *  known repo counts — including one whose work orders are all calm — and a dismissed wizard
  *  stays gone across relaunches. A failed read still answers false: an unverifiable existence must
  *  never suppress the first-run setup (fail-closed). */
-const workspaceExists = (api: DocketBridge) => async (): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'workspaces.list' });
+const repoExists = (api: DocketBridge) => async (): Promise<boolean> => {
+  const reply: unknown = await api.query({ type: 'repos.list' });
   if (isQueryFailure(reply)) return false;
-  return (reply as readonly WorkspaceListItem[]).length > 0;
+  return (reply as readonly RepoListItem[]).length > 0;
 };
 
 /** The wizard's source probe rides the board read, the one read that loads definitions: a
- *  non-failure reply proves the entered workspace's definitions were found and parsed, which is
+ *  non-failure reply proves the entered repo's definitions were found and parsed, which is
  *  the whole question; every failure (a malformed slug, unreadable definitions) answers false —
  *  fail-closed. No api query probes a source path directly yet; the injection point swaps when one
  *  lands, without touching the wizard store. */
 const sourceReachable = (api: DocketBridge) => async (source: string): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'workspace.board', workspace: source });
+  const reply: unknown = await api.query({ type: 'repo.board', repo: source });
   return !isQueryFailure(reply);
 };
 
@@ -98,10 +98,10 @@ if (mount !== null) {
     api,
     actor: USER,
     sourceReachable: sourceReachable(api),
-    workspaceExists: workspaceExists(api),
+    repoExists: repoExists(api),
   });
-  const shell = createShellStore({ api, changes, workspaces: workspaceEntries(api) });
-  // The first-run machine's entry point: it shows the wizard only when no workspace exists (U-7).
+  const shell = createShellStore({ api, changes, repos: repoEntries(api) });
+  // The first-run machine's entry point: it shows the wizard only when no repo exists (U-7).
   void wizard.open();
 
   createRoot(mount).render(

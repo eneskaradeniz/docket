@@ -2,14 +2,14 @@
 //
 // Files are JSON strings: the domain validators take parsed YAML/JSON, and a fake only needs the
 // deterministic variant of that. Every file holds a partial Definitions object; `load` merges the
-// global files with the workspace's, workspace ids overriding global ids of the same kind.
+// global files with the repo's, repo ids overriding global ids of the same kind.
 import type {
   DefinitionIssue,
   Definitions,
   Roadmap,
   RoadmapIssue,
   Result,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../../domain/index';
 import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
 
@@ -21,8 +21,8 @@ export const FAKE_ROADMAP_TARGET = 'roadmap.json';
 export interface FakeDefinitionStore extends DefinitionStore {
   /** Seeds a file directly, bypassing the hash protection — the initial-state setter for tests. */
   seed(scope: DefinitionScope, target: string, content: string): void;
-  /** Overrides what workspacePath reports; undefined marks the workspace as without a checkout. */
-  setWorkspacePath(workspace: WorkspaceSlug, path: string | undefined): void;
+  /** Overrides what repoPath reports; undefined marks the repo as without a checkout. */
+  setRepoPath(repo: RepoSlug, path: string | undefined): void;
 }
 
 interface StoredFile extends DefinitionFile {
@@ -41,7 +41,7 @@ const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const scopeKey = (scope: DefinitionScope): string =>
-  scope.kind === 'global' ? 'global' : `workspace:${scope.workspace}`;
+  scope.kind === 'global' ? 'global' : `repo:${scope.repo}`;
 
 // FNV-1a over UTF-16 units, two 32-bit lanes: a deterministic digest without a hash package.
 // Fixture-scale collision odds are irrelevant; equal content always hashes equal.
@@ -72,7 +72,7 @@ const toDefinitionIssues = (issues: readonly RoadmapIssue[]): readonly Definitio
     message: `roadmap ${issue.code}: ${issue.message}`,
   }));
 
-/** First-seen position, last value: entries appended later (the workspace's) win per id. */
+/** First-seen position, last value: entries appended later (the repo's) win per id. */
 const overrideById = (items: readonly unknown[]): unknown[] => {
   const result: unknown[] = [];
   const indexById = new Map<string, number>();
@@ -96,25 +96,25 @@ const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
   const roles: unknown[] = [];
   const flows: unknown[] = [];
   const capabilities: unknown[] = [];
-  let workspace: unknown;
+  let repo: unknown;
   for (const body of bodies) {
     if (Array.isArray(body.roles)) roles.push(...body.roles);
     if (Array.isArray(body.flows)) flows.push(...body.flows);
     if (Array.isArray(body.capabilities)) capabilities.push(...body.capabilities);
-    if (body.workspace !== undefined) workspace = body.workspace;
+    if (body.repo !== undefined) repo = body.repo;
   }
   const merged: Record<string, unknown> = {
     roles: overrideById(roles),
     flows: overrideById(flows),
     capabilities: overrideById(capabilities),
   };
-  if (workspace !== undefined) merged.workspace = workspace;
+  if (repo !== undefined) merged.repo = repo;
   return merged;
 };
 
 export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const files = new Map<string, StoredFile>();
-  const pathsByWorkspace = new Map<WorkspaceSlug, string | undefined>();
+  const pathsByRepo = new Map<RepoSlug, string | undefined>();
 
   const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
 
@@ -149,8 +149,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
 
   /**
    * The file bodies of a scope, with `replace` swapped in for its target: global files first, then
-   * the workspace's, then the replacement — so a workspace candidate still overrides the globals.
-   * A global scope has no workspace overlay of its own; the port names none for it.
+   * the repo's, then the replacement — so a repo candidate still overrides the globals.
+   * A global scope has no repo overlay of its own; the port names none for it.
    */
   const bodiesFor = (
     scope: DefinitionScope,
@@ -159,15 +159,15 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     const globalFiles = filesOf({ kind: 'global' }).filter(
       (file) => replace === undefined || !(scope.kind === 'global' && file.target === replace.target),
     );
-    const workspaceFiles = scope.kind === 'workspace'
+    const repoFiles = scope.kind === 'repo'
       ? filesOf(scope).filter((file) => replace === undefined || file.target !== replace.target)
       : [];
 
     const ordered: readonly Body[] = [
       ...globalFiles,
       ...(replace !== undefined && scope.kind === 'global' ? [replace] : []),
-      ...workspaceFiles,
-      ...(replace !== undefined && scope.kind === 'workspace' ? [replace] : []),
+      ...repoFiles,
+      ...(replace !== undefined && scope.kind === 'repo' ? [replace] : []),
     ];
 
     const bodies: UnknownRecord[] = [];
@@ -184,19 +184,19 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       files.set(keyOf(scope, target), { target, content, hash: contentHash(content), scope });
     },
 
-    setWorkspacePath: (workspace: WorkspaceSlug, path: string | undefined): void => {
-      pathsByWorkspace.set(workspace, path);
+    setRepoPath: (repo: RepoSlug, path: string | undefined): void => {
+      pathsByRepo.set(repo, path);
     },
 
-    load: async (workspace: WorkspaceSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
-      const collected = bodiesFor({ kind: 'workspace', workspace }, undefined);
+    load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
+      const collected = bodiesFor({ kind: 'repo', repo }, undefined);
       if (!collected.ok) return err([collected.error]);
       return validateDefinitions(mergeBodies(collected.value));
     },
 
-    loadRoadmap: async (workspace: WorkspaceSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
+    loadRoadmap: async (repo: RepoSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
       const file =
-        files.get(keyOf({ kind: 'workspace', workspace }, FAKE_ROADMAP_TARGET)) ??
+        files.get(keyOf({ kind: 'repo', repo }, FAKE_ROADMAP_TARGET)) ??
         files.get(keyOf({ kind: 'global' }, FAKE_ROADMAP_TARGET));
       if (file === undefined) return undefined;
       const parsed = parseRoadmapBody(FAKE_ROADMAP_TARGET, file.content);
@@ -224,8 +224,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       return ok({ hash });
     },
 
-    workspacePath: async (workspace: WorkspaceSlug): Promise<string | undefined> =>
-      pathsByWorkspace.has(workspace) ? pathsByWorkspace.get(workspace) : `/fake/workspaces/${workspace}`,
+    repoPath: async (repo: RepoSlug): Promise<string | undefined> =>
+      pathsByRepo.has(repo) ? pathsByRepo.get(repo) : `/fake/repos/${repo}`,
 
     // Writes nothing: the candidate only ever enters the merge, never the store.
     validateCandidate: async (

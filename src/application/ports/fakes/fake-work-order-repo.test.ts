@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Actor } from '../../../domain/index';
-import { parseSlug, parseUlid, type FlowSlug, type WorkspaceSlug } from '../../../domain/index';
+import { parseSlug, parseUlid, type FlowSlug, type RepoSlug } from '../../../domain/index';
 
 import type { WorkOrderEvent } from '../../../domain/index';
 
@@ -28,12 +28,12 @@ const slugOf = <B extends string>(s: string) => {
 
 const ACTOR: Actor = { kind: 'user', id: 'u1' };
 const FLOW: FlowSlug = slugOf<'flow'>('standard');
-const ACME: WorkspaceSlug = slugOf<'workspace'>('acme');
-const OTHER: WorkspaceSlug = slugOf<'workspace'>('other');
+const ACME: RepoSlug = slugOf<'repo'>('acme');
+const OTHER: RepoSlug = slugOf<'repo'>('other');
 
-const record = (id: string, createdAt: number, workspace: WorkspaceSlug = ACME): WorkOrderRecord => ({
+const record = (id: string, createdAt: number, repo: RepoSlug = ACME): WorkOrderRecord => ({
   id: woId(id),
-  workspace,
+  repo,
   flow: FLOW,
   title: `title ${id}`,
   createdAt,
@@ -44,7 +44,7 @@ const createdEvent = (at: number): WorkOrderEvent => ({ type: 'created', at, by:
 const blockedEvent = (at: number, reason: string): WorkOrderEvent => ({ type: 'blocked', at, by: ACTOR, reason });
 
 describe('createFakeWorkOrderRepo', () => {
-  it('A-2: list orders by createdAt ascending and filters by workspace', async () => {
+  it('A-2: list orders by createdAt ascending and filters by repo', async () => {
     const repo = createFakeWorkOrderRepo();
     await repo.create(record(U3, 30));
     await repo.create(record(U1, 10));
@@ -52,8 +52,8 @@ describe('createFakeWorkOrderRepo', () => {
     await repo.create(record(U4, 40, OTHER));
 
     expect((await repo.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3), woId(U4)]);
-    expect((await repo.list({ workspace: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
-    expect((await repo.list({ workspace: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
+    expect((await repo.list({ repo: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
+    expect((await repo.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
   });
 
   it('A-2: createdAt ties keep insertion order', async () => {

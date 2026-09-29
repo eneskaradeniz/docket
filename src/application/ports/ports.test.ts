@@ -129,8 +129,8 @@ describe('port shapes', () => {
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
       'work_order' | 'run' | 'proposal' | 'account' | 'binding'
     >();
-    expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'workspace' | 'workOrder'>();
-    expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'workspace'>();
+    expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'repo' | 'workOrder'>();
+    expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'repo'>();
     expectTypeOf<DefinitionFile['hash']>().toBeString();
     expectTypeOf<CommandResult['exitCode']>().toBeNumber();
     expectTypeOf<TransportError['code']>().toEqualTypeOf<

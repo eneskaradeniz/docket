@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Definitions } from '../../../domain/index';
-import { parseSlug, type WorkspaceSlug } from '../../../domain/index';
+import { parseSlug, type RepoSlug } from '../../../domain/index';
 
 import type { DefinitionScope } from '../definition-store';
 
 import { createFakeDefinitionStore, FAKE_ROADMAP_TARGET } from './fake-definition-store';
 
-const wsSlug = (s: string): WorkspaceSlug => {
-  const parsed = parseSlug<'workspace'>(s);
+const toSlug = (s: string): RepoSlug => {
+  const parsed = parseSlug<'repo'>(s);
   if (!parsed.ok) throw new Error('fixture slug must parse');
   return parsed.value;
 };
 
-const WS_SLUG: WorkspaceSlug = wsSlug('acme');
+const REPO_SLUG: RepoSlug = toSlug('acme');
 const GLOBAL: DefinitionScope = { kind: 'global' };
-const WS: DefinitionScope = { kind: 'workspace', workspace: WS_SLUG };
+const REPO: DefinitionScope = { kind: 'repo', repo: REPO_SLUG };
 
 const implementerFile = (name: string): string =>
   JSON.stringify({
@@ -136,40 +136,40 @@ describe('createFakeDefinitionStore', () => {
   it('equal content produces the same hash in every scope and target', async () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/a.json', implementerFile('Same'));
-    store.seed(WS, 'roles/b.json', implementerFile('Same'));
+    store.seed(REPO, 'roles/b.json', implementerFile('Same'));
 
     const a = await store.readFile(GLOBAL, 'roles/a.json');
-    const b = await store.readFile(WS, 'roles/b.json');
+    const b = await store.readFile(REPO, 'roles/b.json');
     expect(a?.hash).toBe(b?.hash);
   });
 
-  it('A-2: load merges global definitions with the workspace’s, workspace ids overriding global ids of the same kind', async () => {
+  it('A-2: load merges global definitions with the repo’s, repo ids overriding global ids of the same kind', async () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Global implementer'));
     store.seed(GLOBAL, 'flows/standard.json', flowFile('Global standard'));
     store.seed(GLOBAL, 'capabilities/docs.json', capabilityFile);
-    store.seed(WS, 'roles/implementer.json', implementerFile('Workspace implementer'));
-    store.seed(WS, 'roles/reviewer.json', reviewerFile);
-    store.seed(WS, 'flows/standard.json', flowFile('Workspace standard'));
+    store.seed(REPO, 'roles/implementer.json', implementerFile('Repo implementer'));
+    store.seed(REPO, 'roles/reviewer.json', reviewerFile);
+    store.seed(REPO, 'flows/standard.json', flowFile('Repo standard'));
 
-    const loaded = await store.load(WS_SLUG);
+    const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) throw new Error('load must succeed');
     expect(rolesOf(loaded.value)).toEqual([
-      ['implementer', 'Workspace implementer'],
+      ['implementer', 'Repo implementer'],
       ['reviewer', 'Reviewer'],
     ]);
-    expect(loaded.value.flows.map((flow) => flow.name)).toEqual(['Workspace standard']);
+    expect(loaded.value.flows.map((flow) => flow.name)).toEqual(['Repo standard']);
     expect(loaded.value.capabilities.map((capability) => capability.id)).toEqual(['docs']);
   });
 
-  it('load keeps another workspace’s overrides out', async () => {
+  it('load keeps another repo’s overrides out', async () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Global implementer'));
-    const other = wsSlug('other');
-    store.seed({ kind: 'workspace', workspace: other }, 'roles/implementer.json', implementerFile('Other implementer'));
+    const other = toSlug('other');
+    store.seed({ kind: 'repo', repo: other }, 'roles/implementer.json', implementerFile('Other implementer'));
 
-    const loaded = await store.load(WS_SLUG);
+    const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(true);
     if (loaded.ok) expect(rolesOf(loaded.value)).toEqual([['implementer', 'Global implementer']]);
   });
@@ -178,9 +178,9 @@ describe('createFakeDefinitionStore', () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Implementer'));
     store.seed(GLOBAL, 'flows/standard.json', flowFile('Standard'));
-    store.seed(WS, 'roles/broken.json', JSON.stringify({ roles: [{ id: 'reviewer', name: 'Reviewer' }] }));
+    store.seed(REPO, 'roles/broken.json', JSON.stringify({ roles: [{ id: 'reviewer', name: 'Reviewer' }] }));
 
-    const loaded = await store.load(WS_SLUG);
+    const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(false);
     if (!loaded.ok) expect(loaded.error.length).toBeGreaterThan(0);
   });
@@ -189,7 +189,7 @@ describe('createFakeDefinitionStore', () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/broken.json', 'not-json{');
 
-    const loaded = await store.load(WS_SLUG);
+    const loaded = await store.load(REPO_SLUG);
     expect(loaded.ok).toBe(false);
     if (!loaded.ok) expect(loaded.error.length).toBeGreaterThan(0);
   });
@@ -208,9 +208,9 @@ describe('createFakeDefinitionStore', () => {
     expect(replaced.ok).toBe(true);
     expect((await store.readFile(GLOBAL, 'roles/implementer.json'))?.content).toBe(implementerFile('Implementer'));
 
-    const workspaceScoped = await store.validateCandidate(WS, 'roles/reviewer.json', reviewerFile);
-    expect(workspaceScoped.ok).toBe(true);
-    expect(await store.readFile(WS, 'roles/reviewer.json')).toBeUndefined();
+    const repoScoped = await store.validateCandidate(REPO, 'roles/reviewer.json', reviewerFile);
+    expect(repoScoped.ok).toBe(true);
+    expect(await store.readFile(REPO, 'roles/reviewer.json')).toBeUndefined();
   });
 
   it('validateCandidate reports the issues the candidate would introduce', async () => {
@@ -241,13 +241,13 @@ describe('createFakeDefinitionStore', () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Implementer'));
 
-    expect(await store.loadRoadmap(WS_SLUG)).toBeUndefined();
+    expect(await store.loadRoadmap(REPO_SLUG)).toBeUndefined();
   });
 
-  it('loadRoadmap returns the workspace roadmap, falling back to the global one', async () => {
+  it('loadRoadmap returns the repo roadmap, falling back to the global one', async () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, FAKE_ROADMAP_TARGET, roadmapFile);
-    const globalOnly = await store.loadRoadmap(WS_SLUG);
+    const globalOnly = await store.loadRoadmap(REPO_SLUG);
     expect(globalOnly?.ok).toBe(true);
 
     const otherTasks = JSON.stringify({
@@ -255,33 +255,33 @@ describe('createFakeDefinitionStore', () => {
         { id: 'p1', name: 'Phase 1', blockedBy: [], tasks: [{ id: 't9', title: 'Task 9', dependsOn: [], acceptance: [] }] },
       ],
     });
-    store.seed(WS, FAKE_ROADMAP_TARGET, otherTasks);
-    const workspaceWins = await store.loadRoadmap(WS_SLUG);
-    expect(workspaceWins?.ok).toBe(true);
-    if (workspaceWins?.ok) expect(workspaceWins.value.phases[0]?.tasks[0]?.id).toBe('t9');
+    store.seed(REPO, FAKE_ROADMAP_TARGET, otherTasks);
+    const repoWins = await store.loadRoadmap(REPO_SLUG);
+    expect(repoWins?.ok).toBe(true);
+    if (repoWins?.ok) expect(repoWins.value.phases[0]?.tasks[0]?.id).toBe('t9');
   });
 
   it('loadRoadmap reports issues for an invalid roadmap', async () => {
     const store = createFakeDefinitionStore();
-    store.seed(WS, FAKE_ROADMAP_TARGET, invalidRoadmapFile);
+    store.seed(REPO, FAKE_ROADMAP_TARGET, invalidRoadmapFile);
 
-    const loaded = await store.loadRoadmap(WS_SLUG);
+    const loaded = await store.loadRoadmap(REPO_SLUG);
     expect(loaded?.ok).toBe(false);
     if (loaded && !loaded.ok) expect(loaded.error.length).toBeGreaterThan(0);
   });
 
-  it('workspacePath reports a deterministic path per workspace and honours setWorkspacePath', async () => {
+  it('repoPath reports a deterministic path per repo and honours setRepoPath', async () => {
     const store = createFakeDefinitionStore();
-    const other = wsSlug('other');
+    const other = toSlug('other');
 
-    const a1 = await store.workspacePath(WS_SLUG);
-    const a2 = await store.workspacePath(WS_SLUG);
+    const a1 = await store.repoPath(REPO_SLUG);
+    const a2 = await store.repoPath(REPO_SLUG);
     expect(a1).toBe(a2);
-    expect(await store.workspacePath(other)).not.toBe(a1);
+    expect(await store.repoPath(other)).not.toBe(a1);
 
-    store.setWorkspacePath(WS_SLUG, '/custom/checkout');
-    expect(await store.workspacePath(WS_SLUG)).toBe('/custom/checkout');
-    store.setWorkspacePath(WS_SLUG, undefined);
-    expect(await store.workspacePath(WS_SLUG)).toBeUndefined();
+    store.setRepoPath(REPO_SLUG, '/custom/checkout');
+    expect(await store.repoPath(REPO_SLUG)).toBe('/custom/checkout');
+    store.setRepoPath(REPO_SLUG, undefined);
+    expect(await store.repoPath(REPO_SLUG)).toBeUndefined();
   });
 });

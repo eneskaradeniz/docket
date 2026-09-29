@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { BindingRepo, BindingScope } from '../../../application/index';
 import { createFakeBindingRepo } from '../../../application/ports/fakes/index';
-import { parseSlug, parseUlid, type AccountId, type RoleBinding, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseSlug, parseUlid, type AccountId, type RoleBinding, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import { createSqliteBindingRepo } from './binding-repo';
 import { openDatabase, type DocketDb } from './database';
@@ -34,14 +34,14 @@ const workOrderId = (s: string): WorkOrderId => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf<'workspace'>('acme');
-const OTHER_WS: WorkspaceSlug = slugOf<'workspace'>('other');
+const REPO_SLUG: RepoSlug = slugOf<'repo'>('acme');
+const OTHER_REPO_SLUG: RepoSlug = slugOf<'repo'>('other');
 const ROLE = slugOf<'role'>('implementer');
 const REVIEWER = slugOf<'role'>('reviewer');
 
 const GLOBAL: BindingScope = { level: 'global' };
-const WORKSPACE: BindingScope = { level: 'workspace', workspace: WS };
-const OTHER_WORKSPACE: BindingScope = { level: 'workspace', workspace: OTHER_WS };
+const REPO_SCOPE: BindingScope = { level: 'repo', repo: REPO_SLUG };
+const OTHER_REPO_SCOPE: BindingScope = { level: 'repo', repo: OTHER_REPO_SLUG };
 const WORK_ORDER: BindingScope = { level: 'workOrder', workOrderId: workOrderId(W1) };
 
 // An absent model must stay absent (I-6), so the key is omitted rather than set to undefined.
@@ -84,27 +84,27 @@ describe('createSqliteBindingRepo', () => {
     it('I-5: save and get round-trip a binding; an unsaved scope or role is undefined', async () => {
       const repo = makeRepo();
       const saved = routeFor(A1);
-      await repo.save(WORKSPACE, saved);
+      await repo.save(REPO_SCOPE, saved);
 
-      expect(await repo.get(WORKSPACE, ROLE)).toStrictEqual(saved);
+      expect(await repo.get(REPO_SCOPE, ROLE)).toStrictEqual(saved);
       expect(await repo.get(GLOBAL, ROLE)).toBeUndefined();
-      expect(await repo.get(WORKSPACE, REVIEWER)).toBeUndefined();
+      expect(await repo.get(REPO_SCOPE, REVIEWER)).toBeUndefined();
     });
 
     it('I-5: the scope levels stay independent for the same role', async () => {
       const repo = makeRepo();
       const global = routeFor(A1);
-      const workspace = routeFor(A2);
-      const otherWorkspace = routeFor(A3, 'sonar-mini');
+      const repoBinding = routeFor(A2);
+      const otherBinding = routeFor(A3, 'sonar-mini');
       const workOrder = routeFor(A1, 'atlas-max');
       await repo.save(GLOBAL, global);
-      await repo.save(WORKSPACE, workspace);
-      await repo.save(OTHER_WORKSPACE, otherWorkspace);
+      await repo.save(REPO_SCOPE, repoBinding);
+      await repo.save(OTHER_REPO_SCOPE, otherBinding);
       await repo.save(WORK_ORDER, workOrder);
 
       expect(await repo.get(GLOBAL, ROLE)).toStrictEqual(global);
-      expect(await repo.get(WORKSPACE, ROLE)).toStrictEqual(workspace);
-      expect(await repo.get(OTHER_WORKSPACE, ROLE)).toStrictEqual(otherWorkspace);
+      expect(await repo.get(REPO_SCOPE, ROLE)).toStrictEqual(repoBinding);
+      expect(await repo.get(OTHER_REPO_SCOPE, ROLE)).toStrictEqual(otherBinding);
       expect(await repo.get(WORK_ORDER, ROLE)).toStrictEqual(workOrder);
     });
 
@@ -121,11 +121,11 @@ describe('createSqliteBindingRepo', () => {
       const repo = makeRepo();
       const forImplementer = routeFor(A1);
       const forReviewer: RoleBinding = { role: REVIEWER, accounts: [{ accountId: accountId(A2) }] };
-      await repo.save(WORKSPACE, forImplementer);
-      await repo.save(WORKSPACE, forReviewer);
+      await repo.save(REPO_SCOPE, forImplementer);
+      await repo.save(REPO_SCOPE, forReviewer);
 
-      expect(await repo.get(WORKSPACE, ROLE)).toStrictEqual(forImplementer);
-      expect(await repo.get(WORKSPACE, REVIEWER)).toStrictEqual(forReviewer);
+      expect(await repo.get(REPO_SCOPE, ROLE)).toStrictEqual(forImplementer);
+      expect(await repo.get(REPO_SCOPE, REVIEWER)).toStrictEqual(forReviewer);
     });
 
     it('I-6: a binding read back deep-equals the binding written — the account chain keeps its order and models', async () => {
@@ -145,15 +145,15 @@ describe('createSqliteBindingRepo', () => {
     it('I-5: listAll enumerates every saved scope and role with its scope, in save order', async () => {
       const repo = makeRepo();
       const global = routeFor(A1);
-      const workspace = routeFor(A2);
+      const repoBinding = routeFor(A2);
       const workOrder = routeFor(A3, 'sonar-mini');
       await repo.save(GLOBAL, global);
-      await repo.save(WORKSPACE, workspace);
+      await repo.save(REPO_SCOPE, repoBinding);
       await repo.save(WORK_ORDER, workOrder);
 
       expect(await repo.listAll()).toEqual([
         { scope: GLOBAL, binding: global },
-        { scope: WORKSPACE, binding: workspace },
+        { scope: REPO_SCOPE, binding: repoBinding },
         { scope: WORK_ORDER, binding: workOrder },
       ]);
     });
@@ -161,14 +161,14 @@ describe('createSqliteBindingRepo', () => {
     it('I-5: listAll keeps one entry per scope and role; a replacement updates it in place', async () => {
       const repo = makeRepo();
       await repo.save(GLOBAL, routeFor(A1));
-      await repo.save(OTHER_WORKSPACE, routeFor(A2));
+      await repo.save(OTHER_REPO_SCOPE, routeFor(A2));
       const replacement = routeFor(A3);
       await repo.save(GLOBAL, replacement);
 
       const all = await repo.listAll();
       expect(all).toHaveLength(2);
       expect(all[0]).toEqual({ scope: GLOBAL, binding: replacement });
-      expect(all[1]).toEqual({ scope: OTHER_WORKSPACE, binding: routeFor(A2) });
+      expect(all[1]).toEqual({ scope: OTHER_REPO_SCOPE, binding: routeFor(A2) });
     });
 
     it('I-5: listAll returns nothing when no binding was saved', async () => {
@@ -184,21 +184,21 @@ describe('createSqliteBindingRepo', () => {
       const first = openDb(path);
       const repo = createSqliteBindingRepo(first);
       const global = routeFor(A1);
-      const workspace = routeFor(A2);
+      const repoBinding = routeFor(A2);
       const workOrder = routeFor(A3, 'sonar-mini');
       await repo.save(GLOBAL, global);
-      await repo.save(WORKSPACE, workspace);
+      await repo.save(REPO_SCOPE, repoBinding);
       await repo.save(WORK_ORDER, workOrder);
       closeDb(first);
 
       const second = openDb(path);
       const reopened = createSqliteBindingRepo(second);
       expect(await reopened.get(GLOBAL, ROLE)).toStrictEqual(global);
-      expect(await reopened.get(WORKSPACE, ROLE)).toStrictEqual(workspace);
+      expect(await reopened.get(REPO_SCOPE, ROLE)).toStrictEqual(repoBinding);
       expect(await reopened.get(WORK_ORDER, ROLE)).toStrictEqual(workOrder);
       expect(await reopened.listAll()).toEqual([
         { scope: GLOBAL, binding: global },
-        { scope: WORKSPACE, binding: workspace },
+        { scope: REPO_SCOPE, binding: repoBinding },
         { scope: WORK_ORDER, binding: workOrder },
       ]);
     });

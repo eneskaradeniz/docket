@@ -41,7 +41,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** The domain contract's documented defaults: enough concurrency for one operator's work orders
  *  without dogpiling a single account; per-account caps arrive with account settings later. */
-const DISPATCH_LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const DISPATCH_LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 /** The dispatcher polls: queue items arrive from commands and scheduled resumes, and neither can
  *  push into this process, so a short cadence is the whole scheduler. */
@@ -172,7 +172,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       console.error(`cannot run queue item ${item.id}: its work order is gone`);
       return;
     }
-    const loaded = await deps.definitions.load(record.workspace);
+    const loaded = await deps.definitions.load(record.repo);
     if (!loaded.ok) {
       console.error(`cannot run queue item ${item.id}: definitions did not load`);
       return;
@@ -188,7 +188,7 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
       console.error(`cannot run queue item ${item.id}: its stage has no runnable role`);
       return;
     }
-    const worktree = await deps.worktrees.ensure(record.workspace, record.id);
+    const worktree = await deps.worktrees.ensure(record.repo, record.id);
     if (!worktree.ok) {
       console.error(`cannot run queue item ${item.id}: no worktree (${worktree.error})`);
       return;
@@ -324,9 +324,9 @@ const startApp = async (): Promise<void> => {
   deps = nodeDeps;
 
   const board = createPermissionBoard();
-  // The workspace registry rides beside deps (NodeDeps exposes it); the api reads it for
-  // `workspaces.list`, the enumeration the switcher and the wizard's re-appear guard live on.
-  const api = createApi(nodeDeps, board, discovery, node.workspaces);
+  // The repo registry rides beside deps (NodeDeps exposes it); the api reads it for
+  // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on.
+  const api = createApi(nodeDeps, board, discovery, node.repos);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).

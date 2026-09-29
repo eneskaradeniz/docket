@@ -10,7 +10,7 @@ const flowById = (id: string): FlowDef => {
   return found;
 };
 
-const fixtureWorkspace = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+const fixtureRepo = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 'builtin-fixture',
   name: 'Built-in fixture',
   repos: [],
@@ -140,12 +140,12 @@ describe('BUILTIN_COMMAND_SET_NAMES', () => {
 });
 
 describe('the built-in library', () => {
-  it('R-45: validateDefinitions accepts the whole built-in library with a workspace that defines tests', () => {
+  it('R-45: validateDefinitions accepts the whole built-in library with a repo that defines tests', () => {
     const result = validateDefinitions({
       roles: BUILTIN_ROLES,
       flows: BUILTIN_FLOWS,
       capabilities: [],
-      workspace: fixtureWorkspace(),
+      repo: fixtureRepo(),
     });
     if (!result.ok) {
       throw new Error(`expected ok, got issues: ${JSON.stringify(result.error, null, 2)}`);
@@ -154,12 +154,12 @@ describe('the built-in library', () => {
     expect(result.value.flows).toHaveLength(BUILTIN_FLOWS.length);
   });
 
-  it('fails validation when the workspace lacks the tests command set the flows reference', () => {
+  it('fails validation when the repo lacks the tests command set the flows reference', () => {
     const result = validateDefinitions({
       roles: BUILTIN_ROLES,
       flows: BUILTIN_FLOWS,
       capabilities: [],
-      workspace: fixtureWorkspace({ commandSets: {} }),
+      repo: fixtureRepo({ commandSets: {} }),
     });
     if (result.ok) throw new Error('expected err without the tests command set');
     expect(result.error.map((issue) => issue.code)).toEqual(['unknown_command_set', 'unknown_command_set', 'unknown_command_set']);

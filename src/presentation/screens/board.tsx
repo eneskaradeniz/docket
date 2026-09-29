@@ -1,7 +1,7 @@
-// screens/board.tsx — the workspace board screen (U-3's window): columns mirroring the board
+// screens/board.tsx — the repo board screen (U-3's window): columns mirroring the board
 // view's stage order, the done work as its own lane, and the create-work-order form whose intent
 // the store validates (title and flow) before `workOrder.open` is issued. A failed board query
-// shows the workspace-problem state, never an empty board. Cards do not drag: a work order moves
+// shows the repo-problem state, never an empty board. Cards do not drag: a work order moves
 // only through its gates, so a card's click opens the work order. The layout speaks the design's
 // kanban grammar: one open column per stage under a mono sample header, each card a bordered work
 // row with a lamp naming its state — no boxed sections around the columns.
@@ -19,7 +19,7 @@ import { failureKey } from '../stores/results';
 
 export interface BoardScreenProps {
   readonly store: BoardStore;
-  readonly workspace: string;
+  readonly repo: string;
   readonly locale: Locale;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
 }
@@ -81,11 +81,11 @@ const createNotice = (locale: Locale, outcome: CreateOutcome): { readonly ok: bo
   return { ok: false, text: t(locale, failureKey(outcome.code)), code: outcome.code };
 };
 
-export function BoardScreen({ store, workspace, locale, onOpenWorkOrder }: BoardScreenProps) {
+export function BoardScreen({ store, repo, locale, onOpenWorkOrder }: BoardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   useEffect(() => {
-    void store.load(workspace);
-  }, [store, workspace]);
+    void store.load(repo);
+  }, [store, repo]);
 
   // The flow input stands on the board's own flow until the operator types one: the choice the
   // validation needs is then explicit, not silent.
@@ -96,7 +96,7 @@ export function BoardScreen({ store, workspace, locale, onOpenWorkOrder }: Board
   const [notice, setNotice] = useState<ReturnType<typeof createNotice> | null>(null);
 
   const submit = (): void => {
-    void store.create({ workspace, title, flow: flowValue }).then((outcome) => {
+    void store.create({ repo, title, flow: flowValue }).then((outcome) => {
       setNotice(createNotice(locale, outcome));
       if (outcome.ok) setTitle('');
     });
@@ -105,7 +105,7 @@ export function BoardScreen({ store, workspace, locale, onOpenWorkOrder }: Board
   return (
     <div className="grid gap-5">
       <header className="grid gap-1">
-        <h1 className="truncate font-mono text-[15px] font-bold tracking-tight text-ink">{workspace}</h1>
+        <h1 className="truncate font-mono text-[15px] font-bold tracking-tight text-ink">{repo}</h1>
         {view !== null ? (
           <p className="font-mono text-[11.5px] text-inkdim">{view.flow}</p>
         ) : null}

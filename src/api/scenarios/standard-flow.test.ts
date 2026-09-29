@@ -27,7 +27,7 @@ import {
   type StageSlug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import { createApi } from '../index';
@@ -75,7 +75,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const T0: EpochMs = 1_700_000_000_000;
 
 const MAIN: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
@@ -86,7 +86,7 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
 /** Opens a work order through the api boundary and returns its parsed id. */
 const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', workspace: WS, title });
+  const result = await createApi(deps).command(USER, { type: 'workOrder.open', repo: REPO, title });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -106,12 +106,12 @@ const REVIEW_VERDICT: GateSlug = slugOf<'gate'>('review-verdict');
 const REVIEW_APPROVAL: GateSlug = slugOf<'gate'>('review-approval');
 const CLOSURE: GateSlug = slugOf<'gate'>('closure');
 
-const LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 const TEST_COMMAND = 'npm test';
 
-/** The whole definitions body the fake store serves for the workspace: the built-in library's
- *  `standard` flow plus a workspace that enables it and defines the `tests` command set. */
+/** The whole definitions body the fake store serves for the repo: the built-in library's
+ *  `standard` flow plus a repo that enables it and defines the `tests` command set. */
 const definitionsBody = (): unknown => {
   const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
   if (standard === undefined) throw new Error('expected a built-in flow "standard"');
@@ -119,9 +119,9 @@ const definitionsBody = (): unknown => {
     roles: BUILTIN_ROLES,
     flows: [standard],
     capabilities: [],
-    workspace: {
+    repo: {
       id: 'ws',
-      name: 'Workspace',
+      name: 'Repo',
       repos: [],
       flows: ['standard'],
       defaultFlow: 'standard',
@@ -205,7 +205,7 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
   const view = await viewOf(h.deps, id);
   if (view.next.kind !== 'start_run') throw new Error(`expected start_run, got ${view.next.kind}`);
 
-  const routed = await resolveRoute(h.deps, { workspace: WS, workOrderId: id, role: view.next.role });
+  const routed = await resolveRoute(h.deps, { repo: REPO, workOrderId: id, role: view.next.role });
   if (!routed.ok) throw new Error(`route must resolve: ${JSON.stringify(routed.error)}`);
 
   const queued = await enqueueStage(h.deps, { id });
@@ -223,7 +223,7 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
     item,
     role: routed.value.role,
     prompt: `run stage ${item.stage}`,
-    cwd: `/fake/worktrees/${WS}/${id}`,
+    cwd: `/fake/worktrees/${REPO}/${id}`,
     capabilities: [],
   });
 };
@@ -290,7 +290,7 @@ describe('standard flow, headless end to end', () => {
     expectState(view, { status: 'ready', stage: REVIEW, pendingGates: [REVIEW_VERDICT, REVIEW_APPROVAL] });
     // The command gate ran its set in the work order's worktree, ten minutes per command.
     expect(h.commands.calls()).toEqual([
-      { cwd: `/fake/worktrees/${WS}/${id}`, command: TEST_COMMAND, timeoutMs: 10 * MINUTE },
+      { cwd: `/fake/worktrees/${REPO}/${id}`, command: TEST_COMMAND, timeoutMs: 10 * MINUTE },
     ]);
 
     // 4. the reviewer run completes → gating; its verdict → awaiting_human; approval → close.

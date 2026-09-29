@@ -24,7 +24,7 @@ export interface RunSkill {
   readonly kind: 'skill';
   readonly id: string;
   readonly name: string;
-  /** Workspace or library path the CLI reads the skill from; referenced, never copied. */
+  /** Repo or library path the CLI reads the skill from; referenced, never copied. */
   readonly path: string;
 }
 

@@ -13,7 +13,7 @@ const USER: Actor = { kind: 'user', id: 'u-1' };
 
 const stageOf = (id: string): StageSlug => id as StageSlug;
 
-// The built-in flows reference the `tests` command set; the workspace defines what it runs.
+// The built-in flows reference the `tests` command set; the repo defines what it runs.
 const CTX = { commandSets: { tests: ['npm test'] } };
 
 const standard = () => {

@@ -44,7 +44,7 @@ const AGENT: Actor = {
   role: slugOf<'role'>('worker'),
 };
 
-const WORKSPACE = 'acme';
+const REPO = 'acme';
 const ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAZ');
 const ACCOUNT_OTHER = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB8');
 const PROPOSAL = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
@@ -115,8 +115,8 @@ const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
   flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON],
   capabilities: [],
-  workspace: {
-    id: WORKSPACE,
+  repo: {
+    id: REPO,
     name: 'Acme',
     repos: [],
     flows: ['board-flow', 'ship-flow', 'ship-prd-flow'],
@@ -163,7 +163,7 @@ const createHarness = (): Harness => {
   const worktrees = createFakeWorktrees();
   const definitions = createFakeDefinitionStore();
   const log = createFakeEventLog();
-  definitions.seed({ kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, 'defs.json', DEFINITIONS_JSON);
+  definitions.seed({ kind: 'repo', repo: slugOf<'repo'>(REPO) }, 'defs.json', DEFINITIONS_JSON);
   const deps = createFakeDeps({ commands, worktrees, definitions, log });
   return { deps, definitions, commands, worktrees, log };
 };
@@ -187,7 +187,7 @@ const seedRouting = async (h: Harness): Promise<void> => {
 const openViaApi = async (h: Harness, title = 'Fix the login flow', flow?: string): Promise<string> => {
   const result = await createApi(h.deps).command(ACTOR, {
     type: 'workOrder.open',
-    workspace: WORKSPACE,
+    repo: REPO,
     title,
     ...(flow === undefined ? {} : { flow }),
   });
@@ -223,7 +223,7 @@ const ROLES_BEFORE = JSON.stringify({ roles: [ROLE_JSON] });
 const ROLES_AFTER = JSON.stringify({ roles: [ROLE_JSON, { ...ROLE_JSON, id: 'reviewer', name: 'Reviewer' }] });
 
 const seedPendingProposal = async (h: Harness, id: Ulid<'proposal'>, target: string, after: string): Promise<void> => {
-  const scope = { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) } as const;
+  const scope = { kind: 'repo', repo: slugOf<'repo'>(REPO) } as const;
   h.definitions.seed(scope, target, ROLES_BEFORE);
   const file = await h.definitions.readFile(scope, target);
   if (file === undefined) throw new Error('fixture file must exist');
@@ -275,7 +275,7 @@ describe('createApi', () => {
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
 
-    it('A-21: an invalid workspace, flow or task slug in workOrder.open is rejected before any port call', async () => {
+    it('A-21: an invalid repo, flow or task slug in workOrder.open is rejected before any port call', async () => {
       const h = createHarness();
       const api = createApi(h.deps);
       const spies = [
@@ -285,9 +285,9 @@ describe('createApi', () => {
       ];
 
       const commands: readonly Command[] = [
-        { type: 'workOrder.open', workspace: 'Acme', title: 'Fix the login flow' },
-        { type: 'workOrder.open', workspace: WORKSPACE, title: 'Fix the login flow', flow: 'Board-Flow' },
-        { type: 'workOrder.open', workspace: WORKSPACE, title: 'Fix the login flow', task: 'no task!' },
+        { type: 'workOrder.open', repo: 'Acme', title: 'Fix the login flow' },
+        { type: 'workOrder.open', repo: REPO, title: 'Fix the login flow', flow: 'Board-Flow' },
+        { type: 'workOrder.open', repo: REPO, title: 'Fix the login flow', task: 'no task!' },
       ];
       for (const command of commands) {
         expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
@@ -315,7 +315,7 @@ describe('createApi', () => {
       const h = createHarness();
       const api = createApi(h.deps);
 
-      const result = await api.command(ACTOR, { type: 'workOrder.open', workspace: WORKSPACE, title: '  Fix the login  ' });
+      const result = await api.command(ACTOR, { type: 'workOrder.open', repo: REPO, title: '  Fix the login  ' });
 
       expect(result.ok).toBe(true);
       if (!result.ok || result.id === undefined) throw new Error('open must return an id');
@@ -330,7 +330,7 @@ describe('createApi', () => {
       const h = createHarness();
       const api = createApi(h.deps);
 
-      const result = await api.command(ACTOR, { type: 'workOrder.open', workspace: WORKSPACE, title: '   ' });
+      const result = await api.command(ACTOR, { type: 'workOrder.open', repo: REPO, title: '   ' });
 
       expect(result).toEqual({ ok: false, code: 'empty_title' });
     });
@@ -405,7 +405,7 @@ describe('createApi', () => {
       await seedPendingProposal(h, PROPOSAL, 'roles.json', ROLES_AFTER);
       await seedPendingProposal(h, PROPOSAL_OTHER, 'caps.json', ROLES_AFTER);
       const api = createApi(h.deps);
-      const scope = { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) } as const;
+      const scope = { kind: 'repo', repo: slugOf<'repo'>(REPO) } as const;
 
       const approved = await api.command(ACTOR, { type: 'proposal.decide', id: PROPOSAL, decision: 'approved' });
       expect(approved).toEqual({ ok: true, id: PROPOSAL });
@@ -654,11 +654,11 @@ describe('createApi', () => {
         }),
       ).toEqual({ ok: false, code: 'promote_prerequisite_missing' });
 
-      // definitions_invalid — the workspace's definitions no longer load.
+      // definitions_invalid — the repo's definitions no longer load.
       const broken = createHarness();
       const brokenId = await openViaApi(broken, 'Ship it', 'ship-flow');
       broken.definitions.seed(
-        { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { kind: 'repo', repo: slugOf<'repo'>(REPO) },
         'broken.json',
         '{ not json',
       );
@@ -698,8 +698,8 @@ describe('createApi', () => {
                 },
               ],
               capabilities: [],
-              workspace: {
-                id: slugOf<'workspace'>(WORKSPACE),
+              repo: {
+                id: slugOf<'repo'>(REPO),
                 name: 'Acme',
                 repos: [],
                 flows: [slugOf<'flow'>('ship-flow')],
@@ -722,10 +722,10 @@ describe('createApi', () => {
         }),
       ).toEqual({ ok: false, code: 'unknown_environment' });
 
-      // no_repo — the machine has no checkout of this workspace.
+      // no_repo — the machine has no checkout of this repo.
       const noCheckout = createHarness();
       const noCheckoutId = await openViaApi(noCheckout, 'Ship it', 'ship-flow');
-      noCheckout.worktrees.markNoRepo(slugOf<'workspace'>(WORKSPACE));
+      noCheckout.worktrees.markNoRepo(slugOf<'repo'>(REPO));
       expect(
         await createApi(noCheckout.deps).command(ACTOR, {
           type: 'deploy.approve',
@@ -844,7 +844,7 @@ describe('createApi', () => {
       const h = createHarness();
       await seedRouting(h); // a global worker binding to ACCOUNT
       await h.deps.bindings.save(
-        { level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { level: 'repo', repo: slugOf<'repo'>(REPO) },
         { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }, { accountId: ACCOUNT_OTHER }] },
       );
       const api = createApi(h.deps);
@@ -871,8 +871,8 @@ describe('createApi', () => {
         role,
         accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
       });
-      // The settings surface edits the machine-global baseline; no workspace binding appears.
-      expect(await h.deps.bindings.get({ level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, role)).toBeUndefined();
+      // The settings surface edits the machine-global baseline; no repo binding appears.
+      expect(await h.deps.bindings.get({ level: 'repo', repo: slugOf<'repo'>(REPO) }, role)).toBeUndefined();
 
       expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts: [] })).toEqual({
         ok: false,
@@ -978,7 +978,7 @@ describe('createApi', () => {
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE4');
       await h.deps.workOrders.create({
         id: workOrderId,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,
@@ -993,7 +993,7 @@ describe('createApi', () => {
           item: {
             id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE5'),
             workOrderId,
-            workspace: slugOf<'workspace'>(WORKSPACE),
+            repo: slugOf<'repo'>(REPO),
             stage: slugOf<'stage'>('plan'),
             route: { accountId: ACCOUNT },
             priority: 0,
@@ -1068,7 +1068,7 @@ describe('createApi', () => {
       transports.register(ACCOUNT, createFakeTransport([...script]));
       await h.deps.workOrders.create({
         id: ids.workOrder,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,
@@ -1081,7 +1081,7 @@ describe('createApi', () => {
           item: {
             id: ids.queueItem,
             workOrderId: ids.workOrder,
-            workspace: slugOf<'workspace'>(WORKSPACE),
+            repo: slugOf<'repo'>(REPO),
             stage: slugOf<'stage'>('plan'),
             route: { accountId: ACCOUNT },
             priority: 0,
@@ -1126,7 +1126,7 @@ describe('createApi', () => {
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FEA');
       await h.deps.workOrders.create({
         id: workOrderId,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,

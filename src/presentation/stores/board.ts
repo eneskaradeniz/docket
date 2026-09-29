@@ -1,5 +1,5 @@
-// stores/board.ts — the workspace board store (U-3): it mirrors the `workspace.board` query
-// (columns in stage order, done as its own lane), shows the workspace-problem state on a failed
+// stores/board.ts — the repo board store (U-3): it mirrors the `repo.board` query
+// (columns in stage order, done as its own lane), shows the repo-problem state on a failed
 // query instead of an empty board, and its create intent validates title and flow before issuing
 // `workOrder.open`. Re-queries on work-order changes; run events do not move cards.
 import type { Api } from '../../api/api';
@@ -25,10 +25,10 @@ export interface BoardStoreDeps {
 
 export interface BoardState {
   readonly loading: boolean;
-  /** The last successful query's board; null while the workspace-problem state shows (U-3). */
+  /** The last successful query's board; null while the repo-problem state shows (U-3). */
   readonly view: BoardView | null;
   /** The failure code of the latest failed query (e.g. `definitions_invalid`): the
-   *  workspace-problem state, never an empty board. Null while a board is shown. */
+   *  repo-problem state, never an empty board. Null while a board is shown. */
   readonly problem: string | null;
 }
 
@@ -42,13 +42,13 @@ export type CreateOutcome =
   | { readonly ok: false; readonly code: string };
 
 export interface CreateIntent {
-  readonly workspace: string;
+  readonly repo: string;
   readonly title: string;
   readonly flow: string;
 }
 
 export interface BoardStore {
-  load(workspace: string): Promise<void>;
+  load(repo: string): Promise<void>;
   state(): BoardState;
   create(intent: CreateIntent): Promise<CreateOutcome>;
   subscribe(listener: () => void): () => void;
@@ -58,8 +58,8 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
   const { api, changes, actor } = deps;
 
   let state: BoardState = { loading: false, view: null, problem: null };
-  // The workspace the store is bound to: change events re-query it, create refreshes it.
-  let workspace: string | null = null;
+  // The repo the store is bound to: change events re-query it, create refreshes it.
+  let repo: string | null = null;
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply, as in the cockpit store.
   let attempts = 0;
@@ -72,9 +72,9 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
   const load = async (target: string): Promise<void> => {
     const attempt = attempts + 1;
     attempts = attempt;
-    workspace = target;
+    repo = target;
     set({ loading: true, view: state.view, problem: null });
-    const reply: unknown = await api.query({ type: 'workspace.board', workspace: target } satisfies Query);
+    const reply: unknown = await api.query({ type: 'repo.board', repo: target } satisfies Query);
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
       // The problem state replaces the board: an empty board must not pretend health (U-3).
@@ -88,8 +88,8 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
   changes((change) => {
     // Only work-order changes move cards across columns; run events belong to the cockpit.
     if (change.type !== 'workOrders.changed') return;
-    if (workspace === null) return;
-    void load(workspace);
+    if (repo === null) return;
+    void load(repo);
   });
 
   return {
@@ -111,16 +111,16 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
 
       const result = await api.command(actor, {
         type: 'workOrder.open',
-        workspace: intent.workspace,
+        repo: intent.repo,
         title,
         flow,
       });
       if (!result.ok) {
-        // A command failure is not a workspace problem: the board keeps showing as it was.
+        // A command failure is not a repo problem: the board keeps showing as it was.
         return { ok: false, code: result.code };
       }
       // The board mirrors its own mutation: the next query shows the opened work order.
-      if (workspace !== null) void load(workspace);
+      if (repo !== null) void load(repo);
       return { ok: true, id: result.id };
     },
   };

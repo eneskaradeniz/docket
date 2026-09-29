@@ -228,7 +228,7 @@ function BindingStep({ state, store, locale }: { readonly state: WizardState; re
 
 export function WizardScreen({ store, locale }: WizardScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
-  // While `open` is still proving workspace existence, and when it answered "one exists", the
+  // While `open` is still proving repo existence, and when it answered "one exists", the
   // wizard has nothing to show — the overlay stays away entirely.
   if (state.checking || !state.visible) return null;
 

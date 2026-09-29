@@ -1,5 +1,5 @@
 // screens/shell.tsx — the app shell (U-10's window): the navigation rail with the attention badge,
-// the workspace switcher, and the content area that mounts the cockpit, a workspace's board, a
+// the repo switcher, and the content area that mounts the cockpit, a repo's board, a
 // work order's detail, or the settings. The first-run wizard rides above it all as an overlay: the
 // shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The badge
 // mirrors the shell store: the cockpit's attention count, present only while attention exists —
@@ -35,7 +35,7 @@ export interface ShellScreenProps {
 /** Where the shell can be. Routes carry only ids; the screens load their own data. */
 type ShellRoute =
   | { readonly name: 'cockpit' }
-  | { readonly name: 'board'; readonly workspace: string }
+  | { readonly name: 'board'; readonly repo: string }
   | { readonly name: 'workOrder'; readonly id: string }
   | { readonly name: 'settings' };
 
@@ -86,16 +86,16 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
         <p className="px-2.5 pb-1 pt-4 font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
           {t(locale, 'nav.workspaces')}
         </p>
-        {state.workspaces.length === 0 ? (
+        {state.repos.length === 0 ? (
           <p className="px-2.5 py-1.5 text-[12.5px] text-inkdim">{t(locale, 'nav.workspaces.empty')}</p>
         ) : (
-          state.workspaces.map((entry) => {
-            const current = route.name === 'board' && route.workspace === entry.id;
+          state.repos.map((entry) => {
+            const current = route.name === 'board' && route.repo === entry.id;
             return (
               <button
                 key={entry.id}
                 type="button"
-                onClick={() => setRoute({ name: 'board', workspace: entry.id })}
+                onClick={() => setRoute({ name: 'board', repo: entry.id })}
                 className={navClass(current)}
                 aria-current={current ? 'page' : undefined}
               >
@@ -111,7 +111,7 @@ export function ShellScreen({ shell, cockpit, board, detail, settings, wizard, l
           <CockpitScreen store={cockpit} locale={locale} onOpenWorkOrder={openWorkOrder} />
         ) : null}
         {route.name === 'board' ? (
-          <BoardScreen store={board} workspace={route.workspace} locale={locale} onOpenWorkOrder={openWorkOrder} />
+          <BoardScreen store={board} repo={route.repo} locale={locale} onOpenWorkOrder={openWorkOrder} />
         ) : null}
         {route.name === 'workOrder' ? (
           <WorkOrderDetailScreen store={detail} workOrderId={route.id} locale={locale} />

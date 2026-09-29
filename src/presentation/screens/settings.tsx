@@ -49,12 +49,12 @@ const AuthModeBadge = ({ mode, locale }: { readonly mode: string; readonly local
 
 const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
   global: 'settings.binding.scope.global',
-  workspace: 'settings.binding.scope.workspace',
+  repo: 'settings.binding.scope.workspace',
   workOrder: 'settings.binding.scope.workOrder',
 };
 
 const scopeName = (scope: SettingsBindingScope): string =>
-  scope.level === 'workspace' ? scope.workspace : scope.level === 'workOrder' ? scope.workOrderId : '';
+  scope.level === 'repo' ? scope.repo : scope.level === 'workOrder' ? scope.workOrderId : '';
 
 /** One meter line, in the design's pool grammar: a quiet line under the account's parting
  *  hairline — label, mono reading, and the provenance chip at the edge; no box of its own, a

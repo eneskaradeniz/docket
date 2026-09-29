@@ -5,7 +5,7 @@ export interface SpendCap {
 
 export type SpendStatus = 'ok' | 'warn' | 'hard_stop';
 
-export type CapScope = 'account_day' | 'account_month' | 'workspace_month' | 'work_order';
+export type CapScope = 'account_day' | 'account_month' | 'repo_month' | 'work_order';
 
 export interface ScopedSpend {
   readonly scope: CapScope;

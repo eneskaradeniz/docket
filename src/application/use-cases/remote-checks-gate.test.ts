@@ -14,7 +14,7 @@ import {
   type Ulid,
   type WorkOrderId,
   type WorkOrderState,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import type { AppDeps, CheckRun, Forge, ForgeResolver, RemoteChecksError } from '../index';
@@ -42,7 +42,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WORKSPACE: WorkspaceSlug = slugOf('ws');
+const REPO_SLUG: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
@@ -99,9 +99,9 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'ws',
-    name: 'Workspace',
+    name: 'Repo',
     repos: [],
     flows: ['all-flow', 'required-flow', 'mixed-flow', 'two-stage-flow'],
     defaultFlow: 'all-flow',
@@ -134,7 +134,7 @@ const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id: WORK_ORDER,
-    workspace: WORKSPACE,
+    repo: REPO_SLUG,
     flow: flowId,
     title: 'Fixture',
     createdAt: h.clock.now(),

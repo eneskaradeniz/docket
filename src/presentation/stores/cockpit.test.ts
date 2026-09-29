@@ -10,7 +10,7 @@ import { createCockpitStore, type CockpitChange, type CockpitChangeSignal } from
 
 const attentionItem = (id: string, kind: AttentionItem['kind'], since: number): AttentionItem => ({
   workOrderId: id,
-  workspace: 'atolye',
+  repo: 'atolye',
   title: `title-${id}`,
   kind,
   stage: null,

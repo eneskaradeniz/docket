@@ -15,7 +15,7 @@ import type {
   TaskSlug,
   WorkOrderEvent,
   WorkOrderId,
-  WorkspaceSlug,
+  RepoSlug,
 } from '../../../domain/index';
 import { parseSlug, parseUlid } from '../../../domain/index';
 
@@ -45,12 +45,12 @@ const FLOW: FlowSlug = slugOf<'flow'>('standard');
 const STAGE: StageSlug = slugOf<'stage'>('review');
 const GATE = slugOf<'gate'>('review-approval');
 const TASK: TaskSlug = slugOf<'task'>('setup-auth');
-const ACME: WorkspaceSlug = slugOf<'workspace'>('acme');
-const OTHER: WorkspaceSlug = slugOf<'workspace'>('other');
+const ACME: RepoSlug = slugOf<'repo'>('acme');
+const OTHER: RepoSlug = slugOf<'repo'>('other');
 
-const record = (id: string, createdAt: number, workspace: WorkspaceSlug = ACME): WorkOrderRecord => ({
+const record = (id: string, createdAt: number, repo: RepoSlug = ACME): WorkOrderRecord => ({
   id: woId(id),
-  workspace,
+  repo,
   flow: FLOW,
   title: `title ${id}`,
   createdAt,
@@ -101,7 +101,7 @@ const suites: readonly (readonly [string, () => Suite])[] = [
 ];
 
 describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
-  it('I-5: list orders by createdAt ascending and filters by workspace', async () => {
+  it('I-5: list orders by createdAt ascending and filters by repo', async () => {
     const { repo } = make();
     await repo.create(record(U3, 30));
     await repo.create(record(U1, 10));
@@ -109,8 +109,8 @@ describe.each(suites)('createSqliteWorkOrderRepo (%s)', (_kind, make) => {
     await repo.create(record(U4, 40, OTHER));
 
     expect((await repo.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3), woId(U4)]);
-    expect((await repo.list({ workspace: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
-    expect((await repo.list({ workspace: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
+    expect((await repo.list({ repo: ACME })).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
+    expect((await repo.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U4)]);
   });
 
   it('I-5: createdAt ties keep insertion order (ids ascend with insertion)', async () => {
@@ -226,7 +226,7 @@ describe('createSqliteWorkOrderRepo (sqlite rules)', () => {
     const reopened = createSqliteWorkOrderRepo(second.value);
     expect(await reopened.get(woId(U1))).toStrictEqual(record(U1, 10));
     expect((await reopened.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2)]);
-    expect((await reopened.list({ workspace: OTHER })).map((r) => r.id)).toEqual([woId(U2)]);
+    expect((await reopened.list({ repo: OTHER })).map((r) => r.id)).toEqual([woId(U2)]);
     expect(await reopened.events(woId(U1))).toStrictEqual([createdEvent(10), blockedEvent(11, 'waiting')]);
   });
 });

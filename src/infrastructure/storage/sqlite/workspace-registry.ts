@@ -1,16 +1,16 @@
-// Machine-local registry of which checkout holds which workspace, itself stored in docket.db.
-import type { WorkspaceSlug } from '../../../domain/index';
-import type { WorkspacePaths } from '../../system/index';
+// Machine-local registry of which checkout holds which repo, itself stored in docket.db.
+import type { RepoSlug } from '../../../domain/index';
+import type { RepoPaths } from '../../system/index';
 import type { DocketDb } from './database';
 
-export interface WorkspaceRegistry extends WorkspacePaths {
-  register(slug: WorkspaceSlug, path: string): Promise<void>; // upsert; `path` absolute
-  list(): Promise<readonly { readonly slug: WorkspaceSlug; readonly path: string }[]>; // slug asc
-  remove(slug: WorkspaceSlug): Promise<void>;
+export interface RepoRegistry extends RepoPaths {
+  register(slug: RepoSlug, path: string): Promise<void>; // upsert; `path` absolute
+  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>; // slug asc
+  remove(slug: RepoSlug): Promise<void>;
 }
 
 interface RegistryEntry {
-  readonly slug: WorkspaceSlug;
+  readonly slug: RepoSlug;
   readonly path: string;
 }
 
@@ -21,12 +21,12 @@ function entryFromRow(row: DataRow): RegistryEntry {
   if (typeof row.slug !== 'string' || typeof row.path !== 'string') {
     throw new Error('workspaces row without text columns');
   }
-  return { slug: row.slug as WorkspaceSlug, path: row.path };
+  return { slug: row.slug as RepoSlug, path: row.path };
 }
 
-export function createSqliteWorkspaceRegistry(db: DocketDb): WorkspaceRegistry {
+export function createSqliteRepoRegistry(db: DocketDb): RepoRegistry {
   return {
-    register: async (slug: WorkspaceSlug, path: string): Promise<void> => {
+    register: async (slug: RepoSlug, path: string): Promise<void> => {
       db.raw
         .prepare('INSERT INTO workspaces (slug, path) VALUES (?, ?) ON CONFLICT (slug) DO UPDATE SET path = excluded.path')
         .run(slug, path);
@@ -38,11 +38,11 @@ export function createSqliteWorkspaceRegistry(db: DocketDb): WorkspaceRegistry {
         .all()
         .map((row) => entryFromRow(row)),
 
-    remove: async (slug: WorkspaceSlug): Promise<void> => {
+    remove: async (slug: RepoSlug): Promise<void> => {
       db.raw.prepare('DELETE FROM workspaces WHERE slug = ?').run(slug);
     },
 
-    path: async (slug: WorkspaceSlug): Promise<string | undefined> => {
+    path: async (slug: RepoSlug): Promise<string | undefined> => {
       const row = db.raw.prepare('SELECT path FROM workspaces WHERE slug = ?').get(slug);
       if (row === undefined) return undefined;
       if (typeof row.path !== 'string') throw new Error('workspaces row without a text path');

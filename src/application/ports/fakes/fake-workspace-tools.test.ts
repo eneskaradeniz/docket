@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseSlug, parseUlid, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import type { CommandResult } from '../workspace-tools';
 
@@ -13,8 +13,8 @@ import {
 
 const U1 = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 
-const wsSlug = (s: string): WorkspaceSlug => {
-  const parsed = parseSlug<'workspace'>(s);
+const toSlug = (s: string): RepoSlug => {
+  const parsed = parseSlug<'repo'>(s);
   if (!parsed.ok) throw new Error('fixture slug must parse');
   return parsed.value;
 };
@@ -131,26 +131,26 @@ describe('createFakeEvidenceChecker', () => {
 });
 
 describe('createFakeWorktrees', () => {
-  it('ensures a deterministic worktree path per workspace and work order', async () => {
+  it('ensures a deterministic worktree path per repo and work order', async () => {
     const worktrees = createFakeWorktrees();
-    const first = await worktrees.ensure(wsSlug('acme'), woIdOf(U1));
+    const first = await worktrees.ensure(toSlug('acme'), woIdOf(U1));
     expect(first.ok).toBe(true);
     if (first.ok) expect(first.value.path).toBe(`/fake/worktrees/acme/${U1}`);
 
-    const second = await worktrees.ensure(wsSlug('other'), woIdOf(U1));
+    const second = await worktrees.ensure(toSlug('other'), woIdOf(U1));
     expect(second.ok).toBe(true);
     if (second.ok) expect(second.value.path).toBe(`/fake/worktrees/other/${U1}`);
   });
 
-  it('markNoRepo makes ensure fail with no_repo for that workspace only', async () => {
+  it('markNoRepo makes ensure fail with no_repo for that repo only', async () => {
     const worktrees = createFakeWorktrees();
-    worktrees.markNoRepo(wsSlug('acme'));
+    worktrees.markNoRepo(toSlug('acme'));
 
-    const denied = await worktrees.ensure(wsSlug('acme'), woIdOf(U1));
+    const denied = await worktrees.ensure(toSlug('acme'), woIdOf(U1));
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error).toBe('no_repo');
 
-    const allowed = await worktrees.ensure(wsSlug('other'), woIdOf(U1));
+    const allowed = await worktrees.ensure(toSlug('other'), woIdOf(U1));
     expect(allowed.ok).toBe(true);
   });
 });

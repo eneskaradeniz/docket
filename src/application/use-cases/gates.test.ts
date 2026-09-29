@@ -16,7 +16,7 @@ import {
   type StageSlug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import type { AppDeps, CheckRun, Forge, ForgeResolver } from '../ports';
@@ -55,7 +55,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WORKSPACE: WorkspaceSlug = slugOf('ws');
+const REPO_SLUG: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const RUN_ID: RunId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FA1');
 const WORKTREE_PATH = `/fake/worktrees/ws/${WORK_ORDER}`;
@@ -196,9 +196,9 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'ws',
-    name: 'Workspace',
+    name: 'Repo',
     repos: [],
     flows: [
       'human-flow', 'two-gates', 'later-stage', 'page-flow', 'cmd-flow', 'scan-flow', 'both-flow',
@@ -244,7 +244,7 @@ const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id: WORK_ORDER,
-    workspace: WORKSPACE,
+    repo: REPO_SLUG,
     flow: flowId,
     title: 'Fixture',
     createdAt: h.clock.now(),
@@ -516,9 +516,9 @@ describe('evaluateMachineGates', () => {
     expect(h.commands.calls()).toHaveLength(0);
   });
 
-  it('A-9: a workspace without a checkout on this machine is no_repo', async () => {
+  it('A-9: a repo without a checkout on this machine is no_repo', async () => {
     const h = makeHarness();
-    h.worktrees.markNoRepo(WORKSPACE);
+    h.worktrees.markNoRepo(REPO_SLUG);
     await createIn(h, 'cmd-flow');
     await runSucceededIn(h, slugOf('build'));
 
@@ -850,7 +850,7 @@ describe('evaluateMachineGates', () => {
 // --- GateContext environments (E-18) ----------------------------------------------------------------
 
 describe('GateContext environments (E-18)', () => {
-  it('E-18: GateContext built by use cases carries environments from the workspace definition', async () => {
+  it('E-18: GateContext built by use cases carries environments from the repo definition', async () => {
     const h = makeHarness();
     await createIn(h, 'deploy-flow');
     await runSucceededIn(h, slugOf('ship'));
@@ -862,7 +862,7 @@ describe('GateContext environments (E-18)', () => {
       commit: '9f86d081',
     });
 
-    // A context without the workspace environments would judge the deploy gate unknown and block
+    // A context without the repo environments would judge the deploy gate unknown and block
     // the work order instead of recording the deployment and advancing it.
     expect(result).toEqual({
       ok: true,
@@ -1086,9 +1086,9 @@ describe('submitAgentVerdict', () => {
     expect(result).toEqual({ ok: false, error: 'not_found' });
   });
 
-  it('A-9a: a workspace without a checkout on this machine is no_repo', async () => {
+  it('A-9a: a repo without a checkout on this machine is no_repo', async () => {
     const h = makeHarness();
-    h.worktrees.markNoRepo(WORKSPACE);
+    h.worktrees.markNoRepo(REPO_SLUG);
     h.evidence.setResolvable(['src/a.ts:12']);
     await createIn(h, 'verdict-flow');
     await runSucceededIn(h, slugOf('review'));

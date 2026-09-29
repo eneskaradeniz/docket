@@ -2,7 +2,7 @@
 // definitions source → account → binding → done. `next` is enabled only when the step's
 // validation passes (source reachable / chosen provider discovered+logged-in / at least one bound
 // role); `back` preserves entered state; finishing dismisses the wizard, which reappears on open
-// only while no workspace exists. The account and binding steps ride the settings commands
+// only while no repo exists. The account and binding steps ride the settings commands
 // (docs/v2/ui.md, U-6/U-13) and map every result through results.ts (U-8).
 import type { Api } from '../../api/api';
 import type { Command, CommandResult } from '../../api/commands';
@@ -38,17 +38,17 @@ export interface WizardStoreDeps {
    *  surface yet; the wiring that supplies the real probe lands with the screens, tests inject a
    *  fake — the same stance as the detail store's injected definitions loader. */
   readonly sourceReachable: (source: string) => Promise<boolean>;
-  /** Whether a workspace exists on this machine — the wiring reads `workspaces.list`, the api's
+  /** Whether a repo exists on this machine — the wiring reads `repos.list`, the api's
    *  one enumeration. The verdict stays injected so the store judges only the boolean; `open`
    *  re-checks it rather than trusting a remembered verdict. */
-  readonly workspaceExists: () => Promise<boolean>;
+  readonly repoExists: () => Promise<boolean>;
 }
 
 export interface WizardState {
-  /** False until `open` proves no workspace exists, and again once the machine finishes. */
+  /** False until `open` proves no repo exists, and again once the machine finishes. */
   readonly visible: boolean;
   readonly step: WizardStep;
-  /** True while `open` is re-checking workspace existence. */
+  /** True while `open` is re-checking repo existence. */
   readonly checking: boolean;
   /** The entered definitions source, verbatim; the probe judges its trimmed form. */
   readonly source: string;
@@ -73,7 +73,7 @@ export interface WizardState {
 }
 
 export interface WizardStore {
-  /** The shell's entry point: re-checks workspace existence and shows the wizard only when none
+  /** The shell's entry point: re-checks repo existence and shows the wizard only when none
    *  exists (U-7). A finished machine re-runs from the source step; a mid-wizard session keeps
    *  its place. */
   open(): Promise<void>;
@@ -105,7 +105,7 @@ const providerReady = (provider: string, discovered: readonly DiscoveredProvider
   );
 
 export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
-  const { api, actor, sourceReachable, workspaceExists } = deps;
+  const { api, actor, sourceReachable, repoExists } = deps;
 
   let state: WizardState = {
     visible: false,
@@ -139,10 +139,10 @@ export const createWizardStore = (deps: WizardStoreDeps): WizardStore => {
   const open = async (): Promise<void> => {
     const attempt = (openAttempts += 1);
     set({ ...state, checking: true });
-    const exists = await workspaceExists();
+    const exists = await repoExists();
     if (attempt !== openAttempts) return;
     if (exists) {
-      // A workspace means the first run is over, whenever the question is asked again.
+      // A repo means the first run is over, whenever the question is asked again.
       set({ ...state, checking: false, visible: false });
       return;
     }

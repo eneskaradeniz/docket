@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { QueueRepo } from '../../../application/index';
 import { createFakeQueueRepo } from '../../../application/ports/fakes/index';
-import { parseUlid, type QueueItem, type QueueItemId, type StageSlug, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseUlid, type QueueItem, type QueueItemId, type StageSlug, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import { openDatabase, type DocketDb } from './database';
 import { createSqliteQueueRepo } from './queue-repo';
@@ -36,13 +36,13 @@ const accountId = (s: string) => {
   return parsed.value;
 };
 
-const WS = 'acme' as WorkspaceSlug;
+const REPO = 'acme' as RepoSlug;
 const STAGE = 'implement' as StageSlug;
 
 const item = (id: string, owner: string, priority = 0): QueueItem => ({
   id: queueId(id),
   workOrderId: workOrderId(owner),
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: accountId(A1) },
   priority,

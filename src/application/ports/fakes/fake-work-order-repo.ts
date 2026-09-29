@@ -1,5 +1,5 @@
 // In-memory WorkOrderRepo — work orders keyed by id, events kept per work order.
-import type { WorkOrderEvent, WorkOrderId, WorkspaceSlug } from '../../../domain/index';
+import type { WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { WorkOrderRecord, WorkOrderRepo } from '../work-order-repo';
 
@@ -20,9 +20,9 @@ export const createFakeWorkOrderRepo = (): FakeWorkOrderRepo => {
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => byId.get(id),
 
     // Stable sort keeps insertion order on createdAt ties.
-    list: async (filter: { readonly workspace?: WorkspaceSlug }): Promise<readonly WorkOrderRecord[]> =>
+    list: async (filter: { readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]> =>
       [...byId.values()]
-        .filter((record) => filter.workspace === undefined || record.workspace === filter.workspace)
+        .filter((record) => filter.repo === undefined || record.repo === filter.repo)
         .sort((a, b) => a.createdAt - b.createdAt),
 
     appendEvent: async (id: WorkOrderId, event: WorkOrderEvent): Promise<void> => {
