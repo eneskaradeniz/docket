@@ -17,6 +17,7 @@ import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
+import type { RoadmapStore } from '../stores/roadmap';
 import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
@@ -24,6 +25,7 @@ import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
+import { RoadmapScreen } from './roadmap';
 import { SettingsScreen } from './settings';
 import { WizardScreen } from './wizard';
 
@@ -33,6 +35,7 @@ export interface ShellScreenProps {
   readonly accounts: AccountsFrameStore;
   readonly cockpit: CockpitStore;
   readonly board: BoardStore;
+  readonly roadmap: RoadmapStore;
   readonly detail: WorkOrderDetailStore;
   readonly settings: SettingsStore;
   readonly wizard: WizardStore;
@@ -43,8 +46,8 @@ export interface ShellScreenProps {
 }
 
 /** Where the shell can be. Routes carry only ids; the screens load their own data. The roadmap
- *  and account routes are the project row's and an account card's targets; until the roadmap and
- *  account screens land they render the page title alone. */
+ *  route is the project row's target and the account route an account card's; until the account
+ *  screen lands it renders the page title alone. */
 type ShellRoute =
   | { readonly name: 'cockpit' }
   | { readonly name: 'board'; readonly repo: string }
@@ -111,6 +114,7 @@ export function ShellScreen({
   accounts,
   cockpit,
   board,
+  roadmap,
   detail,
   settings,
   wizard,
@@ -226,9 +230,14 @@ export function ShellScreen({
           <BoardScreen store={board} repo={route.repo} locale={locale} onOpenWorkOrder={openWorkOrder} />
         ) : null}
         {route.name === 'roadmap' ? (
-          <h1 className="max-w-[960px] truncate font-mono text-[15px] font-bold tracking-tight text-ink">
-            {t(locale, 'roadmap.title')}
-          </h1>
+          <RoadmapScreen
+            store={roadmap}
+            project={route.project}
+            name={treeState.tree.find((item) => item.project === route.project)?.name ?? route.project}
+            locale={locale}
+            onOpenRepo={(repo) => setRoute({ name: 'board', repo })}
+            onOpenWorkOrder={openWorkOrder}
+          />
         ) : null}
         {route.name === 'account' ? <AccountTitle accounts={accounts} id={route.id} /> : null}
         {route.name === 'workOrder' ? (

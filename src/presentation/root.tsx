@@ -15,6 +15,7 @@ import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { createProjectTreeStore } from './stores/project-tree';
+import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
 import { createShellStore } from './stores/shell';
@@ -85,6 +86,7 @@ if (mount !== null) {
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
   const accountsFrame = createAccountsFrameStore({ api, changes });
+  const roadmap = createRoadmapStore({ api, changes });
   void tree.load();
   void accountsFrame.load();
   // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
@@ -100,6 +102,7 @@ if (mount !== null) {
           accounts={accountsFrame}
           cockpit={cockpit}
           board={board}
+          roadmap={roadmap}
           detail={detail}
           settings={settings}
           wizard={wizard}

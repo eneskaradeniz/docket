@@ -84,7 +84,14 @@ export interface RoadmapPageView {
     readonly id: string;
     readonly name: string;
     readonly status: string;
-    readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[] }[];
+    readonly tasks: readonly {
+      readonly id: string;
+      readonly title: string;
+      readonly status: string;
+      readonly targets: readonly string[];
+      /** The task's linked work orders, per the task's `targets` order then `number` ascending. */
+      readonly workOrders: readonly { readonly repo: string; readonly id: string; readonly number: number; readonly title: string; readonly status: string }[];
+    }[];
   }[];
   readonly runnable: readonly string[];
 }

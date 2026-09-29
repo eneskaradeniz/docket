@@ -870,8 +870,44 @@ const roadmapView = async (
   const askSinceByWorkOrder = await openAskSince(deps);
   const linked = (await deriveOrders(deps, await deps.workOrders.list({ project }), askSinceByWorkOrder))
     .filter((entry) => entry.record.task !== undefined && entry.status !== undefined)
-    .map((entry) => ({ task: entry.record.task as TaskSlug, status: entry.status as WorkOrderStatus }));
+    .map((entry) => ({
+      task: entry.record.task as TaskSlug,
+      status: entry.status as WorkOrderStatus,
+      record: entry.record,
+    }));
   const view = deriveRoadmap(roadmap.value, linked);
+
+  // Each task's orders travel per its targets order, then by display number ascending — the page
+  // reads a cross-repo task's rows straight off this list. A repo outside the task's targets (an
+  // order opened directly there) sorts after the targeted ones.
+  const ordersByTask = new Map<TaskSlug, readonly { readonly repo: RepoSlug; readonly id: WorkOrderId; readonly number: number; readonly title: string; readonly status: WorkOrderStatus }[]>();
+  for (const phase of roadmap.value.phases) {
+    for (const task of phase.tasks) {
+      const rank = (repo: RepoSlug): number => {
+        const at = task.targets.indexOf(repo);
+        return at === -1 ? task.targets.length : at;
+      };
+      const orders = await Promise.all(
+        linked
+          .filter((entry) => entry.task === task.id)
+          .map(async (entry) => ({
+            repo: entry.record.repo,
+            id: entry.record.id,
+            number: (await deps.workOrders.number(entry.record.id)) ?? 0,
+            title: entry.record.title,
+            status: entry.status,
+            rank: rank(entry.record.repo),
+          })),
+      );
+      ordersByTask.set(
+        task.id,
+        orders
+          .slice()
+          .sort((a, b) => a.rank - b.rank || a.number - b.number)
+          .map(({ repo, id, number, title, status }) => ({ repo, id, number, title, status })),
+      );
+    }
+  }
 
   return {
     phases: roadmap.value.phases.map((phase) => ({
@@ -883,6 +919,7 @@ const roadmapView = async (
         title: task.title,
         status: view.tasks[task.id] ?? 'planned',
         targets: [...task.targets],
+        workOrders: ordersByTask.get(task.id) ?? [],
       })),
     })),
     runnable: [...view.runnable],
