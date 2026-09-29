@@ -198,9 +198,9 @@ belongs to the mobile app.
   Odoo (1); the prototype's work orders by code, stage and state; two accounts with 5-hour, weekly
   and monthly windows. The same codes appear in the same place on every screen. It never touches the
   operator's data.
-- **Window sizes.** Every journey and every audit runs at 760×480 (the minimum), 1280×800 (the
-  default), 1920×1080 and 2560×1440, in the dark and the light theme. The harness resizes the
-  `BrowserWindow`; it does not scale the page.
+- **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1280×800 (the
+  default), 1920×1080 and 2560×1440, in the dark and the light theme. The sidebar is always open,
+  never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
