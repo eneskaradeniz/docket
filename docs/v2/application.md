@@ -127,7 +127,7 @@ export interface AccountRecord {
   readonly plan?: string;
   readonly limitPolicy: LimitPolicy;
   readonly secretRef?: string;           // key into SecretVault; never the secret itself
-  readonly caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[];
+  readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 export interface AccountRepo {
   save(record: AccountRecord): Promise<void>;           // upsert
@@ -493,7 +493,7 @@ Rules:
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
 - **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced).
-- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` / `account_month` = UTC calendar week/month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
+- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
 
 ---
 
