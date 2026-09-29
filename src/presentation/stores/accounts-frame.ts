@@ -101,7 +101,8 @@ export const createAccountsFrameStore = (deps: {
     loading: false,
     cards: null,
     problem: null,
-    open: true,
+    // The frame starts collapsed for the session (U-16); the operator opens it when needed.
+    open: false,
     refreshing: false,
   };
   const listeners = new Set<() => void>();

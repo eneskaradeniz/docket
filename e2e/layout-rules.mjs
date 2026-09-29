@@ -129,12 +129,30 @@ const l5 = async (page, ctx, sel) => {
   return result('L-5', m.widest <= cap + 0.5, `content ${m.widest.toFixed(0)} cap ${cap}`);
 };
 
+// L-6 reads the accounts frame's collapsed geometry (U-16): on a short window the body must be
+// collapsed, and whenever the body is collapsed the frame is the header row plus symmetric
+// padding — no dead space below the header.
 const l6 = async (page, ctx, sel) => {
   if (!sel.accountsBody) return skipped('L-6', 'accountsBody');
-  if (ctx.height >= 640) return result('L-6', true, `height ${ctx.height} >= 640, not applicable`);
   const h = await inPage(page, `const el = resolve(arg); return el ? el.getBoundingClientRect().height : null;`, sel.accountsBody);
   if (h === null) return result('L-6', false, 'accounts body not found');
-  return result('L-6', h <= 1, `accounts body height ${h.toFixed(1)} at window height ${ctx.height}`);
+  if (h > 1) {
+    if (ctx.height >= 640) return result('L-6', true, `height ${ctx.height} >= 640, not applicable`);
+    return result('L-6', false, `accounts body height ${h.toFixed(1)} at window height ${ctx.height}`);
+  }
+  if (!sel.accountsFrame) return skipped('L-6', 'accountsFrame');
+  const m = await inPage(
+    page,
+    `const frame = resolve(arg); if (!frame) return null;
+    const f = frame.getBoundingClientRect();
+    const header = frame.firstElementChild.getBoundingClientRect();
+    return { top: header.top - f.top - frame.clientTop,
+             bottom: f.bottom - header.bottom - (f.height - frame.clientHeight - frame.clientTop) };`,
+    sel.accountsFrame,
+  );
+  if (m === null) return result('L-6', false, 'accounts frame not found');
+  const ok = Math.abs(m.top - m.bottom) <= 1;
+  return result('L-6', ok, `collapsed padding top ${m.top.toFixed(1)} bottom ${m.bottom.toFixed(1)}`);
 };
 
 const l7 = async (page, ctx, sel) => {

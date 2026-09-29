@@ -51,7 +51,19 @@ export function screenNavigator(page) {
       await click('Antero');
       await page.locator('main section button[aria-expanded]').first().waitFor({ state: 'visible', timeout: 1500 });
     },
-    hesap: async () => { await click('Claude Max'); },
+    // The accounts frame starts collapsed (U-16); the account view is reached through a card,
+    // so the step opens the frame first — only when actually collapsed, the app instance is
+    // shared across a run's screen visits.
+    hesap: async () => {
+      const collapsed = await page
+        .locator('[data-accounts-body]')
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().height <= 1);
+      if (collapsed) {
+        await page.getByRole('button', { name: 'Hesapları gizle / göster' }).first().click({ timeout: 1500 });
+      }
+      await click('Claude Max');
+    },
   };
   return goto;
 }

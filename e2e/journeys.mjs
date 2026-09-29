@@ -130,6 +130,7 @@ for (const [size, theme] of combos) {
   });
 
   await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens Settings", async () => {
+    await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
     await click('Claude Max');
     await see('Ayarlar\'da düzenle');
     await shot('account');

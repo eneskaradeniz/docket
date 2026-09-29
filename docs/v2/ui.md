@@ -133,7 +133,7 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
   kept for the session. The search field is focused with ⌘K. The sort control cycles stored
   order → A→Z → recently used; the choice persists locally (manual reordering arrives later).
-- **U-16** (accounts frame) The frame collapses and expands; at most two account cards are visible,
+- **U-16** (accounts frame) The frame collapses and expands and starts collapsed; at most two account cards are visible,
   the rest scroll. A card shows the label plus one mini bar per window (window label and normalized
   percent) and spend meta where the account carries it; a bar at or above its warn percent
   (default 80) renders warn, a `hard_stop` status renders critical; the refresh intent re-polls
