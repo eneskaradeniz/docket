@@ -68,7 +68,7 @@ const formatAge = (locale: Locale, ms: number): string => {
 
 /** The section head the design's sections share: quiet semibold, the count beside it. */
 const SectionHead = ({ title }: { readonly title: string }) => (
-  <h2 className="mb-2.5 text-[12.5px] font-semibold text-inkdim">{title}</h2>
+  <h2 className="mb-2 text-[12.5px] font-semibold text-inkdim">{title}</h2>
 );
 
 export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
@@ -93,7 +93,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
     accounts?.find((card) => card.id === accountId)?.label ?? accountId;
 
   return (
-    <div className="grid max-w-[1200px] gap-[22px]">
+    <div className="grid max-w-[1200px] gap-[18px]">
       <header className="flex items-center gap-3">
         <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
         {attention.length > 0 || running.length > 0 ? (
@@ -129,7 +129,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
               const line = ask?.target ?? null;
               return (
                 <li key={item.workOrderId}>
-                  <div className="flex min-h-[60px] items-center gap-3 rounded-lg border border-hairline bg-surface px-4 py-2 transition-colors hover:border-bord">
+                  <div className="flex min-h-14 items-center gap-3 rounded-lg border border-hairline bg-surface px-4 py-1.5 transition-colors hover:border-bord">
                     <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${KIND_LAMP[item.kind]}`} />
                     <span className="grid min-w-0 flex-1 gap-[3px]">
                       <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[14px] font-semibold text-ink">
@@ -184,13 +184,13 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
         {running.length === 0 ? (
           <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.running.empty')}</p>
         ) : (
-          <ul className="grid gap-2">
+          <ul className="grid gap-1.5">
             {running.map((run) => (
               <li key={`${run.workOrderId}:${run.stage}`}>
                 <button
                   type="button"
                   onClick={() => onOpenWorkOrder(run.workOrderId)}
-                  className="flex min-h-10 w-full items-center gap-2.5 rounded-lg border border-hairline bg-surface px-3 text-left text-[12.5px] transition-colors hover:border-bord"
+                  className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-hairline bg-surface px-3 text-left text-[12.5px] transition-colors hover:border-bord"
                 >
                   <span
                     aria-hidden="true"
@@ -227,7 +227,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                 onClick={() =>
                   card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo)
                 }
-                className="block min-w-[168px] rounded-lg border border-hairline bg-surface px-3 py-2.5 text-left transition-colors hover:border-bord"
+                className="block min-w-[168px] rounded-lg border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:border-bord"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                   <span
@@ -241,7 +241,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-1 block whitespace-nowrap text-[11.5px] text-inkdim">
+                <span className="mt-0.5 block whitespace-nowrap text-[11.5px] text-inkdim">
                   {card.active > 0 ? `${card.active} ${t(locale, 'cockpit.card.active')}` : ''}
                   {card.active > 0 && card.waiting > 0 ? ' · ' : ''}
                   {card.waiting > 0 ? `${card.waiting} ${t(locale, 'cockpit.card.waiting')}` : ''}
