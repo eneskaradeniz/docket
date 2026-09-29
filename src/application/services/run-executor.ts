@@ -308,13 +308,19 @@ export async function executeRun(
         break;
       case 'usage':
         if (event.costUsd !== undefined) {
-          await deps.accounts.recordSpend({
-            accountId: item.route.accountId,
-            repo: item.repo,
-            workOrderId: item.workOrderId,
-            at: event.at,
-            usd: event.costUsd,
-          });
+          // Spend is attributed to the project the work order was opened under — the record, not
+          // the queue item, carries it (a fallback item may outlive re-registration).
+          const workOrder = await deps.workOrders.get(item.workOrderId);
+          if (workOrder !== undefined) {
+            await deps.accounts.recordSpend({
+              accountId: item.route.accountId,
+              project: workOrder.project,
+              repo: item.repo,
+              workOrderId: item.workOrderId,
+              at: event.at,
+              usd: event.costUsd,
+            });
+          }
         }
         break;
       case 'limit_hit': {

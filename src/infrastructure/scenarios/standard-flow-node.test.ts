@@ -169,15 +169,20 @@ async function seedGlobalDefinitions(): Promise<void> {
   await writeFile(join(dataDir, 'flows', 'standard.yaml'), stringify(standard), 'utf8');
 }
 
-/** The repo's own definitions: enable standard, run the tests set with a real command. */
+/** The repo's own definitions: a project≡repo project.yaml naming itself mainRepo, and a
+ *  repo.yaml enabling standard with a command set that runs a real command. */
 async function seedRepoDefinitions(): Promise<void> {
   await mkdir(join(repoDir, '.docket'), { recursive: true });
   await writeFile(
-    join(repoDir, '.docket', 'workspace.yaml'),
+    join(repoDir, '.docket', 'project.yaml'),
+    stringify({ id: 'ws', name: 'Repo', mainRepo: 'ws', repos: ['ws'] }),
+    'utf8',
+  );
+  await writeFile(
+    join(repoDir, '.docket', 'repo.yaml'),
     stringify({
       id: 'ws',
       name: 'Repo',
-      repos: [],
       flows: ['standard'],
       defaultFlow: 'standard',
       commandSets: { tests: [TEST_COMMAND] },
@@ -207,7 +212,12 @@ const expectState = (
 };
 
 const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', repo: REPO, title });
+  const result = await createApi(deps).command(USER, {
+    type: 'workOrder.open',
+    project: slugOf<'project'>('ws'),
+    repo: REPO,
+    title,
+  });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -264,7 +274,9 @@ describe('standard flow, headless end to end on real Node storage', () => {
 
       const node = openNodeDeps();
       const deps = node.deps;
-      await node.repos.register(REPO, repoDir);
+      const attached = await createApi(deps).command(USER, { type: 'project.attach', path: repoDir });
+      expect(attached).toEqual({ ok: true, id: REPO });
+      expect(await node.repos.path(REPO)).toBe(repoDir);
 
       // One account carries every role; one scripted transport completes each run.
       await deps.accounts.save({

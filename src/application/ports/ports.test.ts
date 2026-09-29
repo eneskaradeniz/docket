@@ -22,8 +22,11 @@ import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
 import type { AppDeps } from './deps';
 import type { AuditAction, AuditEntry, AuditSubject, EventLog } from './event-log';
+import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
 import type { Notifier } from './notifier';
+import type { ProjectRepo } from './project-repo';
+import type { RepoRegistry } from './repo-registry';
 import type { ProposalRecord, ProposalRepo } from './proposal-repo';
 import type { QueueRepo } from './queue-repo';
 import type { RunPatch, RunRecord, RunRepo } from './run-repo';
@@ -34,7 +37,7 @@ import type {
   EvidenceChecker,
   SecretScanner,
   Worktrees,
-} from './workspace-tools';
+} from './repo-tools';
 import type { WorkOrderRecord, WorkOrderRepo } from './work-order-repo';
 
 describe('AppDeps', () => {
@@ -45,6 +48,8 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['workOrders']>().toEqualTypeOf<WorkOrderRepo>();
     expectTypeOf<AppDeps['runs']>().toEqualTypeOf<RunRepo>();
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
+    expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
+    expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
     expectTypeOf<AppDeps['bindings']>().toEqualTypeOf<BindingRepo>();
     expectTypeOf<AppDeps['queue']>().toEqualTypeOf<QueueRepo>();
     expectTypeOf<AppDeps['definitions']>().toEqualTypeOf<DefinitionStore>();
@@ -55,6 +60,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['secretScanner']>().toEqualTypeOf<SecretScanner>();
     expectTypeOf<AppDeps['worktrees']>().toEqualTypeOf<Worktrees>();
     expectTypeOf<AppDeps['evidence']>().toEqualTypeOf<EvidenceChecker>();
+    expectTypeOf<AppDeps['git']>().toEqualTypeOf<GitProbe>();
     expectTypeOf<AppDeps['notifier']>().toEqualTypeOf<Notifier>();
   });
 
@@ -66,6 +72,8 @@ describe('AppDeps', () => {
       | 'workOrders'
       | 'runs'
       | 'accounts'
+      | 'projects'
+      | 'repos'
       | 'bindings'
       | 'queue'
       | 'definitions'
@@ -76,6 +84,7 @@ describe('AppDeps', () => {
       | 'secretScanner'
       | 'worktrees'
       | 'evidence'
+      | 'git'
       | 'notifier'
     >();
   });
@@ -94,6 +103,9 @@ describe('AppDeps', () => {
     expectTypeOf<Application.RunRepo>().toEqualTypeOf<RunRepo>();
     expectTypeOf<Application.AccountRecord>().toEqualTypeOf<AccountRecord>();
     expectTypeOf<Application.AccountRepo>().toEqualTypeOf<AccountRepo>();
+    expectTypeOf<Application.ProjectRepo>().toEqualTypeOf<ProjectRepo>();
+    expectTypeOf<Application.RepoRegistry>().toEqualTypeOf<RepoRegistry>();
+    expectTypeOf<Application.GitProbe>().toEqualTypeOf<GitProbe>();
     expectTypeOf<Application.BindingScope>().toEqualTypeOf<BindingScope>();
     expectTypeOf<Application.BindingRepo>().toEqualTypeOf<BindingRepo>();
     expectTypeOf<Application.QueueRepo>().toEqualTypeOf<QueueRepo>();
@@ -127,10 +139,10 @@ describe('port shapes', () => {
     expectTypeOf<ProposalRecord['scope']>().toEqualTypeOf<DefinitionScope>();
     expectTypeOf<AuditEntry['action']>().toEqualTypeOf<AuditAction>();
     expectTypeOf<AuditSubject['kind']>().toEqualTypeOf<
-      'work_order' | 'run' | 'proposal' | 'account' | 'binding'
+      'work_order' | 'run' | 'proposal' | 'account' | 'binding' | 'project' | 'repo'
     >();
-    expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'repo' | 'workOrder'>();
-    expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'repo'>();
+    expectTypeOf<BindingScope['level']>().toEqualTypeOf<'global' | 'project' | 'repo' | 'workOrder'>();
+    expectTypeOf<DefinitionScope['kind']>().toEqualTypeOf<'global' | 'project' | 'repo'>();
     expectTypeOf<DefinitionFile['hash']>().toBeString();
     expectTypeOf<CommandResult['exitCode']>().toBeNumber();
     expectTypeOf<TransportError['code']>().toEqualTypeOf<

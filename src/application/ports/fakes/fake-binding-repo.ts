@@ -10,9 +10,11 @@ export interface FakeBindingRepo extends BindingRepo {}
 const scopeKey = (scope: BindingScope): string =>
   scope.level === 'global'
     ? 'global'
-    : scope.level === 'repo'
-      ? `repo:${scope.repo}`
-      : `workOrder:${scope.workOrderId}`;
+    : scope.level === 'project'
+      ? `project:${scope.project}`
+      : scope.level === 'repo'
+        ? `repo:${scope.repo}`
+        : `workOrder:${scope.workOrderId}`;
 
 export const createFakeBindingRepo = (): FakeBindingRepo => {
   // The scope is stored beside the binding so listAll can report it without parsing keys back.

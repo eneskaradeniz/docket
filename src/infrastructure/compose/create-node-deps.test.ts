@@ -86,7 +86,6 @@ const FLOW_YAML = [
 const REPO_YAML = [
   'id: demo',
   'name: Demo',
-  'repos: []',
   'flows:',
   '  - standard',
   'defaultFlow: standard',
@@ -187,7 +186,7 @@ describe('createNodeDeps', () => {
 
   it('I-31: uses <dataDir> as the global definitions root over the registry-backed YAML store', async () => {
     await mkdir(join(repoDir, '.docket'), { recursive: true });
-    await writeFile(join(repoDir, '.docket', 'workspace.yaml'), REPO_YAML, 'utf8');
+    await writeFile(join(repoDir, '.docket', 'repo.yaml'), REPO_YAML, 'utf8');
     await mkdir(join(dataDir, 'roles'), { recursive: true });
     await mkdir(join(dataDir, 'flows'), { recursive: true });
     await writeFile(join(dataDir, 'roles', 'planner.yaml'), ROLE_YAML, 'utf8');
@@ -211,6 +210,7 @@ describe('createNodeDeps', () => {
 
     await node.deps.workOrders.create({
       id: WO,
+      project: slugOf<'project'>('proj'),
       repo: REPO,
       flow: slugOf<'flow'>('standard'),
       title: 'wire the repos',

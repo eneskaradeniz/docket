@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { Result } from '../../domain/index';
 import { err, ok } from '../../domain/index';
-import type { AppDeps, Clock, Notifier, TransportResolver } from '../../application/index';
+import type { AppDeps, Clock, Notifier, RepoRegistry, TransportResolver } from '../../application/index';
 import { createCommandRunner, createSecretScanner } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -11,6 +11,8 @@ import {
   createSqliteAccountRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqliteProjectPaths,
+  createSqliteProjectRepo,
   createSqliteProposalRepo,
   createSqliteQueueRepo,
   createSqliteRunRepo,
@@ -18,10 +20,9 @@ import {
   createSqliteRepoRegistry,
   openDatabase,
   type OpenDbError,
-  type RepoRegistry,
 } from '../storage/sqlite/index';
-import { createSystemClock, createUlidGen, type RandomBytes } from '../system/index';
-import { createEvidenceChecker, createWorktrees } from '../vcs/index';
+import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
+import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -36,6 +37,7 @@ export interface NodeDepsConfig {
 export interface NodeDeps {
   readonly deps: AppDeps;
   readonly repos: RepoRegistry;
+  readonly projects: ReturnType<typeof createSqliteProjectRepo>;
   close(): void;
 }
 
@@ -46,6 +48,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
 
   const clock = config.clock ?? createSystemClock();
   const repos = createSqliteRepoRegistry(db);
+  const projects = createSqliteProjectRepo(db);
+  const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
@@ -53,9 +57,11 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     workOrders: createSqliteWorkOrderRepo(db),
     runs: createSqliteRunRepo(db),
     accounts: createSqliteAccountRepo(db),
+    projects,
+    repos,
     bindings: createSqliteBindingRepo(db),
     queue: createSqliteQueueRepo(db),
-    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos }),
+    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
     secrets: createKeychainVault(db, config.cipher),
     transports: config.transports,
@@ -63,8 +69,9 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     secretScanner: createSecretScanner(),
     worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos }),
     evidence: createEvidenceChecker(),
+    git: createGitProbe(),
     notifier: config.notifier,
   };
 
-  return ok({ deps, repos, close: (): void => db.close() });
+  return ok({ deps, repos, projects, close: (): void => db.close() });
 }

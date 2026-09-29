@@ -6,6 +6,7 @@ import type {
   FlowAction,
   FlowDef,
   FlowSlug,
+  ProjectSlug,
   Result,
   TaskSlug,
   WorkOrderEvent,
@@ -17,11 +18,19 @@ import { deriveWorkOrderState, err, nextAction, ok } from '../../domain/index';
 
 import type { AppDeps, RunRecord, WorkOrderRecord } from '../ports';
 
-export type OpenError = 'definitions_invalid' | 'unknown_flow' | 'flow_not_enabled' | 'unknown_task' | 'empty_title';
+export type OpenError =
+  | 'definitions_invalid'
+  | 'unknown_project'
+  | 'unknown_repo'
+  | 'unknown_flow'
+  | 'flow_not_enabled'
+  | 'unknown_task'
+  | 'empty_title';
 
 export async function openWorkOrder(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'definitions' | 'projects'>,
   input: {
+    readonly project: ProjectSlug;
     readonly repo: RepoSlug;
     readonly title: string;
     readonly flow?: FlowSlug;
@@ -31,6 +40,12 @@ export async function openWorkOrder(
 ): Promise<Result<WorkOrderId, OpenError>> {
   const title = input.title.trim();
   if (title === '') return err('empty_title');
+
+  // The project is the membership authority: a work order cannot target a repo the project
+  // does not list, whatever the definitions say.
+  const project = await deps.projects.get(input.project);
+  if (project === undefined) return err('unknown_project');
+  if (!project.repos.includes(input.repo)) return err('unknown_repo');
 
   const loaded = await deps.definitions.load(input.repo);
   if (!loaded.ok) return err('definitions_invalid');
@@ -44,7 +59,8 @@ export async function openWorkOrder(
   if (!repo.flows.includes(flow)) return err('flow_not_enabled');
 
   if (input.task !== undefined) {
-    const roadmap = await deps.definitions.loadRoadmap(input.repo);
+    // The roadmap belongs to the project and lives in its main repo's .docket.
+    const roadmap = await deps.definitions.loadRoadmap(input.project);
     if (roadmap === undefined) return err('unknown_task');
     if (!roadmap.ok) return err('definitions_invalid');
     const known = roadmap.value.phases.some((phase) => phase.tasks.some((task) => task.id === input.task));
@@ -55,6 +71,7 @@ export async function openWorkOrder(
   const at = deps.clock.now();
   await deps.workOrders.create({
     id,
+    project: input.project,
     repo: input.repo,
     flow,
     title,

@@ -194,7 +194,7 @@ export async function applyLimitDecision(
 }
 
 export async function enqueueStage(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts' | 'projects'>,
   input: { readonly id: WorkOrderId; readonly priority?: number },
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>> {
   const record = await deps.workOrders.get(input.id);

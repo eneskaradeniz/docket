@@ -2,10 +2,13 @@
 //
 // Files are JSON strings: the domain validators take parsed YAML/JSON, and a fake only needs the
 // deterministic variant of that. Every file holds a partial Definitions object; `load` merges the
-// global files with the repo's, repo ids overriding global ids of the same kind.
+// global files with the repo's project defaults and the repo's own (project ids override global
+// ids, repo ids override both).
 import type {
   DefinitionIssue,
   Definitions,
+  ProjectDef,
+  ProjectSlug,
   Roadmap,
   RoadmapIssue,
   Result,
@@ -15,14 +18,21 @@ import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/i
 
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from '../definition-store';
 
-/** The target the fake keeps a roadmap at, in either scope. */
+/** The target the fake keeps a roadmap at, in the project scope. */
 export const FAKE_ROADMAP_TARGET = 'roadmap.json';
+
+/** The target the fake reads `readProjectAt` from, keyed by checkout path. */
+const PROJECT_AT_FILE = 'project.yaml';
 
 export interface FakeDefinitionStore extends DefinitionStore {
   /** Seeds a file directly, bypassing the hash protection — the initial-state setter for tests. */
   seed(scope: DefinitionScope, target: string, content: string): void;
   /** Overrides what repoPath reports; undefined marks the repo as without a checkout. */
   setRepoPath(repo: RepoSlug, path: string | undefined): void;
+  /** Registers an attached project: membership (repo → project) and its ProjectDef mirror. */
+  setProject(def: ProjectDef): void;
+  /** Seeds the project.yaml content `readProjectAt` finds at a checkout path. */
+  seedProjectAt(path: string, content: string): void;
 }
 
 interface StoredFile extends DefinitionFile {
@@ -41,7 +51,7 @@ const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const scopeKey = (scope: DefinitionScope): string =>
-  scope.kind === 'global' ? 'global' : `repo:${scope.repo}`;
+  scope.kind === 'global' ? 'global' : scope.kind === 'project' ? `project:${scope.project}` : `repo:${scope.repo}`;
 
 // FNV-1a over UTF-16 units, two 32-bit lanes: a deterministic digest without a hash package.
 // Fixture-scale collision odds are irrelevant; equal content always hashes equal.
@@ -97,11 +107,13 @@ const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
   const flows: unknown[] = [];
   const capabilities: unknown[] = [];
   let repo: unknown;
+  let project: unknown;
   for (const body of bodies) {
     if (Array.isArray(body.roles)) roles.push(...body.roles);
     if (Array.isArray(body.flows)) flows.push(...body.flows);
     if (Array.isArray(body.capabilities)) capabilities.push(...body.capabilities);
     if (body.repo !== undefined) repo = body.repo;
+    if (body.project !== undefined) project = body.project;
   }
   const merged: Record<string, unknown> = {
     roles: overrideById(roles),
@@ -109,12 +121,15 @@ const mergeBodies = (bodies: readonly UnknownRecord[]): unknown => {
     capabilities: overrideById(capabilities),
   };
   if (repo !== undefined) merged.repo = repo;
+  if (project !== undefined) merged.project = project;
   return merged;
 };
 
 export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   const files = new Map<string, StoredFile>();
   const pathsByRepo = new Map<RepoSlug, string | undefined>();
+  const projects: ProjectDef[] = [];
+  const projectAt = new Map<string, string>();
 
   const keyOf = (scope: DefinitionScope, target: string): string => `${scopeKey(scope)}\n${target}`;
 
@@ -122,6 +137,31 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     [...files.values()]
       .filter((file) => scopeKey(file.scope) === scopeKey(scope))
       .sort((a, b) => (a.target < b.target ? -1 : 1));
+
+  /** The first registered project listing the repo — the membership answer projectOfRepo gives. */
+  const projectOf = (repo: RepoSlug): ProjectDef | undefined => {
+    for (const def of projects) {
+      if (def.repos.includes(repo)) return def;
+    }
+    return undefined;
+  };
+
+  const projectDefOf = async (project: ProjectSlug): Promise<ProjectDef | undefined> => {
+    // The ProjectDef mirror first; a seeded project body stands in when no mirror was registered,
+    // so a test can drive the roadmap arm with files alone.
+    const mirror = projects.find((def) => def.id === project);
+    if (mirror !== undefined) return mirror;
+    const file = files.get(keyOf({ kind: 'project', project }, 'defs.json'));
+    if (file === undefined) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(file.content);
+      if (!isRecord(parsed) || !isRecord(parsed['project'])) return undefined;
+      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed['project'] });
+      return validated.ok ? validated.value.project : undefined;
+    } catch {
+      return undefined;
+    }
+  };
 
   const parseJson = (target: string, content: string): Result<unknown, DefinitionIssue> => {
     try {
@@ -142,23 +182,34 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
   /** Roadmap files report RoadmapIssues, so they narrow through their own parser. */
   const parseRoadmapBody = (target: string, content: string): Result<UnknownRecord, RoadmapIssue> => {
     const parsed = parseJson(target, content);
-    if (!parsed.ok) return err({ path: target, code: 'wrong_type', message: `${target} is not valid JSON` });
+    if (!parsed.ok) {
+      return err({ path: parsed.error.path, code: 'wrong_type', message: parsed.error.message });
+    }
     if (!isRecord(parsed.value)) return err({ path: target, code: 'wrong_type', message: `${target} must be a JSON object` });
     return ok(parsed.value);
   };
 
   /**
    * The file bodies of a scope, with `replace` swapped in for its target: global files first, then
-   * the repo's, then the replacement — so a repo candidate still overrides the globals.
-   * A global scope has no repo overlay of its own; the port names none for it.
+   * the owning project's, then the repo's, then the replacement — so a repo candidate still
+   * overrides the globals and the project. A global or project scope has no repo overlay; a repo
+   * scope carries its project's files when the project is known.
    */
   const bodiesFor = (
     scope: DefinitionScope,
     replace: Body | undefined,
   ): Result<readonly UnknownRecord[], DefinitionIssue> => {
+    const owning = scope.kind === 'repo' ? projectOf(scope.repo) : undefined;
+    const projectScope: DefinitionScope | undefined =
+      scope.kind === 'project' ? scope : owning === undefined ? undefined : { kind: 'project', project: owning.id };
+
     const globalFiles = filesOf({ kind: 'global' }).filter(
       (file) => replace === undefined || !(scope.kind === 'global' && file.target === replace.target),
     );
+    const projectFiles =
+      projectScope === undefined
+        ? []
+        : filesOf(projectScope).filter((file) => replace === undefined || file.target !== replace.target);
     const repoFiles = scope.kind === 'repo'
       ? filesOf(scope).filter((file) => replace === undefined || file.target !== replace.target)
       : [];
@@ -166,8 +217,9 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
     const ordered: readonly Body[] = [
       ...globalFiles,
       ...(replace !== undefined && scope.kind === 'global' ? [replace] : []),
+      ...projectFiles,
       ...repoFiles,
-      ...(replace !== undefined && scope.kind === 'repo' ? [replace] : []),
+      ...(replace !== undefined && (scope.kind === 'project' || scope.kind === 'repo') ? [replace] : []),
     ];
 
     const bodies: UnknownRecord[] = [];
@@ -188,20 +240,45 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       pathsByRepo.set(repo, path);
     },
 
+    setProject: (def: ProjectDef): void => {
+      const existing = projects.findIndex((candidate) => candidate.id === def.id);
+      if (existing === -1) projects.push({ ...def, repos: [...def.repos] });
+      else projects[existing] = { ...def, repos: [...def.repos] };
+    },
+
+    seedProjectAt: (path: string, content: string): void => {
+      projectAt.set(path, content);
+    },
+
     load: async (repo: RepoSlug): Promise<Result<Definitions, readonly DefinitionIssue[]>> => {
       const collected = bodiesFor({ kind: 'repo', repo }, undefined);
       if (!collected.ok) return err([collected.error]);
       return validateDefinitions(mergeBodies(collected.value));
     },
 
-    loadRoadmap: async (repo: RepoSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
-      const file =
-        files.get(keyOf({ kind: 'repo', repo }, FAKE_ROADMAP_TARGET)) ??
-        files.get(keyOf({ kind: 'global' }, FAKE_ROADMAP_TARGET));
+    readProjectAt: async (path: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
+      const content = projectAt.get(path);
+      if (content === undefined) {
+        return err([{ path: PROJECT_AT_FILE, code: 'missing_field', message: `${PROJECT_AT_FILE} is required` }]);
+      }
+      const parsed = parseJson(PROJECT_AT_FILE, content);
+      if (!parsed.ok) return err([parsed.error]);
+      if (!isRecord(parsed.value)) {
+        return err([{ path: PROJECT_AT_FILE, code: 'wrong_type', message: `${PROJECT_AT_FILE} must be a JSON object` }]);
+      }
+      // A project.yaml carries the project alone; the validator sees explicit empty lists.
+      const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: parsed.value });
+      return validated.ok && validated.value.project !== undefined
+        ? ok(validated.value.project)
+        : err(validated.ok ? [{ path: PROJECT_AT_FILE, code: 'missing_field', message: 'project is required' }] : validated.error);
+    },
+
+    loadRoadmap: async (project: ProjectSlug): Promise<Result<Roadmap, readonly RoadmapIssue[]> | undefined> => {
+      const file = files.get(keyOf({ kind: 'project', project }, FAKE_ROADMAP_TARGET));
       if (file === undefined) return undefined;
       const parsed = parseRoadmapBody(FAKE_ROADMAP_TARGET, file.content);
       if (!parsed.ok) return err([parsed.error]);
-      return validateRoadmap(parsed.value);
+      return validateRoadmap(parsed.value, await projectDefOf(project));
     },
 
     readFile: async (scope: DefinitionScope, target: string): Promise<DefinitionFile | undefined> => {
@@ -236,7 +313,8 @@ export const createFakeDefinitionStore = (): FakeDefinitionStore => {
       if (target === FAKE_ROADMAP_TARGET) {
         const parsed = parseRoadmapBody(target, content);
         if (!parsed.ok) return err(toDefinitionIssues([parsed.error]));
-        const validated = validateRoadmap(parsed.value);
+        const projectDef = scope.kind === 'project' ? await projectDefOf(scope.project) : undefined;
+        const validated = validateRoadmap(parsed.value, projectDef);
         return validated.ok ? ok(undefined) : err(toDefinitionIssues(validated.error));
       }
       const collected = bodiesFor(scope, { target, content });

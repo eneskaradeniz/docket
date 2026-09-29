@@ -1,13 +1,7 @@
 // Machine-local registry of which checkout holds which repo, itself stored in docket.db.
+import type { RepoRegistry } from '../../../application/index';
 import type { RepoSlug } from '../../../domain/index';
-import type { RepoPaths } from '../../system/index';
 import type { DocketDb } from './database';
-
-export interface RepoRegistry extends RepoPaths {
-  register(slug: RepoSlug, path: string): Promise<void>; // upsert; `path` absolute
-  list(): Promise<readonly { readonly slug: RepoSlug; readonly path: string }[]>; // slug asc
-  remove(slug: RepoSlug): Promise<void>;
-}
 
 interface RegistryEntry {
   readonly slug: RepoSlug;
@@ -19,7 +13,7 @@ type DataRow = { readonly [column: string]: unknown };
 
 function entryFromRow(row: DataRow): RegistryEntry {
   if (typeof row.slug !== 'string' || typeof row.path !== 'string') {
-    throw new Error('workspaces row without text columns');
+    throw new Error('repos row without text columns');
   }
   return { slug: row.slug as RepoSlug, path: row.path };
 }
@@ -28,24 +22,24 @@ export function createSqliteRepoRegistry(db: DocketDb): RepoRegistry {
   return {
     register: async (slug: RepoSlug, path: string): Promise<void> => {
       db.raw
-        .prepare('INSERT INTO workspaces (slug, path) VALUES (?, ?) ON CONFLICT (slug) DO UPDATE SET path = excluded.path')
+        .prepare('INSERT INTO repos (slug, path) VALUES (?, ?) ON CONFLICT (slug) DO UPDATE SET path = excluded.path')
         .run(slug, path);
     },
 
     list: async (): Promise<readonly RegistryEntry[]> =>
       db.raw
-        .prepare('SELECT slug, path FROM workspaces ORDER BY slug ASC')
+        .prepare('SELECT slug, path FROM repos ORDER BY slug ASC')
         .all()
         .map((row) => entryFromRow(row)),
 
     remove: async (slug: RepoSlug): Promise<void> => {
-      db.raw.prepare('DELETE FROM workspaces WHERE slug = ?').run(slug);
+      db.raw.prepare('DELETE FROM repos WHERE slug = ?').run(slug);
     },
 
     path: async (slug: RepoSlug): Promise<string | undefined> => {
-      const row = db.raw.prepare('SELECT path FROM workspaces WHERE slug = ?').get(slug);
+      const row = db.raw.prepare('SELECT path FROM repos WHERE slug = ?').get(slug);
       if (row === undefined) return undefined;
-      if (typeof row.path !== 'string') throw new Error('workspaces row without a text path');
+      if (typeof row.path !== 'string') throw new Error('repos row without a text path');
       return row.path;
     },
   };

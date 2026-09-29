@@ -40,6 +40,10 @@ const fakeBoardApi = (initial: unknown, commandResults: readonly CommandResult[]
   const commands: RecordedCommand[] = [];
   let reply: unknown = initial;
   let issued = 0;
+  // One project owning every repo the tests open boards for.
+  const replyProjectTree = [
+    { project: 'atolye', name: 'Atölye', mainRepo: 'atolye', repos: [{ repo: 'atolye', main: true }], active: 0, running: 0, waiting: 0, status: 'idle' },
+  ];
   return {
     queries,
     commands,
@@ -48,6 +52,11 @@ const fakeBoardApi = (initial: unknown, commandResults: readonly CommandResult[]
     },
     query: (query) => {
       queries.push(query);
+      // The create intent resolves the owning project through the tree before opening; the fake
+      // answers it from the same scripted reply surface, so tests keep one knob.
+      if (query.type === 'project.tree') {
+        return Promise.resolve(replyProjectTree);
+      }
       return Promise.resolve(reply);
     },
     command: (actor, command) => {
@@ -129,18 +138,20 @@ describe('board store', () => {
     expect(noFlow).toEqual({ ok: false, validation: 'flow_required' });
     expect(api.commands.length).toBe(0);
 
-    // Valid — the command carries the actor, the repo, the trimmed title and the chosen flow.
+    // Valid — the command carries the actor, the project the tree resolved, the repo, the
+    // trimmed title and the chosen flow.
     const opened = await store.create({ repo: 'atolye', title: '  Oil change  ', flow: 'bakim' });
     expect(opened).toEqual({ ok: true, id: 'wo-new' });
     expect(api.commands).toEqual([
       {
         actor: userActor,
-        command: { type: 'workOrder.open', repo: 'atolye', title: 'Oil change', flow: 'bakim' },
+        command: { type: 'workOrder.open', project: 'atolye', repo: 'atolye', title: 'Oil change', flow: 'bakim' },
       },
     ]);
-    // The board mirrors its own mutation: a successful create re-queries the repo.
-    expect(api.queries.length).toBe(2);
-    expect(api.queries[1]).toEqual({ type: 'repo.board', repo: 'atolye' });
+    // The create resolves the owning project (project.tree) and mirrors its own mutation by
+    // re-querying the board.
+    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'project.tree', 'repo.board']);
+    expect(api.queries[2]).toEqual({ type: 'repo.board', repo: 'atolye' });
   });
 
   it('U-3: a rejected workOrder.open surfaces the api code and leaves the board untouched', async () => {
@@ -154,8 +165,9 @@ describe('board store', () => {
     const state = store.state();
     expect(state.view).toEqual(boardView);
     expect(state.problem).toBeNull();
-    // A failed create did not open anything, so the board is not re-queried either.
-    expect(api.queries.length).toBe(1);
+    // A failed create did not open anything, so the board is not re-queried either — only the
+    // load and the project lookup happened.
+    expect(api.queries.map((query) => query.type)).toEqual(['repo.board', 'project.tree']);
   });
 
   it('U-3: workOrders.changed re-queries the loaded repo; run.updated does not', async () => {

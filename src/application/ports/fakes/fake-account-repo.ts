@@ -6,6 +6,7 @@ import type {
   MeterId,
   Pool,
   PoolId,
+  ProjectSlug,
   WorkOrderId,
   RepoSlug,
 } from '../../../domain/index';
@@ -14,6 +15,7 @@ import type { AccountRecord, AccountRepo } from '../account-repo';
 
 interface SpendEntry {
   readonly accountId: AccountId;
+  readonly project: ProjectSlug;
   readonly repo: RepoSlug;
   readonly workOrderId: WorkOrderId;
   readonly at: EpochMs;
@@ -80,6 +82,7 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
     // `from`/`to` are inclusive on purpose: a window [t, t] still sees the entry at t.
     spend: async (filter: {
       readonly accountId?: AccountId;
+      readonly project?: ProjectSlug;
       readonly repo?: RepoSlug;
       readonly workOrderId?: WorkOrderId;
       readonly from: EpochMs;
@@ -89,6 +92,7 @@ export const createFakeAccountRepo = (): FakeAccountRepo => {
         .filter(
           (entry) =>
             (filter.accountId === undefined || entry.accountId === filter.accountId) &&
+            (filter.project === undefined || entry.project === filter.project) &&
             (filter.repo === undefined || entry.repo === filter.repo) &&
             (filter.workOrderId === undefined || entry.workOrderId === filter.workOrderId) &&
             entry.at >= filter.from &&

@@ -26,7 +26,7 @@ import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/
 
 import { createApi } from './api';
 import type { RepoRegistryPort } from './api';
-import type { BoardView, CockpitView, OpenAskView, SettingsAccountsView, RepoListItem } from './queries';
+import type { BoardView, CockpitView, OpenAskView, ProjectTree, SettingsAccountsView, RepoListItem } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -134,8 +134,9 @@ const seedWorkOrder = async (
   title: string,
   createdAt: number,
   repo: RepoSlug = REPO,
+  project = slugOf<'project'>('proj'),
 ): Promise<void> => {
-  await h.deps.workOrders.create({ id, repo, flow, title, createdAt, createdBy: ACTOR });
+  await h.deps.workOrders.create({ id, project, repo, flow, title, createdAt, createdBy: ACTOR });
   await h.deps.workOrders.appendEvent(id, { type: 'created', at: createdAt, by: ACTOR, flow });
 };
 
@@ -202,10 +203,10 @@ const RUN_EARLY = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H11');
 const RUN_LATE = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H12');
 const RUN_LIMIT = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H13');
 
-const seedCockpitScenario = async (h: Harness): Promise<Harness> => {
-  await seedWorkOrder(h, WO_READY, BOARD_FLOW, 'Just ready', 100);
+const seedCockpitScenario = async (h: Harness, projectOf: (repo: RepoSlug) => string = () => 'proj'): Promise<Harness> => {
+  await seedWorkOrder(h, WO_READY, BOARD_FLOW, 'Just ready', 100, REPO, slugOf<'project'>(projectOf(REPO)));
 
-  await seedWorkOrder(h, WO_DONE, BOARD_FLOW, 'All finished', 200);
+  await seedWorkOrder(h, WO_DONE, BOARD_FLOW, 'All finished', 200, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_DONE, [
     runStarted(250, RUN_EARLY, PLAN),
     runFinished(300, RUN_EARLY, 'succeeded'),
@@ -215,36 +216,36 @@ const seedCockpitScenario = async (h: Harness): Promise<Harness> => {
     gatePassed(500, CLOSE, CLOSURE),
   ]);
 
-  await seedWorkOrder(h, WO_AWAIT_EARLY, BOARD_FLOW, 'Waiting early', 1_000);
+  await seedWorkOrder(h, WO_AWAIT_EARLY, BOARD_FLOW, 'Waiting early', 1_000, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_AWAIT_EARLY, [runStarted(1_100, RUN_EARLY, PLAN), runFinished(1_200, RUN_EARLY, 'succeeded')]);
 
-  await seedWorkOrder(h, WO_LIMIT, BOARD_FLOW, 'Hit a limit', 1_500);
+  await seedWorkOrder(h, WO_LIMIT, BOARD_FLOW, 'Hit a limit', 1_500, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_LIMIT, [runStarted(1_600, RUN_LIMIT, PLAN), runFinished(2_000, RUN_LIMIT, 'limit')]);
 
-  await seedWorkOrder(h, WO_AWAIT_LATE, BOARD_FLOW, 'Waiting late', 2_000);
+  await seedWorkOrder(h, WO_AWAIT_LATE, BOARD_FLOW, 'Waiting late', 2_000, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_AWAIT_LATE, [runStarted(2_400, RUN_LATE, PLAN), runFinished(2_500, RUN_LATE, 'succeeded')]);
 
-  await seedWorkOrder(h, WO_ASK, BOARD_FLOW, 'Waiting on a permission', 4_000);
+  await seedWorkOrder(h, WO_ASK, BOARD_FLOW, 'Waiting on a permission', 4_000, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_ASK, [runStarted(4_100, RUN_ASK, PLAN)]);
   await seedRun(h, activeRun(RUN_ASK, WO_ASK, PLAN, 4_000), [
     { type: 'permission_ask', at: 5_000, id: 'ask-1', tool: 'write', options: ['allow', 'deny'] },
   ]);
 
-  await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Busy running', 4_300);
+  await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Busy running', 4_300, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_RUNNING, [runStarted(4_400, RUN_RUNNING, PLAN)]);
   await seedRun(h, activeRun(RUN_RUNNING, WO_RUNNING, PLAN, 4_500));
 
-  await seedWorkOrder(h, WO_ASK_ANSWERED, BOARD_FLOW, 'Ask already answered', 5_000);
+  await seedWorkOrder(h, WO_ASK_ANSWERED, BOARD_FLOW, 'Ask already answered', 5_000, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_ASK_ANSWERED, [runStarted(5_100, RUN_ANSWERED, PLAN)]);
   await seedRun(h, activeRun(RUN_ANSWERED, WO_ASK_ANSWERED, PLAN, 5_500), [
     { type: 'permission_ask', at: 5_200, id: 'ask-2', tool: 'write', options: ['allow', 'deny'] },
     { type: 'tool_result', at: 5_300, id: 'ask-2', ok: true },
   ]);
 
-  await seedWorkOrder(h, WO_BLOCKED, BOARD_FLOW, 'Explicitly blocked', 9_700);
+  await seedWorkOrder(h, WO_BLOCKED, BOARD_FLOW, 'Explicitly blocked', 9_700, REPO, slugOf<'project'>(projectOf(REPO)));
   await seedEvents(h, WO_BLOCKED, [{ type: 'blocked', at: 9_900, by: ACTOR, reason: 'waiting on upstream' }]);
 
-  await seedWorkOrder(h, WO_BROKEN, BOARD_FLOW, 'Underivable state', 50, BROKEN_REPO);
+  await seedWorkOrder(h, WO_BROKEN, BOARD_FLOW, 'Underivable state', 50, BROKEN_REPO, slugOf<'project'>(projectOf(BROKEN_REPO)));
   return h;
 };
 
@@ -365,6 +366,7 @@ describe('cockpit', () => {
     ]);
     expect(view.attention[0]).toEqual({
       workOrderId: WO_ASK,
+      project: 'proj',
       repo: 'acme',
       title: 'Waiting on a permission',
       kind: 'permission_ask',
@@ -929,5 +931,146 @@ describe('permissions.open', () => {
     const h = createHarness();
 
     expect(await createApi(h.deps).query({ type: 'permissions.open' })).toEqual({ ok: false, code: 'not_found' });
+  });
+});
+
+
+// --- project.tree (A-27) and the cockpit's project layer (A-28) ----------------------------------
+
+const OTHER_REPO = slugOf<'repo'>('beta-repo');
+const PROJECT_ALPHA = slugOf<'project'>('alpha');
+const PROJECT_BETA = slugOf<'project'>('beta');
+
+const WO_P_AWAIT = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5PC1');
+const WO_P_BLOCKED = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5PC2');
+const WO_P_DONE_NEW = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5PC3');
+const WO_P_DONE_OLD = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5PC4');
+const RUN_P_AWAIT = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5PC5');
+
+const seedProjectScenario = async (h: Harness, project: (repo: RepoSlug) => string = () => 'proj'): Promise<Harness> => {
+  h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
+  await h.deps.projects.save({ id: PROJECT_ALPHA, name: 'Alpha', mainRepo: REPO, repos: [REPO] });
+  await h.deps.projects.save({ id: PROJECT_BETA, name: 'Beta', mainRepo: OTHER_REPO, repos: [OTHER_REPO] });
+  await seedCockpitScenario(h, project);
+
+  // Alpha waits with one order and finished two; beta is blocked.
+  await seedWorkOrder(h, WO_P_AWAIT, BOARD_FLOW, 'Alpha waits', 1_000, REPO, slugOf<'project'>(project(REPO)));
+  await seedEvents(h, WO_P_AWAIT, [runStarted(1_100, RUN_P_AWAIT, PLAN), runFinished(1_200, RUN_P_AWAIT, 'succeeded')]);
+
+  await seedWorkOrder(h, WO_P_DONE_NEW, BOARD_FLOW, 'Newer finish', 200, REPO, slugOf<'project'>(project(REPO)));
+  await seedEvents(h, WO_P_DONE_NEW, [
+    runStarted(250, RUN_EARLY, PLAN),
+    runFinished(300, RUN_EARLY, 'succeeded'),
+    gatePassed(350, PLAN, PLAN_APPROVAL),
+    runStarted(400, RUN_LATE, IMPLEMENT),
+    runFinished(850, RUN_LATE, 'succeeded'),
+    gatePassed(900, CLOSE, CLOSURE),
+  ]);
+  await seedWorkOrder(h, WO_P_DONE_OLD, BOARD_FLOW, 'Older finish', 100, REPO, slugOf<'project'>(project(REPO)));
+  await seedEvents(h, WO_P_DONE_OLD, [
+    runStarted(120, RUN_EARLY, PLAN),
+    runFinished(150, RUN_EARLY, 'succeeded'),
+    gatePassed(180, PLAN, PLAN_APPROVAL),
+    runStarted(200, RUN_LATE, IMPLEMENT),
+    runFinished(750, RUN_LATE, 'succeeded'),
+    gatePassed(800, CLOSE, CLOSURE),
+  ]);
+
+  await seedWorkOrder(h, WO_P_BLOCKED, BOARD_FLOW, 'Beta blocked', 3_000, OTHER_REPO, slugOf<'project'>(project(OTHER_REPO)));
+  await seedEvents(h, WO_P_BLOCKED, [{ type: 'blocked', at: 3_100, by: ACTOR, reason: 'upstream' }]);
+  return h;
+};
+
+describe('project.tree', () => {
+  it('A-27: one item per attached project in id asc order, repos in project.repos order, with counted states', async () => {
+    const owner = (repo: RepoSlug): string => (repo === REPO ? 'alpha' : 'beta');
+    const h = await seedProjectScenario(createHarness(), owner);
+    const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
+
+    expect(tree.map((item) => item.project)).toEqual(['alpha', 'beta']);
+
+    const alpha = tree[0];
+    expect(alpha?.name).toBe('Alpha');
+    expect(alpha?.mainRepo).toBe('acme');
+    expect(alpha?.repos.map((node) => node.repo)).toEqual(['acme']);
+    expect(alpha?.repos[0]?.main).toBe(true);
+    // Non-done work orders count as active: the whole cockpit scenario's acme orders (8) plus
+    // this scenario's await (1); the two finished ones do not. Waiting is the attention kinds
+    // (ask, two awaiting_human, blocked, this scenario's await) and three runs are live.
+    expect(alpha?.active).toBe(9);
+    expect(alpha?.waiting).toBe(5);
+    expect(alpha?.running).toBe(3);
+    expect(alpha?.status).toBe('waiting');
+
+    const beta = tree[1];
+    expect(beta?.repos.map((node) => node.repo)).toEqual(['beta-repo']);
+    expect(beta?.repos[0]?.main).toBe(true);
+    expect(beta?.active).toBe(1);
+    expect(beta?.waiting).toBe(1);
+    expect(beta?.running).toBe(0);
+    expect(beta?.status).toBe('waiting');
+  });
+
+  it('A-27: status precedence is waiting > running > idle per repo and per project', async () => {
+    const h = createHarness();
+    h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
+    await h.deps.projects.save({
+      id: PROJECT_ALPHA,
+      name: 'Alpha',
+      mainRepo: REPO,
+      repos: [REPO, OTHER_REPO],
+    });
+
+    // One repo runs, the other only waits: the project aggregates both and reports waiting.
+    await seedWorkOrder(h, WO_RUNNING, BOARD_FLOW, 'Busy running', 100);
+    await seedEvents(h, WO_RUNNING, [runStarted(150, RUN_RUNNING, PLAN)]);
+    await seedRun(h, activeRun(RUN_RUNNING, WO_RUNNING, PLAN, 200));
+
+    await seedWorkOrder(h, WO_AWAIT_EARLY, BOARD_FLOW, 'Waiting', 300, OTHER_REPO);
+    await seedEvents(h, WO_AWAIT_EARLY, [runStarted(350, RUN_EARLY, PLAN), runFinished(400, RUN_EARLY, 'succeeded')]);
+
+    const tree = (await createApi(h.deps).query({ type: 'project.tree' })) as ProjectTree;
+
+    expect(tree[0]?.repos.map((node) => node.status)).toEqual(['running', 'waiting']);
+    expect(tree[0]?.status).toBe('waiting');
+    expect(tree[0]?.active).toBe(2);
+  });
+});
+
+describe('cockpit (project layer)', () => {
+  it('A-28: the project filter narrows attention, running and recentlyClosed; the cards always list every project', async () => {
+    const owner = (repo: RepoSlug): string => (repo === REPO ? 'alpha' : 'beta');
+    const h = await seedProjectScenario(createHarness(), owner);
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+    // Attention in kind order: the permission ask, the awaiting_human ones (alpha's scenario
+    // ones first by since, then beta's blocked-by-event item), then the limit waiter.
+    expect(view.attention.filter((item) => item.project === 'beta').map((item) => item.workOrderId)).toEqual([WO_P_BLOCKED]);
+    expect(view.attention.filter((item) => item.project === 'alpha').map((item) => item.kind)).toContain('awaiting_human');
+
+    expect(view.projects.map((card) => card.project)).toEqual(['alpha', 'beta']);
+    expect(view.projects[0]).toEqual({
+      project: 'alpha',
+      name: 'Alpha',
+      mainRepo: 'acme',
+      repoCount: 1,
+      active: 9,
+      waiting: 5,
+    });
+    // The newest finish first (its finishing gate is its last event), and the max is five.
+    expect(view.recentlyClosed.map((entry) => entry.workOrderId).slice(0, 2)).toEqual([WO_P_DONE_NEW, WO_P_DONE_OLD]);
+    expect(view.recentlyClosed[0]).toEqual({
+      workOrderId: WO_P_DONE_NEW,
+      title: 'Newer finish',
+      project: 'alpha',
+      repo: 'acme',
+      closedAt: 900,
+    });
+    expect(view.recentlyClosed).toHaveLength(3);
+
+    const narrowed = (await createApi(h.deps).query({ type: 'cockpit', project: 'beta' })) as CockpitView;
+    expect(narrowed.attention.map((item) => item.workOrderId)).toEqual([WO_P_BLOCKED]);
+    expect(narrowed.recentlyClosed).toEqual([]);
+    expect(narrowed.projects.map((card) => card.project)).toEqual(['alpha', 'beta']);
   });
 });

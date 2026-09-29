@@ -3,21 +3,26 @@
 // parsed once, at the edge, so nothing beyond this file ever sees an unvalidated id (A-21).
 // Phase 4 binds this same contract to Electron IPC.
 import type {
+  AccountId,
   AccountRoute,
   Actor,
   AuthMode,
+  EpochMs,
   FlowDef,
   Meter,
   Pool,
+  ProjectSlug,
   Result,
   Slug,
   StageSlug,
+  TaskSlug,
   Ulid,
   WorkOrderId,
   WorkOrderEvent,
+  WorkOrderStatus,
   RepoSlug,
 } from '../domain/index';
-import { deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
+import { deriveRoadmap, deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
 
 import type {
   AccountRecord,
@@ -29,26 +34,36 @@ import type {
 } from '../application';
 import {
   approveAndDeploy,
+  attachProject,
   blockWorkOrder,
   closeWorkOrder,
   decideHumanGate,
   decideProposalUseCase,
   enqueueStage,
   getWorkOrder,
+  openTaskWorkOrders,
   openWorkOrder,
+  registerRepo,
   removeAccount,
   saveAccount,
   saveBinding,
   unblockWorkOrder,
+  unregisterRepo,
 } from '../application';
 
 import type { Command, CommandResult } from './commands';
 import type {
+  AccountDetailView,
   AttentionItem,
   BoardView,
   CockpitView,
   OpenAskView,
+  ProjectSpendView,
+  ProjectTree,
+  ProjectTreeItem,
   Query,
+  RepoNode,
+  RoadmapPageView,
   SettingsAccountsView,
   SettingsBindingScope,
   SettingsBindingView,
@@ -174,6 +189,8 @@ const runCommand = async (
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
       const repo = slugValue<'repo'>(command.repo);
       if (repo === undefined) return invalidId();
       const flow = command.flow === undefined ? undefined : slugValue<'flow'>(command.flow);
@@ -182,10 +199,64 @@ const runCommand = async (
       if (task === undefined && command.task !== undefined) return invalidId();
 
       const opened = await openWorkOrder(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions },
-        { repo, title: command.title, flow, task, actor },
+        { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, projects: deps.projects },
+        { project, repo, title: command.title, flow, task, actor },
       );
       return opened.ok ? { ok: true, id: opened.value } : { ok: false, code: opened.error };
+    }
+
+    case 'task.open': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const task = slugValue<'task'>(command.task);
+      if (task === undefined) return invalidId();
+      const opened = await openTaskWorkOrders(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, workOrders: deps.workOrders, definitions: deps.definitions, projects: deps.projects },
+        { project, task, actor },
+      );
+      return opened.ok ? { ok: true } : { ok: false, code: opened.error };
+    }
+
+    case 'project.attach': {
+      // The optional repo registrations ride along as plain slugs; one bad slug rejects the
+      // whole command before any port is touched (A-21).
+      const repos: { readonly repo: RepoSlug; readonly path: string }[] = [];
+      for (const entry of command.repos ?? []) {
+        const repo = slugValue<'repo'>(entry.repo);
+        if (repo === undefined) return invalidId();
+        repos.push({ repo, path: entry.path });
+      }
+      const attached = await attachProject(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, definitions: deps.definitions, git: deps.git },
+        { path: command.path, repos: repos.length === 0 ? undefined : repos, actor },
+      );
+      return attached.ok ? { ok: true, id: attached.value.id } : { ok: false, code: attached.error };
+    }
+
+    case 'repo.register': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      return commandOf(
+        await registerRepo(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, workOrders: deps.workOrders },
+          { project, repo, path: command.path, actor },
+        ),
+      );
+    }
+
+    case 'repo.unregister': {
+      const project = slugValue<'project'>(command.project);
+      if (project === undefined) return invalidId();
+      const repo = slugValue<'repo'>(command.repo);
+      if (repo === undefined) return invalidId();
+      return commandOf(
+        await unregisterRepo(
+          { clock: deps.clock, ids: deps.ids, log: deps.log, projects: deps.projects, repos: deps.repos, workOrders: deps.workOrders },
+          { project, repo, actor },
+        ),
+      );
     }
 
     case 'workOrder.block': {
@@ -233,6 +304,7 @@ const runCommand = async (
           definitions: deps.definitions,
           bindings: deps.bindings,
           accounts: deps.accounts,
+          projects: deps.projects,
         },
         { id },
       );
@@ -389,8 +461,32 @@ const runQuery = async (
       return view.ok ? view.value : { ok: false, code: view.error };
     }
 
-    case 'cockpit':
-      return cockpitView(deps);
+    case 'cockpit': {
+      const project = query.project === undefined ? undefined : slugValue<'project'>(query.project);
+      if (project === undefined && query.project !== undefined) return invalidId();
+      return cockpitView(deps, project);
+    }
+
+    case 'project.tree':
+      return projectTree(deps);
+
+    case 'roadmap.byProject': {
+      const project = slugValue<'project'>(query.project);
+      if (project === undefined) return invalidId();
+      return roadmapView(deps, project);
+    }
+
+    case 'account.detail': {
+      const id = ulidValue<'account'>(query.id);
+      if (id === undefined) return invalidId();
+      return accountDetailView(deps, id);
+    }
+
+    case 'project.spend': {
+      const project = slugValue<'project'>(query.project);
+      if (project === undefined) return invalidId();
+      return projectSpendView(deps, project);
+    }
 
     case 'repo.board': {
       const repo = slugValue<'repo'>(query.repo);
@@ -485,9 +581,11 @@ const meterView = (meter: Meter): SettingsMeterView => ({
 const bindingScopeView = (scope: BindingScope): SettingsBindingScope =>
   scope.level === 'global'
     ? { level: 'global' }
-    : scope.level === 'repo'
-      ? { level: 'repo', repo: scope.repo }
-      : { level: 'workOrder', workOrderId: scope.workOrderId };
+    : scope.level === 'project'
+      ? { level: 'project', project: scope.project }
+      : scope.level === 'repo'
+        ? { level: 'repo', repo: scope.repo }
+        : { level: 'workOrder', workOrderId: scope.workOrderId };
 
 const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
   const records = await deps.accounts.list();
@@ -538,31 +636,32 @@ const flowCache = (deps: AppDeps) => {
   };
 };
 
-const cockpitView = async (deps: AppDeps): Promise<CockpitView> => {
+/** The derived status of every listed work order, plus its attention kind. Records whose flow no
+ *  longer loads have no derivable state — they count as active but carry no attention kind, so one
+ *  broken repo never blanks the whole cockpit. */
+interface DerivedOrder {
+  readonly record: WorkOrderRecordView;
+  readonly status: string | undefined;
+  readonly stage: string | null;
+  readonly kind: AttentionItem['kind'] | undefined;
+  readonly since: number;
+}
+
+type WorkOrderRecordView = Awaited<ReturnType<AppDeps['workOrders']['list']>>[number];
+
+const deriveOrders = async (
+  deps: AppDeps,
+  records: readonly WorkOrderRecordView[],
+  askSinceByWorkOrder: ReadonlyMap<WorkOrderId, number>,
+): Promise<readonly DerivedOrder[]> => {
   const flowsOf = flowCache(deps);
-  const active = await deps.runs.listActive();
-
-  // The earliest still-open permission ask per work order, folded from each active run's stream:
-  // an ask is open until a tool_result of the same id arrives.
-  const askSinceByWorkOrder = new Map<WorkOrderId, number>();
-  for (const run of active) {
-    const events = await deps.runs.events(run.id);
-    const open = foldRun(events).openPermissionAsks;
-    if (open.length === 0) continue;
-    const openIds = new Set(open);
-    for (const event of events) {
-      if (event.type !== 'permission_ask' || !openIds.has(event.id)) continue;
-      const known = askSinceByWorkOrder.get(run.workOrderId);
-      if (known === undefined || event.at < known) askSinceByWorkOrder.set(run.workOrderId, event.at);
-    }
-  }
-
-  const attention: AttentionItem[] = [];
-  for (const record of await deps.workOrders.list({})) {
+  const derived: DerivedOrder[] = [];
+  for (const record of records) {
     const flow = (await flowsOf(record.repo)).find((candidate) => candidate.id === record.flow);
-    // A work order whose definitions no longer load has no derivable state and so no attention
-    // kind; one broken repo must not blank the whole cockpit.
-    if (flow === undefined) continue;
+    if (flow === undefined) {
+      derived.push({ record, status: undefined, stage: null, kind: undefined, since: record.createdAt });
+      continue;
+    }
     const events = await deps.workOrders.events(record.id);
     const state = deriveWorkOrderState(flow, events);
 
@@ -577,33 +676,315 @@ const cockpitView = async (deps: AppDeps): Promise<CockpitView> => {
             : state.status === 'limit_waiting'
               ? 'limit_waiting'
               : undefined;
-    if (kind === undefined) continue;
 
     // `since` is when the wait was last established: the unanswered ask's arrival, else the newest
     // event of the work order (its creation time stands in for a history that should not be empty).
     const lastEvent = events[events.length - 1];
-    const since = askSince ?? (lastEvent === undefined ? record.createdAt : lastEvent.at);
-    attention.push({
-      workOrderId: record.id,
-      repo: record.repo,
-      title: record.title,
-      kind,
+    derived.push({
+      record,
+      status: state.status,
       stage: state.stage,
-      since,
+      kind,
+      since: askSince ?? (lastEvent === undefined ? record.createdAt : lastEvent.at),
     });
   }
+  return derived;
+};
 
+/** The earliest still-open permission ask per work order, folded from each active run's stream. */
+const openAskSince = async (deps: AppDeps): Promise<Map<WorkOrderId, number>> => {
+  const askSinceByWorkOrder = new Map<WorkOrderId, number>();
+  for (const run of await deps.runs.listActive()) {
+    const events = await deps.runs.events(run.id);
+    const open = foldRun(events).openPermissionAsks;
+    if (open.length === 0) continue;
+    const openIds = new Set(open);
+    for (const event of events) {
+      if (event.type !== 'permission_ask' || !openIds.has(event.id)) continue;
+      const known = askSinceByWorkOrder.get(run.workOrderId);
+      if (known === undefined || event.at < known) askSinceByWorkOrder.set(run.workOrderId, event.at);
+    }
+  }
+  return askSinceByWorkOrder;
+};
+
+const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<CockpitView> => {
+  const askSinceByWorkOrder = await openAskSince(deps);
+  // Attention, cards and the closed list all read the same derivation pass — the filter narrows
+  // attention, running and recentlyClosed, while the cards always see every project (K-4:B).
+  const allDerived = await deriveOrders(deps, await deps.workOrders.list({}), askSinceByWorkOrder);
+  const scoped = projectFilter === undefined ? allDerived : allDerived.filter((entry) => entry.record.project === projectFilter);
+
+  const attention: AttentionItem[] = scoped
+    .filter((entry) => entry.kind !== undefined)
+    .map((entry) => ({
+      workOrderId: entry.record.id,
+      project: entry.record.project,
+      repo: entry.record.repo,
+      title: entry.record.title,
+      kind: entry.kind ?? 'blocked',
+      stage: entry.stage,
+      since: entry.since,
+    }));
   attention.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.since - b.since);
 
-  return {
-    attention,
-    running: active.map((run) => ({
+  const active = await deps.runs.listActive();
+  const scopedIds = new Set(scoped.map((entry) => entry.record.id));
+  const running = active
+    .filter((run) => projectFilter === undefined || scopedIds.has(run.workOrderId))
+    .map((run) => ({
       workOrderId: run.workOrderId,
       stage: run.stage,
       accountId: run.route.accountId,
       startedAt: run.startedAt,
+    }));
+
+  const projects = (await deps.projects.list()).map((def) => {
+    const own = allDerived.filter((entry) => entry.record.project === def.id);
+    return {
+      project: def.id,
+      name: def.name,
+      mainRepo: def.mainRepo,
+      repoCount: def.repos.length,
+      active: own.filter((entry) => entry.status !== 'done').length,
+      waiting: own.filter((entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked').length,
+    };
+  });
+
+  // recentlyClosed: the five most recent done work orders by when they finished — a `closed`
+  // event or the closure gate that completed them, whichever the history ends with.
+  const closed: { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[] = [];
+  for (const entry of scoped) {
+    if (entry.status !== 'done') continue;
+    const events = await deps.workOrders.events(entry.record.id);
+    const last = events[events.length - 1];
+    closed.push({
+      workOrderId: entry.record.id,
+      title: entry.record.title,
+      project: entry.record.project,
+      repo: entry.record.repo,
+      closedAt: last === undefined ? entry.record.createdAt : last.at,
+    });
+  }
+  closed.sort((a, b) => b.closedAt - a.closedAt);
+
+  return { attention, running, projects, recentlyClosed: closed.slice(0, 5) };
+};
+
+/** A-27: one item per attached project (id asc), repos in `project.repos` order. */
+const projectTree = async (deps: AppDeps): Promise<ProjectTree> => {
+  const askSinceByWorkOrder = await openAskSince(deps);
+  const records = await deps.workOrders.list({});
+  const derived = await deriveOrders(deps, records, askSinceByWorkOrder);
+  const derivedByRepo = new Map<RepoSlug, readonly DerivedOrder[]>();
+  for (const entry of derived) {
+    const own = derivedByRepo.get(entry.record.repo);
+    if (own === undefined) derivedByRepo.set(entry.record.repo, [entry]);
+    else derivedByRepo.set(entry.record.repo, [...own, entry]);
+  }
+
+  const runningByRepo = new Map<RepoSlug, number>();
+  for (const run of await deps.runs.listActive()) {
+    const workOrder = await deps.workOrders.get(run.workOrderId);
+    if (workOrder === undefined) continue;
+    runningByRepo.set(workOrder.repo, (runningByRepo.get(workOrder.repo) ?? 0) + 1);
+  }
+
+  // Status precedence (A-27): waiting > running > idle.
+  const statusOf = (waiting: number, running: number): RepoNode['status'] =>
+    waiting > 0 ? 'waiting' : running > 0 ? 'running' : 'idle';
+
+  const items: ProjectTreeItem[] = [];
+  for (const def of await deps.projects.list()) {
+    const repos: RepoNode[] = def.repos.map((repo) => {
+      const own = derivedByRepo.get(repo) ?? [];
+      const waiting = own.filter(
+        (entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked',
+      ).length;
+      const running = runningByRepo.get(repo) ?? 0;
+      return {
+        repo,
+        name: repo,
+        main: repo === def.mainRepo,
+        active: own.filter((entry) => entry.status !== 'done').length,
+        running,
+        waiting,
+        status: statusOf(waiting, running),
+      };
+    });
+
+    const waiting = repos.reduce((sum, node) => sum + node.waiting, 0);
+    const running = repos.reduce((sum, node) => sum + node.running, 0);
+    items.push({
+      project: def.id,
+      name: def.name,
+      mainRepo: def.mainRepo,
+      repos,
+      active: repos.reduce((sum, node) => sum + node.active, 0),
+      running,
+      waiting,
+      status: statusOf(waiting, running),
+    });
+  }
+  return items;
+};
+
+const roadmapView = async (
+  deps: AppDeps,
+  project: ProjectSlug,
+): Promise<RoadmapPageView | QueryFailure> => {
+  if ((await deps.projects.get(project)) === undefined) return { ok: false, code: 'not_found' };
+  const roadmap = await deps.definitions.loadRoadmap(project);
+  if (roadmap === undefined) return { ok: false, code: 'not_found' };
+  if (!roadmap.ok) return { ok: false, code: 'definitions_invalid' };
+
+  // A task's status is decided over its linked work orders — every non-done order of the project
+  // that names the task.
+  const askSinceByWorkOrder = await openAskSince(deps);
+  const linked = (await deriveOrders(deps, await deps.workOrders.list({ project }), askSinceByWorkOrder))
+    .filter((entry) => entry.record.task !== undefined && entry.status !== undefined)
+    .map((entry) => ({ task: entry.record.task as TaskSlug, status: entry.status as WorkOrderStatus }));
+  const view = deriveRoadmap(roadmap.value, linked);
+
+  return {
+    phases: roadmap.value.phases.map((phase) => ({
+      id: phase.id,
+      name: phase.name,
+      status: view.phases[phase.id] ?? 'planned',
+      tasks: phase.tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        status: view.tasks[task.id] ?? 'planned',
+        targets: [...task.targets],
+      })),
     })),
+    runnable: [...view.runnable],
   };
+};
+
+const accountDetailView = async (
+  deps: AppDeps,
+  id: AccountId,
+): Promise<AccountDetailView | QueryFailure> => {
+  const record = await deps.accounts.get(id);
+  if (record === undefined) return { ok: false, code: 'not_found' };
+
+  const pools = await deps.accounts.pools(id);
+  const meters = await deps.accounts.meters(id);
+  const poolLabel = new Map(pools.map((pool) => [pool.id, pool.label] as const));
+  const windows = meters.map((meter) => ({
+    label: meter.label ?? poolLabel.get(meter.poolId),
+    unit: meter.unit,
+    used: meter.used ?? undefined,
+    limit: meter.limit ?? undefined,
+    remaining: meter.remaining ?? undefined,
+    resetsAt: meter.resetsAt ?? undefined,
+    resetPrecision: meter.resetPrecision,
+    source: meter.source,
+  }));
+
+  // activeWork: non-done work orders with a run on this account, the oldest active run first.
+  const askSinceByWorkOrder = await openAskSince(deps);
+  const collected: {
+    readonly workOrderId: string;
+    readonly title: string;
+    readonly stage: string | null;
+    readonly status: string;
+    readonly since: number;
+  }[] = [];
+  for (const entry of await deriveOrders(deps, await deps.workOrders.list({}), askSinceByWorkOrder)) {
+    if (entry.status === 'done') continue;
+    const runs = await deps.runs.listForWorkOrder(entry.record.id);
+    const onAccount = runs.filter((run) => run.route.accountId === id);
+    if (onAccount.length === 0) continue;
+    onAccount.sort((a, b) => a.startedAt - b.startedAt);
+    const first = onAccount[0];
+    if (first === undefined) continue;
+    collected.push({
+      workOrderId: entry.record.id,
+      title: entry.record.title,
+      stage: entry.stage,
+      status: entry.status ?? '',
+      since: first.startedAt,
+    });
+  }
+
+  return {
+    account: {
+      id: record.id,
+      provider: record.provider,
+      label: record.label,
+      authMode: record.authMode,
+      plan: record.plan,
+      limitPolicy: record.limitPolicy,
+    },
+    windows,
+    activeWork: [...collected]
+      .sort((a, b) => a.since - b.since)
+      .map(({ workOrderId, title, stage, status }) => ({ workOrderId, title, stage, status })),
+  };
+};
+
+const projectSpendView = async (
+  deps: AppDeps,
+  project: ProjectSlug,
+): Promise<ProjectSpendView | QueryFailure> => {
+  const def = await deps.projects.get(project);
+  if (def === undefined) return { ok: false, code: 'not_found' };
+
+  // The page answers "how much of this month's ceiling is gone", so the window is the current
+  // UTC month — the same window the project ceiling will be enforced over.
+  const now = deps.clock.now();
+  const from = startOfUtcMonth(now);
+  const to = startOfNextUtcMonth(now) - 1;
+
+  const perRepo: { readonly repo: string; readonly usd: number }[] = [];
+  for (const repo of def.repos) {
+    perRepo.push({ repo, usd: await deps.accounts.spend({ project, repo, from, to }) });
+  }
+  const totalUsd = perRepo.reduce((sum, entry) => sum + entry.usd, 0);
+
+  return {
+    totalUsd,
+    perRepo,
+    ...(def.budget !== undefined ? { cap: { amountUsd: def.budget.amountUsd, warnPercent: def.budget.warnPercent } } : {}),
+  };
+};
+
+// Civil-from-days month bounds without a Date object (banned in this layer); the same algorithm
+// the dispatcher uses for its account-month windows.
+const MS_PER_DAY: EpochMs = 86_400_000;
+
+const civilFromDays = (days: number): { readonly year: number; readonly month: number } => {
+  const z = days + 719_468;
+  const era = Math.floor(z / 146_097);
+  const doe = z - era * 146_097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1_460) + Math.floor(doe / 36_524) - Math.floor(doe / 146_096)) / 365);
+  const year = yoe + era * 400;
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const month = mp < 10 ? mp + 3 : mp - 9;
+  return { year: month <= 2 ? year + 1 : year, month };
+};
+
+const daysFromCivilMonth = (year: number, month: number): number => {
+  const shifted = month <= 2 ? year - 1 : year;
+  const era = Math.floor(shifted / 400);
+  const yoe = shifted - era * 400;
+  const mp = month > 2 ? month - 3 : month + 9;
+  const doy = Math.floor((153 * mp + 2) / 5);
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146_097 + doe - 719_468;
+};
+
+const startOfUtcMonth = (at: EpochMs): EpochMs => {
+  const { year, month } = civilFromDays(Math.floor(at / MS_PER_DAY));
+  return daysFromCivilMonth(year, month) * MS_PER_DAY;
+};
+
+const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
+  const { year, month } = civilFromDays(Math.floor(at / MS_PER_DAY));
+  return (month === 12 ? daysFromCivilMonth(year + 1, 1) : daysFromCivilMonth(year, month + 1)) * MS_PER_DAY;
 };
 
 const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | QueryFailure> => {

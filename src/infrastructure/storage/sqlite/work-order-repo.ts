@@ -1,6 +1,6 @@
 // SQLite-backed work order repository; the full record rides in `data`, plus derived index columns.
 import type { WorkOrderRecord, WorkOrderRepo } from '../../../application/index';
-import type { WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
+import type { ProjectSlug, WorkOrderEvent, WorkOrderId, RepoSlug } from '../../../domain/index';
 
 import type { DocketDb } from './database';
 
@@ -16,13 +16,19 @@ const decodeEvent = (text: unknown): WorkOrderEvent => {
 
 export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
   const insert = db.raw.prepare(
-    'INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)',
+    'INSERT INTO work_orders (id, project, repo, created_at, data) VALUES (?, ?, ?, ?, ?)',
   );
   const byId = db.raw.prepare('SELECT data FROM work_orders WHERE id = ?');
   // The composite indexes cover both orderings; ties break by id asc, matching the fake's
   // insertion order for the monotonic ids the application generates.
+  const byProject = db.raw.prepare(
+    'SELECT data FROM work_orders WHERE project = ? ORDER BY created_at ASC, id ASC',
+  );
   const byRepo = db.raw.prepare(
-    'SELECT data FROM work_orders WHERE workspace = ? ORDER BY created_at ASC, id ASC',
+    'SELECT data FROM work_orders WHERE repo = ? ORDER BY created_at ASC, id ASC',
+  );
+  const byProjectAndRepo = db.raw.prepare(
+    'SELECT data FROM work_orders WHERE project = ? AND repo = ? ORDER BY created_at ASC, id ASC',
   );
   const everything = db.raw.prepare('SELECT data FROM work_orders ORDER BY created_at ASC, id ASC');
   const maxSeq = db.raw.prepare(
@@ -37,7 +43,7 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
 
   return {
     create: async (record: WorkOrderRecord): Promise<void> => {
-      insert.run(record.id, record.repo, record.createdAt, JSON.stringify(record));
+      insert.run(record.id, record.project, record.repo, record.createdAt, JSON.stringify(record));
     },
 
     get: async (id: WorkOrderId): Promise<WorkOrderRecord | undefined> => {
@@ -45,9 +51,18 @@ export function createSqliteWorkOrderRepo(db: DocketDb): WorkOrderRepo {
       return row === undefined ? undefined : decodeRecord(row['data']);
     },
 
-    list: async (filter: { readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]> => {
+    list: async (filter: {
+      readonly project?: ProjectSlug;
+      readonly repo?: RepoSlug;
+    }): Promise<readonly WorkOrderRecord[]> => {
       const rows =
-        filter.repo === undefined ? everything.all() : byRepo.all(filter.repo);
+        filter.project !== undefined && filter.repo !== undefined
+          ? byProjectAndRepo.all(filter.project, filter.repo)
+          : filter.project !== undefined
+            ? byProject.all(filter.project)
+            : filter.repo !== undefined
+              ? byRepo.all(filter.repo)
+              : everything.all();
       return rows.map((row) => decodeRecord(row['data']));
     },
 

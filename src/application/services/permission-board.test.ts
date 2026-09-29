@@ -113,6 +113,7 @@ const executorHarness = async (options: {
   });
   await workOrders.create({
     id: WORK_ORDER,
+    project: slugOf<'project'>('proj'),
     repo: REPO,
     flow: slugOf<'flow'>('standard'),
     title: 'The work order',

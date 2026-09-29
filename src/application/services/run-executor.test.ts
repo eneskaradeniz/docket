@@ -109,6 +109,7 @@ const INPUT = {
 
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
+  project: slugOf<'project'>('proj'),
   repo: REPO,
   flow: slugOf<'flow'>('standard'),
   title: 'The work order',

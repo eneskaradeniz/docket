@@ -33,6 +33,7 @@ const OTHER: RepoSlug = slugOf<'repo'>('other');
 
 const record = (id: string, createdAt: number, repo: RepoSlug = ACME): WorkOrderRecord => ({
   id: woId(id),
+  project: slugOf<'project'>('proj'),
   repo,
   flow: FLOW,
   title: `title ${id}`,

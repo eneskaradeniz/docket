@@ -1,7 +1,7 @@
 // In-memory machine-side ports — scripted commands, scans, evidence and worktrees.
 import type { Result, WorkOrderId, RepoSlug } from '../../../domain/index';
 
-import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../workspace-tools';
+import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../repo-tools';
 
 export interface FakeCommandRunner extends CommandRunner {
   /** Scripts the result for an exact command string; same-command scripts are consumed in order. */
