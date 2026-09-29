@@ -114,7 +114,11 @@ Visual source of truth: the operator-approved OpenDesign prototype "Docket v2" �
 is the visual source; the rev-8 prototype is historical and is not updated. The information architecture is fixed
 by the main-screen decisions (K-1…K-8, 2026-09-28/29): the Pano navigation item is gone — a board
 is a repo's view; the app opens on the Kokpit, reached through the title bar's Anasayfa;
-project row → roadmap, repo row → board.
+project row → roadmap, repo row → board. Every current item of the title bar and the sidebar —
+Anasayfa, Ara while its palette is open, the tree's active rows, the settings control, the active
+account card — speaks one active-state language: a raised ground with a 1px `--color-signal`
+border at the row's own radius, never an inset signal bar, with a soft variant (raised ground,
+hairline border) for a selected repo's parent project.
 
 ### API additions (Phase 3.5)
 

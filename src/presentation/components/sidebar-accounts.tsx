@@ -1,13 +1,16 @@
 // components/sidebar-accounts.tsx — the sidebar's accounts frame (U-16): the one collapsible
 // part of the sidebar, collapsed when the session starts, with the usage refresh beside its
-// header. Collapsed, the frame is one slim row — the row's own padding is the frame's whole
-// vertical padding, symmetric so the header sits in even breathing room. The header buttons
-// carry a hairline border that raises on hover. A card carries the account label plus one mini
-// bar per window — a short cadence label, the normalized percent, warn from the warn percent —
-// and the spend line where the account carries money. A card opens the account view; the
-// refresh intent re-polls usage through the store while the icon spins.
+// header. The header row is one fixed standing in both states — the same top offset and the same
+// height — so expanding only adds the body below it and nothing above or around it moves; the
+// row's own padding is the frame's whole vertical padding while collapsed, symmetric so the
+// header sits in even breathing room. The header buttons carry a hairline border that raises on
+// hover. A card carries the account label plus one mini bar per window — a short cadence label,
+// the normalized percent, warn from the warn percent — and the spend line where the account
+// carries money. A card opens the account view; the refresh intent re-polls usage through the
+// store while the icon spins.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
+import { ACTIVE_CLASS } from './active-state';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { AccountCard, AccountsFrameStore } from '../stores/accounts-frame';
@@ -79,7 +82,7 @@ const AccountCardView = ({
     onClick={onOpen}
     aria-current={active ? 'true' : undefined}
     className={`block w-full rounded-lg border p-2 text-left ${
-      active ? 'border-bord bg-raised' : 'border-hairline bg-surface hover:border-bord'
+      active ? ACTIVE_CLASS : 'border-hairline bg-surface hover:border-bord'
     }`}
   >
     <span title={card.label} className="block truncate text-xs font-semibold leading-[17px]">
@@ -145,19 +148,21 @@ export function SidebarAccounts({
   return (
     <div
       data-accounts-frame=""
-      className={`mt-2.5 flex-none rounded-[10px] border border-hairline bg-band ${state.open ? 'p-2' : 'px-1'}`}
+      className={`mt-2.5 flex-none rounded-[10px] border border-hairline bg-band px-1 ${state.open ? 'pb-2' : ''}`}
     >
-      {/* Collapsed, the row's own padding is the frame's whole vertical padding — 4px above and
-          below, so the slim row holds no dead space and stays symmetric; open, the frame pads
-          itself and the larger bottom padding separates header from cards. */}
-      <div className={`flex items-center gap-1 px-1 ${state.open ? 'pt-0.5 pb-2' : 'py-1'}`}>
+      {/* The header row's classes never change with the state — its top offset and height are the
+          same collapsed and expanded, so expanding only adds the body below. Collapsed, the row's
+          own padding is the frame's whole vertical padding — 4px above and below, so the slim row
+          holds no dead space and stays symmetric; expanded, the frame adds its bottom padding
+          between the cards and the frame's edge. */}
+      <div className="flex items-center gap-1 px-1 py-1">
         <button
           type="button"
           onClick={() => store.toggle()}
           aria-expanded={state.open}
           className="flex min-w-0 flex-1 items-center rounded bg-transparent py-0.5 text-left"
         >
-          <span className="truncate font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-inkdim">
+          <span className="truncate font-mono text-[10.5px] font-medium text-inkdim">
             {t(locale, 'accounts.title')}
           </span>
         </button>

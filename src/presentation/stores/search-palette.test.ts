@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectTree } from '../../api/queries';
-import { CLOSED_PALETTE, paletteBody, paletteReducer, searchTree } from './search-palette';
+import {
+  CLOSED_PALETTE,
+  focusRestoredOnClose,
+  paletteBody,
+  paletteReducer,
+  searchTree,
+} from './search-palette';
 
 const TREE: ProjectTree = [
   {
@@ -71,35 +77,52 @@ describe('paletteBody', () => {
   });
 });
 
+describe('focusRestoredOnClose', () => {
+  it('a pointer-opened palette does not restore focus — the opener never asked for the keyboard', () => {
+    expect(focusRestoredOnClose('pointer')).toBe(false);
+  });
+
+  it('a keyboard-opened palette (⌘K or key activation) restores focus to the opener', () => {
+    expect(focusRestoredOnClose('keyboard')).toBe(true);
+  });
+});
+
 describe('paletteReducer', () => {
   it('open starts a fresh palette: open, empty query, no results, first row selected', () => {
-    expect(paletteReducer(CLOSED_PALETTE, { type: 'open' })).toStrictEqual({
+    expect(paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'keyboard' })).toStrictEqual({
       open: true,
       query: '',
       results: [],
       selected: 0,
+      origin: 'keyboard',
     });
   });
 
-  it('open on an already-open palette keeps the typing — a stray ⌘K does not clear it', () => {
-    const typed = paletteReducer(CLOSED_PALETTE, { type: 'open' });
-    const withResults = paletteReducer(typed, { type: 'query', value: 'odoo', tree: TREE });
-    expect(paletteReducer(withResults, { type: 'open' })).toStrictEqual(withResults);
+  it('open carries how the palette was opened — the pointer origin is kept for the close', () => {
+    const opened = paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'pointer' });
+    expect(opened.origin).toBe('pointer');
   });
 
-  it('close flips open off; a close on a closed palette changes nothing', () => {
-    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open' }), {
+  it('open on an already-open palette keeps the typing — a stray ⌘K does not clear it', () => {
+    const typed = paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'pointer' });
+    const withResults = paletteReducer(typed, { type: 'query', value: 'odoo', tree: TREE });
+    expect(paletteReducer(withResults, { type: 'open', origin: 'keyboard' })).toStrictEqual(withResults);
+  });
+
+  it('close flips open off and keeps the origin; a close on a closed palette changes nothing', () => {
+    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'pointer' }), {
       type: 'query',
       value: 'odoo',
       tree: TREE,
     });
     const closed = paletteReducer(opened, { type: 'close' });
     expect(closed.open).toBe(false);
+    expect(closed.origin).toBe('pointer');
     expect(paletteReducer(CLOSED_PALETTE, { type: 'close' })).toStrictEqual(CLOSED_PALETTE);
   });
 
   it('query recomputes the results over the tree and resets the selection to the first', () => {
-    const opened = paletteReducer(CLOSED_PALETTE, { type: 'open' });
+    const opened = paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'keyboard' });
     const withResults = paletteReducer(opened, { type: 'query', value: 'odoo', tree: TREE });
     expect(withResults.results).toHaveLength(2);
     expect(withResults.selected).toBe(0);
@@ -110,7 +133,7 @@ describe('paletteReducer', () => {
   });
 
   it('move steps and wraps around both ends of the result list', () => {
-    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open' }), {
+    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'keyboard' }), {
       type: 'query',
       value: 'odoo',
       tree: TREE,
@@ -124,7 +147,7 @@ describe('paletteReducer', () => {
   });
 
   it('move with no results stays put', () => {
-    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open' }), {
+    const opened = paletteReducer(paletteReducer(CLOSED_PALETTE, { type: 'open', origin: 'keyboard' }), {
       type: 'query',
       value: 'zzz',
       tree: TREE,

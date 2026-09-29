@@ -3,14 +3,22 @@
 // names (projects and repos) and opens what a tree row opens — a project result the roadmap, a
 // repo result the board. The open/close standing, the results and the keyboard's selection all
 // live in the pure reducer (stores/search-palette.ts); this component adds only the DOM: the
-// input takes focus on open, focus is trapped while open and returned to where it was on close,
-// ↑/↓ walk the rows, Enter opens the selected one, Esc or a click on the scrim closes.
+// input takes focus on open, focus is trapped while open, and on close the reducer's origin
+// decision says whether focus returns to the opener or drops to the body — a pointer-opened
+// palette must not leave its button wearing the keyboard's focus ring — ↑/↓ walk the rows,
+// Enter opens the selected one, Esc or a click on the scrim closes.
 // An empty query shows the input row alone — the body (rows or the no-results line) appears
 // only once text is typed, and folds away when it is cleared.
 import { useEffect, useRef, useState } from 'react';
 
 import { t, type Locale } from '../labels/t';
-import { paletteBody, type PaletteResult, type PaletteState } from '../stores/search-palette';
+import {
+  focusRestoredOnClose,
+  paletteBody,
+  type PaletteResult,
+  type PaletteState,
+} from '../stores/search-palette';
+import { ACTIVE_CLASS } from './active-state';
 import { SearchIcon } from './title-bar';
 
 export interface SearchPaletteProps {
@@ -27,17 +35,18 @@ export interface SearchPaletteProps {
 const LIST_ID = 'docket-palette-options';
 const optionId = (index: number): string => `docket-palette-option-${index}`;
 
-/** A row's standing: the keyboard's row reads raised with the inset signal bar, the rest stay
+/** A row's standing: the keyboard's row carries the one active-state language, the rest stay
  *  quiet — the same grammar as the sidebar's rows. */
 const rowClass = (selected: boolean): string =>
   selected
-    ? 'flex h-8 w-full items-center gap-2 rounded-md bg-raised px-2.5 text-left text-[13px] text-ink shadow-[inset_2px_0_0_0] shadow-signal'
+    ? `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
     : 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink hover:bg-raised';
 
 export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose }: SearchPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLElement>(null);
-  // Where focus stood before the palette opened — the palette gives it back on close.
+  // Where focus stood before the palette opened — the palette gives it back on close, unless the
+  // open was a pointer's: the reducer's origin decision (focusRestoredOnClose) settles that.
   const restoreRef = useRef<HTMLElement | null>(null);
   // The overlay's life in the DOM outlives the open standing: `mounted` keeps it in the tree
   // through the exit transition, `entered` is the standing the CSS transitions chase. Mount
@@ -49,8 +58,11 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   useEffect(() => {
     if (state.open) {
       restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    } else {
-      restoreRef.current?.focus();
+    } else if (restoreRef.current !== null) {
+      // A pointer-opened palette blurs its opener — focus falls to the body, and the button
+      // keeps no keyboard-style ring it never earned.
+      if (focusRestoredOnClose(state.origin)) restoreRef.current.focus();
+      else restoreRef.current.blur();
       restoreRef.current = null;
     }
   }, [state.open]);

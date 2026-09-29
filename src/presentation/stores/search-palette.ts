@@ -11,6 +11,10 @@ export type PaletteResult =
   | { readonly kind: 'project'; readonly project: string; readonly name: string }
   | { readonly kind: 'repo'; readonly project: string; readonly repo: string; readonly name: string };
 
+/** How the palette was opened: a pointer press on the Ara button, or the keyboard (⌘K, or key
+ *  activation of the button). It decides where focus lands when the palette closes. */
+export type PaletteOrigin = 'pointer' | 'keyboard';
+
 export interface PaletteState {
   readonly open: boolean;
   /** The input's text, verbatim; matching trims and lowers its own copy. */
@@ -18,7 +22,14 @@ export interface PaletteState {
   readonly results: readonly PaletteResult[];
   /** The row the keyboard sits on — an index into `results`, zero while they are empty. */
   readonly selected: number;
+  /** Stamped by the open, read by the close. */
+  readonly origin: PaletteOrigin;
 }
+
+/** The close's focus decision: a pointer-opened palette blurs on close — the opener never asked
+ *  for the keyboard, so handing its button keyboard-style focus would leave a focus ring it did
+ *  not earn; a keyboard-opened one returns focus to where it was taken from. */
+export const focusRestoredOnClose = (origin: PaletteOrigin): boolean => origin === 'keyboard';
 
 /** What the palette shows under the input: nothing while the query is empty (the palette is the
  *  input row alone), the rows once a typed query matches, the no-results line once it does not. */
@@ -32,13 +43,20 @@ export const paletteBody = (query: string, resultCount: number): PaletteBody => 
 };
 
 export type PaletteAction =
-  | { readonly type: 'open' }
+  | { readonly type: 'open'; readonly origin: PaletteOrigin }
   | { readonly type: 'close' }
   | { readonly type: 'query'; readonly value: string; readonly tree: ProjectTree }
   | { readonly type: 'move'; readonly delta: -1 | 1 };
 
-/** The standing the shell boots with and returns to once the palette has done its work. */
-export const CLOSED_PALETTE: PaletteState = { open: false, query: '', results: [], selected: 0 };
+/** The standing the shell boots with and returns to once the palette has done its work. The
+ *  origin's default never fires: it is read only on a close that follows an open. */
+export const CLOSED_PALETTE: PaletteState = {
+  open: false,
+  query: '',
+  results: [],
+  selected: 0,
+  origin: 'keyboard',
+};
 
 /** The palette's whole index: projects and repos by name, case-insensitively, in the tree's own
  *  order (a project, then its matching repos). An empty or blank query matches nothing — the
@@ -62,17 +80,20 @@ export const searchTree = (tree: ProjectTree, query: string): readonly PaletteRe
 
 export const paletteReducer = (state: PaletteState, action: PaletteAction): PaletteState => {
   switch (action.type) {
-    // A fresh open starts empty; an open palette keeps its place, so a stray ⌘K never clears
-    // what the operator is typing.
+    // A fresh open starts empty and stamps how it was opened; an open palette keeps its place,
+    // so a stray ⌘K never clears what the operator is typing.
     case 'open':
-      return state.open ? state : { open: true, query: '', results: [], selected: 0 };
+      return state.open
+        ? state
+        : { open: true, query: '', results: [], selected: 0, origin: action.origin };
     case 'close':
       return state.open ? { ...state, open: false } : state;
     case 'query': {
       if (!state.open) return state;
       const results = searchTree(action.tree, action.value);
-      // A new query makes a new list: the selection returns to its first row.
-      return { open: true, query: action.value, results, selected: 0 };
+      // A new query makes a new list: the selection returns to its first row. The open's origin
+      // outlives the typing — it is the close's business, not the query's.
+      return { ...state, open: true, query: action.value, results, selected: 0 };
     }
     case 'move': {
       const count = state.results.length;
