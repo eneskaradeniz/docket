@@ -16,6 +16,7 @@ import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
 import { createProjectTreeStore } from './stores/project-tree';
+import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
 import { createShellStore } from './stores/shell';
@@ -88,6 +89,7 @@ if (mount !== null) {
   const accountsFrame = createAccountsFrameStore({ api, changes });
   // The account view (U-20) shares the shell's coarse events and the machine's clock.
   const accountView = createAccountViewStore({ api, changes, now: () => Date.now() });
+  const roadmap = createRoadmapStore({ api, changes });
   void tree.load();
   void accountsFrame.load();
   // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
@@ -103,6 +105,7 @@ if (mount !== null) {
           accounts={accountsFrame}
           cockpit={cockpit}
           board={board}
+          roadmap={roadmap}
           detail={detail}
           accountView={accountView}
           settings={settings}

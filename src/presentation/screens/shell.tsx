@@ -19,6 +19,7 @@ import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
+import type { RoadmapStore } from '../stores/roadmap';
 import type { SettingsStore } from '../stores/settings';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
@@ -27,6 +28,7 @@ import { AccountViewScreen } from './account-view';
 import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
+import { RoadmapScreen } from './roadmap';
 import { SettingsScreen } from './settings';
 import { WizardScreen } from './wizard';
 
@@ -36,6 +38,7 @@ export interface ShellScreenProps {
   readonly accounts: AccountsFrameStore;
   readonly cockpit: CockpitStore;
   readonly board: BoardStore;
+  readonly roadmap: RoadmapStore;
   readonly detail: WorkOrderDetailStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
@@ -124,6 +127,7 @@ export function ShellScreen({
   accounts,
   cockpit,
   board,
+  roadmap,
   detail,
   accountView,
   settings,
@@ -299,9 +303,14 @@ export function ShellScreen({
           />
         ) : null}
         {route.name === 'roadmap' ? (
-          <h1 className="max-w-[960px] truncate font-mono text-[15px] font-bold tracking-tight text-ink">
-            {t(locale, 'roadmap.title')}
-          </h1>
+          <RoadmapScreen
+            store={roadmap}
+            project={route.project}
+            name={treeState.tree.find((item) => item.project === route.project)?.name ?? route.project}
+            locale={locale}
+            onOpenRepo={(repo) => setRoute({ name: 'board', repo })}
+            onOpenWorkOrder={openWorkOrder}
+          />
         ) : null}
         {route.name === 'account' ? (
           <AccountViewScreen

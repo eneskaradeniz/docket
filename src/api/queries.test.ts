@@ -12,6 +12,7 @@ import type {
   RunOutcome,
   Slug,
   StageSlug,
+  TaskSlug,
   Ulid,
   WorkOrderEvent,
   WorkOrderId,
@@ -22,11 +23,11 @@ import { parseSlug, parseUlid } from '../domain/index';
 import type { AppDeps, DiscoveredProvider, ProviderDiscovery, RunRecord } from '../application';
 import { createPermissionBoard } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
-import { createFakeDefinitionStore, createFakeDeps } from '../application/ports/fakes';
+import { createFakeDefinitionStore, createFakeDeps, FAKE_ROADMAP_TARGET } from '../application/ports/fakes';
 
 import { createApi } from './api';
 import type { RepoRegistryPort } from './api';
-import type { BoardView, CockpitView, OpenAskView, ProjectTree, SettingsAccountsView, RepoListItem } from './queries';
+import type { BoardView, CockpitView, OpenAskView, ProjectTree, RoadmapPageView, SettingsAccountsView, RepoListItem } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -1132,5 +1133,114 @@ describe('cockpit (project layer)', () => {
     expect(narrowed.attention.map((item) => item.workOrderId)).toEqual([WO_P_BLOCKED]);
     expect(narrowed.recentlyClosed).toEqual([]);
     expect(narrowed.projects.map((card) => card.project)).toEqual(['alpha', 'beta']);
+  });
+});
+
+// --- roadmap.byProject --------------------------------------------------------------------------------
+
+const ROAD_PROJECT = slugOf<'project'>('yol');
+const WO_CROSS_MAIN = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5RD1');
+const WO_CROSS_OTHER = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5RD2');
+const WO_DONE_FIRST = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5RD3');
+const WO_DONE_SECOND = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5RD4');
+const RUN_CROSS_OTHER = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5RD5');
+const RUN_DONE_FIRST = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5RD6');
+const RUN_DONE_SECOND = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5RD7');
+
+/** One project, two repos, a cross-repo task and a finished one; the roadmap file ties them. */
+const seedRoadmapScenario = async (): Promise<Harness> => {
+  const h = createHarness();
+  h.definitions.seed({ kind: 'repo', repo: OTHER_REPO }, 'defs.json', DEFINITIONS_JSON);
+  await h.deps.projects.save({ id: ROAD_PROJECT, name: 'Yol', mainRepo: REPO, repos: [REPO, OTHER_REPO] });
+  h.definitions.seed(
+    { kind: 'project', project: ROAD_PROJECT },
+    FAKE_ROADMAP_TARGET,
+    JSON.stringify({
+      phases: [
+        {
+          id: 'faz-1',
+          name: 'Faz 1',
+          blockedBy: [],
+          tasks: [
+            // Cross-repo: the beta-repo order is the OLDER one, so its number is lower — the
+            // targets order must still put acme first.
+            { id: 'ciftyonu', title: 'Çapraz görev', dependsOn: [], acceptance: [], targets: [REPO, OTHER_REPO] },
+            { id: 'hepsi', title: 'Bitti görev', dependsOn: [], acceptance: [], targets: [REPO] },
+            { id: 'bos', title: 'Bağlı işi olmayan', dependsOn: [], acceptance: [], targets: [REPO] },
+          ],
+        },
+      ],
+    }),
+  );
+
+  // The seeded orders carry `task` straight on the record (A-25 opens them this way); the
+  // finished one follows the same recipe as the cockpit scenario's done order.
+  const seedTaskOrder = async (id: WorkOrderId, repo: RepoSlug, title: string, createdAt: number, task: TaskSlug): Promise<void> => {
+    await h.deps.workOrders.create({ id, project: ROAD_PROJECT, repo, flow: BOARD_FLOW, title, createdAt, createdBy: ACTOR, task });
+    await h.deps.workOrders.appendEvent(id, { type: 'created', at: createdAt, by: ACTOR, flow: BOARD_FLOW });
+  };
+  const finish = async (id: WorkOrderId, run: RunId, at: number): Promise<void> => {
+    for (const event of [
+      runStarted(at, run, PLAN),
+      runFinished(at + 50, run, 'succeeded'),
+      gatePassed(at + 100, PLAN, PLAN_APPROVAL),
+      runStarted(at + 150, run, IMPLEMENT),
+      runFinished(at + 200, run, 'succeeded'),
+      gatePassed(at + 250, CLOSE, CLOSURE),
+    ]) {
+      await h.deps.workOrders.appendEvent(id, event);
+    }
+  };
+
+  await seedTaskOrder(WO_CROSS_MAIN, REPO, 'Çapraz görev', 100, slugOf<'task'>('ciftyonu'));
+  await seedTaskOrder(WO_CROSS_OTHER, OTHER_REPO, 'Çapraz görev', 50, slugOf<'task'>('ciftyonu'));
+  await finish(WO_CROSS_OTHER, RUN_CROSS_OTHER, 60);
+  await seedTaskOrder(WO_DONE_FIRST, REPO, 'Bitti görev', 300, slugOf<'task'>('hepsi'));
+  await finish(WO_DONE_FIRST, RUN_DONE_FIRST, 310);
+  await seedTaskOrder(WO_DONE_SECOND, REPO, 'Bitti görev', 400, slugOf<'task'>('hepsi'));
+  await finish(WO_DONE_SECOND, RUN_DONE_SECOND, 410);
+  return h;
+};
+
+describe('roadmap.byProject', () => {
+  it('R-40: a task is done only when every linked work order is done', async () => {
+    const h = await seedRoadmapScenario();
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+
+    const byTask = new Set(view.phases[0]?.tasks.map((task) => [task.id, task.status] as const));
+    // One of the cross task's two orders is still ready: the task runs, it is not done.
+    expect(byTask).toContainEqual(['ciftyonu', 'running']);
+    expect(byTask).toContainEqual(['hepsi', 'done']);
+    expect(byTask).toContainEqual(['bos', 'planned']);
+  });
+
+  it('R-40: a task with no linked work order lists none', async () => {
+    const h = await seedRoadmapScenario();
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+
+    const task = view.phases[0]?.tasks.find((entry) => entry.id === 'bos');
+    expect(task?.workOrders).toEqual([]);
+  });
+
+  it('a cross-repo task lists its work orders per repo in the task’s targets order', async () => {
+    const h = await seedRoadmapScenario();
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+
+    const cross = view.phases[0]?.tasks.find((entry) => entry.id === 'ciftyonu');
+    // beta-repo holds the lower number (1), yet targets puts acme first.
+    expect(cross?.workOrders.map((order) => order.repo)).toEqual([REPO, OTHER_REPO]);
+    expect(cross?.workOrders.map((order) => order.id)).toEqual([WO_CROSS_MAIN, WO_CROSS_OTHER]);
+  });
+
+  it('within a repo the work orders order by number ascending, the A-29 display numbers', async () => {
+    const h = await seedRoadmapScenario();
+    const view = (await createApi(h.deps).query({ type: 'roadmap.byProject', project: ROAD_PROJECT })) as RoadmapPageView;
+
+    const done = view.phases[0]?.tasks.find((entry) => entry.id === 'hepsi');
+    expect(done?.workOrders.map((order) => [order.number, order.status] as const)).toEqual([
+      [3, 'done'],
+      [4, 'done'],
+    ]);
+    expect(done?.workOrders[0]).toMatchObject({ repo: REPO, id: WO_DONE_FIRST, title: 'Bitti görev' });
   });
 });
