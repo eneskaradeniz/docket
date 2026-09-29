@@ -366,6 +366,7 @@ describe('cockpit', () => {
     ]);
     expect(view.attention[0]).toEqual({
       workOrderId: WO_ASK,
+      number: 7,
       project: 'proj',
       repo: 'acme',
       title: 'Waiting on a permission',
@@ -397,9 +398,67 @@ describe('cockpit', () => {
     expect(listed).not.toContain(WO_BROKEN);
 
     expect(view.running).toEqual([
-      { workOrderId: WO_ASK, stage: 'plan', accountId: ACCOUNT, startedAt: 4_000 },
-      { workOrderId: WO_RUNNING, stage: 'plan', accountId: ACCOUNT, startedAt: 4_500 },
-      { workOrderId: WO_ASK_ANSWERED, stage: 'plan', accountId: ACCOUNT, startedAt: 5_500 },
+      { workOrderId: WO_ASK, number: 7, stage: 'plan', accountId: ACCOUNT, startedAt: 4_000 },
+      { workOrderId: WO_RUNNING, number: 8, stage: 'plan', accountId: ACCOUNT, startedAt: 4_500 },
+      { workOrderId: WO_ASK_ANSWERED, number: 9, stage: 'plan', accountId: ACCOUNT, startedAt: 5_500 },
+    ]);
+  });
+
+  it('A-29: every view item that names a work order carries its display number', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    // The scenario's runs all route through ACCOUNT; the account record itself is only needed by
+    // the account.detail read.
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'acme-prov',
+      label: 'Main',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+    const api = createApi(h.deps);
+
+    const cockpit = (await api.query({ type: 'cockpit' })) as CockpitView;
+    expect(cockpit.attention.map((item) => [item.workOrderId, item.number])).toEqual([
+      [WO_ASK, 7],
+      [WO_AWAIT_EARLY, 4],
+      [WO_AWAIT_LATE, 6],
+      [WO_BLOCKED, 10],
+      [WO_LIMIT, 5],
+    ]);
+    expect(cockpit.running.map((item) => item.number)).toEqual([7, 8, 9]);
+    // The scenario's one done work order is number 3; recentlyClosed carries it.
+    expect(cockpit.recentlyClosed).toEqual([
+      {
+        workOrderId: WO_DONE,
+        number: 3,
+        title: 'All finished',
+        project: 'proj',
+        repo: 'acme',
+        closedAt: 500,
+      },
+    ]);
+
+    const board = (await api.query({ type: 'repo.board', repo: 'acme' })) as BoardView;
+    // The plan column holds every non-done acme order in createdAt order; the later stages and
+    // the done lane hold the rest.
+    expect(board.columns.map((column) => column.workOrders.map((card) => card.number))).toEqual([
+      [2, 4, 5, 6, 7, 8, 9, 10],
+      [],
+      [],
+    ]);
+    expect(board.done.map((card) => card.number)).toEqual([3]);
+
+    const detail = (await api.query({ type: 'workOrder.detail', id: WO_AWAIT_EARLY })) as { readonly number: number };
+    expect(detail.number).toBe(4);
+
+    const account = (await api.query({ type: 'account.detail', id: ACCOUNT })) as {
+      readonly activeWork: readonly { readonly workOrderId: string; readonly number: number }[];
+    };
+    expect(account.activeWork.map((item) => [item.workOrderId, item.number])).toEqual([
+      [WO_ASK, 7],
+      [WO_RUNNING, 8],
+      [WO_ASK_ANSWERED, 9],
     ]);
   });
 });
@@ -422,14 +481,14 @@ describe('repo.board', () => {
     const h = await seedBoardScenario(createHarness());
     const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
 
-    expect(view.columns[0]?.workOrders).toEqual([{ id: WO_B_PLAN, title: 'Board plan', status: 'awaiting_human' }]);
+    expect(view.columns[0]?.workOrders).toEqual([{ id: WO_B_PLAN, number: 1, title: 'Board plan', status: 'awaiting_human' }]);
     expect(view.columns[1]?.workOrders).toEqual([
-      { id: WO_B_IMPL, title: 'At implement', status: 'ready' },
-      { id: WO_B_RUN, title: 'Still running', status: 'running' },
-      { id: WO_B_SIDE, title: 'Side entry', status: 'ready' },
+      { id: WO_B_IMPL, number: 2, title: 'At implement', status: 'ready' },
+      { id: WO_B_RUN, number: 3, title: 'Still running', status: 'running' },
+      { id: WO_B_SIDE, number: 4, title: 'Side entry', status: 'ready' },
     ]);
-    expect(view.columns[2]?.workOrders).toEqual([{ id: WO_B_CLOSE, title: 'At close', status: 'awaiting_human' }]);
-    expect(view.done).toEqual([{ id: WO_B_DONE, title: 'Finished' }]);
+    expect(view.columns[2]?.workOrders).toEqual([{ id: WO_B_CLOSE, number: 6, title: 'At close', status: 'awaiting_human' }]);
+    expect(view.done).toEqual([{ id: WO_B_DONE, number: 7, title: 'Finished' }]);
 
     // A stage the default flow does not have cannot place its work order anywhere on this board.
     const shown = [
@@ -1061,6 +1120,7 @@ describe('cockpit (project layer)', () => {
     expect(view.recentlyClosed.map((entry) => entry.workOrderId).slice(0, 2)).toEqual([WO_P_DONE_NEW, WO_P_DONE_OLD]);
     expect(view.recentlyClosed[0]).toEqual({
       workOrderId: WO_P_DONE_NEW,
+      number: 5,
       title: 'Newer finish',
       project: 'alpha',
       repo: 'acme',

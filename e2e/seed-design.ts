@@ -17,9 +17,13 @@
 // Determinism: a fixed clock and a zero random source. The ULID generator stays monotonic when the
 // clock moves backwards, so ids follow creation order and repeat exactly run over run.
 //
-// Where the prototype disagrees with itself, the rev-7 screens win; the work-order codes (İE-nnnn)
-// are not stored anywhere — the app names a work order by its id — so the manifest's `codes` map
-// is the code → id key the journeys read.
+// Where the prototype disagrees with itself, the rev-7 screens win. A work order's code (İE-nnnn)
+// is not stored anywhere: A-29 derives the number from the (createdAt, id) order, so the orders
+// open in prototype code order, one minute apart, before any timeline replays — the numbers then
+// follow the code order densely (1..N). The prototype's codes are sparse (İE-0002…İE-0046 with 18
+// ranks absent), so a code's displayed number is its rank in code order, not its literal digits:
+// the manifest's `codes` map stays keyed by the prototype code and each entry carries its real
+// `number` under that rule.
 import { execFileSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -553,18 +557,19 @@ const liveEvents = (plan: OrderPlan, startedAt: EpochMs): readonly AgentEvent[] 
   return events;
 };
 
-const codes: Record<string, { id: WorkOrderId; project: string; repo: string; title: string; stage: string; state: PlanState }> = {};
+const codes: Record<string, { id: WorkOrderId; number: number; project: string; repo: string; title: string; stage: string; state: PlanState }> = {};
 const spendLedger = new Map<AccountKey, number>();
 
-for (const plan of ORDERS) {
+// Phase 1 — every order opens in prototype code order, one minute apart: the A-29 numbers then
+// follow the code order (the ids ascend with the clock, so createdAt alone fixes the rank). The
+// anchor predates every replayed timeline and postdates the project attachments.
+const ORDERS_BY_CODE = [...ORDERS].sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+const openedIds = new Map<string, WorkOrderId>();
+let createdClock: EpochMs = NOW - 21 * DAY;
+for (const plan of ORDERS_BY_CODE) {
+  setClock(createdClock);
   const project = projectOfRepo.get(plan.repo);
   assert(project !== undefined, `${plan.code}: repo ${plan.repo} belongs to no project`);
-  const entry = stageEntry(plan);
-  // Earlier stages complete an hour apart, the last of them handing over exactly at `entry`.
-  const decisionAt = (stage: number): EpochMs => entry - (plan.stage - 1 - stage) * HOUR;
-  const firstStart = plan.stage === 0 ? entry : decisionAt(0) - 11 * MINUTE;
-
-  setClock(firstStart - 5 * MINUTE);
   const opened = await openWorkOrder(deps, {
     project: project as ProjectSlug,
     repo: plan.repo as RepoSlug,
@@ -573,7 +578,20 @@ for (const plan of ORDERS) {
     actor: OPERATOR,
   });
   assert(opened.ok, `${plan.code} did not open: ${opened.ok ? '' : opened.error}`);
-  const id = opened.value;
+  openedIds.set(plan.code, opened.value);
+  createdClock += MINUTE;
+}
+
+// Phase 2 — each order's timeline replays at its own absolute times; the order the phases run in
+// changes nothing the screens derive (states, ages and closes all read the events, not createdAt).
+for (const plan of ORDERS_BY_CODE) {
+  const id = openedIds.get(plan.code);
+  assert(id !== undefined, `${plan.code} did not open`);
+  const project = projectOfRepo.get(plan.repo);
+  assert(project !== undefined, `${plan.code}: repo ${plan.repo} belongs to no project`);
+  const entry = stageEntry(plan);
+  // Earlier stages complete an hour apart, the last of them handing over exactly at `entry`.
+  const decisionAt = (stage: number): EpochMs => entry - (plan.stage - 1 - stage) * HOUR;
 
   for (let stage = 0; stage < plan.stage; stage += 1) {
     await finishedRun(id, plan, stage, decisionAt(stage) - 11 * MINUTE, decisionAt(stage) - MINUTE);
@@ -610,8 +628,11 @@ for (const plan of ORDERS) {
     });
     spendLedger.set(plan.account, (spendLedger.get(plan.account) ?? 0) + plan.usd);
   }
+  const number = await deps.workOrders.number(id);
+  assert(number !== undefined, `${plan.code} did not number`);
   codes[plan.code] = {
     id,
+    number,
     project,
     repo: plan.repo,
     title: plan.title,
@@ -657,6 +678,15 @@ for (const plan of ORDERS) {
   const state = deriveWorkOrderState(flow, await deps.workOrders.events(seeded.id));
   assert.equal(state.status, EXPECTED_STATUS[plan.state], `${plan.code} derived ${state.status}`);
   assert.equal(state.stage, plan.state === 'done' ? null : STAGES[plan.stage].id, `${plan.code} stage`);
+}
+
+// A-29: the prototype's code order is exactly the number order — every code numbers its rank
+// among the opened orders, and the manifest entry agrees with the port.
+for (const [index, plan] of ORDERS_BY_CODE.entries()) {
+  const seeded = codes[plan.code];
+  assert(seeded !== undefined, `${plan.code} is seeded`);
+  assert.equal(await deps.workOrders.number(seeded.id), index + 1, `${plan.code} must number ${index + 1}`);
+  assert.equal(seeded.number, index + 1, `${plan.code} manifest number`);
 }
 
 const api = createApi(deps);

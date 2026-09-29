@@ -10,6 +10,7 @@ import { createShellStore, shellBadge, type ShellChange, type ShellChangeSignal 
 
 const attentionItem = (id: string, kind: AttentionItem['kind'], since: number): AttentionItem => ({
   workOrderId: id,
+  number: 1,
   project: 'atolye',
   repo: 'atolye',
   title: `title-${id}`,

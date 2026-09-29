@@ -66,6 +66,39 @@ describe('createFakeWorkOrderRepo', () => {
     expect((await repo.list({})).map((r) => r.id)).toEqual([woId(U1), woId(U2), woId(U3)]);
   });
 
+  it('A-29: number is the 1-based rank by createdAt asc over every work order, id deciding ties', async () => {
+    const repo = createFakeWorkOrderRepo();
+    await repo.create(record(U3, 30));
+    // U2 is inserted before U1 but carries the larger id: the tie is settled by id, never by
+    // insertion order.
+    await repo.create(record(U2, 10));
+    await repo.create(record(U4, 40, OTHER));
+    await repo.create(record(U1, 10));
+
+    expect(await repo.number(woId(U1))).toBe(1);
+    expect(await repo.number(woId(U2))).toBe(2);
+    expect(await repo.number(woId(U3))).toBe(3);
+    // The rank spans every work order on the machine, not just one repo's.
+    expect(await repo.number(woId(U4))).toBe(4);
+  });
+
+  it('A-29: a later work order never renumbers an earlier one', async () => {
+    const repo = createFakeWorkOrderRepo();
+    await repo.create(record(U1, 10));
+    expect(await repo.number(woId(U1))).toBe(1);
+    await repo.create(record(U2, 20));
+    await repo.create(record(U3, 30));
+    expect(await repo.number(woId(U1))).toBe(1);
+    expect(await repo.number(woId(U3))).toBe(3);
+  });
+
+  it('A-29: an unknown id numbers undefined', async () => {
+    const repo = createFakeWorkOrderRepo();
+    await repo.create(record(U1, 10));
+
+    expect(await repo.number(woId(U2))).toBeUndefined();
+  });
+
   it('A-2: list and events return copies, never internal arrays', async () => {
     const repo = createFakeWorkOrderRepo();
     await repo.create(record(U1, 1));

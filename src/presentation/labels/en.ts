@@ -49,6 +49,7 @@ export const EN: LabelBundle = {
   'wo.status.limit_waiting': 'Waiting on limit',
   'wo.status.blocked': 'Blocked',
   'wo.status.done': 'Done',
+  'workOrder.codePrefix': 'WO-',
   'detail.section.stages': 'Stages and gates',
   'detail.section.runs': 'Runs',
   'detail.section.environments': 'Environments',

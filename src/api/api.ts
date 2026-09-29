@@ -458,7 +458,12 @@ const runQuery = async (
         { workOrders: deps.workOrders, runs: deps.runs, definitions: deps.definitions },
         id,
       );
-      return view.ok ? view.value : { ok: false, code: view.error };
+      if (!view.ok) return { ok: false, code: view.error };
+      // The detail names its work order, so it carries the A-29 number like every view item. The
+      // record the use case just read always numbers; undefined would mean it vanished between
+      // the two reads, which the never-deleted rule rules out.
+      const number = await deps.workOrders.number(id);
+      return number === undefined ? { ok: false, code: 'not_found' } : { ...view.value, number };
     }
 
     case 'cockpit': {
@@ -715,29 +720,48 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
   const allDerived = await deriveOrders(deps, await deps.workOrders.list({}), askSinceByWorkOrder);
   const scoped = projectFilter === undefined ? allDerived : allDerived.filter((entry) => entry.record.project === projectFilter);
 
-  const attention: AttentionItem[] = scoped
-    .filter((entry) => entry.kind !== undefined)
-    .map((entry) => ({
+  // Attention rows carry the A-29 number beside the id they name; a derived record always
+  // numbers, so the undefined branch only keeps the type honest.
+  const attention: AttentionItem[] = [];
+  for (const entry of scoped) {
+    if (entry.kind === undefined) continue;
+    const number = await deps.workOrders.number(entry.record.id);
+    if (number === undefined) continue;
+    attention.push({
       workOrderId: entry.record.id,
+      number,
       project: entry.record.project,
       repo: entry.record.repo,
       title: entry.record.title,
-      kind: entry.kind ?? 'blocked',
+      kind: entry.kind,
       stage: entry.stage,
       since: entry.since,
-    }));
+    });
+  }
   attention.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.since - b.since);
 
   const active = await deps.runs.listActive();
   const scopedIds = new Set(scoped.map((entry) => entry.record.id));
-  const running = active
-    .filter((run) => projectFilter === undefined || scopedIds.has(run.workOrderId))
-    .map((run) => ({
+  const running: {
+    readonly workOrderId: string;
+    readonly number: number;
+    readonly stage: string;
+    readonly accountId: string;
+    readonly startedAt: number;
+  }[] = [];
+  for (const run of active) {
+    if (projectFilter !== undefined && !scopedIds.has(run.workOrderId)) continue;
+    // A run always rides a stored work order; the guard only keeps the type honest.
+    const number = await deps.workOrders.number(run.workOrderId);
+    if (number === undefined) continue;
+    running.push({
       workOrderId: run.workOrderId,
+      number,
       stage: run.stage,
       accountId: run.route.accountId,
       startedAt: run.startedAt,
-    }));
+    });
+  }
 
   const projects = (await deps.projects.list()).map((def) => {
     const own = allDerived.filter((entry) => entry.record.project === def.id);
@@ -753,13 +777,16 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
 
   // recentlyClosed: the five most recent done work orders by when they finished — a `closed`
   // event or the closure gate that completed them, whichever the history ends with.
-  const closed: { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[] = [];
+  const closed: { readonly workOrderId: string; readonly number: number; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[] = [];
   for (const entry of scoped) {
     if (entry.status !== 'done') continue;
+    const number = await deps.workOrders.number(entry.record.id);
+    if (number === undefined) continue;
     const events = await deps.workOrders.events(entry.record.id);
     const last = events[events.length - 1];
     closed.push({
       workOrderId: entry.record.id,
+      number,
       title: entry.record.title,
       project: entry.record.project,
       repo: entry.record.repo,
@@ -887,6 +914,7 @@ const accountDetailView = async (
   const askSinceByWorkOrder = await openAskSince(deps);
   const collected: {
     readonly workOrderId: string;
+    readonly number: number;
     readonly title: string;
     readonly stage: string | null;
     readonly status: string;
@@ -900,8 +928,11 @@ const accountDetailView = async (
     onAccount.sort((a, b) => a.startedAt - b.startedAt);
     const first = onAccount[0];
     if (first === undefined) continue;
+    const number = await deps.workOrders.number(entry.record.id);
+    if (number === undefined) continue;
     collected.push({
       workOrderId: entry.record.id,
+      number,
       title: entry.record.title,
       stage: entry.stage,
       status: entry.status ?? '',
@@ -921,7 +952,7 @@ const accountDetailView = async (
     windows,
     activeWork: [...collected]
       .sort((a, b) => a.since - b.since)
-      .map(({ workOrderId, title, stage, status }) => ({ workOrderId, title, stage, status })),
+      .map(({ workOrderId, number, title, stage, status }) => ({ workOrderId, number, title, stage, status })),
   };
 };
 
@@ -996,22 +1027,25 @@ const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | Que
   const flow = loaded.value.flows.find((candidate) => candidate.id === def.defaultFlow);
   if (flow === undefined) return { ok: false, code: 'definitions_invalid' };
 
-  const placed = new Map<StageSlug, { readonly id: string; readonly title: string; readonly status: string }[]>();
-  const done: { readonly id: string; readonly title: string }[] = [];
+  const placed = new Map<StageSlug, { readonly id: string; readonly number: number; readonly title: string; readonly status: string }[]>();
+  const done: { readonly id: string; readonly number: number; readonly title: string }[] = [];
   for (const record of await deps.workOrders.list({ repo })) {
     // State derives from the work order's own flow; the columns come from the default flow.
     const ownFlow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
     if (ownFlow === undefined) continue;
     const state = deriveWorkOrderState(ownFlow, await deps.workOrders.events(record.id));
+    // Every listed record numbers (A-29); the guard only keeps the type honest.
+    const number = await deps.workOrders.number(record.id);
+    if (number === undefined) continue;
 
     if (state.status === 'done') {
-      done.push({ id: record.id, title: record.title });
+      done.push({ id: record.id, number, title: record.title });
       continue;
     }
     // A current stage the default flow does not have leaves the work order off this board: there
     // is no column to sit in and it is not finished.
     if (state.stage === null || !flow.stages.some((stage) => stage.id === state.stage)) continue;
-    const item = { id: record.id, title: record.title, status: state.status };
+    const item = { id: record.id, number, title: record.title, status: state.status };
     const column = placed.get(state.stage);
     if (column === undefined) placed.set(state.stage, [item]);
     else column.push(item);
