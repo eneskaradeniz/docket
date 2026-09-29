@@ -36,7 +36,13 @@ import {
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
-import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, titleBarOptionsFor } from './window-options';
+import {
+  WINDOW_DEFAULT_HEIGHT,
+  WINDOW_DEFAULT_WIDTH,
+  WINDOW_MIN_HEIGHT,
+  WINDOW_MIN_WIDTH,
+  titleBarOptionsFor,
+} from './window-options';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -271,8 +277,8 @@ const registerIpc = (api: Api): void => {
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: WINDOW_DEFAULT_WIDTH,
+    height: WINDOW_DEFAULT_HEIGHT,
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
     // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere

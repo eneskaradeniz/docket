@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, titleBarOptionsFor } from './window-options';
+import {
+  WINDOW_DEFAULT_HEIGHT,
+  WINDOW_DEFAULT_WIDTH,
+  WINDOW_MIN_HEIGHT,
+  WINDOW_MIN_WIDTH,
+  titleBarOptionsFor,
+} from './window-options';
+
+describe('window default size', () => {
+  it('opens at 1152x720 and never smaller than either minimum', () => {
+    expect(WINDOW_DEFAULT_WIDTH).toBe(1152);
+    expect(WINDOW_DEFAULT_HEIGHT).toBe(720);
+    expect(WINDOW_DEFAULT_WIDTH).toBeGreaterThanOrEqual(WINDOW_MIN_WIDTH);
+    expect(WINDOW_DEFAULT_HEIGHT).toBeGreaterThanOrEqual(WINDOW_MIN_HEIGHT);
+  });
+});
 
 describe('window minimum size', () => {
   it('is 1024x640 so the fixed 240px sidebar still leaves a 784px body column', () => {
