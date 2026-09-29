@@ -125,8 +125,8 @@ function openMemory(): DocketDb {
 
 function seedWorkOrder(db: DocketDb, id: string): void {
   db.raw
-    .prepare('INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)')
-    .run(id, 'acme', 1, '{}');
+    .prepare("INSERT INTO work_orders (id, project, repo, created_at, data) VALUES (?, ?, ?, ?, ?)")
+    .run(id, 'acme', 'acme', 1, '{}');
 }
 
 interface Suite {

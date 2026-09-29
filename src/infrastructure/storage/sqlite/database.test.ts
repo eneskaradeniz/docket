@@ -3,6 +3,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { ProjectDef, RepoSlug } from '../../../domain/index';
+import { createSqliteProjectRepo } from './project-repo';
+import { createSqliteRepoRegistry } from './repo-registry';
 import { openDatabase, type DocketDb } from './database';
 import { MIGRATIONS } from './schema';
 
@@ -32,6 +35,24 @@ const MIGRATION_1_SQL = [
   'CREATE TABLE workspaces (slug TEXT PRIMARY KEY, path TEXT NOT NULL);',
 ].join('\n');
 
+const MIGRATION_2_SQL = [
+  'ALTER TABLE workspaces RENAME TO repos;',
+  'ALTER TABLE work_orders RENAME COLUMN workspace TO repo;',
+  'ALTER TABLE work_orders ADD COLUMN project TEXT NOT NULL DEFAULT \'\';',
+  'ALTER TABLE spend RENAME COLUMN workspace TO repo;',
+  'ALTER TABLE spend ADD COLUMN project TEXT NOT NULL DEFAULT \'\';',
+  'CREATE TABLE projects (slug TEXT PRIMARY KEY, name TEXT NOT NULL, main_repo TEXT NOT NULL, data TEXT NOT NULL);',
+  'CREATE TABLE project_repos (project TEXT NOT NULL REFERENCES projects (slug), repo TEXT NOT NULL, PRIMARY KEY (project, repo));',
+  "INSERT INTO projects (slug, name, main_repo, data)\n  SELECT slug, slug, slug, json_object('id', slug, 'name', slug, 'mainRepo', slug, 'repos', json_array(slug)) FROM repos;",
+  'INSERT INTO project_repos (project, repo) SELECT slug, slug FROM repos;',
+  'UPDATE work_orders SET project = repo;',
+  "UPDATE work_orders SET data = json_set(json_remove(data, '$.workspace'), '$.project', repo, '$.repo', repo);",
+  'UPDATE spend SET project = repo;',
+  "UPDATE bindings SET level = 'repo' WHERE level = 'workspace';",
+  'CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);',
+  'CREATE INDEX project_repos_by_repo ON project_repos (repo);',
+].join('\n');
+
 const MIGRATION_1_TABLES = [
   'work_orders',
   'work_order_events',
@@ -49,8 +70,12 @@ const MIGRATION_1_TABLES = [
   'workspaces',
 ];
 
+// What the schema holds once every migration has run: migration 2 renames workspaces to repos
+// and adds the project tables.
+const MIGRATED_TABLES = [...MIGRATION_1_TABLES.filter((table) => table !== 'workspaces'), 'repos', 'projects', 'project_repos'];
+
 const MIGRATION_1_INDEXES = [
-  'work_orders_by_workspace',
+  'work_orders_by_workspace', // SQLite keeps index names across the migration-2 renames
   'runs_by_work_order',
   'runs_active',
   'audit_by_subject',
@@ -58,6 +83,8 @@ const MIGRATION_1_INDEXES = [
   'meters_by_pool',
   'spend_by_time',
 ];
+
+const MIGRATED_INDEXES = [...MIGRATION_1_INDEXES, 'work_orders_by_project', 'project_repos_by_repo'];
 
 let tmp: string;
 let openHandles: DocketDb[];
@@ -97,8 +124,8 @@ function workOrderCount(db: DocketDb): number {
 
 function insertWorkOrder(db: DocketDb, id: string): void {
   db.raw
-    .prepare('INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)')
-    .run(id, 'ws-a', 1, '{}');
+    .prepare('INSERT INTO work_orders (id, project, repo, created_at, data) VALUES (?, ?, ?, ?, ?)')
+    .run(id, 'ws-a', 'ws-a', 1, '{}');
 }
 
 describe('openDatabase', () => {
@@ -139,8 +166,8 @@ describe('openDatabase', () => {
       .all();
     const tables = objects.filter((o) => o.type === 'table').map((o) => String(o.name)).sort();
     const indexes = objects.filter((o) => o.type === 'index').map((o) => String(o.name)).sort();
-    expect(tables).toStrictEqual([...MIGRATION_1_TABLES].sort());
-    expect(indexes).toStrictEqual([...MIGRATION_1_INDEXES].sort());
+    expect(tables).toStrictEqual([...MIGRATED_TABLES].sort());
+    expect(indexes).toStrictEqual([...MIGRATED_INDEXES].sort());
   });
 
   it('I-3: opening again is a no-op — migration 1 does not re-run', () => {
@@ -182,6 +209,10 @@ describe('openDatabase', () => {
 describe('MIGRATIONS', () => {
   it('holds migration 1 exactly as contracted', () => {
     expect(MIGRATIONS[0]).toStrictEqual({ version: 1, sql: MIGRATION_1_SQL });
+  });
+
+  it('holds migration 2 exactly as contracted', () => {
+    expect(MIGRATIONS[1]).toStrictEqual({ version: 2, sql: MIGRATION_2_SQL });
   });
 
   it('has unique, increasing versions starting at 1', () => {
@@ -266,5 +297,149 @@ describe('transaction', () => {
       }),
     ).toThrow('boom');
     expect(workOrderCount(db)).toBe(1);
+  });
+});
+
+// --- Migration 2 (I-33): the project layer over a version-1 database --------------------------------
+
+const OLD_ACTOR = { kind: 'user', id: 'u1', label: 'opener' } as const;
+
+/** A database left at version 1: migration 1 applied by hand, user_version pinned, and rows in
+ *  the pre-project shapes — including a pre-rename work order (data carries $.workspace) and a
+ *  post-rename one (data carries $.repo, column still `workspace`). */
+const makeVersion1Database = (path: string): void => {
+  const setup = new DatabaseSync(path);
+  setup.exec(MIGRATIONS[0]?.sql ?? '');
+  setup.exec('PRAGMA user_version = 1');
+  setup
+    .prepare("INSERT INTO workspaces (slug, path) VALUES ('acme', '/x/acme'), ('zulu', '/x/zulu')")
+    .run();
+  setup
+    .prepare("INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)")
+    .run('01ARZ3NDEKTSV4RRFFQ69G5F101', 'acme', 5, JSON.stringify({
+      id: '01ARZ3NDEKTSV4RRFFQ69G5F101',
+      workspace: 'acme',
+      flow: 'standard',
+      title: 'Truly old',
+      createdAt: 5,
+      createdBy: OLD_ACTOR,
+    }));
+  setup
+    .prepare("INSERT INTO work_orders (id, workspace, created_at, data) VALUES (?, ?, ?, ?)")
+    .run('01ARZ3NDEKTSV4RRFFQ69G5F102', 'acme', 6, JSON.stringify({
+      id: '01ARZ3NDEKTSV4RRFFQ69G5F102',
+      repo: 'acme',
+      flow: 'standard',
+      title: 'Renamed era',
+      task: 'setup-auth',
+      createdAt: 6,
+      createdBy: OLD_ACTOR,
+    }));
+  setup
+    .prepare("INSERT INTO spend (account_id, workspace, work_order_id, at, usd) VALUES (?, ?, ?, ?, ?)")
+    .run('01ARZ3NDEKTSV4RRFFQ69G5FAA1', 'acme', '01ARZ3NDEKTSV4RRFFQ69G5F101', 10, 1.5);
+  setup
+    .prepare("INSERT INTO bindings (level, scope_key, role, data) VALUES (?, ?, ?, ?)")
+    .run('workspace', 'acme', 'worker', JSON.stringify({ role: 'worker', accounts: [] }));
+  setup
+    .prepare("INSERT INTO bindings (level, scope_key, role, data) VALUES (?, ?, ?, ?)")
+    .run('global', '', 'worker', JSON.stringify({ role: 'worker', accounts: [] }));
+  setup.close();
+};
+
+describe('Migration 2', () => {
+  it('I-33: a version-1 database migrates exactly once; every old workspace becomes a project≡repo and the records read back in the new shapes', async () => {
+    const path = join(tmp, 'old.db');
+    makeVersion1Database(path);
+
+    const migrated = openOk(path);
+    expect(pragmaValue(migrated, 'user_version')).toBe(2);
+
+    // The registry reads the renamed table.
+    const registry = createSqliteRepoRegistry(migrated);
+    expect(await registry.list()).toEqual([
+      { slug: 'acme' as RepoSlug, path: '/x/acme' },
+      { slug: 'zulu' as RepoSlug, path: '/x/zulu' },
+    ]);
+
+    // Every workspace became a project≡repo: name and main repo are the slug itself.
+    const projects = createSqliteProjectRepo(migrated);
+    const listed: readonly ProjectDef[] = await projects.list();
+    expect(listed).toEqual([
+      { id: 'acme' as never, name: 'acme', mainRepo: 'acme' as never, repos: ['acme' as never] },
+      { id: 'zulu' as never, name: 'zulu', mainRepo: 'zulu' as never, repos: ['zulu' as never] },
+    ]);
+    expect((await projects.projectOfRepo('acme' as never))?.id).toBe('acme');
+
+    // Work orders carry project and repo pointing at the owning workspace, and the rewritten
+    // data deep-equals the new record shape — the renamed-era row keeps its task, the truly old
+    // one loses $.workspace.
+    const rows = migrated.raw.prepare('SELECT data FROM work_orders ORDER BY created_at ASC').all() as unknown as readonly { readonly data: string }[];
+    expect(JSON.parse(rows[0]?.data ?? '{}')).toStrictEqual({
+      id: '01ARZ3NDEKTSV4RRFFQ69G5F101',
+      project: 'acme',
+      repo: 'acme',
+      flow: 'standard',
+      title: 'Truly old',
+      createdAt: 5,
+      createdBy: OLD_ACTOR,
+    });
+    expect(JSON.parse(rows[1]?.data ?? '{}')).toStrictEqual({
+      id: '01ARZ3NDEKTSV4RRFFQ69G5F102',
+      project: 'acme',
+      repo: 'acme',
+      flow: 'standard',
+      title: 'Renamed era',
+      task: 'setup-auth',
+      createdAt: 6,
+      createdBy: OLD_ACTOR,
+    });
+    const columns = migrated.raw
+      .prepare("SELECT project, repo FROM work_orders WHERE id = '01ARZ3NDEKTSV4RRFFQ69G5F101'")
+      .get() as { readonly project: string; readonly repo: string };
+    expect(columns).toEqual({ project: 'acme', repo: 'acme' });
+
+    // Spend history survived with its project and repo attributed.
+    const spend = migrated.raw
+      .prepare('SELECT project, repo, usd FROM spend')
+      .all() as unknown as readonly { readonly project: string; readonly repo: string; readonly usd: number }[];
+    expect(spend).toEqual([{ project: 'acme', repo: 'acme', usd: 1.5 }]);
+
+    // The binding level rewrite: only the workspace-level row moved to repo.
+    const levels = migrated.raw
+      .prepare('SELECT level, scope_key FROM bindings ORDER BY level')
+      .all() as unknown as readonly { readonly level: string; readonly scope_key: string }[];
+    expect(levels).toEqual([
+      { level: 'global', scope_key: '' },
+      { level: 'repo', scope_key: 'acme' },
+    ]);
+
+    closeDb(migrated);
+
+    // Opening again is a no-op: migration 2 does not re-run (the project rows stay unique).
+    const again = openOk(path);
+    expect(pragmaValue(again, 'user_version')).toBe(2);
+    expect(await createSqliteProjectRepo(again).list()).toHaveLength(2);
+    closeDb(again);
+  });
+
+  it('I-33: a database already at version 2 is a no-op, and too_new is unchanged', async () => {
+    const path = join(tmp, 'fresh.db');
+    const first = openOk(path);
+    expect(pragmaValue(first, 'user_version')).toBe(2);
+    closeDb(first);
+
+    const second = openOk(path);
+    expect(pragmaValue(second, 'user_version')).toBe(2);
+    closeDb(second);
+
+    const newer = join(tmp, 'newer.db');
+    const setup = new DatabaseSync(newer);
+    setup.exec(`PRAGMA user_version = ${SUPPORTED_VERSION + 1}`);
+    setup.close();
+    expect(openDatabase(newer)).toStrictEqual({
+      ok: false,
+      error: { code: 'too_new', found: SUPPORTED_VERSION + 1, supported: SUPPORTED_VERSION },
+    });
   });
 });

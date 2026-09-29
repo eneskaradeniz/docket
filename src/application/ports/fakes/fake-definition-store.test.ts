@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Definitions } from '../../../domain/index';
+import type { Definitions, ProjectSlug } from '../../../domain/index';
 import { parseSlug, type RepoSlug } from '../../../domain/index';
 
 import type { DefinitionScope } from '../definition-store';
@@ -13,8 +13,16 @@ const toSlug = (s: string): RepoSlug => {
   return parsed.value;
 };
 
+const toProjectSlug = (s: string): ProjectSlug => {
+  const parsed = parseSlug<'project'>(s);
+  if (!parsed.ok) throw new Error('fixture slug must parse');
+  return parsed.value;
+};
+
 const REPO_SLUG: RepoSlug = toSlug('acme');
+const PROJECT_SLUG: ProjectSlug = toProjectSlug('atolye');
 const GLOBAL: DefinitionScope = { kind: 'global' };
+const PROJECT: DefinitionScope = { kind: 'project', project: PROJECT_SLUG };
 const REPO: DefinitionScope = { kind: 'repo', repo: REPO_SLUG };
 
 const implementerFile = (name: string): string =>
@@ -57,17 +65,6 @@ const flowFile = (name: string): string =>
 
 const capabilityFile = JSON.stringify({
   capabilities: [{ kind: 'context', id: 'docs', name: 'Docs', path: 'docs' }],
-});
-
-const roadmapFile = JSON.stringify({
-  phases: [
-    {
-      id: 'p1',
-      name: 'Phase 1',
-      blockedBy: [],
-      tasks: [{ id: 't1', title: 'Task 1', dependsOn: [], acceptance: [] }],
-    },
-  ],
 });
 
 const invalidRoadmapFile = JSON.stringify({
@@ -237,37 +234,79 @@ describe('createFakeDefinitionStore', () => {
     if (!unknownCapability.ok) expect(unknownCapability.error.length).toBeGreaterThan(0);
   });
 
-  it('loadRoadmap is undefined when no roadmap file exists', async () => {
+  it('loadRoadmap is undefined for an unknown project and for a project without a roadmap', async () => {
     const store = createFakeDefinitionStore();
     store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Implementer'));
 
-    expect(await store.loadRoadmap(REPO_SLUG)).toBeUndefined();
+    expect(await store.loadRoadmap(PROJECT_SLUG)).toBeUndefined();
+    store.seed(PROJECT, 'roles/implementer.json', implementerFile('Implementer'));
+    expect(await store.loadRoadmap(PROJECT_SLUG)).toBeUndefined();
   });
 
-  it('loadRoadmap returns the repo roadmap, falling back to the global one', async () => {
+  it('loadRoadmap returns the project roadmap, validated against the project', async () => {
     const store = createFakeDefinitionStore();
-    store.seed(GLOBAL, FAKE_ROADMAP_TARGET, roadmapFile);
-    const globalOnly = await store.loadRoadmap(REPO_SLUG);
-    expect(globalOnly?.ok).toBe(true);
-
-    const otherTasks = JSON.stringify({
+    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', mainRepo: REPO_SLUG, repos: [REPO_SLUG] });
+    const targetsKnown = JSON.stringify({
       phases: [
-        { id: 'p1', name: 'Phase 1', blockedBy: [], tasks: [{ id: 't9', title: 'Task 9', dependsOn: [], acceptance: [] }] },
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          blockedBy: [],
+          tasks: [{ id: 't9', title: 'Task 9', dependsOn: [], acceptance: [], targets: ['acme'] }],
+        },
       ],
     });
-    store.seed(REPO, FAKE_ROADMAP_TARGET, otherTasks);
-    const repoWins = await store.loadRoadmap(REPO_SLUG);
-    expect(repoWins?.ok).toBe(true);
-    if (repoWins?.ok) expect(repoWins.value.phases[0]?.tasks[0]?.id).toBe('t9');
+    store.seed(PROJECT, FAKE_ROADMAP_TARGET, targetsKnown);
+    const loaded = await store.loadRoadmap(PROJECT_SLUG);
+    expect(loaded?.ok).toBe(true);
+    if (loaded?.ok) expect(loaded.value.phases[0]?.tasks[0]?.targets).toEqual([REPO_SLUG]);
   });
 
   it('loadRoadmap reports issues for an invalid roadmap', async () => {
     const store = createFakeDefinitionStore();
-    store.seed(REPO, FAKE_ROADMAP_TARGET, invalidRoadmapFile);
+    store.seed(PROJECT, FAKE_ROADMAP_TARGET, invalidRoadmapFile);
 
-    const loaded = await store.loadRoadmap(REPO_SLUG);
+    const loaded = await store.loadRoadmap(PROJECT_SLUG);
     expect(loaded?.ok).toBe(false);
     if (loaded && !loaded.ok) expect(loaded.error.length).toBeGreaterThan(0);
+  });
+
+  it('readProjectAt classifies the project.yaml at a checkout path', async () => {
+    const store = createFakeDefinitionStore();
+
+    const absent = await store.readProjectAt('/checkouts/atolye');
+    expect(absent.ok).toBe(false);
+    if (!absent.ok) {
+      expect(absent.error).toEqual([{ path: 'project.yaml', code: 'missing_field', message: 'project.yaml is required' }]);
+    }
+
+    store.seedProjectAt('/checkouts/atolye', JSON.stringify({ id: 'atolye', name: 'Atölye', mainRepo: 'acme', repos: ['acme'] }));
+    const loaded = await store.readProjectAt('/checkouts/atolye');
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) expect(loaded.value).toEqual({ id: PROJECT_SLUG, name: 'Atölye', mainRepo: REPO_SLUG, repos: [REPO_SLUG] });
+
+    store.seedProjectAt('/checkouts/broken', 'not-json{');
+    const broken = await store.readProjectAt('/checkouts/broken');
+    expect(broken.ok).toBe(false);
+    if (!broken.ok) expect(broken.error[0]?.code).toBe('wrong_type');
+  });
+
+  it('load merges the project defaults of the repo owning project between global and repo', async () => {
+    const store = createFakeDefinitionStore();
+    store.setProject({ id: PROJECT_SLUG, name: 'Atölye', mainRepo: REPO_SLUG, repos: [REPO_SLUG] });
+    store.seed(GLOBAL, 'roles/implementer.json', implementerFile('Global implementer'));
+    store.seed(PROJECT, 'roles/implementer.json', JSON.stringify({
+      roles: [{ id: 'reviewer', name: 'Project reviewer', instructions: 'review', writeScope: { kind: 'none' }, capabilities: [], active: false }],
+    }));
+    store.seed(REPO, 'roles/implementer.json', implementerFile('Repo implementer'));
+
+    const loaded = await store.load(REPO_SLUG);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      const implementer = loaded.value.roles.find((role) => role.id === 'implementer');
+      expect(implementer?.name).toBe('Repo implementer');
+      expect(loaded.value.roles.some((role) => role.id === 'reviewer')).toBe(true);
+    }
   });
 
   it('repoPath reports a deterministic path per repo and honours setRepoPath', async () => {

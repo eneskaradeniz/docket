@@ -134,6 +134,7 @@ const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id: WORK_ORDER,
+    project: slugOf<'project'>('proj'),
     repo: REPO_SLUG,
     flow: flowId,
     title: 'Fixture',

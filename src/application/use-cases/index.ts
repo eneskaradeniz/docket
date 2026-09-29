@@ -2,6 +2,7 @@
 export * from './work-orders';
 export * from './gates';
 export * from './routing';
+export * from './projects';
 export * from './proposals';
 export * from './accounts';
 export * from './deploy-gate';

@@ -107,7 +107,12 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
 /** Opens a work order through the api boundary and returns its parsed id. */
 const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', repo: REPO, title });
+  const result = await createApi(deps).command(USER, {
+    type: 'workOrder.open',
+    project: slugOf<'project'>('ws-proj'),
+    repo: REPO,
+    title,
+  });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -428,7 +433,9 @@ const makeHarness = (): Harness => {
   const commands = createFakeCommandRunner();
   const evidence = createFakeEvidenceChecker();
   const transports = createFakeTransportResolver();
+  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
   const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports });
+  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
   return { deps, clock, log, definitions, commands, evidence, transports };
 };
 

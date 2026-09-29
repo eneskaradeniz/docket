@@ -6,6 +6,7 @@ import type {
   LimitPolicy,
   Meter,
   Pool,
+  ProjectSlug,
   SpendCap,
   WorkOrderId,
   RepoSlug,
@@ -33,6 +34,7 @@ export interface AccountRepo {
   meters(accountId?: AccountId): Promise<readonly Meter[]>;
   recordSpend(entry: {
     readonly accountId: AccountId;
+    readonly project: ProjectSlug;
     readonly repo: RepoSlug;
     readonly workOrderId: WorkOrderId;
     readonly at: EpochMs;
@@ -40,6 +42,7 @@ export interface AccountRepo {
   }): Promise<void>;
   spend(filter: {
     readonly accountId?: AccountId;
+    readonly project?: ProjectSlug;
     readonly repo?: RepoSlug;
     readonly workOrderId?: WorkOrderId;
     readonly from: EpochMs;

@@ -189,6 +189,7 @@ const createWorkOrder = async (
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id,
+    project: slugOf<'project'>('proj'),
     repo,
     flow: flowId,
     title: `fixture ${id}`,
@@ -379,6 +380,7 @@ describe('enqueueStage', () => {
     const flowId = slugOf<'flow'>('manual');
     await h.deps.workOrders.create({
       id: WO1,
+      project: slugOf<'project'>('proj'),
       repo: REPO,
       flow: flowId,
       title: 'fixture',
@@ -613,6 +615,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(h, WO2);
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,
@@ -637,6 +640,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(h, WO1);
     await h.deps.accounts.save(account(A1, [{ scope: 'account_day', cap: { amountUsd: 10, warnPercent: 80 } }]));
     await h.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,
@@ -658,6 +662,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(atBoundary, WO1);
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,
@@ -672,6 +677,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(beforeBoundary, WO1);
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,
@@ -690,6 +696,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(atBoundary, WO1);
     await atBoundary.deps.accounts.save(capped);
     await atBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,
@@ -704,6 +711,7 @@ describe('dispatcherTick', () => {
     await createWorkOrder(beforeBoundary, WO1);
     await beforeBoundary.deps.accounts.save(capped);
     await beforeBoundary.deps.accounts.recordSpend({
+      project: slugOf<'project'>('proj'),
       accountId: A1,
       repo: REPO,
       workOrderId: WO1,

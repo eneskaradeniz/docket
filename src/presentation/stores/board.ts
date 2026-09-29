@@ -3,7 +3,7 @@
 // query instead of an empty board, and its create intent validates title and flow before issuing
 // `workOrder.open`. Re-queries on work-order changes; run events do not move cards.
 import type { Api } from '../../api/api';
-import type { BoardView, Query } from '../../api/queries';
+import type { BoardView, ProjectTree, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import { isQueryFailure } from './results';
 
@@ -109,8 +109,17 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
       const flow = intent.flow.trim();
       if (flow === '') return { ok: false, validation: 'flow_required' };
 
+      // A work order opens under a project: the tree says which one owns the repo. The project
+      // surfaces own the real chooser; the board only needs the answer to issue the command.
+      const tree: unknown = await api.query({ type: 'project.tree' } satisfies Query);
+      const owner = (Array.isArray(tree) ? (tree as ProjectTree) : []).find((item) =>
+        item.repos.some((node) => node.repo === intent.repo),
+      );
+      if (owner === undefined) return { ok: false, code: 'unknown_project' };
+
       const result = await api.command(actor, {
         type: 'workOrder.open',
+        project: owner.project,
         repo: intent.repo,
         title,
         flow,

@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { parseSlug, parseUlid, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
-import type { CommandResult } from '../workspace-tools';
+import type { CommandResult } from '../repo-tools';
 
 import {
   createFakeCommandRunner,
   createFakeEvidenceChecker,
   createFakeSecretScanner,
   createFakeWorktrees,
-} from './fake-workspace-tools';
+} from './fake-repo-tools';
 
 const U1 = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 

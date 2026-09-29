@@ -13,7 +13,9 @@ import type {
 } from '../../domain/index';
 import { deriveWorkOrderState, err, nextAction, parseSlug, parseUlid } from '../../domain/index';
 
+import type { ProjectDef, ProjectSlug } from '../../domain/index';
 import type { RunRecord } from '../ports';
+import type { FakeProjectRepo } from '../ports/fakes';
 import type {
   FakeClock,
   FakeDefinitionStore,
@@ -26,6 +28,7 @@ import {
   createFakeDefinitionStore,
   createFakeEventLog,
   createFakeIdGen,
+  createFakeProjectRepo,
   createFakeRunRepo,
   createFakeWorkOrderRepo,
 } from '../ports/fakes';
@@ -47,6 +50,8 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
 };
 
 const REPO: RepoSlug = slugOf<'repo'>('acme');
+const PROJECT: ProjectSlug = slugOf<'project'>('atolye');
+const PROJECT_DEF: ProjectDef = { id: PROJECT, name: 'Atölye', mainRepo: REPO, repos: [REPO] };
 const FLOW_A: FlowSlug = slugOf<'flow'>('flow-a');
 const FLOW_B: FlowSlug = slugOf<'flow'>('flow-b');
 const FLOW_FAIL: FlowSlug = slugOf<'flow'>('flow-fail');
@@ -174,6 +179,7 @@ interface Harness {
   readonly workOrders: FakeWorkOrderRepo;
   readonly runs: FakeRunRepo;
   readonly definitions: FakeDefinitionStore;
+  readonly projects: FakeProjectRepo;
   readonly openDeps: Parameters<typeof openWorkOrder>[0];
   readonly viewDeps: Parameters<typeof getWorkOrder>[0];
   readonly blockDeps: Parameters<typeof blockWorkOrder>[0];
@@ -187,8 +193,11 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
   const workOrders = createFakeWorkOrderRepo();
   const runs = createFakeRunRepo();
   const definitions = createFakeDefinitionStore();
+  const projects = createFakeProjectRepo();
+  definitions.setProject(PROJECT_DEF);
+  void projects.save(PROJECT_DEF);
   definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson());
-  if (withRoadmap) definitions.seed({ kind: 'repo', repo: REPO }, 'roadmap.json', ROADMAP_JSON);
+  if (withRoadmap) definitions.seed({ kind: 'project', project: PROJECT }, 'roadmap.json', ROADMAP_JSON);
   configure?.(definitions);
 
   return {
@@ -197,7 +206,8 @@ const createHarness = (configure?: (definitions: FakeDefinitionStore) => void, w
     workOrders,
     runs,
     definitions,
-    openDeps: { clock, ids, log, workOrders, definitions },
+    projects,
+    openDeps: { clock, ids, log, workOrders, definitions, projects },
     viewDeps: { workOrders, runs, definitions },
     blockDeps: { clock, ids, log, workOrders },
     unblockDeps: { clock, ids, log, workOrders, definitions },
@@ -209,6 +219,7 @@ const openedWorkOrder = async (
   overrides: { readonly flow?: FlowSlug; readonly task?: TaskSlug; readonly title?: string } = {},
 ): Promise<WorkOrderId> => {
   const result = await openWorkOrder(h.openDeps, {
+    project: PROJECT,
     repo: REPO,
     title: overrides.title ?? 'Fix the login flow',
     flow: overrides.flow,
@@ -249,10 +260,42 @@ describe('openWorkOrder', () => {
     const h = createHarness();
 
     for (const title of ['', '   ', ' \t ']) {
-      const result = await openWorkOrder(h.openDeps, { repo: REPO, title, actor: ACTOR });
+      const result = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title, actor: ACTOR });
       expect(result).toEqual(err('empty_title'));
     }
 
+    expect(await h.workOrders.list({})).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-5: an unknown project returns unknown_project and writes nothing', async () => {
+    const h = createHarness();
+    const missing = slugOf<'project'>('no-such-project');
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: missing,
+      repo: REPO,
+      title: 'Fix the login flow',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('unknown_project'));
+    expect(await h.workOrders.list({})).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-5: a repo the project does not list returns unknown_repo and writes nothing', async () => {
+    const h = createHarness();
+    const outsider = slugOf<'repo'>('not-in-project');
+
+    const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
+      repo: outsider,
+      title: 'Fix the login flow',
+      actor: ACTOR,
+    });
+
+    expect(result).toEqual(err('unknown_repo'));
     expect(await h.workOrders.list({})).toEqual([]);
     expect(h.log.entries()).toEqual([]);
   });
@@ -286,6 +329,7 @@ describe('openWorkOrder', () => {
   it('A-5: an unknown flow returns unknown_flow and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
       repo: REPO,
       title: 'Fix the login flow',
       flow: slugOf<'flow'>('no-such-flow'),
@@ -300,6 +344,7 @@ describe('openWorkOrder', () => {
   it('A-5: a flow that is not enabled in the repo returns flow_not_enabled and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
       repo: REPO,
       title: 'Fix the login flow',
       flow: FLOW_DISABLED,
@@ -315,7 +360,7 @@ describe('openWorkOrder', () => {
     const h = createHarness((definitions) => {
       definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', BROKEN_DEFS);
     });
-    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title: 'Fix the login flow', actor: ACTOR });
 
     expect(result).toEqual(err('definitions_invalid'));
     expect(await h.workOrders.list({})).toEqual([]);
@@ -326,7 +371,7 @@ describe('openWorkOrder', () => {
     const h = createHarness((definitions) => {
       definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', definitionsJson({ withRepo: false }));
     });
-    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title: 'Fix the login flow', actor: ACTOR });
 
     expect(result).toEqual(err('definitions_invalid'));
     expect(await h.workOrders.list({})).toEqual([]);
@@ -335,6 +380,7 @@ describe('openWorkOrder', () => {
   it('A-5: a task missing from the repo roadmap returns unknown_task and writes nothing', async () => {
     const h = createHarness();
     const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
       repo: REPO,
       title: 'Fix the login flow',
       task: slugOf<'task'>('no-such-task'),
@@ -349,6 +395,7 @@ describe('openWorkOrder', () => {
   it('A-5: a task given with no roadmap at all returns unknown_task', async () => {
     const h = createHarness(undefined, false);
     const result = await openWorkOrder(h.openDeps, {
+      project: PROJECT,
       repo: REPO,
       title: 'Fix the login flow',
       task: KNOWN_TASK,
@@ -369,7 +416,7 @@ describe('openWorkOrder', () => {
 
   it('A-5: success creates the record, appends one created event and audits work_order.opened', async () => {
     const h = createHarness();
-    const result = await openWorkOrder(h.openDeps, { repo: REPO, title: 'Fix the login flow', task: KNOWN_TASK, actor: ACTOR });
+    const result = await openWorkOrder(h.openDeps, { project: PROJECT, repo: REPO, title: 'Fix the login flow', task: KNOWN_TASK, actor: ACTOR });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -378,6 +425,7 @@ describe('openWorkOrder', () => {
     const record = await h.workOrders.get(result.value);
     expect(record).toEqual({
       id: result.value,
+      project: PROJECT,
       repo: REPO,
       flow: FLOW_A,
       title: 'Fix the login flow',

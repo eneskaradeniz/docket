@@ -8,7 +8,7 @@ export type RouteError = 'unknown_role' | 'no_binding' | 'no_account';
 
 /** Resolves the role definition (with overrides) and the account chain for a stage run. */
 export async function resolveRoute(
-  deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts'>,
+  deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts' | 'projects'>,
   input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly role: RoleSlug },
 ): Promise<Result<{ readonly role: RoleDef; readonly chain: readonly AccountRoute[] }, RouteError>> {
   // Without loadable definitions the role cannot be shown to exist, which is `unknown_role` by A-10.
@@ -20,12 +20,19 @@ export async function resolveRoute(
   const role = applyRoleOverrides(base, loaded.value.repo?.roleOverrides ?? []);
   if (!role.active) return err('unknown_role');
 
+  // The project layer sits between repo and global: a repo with no owning project simply has
+  // no layer there, exactly like a repo without a binding of its own.
+  const owning = await deps.projects.projectOfRepo(input.repo);
+
   const workOrder = await deps.bindings.get({ level: 'workOrder', workOrderId: input.workOrderId }, input.role);
   const repo = await deps.bindings.get({ level: 'repo', repo: input.repo }, input.role);
+  const project =
+    owning === undefined ? undefined : await deps.bindings.get({ level: 'project', project: owning.id }, input.role);
   const global = await deps.bindings.get({ level: 'global' }, input.role);
   const resolved = resolveBinding([
     { level: 'workOrder', value: workOrder },
     { level: 'repo', value: repo },
+    { level: 'project', value: project },
     { level: 'global', value: global },
   ]);
   if (resolved === undefined) return err('no_binding');

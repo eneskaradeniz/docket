@@ -1,12 +1,12 @@
-// Definition store over YAML files: global root merged with per-repo overrides.
+// Definition store over YAML files: global root merged with per-project and per-repo overrides.
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 
 import type { DefinitionScope, DefinitionStore } from '../../../application/index';
-import type { DefinitionIssue, Definitions, Result, RoadmapIssue } from '../../../domain/index';
+import type { DefinitionIssue, Definitions, ProjectDef, Result, RoadmapIssue } from '../../../domain/index';
 import { err, ok, validateDefinitions, validateRoadmap } from '../../../domain/index';
-import type { RepoPaths } from '../../system/index';
+import type { ProjectPaths, RepoPaths } from '../../system/index';
 
 import type { DefinitionKind } from './targets';
 import { hashContent, parseTarget } from './targets';
@@ -14,16 +14,18 @@ import { hashContent, parseTarget } from './targets';
 export interface YamlStoreConfig {
   readonly globalRoot: string;
   readonly repos: RepoPaths;
+  readonly projects: ProjectPaths;
 }
 
 const YAML_OPTIONS = { schema: 'core', uniqueKeys: true, maxAliasCount: 100 } as const;
 const KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities'];
-const WORKSPACE_DIR = '.docket';
+const DOCKET_DIR = '.docket';
 const EXTENSION = '.yaml';
-const WORKSPACE_FILE = 'workspace.yaml';
+const PROJECT_FILE = 'project.yaml';
 const ROADMAP_FILE = 'roadmap.yaml';
+const REPO_FILE = 'repo.yaml';
 
-type ScopeLabel = 'global' | 'repo';
+type ScopeLabel = 'global' | 'project' | 'repo';
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -144,33 +146,40 @@ const loadKind = async (
   return { entries, problems };
 };
 
-/** Global entries first; a repo entry with the same id takes the global's position; the rest follow. */
-const mergeKind = (globals: readonly KindEntry[], repoEntries: readonly KindEntry[]): readonly UnknownRecord[] => {
-  const merged = [...globals];
-  const indexById = new Map(merged.map((entry, index) => [entry.id, index] as const));
-  for (const entry of repoEntries) {
-    const index = indexById.get(entry.id);
-    if (index === undefined) {
-      indexById.set(entry.id, merged.length);
-      merged.push(entry);
-    } else {
-      merged[index] = entry;
+/** Root-order merge (S3): earlier roots first; a later entry with the same id replaces it in its
+ * position; entries no earlier root knows follow in their own file-name order. */
+const mergeKind = (layers: readonly (readonly KindEntry[])[]): readonly UnknownRecord[] => {
+  const merged: KindEntry[] = [];
+  const indexById = new Map<string, number>();
+  for (const layer of layers) {
+    for (const entry of layer) {
+      const index = indexById.get(entry.id);
+      if (index === undefined) {
+        indexById.set(entry.id, merged.length);
+        merged.push(entry);
+      } else {
+        merged[index] = entry;
+      }
     }
   }
   return merged.map((entry) => entry.mapping);
 };
 
 interface PipelineInput {
-  /** Repo scope under which the repo folder is listed; a global-scope run passes `{ kind: 'global' }`. */
+  /** The scope the repo folder is listed under; a global-scope run passes `{ kind: 'global' }`. */
   readonly scope: DefinitionScope;
   readonly repoRoot: string | undefined;
+  readonly projectRoot: string | undefined;
   /** True when a repo is required: `load` and repo-scope candidates; a global run has none. */
   readonly expectRepo: boolean;
   readonly candidate: CandidateFile | undefined;
 }
 
 /** A roadmap candidate folds into DefinitionIssues: the roadmap code travels in the message. */
-const validateRoadmapCandidate = (content: string): Result<void, readonly DefinitionIssue[]> => {
+const validateRoadmapCandidate = (
+  content: string,
+  projectDef: ProjectDef | undefined,
+): Result<void, readonly DefinitionIssue[]> => {
   let document: unknown;
   try {
     document = parseYaml(content, YAML_OPTIONS);
@@ -178,7 +187,7 @@ const validateRoadmapCandidate = (content: string): Result<void, readonly Defini
     // Anything that is not a document is not a roadmap object; validateRoadmap says so itself.
     document = undefined;
   }
-  const result = validateRoadmap(document);
+  const result = validateRoadmap(document, projectDef);
   if (result.ok) return ok(undefined);
   return err(
     result.error.map((issue: RoadmapIssue): DefinitionIssue => ({
@@ -187,6 +196,36 @@ const validateRoadmapCandidate = (content: string): Result<void, readonly Defini
       message: `${issue.code}: ${issue.message}`,
     })),
   );
+};
+
+/** Reads and parses one scope-fixed file (project.yaml / repo.yaml); missing → undefined. */
+const readFixedFile = async (
+  root: string | undefined,
+  label: ScopeLabel,
+  file: string,
+): Promise<Result<{ readonly mapping: UnknownRecord } | undefined, DefinitionIssue>> => {
+  if (root === undefined) return ok(undefined);
+  let text: string;
+  try {
+    text = await readFile(join(root, file), 'utf8');
+  } catch (error) {
+    if (isMissing(error)) return ok(undefined);
+    throw error;
+  }
+  const parsed = parseDocument(label, file, text);
+  return parsed.ok ? ok({ mapping: parsed.mapping }) : err(parsed.problem);
+};
+
+/** Validates a parsed project.yaml mapping with the project rules alone: roles/flows are not
+ * required in a project.yaml, so the validator sees explicit empty lists. */
+const validateProjectMapping = (
+  mapping: UnknownRecord,
+): Result<ProjectDef, readonly DefinitionIssue[]> => {
+  const validated = validateDefinitions({ roles: [], flows: [], capabilities: [], project: mapping });
+  if (!validated.ok) return err(validated.error);
+  return validated.value.project === undefined
+    ? err([{ path: PROJECT_FILE, code: 'missing_field', message: 'project is required' }])
+    : ok(validated.value.project);
 };
 
 export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionStore {
@@ -205,7 +244,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     }
 
     const problems: DefinitionIssue[] = [];
-    const merged: Record<DefinitionKind, UnknownRecord[]> = { roles: [], flows: [], capabilities: [] };
+    const merged: Record<DefinitionKind, readonly UnknownRecord[]> = { roles: [], flows: [], capabilities: [] };
 
     for (const kind of KINDS) {
       const globalLoad = await loadKind(
@@ -216,6 +255,18 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         input.candidate?.label === 'global' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
       );
       problems.push(...globalLoad.problems);
+
+      let projectLoad: KindLoad | undefined;
+      if (input.projectRoot !== undefined) {
+        projectLoad = await loadKind(
+          input.projectRoot,
+          'project',
+          input.scope,
+          kind,
+          input.candidate?.label === 'project' && input.candidate.target.startsWith(`${kind}/`) ? input.candidate : undefined,
+        );
+        problems.push(...projectLoad.problems);
+      }
 
       let repoLoad: KindLoad | undefined;
       if (input.repoRoot !== undefined) {
@@ -229,30 +280,40 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
         problems.push(...repoLoad.problems);
       }
 
-      merged[kind] = [...mergeKind(globalLoad.entries, repoLoad?.entries ?? [])];
+      merged[kind] = mergeKind([globalLoad.entries, projectLoad?.entries ?? [], repoLoad?.entries ?? []]);
+    }
+
+    // The project's own project.yaml is a file like any other when the project root is known:
+    // unparsable content is a file problem, a missing file simply carries no project defaults.
+    let projectMapping: UnknownRecord | undefined;
+    if (input.projectRoot !== undefined) {
+      if (input.candidate?.label === 'project' && input.candidate.target === PROJECT_FILE) {
+        const parsed = parseDocument('project', PROJECT_FILE, input.candidate.text);
+        if (parsed.ok) projectMapping = parsed.mapping;
+        else problems.push(parsed.problem);
+      } else {
+        const read = await readFixedFile(input.projectRoot, 'project', PROJECT_FILE);
+        if (!read.ok) problems.push(read.error);
+        else projectMapping = read.value?.mapping;
+      }
     }
 
     let repoMapping: UnknownRecord | undefined;
     if (input.repoRoot !== undefined) {
-      if (input.candidate?.label === 'repo' && input.candidate.target === WORKSPACE_FILE) {
-        const parsed = parseDocument('repo', WORKSPACE_FILE, input.candidate.text);
+      if (input.candidate?.label === 'repo' && input.candidate.target === REPO_FILE) {
+        const parsed = parseDocument('repo', REPO_FILE, input.candidate.text);
         if (parsed.ok) repoMapping = parsed.mapping;
         else problems.push(parsed.problem);
       } else {
-        try {
-          const text = await readFile(join(input.repoRoot, WORKSPACE_FILE), 'utf8');
-          const parsed = parseDocument('repo', WORKSPACE_FILE, text);
-          if (parsed.ok) repoMapping = parsed.mapping;
-          else problems.push(parsed.problem);
-        } catch (error) {
-          if (!isMissing(error)) throw error;
-        }
+        const read = await readFixedFile(input.repoRoot, 'repo', REPO_FILE);
+        if (!read.ok) problems.push(read.error);
+        else repoMapping = read.value?.mapping;
       }
     }
 
     if (problems.length > 0) return err(problems);
     if (input.expectRepo && repoMapping === undefined) {
-      return err([{ path: 'repo', code: 'missing_field', message: `${WORKSPACE_FILE} is required` }]);
+      return err([{ path: 'repo', code: 'missing_field', message: `${REPO_FILE} is required` }]);
     }
 
     const definitionsInput: Record<string, unknown> = {
@@ -260,6 +321,7 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       flows: merged.flows,
       capabilities: merged.capabilities,
     };
+    if (projectMapping !== undefined) definitionsInput['project'] = projectMapping;
     if (repoMapping !== undefined) definitionsInput['repo'] = repoMapping;
     return validateDefinitions(definitionsInput);
   };
@@ -297,30 +359,71 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
     return ok({ hash: hashContent(content) });
   };
 
-  const resolveRepoRoot = async (scope: DefinitionScope): Promise<string | undefined> => {
-    if (scope.kind === 'global') return config.globalRoot;
+  /** Reads and validates the project.yaml under a project root; the reader behind both
+   * `readProjectAt` and the roadmap's project context. Loader-level failures carry the bare
+   * file name as their path — the attach flow tells them apart by exactly that. */
+  const projectAtRoot = async (root: string): Promise<Result<ProjectDef, readonly DefinitionIssue[]>> => {
+    let text: string;
+    try {
+      text = await readFile(join(root, PROJECT_FILE), 'utf8');
+    } catch (error) {
+      if (isMissing(error)) {
+        return err([{ path: PROJECT_FILE, code: 'missing_field', message: `${PROJECT_FILE} is required` }]);
+      }
+      throw error;
+    }
+    let document: unknown;
+    try {
+      document = parseYaml(text, YAML_OPTIONS);
+    } catch (error) {
+      return err([{ path: PROJECT_FILE, code: 'wrong_type', message: `yaml: ${firstLine(error)}` }]);
+    }
+    if (!isRecord(document)) {
+      return err([{ path: PROJECT_FILE, code: 'wrong_type', message: 'yaml: document must be a mapping' }]);
+    }
+    return validateProjectMapping(document);
+  };
+
+  /** The scope's own folder, and — for a repo scope — its project's folder too. */
+  const scopeRoots = async (
+    scope: DefinitionScope,
+  ): Promise<{ readonly own: string | undefined; readonly project: string | undefined }> => {
+    if (scope.kind === 'global') return { own: config.globalRoot, project: undefined };
+    if (scope.kind === 'project') {
+      const path = await config.projects.mainRepoPath(scope.project);
+      return { own: path === undefined ? undefined : join(path, DOCKET_DIR), project: undefined };
+    }
+    const owning = await config.projects.projectOf(scope.repo);
+    const projectPath = owning === undefined ? undefined : await config.projects.mainRepoPath(owning);
     const path = await config.repos.path(scope.repo);
-    return path === undefined ? undefined : join(path, WORKSPACE_DIR);
+    return {
+      own: path === undefined ? undefined : join(path, DOCKET_DIR),
+      project: projectPath === undefined ? undefined : join(projectPath, DOCKET_DIR),
+    };
   };
 
   return {
     load: async (repo) => {
-      const path = await config.repos.path(repo);
+      const roots = await scopeRoots({ kind: 'repo', repo });
       return runDefinitionsPipeline({
         scope: { kind: 'repo', repo },
-        repoRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
+        repoRoot: roots.own,
+        projectRoot: roots.project,
         expectRepo: true,
         candidate: undefined,
       });
     },
 
-    loadRoadmap: async (repo) => {
-      const path = await config.repos.path(repo);
-      if (path === undefined) return undefined;
+    readProjectAt: async (path) => projectAtRoot(join(path, DOCKET_DIR)),
+
+    loadRoadmap: async (project) => {
+      const mainPath = await config.projects.mainRepoPath(project);
+      if (mainPath === undefined) return undefined;
+      const root = join(mainPath, DOCKET_DIR);
 
       let text: string;
       try {
-        text = await readFile(join(path, WORKSPACE_DIR, ROADMAP_FILE), 'utf8');
+        text = await readFile(join(root, ROADMAP_FILE), 'utf8');
       } catch (error) {
         if (isMissing(error)) return undefined;
         throw error;
@@ -335,12 +438,15 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       if (!isRecord(document)) {
         return err([{ path: ROADMAP_FILE, code: 'wrong_type', message: 'yaml: document must be a mapping' }]);
       }
-      return validateRoadmap(document);
+      // The roadmap's task targets are checked against the project that owns it; a project.yaml
+      // that no longer parses there still yields a roadmap, just without membership checks.
+      const projectDef = await projectAtRoot(root);
+      return validateRoadmap(document, projectDef.ok ? projectDef.value : undefined);
     },
 
     readFile: async (scope, target) => {
       if (parseTarget(scope, target) === undefined) return undefined;
-      const root = await resolveRepoRoot(scope);
+      const root = (await scopeRoots(scope)).own;
       if (root === undefined) return undefined;
       try {
         const content = await readFile(join(root, target), 'utf8');
@@ -355,9 +461,15 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       if (parseTarget(scope, target) === undefined) {
         throw new Error(`not a definition file: ${target}`);
       }
-      const root = await resolveRepoRoot(scope);
+      const root = (await scopeRoots(scope)).own;
       if (root === undefined) {
-        throw new Error(scope.kind === 'global' ? 'no global root' : `unknown repo: ${scope.repo}`);
+        throw new Error(
+          scope.kind === 'global'
+            ? 'no global root'
+            : scope.kind === 'project'
+              ? `unknown project: ${scope.project}`
+              : `unknown repo: ${scope.repo}`,
+        );
       }
       const file = join(root, target);
       return enqueue(file, () => writeAtomic(file, content, expectedHash));
@@ -369,14 +481,22 @@ export function createYamlDefinitionStore(config: YamlStoreConfig): DefinitionSt
       if (parseTarget(scope, target) === undefined) {
         return err([{ path: target, code: 'wrong_type', message: 'not a definition file' }]);
       }
-      if (target === ROADMAP_FILE) return validateRoadmapCandidate(content);
+      if (target === ROADMAP_FILE) {
+        const root = (await scopeRoots(scope)).own;
+        if (scope.kind !== 'project' || root === undefined) return validateRoadmapCandidate(content, undefined);
+        const read = await projectAtRoot(root);
+        return validateRoadmapCandidate(content, read.ok ? read.value : undefined);
+      }
 
-      const path = scope.kind === 'global' ? undefined : await config.repos.path(scope.repo);
+      const roots = await scopeRoots(scope);
       const result = await runDefinitionsPipeline({
         scope,
-        repoRoot: path === undefined ? undefined : join(path, WORKSPACE_DIR),
+        // A repo scope validates the repo's own merged definitions; the project root rides along
+        // only then. Project and global scopes validate without a repo.
+        repoRoot: scope.kind === 'repo' ? roots.own : undefined,
+        projectRoot: scope.kind === 'repo' ? roots.project : roots.own,
         expectRepo: scope.kind === 'repo',
-        candidate: { label: scope.kind === 'global' ? 'global' : 'repo', target, text: content },
+        candidate: { label: scope.kind === 'global' ? 'global' : scope.kind, target, text: content },
       });
       return result.ok ? ok(undefined) : err(result.error);
     },
