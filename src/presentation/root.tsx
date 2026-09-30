@@ -20,6 +20,7 @@ import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
 import { createShellStore } from './stores/shell';
+import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
@@ -90,11 +91,14 @@ if (mount !== null) {
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
   const accountsFrame = createAccountsFrameStore({ api, changes });
+  // The provider marks every account badge reads: one query, kept for the session (A-41).
+  const marks = createProviderMarksStore({ api });
   // The account view (U-20) shares the shell's coarse events and the machine's clock.
   const accountView = createAccountViewStore({ api, changes, now: () => Date.now() });
   const roadmap = createRoadmapStore({ api, changes });
   void tree.load();
   void accountsFrame.load();
+  void marks.load();
   // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
   void wizard.open();
 
@@ -112,6 +116,7 @@ if (mount !== null) {
           detail={detail}
           accountView={accountView}
           settings={settings}
+          marks={marks}
           update={update}
           wizard={wizard}
           timeZone={timeZone}

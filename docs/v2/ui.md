@@ -187,7 +187,9 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   title and the status. The pencil beside the repo name opens the Settings window, where the project
   and its flow are edited; the board itself never edits definitions (K-5).
 - **U-19** (in-place detail) The detail opens in place of the board — no overlay; ‹ Geri returns to
-  the board with its view state (Kanban/Liste, scroll) intact. The flow strip marks pending gates
+  the board with its view state (Kanban/Liste, scroll) intact — ‹ Geri is the navigation history's
+  back: its label names the previous entry's kind and the row is hidden when no previous entry
+  stands behind it (U-25). The flow strip marks pending gates
   amber and dashed; the "bu aşamada senden beklenen" section and its actions map U-4's intents;
   the live pane follows U-5 and opens only from the card/detail (K-8:A).
 - **U-20** (account view) Fed by `account.detail`. Window blocks: one large labelled bar per window
@@ -201,7 +203,10 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   Proje kartları (K-4:B — each card is a shortcut to the project's default view: multi-repo →
   roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
-  cockpit — that intent lives on the board header (IA-3).
+  cockpit — that intent lives on the board header (IA-3). An account is identified by its provider's
+  mark, everywhere a badge names one (cockpit rows, sidebar cards, account view header, Settings
+  accounts list): the logo from `providers.marks`, monochrome in the row's text colour; an unknown
+  provider shows a neutral rounded-square outline, never a letter.
 - **U-22** (work-order code) A work order is shown by its code: the locale's prefix (TR `İE-`, EN `WO-`, label key `workOrder.codePrefix`) plus its A-29 number left-padded with zeros to four digits (`İE-0014`); a number above 9999 is shown in full, never truncated. The code is set in the mono face. One pure helper formats it; no screen builds a code itself.
 - **U-23** (corner radius) Corner radius comes from three tokens and nothing else: `rounded-control` (6px — buttons, inputs, tabs and segments, icon buttons, hover rows, chips), `rounded-card` (8px — bordered boxes: cards, alerts, notices, sections, bordered list rows, the sidebar frames) and `rounded-panel` (12px — surfaces that float or hold cards: modals, the search palette, the settings panel, Kanban lanes). `rounded-full` stays for lamps and round badges. No other `rounded-*` utility and no hand-typed radius in `src/presentation`; a test scans the sources.
 - **U-24** (app update / nav doors) One update store feeds both update surfaces off the
@@ -221,6 +226,20 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   gear did; the sidebar foot carries the accounts frame and nothing else. A download mutates the
   checker while the apply command is in flight and `update.changed` fires only at its end, so
   the store polls the query through the flight — the percent standings must be visible.
+- **U-25** (navigation history) The shell keeps a navigation history — a pure reducer
+  `stores/nav-history.ts` over `{ entries, index }`. Entries are the cockpit, a repo's board, a
+  project's roadmap, a work-order detail and an account view; the settings panel and the search
+  palette are overlays and never entries, and a navigation to the route already current adds
+  nothing. A push truncates the forward part and stamps the left screen's main-column scroll
+  into its entry; the history holds at most 50 entries (the oldest drops). Back and forward move
+  the index and restore the target's scroll in memory — the board's Kanban/Liste choice and the
+  roadmap/cockpit folds keep their own state and are not stored. Entries whose subject no longer
+  exists (a removed repo or project, a vanished work order) are skipped silently in the travel
+  direction; a walk that finds nothing valid lands on the cockpit. The title bar carries two
+  icon-only chevron buttons 12px after the wordmark (28×28, ghost, no-drag), dimmed and inert
+  with `aria-disabled` at the ends, labelled "Geri ⌘[" / "İleri ⌘]" from the bundles; ⌘[ and ⌘]
+  do the same and are ignored while focus is in an input/textarea/contenteditable or while the
+  palette or the settings panel is open. The detail's ‹ Geri row calls the same back.
 
 ### Prototype vs rules (2026-09-29)
 
@@ -240,9 +259,9 @@ belongs to the mobile app.
 
 | Layer | File | Runs | Blocks merge |
 | --- | --- | --- | --- |
-| Store rules U-15 … U-21, U-23, U-24 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
+| Store rules U-15 … U-21, U-23 … U-25 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
 | Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
-| Layout audit L-1 … L-12 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
+| Layout audit L-1 … L-13 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
 | Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |
 | Operator scenario | PR body | operator | yes (`main` gate) |
 
@@ -265,7 +284,9 @@ belongs to the mobile app.
   roadmap → expand a cross-repo task → its work order opens the detail · J-5 single-repo project →
   board → "Yol haritası ↗" · J-6 account card → account view → "Ayarlar'da düzenle ↗" opens
   Settings, and the nav's Telefon and Ayarlar rows open it on their own sections · J-7 ⌘K (or the
-  sidebar's Ara row) opens the search palette and focuses its input. Each step asserts visible text and saves a screenshot.
+  sidebar's Ara row) opens the search palette and focuses its input · J-8 cockpit → open a project →
+  back → forward (the bar's chevrons, ⌘[/⌘], dimmed at the ends; the palette owns its keys), and the
+  detail's ‹ Geri rides the same history. Each step asserts visible text and saves a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
@@ -289,7 +310,7 @@ belongs to the mobile app.
     left edge sits within 1px of it at every size, never centred inside the column.
   - **L-11** Every Kanban card spans its column header's width — its left and right edges sit
     within 1px of the header row's at every size and theme.
-  - **L-12** No audited screen shows a problem state: no visible text equals an `error.*` label
+  - **L-13** No audited screen shows a problem state: no visible text equals an `error.*` label
     (keyed off the app's own label bundles, both locales) — a failing row names the screen and the
     text. A screen whose cause sits in a file under interactive redesign may carry a named,
     temporary known-standing in `e2e/layout-rules.mjs`, removed when that redesign lands.

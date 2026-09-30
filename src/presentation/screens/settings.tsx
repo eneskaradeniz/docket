@@ -19,6 +19,7 @@ import { countedLabel } from '../components/counted-label';
 import { LocaleSwitcher } from '../components/locale-switcher';
 import { motionVars, MOTION } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
+import { ProviderMark, type ProviderMarkProps } from '../components/provider-mark';
 import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
@@ -33,6 +34,7 @@ import type {
   SettingsStore,
 } from '../stores/settings';
 import { failureKey } from '../stores/results';
+import type { ProviderMarksStore } from '../stores/provider-marks';
 import { updateButton, type UpdateStore, type UpdateStatus } from '../stores/update';
 import type { SettingsBindingScope } from '../../api/queries';
 
@@ -47,6 +49,8 @@ export interface SettingsPanelProps {
   readonly onSection: (section: SettingsSection) => void;
   readonly onClose: () => void;
   readonly store: SettingsStore;
+  /** The provider marks the accounts list's badges resolve from (loaded once, session-cached). */
+  readonly marks: ProviderMarksStore;
   /** The app-update standing the Güncelleme section reads (U-24). */
   readonly update: UpdateStore;
   readonly locale: Locale;
@@ -147,11 +151,13 @@ function MeterRow({ meter, locale, store }: { readonly meter: MeterDisplay; read
 
 function AccountRow({
   account,
+  mark,
   locale,
   store,
   onRemove,
 }: {
   readonly account: AccountDisplay;
+  readonly mark: ProviderMarkProps['mark'];
   readonly locale: Locale;
   readonly store: SettingsStore;
   readonly onRemove: (accountId: string) => void;
@@ -160,6 +166,7 @@ function AccountRow({
     <li className="grid gap-2.5 rounded-card border border-hairline bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+          <ProviderMark mark={mark} className="self-center" />
           <span className="text-[13.5px] font-semibold text-ink">{account.label}</span>
           <code className="font-mono text-[11.5px] text-inkdim">{account.provider}</code>
           <AuthModeBadge mode={account.authMode} locale={locale} />
@@ -271,8 +278,10 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, onSection, onClose, store, update, locale, localeStore }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, onSection, onClose, store, marks, update, locale, localeStore }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The marks land once, after the first paint; the subscription turns them into a re-render.
+  useSyncExternalStore(marks.subscribe, marks.state);
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
   // only subscribes.
   const updateState = useSyncExternalStore(update.subscribe, update.state);
@@ -519,7 +528,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
                 ) : (
                   <ul className="grid gap-2">
                     {accounts.map((account) => (
-                      <AccountRow key={account.id} account={account} locale={locale} store={store} onRemove={remove} />
+                      <AccountRow key={account.id} account={account} mark={marks.markFor(account.provider)} locale={locale} store={store} onRemove={remove} />
                     ))}
                   </ul>
                 )}

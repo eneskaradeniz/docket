@@ -121,6 +121,8 @@ describe('accounts frame store', () => {
 
     const cards = store.state().cards;
     expect(cards?.map((card) => card.label)).toEqual(['Claude Max', 'z.ai GLM', 'Codex Pro']);
+    // The card carries its provider through — the badge resolves the mark from it.
+    expect(cards?.map((card) => card.provider)).toEqual(['opencode', 'opencode', 'opencode']);
     expect(cards?.[0]?.windows.map((window) => [window.kind, window.percent])).toEqual([
       ['five_hour', 41],
       ['week', 12],

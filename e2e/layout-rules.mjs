@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-12 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-13 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,7 +7,7 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13'];
 
 /** The audit size plan: the window's minimum, its default, and full screen — nothing between.
  *  The first two are numbers; full screen is `'display'`, resolved to the primary display's work
@@ -313,7 +313,79 @@ const l11 = async (page, ctx, sel) => {
   );
 };
 
-// L-12: no audited screen shows a problem state. A rendered `error.*` label is content standing in
+// L-12: every visible account badge (U-21's "account badge", the provider mark) carries a real
+// mark — one svg whose path is non-empty — and stays inside its row: the badge's box lies within
+// the nearest row container (button, li, a, header, label) that carries it, L-3's containment
+// notion measured on the badge itself. The sidebar's cards sit in the accounts frame's collapsed
+// body, so the rule opens the frame for the measurement when it is closed and puts it back the
+// way it found it (L-6's dance). A badge with no svg path means the marks did not resolve — the
+// neutral glyph — which the seed's real provider ids never warrant.
+const l12 = async (page, ctx, sel) => {
+  if (!sel.accountMark) return skipped('L-12', 'accountMark');
+  let opened = false;
+  if (sel.accountsFrame && sel.accountsBody) {
+    const h = await inPage(page, `const el = resolve(arg); return el ? el.getBoundingClientRect().height : null;`, sel.accountsBody);
+    if (h !== null && h <= 1) {
+      const toggle = page.locator(sel.accountsFrame).locator('button[aria-expanded]').first();
+      await toggle.click();
+      await page.waitForFunction(
+        (bodySel) => {
+          const body = document.querySelector(bodySel);
+          if (body === null) return false;
+          return body.getBoundingClientRect().height > 1 && body.getAnimations().length === 0;
+        },
+        sel.accountsBody,
+        { timeout: 4000 },
+      );
+      opened = true;
+    }
+  }
+  const m = await inPage(
+    page,
+    `const badges = [...document.querySelectorAll(arg)];
+    const visible = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const out = [];
+    let counted = 0;
+    for (const el of badges) {
+      if (!visible(el)) continue;
+      counted += 1;
+      const d = el.querySelector('svg path')?.getAttribute('d') ?? '';
+      if (d.trim() === '') out.push('badge without a mark path');
+      const row = el.closest('button, li, a, header, label');
+      if (row !== null) {
+        const r = el.getBoundingClientRect();
+        const b = row.getBoundingClientRect();
+        if (r.left < b.left - 0.5 || r.right > b.right + 0.5 || r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5) {
+          out.push('badge outside its row');
+        }
+      }
+    }
+    return { counted, out: out.slice(0, 3) };`,
+    sel.accountMark,
+  );
+  if (opened) {
+    const toggle = page.locator(sel.accountsFrame).locator('button[aria-expanded]').first();
+    await toggle.click();
+    await page.waitForFunction(
+      (bodySel) => {
+        const body = document.querySelector(bodySel);
+        if (body === null) return false;
+        return body.getBoundingClientRect().height <= 1 && body.getAnimations().length === 0;
+      },
+      sel.accountsBody,
+      { timeout: 4000 },
+    );
+  }
+  if (m.counted === 0) return result('L-12', true, 'no visible account badges');
+  return result('L-12', m.out.length === 0, m.out.length === 0 ? `${m.counted} badges carry their mark inside the row` : `${m.out.join('; ')}`);
+};
+
+
+// L-13: no audited screen shows a problem state. A rendered `error.*` label is content standing in
 // for a query that failed against the design seed — a wrong id, a query the state cannot answer, a
 // stale problem never cleared — so the walk treats its text as a defect, named by screen. The texts
 // are keyed by the app's own label bundles (both locales), never re-typed here.
@@ -338,12 +410,12 @@ export const matchProblemText = (text, entries) => {
  *  interactive redesign (the detail and live panes) is listed in the issue's PR body instead of
  *  fixed here. Each entry names the screen and the keys it owes, cited to the redesign that
  *  removes it — the map is empty while no screen owes a standing. */
-export const L12_KNOWN_STANDINGS = {};
+export const L13_KNOWN_STANDINGS = {};
 
 const PROBLEM_ENTRIES = problemLabelEntries(TR, EN);
 
-const l12 = async (page, ctx) => {
-  const known = L12_KNOWN_STANDINGS[ctx.screen] ?? [];
+const l13 = async (page, ctx) => {
+  const known = L13_KNOWN_STANDINGS[ctx.screen] ?? [];
   const hits = await inPage(
     page,
     `const texts = new Map();
@@ -368,12 +440,12 @@ const l12 = async (page, ctx) => {
       .map(({ key, text, tag }) => ({ key, text, tag }));`,
     PROBLEM_ENTRIES,
   );
-  if (hits.length === 0) return result('L-12', true, 'no problem text on the screen');
+  if (hits.length === 0) return result('L-13', true, 'no problem text on the screen');
   const knownHits = hits.filter((hit) => known.includes(hit.key));
   const fresh = hits.filter((hit) => !known.includes(hit.key));
   if (fresh.length > 0) {
     return result(
-      'L-12',
+      'L-13',
       false,
       `${fresh.length} problem text${fresh.length === 1 ? '' : 's'}: ${fresh
         .map((hit) => `${hit.key} "${hit.text}" <${hit.tag}>`)
@@ -381,7 +453,7 @@ const l12 = async (page, ctx) => {
         .join('; ')}`,
     );
   }
-  return result('L-12', true, `known standing: ${knownHits.map((hit) => hit.key).join(', ')}`);
+  return result('L-13', true, `known standing: ${knownHits.map((hit) => hit.key).join(', ')}`);
 };
 
 const RULES = [
@@ -397,6 +469,7 @@ const RULES = [
   ['L-10', l10],
   ['L-11', l11],
   ['L-12', l12],
+  ['L-13', l13],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */

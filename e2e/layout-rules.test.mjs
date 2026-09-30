@@ -5,7 +5,7 @@ import { strict as assert } from 'node:assert';
 
 import {
   comboPlan,
-  L12_KNOWN_STANDINGS,
+  L13_KNOWN_STANDINGS,
   matchProblemText,
   problemLabelEntries,
   RULE_IDS,
@@ -93,11 +93,11 @@ test('the combination plan carries the concrete resolved sizes through', () => {
   }
 });
 
-// --- L-12's problem-text matching ---------------------------------------------------------------------
+// --- L-13's problem-text matching ---------------------------------------------------------------------
 
-test('L-12 is the walk’s twelfth rule and its known standings name only real screens', () => {
-  assert.equal(RULE_IDS.at(-1), 'L-12');
-  for (const screen of Object.keys(L12_KNOWN_STANDINGS)) {
+test('L-13 is the walk’s thirteenth rule and its known standings name only real screens', () => {
+  assert.equal(RULE_IDS.at(-1), 'L-13');
+  for (const screen of Object.keys(L13_KNOWN_STANDINGS)) {
     assert.equal(['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'].includes(screen), true);
   }
 });

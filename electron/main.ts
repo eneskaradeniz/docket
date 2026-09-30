@@ -33,6 +33,7 @@ import {
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
   BUILTIN_PROVIDER_DEFS,
+  builtinProviderMarks,
   createDesignUpdateChecker,
   createNodeDeps,
   createNoopUpdateChecker,
@@ -348,8 +349,10 @@ const startApp = async (): Promise<void> => {
       ? createNoopUpdateChecker(app.getVersion())
       : createDesignUpdateChecker(app.getVersion(), updateFake);
   // The repo registry rides beside deps (NodeDeps exposes it); the api reads it for
-  // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on.
-  const api = createApi(nodeDeps, board, discovery, node.repos, updates);
+  // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
+  // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
+  // every account badge resolves its mark through.
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).

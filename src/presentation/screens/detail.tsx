@@ -31,8 +31,9 @@ export interface WorkOrderDetailScreenProps {
   readonly store: WorkOrderDetailStore;
   readonly workOrderId: string;
   readonly locale: Locale;
-  /** Where the detail was opened from — the back row names it (U-19). */
-  readonly backKey: 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap';
+  /** Where the detail was opened from — the back row names it (U-19); null means no previous
+   *  entry stands behind it, and the row stays hidden (U-25). */
+  readonly backKey: 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap' | null;
   readonly onBack: () => void;
 }
 
@@ -306,11 +307,13 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
 
   return (
     <div className="grid max-w-[1280px] gap-5">
-      <div className="-mb-2">
-        <ActionButton variant="ghost" onClick={onBack}>
-          {t(locale, backKey)}
-        </ActionButton>
-      </div>
+      {backKey !== null ? (
+        <div className="-mb-2">
+          <ActionButton variant="ghost" onClick={onBack}>
+            {t(locale, backKey)}
+          </ActionButton>
+        </div>
+      ) : null}
 
       <header className="grid gap-1">
         {view === null ? (
