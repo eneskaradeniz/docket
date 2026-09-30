@@ -211,7 +211,7 @@ belongs to the mobile app.
 | --- | --- | --- | --- |
 | Store rules U-15 … U-21, U-23 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
 | Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
-| Layout audit L-1 … L-10 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
+| Layout audit L-1 … L-11 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
 | Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |
 | Operator scenario | PR body | operator | yes (`main` gate) |
 
@@ -250,6 +250,8 @@ belongs to the mobile app.
     applicable.
   - **L-10** Every screen's content wrapper starts at the main column's left padding edge — its
     left edge sits within 1px of it at every size, never centred inside the column.
+  - **L-11** Every Kanban card spans its column header's width — its left and right edges sit
+    within 1px of the header row's at every size and theme.
 - **Evidence.** A UI PR attaches the pass lines of `test:journeys` and `test:layout` and the gallery
   path. The architect compares the gallery against the rev-8 reference screenshots before the
   operator scenario.
