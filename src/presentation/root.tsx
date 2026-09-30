@@ -71,7 +71,7 @@ if (mount !== null) {
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const cockpit = createCockpitStore({ api, changes, now: () => Date.now(), actor: USER });
+  const cockpit = createCockpitStore({ api, changes, now: () => Date.now(), actor: USER, persistence: window.localStorage });
   const board = createBoardStore({ api, changes, actor: USER, persistence: window.localStorage });
   // The live pane has no run at composition time — the detail store attaches it to the active
   // run of whichever work order loads.
