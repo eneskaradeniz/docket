@@ -16,6 +16,7 @@ import {
   type TreeSelection,
 } from '../stores/project-tree';
 import { ACTIVE_CLASS, ACTIVE_SOFT_CLASS } from './active-state';
+import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 
 export interface SidebarTreeProps {
   readonly store: ProjectTreeStore;
@@ -67,7 +68,7 @@ const Chevron = ({ open }: { readonly open: boolean }) => (
 );
 
 const SortIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="block h-3.5 w-3.5">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="block h-3 w-3">
     <path d="m21 16-4 4-4-4" />
     <path d="M17 20V4" />
     <path d="m3 8 4-4 4 4" />
@@ -76,7 +77,7 @@ const SortIcon = () => (
 );
 
 const PlusIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="block h-3.5 w-3.5">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="block h-3 w-3">
     <path d="M12 5v14" />
     <path d="M5 12h14" />
   </svg>
@@ -144,7 +145,9 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
 
   return (
     <>
-      <div className="mb-1.5 mt-3.5 flex h-7 flex-none items-center gap-1 pl-2 pr-1.5">
+      {/* Like the Hesaplar header, the row's height is its 22px buttons plus the symmetric py-1 —
+          no fixed height, so the label stays centred on the buttons' own geometry. */}
+      <div className="mb-1.5 mt-3.5 flex flex-none items-center gap-1 py-1 pl-2 pr-1.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] font-medium text-inkdim">
           {t(locale, 'nav.projects')}
         </span>
@@ -153,7 +156,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
           onClick={() => store.cycleSort()}
           aria-label={t(locale, 'nav.projects.sort')}
           title={t(locale, 'nav.projects.sort')}
-          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink"
+          className={SIDEBAR_HEADER_BUTTON}
         >
           <SortIcon />
         </button>
@@ -161,7 +164,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
           type="button"
           aria-label={t(locale, 'nav.projects.new')}
           title={t(locale, 'nav.projects.new')}
-          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink"
+          className={SIDEBAR_HEADER_BUTTON}
         >
           <PlusIcon />
         </button>
