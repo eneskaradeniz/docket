@@ -11,6 +11,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
+import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { AccountCard, AccountsFrameStore } from '../stores/accounts-frame';
@@ -175,9 +176,7 @@ export function SidebarAccounts({
           }}
           aria-label={t(locale, 'accounts.refresh')}
           title={t(locale, 'accounts.refresh')}
-          className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink ${
-            spinning || state.refreshing ? 'animate-spin' : ''
-          }`}
+          className={`${SIDEBAR_HEADER_BUTTON} ${spinning || state.refreshing ? 'animate-spin' : ''}`}
         >
           <RefreshIcon />
         </button>
@@ -186,7 +185,7 @@ export function SidebarAccounts({
           onClick={() => store.toggle()}
           aria-label={t(locale, 'accounts.toggle')}
           title={t(locale, 'accounts.toggle')}
-          className="grid h-[22px] w-[22px] flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink"
+          className={SIDEBAR_HEADER_BUTTON}
         >
           <Chevron open={state.open} />
         </button>

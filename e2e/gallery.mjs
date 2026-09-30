@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT, launchDesignApp, screenNavigator, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { SCREENS, SIZES, THEMES } from './layout-rules.mjs';
+import { SCREENS, THEMES, resolveSizes } from './layout-rules.mjs';
 
 const REF_DIR = process.env.DOCKET_REV8_REF ?? join(homedir(), 'source', 'docket-tasarim', 'rev8', 'ref');
 const OUT = join(ROOT, 'e2e', '.out', 'gallery');
@@ -19,10 +19,14 @@ await acquireE2eLock(ROOT);
 
 const handle = await launchDesignApp();
 const goto = screenNavigator(handle.page);
+// The plan resolves against the app's own display: full screen is the real work area, so the
+// app tiles carry this machine's numbers and pair with a reference only where one of the same
+// size exists (the 1024x640 set).
+const sizes = await resolveSizes(handle.app);
 const tiles = [];
 
 for (const theme of THEMES) {
-  for (const size of SIZES) {
+  for (const { size } of sizes) {
     await setWindow(handle, size, theme);
     for (const screen of SCREENS) {
       const name = `${screen}-${size[0]}x${size[1]}-${theme}`;
