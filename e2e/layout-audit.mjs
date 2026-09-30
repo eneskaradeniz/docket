@@ -13,9 +13,9 @@
 // containment walked again on the two sections the nav rows open — Telefon, Güncelleme):
 //   settings: kokpit <WxH> <theme> ok|FAIL <detail>
 // and one for the title bar's Update button (U-24), measured on the cockpit: 40px bar, wordmark
-// at the left, the button 28px at the bar's right end and outside the drag region; the first
-// combo of the run also walks the button's states — apply, a disabled percent, then the restart
-// label:
+// at the left, the button 28px at the bar's right end, 16px clear of the window's right edge and
+// outside the drag region; the first combo of the run also walks the button's states — apply, a
+// disabled percent, then the restart label:
 //   titlebar: kokpit <WxH> <theme> ok|FAIL <detail>
 // A second, fake-free launch closes the loop once per run: with the noop checker the button
 // must be absent from the bar and the Güncelleme section must read "Docket güncel.":
@@ -393,10 +393,11 @@ async function settingsPanelCheck(target) {
 
 /** The title bar's Update button (U-24): the bar stays a 40px strip with the wordmark at its
  *  left, and the button — the design seed fakes an available update, so it is up — sits 28px
- *  tall at the bar's right end, clear of the drag region. With `walk`, the button is also driven
- *  through its standings once per run: apply turns the label into a disabled percent, and the
- *  download's end turns it into the restart label. The ready click is left alone — it is the
- *  restart itself. */
+ *  tall at the bar's right end, 16px clear of the window's right edge (the bar's own padding,
+ *  so the gap belongs to the bar, not the button), outside the drag region. With `walk`, the
+ *  button is also driven through its standings once per run: apply turns the label into a
+ *  disabled percent, and the download's end turns it into the restart label. The ready click is
+ *  left alone — it is the restart itself. */
 async function titleBarCheck(target, walk) {
   const { page, selectors } = target;
   const m = await page.evaluate(
@@ -412,6 +413,7 @@ async function titleBarCheck(target, walk) {
         h: r.height,
         top: r.top,
         right: r.right,
+        windowRight: window.innerWidth,
         wordmarkLeft: wordmark ? wordmark.getBoundingClientRect().left : null,
         btn:
           b === null
@@ -458,12 +460,14 @@ async function titleBarCheck(target, walk) {
   const wordmarkOk = m.wordmarkLeft !== null && m.wordmarkLeft > 0 && m.wordmarkLeft < 200;
   const btnHeightOk = Math.abs(m.btn.h - 28) <= 0.5;
   const inBar = m.btn.top >= m.top - 0.5 && m.btn.bottom <= m.top + m.h + 0.5 && m.btn.right <= m.right + 0.5;
-  const ok = heightOk && wordmarkOk && btnHeightOk && inBar && m.btn.noDrag === 'no-drag';
+  const rightGap = m.windowRight - m.btn.right;
+  const gapOk = Math.abs(rightGap - 16) <= 1;
+  const ok = heightOk && wordmarkOk && btnHeightOk && inBar && gapOk && m.btn.noDrag === 'no-drag';
   return {
     ok,
     detail: `bar ${m.h.toFixed(0)}px wordmark ${m.wordmarkLeft === null ? 'missing' : m.wordmarkLeft.toFixed(0)}px button ${m.btn.h.toFixed(0)}px ${
       inBar ? 'in the bar' : 'outside the bar'
-    } drag ${m.btn.noDrag} ${walkNote}`,
+    } right gap ${rightGap.toFixed(1)}px ${gapOk ? '(want 16)' : '(want 16, off)'} drag ${m.btn.noDrag} ${walkNote}`,
   };
 }
 
