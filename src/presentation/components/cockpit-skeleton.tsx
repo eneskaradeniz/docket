@@ -1,6 +1,6 @@
 // components/cockpit-skeleton.tsx — the cockpit's loading composition (U-26): grey shapes in
 // the four sections' own layout. Every wrapper, padding and line-box height mirrors the ready
-// screen's rows (the seed's standings: three attention rows, five running, five project cards,
+// screen's rows (the seed's standings: four attention rows, five running, five project cards,
 // five closed), so the content's arrival moves nothing — the heights are the row containers'
 // own, and the bars sit at the text line heights they stand in for.
 import { t, type Locale } from '../labels/t';
@@ -12,7 +12,7 @@ const FoldHeadSkeleton = () => (
   <div className="flex min-w-0 items-center gap-2">
     <div className="-ml-1.5 flex items-center gap-1.5 px-1.5 py-0.5">
       <Skeleton radius="control" width="12px" height="12px" />
-      <Skeleton radius="control" width="88px" height="15px" />
+      <Skeleton radius="control" width="88px" height="20px" />
     </div>
     <Skeleton radius="full" width="20px" height="18px" />
   </div>
@@ -27,12 +27,13 @@ const PlainHeadSkeleton = () => (
 );
 
 /** One attention row: the loud section's card wrapper with its lamp, title line, action button
- *  block and meta line — the ready row's own grid and paddings. */
+ *  block and meta line — the ready row's own grid and paddings, sized to its 62px stance (the
+ *  permission row grows its command band only once the ask resolves, after the swap). */
 const AttentionRowSkeleton = () => (
   <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
     <Skeleton radius="full" width="8px" height="8px" className="mt-2 self-start" />
-    <Skeleton radius="control" width="42%" height="21px" />
-    <Skeleton radius="control" width="152px" height="26px" />
+    <Skeleton radius="control" width="42%" height="19px" />
+    <Skeleton radius="control" width="152px" height="21px" />
     <Skeleton radius="control" width="68%" height="17px" />
   </div>
 );
@@ -51,15 +52,15 @@ const RunningRowSkeleton = () => (
 /** One project card: the card's own grid, gaps and paddings around its three lines. */
 const ProjectCardSkeleton = () => (
   <div className="grid min-w-0 gap-2 rounded-card border border-hairline bg-surface px-3.5 py-2.5">
-    <Skeleton radius="control" width="46%" height="21px" />
-    <Skeleton radius="control" width="64px" height="22px" />
-    <Skeleton radius="control" width="72%" height="17px" />
+    <Skeleton radius="control" width="46%" height="23px" />
+    <Skeleton radius="control" width="64px" height="24px" />
+    <Skeleton radius="control" width="72%" height="18px" />
   </div>
 );
 
 /** One closed row inside the bordered list the ready screen shows. */
 const ClosedRowSkeleton = () => (
-  <div className="grid min-h-9 w-full items-center gap-3 px-3.5">
+  <div className="grid min-h-[37px] w-full items-center gap-3 px-3.5 [grid-template-columns:auto_minmax(0,1fr)_auto_auto_auto]">
     <Skeleton radius="control" width="52px" height="14px" />
     <Skeleton radius="control" width="30%" height="19px" />
     <Skeleton radius="control" width="120px" height="14px" className="ml-auto" />
@@ -74,9 +75,9 @@ export function CockpitSkeleton({ locale }: { readonly locale: Locale }) {
       <section className="grid gap-2">
         <PlainHeadSkeleton />
         <ul className="grid gap-2">
-          <li><AttentionRowSkeleton /></li>
-          <li><AttentionRowSkeleton /></li>
-          <li><AttentionRowSkeleton /></li>
+          {[0, 1, 2, 3].map((row) => (
+            <li key={row}><AttentionRowSkeleton /></li>
+          ))}
         </ul>
       </section>
       <section className="grid">

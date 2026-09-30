@@ -653,7 +653,7 @@ async function openApp() {
  *  open, exactly as the composition draws them. */
 async function skeletonCheck(target, screen, combo) {
   const { page } = target;
-  if (combo !== undefined) await target.show(screen, 'dark', combo);
+  if (combo !== undefined) await target.show(screen, combo.theme, combo.size);
   await page.evaluate(() => localStorage.removeItem('docket.cockpit.collapsed'));
   await page.reload();
   await page.waitForSelector('nav', { timeout: 30_000 });
@@ -799,7 +799,7 @@ if (args.slow && target.selectors.skeleton) {
     try {
       r = await skeletonCheck(target, screen, slowCombo);
     } catch (error) {
-      r = { ok: false, detail: `skeleton pass unreachable: ${String(error).split('\n')[0]}` };
+      r = { ok: false, detail: `skeleton pass unreachable: ${String(error).split('\n').slice(0, 4).join(' | ')}` };
     }
     if (!r.ok) failures += 1;
     lines += 1;

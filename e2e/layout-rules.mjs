@@ -563,7 +563,10 @@ export function skeletonVerdict(before, after) {
   const deltas = before.map((m, i) => after[i] - m.holderHeight);
   const worst = Math.max(...deltas.map(Math.abs));
   if (worst > SKELETON_HEIGHT_TOLERANCE_PX) {
-    return { ok: false, detail: `${before.length} compositions, ${blocks} blocks contained, holder moved ${worst.toFixed(1)}px (tolerance ${SKELETON_HEIGHT_TOLERANCE_PX})` };
+    const moves = before
+      .map((m, i) => `${m.holderHeight.toFixed(0)}→${after[i].toFixed(0)}`)
+      .join(' ');
+    return { ok: false, detail: `${before.length} compositions, ${blocks} blocks contained, holder moved ${worst.toFixed(1)}px (tolerance ${SKELETON_HEIGHT_TOLERANCE_PX}) [${moves}]` };
   }
   return {
     ok: true,
