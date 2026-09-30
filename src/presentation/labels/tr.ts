@@ -214,6 +214,7 @@ export const TR: LabelBundle = {
   'success.permission.answer': 'İzin yanıtı kaydedildi.',
   'success.deploy.approve': 'Dağıtım onaylandı ve çalıştırıldı.',
   'nav.settings': 'Ayarlar',
+  'settings.close': 'Ayarları kapat',
   'settings.section.accounts': 'Hesaplar',
   'settings.section.bindings': 'Rol bağlantıları',
   'settings.section.discovery': 'Sağlayıcı keşfi',

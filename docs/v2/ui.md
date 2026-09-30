@@ -97,7 +97,10 @@ Deploy approval passes the gate's `environment`; a protected environment without
   in locale format, source badge from `ObservationSource`), per-role bindings, and discovery
   results that stream in per provider (a slow provider delays only its row). Saving an account
   or binding maps through U-8; removing an account that a binding still references warns with
-  the referencing roles before issuing the command.
+  the referencing roles before issuing the command. Settings is not a page in the body: it opens
+  as a centered window-style overlay over the current route (the wizard's frame, a 200px section
+  menu beside the selected section's content) — ✕, Esc or a backdrop click closes it, and the
+  route underneath stays unchanged.
 - **U-7** (wizard) First-run state machine: definitions source → account → binding → done.
   `next` is enabled only when the step's validation passes (source reachable / at least one
   discovered+logged-in provider for the chosen account / at least one bound role); `back`

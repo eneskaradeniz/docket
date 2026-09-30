@@ -236,6 +236,7 @@ export const LABEL_KEYS = [
   'action.open',
   // Settings screen (U-6): sections, account and meter rows, bindings editor, discovery list.
   'nav.settings',
+  'settings.close',
   'settings.section.accounts',
   'settings.section.bindings',
   'settings.section.discovery',
