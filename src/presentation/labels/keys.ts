@@ -224,8 +224,10 @@ export const LABEL_KEYS = [
   'board.new',
   'board.done.jobs',
   'board.empty.stage',
-  'board.list.done',
-  'board.list.closed',
+  'board.list.col.code',
+  'board.list.col.title',
+  'board.list.col.status',
+  'board.list.empty',
   'board.list.running',
   'board.list.waiting',
   // Kanban columns: the shut/open control, the pinned-open reason and the done column's name.

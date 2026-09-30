@@ -15,8 +15,7 @@ import {
   cardTone,
   createBoardStore,
   kanbanColumns,
-  listRows,
-  listSegments,
+  listGroups,
   storedBoardView,
   type BoardChange,
   type BoardChangeSignal,
@@ -124,7 +123,7 @@ describe('board store', () => {
     const persistence = fakePersistence();
     const api = fakeBoardApi(boardView);
     const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
-    expect(store.state()).toEqual({ loading: false, view: null, problem: null, viewMode: 'kanban', listFilter: null, columnOverrides: {} });
+    expect(store.state()).toEqual({ loading: false, view: null, problem: null, viewMode: 'kanban', columnOverrides: {}, groupOverrides: {} });
 
     await store.load('atolye');
 
@@ -292,46 +291,69 @@ describe('board store — view mode (U-18)', () => {
 });
 
 describe('board store — list view (U-18)', () => {
-  it('U-18: the rail counts running and waiting per stage and closes with the done segment', () => {
-    const segments = listSegments(listView);
-    expect(segments).toEqual([
-      { stage: 'analiz', name: 'Analiz', running: 1, waiting: 0, total: 2 },
-      { stage: 'cozum', name: 'Çözüm', running: 0, waiting: 0, total: 0 },
-      { stage: 'gelistir', name: 'Geliştir', running: 1, waiting: 1, total: 2 },
-      { stage: 'test', name: 'Test', running: 0, waiting: 1, total: 1 },
-      { done: true, count: 2 },
+  it('U-18: the list groups rows by stage in flow order, closes with the done group, and counts running and waiting', () => {
+    const groups = listGroups(listView, {});
+    expect(groups.map((group) => [group.key, group.kind, group.rows.length, group.running, group.waiting])).toEqual([
+      ['stage:analiz', 'stage', 2, 1, 0],
+      ['stage:cozum', 'stage', 0, 0, 0],
+      ['stage:gelistir', 'stage', 2, 1, 1],
+      ['stage:test', 'stage', 1, 0, 1],
+      ['done', 'done', 2, 0, 0],
+    ]);
+    expect(groups[0]?.rows.map((row) => row.id)).toEqual(['wo-1', 'wo-2']);
+    expect(groups[0]?.rows.map((row) => row.tone)).toEqual(['ready', 'running']);
+    expect(groups[4]?.rows.map((row) => [row.id, row.status, row.tone])).toEqual([
+      ['wo-6', 'done', 'done'],
+      ['wo-7', 'done', 'done'],
     ]);
   });
 
-  it('U-18: no filter lists every open row with its stage; a stage filter narrows; done closes', () => {
-    const all = listRows(listView, null);
-    expect(all.map((row) => row.id)).toEqual(['wo-1', 'wo-2', 'wo-3', 'wo-4', 'wo-5']);
-    expect(all[0].stageName).toBe('Analiz');
-    expect(all[3].stageName).toBe('Geliştir');
-
-    const staged = listRows(listView, 2);
-    expect(staged.map((row) => row.id)).toEqual(['wo-3', 'wo-4']);
-    expect(staged.every((row) => row.stageName === 'Geliştir')).toBe(true);
-
-    const done = listRows(listView, 'done');
-    expect(done.map((row) => row.id)).toEqual(['wo-6', 'wo-7']);
+  it('U-18: a filled stage starts open, an empty stage and the done group start closed', () => {
+    expect(listGroups(listView, {}).map((group) => group.open)).toEqual([true, false, true, true, false]);
   });
 
-  it('U-18: the list filter is session state — selection changes it, a load resets it', async () => {
+  it('U-18: an explicit choice closes a filled group or opens done; an empty group never opens', () => {
+    const groups = listGroups(listView, { 'stage:analiz': 'shut', done: 'open', 'stage:cozum': 'open' });
+    expect(groups.map((group) => group.open)).toEqual([false, false, true, true, true]);
+  });
+
+  it('U-18: toggling a group flips it, persists per repo and survives a reload', async () => {
     const persistence = fakePersistence();
     const api = fakeBoardApi(listView);
     const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
     await store.load('atolye');
-    expect(store.state().listFilter).toBeNull();
+    store.toggleGroup('atolye', 'stage:analiz');
+    store.toggleGroup('atolye', 'done');
+    expect(store.state().groupOverrides).toEqual({ 'stage:analiz': 'shut', done: 'open' });
+    expect(persistence.store.get('docket.board.groups.atolye')).toBe(JSON.stringify({ 'stage:analiz': 'shut', done: 'open' }));
+    store.toggleGroup('atolye', 'done');
+    expect(store.state().groupOverrides).toEqual({ 'stage:analiz': 'shut', done: 'shut' });
 
-    store.selectList(2);
-    expect(store.state().listFilter).toBe(2);
-    store.selectList('done');
-    expect(store.state().listFilter).toBe('done');
+    const reloaded = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await reloaded.load('atolye');
+    expect(reloaded.state().groupOverrides).toEqual({ 'stage:analiz': 'shut', done: 'shut' });
+    await reloaded.load('depo');
+    expect(reloaded.state().groupOverrides).toEqual({});
+  });
 
-    // A reload (another repo, or a change event) starts the list unfiltered again.
-    await store.load('depo');
-    expect(store.state().listFilter).toBeNull();
+  it('U-18: toggling an empty group changes nothing', async () => {
+    const persistence = fakePersistence();
+    const store = createBoardStore({ api: fakeBoardApi(listView), changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    store.toggleGroup('atolye', 'stage:cozum');
+    expect(store.state().groupOverrides).toEqual({});
+    expect(persistence.store.has('docket.board.groups.atolye')).toBe(false);
+  });
+
+  it('U-18: unreadable stored group choices mean the defaults; foreign entries are dropped', async () => {
+    const persistence = fakePersistence();
+    persistence.store.set('docket.board.groups.atolye', 'not json');
+    const store = createBoardStore({ api: fakeBoardApi(listView), changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    expect(store.state().groupOverrides).toEqual({});
+    persistence.store.set('docket.board.groups.atolye', '{"done":"open","stage:test":"sideways"}');
+    await store.load('atolye');
+    expect(store.state().groupOverrides).toEqual({ done: 'open' });
   });
 });
 
