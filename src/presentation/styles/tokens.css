@@ -39,7 +39,9 @@
   --ink: #191917;
   --dim: #6e6e69;
   --signal: #f5b544;
-  --signal-soft: #9a6700;
+  /* AA for the small amber text on band/raised/surface (5.05 / 4.92 / 5.52:1); the rev-8 value
+     #9a6700 measured 4.46 / 4.34 on the first two. */
+  --signal-soft: #8f5f00;
   --signal-ink: #1c1300;
   --proceed: #1a7f37;
   --info: #0969da;
