@@ -9,6 +9,8 @@ import type {
   AgentEvent,
   FlowSlug,
   GateSlug,
+  QueueItem,
+  QueueItemId,
   RunId,
   RunOutcome,
   Slug,
@@ -251,6 +253,29 @@ const seedCockpitScenario = async (h: Harness, projectOf: (repo: RepoSlug) => st
   return h;
 };
 
+// --- the queue and close-out fixtures for the cockpit field rules (A-35 … A-39) -------------------
+
+const WO_STALE_STAGE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB6');
+const WO_CLOSED_EVENT = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB7');
+const RUN_STALE_STAGE = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H25');
+const ACCOUNT_BARE = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5GC1');
+const QUEUE_POOL = ulidOf<'pool'>('01ARZ3NDEKTSV4RRFFQ69G5GC2');
+const QUEUE_METER = ulidOf<'meter'>('01ARZ3NDEKTSV4RRFFQ69G5GC3');
+const QUEUE_EARLY = ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5HC1');
+const QUEUE_LATE = ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5HC2');
+const QUEUE_OTHER = ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5HC3');
+const QUEUE_LIMITED = ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5HC4');
+const QUEUE_BARE = ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5HC5');
+
+const queueItem = (
+  id: QueueItemId,
+  workOrderId: WorkOrderId,
+  stage: StageSlug,
+  enqueuedAt: number,
+  repo: RepoSlug = REPO,
+  route: { readonly accountId: AccountId } = { accountId: ACCOUNT },
+): QueueItem => ({ id, workOrderId, repo, stage, route, priority: 0, enqueuedAt });
+
 // --- the board scenario: one work order per position, plus the cross-flow cases ---------------
 
 const WO_B_PLAN = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GAV');
@@ -418,9 +443,9 @@ describe('cockpit', () => {
     expect(listed).not.toContain(WO_BROKEN);
 
     expect(view.running).toEqual([
-      { workOrderId: WO_ASK, number: 7, stage: 'plan', accountId: ACCOUNT, startedAt: 4_000 },
-      { workOrderId: WO_RUNNING, number: 8, stage: 'plan', accountId: ACCOUNT, startedAt: 4_500 },
-      { workOrderId: WO_ASK_ANSWERED, number: 9, stage: 'plan', accountId: ACCOUNT, startedAt: 5_500 },
+      { workOrderId: WO_ASK, number: 7, stage: 'plan', accountId: ACCOUNT, startedAt: 4_000, title: 'Waiting on a permission', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
+      { workOrderId: WO_RUNNING, number: 8, stage: 'plan', accountId: ACCOUNT, startedAt: 4_500, title: 'Busy running', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
+      { workOrderId: WO_ASK_ANSWERED, number: 9, stage: 'plan', accountId: ACCOUNT, startedAt: 5_500, title: 'Ask already answered', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
     ]);
   });
 
@@ -456,6 +481,7 @@ describe('cockpit', () => {
         project: 'proj',
         repo: 'acme',
         closedAt: 500,
+        outcome: 'merged',
       },
     ]);
 
@@ -479,6 +505,101 @@ describe('cockpit', () => {
       [WO_ASK, 7],
       [WO_RUNNING, 8],
       [WO_ASK_ANSWERED, 9],
+    ]);
+  });
+
+  it('A-35: running rows carry the title and the 1-based stage position; a stage outside the flow zeroes the strip', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    // A run whose stage no longer exists in board-flow; created last, so the scenario's numbering
+    // is untouched and the row rides after the scenario's runs.
+    await seedWorkOrder(h, WO_STALE_STAGE, BOARD_FLOW, 'Stale stage', 9_800);
+    await seedRun(h, activeRun(RUN_STALE_STAGE, WO_STALE_STAGE, slugOf<'stage'>('gone'), 9_900));
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    // board-flow is plan (1), implement (2), close (3); every scenario run rides plan.
+    expect(view.running.map((row) => [row.title, row.stageIndex, row.stageCount])).toEqual([
+      ['Waiting on a permission', 1, 3],
+      ['Busy running', 1, 3],
+      ['Ask already answered', 1, 3],
+      ['Stale stage', 0, 0],
+    ]);
+  });
+
+  it('A-36: queued items ride running after the running rows, startedAt = the enqueue instant', async () => {
+    const h = await seedCockpitScenario(createHarness(), (repo) => (repo === REPO ? 'proj' : 'other'));
+    await h.deps.queue.put(queueItem(QUEUE_OTHER, WO_BROKEN, PLAN, 4_000, BROKEN_REPO));
+    await h.deps.queue.put(queueItem(QUEUE_EARLY, WO_AWAIT_LATE, IMPLEMENT, 5_500));
+    await h.deps.queue.put(queueItem(QUEUE_LATE, WO_READY, PLAN, 6_000));
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    // Three running rows first, then the queue by enqueuedAt asc. A queued row's startedAt is the
+    // instant it was queued, and the broken repo's flow no longer loads, so its strip is 0/0.
+    expect(view.running.slice(3).map((row) => [row.workOrderId, row.startedAt, row.queued, row.title])).toEqual([
+      [WO_BROKEN, 4_000, true, 'Underivable state'],
+      [WO_AWAIT_LATE, 5_500, true, 'Waiting late'],
+      [WO_READY, 6_000, true, 'Just ready'],
+    ]);
+    expect(view.running[3]).toMatchObject({ stage: 'plan', accountId: ACCOUNT, stageIndex: 0, stageCount: 0 });
+    expect(view.running[4]).toMatchObject({ stage: 'implement', stageIndex: 2, stageCount: 3 });
+
+    const narrowed = (await createApi(h.deps).query({ type: 'cockpit', project: 'proj' })) as CockpitView;
+    expect(narrowed.running.filter((row) => row.queued === true).map((row) => row.workOrderId)).toEqual([WO_AWAIT_LATE, WO_READY]);
+  });
+
+  it('A-37: a queued row blocked by quota reads limit with the earliest reset; other waits read queue', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.savePools(ACCOUNT, [
+      { id: QUEUE_POOL, accountId: ACCOUNT, label: 'allowance', kind: 'allowance', appliesTo: 'all' },
+    ]);
+    await h.deps.accounts.saveMeter({
+      id: QUEUE_METER,
+      poolId: QUEUE_POOL,
+      cadence: 'calendar',
+      unit: 'fraction',
+      remaining: 0,
+      resetsAt: 9_000,
+      resetPrecision: 'exact',
+      observedAt: 1_000,
+      source: 'pushed',
+    });
+    // Routes to an account with no quota data at all: waiting, but not for a limit.
+    await h.deps.queue.put(queueItem(QUEUE_LIMITED, WO_READY, PLAN, 6_000));
+    await h.deps.queue.put(queueItem(QUEUE_BARE, WO_AWAIT_EARLY, IMPLEMENT, 6_500, REPO, { accountId: ACCOUNT_BARE }));
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
+    expect(byWorkOrder.get(WO_READY)).toMatchObject({ queued: true, queuedReason: 'limit', limitResetsAt: 9_000 });
+    expect(byWorkOrder.get(WO_AWAIT_EARLY)).toMatchObject({ queued: true, queuedReason: 'queue', limitResetsAt: null });
+    expect(view.running.filter((row) => row.queued === false).every((row) => row.queuedReason === undefined && row.limitResetsAt === null)).toBe(true);
+  });
+
+  it('A-38: project cards carry the latest work-order status change; null when the project has none', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.projects.save({ id: slugOf<'project'>('proj'), name: 'Proj', mainRepo: REPO, repos: [REPO] });
+    await h.deps.projects.save({ id: slugOf<'project'>('empty'), name: 'Empty', mainRepo: REPO, repos: [REPO] });
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    const byProject = new Map(view.projects.map((card) => [card.project, card]));
+    // The scenario's newest status change is the explicit block at 9_900; every order, the
+    // underivable one included, lives in 'proj' under the default mapping.
+    expect(byProject.get('proj')?.lastActivityAt).toBe(9_900);
+    expect(byProject.get('empty')?.lastActivityAt).toBeNull();
+  });
+
+  it('A-39: outcome — a finished flow reads merged, a closed event reads cancelled', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await seedWorkOrder(h, WO_CLOSED_EVENT, BOARD_FLOW, 'Closed by hand', 600);
+    await seedEvents(h, WO_CLOSED_EVENT, [{ type: 'closed', at: 700, by: ACTOR }]);
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    expect(view.recentlyClosed.map((entry) => [entry.workOrderId, entry.outcome])).toEqual([
+      [WO_CLOSED_EVENT, 'cancelled'],
+      [WO_DONE, 'merged'],
     ]);
   });
 });
@@ -1177,6 +1298,9 @@ describe('cockpit (project layer)', () => {
       repoCount: 1,
       active: 9,
       waiting: 5,
+      // Alpha's newest status change is the explicit block at 9_900; the beta-side block at
+      // 3_100 belongs to the other card.
+      lastActivityAt: 9_900,
     });
     // The newest finish first (its finishing gate is its last event), and the max is five.
     expect(view.recentlyClosed.map((entry) => entry.workOrderId).slice(0, 2)).toEqual([WO_P_DONE_NEW, WO_P_DONE_OLD]);
@@ -1187,6 +1311,7 @@ describe('cockpit (project layer)', () => {
       project: 'alpha',
       repo: 'acme',
       closedAt: 900,
+      outcome: 'merged',
     });
     expect(view.recentlyClosed).toHaveLength(3);
 

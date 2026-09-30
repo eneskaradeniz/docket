@@ -567,10 +567,23 @@ export type Query =
 export interface AttentionItem { readonly workOrderId: string; readonly project: string; readonly repo: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
-  readonly running: readonly { readonly workOrderId: string; readonly stage: string; readonly accountId: string; readonly startedAt: number }[];
+  // The optional fields below (A-35 … A-37) are optional in the type only so consumers written
+  // before they existed keep compiling; the cockpit query itself always fills them.
+  readonly running: readonly {
+    readonly workOrderId: string;
+    readonly stage: string;
+    readonly accountId: string;
+    readonly startedAt: number;
+    readonly title?: string;
+    readonly stageIndex?: number;
+    readonly stageCount?: number;
+    readonly queued?: boolean;
+    readonly queuedReason?: 'limit' | 'queue';
+    readonly limitResetsAt?: number | null;
+  }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */
-  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number }[];
-  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[];   // closedAt desc, max 5
+  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number; readonly lastActivityAt?: number | null }[];
+  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number; readonly outcome?: 'merged' | 'cancelled' }[];   // closedAt desc, max 5
 }
 export interface RepoNode { readonly repo: string; readonly name: string; readonly main: boolean; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
 export interface ProjectTreeItem { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repos: readonly RepoNode[]; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
@@ -611,6 +624,11 @@ Rules:
 - **A-29** Work-order display number: `WorkOrderRepo.number(id)` is the 1-based position of the work order in (`createdAt` asc, `id` asc) order over every work order on this machine. Work orders are never deleted, so a number, once shown, never changes and is never reused; a converted old database numbers its work orders the same way. The ULID stays the identity; the number is display only (machine-local; team sync revisits it). Every query view item that names a work order (`workOrderId` or `id` of a work order) also carries `number: number` — attention, running and recentlyClosed items, board cards and done strip, the detail, `account.detail.activeWork`, and the per-repo work orders of a roadmap task.
 - **A-30** Each card in `BoardColumn.workOrders[]` carries `account`: the display label of the account bound to the work order's current or most recent run — the newest run by `startedAt`, active or finished; `null` when the work order never had a run, or the run's account no longer loads. The `done` entries carry neither `account` nor `since`.
 - **A-31** Each card in `BoardColumn.workOrders[]` carries `since`: the ISO-8601 UTC instant (`YYYY-MM-DDTHH:MM:SS.sssZ`) the work order entered its current status — the `at` of the last event that changed the derived status, the work order's `createdAt` while no event has. Stored event timestamps only, never a clock read.
+- **A-35** Each `cockpit.running[]` row carries `title` (the work order's title) and the stage position for the progress strip: `stageIndex` is the 1-based position of the row's stage in the work order's flow and `stageCount` the flow's stage count. When the stage is no longer in the flow — or the flow no longer loads — both are `0` and the UI hides the strip. A queued row positions its queue item's stage the same way.
+- **A-36** Queued work stays in `running` (U-21): the queue's items ride the same list after the actually-running rows, which keep today's order; queued rows follow ordered by `enqueuedAt` asc, then id asc. A queued row carries the queue item's `stage` and route `accountId`, and its `startedAt` is the instant it was queued (`enqueuedAt`), never a run start. The A-28 project filter narrows queued rows together with the rest.
+- **A-37** A queued row carries `queued: true` and a `queuedReason`: `'limit'` when the route's headroom is currently blocked — the same domain call the dispatcher's tick makes, evaluated at query time — with `limitResetsAt` the blocking meters' earliest `resetsAt` (`null` when no relief instant is known); every other wait (concurrency limits, a scheduled `notBefore`, a busy work order) reads `'queue'` with `limitResetsAt: null`. Running rows carry `queued: false` and `limitResetsAt: null` and no `queuedReason`.
+- **A-38** Each `cockpit.projects[]` card carries `lastActivityAt`: the stamp of the latest status change among the project's work orders, on A-31's `since` basis (a work order whose flow no longer loads contributes its creation time); `null` when the project has no work orders.
+- **A-39** Each `cockpit.recentlyClosed[]` entry carries `outcome`: `'merged'` when the work order finished its flow — past the last stage's gates — and `'cancelled'` when a `closed` event ended it. The domain has no finer terminal status, and a `closed` event appended after a flow completion still reads `'cancelled'`: the closing act is the operator's terminal word even where the fold ignores it (R-23).
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 

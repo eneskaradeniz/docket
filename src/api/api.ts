@@ -22,7 +22,7 @@ import type {
   WorkOrderStatus,
   RepoSlug,
 } from '../domain/index';
-import { deriveRoadmap, deriveWorkOrderState, foldRun, parseSlug, parseUlid } from '../domain/index';
+import { deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
 
 import type {
   AccountRecord,
@@ -692,8 +692,8 @@ const deriveOrders = async (
   deps: AppDeps,
   records: readonly WorkOrderRecordView[],
   askSinceByWorkOrder: ReadonlyMap<WorkOrderId, number>,
+  flowsOf: (repo: RepoSlug) => Promise<readonly FlowDef[]> = flowCache(deps),
 ): Promise<readonly DerivedOrder[]> => {
-  const flowsOf = flowCache(deps);
   const derived: DerivedOrder[] = [];
   for (const record of records) {
     const flow = (await flowsOf(record.repo)).find((candidate) => candidate.id === record.flow);
@@ -751,7 +751,8 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
   const askSinceByWorkOrder = await openAskSince(deps);
   // Attention, cards and the closed list all read the same derivation pass — the filter narrows
   // attention, running and recentlyClosed, while the cards always see every project (K-4:B).
-  const allDerived = await deriveOrders(deps, await deps.workOrders.list({}), askSinceByWorkOrder);
+  const flowsOf = flowCache(deps);
+  const allDerived = await deriveOrders(deps, await deps.workOrders.list({}), askSinceByWorkOrder, flowsOf);
   const scoped = projectFilter === undefined ? allDerived : allDerived.filter((entry) => entry.record.project === projectFilter);
 
   // Attention rows carry the A-29 number beside the id they name; a derived record always
@@ -774,50 +775,110 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
   }
   attention.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.since - b.since);
 
+  // The stage strip (A-35): where a row's stage sits in its work order's flow. Zeroes hide the
+  // strip — a stage the flow no longer lists, or a flow that no longer loads.
+  const stagePosition = async (
+    record: WorkOrderRecordView,
+    stage: string,
+  ): Promise<{ readonly stageIndex: number; readonly stageCount: number }> => {
+    const flow = (await flowsOf(record.repo)).find((candidate) => candidate.id === record.flow);
+    if (flow === undefined) return { stageIndex: 0, stageCount: 0 };
+    const stageIndex = flow.stages.findIndex((candidate) => candidate.id === stage) + 1;
+    return stageIndex === 0 ? { stageIndex: 0, stageCount: 0 } : { stageIndex, stageCount: flow.stages.length };
+  };
+
   const active = await deps.runs.listActive();
   const scopedIds = new Set(scoped.map((entry) => entry.record.id));
-  const running: {
-    readonly workOrderId: string;
-    readonly number: number;
-    readonly stage: string;
-    readonly accountId: string;
-    readonly startedAt: number;
-  }[] = [];
+  const running: CockpitView['running'][number][] = [];
   for (const run of active) {
     if (projectFilter !== undefined && !scopedIds.has(run.workOrderId)) continue;
     // A run always rides a stored work order; the guard only keeps the type honest.
+    const record = await deps.workOrders.get(run.workOrderId);
     const number = await deps.workOrders.number(run.workOrderId);
-    if (number === undefined) continue;
+    if (record === undefined || number === undefined) continue;
+    const { stageIndex, stageCount } = await stagePosition(record, run.stage);
     running.push({
       workOrderId: run.workOrderId,
       number,
       stage: run.stage,
       accountId: run.route.accountId,
       startedAt: run.startedAt,
+      title: record.title,
+      stageIndex,
+      stageCount,
+      queued: false,
+      limitResetsAt: null,
     });
   }
 
-  const projects = (await deps.projects.list()).map((def) => {
+  // The queue rides the same list after the running rows (A-36); its wait is explained by the
+  // same headroom call the dispatcher's tick makes, read at query time (A-37).
+  const queuedItems = (await deps.queue.list())
+    .filter((item) => projectFilter === undefined || scopedIds.has(item.workOrderId))
+    .sort((a, b) => a.enqueuedAt - b.enqueuedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (queuedItems.length > 0) {
+    const pools = await deps.accounts.pools();
+    const meters = await deps.accounts.meters();
+    const now = deps.clock.now();
+    for (const item of queuedItems) {
+      const record = await deps.workOrders.get(item.workOrderId);
+      const number = await deps.workOrders.number(item.workOrderId);
+      if (record === undefined || number === undefined) continue;
+      const { stageIndex, stageCount } = await stagePosition(record, item.stage);
+      const room = headroom(pools, meters, item.route.accountId, item.route.model ?? '', now);
+      const limit = room.ok === false;
+      running.push({
+        workOrderId: item.workOrderId,
+        number,
+        stage: item.stage,
+        accountId: item.route.accountId,
+        startedAt: item.enqueuedAt,
+        title: record.title,
+        stageIndex,
+        stageCount,
+        queued: true,
+        queuedReason: limit ? 'limit' : 'queue',
+        limitResetsAt: limit ? room.earliestRelief ?? null : null,
+      });
+    }
+  }
+
+  const projects: CockpitView['projects'][number][] = [];
+  for (const def of await deps.projects.list()) {
     const own = allDerived.filter((entry) => entry.record.project === def.id);
-    return {
+    // A-38: the project's latest status change on A-31's basis. An order whose flow no longer
+    // loads still contributes its creation; no orders at all leaves null.
+    let lastActivityAt: number | null = null;
+    for (const entry of own) {
+      const flow = (await flowsOf(entry.record.repo)).find((candidate) => candidate.id === entry.record.flow);
+      const stamp =
+        flow === undefined
+          ? entry.record.createdAt
+          : statusSince(flow, await deps.workOrders.events(entry.record.id), entry.record.createdAt);
+      if (lastActivityAt === null || stamp > lastActivityAt) lastActivityAt = stamp;
+    }
+    projects.push({
       project: def.id,
       name: def.name,
       mainRepo: def.mainRepo,
       repoCount: def.repos.length,
       active: own.filter((entry) => entry.status !== 'done').length,
       waiting: own.filter((entry) => entry.kind === 'permission_ask' || entry.kind === 'awaiting_human' || entry.kind === 'blocked').length,
-    };
-  });
+      lastActivityAt,
+    });
+  }
 
   // recentlyClosed: the five most recent done work orders by when they finished — a `closed`
   // event or the closure gate that completed them, whichever the history ends with.
-  const closed: { readonly workOrderId: string; readonly number: number; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[] = [];
+  const closed: CockpitView['recentlyClosed'][number][] = [];
   for (const entry of scoped) {
     if (entry.status !== 'done') continue;
     const number = await deps.workOrders.number(entry.record.id);
     if (number === undefined) continue;
     const events = await deps.workOrders.events(entry.record.id);
     const last = events[events.length - 1];
+    // The done status itself came from this flow, so the fallback only keeps the type honest.
+    const flow = (await flowsOf(entry.record.repo)).find((candidate) => candidate.id === entry.record.flow);
     closed.push({
       workOrderId: entry.record.id,
       number,
@@ -825,6 +886,7 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
       project: entry.record.project,
       repo: entry.record.repo,
       closedAt: last === undefined ? entry.record.createdAt : last.at,
+      outcome: flow === undefined ? 'merged' : closeOutcome(flow, events),
     });
   }
   closed.sort((a, b) => b.closedAt - a.closedAt);
@@ -1104,6 +1166,17 @@ const statusSince = (flow: FlowDef, events: readonly WorkOrderEvent[], createdAt
     }
   }
   return since;
+};
+
+/** A-39: which event ended a done work order — a `closed` event reads cancelled, the flow's own
+ *  completion merged. The same prefix refold as statusSince over the same short histories. */
+const closeOutcome = (flow: FlowDef, events: readonly WorkOrderEvent[]): 'merged' | 'cancelled' => {
+  for (const [index, event] of events.entries()) {
+    if (deriveWorkOrderState(flow, events.slice(0, index + 1)).status === 'done') {
+      return event.type === 'closed' ? 'cancelled' : 'merged';
+    }
+  }
+  return 'merged';
 };
 
 /** A-31: a card's `since` travels as an ISO-8601 UTC instant. `Date` stays banned in this layer,
