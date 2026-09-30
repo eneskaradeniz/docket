@@ -32,15 +32,24 @@ export interface PaletteState {
 export const focusRestoredOnClose = (origin: PaletteOrigin): boolean => origin === 'keyboard';
 
 /** What the palette shows under the input: nothing while the query is empty (the palette is the
- *  input row alone), the rows once a typed query matches, the no-results line once it does not. */
-export type PaletteBody = 'none' | 'results' | 'no-results';
+ *  input row alone), the rows once a settled query matches, the no-results line once it does
+ *  not — and `keep` while a typed query is still settling, meaning "hold the current standing":
+ *  the settled rows stay on screen, a folded body stays folded. The line belongs to its settled
+ *  query alone, so a query in flight can never flash it. */
+export type PaletteBody = 'none' | 'results' | 'no-results' | 'keep';
 
-/** The visible body is a pure function of the query and the result count — the component renders
- *  it and nothing else decides it. */
-export const paletteBody = (query: string, resultCount: number): PaletteBody => {
+/** The visible body is a pure function of the query, the query the settled list answers, and the
+ *  settled count — the component renders it and nothing else decides it. */
+export const paletteBody = (query: string, settledQuery: string, settledCount: number): PaletteBody => {
   if (query.trim() === '') return 'none';
-  return resultCount > 0 ? 'results' : 'no-results';
+  if (query !== settledQuery) return 'keep';
+  return settledCount > 0 ? 'results' : 'no-results';
 };
+
+/** The first typed character settles at once: with nothing settled yet (the palette just opened,
+ *  or the field was cleared) there is no previous list to protect, so the debounce has nothing
+ *  to buy — it only smooths the change from the second keystroke on. */
+export const settlesAtOnce = (settledQuery: string): boolean => settledQuery.trim() === '';
 
 /** A row's identity: its kind and its target — the same key the DOM rows render by, so a project
  *  and a repo that share a name stay two rows. */

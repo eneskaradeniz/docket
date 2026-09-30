@@ -11,9 +11,12 @@
 // only once text is typed, and folds away when it is cleared.
 // The results settle behind a debounce: the input's text updates on every keystroke, but the
 // rows recompute only after the last one has had its beat, so typing narrows the list in one
-// step instead of flashing through every intermediate standing. Settling is a keyed row diff —
-// rows that stay keep their place, rows that leave fold away, rows that arrive rise in — and
-// the keyboard's highlight follows the rows on screen, never the ones still being computed.
+// step instead of flashing through every intermediate standing. The first typed character
+// settles at once — with nothing settled yet there is no previous list to protect. Settling is
+// a keyed row diff — rows that stay keep their place, rows that leave fold away, rows that
+// arrive rise in — and the keyboard's highlight follows the rows on screen, never the ones
+// still being computed. The no-results line belongs to its settled query alone: while a query
+// is still settling the body keeps its standing, so typing never flashes "no results".
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { t, type Locale } from '../labels/t';
@@ -22,6 +25,7 @@ import {
   focusRestoredOnClose,
   paletteBody,
   paletteRowId,
+  settlesAtOnce,
   type PaletteResult,
   type PaletteState,
 } from '../stores/search-palette';
@@ -110,9 +114,11 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   // open was a pointer's: the reducer's origin decision (focusRestoredOnClose) settles that.
   const restoreRef = useRef<HTMLElement | null>(null);
   // The rows the palette is actually showing — the settled list, which lags the query by the
-  // debounce. Ghosts are rows walking out; ranks stagger the rows walking in, and the hidden
-  // set holds the arriving rows until their start state has painted.
+  // debounce, and the query that list answers (the body's keep decision reads it). Ghosts are
+  // rows walking out; ranks stagger the rows walking in, and the hidden set holds the arriving
+  // rows until their start state has painted.
   const [settled, setSettled] = useState<readonly PaletteResult[]>(EMPTY_ROWS);
+  const [settledQuery, setSettledQuery] = useState('');
   const [ghosts, setGhosts] = useState<readonly PaletteResult[]>(EMPTY_ROWS);
   const [enteringRanks, setEnteringRanks] = useState<ReadonlyMap<string, number>>(EMPTY_RANKS);
   const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(EMPTY_IDS);
@@ -163,12 +169,15 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   }, [mounted, state.open]);
 
   // The settling itself. The input never waits; the rows recompute only once the last
-  // keystroke is 120ms behind, so fast typing reshapes the list once instead of per key.
-  // An emptied input (or a closed palette) settles at once — the body folds away on the clear,
-  // and nothing waits for a debounce that has nothing to show.
+  // keystroke is 120ms behind, so fast typing reshapes the list once instead of per key —
+  // except the first typed character, which settles at once (settlesAtOnce: with nothing
+  // settled yet the debounce has nothing to protect). An emptied input (or a closed palette)
+  // settles at once too — the body folds away on the clear, and nothing waits for a debounce
+  // that has nothing to show.
   useEffect(() => {
     if (!state.open || state.query.trim() === '') {
       setSettled(EMPTY_ROWS);
+      setSettledQuery('');
       setGhosts(EMPTY_ROWS);
       setEnteringRanks(EMPTY_RANKS);
       setHiddenIds(EMPTY_IDS);
@@ -180,6 +189,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
     const timer = window.setTimeout(() => {
       const diff = diffRows(settled, state.results);
       setSettled(state.results);
+      setSettledQuery(state.query);
       const nextIds = new Set(state.results.map(paletteRowId));
       setGhosts((current) => [
         ...current.filter((row) => !nextIds.has(paletteRowId(row))),
@@ -191,9 +201,9 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
       diff.entering.forEach((row, rank) => ranks.set(paletteRowId(row), rank));
       setEnteringRanks(ranks);
       setHiddenIds(new Set(ranks.keys()));
-    }, MOTION.results.debounceMs);
+    }, settlesAtOnce(settledQuery) ? 0 : MOTION.results.debounceMs);
     return () => window.clearTimeout(timer);
-  }, [state.open, state.query, state.results, settled]);
+  }, [state.open, state.query, state.results, settled, settledQuery]);
 
   // Arriving rows mount folded and hidden; the flip waits for a painted frame so their rise
   // has a start state to chase — the same double frame the palette's own open rides.
@@ -221,8 +231,10 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   // Ghosts must never outlive the palette's own DOM — a stray timer fires into nothing.
   useEffect(() => () => window.clearTimeout(ghostTimerRef.current), []);
 
-  const body = paletteBody(state.query, settled.length);
-  const hasBody = body !== 'none';
+  const body = paletteBody(state.query, settledQuery, settled.length);
+  // `keep` holds the current standing through a settle: the settled rows stay on screen, and a
+  // folded body (or one showing the line of a query it no longer answers) stays folded.
+  const hasBody = body === 'keep' ? settled.length > 0 : body !== 'none';
 
   // The keyboard's row must stay in view when the list outgrows its cap.
   useEffect(() => {
