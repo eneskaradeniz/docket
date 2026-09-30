@@ -224,8 +224,6 @@ export const LABEL_KEYS = [
   'cockpit.closed.cancelled',
   'cockpit.card.lastActivity',
   'cockpit.more',
-  'cockpit.hide',
-  'cockpit.show',
   'cockpit.less',
   'cockpit.card.repos',
   'cockpit.card.singleRepo',

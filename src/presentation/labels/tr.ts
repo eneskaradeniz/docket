@@ -183,8 +183,6 @@ export const TR: LabelBundle = {
   'cockpit.running.hint': 'Bir aşama başladığında hesabı ve süresiyle burada görünür.',
   'cockpit.closed.hint': 'Biten iş emirleri burada son beşiyle listelenir.',
   'cockpit.ask.wants': 'Şunu çalıştırmak istiyor',
-  'cockpit.hide': 'Gizle',
-  'cockpit.show': 'Göster',
   'cockpit.head.queued': 'sırada',
   'cockpit.queued.queue': 'sırada',
   'cockpit.queued.limit': 'limit dolu',

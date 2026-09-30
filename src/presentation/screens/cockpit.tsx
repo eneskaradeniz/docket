@@ -8,7 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { CommandResult } from '../../api/commands';
 import { t, type Locale } from '../labels/t';
 import { CockpitAttentionRow } from '../components/cockpit-attention';
-import { CockpitClosedList } from '../components/cockpit-closed';
+import { CockpitClosedSection } from '../components/cockpit-closed';
 import { formatAge } from '../components/cockpit-format';
 import { CockpitProjectCard } from '../components/cockpit-projects';
 import { CockpitRunningRow } from '../components/cockpit-running';
@@ -55,12 +55,11 @@ function Pulse({ tone, children }: { readonly tone: LampTone; readonly children:
   );
 }
 
-function FoldButton({ label, onClick, expanded }: { readonly label: string; readonly onClick: () => void; readonly expanded?: boolean }) {
+function FoldButton({ label, onClick }: { readonly label: string; readonly onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-expanded={expanded}
       className="rounded-control px-1.5 py-0.5 text-[12.5px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
     >
       {label}
@@ -81,7 +80,6 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
     void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
   };
   const [expanded, setExpanded] = useState({ attention: false, running: false });
-  const [closedOpen, setClosedOpen] = useState(true);
 
   const phase = cockpitPhase(state);
   const view = state.view;
@@ -238,26 +236,14 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
             )}
           </section>
 
-          <section className="grid gap-2">
-            <SectionHead
-              title={t(locale, 'cockpit.section.closed')}
-              count={null}
-              action={
-                closed.length > 0 ? (
-                  <FoldButton
-                    label={t(locale, closedOpen ? 'cockpit.hide' : 'cockpit.show')}
-                    expanded={closedOpen}
-                    onClick={() => setClosedOpen(!closedOpen)}
-                  />
-                ) : undefined
-              }
-            />
-            {!closedOpen && closed.length > 0 ? null : closed.length === 0 ? (
+          {closed.length === 0 ? (
+            <section className="grid gap-2">
+              <SectionHead title={t(locale, 'cockpit.section.closed')} count={null} />
               <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
-            ) : (
-              <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} />
-            )}
-          </section>
+            </section>
+          ) : (
+            <CockpitClosedSection entries={closed} locale={locale} sinceMs={store.sinceMs} />
+          )}
         </div>
       ) : null}
     </div>

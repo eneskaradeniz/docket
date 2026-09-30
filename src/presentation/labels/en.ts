@@ -184,8 +184,6 @@ export const EN: LabelBundle = {
   'cockpit.running.hint': 'When a stage starts, it appears here with its account and duration.',
   'cockpit.closed.hint': 'Finished work orders are listed here, the latest five.',
   'cockpit.ask.wants': 'Wants to run',
-  'cockpit.hide': 'Hide',
-  'cockpit.show': 'Show',
   'cockpit.head.queued': 'queued',
   'cockpit.queued.queue': 'queued',
   'cockpit.queued.limit': 'limit full',
