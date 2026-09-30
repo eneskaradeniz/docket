@@ -145,6 +145,11 @@ export const LABEL_KEYS = [
   'palette.empty',
   'palette.kind.project',
   'palette.kind.repo',
+  // The palette's history standing (an empty query with remembered searches): the header, its
+  // clear control and the per-row remove control's accessible name.
+  'palette.history.title',
+  'palette.history.clear',
+  'palette.history.remove',
   'nav.projects',
   'nav.projects.empty',
   'nav.projects.sort',
