@@ -25,9 +25,12 @@ import {
   type CockpitStore,
 } from '../stores/cockpit';
 import { commandResultKey } from '../stores/results';
+import type { ProviderMarksStore } from '../stores/provider-marks';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
+  /** The provider marks the running rows' badges resolve from (loaded once, session-cached). */
+  readonly marks: ProviderMarksStore;
   readonly locale: Locale;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
   /** The project cards' targets (K-4:B): a multi-repo project opens its roadmap, a single-repo
@@ -68,8 +71,10 @@ function FoldButton({ label, onClick }: { readonly label: string; readonly onCli
   );
 }
 
-export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
+export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The marks land once, after the first paint; the subscription turns them into a re-render.
+  useSyncExternalStore(marks.subscribe, marks.state);
   useEffect(() => {
     void store.load();
   }, [store]);
@@ -210,6 +215,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                       run={run}
                       locale={locale}
                       accountLabel={accountLabel(run.accountId)}
+                      mark={marks.markFor(run.provider ?? '')}
                       sinceMs={store.sinceMs(run.startedAt)}
                       onOpen={() => onOpenWorkOrder(run.workOrderId)}
                     />

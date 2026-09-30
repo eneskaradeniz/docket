@@ -11,10 +11,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { ACTIVE_CLASS } from './active-state';
+import { MARK_SIZE, ProviderMark } from './provider-mark';
 import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { AccountCard, AccountsFrameStore } from '../stores/accounts-frame';
+import type { ProviderMark as ProviderMarkValue, ProviderMarksStore } from '../stores/provider-marks';
 
 const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' };
 
@@ -69,11 +71,13 @@ const RefreshIcon = () => (
 
 const AccountCardView = ({
   card,
+  mark,
   active,
   locale,
   onOpen,
 }: {
   readonly card: AccountCard;
+  readonly mark: ProviderMarkValue | null;
   readonly active: boolean;
   readonly locale: Locale;
   readonly onOpen: () => void;
@@ -86,8 +90,11 @@ const AccountCardView = ({
       active ? ACTIVE_CLASS : 'border-hairline bg-surface hover:border-bord'
     }`}
   >
-    <span title={card.label} className="block truncate text-xs font-semibold leading-[17px]">
-      {card.label}
+    <span className="flex items-center gap-1.5">
+      <ProviderMark mark={mark} size={MARK_SIZE.dense} />
+      <span title={card.label} className="min-w-0 truncate text-xs font-semibold leading-[17px]">
+        {card.label}
+      </span>
     </span>
     <span className="mt-1.5 grid gap-[3px]">
       {card.windows.map((window, index) => (
@@ -127,16 +134,20 @@ const AccountCardView = ({
 
 export function SidebarAccounts({
   store,
+  marks,
   locale,
   activeAccountId,
   onOpenAccount,
 }: {
   readonly store: AccountsFrameStore;
+  readonly marks: ProviderMarksStore;
   readonly locale: Locale;
   readonly activeAccountId: string | null;
   readonly onOpenAccount: (id: string) => void;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The marks land once, after the first paint; the subscription turns them into a re-render.
+  useSyncExternalStore(marks.subscribe, marks.state);
   // The refresh icon spins for a fixed beat, like the prototype's — a fast reply would end the
   // spin before the eye catches it.
   const [spinning, setSpinning] = useState(false);
@@ -203,6 +214,7 @@ export function SidebarAccounts({
                 <AccountCardView
                   key={card.id}
                   card={card}
+                  mark={marks.markFor(card.provider)}
                   active={activeAccountId === card.id}
                   locale={locale}
                   onOpen={() => onOpenAccount(card.id)}

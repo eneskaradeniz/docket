@@ -8,14 +8,18 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
+import { ProviderMark } from '../components/provider-mark';
 import { StateBadge } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 import type { AccountViewStore } from '../stores/account-view';
 import { policyKey, windowBars } from '../stores/account-view';
 import { failureKey } from '../stores/results';
+import type { ProviderMarksStore } from '../stores/provider-marks';
 
 export interface AccountViewScreenProps {
   readonly store: AccountViewStore;
+  /** The provider marks the header's badge resolves from (loaded once, session-cached). */
+  readonly marks: ProviderMarksStore;
   readonly accountId: string;
   readonly locale: Locale;
   readonly timeZone: string;
@@ -56,6 +60,7 @@ const InfoGlyph = ({ title, label }: { readonly title: string; readonly label: s
 
 export function AccountViewScreen({
   store,
+  marks,
   accountId,
   locale,
   timeZone,
@@ -64,6 +69,8 @@ export function AccountViewScreen({
   onBack,
 }: AccountViewScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The marks land once, after the first paint; the subscription turns them into a re-render.
+  useSyncExternalStore(marks.subscribe, marks.state);
   useEffect(() => {
     void store.load(accountId);
   }, [store, accountId]);
@@ -86,6 +93,7 @@ export function AccountViewScreen({
           ) : null
         ) : (
           <>
+            <ProviderMark mark={marks.markFor(view.account.provider)} />
             <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{view.account.label}</h1>
             {view.account.authMode === 'subscription' ? (
               <StateBadge tone="proceed">{t(locale, 'account.plan.subscription')}</StateBadge>

@@ -1,5 +1,5 @@
 // components/cockpit-running.tsx — Koşanlar (U-21): one calm line per run — the account's
-// monogram, the work-order code, the title (A-35) over the stage and its progress strip, the
+// provider mark, the work-order code, the title (A-35) over the stage and its progress strip, the
 // account name and the live duration. A queued row (A-36) is dashed and dimmed, says why it waits
 // (A-37) and shows how long instead of a running spinner.
 import type { CockpitView } from '../../api/queries';
@@ -7,11 +7,14 @@ import { t, type Locale } from '../labels/t';
 import { isQueued, stageStrip } from '../stores/cockpit';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 import { formatAge, formatInstant } from './cockpit-format';
+import { ProviderMark, type ProviderMarkProps } from './provider-mark';
 
 export interface CockpitRunningRowProps {
   readonly run: CockpitView['running'][number];
   readonly locale: Locale;
   readonly accountLabel: string;
+  /** The account's provider mark (U-21's account badge); null renders the neutral glyph. */
+  readonly mark: ProviderMarkProps['mark'];
   readonly sinceMs: number;
   readonly onOpen: () => void;
 }
@@ -37,7 +40,7 @@ const queuedNote = (run: CockpitView['running'][number], locale: Locale): string
     : `${t(locale, 'cockpit.queued.limitAt')} ${formatInstant(locale, at)}`;
 };
 
-export function CockpitRunningRow({ run, locale, accountLabel, sinceMs, onOpen }: CockpitRunningRowProps) {
+export function CockpitRunningRow({ run, locale, accountLabel, mark, sinceMs, onOpen }: CockpitRunningRowProps) {
   const queued = isQueued(run);
   const strip = queued ? null : stageStrip(run);
   const title = run.title !== undefined && run.title !== '' ? run.title : null;
@@ -49,12 +52,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, sinceMs, onOpen }
         title !== null ? 'min-h-12' : 'min-h-9'
       } ${queued ? 'border-dashed border-hairline bg-transparent opacity-60' : 'border-hairline bg-surface'}`}
     >
-      <span
-        aria-hidden="true"
-        className="grid h-[22px] w-[22px] place-items-center rounded-control border border-hairline bg-raised font-mono text-[11px] text-inkdim"
-      >
-        {accountLabel.slice(0, 1).toUpperCase()}
-      </span>
+      <ProviderMark mark={mark} />
       <span className="font-mono text-[11.5px] text-inkdim">{formatWorkOrderCode(run.number, locale)}</span>
       <span className="grid min-w-0">
         {title !== null ? (
