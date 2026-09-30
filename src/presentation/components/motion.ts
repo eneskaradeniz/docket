@@ -37,6 +37,13 @@ export const MOTION = {
     // The keyboard highlight's own pace — quicker than any row leg, so it never lags a move.
     highlightMs: 120,
   },
+  // The Kanban board: hover/focus and the edge fades answer quickly, a column folding takes a
+  // little longer, a running lamp breathes slowly.
+  board: {
+    hoverMs: 160,
+    columnMs: 200,
+    pulseMs: 1800,
+  },
   reducedMs: 80,
 } as const;
 
@@ -61,4 +68,13 @@ export const motionVars = (): CSSProperties =>
     // Rows carry no stagger delay unless they are entering — the class consumes this default.
     '--row-delay': '0ms',
     '--motion-reduced': `${MOTION.reducedMs}ms`,
+  }) as CSSProperties;
+
+/** The board's motion numbers as CSS custom properties, set once on the board's root. */
+export const boardMotionVars = (): CSSProperties =>
+  ({
+    '--motion-board-hover': `${MOTION.board.hoverMs}ms`,
+    '--motion-board-column': `${MOTION.board.columnMs}ms`,
+    '--motion-board-pulse': `${MOTION.board.pulseMs}ms`,
+    '--motion-ease': MOTION.open.easing,
   }) as CSSProperties;

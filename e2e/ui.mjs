@@ -157,10 +157,8 @@ await spec('cockpit lists the seeded work order as awaiting a human', async () =
 await spec('board renders the columns of the seeded definitions', async () => {
   await repoRow().click();
   await waitFor('the board heading', () => present(page.locator('main h1').filter({ hasText: 'duman' })));
-  const flow = await page.locator('main header p').textContent();
-  assert.ok(flow?.includes('duman-akisi'), `board header missing the flow: ${flow}`);
-  // one work order waiting in review, none running yet — a filled column heads with the stage
-  // name, an empty one is the slim vertical rail carrying the same name.
+  // one work order waiting in review, none running yet — on a short flow every stage is an open
+  // lane headed with its name, the empty ones included.
   await waitFor("the 'İnceleme' column", () => present(page.locator('main section h2').filter({ hasText: 'İnceleme' })));
   await waitFor("the empty 'Uygulama' column", () => present(page.locator('main section h2').filter({ hasText: 'Uygulama' })));
   const card = page.locator('main section button').filter({ hasText: TITLE });

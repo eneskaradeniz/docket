@@ -3,8 +3,10 @@
 // query instead of an empty board, and its create intent validates title and flow before issuing
 // `workOrder.open`. U-18 adds the Kanban ⇄ Liste choice — persisted per repo through the
 // injected persistence, so it survives a reload — and the list view's derivations: the stage
-// rail's segments and the rows a filter selects. Re-queries on work-order changes; run events do
-// not move cards.
+// rail's segments and the rows a filter selects. The Kanban view's derivations live here too:
+// each card's tone, the columns with the done work as the last one, and which columns stand shut
+// (an explicit choice per repo, else a default). Re-queries on work-order changes; run events
+// do not move cards.
 import type { Api } from '../../api/api';
 import type { BoardView, ProjectTree, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
@@ -56,6 +58,54 @@ export interface BoardState {
   readonly viewMode: BoardViewMode;
   /** The list view's rail selection — session state, reset by every load (U-18). */
   readonly listFilter: ListFilter;
+  /** The operator's explicit open/shut choices for Kanban columns, per repo (U-18); a column
+   *  without an entry stands at its default. */
+  readonly columnOverrides: ColumnOverrides;
+}
+
+/** A Kanban column's standing the operator chose — anything else is the default. */
+export type ColumnOverrides = Readonly<Record<string, 'open' | 'shut'>>;
+
+/** The storage key a repo's Kanban column choices persist under. */
+export const boardColumnsKey = (repo: string): string => `docket.board.columns.${repo}`;
+
+/** Flows longer than this start their empty stages shut, so a long flow does not spend its width
+ *  on stages with no work. */
+export const EMPTY_SHUT_ABOVE_STAGES = 6;
+
+/** The one hue a card's status stands for: waiting kinds share the attention tone, a status
+ *  outside the closed set stays unknown instead of pretending a known state. */
+export type CardTone = 'ready' | 'running' | 'gating' | 'attention' | 'blocked' | 'done' | 'unknown';
+
+const TONES: Readonly<Record<string, CardTone>> = {
+  ready: 'ready',
+  running: 'running',
+  gating: 'gating',
+  awaiting_human: 'attention',
+  limit_waiting: 'attention',
+  blocked: 'blocked',
+  done: 'done',
+};
+
+export const cardTone = (status: string): CardTone => TONES[status] ?? 'unknown';
+
+export interface KanbanCard {
+  readonly id: string;
+  readonly number: number;
+  readonly title: string;
+  readonly status: string;
+  readonly tone: CardTone;
+}
+
+/** One Kanban column: a stage of the flow, or the done work as the last column. */
+export interface KanbanColumn {
+  readonly key: string;
+  readonly kind: 'stage' | 'done';
+  readonly name: string;
+  readonly cards: readonly KanbanCard[];
+  /** Cards that wait on a person (awaiting, blocked, limit). */
+  readonly waiting: number;
+  readonly shut: boolean;
 }
 
 /** One rail segment of the list view (U-18): a stage's name with its running and waiting counts,
@@ -81,6 +131,40 @@ export const storedBoardView = (persistence: BoardPersistence, repo: string): Bo
 
 /** The statuses that wait on something a person should see: the rail's amber count. */
 const WAITING: ReadonlySet<string> = new Set(['awaiting_human', 'blocked', 'limit_waiting']);
+
+const isColumnChoice = (value: unknown): value is 'open' | 'shut' => value === 'open' || value === 'shut';
+
+/** The stored column choices; unreadable storage or a foreign value falls back to the defaults,
+ *  entry by entry, never to a broken board (U-18). */
+export const storedColumnOverrides = (persistence: BoardPersistence, repo: string): ColumnOverrides => {
+  const raw = persistence.getItem(boardColumnsKey(repo));
+  if (raw === null) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, 'open' | 'shut'] => isColumnChoice(entry[1])));
+  } catch {
+    return {};
+  }
+};
+
+/** The Kanban columns in flow order with the done work last. A column with a waiting card is
+ *  never shut — the operator's next move must stay visible; otherwise an explicit choice wins,
+ *  else done and (on a long flow) empty stages start shut (U-18). */
+export const kanbanColumns = (view: BoardView, overrides: ColumnOverrides): readonly KanbanColumn[] => {
+  const long = view.columns.length > EMPTY_SHUT_ABOVE_STAGES;
+  const build = (key: string, kind: 'stage' | 'done', name: string, cards: readonly KanbanCard[]): KanbanColumn => {
+    const waiting = cards.filter((card) => WAITING.has(card.status)).length;
+    const standing = overrides[key] ?? (kind === 'done' || (long && cards.length === 0) ? 'shut' : 'open');
+    return { key, kind, name, cards, waiting, shut: waiting === 0 && standing === 'shut' };
+  };
+  return [
+    ...view.columns.map((column) =>
+      build(`stage:${column.stage}`, 'stage', column.name, column.workOrders.map((card) => ({ ...card, tone: cardTone(card.status) }))),
+    ),
+    build('done', 'done', '', view.done.map((card) => ({ ...card, status: 'done', tone: 'done' as const }))),
+  ];
+};
 
 /** The rail: one segment per stage in the flow's order, closed by the done lane (U-18). */
 export const listSegments = (view: BoardView): readonly ListSegment[] => [
@@ -129,13 +213,16 @@ export interface BoardStore {
   setViewMode(repo: string, mode: BoardViewMode): void;
   /** Selects the list view's rail segment — session state only (U-18). */
   selectList(filter: ListFilter): void;
+  /** Flips a Kanban column open/shut and persists the choice for this repo (U-18); a column that
+   *  waits on a person stays open. */
+  toggleColumn(repo: string, key: string): void;
   subscribe(listener: () => void): () => void;
 }
 
 export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
   const { api, changes, actor, persistence } = deps;
 
-  let state: BoardState = { loading: false, view: null, problem: null, viewMode: 'kanban', listFilter: null };
+  let state: BoardState = { loading: false, view: null, problem: null, viewMode: 'kanban', listFilter: null, columnOverrides: {} };
   // The repo the store is bound to: change events re-query it, create refreshes it.
   let repo: string | null = null;
   const listeners = new Set<() => void>();
@@ -153,7 +240,14 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
     repo = target;
     // Every load re-reads the stored choice — a reload restores the repo's standing — and
     // starts the list unfiltered (U-18).
-    set({ loading: true, view: state.view, problem: null, viewMode: storedBoardView(persistence, target), listFilter: null });
+    set({
+      loading: true,
+      view: state.view,
+      problem: null,
+      viewMode: storedBoardView(persistence, target),
+      listFilter: null,
+      columnOverrides: storedColumnOverrides(persistence, target),
+    });
     const reply: unknown = await api.query({ type: 'repo.board', repo: target } satisfies Query);
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
@@ -181,6 +275,13 @@ export const createBoardStore = (deps: BoardStoreDeps): BoardStore => {
     },
     selectList: (filter) => {
       set({ ...state, listFilter: filter });
+    },
+    toggleColumn: (target, key) => {
+      const column = state.view === null ? undefined : kanbanColumns(state.view, state.columnOverrides).find((candidate) => candidate.key === key);
+      if (column === undefined || column.waiting > 0) return;
+      const next: ColumnOverrides = { ...state.columnOverrides, [key]: column.shut ? 'open' : 'shut' };
+      persistence.setItem(boardColumnsKey(target), JSON.stringify(next));
+      if (target === repo) set({ ...state, columnOverrides: next });
     },
     subscribe: (listener) => {
       listeners.add(listener);

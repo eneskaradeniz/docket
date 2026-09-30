@@ -81,8 +81,12 @@ for (const [size, theme] of combos) {
 
   await journey('J-2', 'tree → repo row → board; Kanban ⇄ Liste survives reload', async () => {
     await click('antreo-api');
-    await see('Pano');
+    // The view choice persists per repo in the app profile, so the journey enters from Kanban
+    // whatever an earlier run left behind.
+    await button('Kanban');
+    await page.waitForSelector('[data-board-kanban]', { timeout: WAIT });
     await see('Rol matrisi');
+    await see('Bitti');
     await shot('board-kanban');
     await button('Liste');
     await see('İE-0016');
@@ -91,7 +95,7 @@ for (const [size, theme] of combos) {
     await page.waitForSelector('nav');
     await click('antreo-api');
     await see('İE-0016');
-    assert.equal(await page.getByText('ANALİZ', { exact: true }).count(), 0, 'the Kanban columns must stay hidden after reload');
+    assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'the Kanban columns must stay hidden after reload');
     await shot('board-liste-after-reload');
   });
 
@@ -106,7 +110,7 @@ for (const [size, theme] of combos) {
     await shot('approved');
     await click('‹ Geri');
     await see('İE-0016');
-    assert.equal(await page.getByText('ANALİZ', { exact: true }).count(), 0, 'Liste must still be the active view');
+    assert.equal(await page.locator('[data-board-kanban]').count(), 0, 'Liste must still be the active view');
     await shot('back-on-board');
   });
 
@@ -127,7 +131,7 @@ for (const [size, theme] of combos) {
   await journey('J-5', 'single-repo project → board → Yol haritası ↗', async () => {
     await click('Kadife Odoo');
     await see('kadife-odoo');
-    await see('Pano');
+    await page.waitForSelector('[data-board-kanban]');
     await shot('board');
     await click('Yol haritası ↗');
     await see('Yol haritası');
