@@ -11,6 +11,7 @@ import type { AttentionItem, CockpitView, Query } from '../../api/queries';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Actor, AgentEvent } from '../../domain/index';
 import {
+  COCKPIT_COLLAPSED_STORAGE_KEY,
   COCKPIT_LIMITS,
   cockpitPhase,
   cockpitSummary,
@@ -111,7 +112,7 @@ describe('cockpit store', () => {
     const api = fakeCockpitApi(view);
     const store = createCockpitStore({ api, changes: fakeSignal().signal, now: () => 1_000, actor: userActor });
 
-    expect(store.state()).toEqual({ loading: false, view: null, failed: false, asks: {}, loadedAt: null });
+    expect(store.state()).toEqual({ loading: false, view: null, failed: false, asks: {}, loadedAt: null, collapsed: [] });
     const loading = store.load();
     expect(store.state().loading).toBe(true);
     await loading;
@@ -179,7 +180,7 @@ describe('cockpit store', () => {
     api.setReply(recovered);
     await store.retry();
     expect(api.queries.filter((query) => query.type === 'cockpit').length).toBe(3);
-    expect(store.state()).toEqual({ loading: false, view: recovered, failed: false, asks: {}, loadedAt: 0 });
+    expect(store.state()).toEqual({ loading: false, view: recovered, failed: false, asks: {}, loadedAt: 0, collapsed: [] });
   });
 
   it('U-2: a first failed query leaves no view but still exposes retry', async () => {
@@ -194,7 +195,7 @@ describe('cockpit store', () => {
     const good = cockpitView([]);
     api.setReply(good);
     await store.retry();
-    expect(store.state()).toEqual({ loading: false, view: good, failed: false, asks: {}, loadedAt: 0 });
+    expect(store.state()).toEqual({ loading: false, view: good, failed: false, asks: {}, loadedAt: 0, collapsed: [] });
   });
 });
 
@@ -379,7 +380,7 @@ describe('cockpit head and lists (U-21 redesign)', () => {
   });
 
   it('U-21: the phase names what the screen shows — loading, first run, failed with nothing, or ready', () => {
-    const base = { loading: false, failed: false, asks: {}, loadedAt: null } as const;
+    const base = { loading: false, failed: false, asks: {}, loadedAt: null, collapsed: [] } as const;
     expect(cockpitPhase({ ...base, loading: true, view: null })).toBe('loading');
     expect(cockpitPhase({ ...base, failed: true, view: null })).toBe('failed-empty');
     expect(cockpitPhase({ ...base, view: cockpitView([]) })).toBe('first-run');
@@ -436,5 +437,46 @@ describe('cockpit — queue, stage strip and project activity (A-35 … A-38)', 
     expect(showsLastActivity(card(2, 5_000))).toBe(false);
     expect(showsLastActivity(card(0, null))).toBe(false);
     expect(showsLastActivity(card(0))).toBe(false);
+  });
+});
+
+describe('cockpit — folded sections persist (U-21 redesign)', () => {
+  const memory = (initial?: string) => {
+    const data = new Map<string, string>();
+    if (initial !== undefined) data.set(COCKPIT_COLLAPSED_STORAGE_KEY, initial);
+    return { data, storage: { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => void data.set(key, value) } };
+  };
+  const make = (persistence?: ReturnType<typeof memory>['storage']) =>
+    createCockpitStore({ api: fakeCockpitApi(cockpitView([])), changes: fakeSignal().signal, now: () => 0, actor: userActor, ...(persistence === undefined ? {} : { persistence }) });
+
+  it('U-21: every section starts open', () => {
+    expect(make(memory().storage).state().collapsed).toEqual([]);
+  });
+
+  it('U-21: toggling folds a section and persists it; toggling again opens it', () => {
+    const mem = memory();
+    const store = make(mem.storage);
+    store.toggleSection('closed');
+    store.toggleSection('running');
+    expect(store.state().collapsed).toEqual(['closed', 'running']);
+    expect(JSON.parse(mem.data.get(COCKPIT_COLLAPSED_STORAGE_KEY) ?? 'null')).toEqual(['closed', 'running']);
+    store.toggleSection('closed');
+    expect(store.state().collapsed).toEqual(['running']);
+  });
+
+  it('U-21: a new store reads the folded sections back', () => {
+    expect(make(memory('["projects"]').storage).state().collapsed).toEqual(['projects']);
+  });
+
+  it('U-21: unreadable or foreign storage means everything open; Senden bekleyenler never folds', () => {
+    expect(make(memory('{oops').storage).state().collapsed).toEqual([]);
+    expect(make(memory('"closed"').storage).state().collapsed).toEqual([]);
+    expect(make(memory('["attention","closed","bogus"]').storage).state().collapsed).toEqual(['closed']);
+  });
+
+  it('U-21: without storage the fold still works for the session', () => {
+    const store = make();
+    store.toggleSection('projects');
+    expect(store.state().collapsed).toEqual(['projects']);
   });
 });

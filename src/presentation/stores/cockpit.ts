@@ -38,6 +38,19 @@ export type ProjectCardTarget =
   | { readonly kind: 'roadmap'; readonly project: string }
   | { readonly kind: 'board'; readonly repo: string };
 
+/** The sections the operator can fold. Senden bekleyenler is not among them: what waits on the
+ *  operator is never hidden (U-10). */
+export type CockpitSection = 'running' | 'projects' | 'closed';
+const FOLDABLE: readonly CockpitSection[] = ['running', 'projects', 'closed'];
+
+export const COCKPIT_COLLAPSED_STORAGE_KEY = 'docket.cockpit.collapsed';
+
+/** The structural slice of DOM storage the folds persist through; localStorage satisfies it. */
+export interface CockpitPersistence {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
 export interface CockpitStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   readonly changes: CockpitChangeSignal;
@@ -45,6 +58,8 @@ export interface CockpitStoreDeps {
   readonly now: () => number;
   /** Every issued answer travels as this actor — the cockpit acts as the user. */
   readonly actor: Actor;
+  /** The folded sections persist here; without it they last for the session. */
+  readonly persistence?: CockpitPersistence;
 }
 
 export interface CockpitState {
@@ -60,6 +75,8 @@ export interface CockpitState {
   /** The clock reading of the last successful load; null before the first one. A failed reload
    *  keeps it, so the screen can say how old the view it still shows is. */
   readonly loadedAt: number | null;
+  /** The folded sections, in the order they were folded. */
+  readonly collapsed: readonly CockpitSection[];
 }
 
 export interface AnswerIntentInput {
@@ -81,6 +98,8 @@ export interface CockpitStore {
   /** The inline answer of a permission-ask row (U-21): `permission.answer` plus the re-query
    *  that must drop the answered row. */
   answerPermission(input: AnswerIntentInput): Promise<CommandResult>;
+  /** Folds an open section and opens a folded one; the choice persists. */
+  toggleSection(section: CockpitSection): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -183,10 +202,23 @@ export const cockpitPhase = (state: CockpitState): CockpitPhase => {
   return empty ? 'first-run' : 'ready';
 };
 
-export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
-  const { api, changes, now, actor } = deps;
+/** Anything unreadable in storage means every section open; unknown names are dropped. */
+const readCollapsed = (persistence: CockpitPersistence | undefined): readonly CockpitSection[] => {
+  try {
+    const raw = persistence?.getItem(COCKPIT_COLLAPSED_STORAGE_KEY);
+    if (raw === null || raw === undefined) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return FOLDABLE.filter((section) => parsed.includes(section)).sort((a, b) => parsed.indexOf(a) - parsed.indexOf(b));
+  } catch {
+    return [];
+  }
+};
 
-  let state: CockpitState = { loading: false, view: null, failed: false, asks: {}, loadedAt: null };
+export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
+  const { api, changes, now, actor, persistence } = deps;
+
+  let state: CockpitState = { loading: false, view: null, failed: false, asks: {}, loadedAt: null, collapsed: readCollapsed(persistence) };
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher view when change events stack up.
@@ -255,7 +287,7 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
     }
     // The contract of the cockpit query: a reply that is not a failure is a CockpitView.
     const view = reply as CockpitView;
-    set({ loading: false, view, failed: false, asks: {}, loadedAt: now() });
+    set({ ...state, loading: false, view, failed: false, asks: {}, loadedAt: now() });
     void loadAsks(view, attempt);
   };
 
@@ -283,6 +315,17 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
       // agrees, or keeps it when the ask was already gone.
       void load();
       return result;
+    },
+    toggleSection: (section) => {
+      const collapsed = state.collapsed.includes(section)
+        ? state.collapsed.filter((each) => each !== section)
+        : [...state.collapsed, section];
+      set({ ...state, collapsed });
+      try {
+        persistence?.setItem(COCKPIT_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+      } catch {
+        // Storage refused the write: the fold still holds for the session.
+      }
     },
     subscribe: (listener) => {
       listeners.add(listener);

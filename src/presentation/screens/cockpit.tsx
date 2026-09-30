@@ -8,9 +8,10 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { CommandResult } from '../../api/commands';
 import { t, type Locale } from '../labels/t';
 import { CockpitAttentionRow } from '../components/cockpit-attention';
-import { CockpitClosedSection } from '../components/cockpit-closed';
+import { CockpitClosedList } from '../components/cockpit-closed';
 import { formatAge } from '../components/cockpit-format';
 import { CockpitProjectCard } from '../components/cockpit-projects';
+import { CockpitSection } from '../components/cockpit-section';
 import { CockpitRunningRow } from '../components/cockpit-running';
 import { CockpitAlert, FirstRunCard, QuietRow, SectionHead, Skeleton } from '../components/cockpit-states';
 import type { AccountCard } from '../stores/accounts-frame';
@@ -192,12 +193,13 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
             ) : null}
           </section>
 
-          <section className="grid gap-2">
-            <SectionHead
-              title={t(locale, 'cockpit.section.running')}
-              count={summary.running}
-              action={fold('running', view.running.length, COCKPIT_LIMITS.running)}
-            />
+          <CockpitSection
+            title={t(locale, 'cockpit.section.running')}
+            count={summary.running}
+            open={!state.collapsed.includes('running')}
+            onToggle={() => store.toggleSection('running')}
+            action={fold('running', view.running.length, COCKPIT_LIMITS.running)}
+          >
             {view.running.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.running.empty')} hint={t(locale, 'cockpit.running.hint')} />
             ) : (
@@ -215,10 +217,14 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                 ))}
               </ul>
             )}
-          </section>
+          </CockpitSection>
 
-          <section className="grid gap-2">
-            <SectionHead title={t(locale, 'cockpit.section.projects')} count={view.projects.length} />
+          <CockpitSection
+            title={t(locale, 'cockpit.section.projects')}
+            count={view.projects.length}
+            open={!state.collapsed.includes('projects')}
+            onToggle={() => store.toggleSection('projects')}
+          >
             {view.projects.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.projects.empty')} />
             ) : (
@@ -234,16 +240,20 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                 ))}
               </div>
             )}
-          </section>
+          </CockpitSection>
 
-          {closed.length === 0 ? (
-            <section className="grid gap-2">
-              <SectionHead title={t(locale, 'cockpit.section.closed')} count={null} />
+          <CockpitSection
+            title={t(locale, 'cockpit.section.closed')}
+            count={closed.length}
+            open={!state.collapsed.includes('closed')}
+            onToggle={() => store.toggleSection('closed')}
+          >
+            {closed.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
-            </section>
-          ) : (
-            <CockpitClosedSection entries={closed} locale={locale} sinceMs={store.sinceMs} />
-          )}
+            ) : (
+              <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
+            )}
+          </CockpitSection>
         </div>
       ) : null}
     </div>

@@ -26,7 +26,14 @@ export function CockpitAttentionRow({ item, ask, locale, ageMs, onOpen, onAnswer
     <div className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-card border bg-surface px-3.5 py-2.5 transition-colors hover:border-bord ${border}`}>
       <span aria-hidden="true" className={`row-span-2 mt-2 h-2 w-2 flex-none self-start rounded-full ${KIND_LAMP[item.kind]}`} />
       <span className="flex min-w-0 items-center gap-2 text-[14px] font-semibold text-ink">
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={item.title}>{item.title}</span>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left hover:underline"
+          title={item.title}
+        >
+          {item.title}
+        </button>
         <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
       </span>
       <span className="col-start-3 row-span-2 flex flex-none gap-2">
