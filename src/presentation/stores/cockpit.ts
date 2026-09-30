@@ -38,6 +38,19 @@ export type ProjectCardTarget =
   | { readonly kind: 'roadmap'; readonly project: string }
   | { readonly kind: 'board'; readonly repo: string };
 
+/** The sections the operator can fold. Senden bekleyenler is not among them: what waits on the
+ *  operator is never hidden (U-10). */
+export type CockpitSection = 'running' | 'projects' | 'closed';
+const FOLDABLE: readonly CockpitSection[] = ['running', 'projects', 'closed'];
+
+export const COCKPIT_COLLAPSED_STORAGE_KEY = 'docket.cockpit.collapsed';
+
+/** The structural slice of DOM storage the folds persist through; localStorage satisfies it. */
+export interface CockpitPersistence {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
 export interface CockpitStoreDeps {
   readonly api: Pick<Api, 'query' | 'command'>;
   readonly changes: CockpitChangeSignal;
@@ -45,6 +58,8 @@ export interface CockpitStoreDeps {
   readonly now: () => number;
   /** Every issued answer travels as this actor — the cockpit acts as the user. */
   readonly actor: Actor;
+  /** The folded sections persist here; without it they last for the session. */
+  readonly persistence?: CockpitPersistence;
 }
 
 export interface CockpitState {
@@ -57,6 +72,11 @@ export interface CockpitState {
   /** The permission ask of each waiting row that carries one, keyed by work order id (U-21);
    *  a row without a derivable ask renders its own kind copy instead. */
   readonly asks: Readonly<Record<string, CockpitAsk>>;
+  /** The clock reading of the last successful load; null before the first one. A failed reload
+   *  keeps it, so the screen can say how old the view it still shows is. */
+  readonly loadedAt: number | null;
+  /** The folded sections, in the order they were folded. */
+  readonly collapsed: readonly CockpitSection[];
 }
 
 export interface AnswerIntentInput {
@@ -78,6 +98,8 @@ export interface CockpitStore {
   /** The inline answer of a permission-ask row (U-21): `permission.answer` plus the re-query
    *  that must drop the answered row. */
   answerPermission(input: AnswerIntentInput): Promise<CommandResult>;
+  /** Folds an open section and opens a folded one; the choice persists. */
+  toggleSection(section: CockpitSection): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -104,10 +126,99 @@ export const projectCardTarget = (card: Extract<CockpitView['projects'][number],
     ? { kind: 'roadmap', project: card.project }
     : { kind: 'board', repo: card.mainRepo };
 
-export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
-  const { api, changes, now, actor } = deps;
+/** How many rows each list shows before its fold; Son kapananlar is capped by the api too (A-28),
+ *  the store re-asserts it so a longer reply never stretches the screen. */
+export const COCKPIT_LIMITS = { attention: 5, running: 6, closed: 5 } as const;
 
-  let state: CockpitState = { loading: false, view: null, failed: false, asks: {} };
+type RunRow = CockpitView['running'][number];
+
+/** A queued row waits for a slot or a limit; every other row is an actually running stage (A-36). */
+export const isQueued = (run: RunRow): boolean => run.queued === true;
+
+/** The head's counts. `attention` is every attention item — the number the title bar's badge
+ *  shows (U-10); `waiting` are those the operator or a clock holds, `blocked` the stopped ones.
+ *  `running` counts rows actually running, `queued` the ones waiting for their turn (A-36). */
+export const cockpitSummary = (
+  view: CockpitView,
+): {
+  readonly attention: number;
+  readonly waiting: number;
+  readonly blocked: number;
+  readonly running: number;
+  readonly queued: number;
+} => {
+  const blocked = view.attention.filter((item) => item.kind === 'blocked').length;
+  const queued = view.running.filter(isQueued).length;
+  return {
+    attention: view.attention.length,
+    waiting: view.attention.length - blocked,
+    blocked,
+    running: view.running.length - queued,
+    queued,
+  };
+};
+
+/** The progress strip of a run row (A-35): the stage's 1-based position in its flow and the flow's
+ *  length; null when the api could not place the stage (both 0) or does not say. Pure. */
+export const stageStrip = (run: RunRow): { readonly index: number; readonly count: number } | null => {
+  const { stageIndex, stageCount } = run;
+  if (stageIndex === undefined || stageCount === undefined || stageIndex <= 0 || stageCount <= 0) return null;
+  return { index: Math.min(stageIndex, stageCount), count: stageCount };
+};
+
+/** Whether a project card shows "last activity": only a card with no active work and a known
+ *  stamp (A-38) — a busy card already says what is going on. Pure. */
+export const showsLastActivity = (card: CockpitView['projects'][number]): boolean =>
+  card.active === 0 && card.lastActivityAt !== undefined && card.lastActivityAt !== null;
+
+/** The rows a list shows and how many its fold hides; expanded shows everything. Pure. */
+export const limitRows = <T>(
+  rows: readonly T[],
+  limit: number,
+  expanded: boolean,
+): { readonly shown: readonly T[]; readonly hidden: number } =>
+  expanded || rows.length <= limit
+    ? { shown: rows, hidden: 0 }
+    : { shown: rows.slice(0, limit), hidden: rows.length - limit };
+
+/** Son kapananlar: the most recent closes, `closedAt` descending, at most five. Pure. */
+export const recentClosed = (
+  closed: CockpitView['recentlyClosed'],
+): CockpitView['recentlyClosed'] =>
+  [...closed].sort((a, b) => b.closedAt - a.closedAt).slice(0, COCKPIT_LIMITS.closed);
+
+export type CockpitPhase = 'loading' | 'failed-empty' | 'first-run' | 'ready';
+
+/** What the screen shows as a whole: a failed reload over an existing view stays `ready` — an
+ *  error never blanks the cockpit (U-2); a view with no project, work and history is a first run. */
+export const cockpitPhase = (state: CockpitState): CockpitPhase => {
+  const view = state.view;
+  if (view === null) return state.failed ? 'failed-empty' : 'loading';
+  const empty =
+    view.projects.length === 0 &&
+    view.attention.length === 0 &&
+    view.running.length === 0 &&
+    view.recentlyClosed.length === 0;
+  return empty ? 'first-run' : 'ready';
+};
+
+/** Anything unreadable in storage means every section open; unknown names are dropped. */
+const readCollapsed = (persistence: CockpitPersistence | undefined): readonly CockpitSection[] => {
+  try {
+    const raw = persistence?.getItem(COCKPIT_COLLAPSED_STORAGE_KEY);
+    if (raw === null || raw === undefined) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return FOLDABLE.filter((section) => parsed.includes(section)).sort((a, b) => parsed.indexOf(a) - parsed.indexOf(b));
+  } catch {
+    return [];
+  }
+};
+
+export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
+  const { api, changes, now, actor, persistence } = deps;
+
+  let state: CockpitState = { loading: false, view: null, failed: false, asks: {}, loadedAt: null, collapsed: readCollapsed(persistence) };
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher view when change events stack up.
@@ -176,7 +287,7 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
     }
     // The contract of the cockpit query: a reply that is not a failure is a CockpitView.
     const view = reply as CockpitView;
-    set({ loading: false, view, failed: false, asks: {} });
+    set({ ...state, loading: false, view, failed: false, asks: {}, loadedAt: now() });
     void loadAsks(view, attempt);
   };
 
@@ -204,6 +315,17 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
       // agrees, or keeps it when the ask was already gone.
       void load();
       return result;
+    },
+    toggleSection: (section) => {
+      const collapsed = state.collapsed.includes(section)
+        ? state.collapsed.filter((each) => each !== section)
+        : [...state.collapsed, section];
+      set({ ...state, collapsed });
+      try {
+        persistence?.setItem(COCKPIT_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+      } catch {
+        // Storage refused the write: the fold still holds for the session.
+      }
     },
     subscribe: (listener) => {
       listeners.add(listener);

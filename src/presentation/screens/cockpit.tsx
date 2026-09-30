@@ -1,21 +1,30 @@
-// screens/cockpit.tsx — the cockpit screen (U-2's window, U-21's four sections): Senden
-// bekleyenler in the api's order with the answer inline where the wait is a permission ask,
-// Koşanler with the account badge and the age, Proje kartları (K-4:B — a card is a shortcut to
-// the project's default view), and Son kapananlar. The screen renders the store's view and
-// forwards clicks; ages render from the stamped times through the store's injected clock, and
-// every user-visible string arrives through a label key (U-1). Rows speak the design's work-row
-// grammar: a lamp naming the row's standing, the title, a mono meta line, the age at the edge.
+// screens/cockpit.tsx — the cockpit screen (U-21's four sections). Only Senden bekleyenler is
+// loud: its rows carry the amber/red edge and the inline answer; Koşanlar, Proje kartları and Son
+// kapananlar stay quiet. Long lists fold (COCKPIT_LIMITS) so the project cards and the closed list
+// stay near the first screen; every empty, loading and failed standing speaks through a component
+// that says what it means. The screen renders the store's view and forwards clicks; ages render
+// from stamped times through the store's injected clock, and every string is a label key (U-1).
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { AttentionItem, CockpitView } from '../../api/queries';
 import type { CommandResult } from '../../api/commands';
-import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { ActionButton } from '../components/action-button';
-import { StateBadge, type BadgeTone } from '../components/state-badge';
-import { formatWorkOrderCode } from '../stores/work-order-code';
+import { CockpitAttentionRow } from '../components/cockpit-attention';
+import { CockpitClosedList } from '../components/cockpit-closed';
+import { formatAge } from '../components/cockpit-format';
+import { CockpitProjectCard } from '../components/cockpit-projects';
+import { CockpitSection } from '../components/cockpit-section';
+import { CockpitRunningRow } from '../components/cockpit-running';
+import { CockpitAlert, FirstRunCard, QuietRow, SectionHead, Skeleton } from '../components/cockpit-states';
 import type { AccountCard } from '../stores/accounts-frame';
-import { commandResultKey, GENERIC_FAILURE_KEY } from '../stores/results';
-import type { CockpitStore } from '../stores/cockpit';
+import {
+  COCKPIT_LIMITS,
+  cockpitPhase,
+  cockpitSummary,
+  limitRows,
+  recentClosed,
+  type CockpitAsk,
+  type CockpitStore,
+} from '../stores/cockpit';
+import { commandResultKey } from '../stores/results';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
@@ -29,47 +38,35 @@ export interface CockpitScreenProps {
   readonly accounts: readonly AccountCard[] | null;
 }
 
-const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' };
+type LampTone = 'signal' | 'error' | 'proceed' | 'hollow';
 
-const KIND_TONE: Readonly<Record<AttentionItem['kind'], BadgeTone>> = {
-  permission_ask: 'signal',
-  awaiting_human: 'signal',
-  blocked: 'error',
-  limit_waiting: 'info',
+const LAMP_CLASS: Readonly<Record<LampTone, string>> = {
+  signal: 'bg-signal',
+  error: 'bg-error',
+  proceed: 'bg-proceed',
+  hollow: 'border-[1.5px] border-bord',
 };
 
-/** The lamp hue for a row's standing: amber = the operator is the next move, blue = a machine
- *  waits on a clock or a limit, red = stopped. */
-const KIND_LAMP: Readonly<Record<AttentionItem['kind'], string>> = {
-  permission_ask: 'bg-signal',
-  awaiting_human: 'bg-signal',
-  blocked: 'bg-error',
-  limit_waiting: 'bg-info',
-};
+function Pulse({ tone, children }: { readonly tone: LampTone; readonly children: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${LAMP_CLASS[tone]}`} />
+      {children}
+    </span>
+  );
+}
 
-const KIND_KEY: Readonly<Record<AttentionItem['kind'], LabelKey>> = {
-  permission_ask: 'attention.permission_ask',
-  awaiting_human: 'attention.awaiting_human',
-  blocked: 'attention.blocked',
-  limit_waiting: 'attention.limit_waiting',
-};
-
-/** A wait's age in the active locale, from milliseconds (U-2): minutes under an hour, hours under
- *  a day, days beyond — Intl carries the wording, so no copy lives here. */
-const formatAge = (locale: Locale, ms: number): string => {
-  const relative = new Intl.RelativeTimeFormat(LOCALE_TAG[locale], { numeric: 'always' });
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return relative.format(0, 'second');
-  if (minutes < 60) return relative.format(-minutes, 'minute');
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return relative.format(-hours, 'hour');
-  return relative.format(-Math.floor(hours / 24), 'day');
-};
-
-/** The section head the design's sections share: quiet semibold, the count beside it. */
-const SectionHead = ({ title }: { readonly title: string }) => (
-  <h2 className="mb-2 text-[12.5px] font-semibold text-inkdim">{title}</h2>
-);
+function FoldButton({ label, onClick }: { readonly label: string; readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-control px-1.5 py-0.5 text-[12.5px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+    >
+      {label}
+    </button>
+  );
+}
 
 export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
@@ -80,198 +77,185 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
   // The inline answer toasts through the same U-8 mapping every intent uses; the store owns the
   // re-query that must drop the answered row.
   const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
-  const answer = (runId: string, askId: string, decision: 'allow' | 'deny'): void => {
-    void store.answerPermission({ runId, askId, decision }).then(setAnswerResult);
+  const answer = (ask: CockpitAsk, decision: 'allow' | 'deny'): void => {
+    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
   };
+  const [expanded, setExpanded] = useState({ attention: false, running: false });
 
-  const view: CockpitView | null = state.view;
-  const attention = view?.attention ?? [];
-  const running = view?.running ?? [];
-  const projects = view?.projects ?? [];
-  const closed = view?.recentlyClosed ?? [];
+  const phase = cockpitPhase(state);
+  const view = state.view;
   const accountLabel = (accountId: string): string =>
     accounts?.find((card) => card.id === accountId)?.label ?? accountId;
 
+  const summary = view === null ? null : cockpitSummary(view);
+  const attention = view === null ? null : limitRows(view.attention, COCKPIT_LIMITS.attention, expanded.attention);
+  const running = view === null ? null : limitRows(view.running, COCKPIT_LIMITS.running, expanded.running);
+  const closed = view === null ? [] : recentClosed(view.recentlyClosed);
+
+  const fold = (key: 'attention' | 'running', total: number, limit: number) =>
+    total > limit ? (
+      <FoldButton
+        label={expanded[key] ? t(locale, 'cockpit.less') : `${t(locale, 'cockpit.more')} (+${total - limit})`}
+        onClick={() => setExpanded({ ...expanded, [key]: !expanded[key] })}
+      />
+    ) : undefined;
+
+  const staleDetail =
+    state.loadedAt === null
+      ? t(locale, 'cockpit.error.empty')
+      : `${t(locale, 'cockpit.error.stale')} ${formatAge(locale, store.sinceMs(state.loadedAt))}`;
+
   return (
-    <div className="grid max-w-[1200px] gap-[18px]">
-      <header className="flex items-center gap-3">
+    <div className="grid max-w-[1200px] gap-4">
+      <header className="flex flex-wrap items-baseline gap-x-[18px] gap-y-1.5">
         <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
-        {attention.length > 0 || running.length > 0 ? (
-          <p className="min-w-0 whitespace-nowrap text-[12.5px] text-inkdim">
-            {attention.length > 0 ? `${attention.length} ${t(locale, 'cockpit.head.waiting')}` : ''}
-            {attention.length > 0 && running.length > 0 ? ' · ' : ''}
-            {running.length > 0 ? `${running.length} ${t(locale, 'cockpit.head.running')}` : ''}
+        {phase === 'ready' && summary !== null ? (
+          <p className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13px] text-inkdim">
+            {summary.attention === 0 && summary.running === 0 && summary.queued === 0 ? <Pulse tone="hollow">{t(locale, 'cockpit.head.idle')}</Pulse> : null}
+            {summary.attention === 0 && (summary.running > 0 || summary.queued > 0) ? <Pulse tone="proceed">{t(locale, 'cockpit.head.ok')}</Pulse> : null}
+            {summary.waiting > 0 ? <Pulse tone="signal">{`${summary.waiting} ${t(locale, 'cockpit.head.waiting')}`}</Pulse> : null}
+            {summary.blocked > 0 ? <Pulse tone="error">{`${summary.blocked} ${t(locale, 'cockpit.head.blocked')}`}</Pulse> : null}
+            {summary.running > 0 ? <Pulse tone="proceed">{`${summary.running} ${t(locale, 'cockpit.head.running')}`}</Pulse> : null}
+            {summary.queued > 0 ? <Pulse tone="hollow">{`${summary.queued} ${t(locale, 'cockpit.head.queued')}`}</Pulse> : null}
           </p>
         ) : null}
       </header>
 
-      {state.loading && view === null ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'cockpit.loading')}</p>
-      ) : null}
+      {state.failed ? <CockpitAlert locale={locale} detail={staleDetail} onRetry={() => void store.retry()} /> : null}
 
-      {state.failed ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2.5 rounded-card border border-error/40 bg-surface px-3 py-2">
-          <p className="text-[13px] text-error">{t(locale, GENERIC_FAILURE_KEY)}</p>
-          <ActionButton variant="neutral" onClick={() => void store.retry()}>
-            {t(locale, 'action.retry')}
-          </ActionButton>
+      {phase === 'loading' ? (
+        <div role="status" aria-label={t(locale, 'cockpit.loading')} className="grid gap-4">
+          <section className="grid gap-2">
+            <SectionHead title={t(locale, 'cockpit.section.attention')} count={null} />
+            <Skeleton className="h-14" />
+            <Skeleton className="h-14" />
+          </section>
+          <section className="grid gap-2">
+            <SectionHead title={t(locale, 'cockpit.section.running')} count={null} />
+            <Skeleton className="h-10" />
+            <Skeleton className="h-10" />
+          </section>
+          <section className="grid gap-2">
+            <SectionHead title={t(locale, 'cockpit.section.projects')} count={null} />
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+            </div>
+          </section>
         </div>
       ) : null}
 
-      <section>
-        <SectionHead title={t(locale, 'cockpit.section.attention')} />
-        {attention.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.attention.empty')}</p>
-        ) : (
-          <ul className="grid gap-2">
-            {attention.map((item) => {
-              const ask = state.asks[item.workOrderId];
-              const line = ask?.target ?? null;
-              return (
-                <li key={item.workOrderId}>
-                  <div className="flex min-h-14 items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-1.5 transition-colors hover:border-bord">
-                    <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${KIND_LAMP[item.kind]}`} />
-                    <span className="grid min-w-0 flex-1 gap-[3px]">
-                      <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[14px] font-semibold text-ink">
-                        {line !== null ? (
-                          <>
-                            <span className="flex-none">{t(locale, 'cockpit.ask.prefix')}</span>
-                            <code className="min-w-0 overflow-hidden text-ellipsis font-mono text-[13px] font-normal" title={line}>{line}</code>
-                            <span className="flex-none">{t(locale, 'cockpit.ask.suffix')}</span>
-                          </>
-                        ) : (
-                          <span className="min-w-0 overflow-hidden text-ellipsis" title={item.title}>{item.title}</span>
-                        )}
-                        <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
-                      </span>
-                      <span className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-inkdim">
-                        {item.project} / {item.repo} · {formatWorkOrderCode(item.number, locale)}
-                        {item.stage !== null ? ` · ${item.stage}` : ''} · {formatAge(locale, store.ageMs(item))}
-                      </span>
-                    </span>
-                    <span className="flex flex-none gap-2">
-                      {item.kind === 'permission_ask' && ask !== undefined ? (
-                        <>
-                          <ActionButton variant="neutral" onClick={() => answer(ask.runId, ask.askId, 'deny')}>
-                            {t(locale, 'action.deny')}
-                          </ActionButton>
-                          <ActionButton variant="primary" onClick={() => answer(ask.runId, ask.askId, 'allow')}>
-                            {t(locale, 'action.allow')}
-                          </ActionButton>
-                        </>
-                      ) : (
-                        <ActionButton variant="neutral" onClick={() => onOpenWorkOrder(item.workOrderId)}>
-                          {t(locale, 'action.open')}
-                        </ActionButton>
-                      )}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      {phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
 
-      {answerResult !== null ? (
-        <p className={`text-[13px] ${answerResult.ok ? 'text-proceed' : 'text-error'}`}>
-          {t(locale, commandResultKey('permission.answer', answerResult))}
-        </p>
+      {phase === 'failed-empty' ? (
+        <>
+          {(['attention', 'running', 'projects', 'closed'] as const).map((section) => (
+            <section key={section} className="grid gap-2">
+              <SectionHead title={t(locale, `cockpit.section.${section}`)} count={null} />
+              <QuietRow tone="unknown" title={t(locale, 'cockpit.error.unavailable')} />
+            </section>
+          ))}
+        </>
       ) : null}
 
-      <section>
-        <SectionHead title={t(locale, 'cockpit.section.running')} />
-        {running.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.running.empty')}</p>
-        ) : (
-          <ul className="grid gap-1.5">
-            {running.map((run) => (
-              <li key={`${run.workOrderId}:${run.stage}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkOrder(run.workOrderId)}
-                  className="flex min-h-9 w-full items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 text-left text-[12.5px] transition-colors hover:border-bord"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="grid h-5 w-5 flex-none place-items-center rounded-control border border-hairline bg-raised font-mono text-[11px] text-inkdim"
-                  >
-                    {accountLabel(run.accountId).slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="flex-none font-mono text-[11px] text-inkdim">{formatWorkOrderCode(run.number, locale)}</span>
-                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-semibold text-ink">
-                    {run.stage}
-                  </span>
-                  <span className="flex-none whitespace-nowrap text-[11.5px] text-inkdim">{accountLabel(run.accountId)}</span>
-                  <span className="flex-none whitespace-nowrap font-mono text-[10.5px] text-inkdim">
-                    {formatAge(locale, store.sinceMs(run.startedAt))}
-                  </span>
-                  <span aria-hidden="true" className="h-2.5 w-2.5 flex-none rounded-full border-[1.5px] border-inkdim border-t-transparent motion-safe:animate-spin" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {phase === 'ready' && view !== null && attention !== null && running !== null && summary !== null ? (
+        <div className={`grid gap-4 ${state.failed ? 'opacity-70' : ''}`}>
+          <section className="grid gap-2">
+            <SectionHead
+              title={t(locale, 'cockpit.section.attention')}
+              count={summary.attention}
+              hot={summary.attention > 0}
+              action={fold('attention', view.attention.length, COCKPIT_LIMITS.attention)}
+            />
+            {view.attention.length === 0 ? (
+              <QuietRow tone="good" title={t(locale, 'cockpit.attention.empty')} hint={t(locale, 'cockpit.attention.hint')} />
+            ) : (
+              <ul className="grid gap-2">
+                {attention.shown.map((item) => (
+                  <li key={item.workOrderId}>
+                    <CockpitAttentionRow
+                      item={item}
+                      ask={state.asks[item.workOrderId]}
+                      locale={locale}
+                      ageMs={store.ageMs(item)}
+                      onOpen={() => onOpenWorkOrder(item.workOrderId)}
+                      onAnswer={answer}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {answerResult !== null ? (
+              <p role="status" className={`text-[13px] ${answerResult.ok ? 'text-proceed' : 'text-error'}`}>
+                {t(locale, commandResultKey('permission.answer', answerResult))}
+              </p>
+            ) : null}
+          </section>
 
-      <section>
-        <SectionHead title={t(locale, 'cockpit.section.projects')} />
-        {projects.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.projects.empty')}</p>
-        ) : (
-          <div className="flex flex-wrap gap-2.5">
-            {projects.map((card) => (
-              <button
-                key={card.project}
-                type="button"
-                onClick={() =>
-                  card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo)
-                }
-                className="block min-w-[168px] rounded-card border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:border-bord"
-              >
-                <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                  <span
-                    aria-hidden="true"
-                    className={`h-2 w-2 flex-none rounded-full ${card.waiting > 0 ? 'bg-signal' : card.active > 0 ? 'bg-proceed' : 'border border-bord bg-transparent'}`}
+          <CockpitSection
+            title={t(locale, 'cockpit.section.running')}
+            count={summary.running}
+            open={!state.collapsed.includes('running')}
+            onToggle={() => store.toggleSection('running')}
+            action={fold('running', view.running.length, COCKPIT_LIMITS.running)}
+          >
+            {view.running.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.running.empty')} hint={t(locale, 'cockpit.running.hint')} />
+            ) : (
+              <ul className="grid gap-1.5 min-[1500px]:grid-cols-2">
+                {running.shown.map((run) => (
+                  <li key={`${run.workOrderId}:${run.stage}`}>
+                    <CockpitRunningRow
+                      run={run}
+                      locale={locale}
+                      accountLabel={accountLabel(run.accountId)}
+                      sinceMs={store.sinceMs(run.startedAt)}
+                      onOpen={() => onOpenWorkOrder(run.workOrderId)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CockpitSection>
+
+          <CockpitSection
+            title={t(locale, 'cockpit.section.projects')}
+            count={view.projects.length}
+            open={!state.collapsed.includes('projects')}
+            onToggle={() => store.toggleSection('projects')}
+          >
+            {view.projects.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.projects.empty')} />
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+                {view.projects.map((card) => (
+                  <CockpitProjectCard
+                    key={card.project}
+                    card={card}
+                    locale={locale}
+                    sinceMs={store.sinceMs}
+                    onOpen={() => (card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo))}
                   />
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={card.name}>{card.name}</span>
-                  {card.active > 0 ? (
-                    <span className="ml-auto flex-none rounded-full border border-hairline px-1.5 font-mono text-[11px] font-normal leading-[18px] text-inkdim">
-                      {card.active}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="mt-0.5 block whitespace-nowrap text-[11.5px] text-inkdim">
-                  {card.active > 0 ? `${card.active} ${t(locale, 'cockpit.card.active')}` : ''}
-                  {card.active > 0 && card.waiting > 0 ? ' · ' : ''}
-                  {card.waiting > 0 ? `${card.waiting} ${t(locale, 'cockpit.card.waiting')}` : ''}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+                ))}
+              </div>
+            )}
+          </CockpitSection>
 
-      <section>
-        <SectionHead title={t(locale, 'cockpit.section.closed')} />
-        {closed.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.closed.empty')}</p>
-        ) : (
-          <ul className="grid">
-            {closed.map((entry) => (
-              <li key={entry.workOrderId} className="flex h-[34px] items-center gap-2.5 rounded-control px-2.5 text-[13px] opacity-65">
-                <span className="flex-none font-mono text-[11px] text-inkdim">{formatWorkOrderCode(entry.number, locale)}</span>
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-ink" title={entry.title}>
-                  {entry.title}
-                </span>
-                <span className="flex-none whitespace-nowrap text-[11.5px] text-inkdim">
-                  {t(locale, 'cockpit.closed.at')} · {formatAge(locale, store.sinceMs(entry.closedAt))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <CockpitSection
+            title={t(locale, 'cockpit.section.closed')}
+            count={closed.length}
+            open={!state.collapsed.includes('closed')}
+            onToggle={() => store.toggleSection('closed')}
+          >
+            {closed.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
+            ) : (
+              <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
+            )}
+          </CockpitSection>
+        </div>
+      ) : null}
     </div>
   );
 }

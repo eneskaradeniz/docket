@@ -197,7 +197,7 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   is inspectable (ⓘ); editing stays in the Settings window (K-5's rule: bilgi → ⓘ,
   düzenleme → Ayarlar penceresi).
 - **U-21** (cockpit) The app opens on the cockpit, which has four sections: Senden bekleyenler
-  (U-2's order, inline actions), Koşanlar (account badge, stage, duration; queued items dimmed),
+  (U-2's order, inline actions), Koşanlar (account badge, stage, duration; queued items dimmed, A-36),
   Proje kartları (K-4:B — each card is a shortcut to the project's default view: multi-repo →
   roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the

@@ -61,7 +61,7 @@ const L = {
   runningRun: 'Koşuyor',
   succeededRun: 'Başarılı',
   runsEmpty: 'Bu iş emrinde henüz koşu yok.',
-  attentionEmpty: 'Şu an senden bekleyen yok.',
+  attentionEmpty: 'Senden bekleyen yok',
   startStage: 'Aşamayı başlat',
   enqueuedNotice: 'Aşama kuyruğa alındı.',
 };
