@@ -342,9 +342,18 @@ for (const [sizeName, theme] of combos) {
   });
 
   await journey('J-8', 'cockpit → project → back → forward; the detail’s ‹ Geri rides the same history', async () => {
-    const backButton = page.getByRole('button', { name: 'Geri ⌘[' });
-    const forwardButton = page.getByRole('button', { name: 'İleri ⌘]' });
-    const disabled = (locator) => locator.getAttribute('aria-disabled');
+    // The chevrons' standing is a DOM attribute that lands with the route's own render; reading
+    // it in the same breath as the screen's text can catch the commit between the two queries —
+    // so every standing is waited for, never sampled.
+    const dimmedIs = (hook, want) =>
+      page.waitForFunction(
+        ({ hook, want }) => {
+          const btn = document.querySelector(`[data-nav-${hook}]`);
+          return btn !== null && (btn.getAttribute('aria-disabled') !== null) === want;
+        },
+        { hook, want },
+        { timeout: WAIT },
+      );
     // The history lives in memory alone (U-25): the journeys before this one left theirs behind —
     // J-7 ends on a roadmap, and the helper's Anasayfa click would only push another cockpit on
     // top of it, leaving back legitimately alive. A reload starts the history over as the
@@ -352,18 +361,18 @@ for (const [sizeName, theme] of combos) {
     await page.reload();
     await page.waitForSelector('nav');
     await see('Senden bekleyenler');
-    assert.equal(await disabled(backButton), 'true', 'back must dim on the cockpit, the history’s first entry');
-    assert.equal(await disabled(forwardButton), 'true', 'forward must dim with nothing to redo');
+    await dimmedIs('back', true);
+    await dimmedIs('forward', true);
     await shot('ends-dimmed');
     // A project from the tree is the history's second entry.
     await click('Antero');
     await see('Yol haritası');
-    assert.equal(await disabled(backButton), null, 'back must come alive once somewhere was left');
+    await dimmedIs('back', false);
     await shot('roadmap');
     // ⌘[ returns to the cockpit — the chevrons and the keys are the same doors.
     await page.keyboard.press('Meta+[');
     await see('Senden bekleyenler');
-    assert.equal(await disabled(forwardButton), null, 'forward must come alive once somewhere was left');
+    await dimmedIs('forward', false);
     await shot('back-on-cockpit');
     // ⌘] returns to the roadmap.
     await page.keyboard.press('Meta+]');
@@ -390,7 +399,7 @@ for (const [sizeName, theme] of combos) {
     await shot('detail');
     await click('‹ Geri · yol haritası');
     await see('Yol haritası');
-    assert.equal(await disabled(forwardButton), null, 'the detail’s Geri leaves it redoable');
+    await dimmedIs('forward', false);
     await shot('back-from-detail');
   });
 
