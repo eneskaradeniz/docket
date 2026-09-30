@@ -48,14 +48,14 @@ const HINT_KEY: Readonly<Record<WizardStep, LabelKey>> = {
 };
 
 const INPUT_CLASS =
-  'rounded-sm border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+  'rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
 const MONO_INPUT_CLASS = `${INPUT_CLASS} font-mono`;
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 /** The rail entry's standing: the current step reads ink on the raised ground with its number
  *  signed amber, a finished step fills its number green, the rest stay quiet. */
 const railClass = (standing: 'todo' | 'cur' | 'done'): string =>
-  `flex items-center gap-2.5 rounded-md px-2.5 py-[7px] ${standing === 'cur' ? 'bg-raised' : ''}`;
+  `flex items-center gap-2.5 rounded-control px-2.5 py-[7px] ${standing === 'cur' ? 'bg-raised' : ''}`;
 
 const railNumberClass = (standing: 'todo' | 'cur' | 'done'): string => {
   const base = 'grid h-5 w-5 flex-none place-items-center rounded-full border font-mono text-[11px]';
@@ -131,7 +131,7 @@ function AccountStep({ state, store, locale }: { readonly state: WizardState; re
                   <button
                     type="button"
                     onClick={() => store.chooseProvider(row.defId)}
-                    className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-md border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${
+                    className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-card border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${
                       selected ? 'border-signal' : 'border-hairline hover:border-bord'
                     }`}
                   >
@@ -162,7 +162,7 @@ function AccountStep({ state, store, locale }: { readonly state: WizardState; re
           <select
             value={state.draft.authMode}
             onChange={(event) => enterDraft({ authMode: event.target.value })}
-            className="rounded-sm border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none focus:border-signal"
+            className="rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none focus:border-signal"
           >
             <option value="" disabled>
               {t(locale, 'wizard.account.authMode')}
@@ -238,7 +238,7 @@ export function WizardScreen({ store, locale }: WizardScreenProps) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
       <div
-        className="grid w-full max-w-[720px] overflow-hidden rounded-xl border border-bord bg-bg md:grid-cols-[200px_minmax(0,1fr)]"
+        className="grid w-full max-w-[720px] overflow-hidden rounded-panel border border-bord bg-bg md:grid-cols-[200px_minmax(0,1fr)]"
         role="dialog"
         aria-label={t(locale, 'wizard.title')}
       >

@@ -98,7 +98,7 @@ export function AccountViewScreen({
       </header>
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
@@ -108,7 +108,7 @@ export function AccountViewScreen({
           <section className="grid gap-2.5">
             <h2 className="text-[12.5px] font-semibold text-inkdim">{t(locale, 'account.section.windows')}</h2>
             {bars.map((bar, index) => (
-              <div key={index} className="max-w-[640px] rounded-lg border border-hairline bg-surface px-4 py-3.5">
+              <div key={index} className="max-w-[640px] rounded-card border border-hairline bg-surface px-4 py-3.5">
                 <div className="flex items-center text-[13px] font-semibold text-ink">
                   <span className="min-w-0 truncate" title={bar.label ?? undefined}>{bar.label ?? ''}</span>
                   <InfoGlyph title={t(locale, 'account.window.info')} label={t(locale, 'account.window.info')} />
@@ -142,7 +142,7 @@ export function AccountViewScreen({
                     key={work.workOrderId}
                     type="button"
                     onClick={() => onOpenWorkOrder(work.workOrderId)}
-                    className="flex min-h-11 items-center gap-3 rounded-lg border border-hairline bg-surface px-3 text-left transition-colors hover:border-bord"
+                    className="flex min-h-11 items-center gap-3 rounded-card border border-hairline bg-surface px-3 text-left transition-colors hover:border-bord"
                   >
                     <span className="flex-none font-mono text-[11px] text-inkdim">{formatWorkOrderCode(work.number, locale)}</span>
                     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-ink" title={work.title}>
@@ -157,7 +157,7 @@ export function AccountViewScreen({
             )}
           </section>
 
-          <div className="mt-1.5 flex max-w-[640px] items-center gap-3 rounded-lg border border-hairline bg-band px-3.5 py-3 text-[12.5px] text-inkdim">
+          <div className="mt-1.5 flex max-w-[640px] items-center gap-3 rounded-card border border-hairline bg-band px-3.5 py-3 text-[12.5px] text-inkdim">
             <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
             <span>{t(locale, 'account.policy.when')}</span>
             <b className="font-semibold text-ink">{t(locale, policyKey(view.account.limitPolicy))}</b>

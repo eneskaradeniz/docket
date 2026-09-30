@@ -187,6 +187,7 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
   cockpit — that intent lives on the board header (IA-3).
 - **U-22** (work-order code) A work order is shown by its code: the locale's prefix (TR `İE-`, EN `WO-`, label key `workOrder.codePrefix`) plus its A-29 number left-padded with zeros to four digits (`İE-0014`); a number above 9999 is shown in full, never truncated. The code is set in the mono face. One pure helper formats it; no screen builds a code itself.
+- **U-23** (corner radius) Corner radius comes from three tokens and nothing else: `rounded-control` (6px — buttons, inputs, tabs and segments, icon buttons, hover rows, chips), `rounded-card` (8px — bordered boxes: cards, alerts, notices, sections, bordered list rows, the sidebar frames) and `rounded-panel` (12px — surfaces that float or hold cards: modals, the search palette, the settings panel, Kanban lanes). `rounded-full` stays for lamps and round badges. No other `rounded-*` utility and no hand-typed radius in `src/presentation`; a test scans the sources.
 
 ### Prototype vs rules (2026-09-29)
 
@@ -206,7 +207,7 @@ belongs to the mobile app.
 
 | Layer | File | Runs | Blocks merge |
 | --- | --- | --- | --- |
-| Store rules U-15 … U-21 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
+| Store rules U-15 … U-21, U-23 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
 | Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
 | Layout audit L-1 … L-10 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
 | Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |

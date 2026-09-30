@@ -110,7 +110,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
       ) : null}
 
       {state.failed ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2.5 rounded-md border border-error/40 bg-surface px-3 py-2">
+        <div role="alert" className="flex flex-wrap items-center gap-2.5 rounded-card border border-error/40 bg-surface px-3 py-2">
           <p className="text-[13px] text-error">{t(locale, GENERIC_FAILURE_KEY)}</p>
           <ActionButton variant="neutral" onClick={() => void store.retry()}>
             {t(locale, 'action.retry')}
@@ -129,7 +129,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
               const line = ask?.target ?? null;
               return (
                 <li key={item.workOrderId}>
-                  <div className="flex min-h-14 items-center gap-3 rounded-lg border border-hairline bg-surface px-4 py-1.5 transition-colors hover:border-bord">
+                  <div className="flex min-h-14 items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-1.5 transition-colors hover:border-bord">
                     <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${KIND_LAMP[item.kind]}`} />
                     <span className="grid min-w-0 flex-1 gap-[3px]">
                       <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[14px] font-semibold text-ink">
@@ -190,11 +190,11 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                 <button
                   type="button"
                   onClick={() => onOpenWorkOrder(run.workOrderId)}
-                  className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-hairline bg-surface px-3 text-left text-[12.5px] transition-colors hover:border-bord"
+                  className="flex min-h-9 w-full items-center gap-2.5 rounded-card border border-hairline bg-surface px-3 text-left text-[12.5px] transition-colors hover:border-bord"
                 >
                   <span
                     aria-hidden="true"
-                    className="grid h-5 w-5 flex-none place-items-center rounded-[5px] border border-hairline bg-raised font-mono text-[11px] text-inkdim"
+                    className="grid h-5 w-5 flex-none place-items-center rounded-control border border-hairline bg-raised font-mono text-[11px] text-inkdim"
                   >
                     {accountLabel(run.accountId).slice(0, 1).toUpperCase()}
                   </span>
@@ -227,7 +227,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                 onClick={() =>
                   card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo)
                 }
-                className="block min-w-[168px] rounded-lg border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:border-bord"
+                className="block min-w-[168px] rounded-card border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:border-bord"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                   <span
@@ -259,7 +259,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
         ) : (
           <ul className="grid">
             {closed.map((entry) => (
-              <li key={entry.workOrderId} className="flex h-[34px] items-center gap-2.5 rounded-md px-2.5 text-[13px] opacity-65">
+              <li key={entry.workOrderId} className="flex h-[34px] items-center gap-2.5 rounded-control px-2.5 text-[13px] opacity-65">
                 <span className="flex-none font-mono text-[11px] text-inkdim">{formatWorkOrderCode(entry.number, locale)}</span>
                 <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-ink" title={entry.title}>
                   {entry.title}

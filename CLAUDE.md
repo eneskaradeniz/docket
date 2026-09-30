@@ -43,6 +43,7 @@ ask; do not pick one yourself.
   inputs. Only import other modules through their `index.ts`, following the module dependency map in
   `docs/v2/domain.md`.
 - No `any`, no default exports, no non-null assertions (`!`) in v2 code. Prefer `readonly` types.
+- Corner radius only from the three tokens `rounded-control` (6px), `rounded-card` (8px), `rounded-panel` (12px), plus `rounded-full` for lamps and round badges — no other `rounded-*`, no hand-typed radius (U-23; a test enforces it).
 - Names: files `kebab-case.ts`; types `PascalCase`; functions and values `camelCase`; constants
   `UPPER_SNAKE_CASE`.
 - Comments explain *why*, never history. No issue numbers or dates in code comments.

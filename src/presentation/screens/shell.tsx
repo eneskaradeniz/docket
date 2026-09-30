@@ -308,7 +308,7 @@ export function ShellScreen({
               onClick={openSettings}
               aria-label={t(locale, 'nav.settings')}
               title={t(locale, 'nav.settings')}
-              className={`grid h-8 w-8 flex-none place-items-center rounded-lg border ${
+              className={`grid h-8 w-8 flex-none place-items-center rounded-control border ${
                 settingsPanel.open
                   ? `text-ink ${ACTIVE_CLASS}`
                   : 'border-bord text-inkdim hover:border-inkdim hover:text-ink'

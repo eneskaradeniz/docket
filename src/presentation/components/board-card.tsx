@@ -21,7 +21,7 @@ export function BoardCard({
     <button
       type="button"
       onClick={() => onOpen(card.id)}
-      className="flex min-h-[72px] w-full flex-col gap-2 rounded-lg border border-bord bg-surface p-3 text-left outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-inkdim focus-visible:border-signal-soft focus-visible:bg-raised motion-reduce:transition-none"
+      className="flex min-h-[72px] w-full flex-col gap-2 rounded-card border border-bord bg-surface p-3 text-left outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-inkdim focus-visible:border-signal-soft focus-visible:bg-raised motion-reduce:transition-none"
     >
       <span className="font-mono text-[11px] font-medium leading-4 text-inkdim">{formatWorkOrderCode(card.number, locale)}</span>
       <span className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-ink [overflow-wrap:anywhere]" title={card.title}>

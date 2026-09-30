@@ -78,8 +78,8 @@ const staggerDelay = (rank: number): string =>
 const rowClass = (selected: boolean, standing: RowStanding, hidden: boolean): string =>
   [
     selected
-      ? `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
-      : 'flex h-8 w-full items-center gap-2 rounded-md border border-transparent px-2.5 text-left text-[13px] text-ink hover:bg-raised',
+      ? `flex h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
+      : 'flex h-8 w-full items-center gap-2 rounded-control border border-transparent px-2.5 text-left text-[13px] text-ink hover:bg-raised',
     ROW_PAINT,
     standing === 'leaving' ? 'duration-[var(--motion-row-exit)]' : 'duration-[var(--motion-results-fade)]',
     // A row that leaves only fades and folds — it does not rise on the way out.
@@ -351,7 +351,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
         aria-label={t(locale, 'palette.title')}
         onKeyDown={onKeyDown}
         className={[
-          'flex w-full max-w-[560px] flex-col overflow-hidden rounded-lg border border-bord bg-surface shadow-2xl',
+          'flex w-full max-w-[560px] flex-col overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl',
           'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'

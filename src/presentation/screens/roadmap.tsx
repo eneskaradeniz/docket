@@ -107,7 +107,7 @@ const PhaseCard = ({
 }) => {
   const done = phase.tasks.filter((task) => task.status === 'done').length;
   return (
-    <section className="overflow-hidden rounded-[10px] border border-hairline bg-surface">
+    <section className="overflow-hidden rounded-card border border-hairline bg-surface">
       <button
         type="button"
         onClick={() => store.togglePhase(phase.id)}
@@ -169,7 +169,7 @@ const TaskRow = ({
   // plain row with its repo tag at the edge.
   if (task.targets.length <= 1) {
     return (
-      <div className="flex h-10 items-center gap-3 rounded-md px-2.5 text-[13.5px] transition-colors hover:bg-raised">
+      <div className="flex h-10 items-center gap-3 rounded-control px-2.5 text-[13.5px] transition-colors hover:bg-raised">
         <TaskGlyph status={task.status} locale={locale} />
         {title}
         {task.targets.map((repo) => (
@@ -187,7 +187,7 @@ const TaskRow = ({
         type="button"
         onClick={() => store.toggleTask(task.id)}
         aria-expanded={expanded}
-        className="flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] transition-colors hover:bg-raised"
+        className="flex h-10 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-[13.5px] transition-colors hover:bg-raised"
       >
         <Chevron open={expanded} small />
         <TaskGlyph status={task.status} locale={locale} />
@@ -204,12 +204,12 @@ const TaskRow = ({
             task.workOrders.map((order) => {
               const code = formatWorkOrderCode(order.number, locale);
               return (
-                <div key={order.id} className="flex h-[34px] items-center gap-2.5 rounded px-1.5 text-[12.5px] transition-colors hover:bg-raised">
+                <div key={order.id} className="flex h-[34px] items-center gap-2.5 rounded-control px-1.5 text-[12.5px] transition-colors hover:bg-raised">
                   <button
                     type="button"
                     onClick={() => onOpenRepo(order.repo)}
                     title={t(locale, 'roadmap.task.openRepoBoard')}
-                    className="flex-none rounded border border-hairline bg-raised px-[5px] py-px font-mono text-[10px] text-ink transition-colors hover:border-bord"
+                    className="flex-none rounded-control border border-hairline bg-raised px-[5px] py-px font-mono text-[10px] text-ink transition-colors hover:border-bord"
                   >
                     {order.repo}
                   </button>
@@ -258,7 +258,7 @@ export function RoadmapScreen({ store, project, name, locale, onOpenRepo, onOpen
       ) : null}
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}

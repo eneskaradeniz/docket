@@ -51,7 +51,7 @@ const VALIDATION_KEY: Readonly<Record<CreateValidation, LabelKey>> = {
 };
 
 const INPUT_CLASS =
-  'rounded-sm border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+  'rounded-control border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 /** A card's status travels as a plain string on the wire; a value outside the closed set renders
@@ -92,7 +92,7 @@ function RailSegment({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex flex-col items-start gap-0.5 rounded-lg border px-3.5 py-2 text-left transition-colors ${
+      className={`flex flex-col items-start gap-0.5 rounded-card border px-3.5 py-2 text-left transition-colors ${
         selected ? 'border-bord bg-surface' : 'border-transparent bg-raised'
       }`}
     >
@@ -129,7 +129,7 @@ function ListRowButton({
     <button
       type="button"
       onClick={() => onOpenWorkOrder(row.id)}
-      className={`flex min-h-[52px] items-center gap-3 rounded-lg border border-hairline bg-surface px-3.5 py-2 text-left transition-colors hover:border-bord ${
+      className={`flex min-h-[52px] items-center gap-3 rounded-card border border-hairline bg-surface px-3.5 py-2 text-left transition-colors hover:border-bord ${
         dim ? 'opacity-65' : ''
       }`}
     >
@@ -186,12 +186,12 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
           onClick={onOpenSettings}
           aria-label={t(locale, 'board.editProject')}
           title={t(locale, 'board.editProject.title')}
-          className="grid h-7 w-7 flex-none place-items-center rounded-lg border border-bord text-inkdim outline-none transition-colors hover:bg-raised hover:text-ink focus-visible:border-signal-soft"
+          className="grid h-7 w-7 flex-none place-items-center rounded-control border border-bord text-inkdim outline-none transition-colors hover:bg-raised hover:text-ink focus-visible:border-signal-soft"
         >
           <PencilIcon />
         </button>
         <span className="flex-1" />
-        <span role="group" aria-label={t(locale, 'board.view.aria')} className="inline-flex overflow-hidden rounded-lg border border-bord">
+        <span role="group" aria-label={t(locale, 'board.view.aria')} className="inline-flex overflow-hidden rounded-control border border-bord">
           {(['kanban', 'liste'] as const).map((mode) => (
             <button
               key={mode}
@@ -223,7 +223,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       ) : null}
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
@@ -233,7 +233,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       ) : null}
 
       {view !== null && createOpen ? (
-        <section className="rounded-md border border-hairline bg-band p-3">
+        <section className="rounded-card border border-hairline bg-band p-3">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
             <label className="grid gap-1">
               <span className={LABEL_CLASS}>{t(locale, 'board.create.titleLabel')}</span>

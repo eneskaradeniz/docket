@@ -75,8 +75,8 @@ const HomeIcon = () => (
  *  current route or an open palette keeps the one active-state language of active-state.ts. */
 const buttonClass = (current: boolean): string =>
   current
-    ? `relative grid h-7 w-7 flex-none place-items-center rounded-md text-ink ${ACTIVE_CLASS} [-webkit-app-region:no-drag]`
-    : 'relative grid h-7 w-7 flex-none place-items-center rounded-md text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink [-webkit-app-region:no-drag]';
+    ? `relative grid h-7 w-7 flex-none place-items-center rounded-control text-ink ${ACTIVE_CLASS} [-webkit-app-region:no-drag]`
+    : 'relative grid h-7 w-7 flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink [-webkit-app-region:no-drag]';
 
 export function TitleBar({
   platform,

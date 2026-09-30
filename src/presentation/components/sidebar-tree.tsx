@@ -94,7 +94,7 @@ const ProjectRow = ({
   <button
     type="button"
     onClick={onOpen}
-    className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink hover:bg-raised ${rowState(state)}`}
+    className={`flex h-8 min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 text-left text-[13px] text-ink hover:bg-raised ${rowState(state)}`}
   >
     <span aria-hidden="true" className={dot(item.status)} />
     <span title={item.name} className="min-w-0 flex-1 truncate">
@@ -119,7 +119,7 @@ const RepoRow = ({
     type="button"
     onClick={onOpen}
     aria-current={selected ? 'true' : undefined}
-    className={`flex h-7 min-w-0 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-ink hover:bg-raised ${rowState(selected ? 'sel' : null)}`}
+    className={`flex h-7 min-w-0 w-full items-center gap-2 rounded-control px-2.5 text-left text-xs text-ink hover:bg-raised ${rowState(selected ? 'sel' : null)}`}
   >
     <span aria-hidden="true" className={dot(node.status)} />
     <span title={node.name} className="min-w-0 flex-1 truncate">
@@ -153,7 +153,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
           onClick={() => store.cycleSort()}
           aria-label={t(locale, 'nav.projects.sort')}
           title={t(locale, 'nav.projects.sort')}
-          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-md border border-bord text-inkdim hover:bg-raised hover:text-ink"
+          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink"
         >
           <SortIcon />
         </button>
@@ -161,7 +161,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
           type="button"
           aria-label={t(locale, 'nav.projects.new')}
           title={t(locale, 'nav.projects.new')}
-          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-md border border-bord text-inkdim hover:bg-raised hover:text-ink"
+          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-control border border-bord text-inkdim hover:bg-raised hover:text-ink"
         >
           <PlusIcon />
         </button>
@@ -191,7 +191,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
                     aria-label={t(locale, 'tree.open')}
                     aria-expanded={state.expanded.includes(row.item.project)}
                     title={t(locale, 'tree.open')}
-                    className="grid h-8 w-5 flex-none place-items-center rounded text-inkdim hover:text-ink"
+                    className="grid h-8 w-5 flex-none place-items-center rounded-control text-inkdim hover:text-ink"
                   >
                     <Chevron open={state.expanded.includes(row.item.project)} />
                   </button>
