@@ -28,6 +28,7 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "test:e2e-lock": "node --test e2e/lock.test.mjs",
+    "test:e2e-sizes": "node --test e2e/layout-rules.test.mjs",
     "seed:design": "tsx e2e/seed-design.ts",
     "design": "node e2e/design-run.mjs",
     "test:seed-design": "node --test e2e/seed-design.test.mjs"

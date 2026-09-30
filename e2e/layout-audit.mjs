@@ -1,6 +1,10 @@
 // e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-11 rules of e2e/layout-rules.mjs
 // for every screen × window size × theme and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
+// The run opens by printing the resolved size plan with its real numbers (`size: <name> <WxH>`,
+// full screen being the primary display's work area), and the app target adds one line per
+// size × theme asserting the window lies wholly inside that work area:
+//   window: <size name> <WxH> <theme> ok|FAIL window WxH at x,y ⊆ workArea WxH at x,y
 // The app target adds one more line per size × theme for the search palette, measured open on the
 // cockpit screen (⌘K): the panel must sit in the window's centre over a scrim that covers the
 // window and blurs what is behind it, the empty standing must show the input row alone, a typed
@@ -34,7 +38,7 @@ import { pathToFileURL } from 'node:url';
 import { _electron as electron, chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { runRules, RULE_IDS, SIZES, THEMES, SCREENS } from './layout-rules.mjs';
+import { runRules, RULE_IDS, resolveSizes, sizesForWorkArea, THEMES, SCREENS } from './layout-rules.mjs';
 
 /** Selector maps. A key the target lacks is reported by the rule as `skipped: no hook <key>`. */
 const PROTOTYPE_SELECTORS = {
@@ -92,8 +96,11 @@ async function openPrototype(path) {
   return {
     selectors: PROTOTYPE_SELECTORS,
     page,
+    // The prototype is frozen: a Chromium viewport has no display to read, so the plan resolves
+    // against the 1920x1080 area the rev-8 references were drawn for.
+    sizes: sizesForWorkArea({ width: 1920, height: 1080 }),
     close: () => browser.close(),
-    async show(screen, theme, [w, h]) {
+    async show(screen, theme, { size: [w, h] }) {
       await page.setViewportSize({ width: w, height: h });
       const route = screen === 'liste' ? 'pano' : screen;
       await page.goto(`${base}#/${route}`);
@@ -519,11 +526,15 @@ async function openApp() {
   const handle = await launchDesignApp();
   const { page } = handle;
   const goto = screenNavigator(page);
+  // The plan resolves once per run, against the app's own primary display — the real numbers the
+  // labels then carry.
+  const sizes = await resolveSizes(handle.app);
   return {
     selectors: APP_SELECTORS,
     page,
+    sizes,
     close: () => handle.app.close(),
-    async show(screen, theme, size) {
+    async show(screen, theme, { size }) {
       await setWindow(handle, size, theme);
       await goto[screen]();
       // The board's view choice persists per repo (U-18), so an earlier `liste` measurement
@@ -533,6 +544,24 @@ async function openApp() {
         await page.getByRole('button', { name: 'Kanban' }).first().click({ timeout: 1500 });
       }
       await page.waitForTimeout(450);
+    },
+    /** The guarantee behind every combination: the window's bounds lie wholly inside the primary
+     *  display's work area. Both rectangles are read in the main process, where they live. */
+    async windowCheck() {
+      const m = await handle.app.evaluate(({ BrowserWindow, screen }) => {
+        const b = BrowserWindow.getAllWindows()[0].getBounds();
+        const a = screen.getPrimaryDisplay().workArea;
+        return {
+          bx: b.x, by: b.y, bw: b.width, bh: b.height,
+          ax: a.x, ay: a.y, aw: a.width, ah: a.height,
+        };
+      });
+      const inside =
+        m.bx >= m.ax && m.by >= m.ay && m.bx + m.bw <= m.ax + m.aw && m.by + m.bh <= m.ay + m.ah;
+      return {
+        ok: inside,
+        detail: `window ${m.bw}x${m.bh} at ${m.bx},${m.by} ${inside ? '⊆' : '⊄'} workArea ${m.aw}x${m.ah} at ${m.ax},${m.ay}`,
+      };
     },
   };
 }
@@ -545,19 +574,23 @@ if (args.target === 'prototype' && !args.path) {
 }
 const target = args.target === 'prototype' ? await openPrototype(args.path) : await openApp();
 
+// The plan's real numbers, printed once so every later label can be read against them.
+for (const { name, size } of target.sizes) console.log(`size: ${name} ${size[0]}x${size[1]}`);
+
 let failures = 0;
 let lines = 0;
 // The Update button's state walk runs once per run — the first cockpit combo carries it.
 let walkedUpdate = false;
 for (const theme of THEMES) {
-  for (const size of SIZES) {
+  for (const entry of target.sizes) {
     for (const screen of SCREENS) {
+      const { name: sizeName, size } = entry;
       const [width, height] = size;
       const label = `${screen} ${width}x${height} ${theme}`;
       let results;
       try {
-        await target.show(screen, theme, size);
-        results = await runRules(target.page, { screen, width, height, theme }, target.selectors);
+        await target.show(screen, theme, entry);
+        results = await runRules(target.page, { screen, width, height, theme, sizeName }, target.selectors);
       } catch (error) {
         const why = String(error).split('\n')[0];
         results = RULE_IDS.map((id) => ({
@@ -569,6 +602,19 @@ for (const theme of THEMES) {
         if (status === 'FAIL') failures += 1;
         lines += 1;
         console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+      }
+      // The window's own containment is asserted once per size × theme, on the first screen of
+      // the size: it must lie wholly inside the primary display's work area.
+      if (screen === 'kokpit' && target.windowCheck !== undefined) {
+        let r;
+        try {
+          r = await target.windowCheck();
+        } catch (error) {
+          r = { ok: false, detail: `window unreachable: ${String(error).split('\n')[0]}` };
+        }
+        if (!r.ok) failures += 1;
+        lines += 1;
+        console.log(`window: ${sizeName} ${width}x${height} ${theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       }
       // The palette is measured open once per size × theme, on the cockpit screen; the settings
       // panel is measured the same way, through the nav's Ayarlar row; the title bar's Update

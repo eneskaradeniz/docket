@@ -9,12 +9,32 @@
 
 export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11'];
 
-/** The audit sizes: the window's minimum, its default, and full screen — nothing between. */
-export const SIZES = [
-  [1024, 640],
-  [1152, 720],
-  [1920, 1080],
+/** The audit size plan: the window's minimum, its default, and full screen — nothing between.
+ *  The first two are numbers; full screen is `'display'`, resolved to the primary display's work
+ *  area at run time so the window is exactly as large as the real screen allows. */
+export const SIZE_PLAN = [
+  { name: 'minimum', size: [1024, 640] },
+  { name: 'default', size: [1152, 720] },
+  { name: 'fullscreen', size: 'display' },
 ];
+
+/** One planned size against a work area: `'display'` becomes the area itself, a number is clamped
+ *  down to it — so even the minimum and the default never spill off a small display. */
+export const sizeFromPlan = (planned, workArea) =>
+  planned === 'display'
+    ? [workArea.width, workArea.height]
+    : [Math.min(planned[0], workArea.width), Math.min(planned[1], workArea.height)];
+
+/** The plan resolved for one work area: each name paired with its concrete [w, h]. */
+export const sizesForWorkArea = (workArea) =>
+  SIZE_PLAN.map(({ name, size }) => ({ name, size: sizeFromPlan(size, workArea) }));
+
+/** Resolve the plan against the primary display's work area of a live app, read in the Electron
+ *  main process — the only place the real screen is known. */
+export async function resolveSizes(app) {
+  const workArea = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().workAreaSize);
+  return sizesForWorkArea(workArea);
+}
 export const THEMES = ['dark', 'light'];
 export const SCREENS = ['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'];
 
@@ -214,11 +234,11 @@ const l8 = async (page, ctx, sel) => {
   return result('L-8', ok, `overflowing; snap ${m.snap}; fade ${m.fade}`);
 };
 
-// L-9 lives at full screen only: the smaller windows accept the closed-list heading below the
-// fold, so they report the rule as not applicable instead of measuring it.
+// L-9 lives at the full-screen size only: the smaller windows accept the closed-list heading
+// below the fold, so they report the rule as not applicable instead of measuring it.
 const l9 = async (page, ctx, sel) => {
-  if (ctx.screen !== 'kokpit' || ctx.width !== 1920 || ctx.height !== 1080) {
-    return result('L-9', true, 'only checked on the cockpit at 1920x1080');
+  if (ctx.screen !== 'kokpit' || ctx.sizeName !== 'fullscreen') {
+    return result('L-9', true, 'only checked on the cockpit at the full-screen size');
   }
   if (!sel.closedHeading) return skipped('L-9', 'closedHeading');
   const m = await inPage(page, `const el = resolve(arg); return el ? { top: el.getBoundingClientRect().top, ih: innerHeight } : null;`, sel.closedHeading);

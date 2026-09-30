@@ -252,7 +252,9 @@ belongs to the mobile app.
   and monthly windows. The same codes appear in the same place on every screen. It never touches the
   operator's data.
 - **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1152×720 (the
-  default window) and 1920×1080 (full screen), in the dark and the light theme. The sidebar is
+  default window) and the primary display's work area (full screen — read at run time from the
+  Electron main process, so the window is exactly as large as the real screen and never spills
+  off it), in the dark and the light theme. The sidebar is
   always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·
@@ -277,7 +279,7 @@ belongs to the mobile app.
   - **L-7** When the detail's main width is below 900 the live pane sits below the "bu aşamada
     senden beklenen" section.
   - **L-8** When Kanban columns overflow, the scroller has scroll-snap and shows the edge fade.
-  - **L-9** At 1920×1080 (full screen) the cockpit's "Son kapananlar" heading starts inside the
+  - **L-9** At the full-screen size the cockpit's "Son kapananlar" heading starts inside the
     first screen; the smaller windows accept it below the fold and report the rule as not
     applicable.
   - **L-10** Every screen's content wrapper starts at the main column's left padding edge — its

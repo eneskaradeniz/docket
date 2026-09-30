@@ -13,7 +13,7 @@
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
 //   5. IPC handlers and the window last — the renderer boots only once every surface it can
 //      call already exists.
-import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, Notification, dialog, ipcMain, safeStorage, screen } from 'electron';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -40,10 +40,9 @@ import {
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
 import {
-  WINDOW_DEFAULT_HEIGHT,
-  WINDOW_DEFAULT_WIDTH,
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
+  clampDefaultWindowSize,
   titleBarOptionsFor,
 } from './window-options';
 
@@ -279,9 +278,12 @@ const registerIpc = (api: Api): void => {
 // --- the window -------------------------------------------------------------------------------------
 
 function createWindow(): BrowserWindow {
+  // The first window must fit the display it opens on: the default size clamped to the primary
+  // display's work area (window-options.ts) — never below the minimums, never spilling off screen.
+  const size = clampDefaultWindowSize(screen.getPrimaryDisplay().workArea);
   const win = new BrowserWindow({
-    width: WINDOW_DEFAULT_WIDTH,
-    height: WINDOW_DEFAULT_HEIGHT,
+    width: size.width,
+    height: size.height,
     minWidth: WINDOW_MIN_WIDTH,
     minHeight: WINDOW_MIN_HEIGHT,
     // On darwin the traffic lights sit inside the app bar (see window-options.ts); everywhere
