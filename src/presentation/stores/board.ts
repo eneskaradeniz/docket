@@ -15,7 +15,8 @@ import { isQueryFailure } from './results';
  *  tests inject a fake, so the type lives here until then. */
 export type BoardChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type BoardChangeSignal = (listener: (change: BoardChange) => void) => () => void;

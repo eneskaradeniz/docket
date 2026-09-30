@@ -29,7 +29,8 @@ import { commandResultKey, isQueryFailure } from './results';
  *  signal as-is. */
 export type SettingsChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type SettingsChangeSignal = (listener: (change: SettingsChange) => void) => () => void;
@@ -251,8 +252,10 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
 
   // Both event kinds can move what settings shows (meters move with runs, accounts with
   // commands), so every notification re-queries the accounts view. Discovery is intentionally
-  // absent: a pass spawns probes, and change events must not pay for one.
-  changes(() => {
+  // absent: a pass spawns probes, and change events must not pay for one. The update channel is
+  // absent for the same economy — the update surface tracks it in its own wave.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     void load();
   });
 

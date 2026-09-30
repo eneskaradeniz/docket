@@ -19,4 +19,5 @@ export * from './fake-repo-tools';
 export * from './fake-run-repo';
 export * from './fake-secret-vault';
 export * from './fake-transport';
+export * from './fake-update-checker';
 export * from './fake-work-order-repo';

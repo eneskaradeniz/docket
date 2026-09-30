@@ -20,4 +20,5 @@ export * from './repo-registry';
 export * from './repo-tools';
 export * from './run-repo';
 export * from './secret-vault';
+export * from './update-checker';
 export * from './work-order-repo';

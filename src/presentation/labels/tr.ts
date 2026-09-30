@@ -302,4 +302,6 @@ export const TR: LabelBundle = {
   'success.account.save': 'Hesap kaydedildi.',
   'success.account.remove': 'Hesap kaldırıldı.',
   'success.binding.save': 'Rol bağlantısı kaydedildi.',
+  'success.app.update.check': 'Güncellemeler kontrol edildi.',
+  'success.app.update.apply': 'Güncelleme indirmesi başladı.',
 };

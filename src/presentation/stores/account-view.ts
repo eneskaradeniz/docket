@@ -16,7 +16,8 @@ export const WARN_PERCENT = 80;
 /** The coarse change events the store re-queries on; the shell's signal satisfies it as-is. */
 export type AccountViewChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 export type AccountViewChangeSignal = (listener: (change: AccountViewChange) => void) => () => void;
 
@@ -118,8 +119,9 @@ export const createAccountViewStore = (deps: AccountViewStoreDeps): AccountViewS
   };
 
   // Both event kinds concern the account's active work and windows — runs move and work orders
-  // change — so every notification triggers the same re-query.
-  changes(() => {
+  // change — so they trigger the same re-query; the update channel does not.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     if (accountId === null) return;
     void load(accountId);
   });

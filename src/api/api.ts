@@ -31,15 +31,19 @@ import type {
   DiscoveredProvider,
   PermissionBoard,
   ProviderDiscovery,
+  UpdateChecker,
 } from '../application';
 import {
   approveAndDeploy,
+  applyUpdate,
   attachProject,
   blockWorkOrder,
+  checkForUpdates,
   closeWorkOrder,
   decideHumanGate,
   decideProposalUseCase,
   enqueueStage,
+  getUpdateState,
   getWorkOrder,
   openTaskWorkOrders,
   openWorkOrder,
@@ -77,7 +81,8 @@ import { RUN_EVENTS_TAIL_LIMIT } from './queries';
  *  store re-queries on receipt, so the channel survives every change of what the views show. */
 export type UiEvent =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 export interface Api {
   command(actor: Actor, command: Command): Promise<CommandResult>;
@@ -128,12 +133,14 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  port is passed the same way: it is composed beside AppDeps at the root, and without it no
  *  provider can be reported, so `providers.discovered` answers not_found too. The repo
  *  registry joins them: without it no repo can be enumerated, so `repos.list` answers
- *  not_found as well. */
+ *  not_found as well. The update checker completes the set: without it no update state exists,
+ *  so `app.update` and its intents answer not_found instead of inventing "you are current". */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
   discovery?: ProviderDiscovery,
   registry?: RepoRegistryPort,
+  updates?: UpdateChecker,
 ): Api & RunEventFeed {
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
@@ -165,11 +172,17 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board);
+      const result = await runCommand(tracked, actor, command, board, updates);
       if (appended) emit({ type: 'workOrders.changed' });
+      // update.changed rides the same coarse pattern as workOrders.changed: the command answers
+      // ok, the event tells every store to re-query — CommandResult carries no state payload. A
+      // refused apply (not_available) changed nothing, so it stays silent.
+      if (result.ok && (command.type === 'app.update.check' || command.type === 'app.update.apply')) {
+        emit({ type: 'update.changed' });
+      }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -186,6 +199,7 @@ const runCommand = async (
   actor: Actor,
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
+  updates: UpdateChecker | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -440,6 +454,19 @@ const runCommand = async (
         ),
       );
     }
+
+    case 'app.update.check': {
+      if (updates === undefined) return { ok: false, code: 'not_found' };
+      // The re-check runs for its side effect on the checker's state; the answer itself travels
+      // through update.changed and the re-query it triggers.
+      await checkForUpdates(updates);
+      return { ok: true };
+    }
+
+    case 'app.update.apply': {
+      if (updates === undefined) return { ok: false, code: 'not_found' };
+      return commandOf(await applyUpdate(updates));
+    }
   }
 };
 
@@ -449,6 +476,7 @@ const runQuery = async (
   discovery: ProviderDiscovery | undefined,
   registry: RepoRegistryPort | undefined,
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
+  updates: UpdateChecker | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -527,6 +555,12 @@ const runQuery = async (
         asks.push({ runId: ask.runId, askId: ask.askId, since: ask.since, title: workOrder?.title ?? null });
       }
       return asks;
+    }
+
+    case 'app.update': {
+      // The state is already the view: plain JSON, no derivation, nothing stored.
+      if (updates === undefined) return { ok: false, code: 'not_found' };
+      return getUpdateState(updates);
     }
   }
 };

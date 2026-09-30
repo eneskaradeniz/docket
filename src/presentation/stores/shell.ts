@@ -12,7 +12,8 @@ import { isQueryFailure } from './results';
  *  U-12). Notifications carry no payloads — the store re-queries. */
 export type ShellChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type ShellChangeSignal = (listener: (change: ShellChange) => void) => () => void;
@@ -91,9 +92,10 @@ export const createShellStore = (deps: ShellStoreDeps): ShellStore => {
     set({ loading: false, badge: shellBadge(view.attention) });
   };
 
-  // Both event kinds concern the badge — work orders change and runs move — so every
-  // notification triggers the same re-query (U-10: the same events as the cockpit).
-  changes(() => {
+  // Both event kinds concern the badge — work orders change and runs move — so they trigger the
+  // same re-query (U-10: the same events as the cockpit); the update channel does not move it.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     void load();
   });
 
