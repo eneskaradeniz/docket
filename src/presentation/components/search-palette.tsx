@@ -9,12 +9,19 @@
 // Enter opens the selected one, Esc or a click on the scrim closes.
 // An empty query shows the input row alone — the body (rows or the no-results line) appears
 // only once text is typed, and folds away when it is cleared.
-import { useEffect, useRef, useState } from 'react';
+// The results settle behind a debounce: the input's text updates on every keystroke, but the
+// rows recompute only after the last one has had its beat, so typing narrows the list in one
+// step instead of flashing through every intermediate standing. Settling is a keyed row diff —
+// rows that stay keep their place, rows that leave fold away, rows that arrive rise in — and
+// the keyboard's highlight follows the rows on screen, never the ones still being computed.
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import {
+  diffRows,
   focusRestoredOnClose,
   paletteBody,
+  paletteRowId,
   type PaletteResult,
   type PaletteState,
 } from '../stores/search-palette';
@@ -40,22 +47,39 @@ const optionId = (index: number): string => `docket-palette-option-${index}`;
 // them, the constants above own them.
 const MOTION_STYLE = motionVars();
 
-// The rows' transition is one language; only the stagger delay differs, and only while the
-// rows are arriving — a hiding row must not lag behind its neighbours.
-const ROW_FADE =
-  'transition-opacity duration-[var(--motion-results-fade)] [transition-timing-function:var(--motion-ease)] motion-reduce:transition-none';
-const staggerDelay = (index: number): string =>
-  `${Math.min(index, MOTION.results.staggerRows - 1) * MOTION.results.staggerMs}ms`;
+const EMPTY_ROWS: readonly PaletteResult[] = [];
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+const EMPTY_RANKS: ReadonlyMap<string, number> = new Map<string, number>();
 
-/** A row's standing: the keyboard's row carries the one active-state language, the rest stay
- *  quiet — the same grammar as the sidebar's rows. */
-const rowClass = (selected: boolean, shown: boolean): string =>
+/** A row's life between two settled lists: it arrives, it stays, or it walks out. */
+type RowStanding = 'entering' | 'staying' | 'leaving';
+
+// The row's fold is its own leg — leaving rows close it, arriving rows open it — while the
+// body's 0fr → 1fr track keeps covering the fold between "nothing typed" and "something typed".
+const ROW_FOLD =
+  'grid transition-[grid-template-rows] duration-[var(--motion-row-exit)] delay-[var(--row-delay)] [transition-timing-function:var(--motion-ease)] motion-reduce:transition-none';
+
+// The row's paints ride one transition list: the fade and the rise at the results' own pace,
+// the highlight's ground at its shorter one. Reduced motion keeps the fade only, flat and fast.
+const ROW_PAINT =
+  'transition-[opacity,translate,background-color,border-color] [transition-timing-function:var(--motion-ease)] delay-[var(--row-delay)] motion-reduce:transition-[opacity] motion-reduce:duration-[var(--motion-reduced)] motion-reduce:delay-0 motion-reduce:translate-y-0';
+
+/** Entering rows rise one after another — the first six only; the rest arrive with the sixth. */
+const staggerDelay = (rank: number): string =>
+  `${Math.min(rank, MOTION.results.staggerRows - 1) * MOTION.results.staggerMs}ms`;
+
+/** A row's paint: the keyboard's row carries the one active-state language, the rest stay quiet
+ *  — the same grammar as the sidebar's rows, over a border every row reserves so the highlight
+ *  never shifts the row's geometry when it lands. */
+const rowClass = (selected: boolean, standing: RowStanding, hidden: boolean): string =>
   [
     selected
       ? `flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink ${ACTIVE_CLASS}`
-      : 'flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-ink hover:bg-raised',
-    ROW_FADE,
-    shown ? 'opacity-100' : 'opacity-0',
+      : 'flex h-8 w-full items-center gap-2 rounded-md border border-transparent px-2.5 text-left text-[13px] text-ink hover:bg-raised',
+    ROW_PAINT,
+    standing === 'leaving' ? 'duration-[var(--motion-row-exit)]' : 'duration-[var(--motion-results-fade)]',
+    // A row that leaves only fades and folds — it does not rise on the way out.
+    hidden ? 'opacity-0 translate-y-[var(--motion-row-rise)]' : 'opacity-100 translate-y-0',
   ].join(' ');
 
 /** Flips to true only once `active` has survived a painted frame — the browser needs the
@@ -85,6 +109,20 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   // Where focus stood before the palette opened — the palette gives it back on close, unless the
   // open was a pointer's: the reducer's origin decision (focusRestoredOnClose) settles that.
   const restoreRef = useRef<HTMLElement | null>(null);
+  // The rows the palette is actually showing — the settled list, which lags the query by the
+  // debounce. Ghosts are rows walking out; ranks stagger the rows walking in, and the hidden
+  // set holds the arriving rows until their start state has painted.
+  const [settled, setSettled] = useState<readonly PaletteResult[]>(EMPTY_ROWS);
+  const [ghosts, setGhosts] = useState<readonly PaletteResult[]>(EMPTY_ROWS);
+  const [enteringRanks, setEnteringRanks] = useState<ReadonlyMap<string, number>>(EMPTY_RANKS);
+  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(EMPTY_IDS);
+  // The keyboard's row over the rows on screen. While the settled list is the live one this is
+  // simply the reducer's selection; the ref freezes the last live row for the wait, so typing
+  // does not yank the highlight before the new list lands.
+  const liveSelectedRef = useRef(0);
+  // Ghosts leave the DOM once their exit has surely ended; a new settle re-arms the timer.
+  const ghostTimerRef = useRef(0);
+
   // The overlay's life in the DOM outlives the open standing: `mounted` keeps it in the tree
   // through the exit transition, `entered` is the standing the CSS transitions chase. Mount
   // hidden, flip only after the hidden frame is painted — the browser needs a start state to
@@ -124,19 +162,75 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
     return () => window.clearTimeout(timer);
   }, [mounted, state.open]);
 
-  const body = paletteBody(state.query, state.results.length);
+  // The settling itself. The input never waits; the rows recompute only once the last
+  // keystroke is 120ms behind, so fast typing reshapes the list once instead of per key.
+  // An emptied input (or a closed palette) settles at once — the body folds away on the clear,
+  // and nothing waits for a debounce that has nothing to show.
+  useEffect(() => {
+    if (!state.open || state.query.trim() === '') {
+      setSettled(EMPTY_ROWS);
+      setGhosts(EMPTY_ROWS);
+      setEnteringRanks(EMPTY_RANKS);
+      setHiddenIds(EMPTY_IDS);
+      window.clearTimeout(ghostTimerRef.current);
+      return;
+    }
+    // The settled list already is the live one — nothing to compute, and no timer to keep.
+    if (settled === state.results) return;
+    const timer = window.setTimeout(() => {
+      const diff = diffRows(settled, state.results);
+      setSettled(state.results);
+      const nextIds = new Set(state.results.map(paletteRowId));
+      setGhosts((current) => [
+        ...current.filter((row) => !nextIds.has(paletteRowId(row))),
+        ...diff.leaving,
+      ]);
+      window.clearTimeout(ghostTimerRef.current);
+      ghostTimerRef.current = window.setTimeout(() => setGhosts(EMPTY_ROWS), MOTION.results.rowExitRemoveMs);
+      const ranks = new Map<string, number>();
+      diff.entering.forEach((row, rank) => ranks.set(paletteRowId(row), rank));
+      setEnteringRanks(ranks);
+      setHiddenIds(new Set(ranks.keys()));
+    }, MOTION.results.debounceMs);
+    return () => window.clearTimeout(timer);
+  }, [state.open, state.query, state.results, settled]);
+
+  // Arriving rows mount folded and hidden; the flip waits for a painted frame so their rise
+  // has a start state to chase — the same double frame the palette's own open rides.
+  useEffect(() => {
+    if (hiddenIds.size === 0) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setHiddenIds(EMPTY_IDS));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [hiddenIds]);
+
+  const live = settled === state.results;
+  const selection = live ? state.selected : liveSelectedRef.current;
+
+  // The ref mirrors the keyboard's row only while the settled list is the live one — during
+  // the wait it holds the row the operator last stood on, which is the row still on screen.
+  useEffect(() => {
+    if (live) liveSelectedRef.current = state.selected;
+  }, [live, state.selected]);
+
+  // Ghosts must never outlive the palette's own DOM — a stray timer fires into nothing.
+  useEffect(() => () => window.clearTimeout(ghostTimerRef.current), []);
+
+  const body = paletteBody(state.query, settled.length);
   const hasBody = body !== 'none';
-  // The rows stagger in with the body's first growth; once the body stands, later rows join
-  // at full opacity so retyping never replays the cascade.
-  const rowsIn = usePaintedFlip(hasBody);
 
   // The keyboard's row must stay in view when the list outgrows its cap.
   useEffect(() => {
     if (!state.open) return;
     const options = panelRef.current?.querySelectorAll('[role="option"]');
-    const option = options?.[state.selected];
+    const option = options?.[selection];
     option?.scrollIntoView({ block: 'nearest' });
-  }, [state.selected, state.open]);
+  }, [selection, state.open]);
 
   if (!mounted) return null;
 
@@ -159,21 +253,57 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      onMove(1);
+      // The walk means nothing over a list that is about to be replaced — during the wait the
+      // keys would move over rows nobody can see.
+      if (live) onMove(1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      onMove(-1);
+      if (live) onMove(-1);
     } else if (event.key === 'Enter') {
       // Preventing the default keeps a focused row from firing its own click on top of this.
+      // Enter opens the row on screen, not the one still being computed.
       event.preventDefault();
-      const result = state.results[state.selected];
-      if (result !== undefined) onOpen(result);
+      const chosen = settled[selection];
+      if (chosen !== undefined) onOpen(chosen);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
     } else if (event.key === 'Tab') {
       trapTab(event);
     }
+  };
+
+  /** One row in the settled list — folded while it arrives or leaves, open once it stands. */
+  const renderRow = (result: PaletteResult, index: number, standing: RowStanding): React.ReactNode => {
+    const id = paletteRowId(result);
+    const rank = enteringRanks.get(id);
+    const hidden = hiddenIds.has(id);
+    const open = !hidden && standing !== 'leaving';
+    // Ghosts sit below the settled rows and never take the highlight with them.
+    const selected = standing !== 'leaving' && index === selection;
+    const rowStyle: CSSProperties | undefined =
+      standing === 'entering' && rank !== undefined ? ({ '--row-delay': staggerDelay(rank) } as CSSProperties) : undefined;
+    return (
+      <div key={id} className={[ROW_FOLD, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'].join(' ')} style={rowStyle}>
+        <div className="min-h-0 overflow-hidden">
+          <button
+            type="button"
+            id={optionId(index)}
+            role="option"
+            aria-selected={selected}
+            onClick={() => onOpen(result)}
+            className={rowClass(selected, standing, hidden)}
+          >
+            <span title={result.name} className="min-w-0 flex-1 truncate">
+              {result.name}
+            </span>
+            <span className="flex-none font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
+              {t(locale, result.kind === 'project' ? 'palette.kind.project' : 'palette.kind.repo')}
+            </span>
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -231,7 +361,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
             role="combobox"
             aria-expanded={hasBody}
             aria-controls={LIST_ID}
-            aria-activedescendant={state.results.length > 0 ? optionId(state.selected) : undefined}
+            aria-activedescendant={settled.length > 0 ? optionId(selection) : undefined}
             aria-label={t(locale, 'palette.placeholder')}
             placeholder={t(locale, 'palette.placeholder')}
             value={state.query}
@@ -244,7 +374,9 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
         </div>
 
         {/* The body's height rides a 0fr → 1fr grid track: it grows and folds with the first
-            typed and cleared character, and a collapsed track leaves no padding under the input. */}
+            typed and cleared character, and a collapsed track leaves no padding under the input.
+            Inside, the rows' own folds carry every later reshape — the height follows the rows,
+            so a narrowed list glides shut instead of snapping to size. */}
         <div
           data-search-body
           className={[
@@ -263,25 +395,10 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
                 hasBody ? 'opacity-100' : 'opacity-0',
               ].join(' ')}
             >
-              {state.results.map((result, index) => (
-                <button
-                  key={`${result.kind}:${result.kind === 'project' ? result.project : result.repo}`}
-                  type="button"
-                  id={optionId(index)}
-                  role="option"
-                  aria-selected={index === state.selected}
-                  onClick={() => onOpen(result)}
-                  style={rowsIn ? { transitionDelay: staggerDelay(index) } : undefined}
-                  className={rowClass(index === state.selected, rowsIn)}
-                >
-                  <span title={result.name} className="min-w-0 flex-1 truncate">
-                    {result.name}
-                  </span>
-                  <span className="flex-none font-mono text-[10.5px] uppercase tracking-[0.08em] text-inkdim">
-                    {t(locale, result.kind === 'project' ? 'palette.kind.project' : 'palette.kind.repo')}
-                  </span>
-                </button>
-              ))}
+              {settled.map((result, index) =>
+                renderRow(result, index, enteringRanks.has(paletteRowId(result)) ? 'entering' : 'staying'),
+              )}
+              {ghosts.map((result, index) => renderRow(result, settled.length + index, 'leaving'))}
               {body === 'no-results' ? (
                 <p className="px-2.5 py-2 text-xs text-inkdim">{t(locale, 'palette.empty')}</p>
               ) : null}

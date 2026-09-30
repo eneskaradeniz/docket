@@ -42,6 +42,35 @@ export const paletteBody = (query: string, resultCount: number): PaletteBody => 
   return resultCount > 0 ? 'results' : 'no-results';
 };
 
+/** A row's identity: its kind and its target — the same key the DOM rows render by, so a project
+ *  and a repo that share a name stay two rows. */
+export const paletteRowId = (result: PaletteResult): string =>
+  result.kind === 'project' ? `project:${result.project}` : `repo:${result.repo}`;
+
+/** How one settled list becomes the next: rows keyed by id, `staying` and `entering` in `next`'s
+ *  order, `leaving` in `previous`'s. The component renders `staying` and `entering` where they
+ *  stand and walks `leaving` out — the diff is pure so the settling itself stays testable. */
+export interface RowDiff {
+  readonly entering: readonly PaletteResult[];
+  readonly staying: readonly PaletteResult[];
+  readonly leaving: readonly PaletteResult[];
+}
+
+export const diffRows = (
+  previous: readonly PaletteResult[],
+  next: readonly PaletteResult[],
+): RowDiff => {
+  const previousIds = new Set(previous.map(paletteRowId));
+  const nextIds = new Set(next.map(paletteRowId));
+  const entering: PaletteResult[] = [];
+  const staying: PaletteResult[] = [];
+  for (const result of next) {
+    (previousIds.has(paletteRowId(result)) ? staying : entering).push(result);
+  }
+  const leaving: PaletteResult[] = previous.filter((result) => !nextIds.has(paletteRowId(result)));
+  return { entering, staying, leaving };
+};
+
 export type PaletteAction =
   | { readonly type: 'open'; readonly origin: PaletteOrigin }
   | { readonly type: 'close' }
