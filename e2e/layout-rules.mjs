@@ -411,3 +411,89 @@ export async function runRules(page, ctx, selectors) {
   }
   return out;
 }
+
+// --- the skeletons' own measurement (U-26) -----------------------------------------------------------
+// Unlike the L rules, these run mid-load: the audit's --slow pass calls them while the delayed
+// replies are still in flight, then again once the content has replaced the compositions. The
+// holder is tagged on the first pass so the second pass can find the same element after the
+// composition is gone.
+
+/** How far the holder's height may move when the real content lands (U-26: same paddings and
+ *  row heights, so nothing jumps). */
+export const SKELETON_HEIGHT_TOLERANCE_PX = 8;
+
+/** Measure every visible `[data-skeleton]` composition (U-26): each must sit inside its holder
+ *  and, L-3's notion, inside every clipping ancestor horizontally; the holder is tagged
+ *  `data-skeleton-holder` and its height recorded, so the second pass can see whether the
+ *  content that replaces the composition moves it. Pure DOM measurement, no waiting. */
+export async function measureSkeletons(page) {
+  return page.evaluate(() => {
+    const visible = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const out = [];
+    for (const el of document.querySelectorAll('[data-skeleton]')) {
+      if (!visible(el)) continue;
+      const holder = el.parentElement;
+      if (holder === null) continue;
+      holder.setAttribute('data-skeleton-holder', '');
+      const r = el.getBoundingClientRect();
+      const h = holder.getBoundingClientRect();
+      // L-3's horizontal containment: past the right edge of a clipping ancestor is a defect.
+      let left = 0;
+      let right = innerWidth;
+      for (let p = holder; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflowX === 'visible') continue;
+        const pr = p.getBoundingClientRect();
+        left = Math.max(left, pr.left);
+        right = Math.min(right, pr.right);
+      }
+      out.push({
+        blocks: el.querySelectorAll('[data-skeleton-block]').length,
+        holderHeight: h.height,
+        insideHolder: r.left >= h.left - 0.5 && r.right <= h.right + 0.5 && r.bottom <= h.bottom + 0.5,
+        contained: r.left >= left - 0.5 && r.right <= right + 0.5,
+      });
+    }
+    return out;
+  });
+}
+
+/** The second pass, after the compositions are gone: every tagged holder's height now, to
+ *  compare against the recorded one — and the tags are cleared, so a later measurement starts
+ *  clean. Pure DOM measurement, no waiting. */
+export async function measureSkeletonHolders(page) {
+  return page.evaluate(() => {
+    const out = [];
+    for (const holder of document.querySelectorAll('[data-skeleton-holder]')) {
+      out.push(holder.getBoundingClientRect().height);
+      holder.removeAttribute('data-skeleton-holder');
+    }
+    return out;
+  });
+}
+
+/** Pure: compare the two passes. Every composition must have been contained, and every holder
+ *  must sit still within the tolerance. Returns { ok, detail } in the rules' own shape. */
+export function skeletonVerdict(before, after) {
+  if (before.length === 0) return { ok: false, detail: 'no skeleton composition appeared' };
+  const stray = before.filter((m) => !m.insideHolder || !m.contained).length;
+  const blocks = before.reduce((sum, m) => sum + m.blocks, 0);
+  if (stray > 0) {
+    return { ok: false, detail: `${before.length} compositions, ${blocks} blocks, ${stray} outside their holder or screen` };
+  }
+  if (after.length !== before.length) {
+    return { ok: false, detail: `${before.length} holders measured, ${after.length} found again` };
+  }
+  const deltas = before.map((m, i) => after[i] - m.holderHeight);
+  const worst = Math.max(...deltas.map(Math.abs));
+  if (worst > SKELETON_HEIGHT_TOLERANCE_PX) {
+    return { ok: false, detail: `${before.length} compositions, ${blocks} blocks contained, holder moved ${worst.toFixed(1)}px (tolerance ${SKELETON_HEIGHT_TOLERANCE_PX})` };
+  }
+  return {
+    ok: true,
+    detail: `${before.length} compositions, ${blocks} blocks contained; holder Δ ${deltas.map((d) => d.toFixed(1)).join('/')}px`,
+  };
+}

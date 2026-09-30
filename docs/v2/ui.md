@@ -240,6 +240,19 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   with `aria-disabled` at the ends, labelled "Geri ⌘[" / "İleri ⌘]" from the bundles; ⌘[ and ⌘]
   do the same and are ignored while focus is in an input/textarea/contenteditable or while the
   palette or the settings panel is open. The detail's ‹ Geri row calls the same back.
+- **U-26** (loading skeletons) A load that outlives `MOTION.skeleton.delayMs` (150 ms) shows
+  skeletons — grey placeholder shapes in the real content's layout, never a blank gap or a
+  spinner — built from one `Skeleton` primitive (`components/skeleton.tsx`): a block in the
+  raised tone (slightly lighter at the crest) whose shimmer sweeps left→right every 1.4 s
+  (`ease-in-out`, infinite), `aria-hidden` blocks inside a holder that carries
+  `aria-busy="true"`, and a static placeholder under `prefers-reduced-motion`. The anti-flicker
+  rule is the pure `skeletonPhase(loadingSince, now, shownSince)` (`stores/skeleton-phase.ts`,
+  time injected): a skeleton appears only past the delay and, once shown, holds at least
+  `minShowMs` (300 ms); the real content then enters with the row motion's rise and fade. The
+  compositions (`cockpit-skeleton`, `board-skeleton`, the tree rows and the account cards) mirror
+  their screen's own wrappers, paddings and row heights so nothing jumps. `npm run design --
+  --slow` sets `DOCKET_API_DELAY_MS` (1200) — read once in the composition root, set only by
+  `e2e/design-run.mjs` — so the standings can be seen; absent means no delay, as today.
 
 ### Prototype vs rules (2026-09-29)
 
