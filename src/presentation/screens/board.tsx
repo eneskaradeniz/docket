@@ -75,7 +75,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   return (
     <div
       style={boardMotionVars()}
-      className={state.viewMode === 'kanban' ? 'flex h-full min-h-0 flex-col gap-[18px]' : 'grid gap-[18px]'}
+      className="flex h-full min-h-0 flex-col gap-[18px]"
     >
       <header className="flex flex-none flex-wrap items-center gap-3">
         <h1 className="truncate font-mono text-[15px] font-bold tracking-tight text-ink">{repo}</h1>
