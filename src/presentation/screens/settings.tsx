@@ -6,6 +6,9 @@
 // opener on a keyboard-opened close only (the palette's one rule). The screen renders the
 // store's view and forwards clicks; secret values have no surface here — account names only —
 // and every user-visible string arrives through a label key (U-1).
+// The section is the shell's, not the panel's own: the sidebar's Telefon and Ayarlar rows open
+// the panel on a named section and read their current standing from it (U-24), so the panel
+// receives the section and reports every move.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
@@ -30,6 +33,7 @@ import type {
   SettingsStore,
 } from '../stores/settings';
 import { failureKey } from '../stores/results';
+import { updateButton, type UpdateStore, type UpdateStatus } from '../stores/update';
 import type { SettingsBindingScope } from '../../api/queries';
 
 export interface SettingsPanelProps {
@@ -37,25 +41,41 @@ export interface SettingsPanelProps {
   readonly open: boolean;
   /** Stamped by the open; the close's focus rule reads it. */
   readonly origin: SettingsPanelOrigin;
+  /** The selected section — owned by the shell, which names it on open (U-24). */
+  readonly section: SettingsSection;
+  /** Reports a section move from the menu, so the sidebar's rows follow it. */
+  readonly onSection: (section: SettingsSection) => void;
   readonly onClose: () => void;
   readonly store: SettingsStore;
+  /** The app-update standing the Güncelleme section reads (U-24). */
+  readonly update: UpdateStore;
   readonly locale: Locale;
   /** The language control binds straight to the locale store: a selection swaps the bundle for the
    *  whole app through the root's subscription and persists the choice (U-9). */
   readonly localeStore: LocaleStore;
 }
 
-/** The panel's sections — the same list and order the screen's cards have always carried; the
- *  menu walks them, the pane carries the one that is selected. */
-type SettingsSection = 'language' | 'accounts' | 'bindings' | 'discovery';
+/** The panel's sections — the same list and order the screen's cards have always carried, with
+ *  the phone and update sections appended (U-24); the menu walks them, the pane carries the one
+ *  that is selected, and the sidebar's rows name them on open. */
+export type SettingsSection = 'language' | 'accounts' | 'bindings' | 'discovery' | 'phone' | 'update';
 
-const SECTIONS: readonly SettingsSection[] = ['language', 'accounts', 'bindings', 'discovery'];
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  'language',
+  'accounts',
+  'bindings',
+  'discovery',
+  'phone',
+  'update',
+];
 
 const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
   language: 'settings.language.label',
   accounts: 'settings.section.accounts',
   bindings: 'settings.section.bindings',
   discovery: 'settings.section.discovery',
+  phone: 'settings.section.phone',
+  update: 'settings.section.update',
 };
 
 const AUTH_MODE_KEY: Readonly<Record<string, LabelKey>> = {
@@ -77,6 +97,22 @@ const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
   project: 'settings.binding.scope.project',
   repo: 'settings.binding.scope.workspace',
   workOrder: 'settings.binding.scope.workOrder',
+};
+
+/** One status line per UpdateStatus (U-24) — the Güncelleme section's quiet reading of where the
+ *  app's own newer version stands; absence is never invented into a status. */
+const UPDATE_STATUS_KEY: Readonly<Record<UpdateStatus['kind'], LabelKey>> = {
+  none: 'settings.update.status.none',
+  available: 'settings.update.status.available',
+  downloading: 'settings.update.status.downloading',
+  ready: 'settings.update.status.ready',
+  error: 'settings.update.status.error',
+};
+
+/** The error status's closed reason set — offline or failed, nothing else exists on the wire. */
+const UPDATE_ERROR_KEY: Readonly<Record<'offline' | 'failed', LabelKey>> = {
+  offline: 'update.error.offline',
+  failed: 'update.error.failed',
 };
 
 const scopeName = (scope: SettingsBindingScope): string =>
@@ -235,8 +271,11 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, onClose, store, locale, localeStore }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, onSection, onClose, store, update, locale, localeStore }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The update standing is the shell's to load (the title bar reads it from startup); the panel
+  // only subscribes.
+  const updateState = useSyncExternalStore(update.subscribe, update.state);
   useEffect(() => {
     void store.load();
   }, [store]);
@@ -249,7 +288,6 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
   const [editAccounts, setEditAccounts] = useState<readonly string[]>([]);
   const [newRole, setNewRole] = useState('');
   const [newAccounts, setNewAccounts] = useState<readonly string[]>([]);
-  const [section, setSection] = useState<SettingsSection>('language');
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -416,13 +454,13 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
 
         <div className="grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)]">
           <div className="flex flex-col gap-1 overflow-y-auto border-r border-hairline p-2.5">
-            {SECTIONS.map((entry) => {
+            {SETTINGS_SECTIONS.map((entry) => {
               const current = entry === section;
               return (
                 <button
                   key={entry}
                   type="button"
-                  onClick={() => setSection(entry)}
+                  onClick={() => onSection(entry)}
                   aria-current={current ? 'true' : undefined}
                   className={`flex h-8 items-center rounded-control border px-2.5 text-left text-[13px] ${
                     current
@@ -624,6 +662,80 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                       ))}
                     </ul>
                   )}
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {section === 'phone' ? (
+              <SectionCard title={t(locale, 'settings.section.phone')}>
+                {/* The honest status, no fake data: the phone link feature does not exist yet, so
+                    the section says so and offers nothing that pretends otherwise (U-24). */}
+                <div className="grid gap-2.5">
+                  <p className="text-[13.5px] font-semibold text-ink">{t(locale, 'settings.phone.none')}</p>
+                  <p className="max-w-[52ch] text-[13px] text-inkdim">{t(locale, 'settings.phone.explain')}</p>
+                  <div className="flex items-center gap-2.5">
+                    <ActionButton variant="neutral" disabled>
+                      {t(locale, 'settings.phone.pair')}
+                    </ActionButton>
+                    <StateBadge tone="dim">{t(locale, 'settings.phone.soon')}</StateBadge>
+                  </div>
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {section === 'update' ? (
+              <SectionCard
+                title={t(locale, 'settings.section.update')}
+                action={
+                  <ActionButton variant="neutral" disabled={updateState.checking} onClick={() => void update.check()}>
+                    {t(locale, 'settings.update.check')}
+                  </ActionButton>
+                }
+              >
+                <div className="grid gap-3" data-settings-update>
+                  <p className="font-mono text-[12.5px] text-inkdim">
+                    {t(locale, 'settings.update.version')}{' '}
+                    <span className="text-ink">{updateState.status?.current ?? '—'}</span>
+                  </p>
+                  <p className="flex flex-wrap items-baseline gap-2 text-[13px] text-ink">
+                    {updateState.status === null ? null : (
+                      <>
+                        <span>{t(locale, UPDATE_STATUS_KEY[updateState.status.kind])}</span>
+                        {updateState.status.kind === 'downloading' ? (
+                          <span className="font-mono text-[12px] text-inkdim">%{updateState.status.percent}</span>
+                        ) : null}
+                        {updateState.status.kind === 'available' || updateState.status.kind === 'ready' ? (
+                          <span className="font-mono text-[12px] text-inkdim">{updateState.status.next}</span>
+                        ) : null}
+                        {updateState.status.kind === 'error' ? (
+                          <span className="text-[12.5px] text-error">
+                            {t(locale, UPDATE_ERROR_KEY[updateState.status.reason])}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
+                  </p>
+                  {(() => {
+                    // The same apply action the bar carries, in the section's own button grammar.
+                    if (updateState.status === null) return null;
+                    const plan = updateButton(updateState.status);
+                    if (!plan.visible) return null;
+                    return (
+                      <div>
+                        <ActionButton variant="primary" disabled={plan.disabled} onClick={() => void update.apply()}>
+                          {t(locale, plan.labelKey)}
+                          {plan.percent !== null ? ` %${plan.percent}` : ''}
+                        </ActionButton>
+                      </div>
+                    );
+                  })()}
+                  {updateState.lastOutcome !== null ? (
+                    <OutcomeNotice
+                      ok={updateState.lastOutcome.result.ok}
+                      text={t(locale, updateState.lastOutcome.labelKey)}
+                      code={updateState.lastOutcome.result.ok ? undefined : updateState.lastOutcome.result.code}
+                    />
+                  ) : null}
                 </div>
               </SectionCard>
             ) : null}

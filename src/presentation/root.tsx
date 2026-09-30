@@ -20,6 +20,7 @@ import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
 import { createShellStore } from './stores/shell';
+import { createUpdateStore } from './stores/update';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
@@ -83,6 +84,8 @@ if (mount !== null) {
     sourceReachable: sourceReachable(api),
   });
   const shell = createShellStore({ api, changes });
+  // The app's own newer version — the title bar's button and the panel's Güncelleme section.
+  const update = createUpdateStore({ api, changes, actor: USER });
   // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
   // persists where the locale choice does.
   const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
@@ -109,6 +112,7 @@ if (mount !== null) {
           detail={detail}
           accountView={accountView}
           settings={settings}
+          update={update}
           wizard={wizard}
           timeZone={timeZone}
         />

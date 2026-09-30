@@ -138,7 +138,7 @@ for (const [size, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; Esc closes and the account view is still there", async () => {
+  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
     await click('Claude Max');
     await see('Ayarlar\'da düzenle');
@@ -154,6 +154,21 @@ for (const [size, theme] of combos) {
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await see('Ayarlar\'da düzenle');
     await shot('closed-back-on-account');
+    // The sidebar's nav rows are the panel's doors (U-24): Telefon opens it on the phone
+    // section's honest "not linked yet" standing; Ayarlar opens it where the gear used to.
+    await page.getByRole('button', { name: 'Telefon', exact: true }).first().click({ timeout: WAIT });
+    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await see('Telefon bağlı değil');
+    await see('Yakında');
+    await shot('settings-phone');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await see('Dil');
+    await shot('settings-language');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
   });
 
   await journey('J-7', '⌘K opens the palette and focuses its input', async () => {
@@ -299,10 +314,10 @@ for (const [size, theme] of combos) {
     });
     assert.match(focusAfterClear, /^INPUT /i, `focus after Temizle is on ${focusAfterClear}`);
     await shot('palette-history-cleared');
-    // The title bar's Ara button opens the same door; clearing the text folds the body away
+    // The sidebar's Ara row opens the same door (U-24); clearing the text folds the body away
     // again (the history stays empty — a query is remembered only by an opening), and Esc eases
-    // the palette out. Its accessible name is the icon's aria-label, the bundle's search label
-    // with the shortcut hint.
+    // the palette out. The row's accessible name is its label plus the right-aligned ⌘K hint,
+    // the name the palette's door has always carried.
     await page.keyboard.press('Escape');
     await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
     await page.getByRole('button', { name: 'Ara ⌘K', exact: true }).click({ timeout: WAIT });
