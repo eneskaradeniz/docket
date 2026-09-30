@@ -41,7 +41,7 @@ const boardView: BoardView = {
   flow: 'bakim',
   // Deliberately not in slug order: the store mirrors the api's stage order untouched.
   columns: [
-    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-2', number: 2, title: 'Book binding', status: 'ready' }] },
+    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-2', number: 2, title: 'Book binding', status: 'ready', account: null, since: '1970-01-01T00:00:00.400Z' }] },
     { stage: 'planla', name: 'Planla', workOrders: [] },
   ],
   done: [{ id: 'wo-1', number: 1, title: 'Paper marbling' }],
@@ -233,8 +233,8 @@ const listView: BoardView = {
       stage: 'analiz',
       name: 'Analiz',
       workOrders: [
-        { id: 'wo-1', number: 1, title: 'Rol matrisi', status: 'ready' },
-        { id: 'wo-2', number: 2, title: 'Önbellek', status: 'running' },
+        { id: 'wo-1', number: 1, title: 'Rol matrisi', status: 'ready', account: null, since: '1970-01-01T00:00:00.100Z' },
+        { id: 'wo-2', number: 2, title: 'Önbellek', status: 'running', account: 'Zincir dışı', since: '1970-01-01T00:00:00.200Z' },
       ],
     },
     { stage: 'cozum', name: 'Çözüm', workOrders: [] },
@@ -242,11 +242,11 @@ const listView: BoardView = {
       stage: 'gelistir',
       name: 'Geliştir',
       workOrders: [
-        { id: 'wo-3', number: 3, title: 'Hız sınırı', status: 'running' },
-        { id: 'wo-4', number: 4, title: 'Fatura raporu', status: 'awaiting_human' },
+        { id: 'wo-3', number: 3, title: 'Hız sınırı', status: 'running', account: 'Zincir dışı', since: '1970-01-01T00:00:00.300Z' },
+        { id: 'wo-4', number: 4, title: 'Fatura raporu', status: 'awaiting_human', account: null, since: '1970-01-01T00:00:00.400Z' },
       ],
     },
-    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-5', number: 5, title: 'Stok uyarısı', status: 'limit_waiting' }] },
+    { stage: 'test', name: 'Test', workOrders: [{ id: 'wo-5', number: 5, title: 'Stok uyarısı', status: 'limit_waiting', account: null, since: '1970-01-01T00:00:00.500Z' }] },
   ],
   done: [
     { id: 'wo-6', number: 6, title: 'Müşteri etiketi' },
@@ -364,7 +364,7 @@ const boardOf = (stages: number, cards: Readonly<Record<number, readonly { reado
   columns: Array.from({ length: stages }, (_, index) => ({
     stage: `s${index + 1}`,
     name: `Stage ${index + 1}`,
-    workOrders: (cards[index] ?? []).map((card, order) => ({ id: card.id, number: index * 10 + order + 1, title: `Card ${card.id}`, status: card.status })),
+    workOrders: (cards[index] ?? []).map((card, order) => ({ id: card.id, number: index * 10 + order + 1, title: `Card ${card.id}`, status: card.status, account: null, since: '1970-01-01T00:00:00.000Z' })),
   })),
   done: Array.from({ length: done }, (_, index) => ({ id: `d${index + 1}`, number: 100 + index, title: `Closed ${index + 1}` })),
 });

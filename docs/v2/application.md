@@ -551,8 +551,14 @@ export interface AccountDetailView {
   readonly activeWork: readonly { readonly workOrderId: string; readonly title: string; readonly stage: string | null; readonly status: string }[];   // non-done work orders with a run on this account, oldest active first
 }
 export interface ProjectSpendView { readonly totalUsd: number; readonly perRepo: readonly { readonly repo: string; readonly usd: number }[]; readonly cap?: { readonly amountUsd: number; readonly warnPercent: number } }
-export interface BoardColumn { readonly stage: string; readonly name: string; readonly workOrders: readonly { readonly id: string; readonly title: string; readonly status: string }[] }
-export interface BoardView { readonly project: string; readonly repo: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly title: string }[] }
+export interface BoardColumn {
+  readonly stage: string;
+  readonly name: string;
+  // account (A-30): the run's account label, null when there never was one; since (A-31): the
+  // ISO-8601 UTC instant of the last status change. The done entries below carry neither.
+  readonly workOrders: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string; readonly account: string | null; readonly since: string }[];
+}
+export interface BoardView { readonly repo: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly number: number; readonly title: string }[] }
 
 // api.ts
 export interface Api {
@@ -569,6 +575,8 @@ Rules:
 - **A-27** `project.tree`: one item per attached project (id asc), repos in `project.repos` order. Per repo: `active` = non-done work orders, `waiting` = attention items of kinds `permission_ask` / `awaiting_human` / `blocked`, `running` = runs without `endedAt`; status precedence `waiting > running > idle`; the project aggregates its repos' counts and takes its status the same way. One call serves the whole sidebar (K-7).
 - **A-28** `cockpit`: the `project` filter narrows `attention`, `running` and `recentlyClosed` to that project; `projects` always lists every project (K-4:B). `recentlyClosed` = the five most recent `done` work orders, `closedAt` desc. `account.detail` returns the account with its windows (from pools/meters) and `activeWork` = non-done work orders with a run on the account.
 - **A-29** Work-order display number: `WorkOrderRepo.number(id)` is the 1-based position of the work order in (`createdAt` asc, `id` asc) order over every work order on this machine. Work orders are never deleted, so a number, once shown, never changes and is never reused; a converted old database numbers its work orders the same way. The ULID stays the identity; the number is display only (machine-local; team sync revisits it). Every query view item that names a work order (`workOrderId` or `id` of a work order) also carries `number: number` — attention, running and recentlyClosed items, board cards and done strip, the detail, `account.detail.activeWork`, and the per-repo work orders of a roadmap task.
+- **A-30** Each card in `BoardColumn.workOrders[]` carries `account`: the display label of the account bound to the work order's current or most recent run — the newest run by `startedAt`, active or finished; `null` when the work order never had a run, or the run's account no longer loads. The `done` entries carry neither `account` nor `since`.
+- **A-31** Each card in `BoardColumn.workOrders[]` carries `since`: the ISO-8601 UTC instant (`YYYY-MM-DDTHH:MM:SS.sssZ`) the work order entered its current status — the `at` of the last event that changed the derived status, the work order's `createdAt` while no event has. Stored event timestamps only, never a clock read.
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 

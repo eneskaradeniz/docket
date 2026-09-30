@@ -111,7 +111,9 @@ export interface ProjectSpendView {
 export interface BoardColumn {
   readonly stage: string;
   readonly name: string;
-  readonly workOrders: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string }[];
+  /** `account` (A-30): the run's account label, null when there never was one; `since` (A-31):
+   *  the ISO-8601 UTC instant of the last status change. The done strip carries neither. */
+  readonly workOrders: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string; readonly account: string | null; readonly since: string }[];
 }
 
 export interface BoardView {
