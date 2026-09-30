@@ -3,7 +3,17 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { comboPlan, SIZE_PLAN, resolveSizes, sizeFromPlan, sizesForWorkArea } from './layout-rules.mjs';
+import {
+  comboPlan,
+  L12_KNOWN_STANDINGS,
+  matchProblemText,
+  problemLabelEntries,
+  RULE_IDS,
+  SIZE_PLAN,
+  resolveSizes,
+  sizeFromPlan,
+  sizesForWorkArea,
+} from './layout-rules.mjs';
 
 test('the plan holds three named sizes, full screen being the display itself', () => {
   assert.deepEqual(
@@ -81,4 +91,57 @@ test('the combination plan carries the concrete resolved sizes through', () => {
     assert.equal(size.size[0] <= 1280, true);
     assert.equal(size.size[1] <= 800, true);
   }
+});
+
+// --- L-12's problem-text matching ---------------------------------------------------------------------
+
+test('L-12 is the walk’s twelfth rule and its known standings name only real screens', () => {
+  assert.equal(RULE_IDS.at(-1), 'L-12');
+  for (const screen of Object.keys(L12_KNOWN_STANDINGS)) {
+    assert.equal(['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'].includes(screen), true);
+  }
+});
+
+test('problemLabelEntries keys the texts off the bundles’ error.* keys alone', () => {
+  const tr = { 'error.not_found': 'Kayıt bulunamadı.', 'cockpit.error.stale': 'eski', 'nav.cockpit': 'Kokpit' };
+  const en = { 'error.not_found': 'The record was not found.', 'nav.cockpit': 'Cockpit' };
+  assert.deepEqual(problemLabelEntries(tr, en), [
+    { key: 'error.not_found', tr: 'Kayıt bulunamadı.', en: 'The record was not found.' },
+  ]);
+});
+
+test('a key the en bundle misses falls back to its tr copy', () => {
+  const entries = problemLabelEntries({ 'error.stale': 'eski' }, {});
+  assert.deepEqual(entries, [{ key: 'error.stale', tr: 'eski', en: 'eski' }]);
+});
+
+test('matchProblemText answers the entry whose tr or en copy the text equals', () => {
+  const entries = problemLabelEntries(
+    { 'error.not_found': 'Kayıt bulunamadı.', 'error.stale': 'eski' },
+    { 'error.not_found': 'The record was not found.' },
+  );
+  assert.equal(matchProblemText('Kayıt bulunamadı.', entries)?.key, 'error.not_found');
+  assert.equal(matchProblemText('The record was not found.', entries)?.key, 'error.not_found');
+  assert.equal(matchProblemText('eski', entries)?.key, 'error.stale');
+});
+
+test('matchProblemText takes exact equality only — a wrapped or decorated copy is not a hit', () => {
+  const entries = problemLabelEntries({ 'error.not_found': 'Kayıt bulunamadı.' }, {});
+  assert.equal(matchProblemText('Kayıt bulunamadı', entries), null);
+  assert.equal(matchProblemText('— Kayıt bulunamadı.', entries), null);
+  assert.equal(matchProblemText('Kayıt bulunamadı. ', entries)?.key, 'error.not_found');
+  assert.equal(matchProblemText('', entries), null);
+});
+
+test('the real bundles carry error.* copy in both locales for the walk to key off', async () => {
+  const { TR } = await import('../src/presentation/labels/tr.ts');
+  const { EN } = await import('../src/presentation/labels/en.ts');
+  const entries = problemLabelEntries(TR, EN);
+  assert.equal(entries.length > 0, true);
+  for (const entry of entries) {
+    assert.equal(typeof entry.tr, 'string');
+    assert.equal(typeof entry.en, 'string');
+  }
+  assert.equal(matchProblemText('Kayıt bulunamadı.', entries)?.key, 'error.not_found');
+  assert.equal(matchProblemText('The record was not found.', entries)?.key, 'error.not_found');
 });
