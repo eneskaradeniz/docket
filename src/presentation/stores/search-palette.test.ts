@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectTree } from '../../api/queries';
 import {
   CLOSED_PALETTE,
+  diffRows,
   focusRestoredOnClose,
   paletteBody,
   paletteReducer,
+  paletteRowId,
   searchTree,
 } from './search-palette';
 
@@ -74,6 +76,69 @@ describe('paletteBody', () => {
 
   it('a typed query without results shows the no-results line', () => {
     expect(paletteBody('zzz', 0)).toBe('no-results');
+  });
+});
+
+describe('paletteRowId', () => {
+  it('keys a row by its kind and target — a project and a repo may share a name', () => {
+    const project = { kind: 'project', project: 'antero', name: 'Antero' } as const;
+    const repo = { kind: 'repo', project: 'antero', repo: 'antero', name: 'Antero' } as const;
+    expect(paletteRowId(project)).toBe('project:antero');
+    expect(paletteRowId(repo)).toBe('repo:antero');
+    expect(paletteRowId(project)).not.toBe(paletteRowId(repo));
+  });
+});
+
+describe('diffRows', () => {
+  // Rows for the diff cases, built directly — the diff is a list computation, not a search.
+  const row = (id: string): { kind: 'project'; project: string; name: string } => ({
+    kind: 'project',
+    project: id,
+    name: id,
+  });
+  const many = (ids: string[]): readonly { kind: 'project'; project: string; name: string }[] =>
+    ids.map(row);
+
+  it('identical lists stay whole: everything stays, nothing enters or leaves', () => {
+    const list = many(['a', 'b', 'c']);
+    expect(diffRows(list, many(['a', 'b', 'c']))).toStrictEqual({
+      entering: [],
+      staying: list,
+      leaving: [],
+    });
+  });
+
+  it('a narrowed list (20 → 5) keeps the five and sends fifteen away', () => {
+    const twenty = many(Array.from({ length: 20 }, (_, i) => `r${i}`));
+    const five = many(['r0', 'r5', 'r9', 'r14', 'r19']);
+    const diff = diffRows(twenty, five);
+    expect(diff.entering).toStrictEqual([]);
+    expect(diff.staying).toStrictEqual(five);
+    expect(diff.leaving).toStrictEqual(
+      many(['r1', 'r2', 'r3', 'r4', 'r6', 'r7', 'r8', 'r10', 'r11', 'r12', 'r13', 'r15', 'r16', 'r17', 'r18']),
+    );
+  });
+
+  it('disjoint lists swap the membership whole', () => {
+    const before = many(['a', 'b']);
+    const after = many(['x', 'y', 'z']);
+    expect(diffRows(before, after)).toStrictEqual({ entering: after, staying: [], leaving: before });
+  });
+
+  it('an empty list growing shows every row as entering, in the next order', () => {
+    const after = many(['a', 'b', 'c']);
+    expect(diffRows([], after)).toStrictEqual({ entering: after, staying: [], leaving: [] });
+  });
+
+  it('a list emptied sends every row away', () => {
+    const before = many(['a', 'b', 'c']);
+    expect(diffRows(before, [])).toStrictEqual({ entering: [], staying: [], leaving: before });
+  });
+
+  it('staying keeps the next order even when the previous order differed', () => {
+    const before = many(['b', 'a', 'c']);
+    const after = many(['a', 'b', 'c']);
+    expect(diffRows(before, after)).toStrictEqual({ entering: [], staying: after, leaving: [] });
   });
 });
 

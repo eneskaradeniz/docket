@@ -26,6 +26,16 @@ export const MOTION = {
     staggerMs: 25,
     // The first six rows stagger in; the rest appear with the sixth.
     staggerRows: 6,
+    // The results settle this long after the last keystroke — the input itself never waits.
+    debounceMs: 120,
+    // A row that leaves folds and fades away on this leg; the container's height follows it.
+    rowExitMs: 160,
+    // Ghost rows leave the DOM only past their exit's end, so the fold always finishes first.
+    rowExitRemoveMs: 220,
+    // An entering row rises this far on its way in.
+    risePx: 6,
+    // The keyboard highlight's own pace — quicker than any row leg, so it never lags a move.
+    highlightMs: 120,
   },
   reducedMs: 80,
 } as const;
@@ -45,5 +55,10 @@ export const motionVars = (): CSSProperties =>
     '--motion-close-backdrop-delay': `${MOTION.close.backdropDelayMs}ms`,
     '--motion-results': `${MOTION.results.heightMs}ms`,
     '--motion-results-fade': `${MOTION.results.fadeMs}ms`,
+    '--motion-row-exit': `${MOTION.results.rowExitMs}ms`,
+    '--motion-row-rise': `${MOTION.results.risePx}px`,
+    '--motion-highlight': `${MOTION.results.highlightMs}ms`,
+    // Rows carry no stagger delay unless they are entering — the class consumes this default.
+    '--row-delay': '0ms',
     '--motion-reduced': `${MOTION.reducedMs}ms`,
   }) as CSSProperties;
