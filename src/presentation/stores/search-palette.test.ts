@@ -12,6 +12,7 @@ import {
   paletteReducer,
   paletteRowId,
   searchTree,
+  settlesAtOnce,
 } from './search-palette';
 
 const TREE: ProjectTree = [
@@ -63,19 +64,39 @@ describe('searchTree', () => {
 
 describe('paletteBody', () => {
   it('an empty or blank query shows no body — the palette is the input row only', () => {
-    expect(paletteBody('', 0)).toBe('none');
-    expect(paletteBody('   ', 0)).toBe('none');
+    expect(paletteBody('', '', 0)).toBe('none');
+    expect(paletteBody('   ', 'zzz', 0)).toBe('none');
     // The query alone decides: even a stray count cannot open a body under an empty input.
-    expect(paletteBody('', 2)).toBe('none');
+    expect(paletteBody('', '', 2)).toBe('none');
   });
 
-  it('a typed query with results shows the list', () => {
-    expect(paletteBody('odoo', 2)).toBe('results');
-    expect(paletteBody(' odoo ', 1)).toBe('results');
+  it('a settled query with results shows the list', () => {
+    expect(paletteBody('odoo', 'odoo', 2)).toBe('results');
+    expect(paletteBody(' odoo ', ' odoo ', 1)).toBe('results');
   });
 
-  it('a typed query without results shows the no-results line', () => {
-    expect(paletteBody('zzz', 0)).toBe('no-results');
+  it('a settled query without results shows the no-results line', () => {
+    expect(paletteBody('zzz', 'zzz', 0)).toBe('no-results');
+  });
+
+  it('a typed query still settling keeps the current standing — never a transient no-results', () => {
+    // The first character over nothing settled: the body stays as it was — collapsed.
+    expect(paletteBody('a', '', 0)).toBe('keep');
+    // A later keystroke over a settled list: the previous rows stay while the new ones settle.
+    expect(paletteBody('anteroX', 'antero', 7)).toBe('keep');
+    // Pending means keep whatever the count is — the line never outlives its own query.
+    expect(paletteBody('kadife', 'zzz', 0)).toBe('keep');
+  });
+});
+
+describe('settlesAtOnce', () => {
+  it('with nothing settled yet (just opened, or cleared) the next query settles without waiting', () => {
+    expect(settlesAtOnce('')).toBe(true);
+  });
+
+  it('once any text has settled, later changes ride the debounce', () => {
+    expect(settlesAtOnce('a')).toBe(false);
+    expect(settlesAtOnce('antero')).toBe(false);
   });
 });
 

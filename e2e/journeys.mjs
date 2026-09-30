@@ -199,6 +199,34 @@ for (const [size, theme] of combos) {
     const emptyBody = await bodyHeight();
     assert.ok(emptyBody < 1, `empty palette shows a ${emptyBody}px body under the input`);
     await shot('palette-open');
+    // 'a' then 'ad' both match the seed ("Kadife Odoo"), so every standing on the way has rows —
+    // sample the palette across the whole debounce window while the keys land and the rows
+    // settle, and require the no-results line never to appear.
+    const emptySeen = page.evaluate(
+      (emptyText) =>
+        new Promise((resolve) => {
+          let seen = false;
+          const startedAt = performance.now();
+          const sample = () => {
+            const list = document.querySelector('[data-search-palette] [role="listbox"]');
+            if (list !== null && list.textContent.includes(emptyText)) seen = true;
+            if (performance.now() - startedAt > 500) resolve(seen);
+            else setTimeout(sample, 16);
+          };
+          sample();
+        }),
+      'Sonuç yok',
+    );
+    await page.keyboard.press('a');
+    await page.keyboard.press('d');
+    assert.ok((await emptySeen) === false, 'the no-results line flashed while "a"/"ad" settled');
+    await bodySettled(true);
+    // 'ad' matches the project and its repo — the first row carrying the text is evidence enough.
+    await see('Kadife');
+    await shot('palette-first-keys');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace');
+    await bodySettled(false);
     // The palette's index is the tree's own names: 'antero' finds the project, Enter opens its roadmap.
     await page.keyboard.type('antero');
     await bodySettled(true);
