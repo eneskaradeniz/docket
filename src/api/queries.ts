@@ -1,6 +1,7 @@
 // api/queries.ts — the read side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts.
 import type { ModelMatcher } from '../domain/index';
+import type { ProviderMark } from '../application';
 
 export type Query =
   | { readonly type: 'workOrder.detail'; readonly id: string }
@@ -13,6 +14,7 @@ export type Query =
   | { readonly type: 'repos.list' }
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' }
+  | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }
   | { readonly type: 'app.update' };
@@ -31,13 +33,14 @@ export interface AttentionItem {
 
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
-  // The optional fields below (A-35 … A-37) are optional in the type only so consumers written
-  // before they existed keep compiling; the cockpit query itself always fills them.
+  // The optional fields below (A-35 … A-37, A-40) are optional in the type only so consumers
+  // written before they existed keep compiling; the cockpit query itself always fills them.
   readonly running: readonly {
     readonly workOrderId: string;
     readonly number: number;
     readonly stage: string;
     readonly accountId: string;
+    readonly provider?: string;
     readonly startedAt: number;
     readonly title?: string;
     readonly stageIndex?: number;
@@ -218,3 +221,8 @@ export interface OpenAskView {
   readonly since: number;
   readonly title: string | null;
 }
+
+// --- providers.marks ----------------------------------------------------------------------------------
+
+/** The marks of every composed provider def (A-41): def id → its mark, `null` when it has none. */
+export type ProviderMarksView = Record<string, ProviderMark | null>;
