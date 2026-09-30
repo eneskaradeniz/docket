@@ -2,11 +2,14 @@
 // own mark, null when it has none. A port only because the api layer must not reach the defs
 // itself; the source is composed beside AppDeps and passed to createApi (the discovery pattern).
 /** One provider's mark: a single SVG path plus the viewBox it was drawn for, rendered with
- *  `currentColor` so it follows the theme. The marks identify the provider only and travel
- *  unmodified from the provider's own official file. */
+ *  `currentColor` so it follows the theme. The fill rule travels with the path because two
+ *  shapes with the same `d` render differently under `nonzero` and `evenodd` — the renderer
+ *  never guesses it. The marks identify the provider only and travel unmodified from the
+ *  file they were taken from. */
 export interface ProviderMark {
   readonly viewBox: string;
   readonly path: string;
+  readonly fillRule: 'nonzero' | 'evenodd';
 }
 
 export interface ProviderMarks {
