@@ -19,6 +19,8 @@ export type WindowKind = 'five_hour' | 'week' | 'month';
 export interface AccountCard {
   readonly id: string;
   readonly label: string;
+  /** The account's provider id — the card's badge resolves its mark from the marks store. */
+  readonly provider: string;
   /** One mini bar per window, in the query's order. */
   readonly windows: readonly {
     readonly kind: WindowKind | null;
@@ -83,6 +85,7 @@ export const accountCards = (view: SettingsAccountsView): readonly AccountCard[]
     return {
       id: account.id,
       label: account.label,
+      provider: account.provider,
       windows,
       spend:
         money !== undefined && money.used !== null && money.limit !== null
