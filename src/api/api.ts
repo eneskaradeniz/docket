@@ -1055,6 +1055,34 @@ const startOfNextUtcMonth = (at: EpochMs): EpochMs => {
   return (month === 12 ? daysFromCivilMonth(year + 1, 1) : daysFromCivilMonth(year, month + 1)) * MS_PER_DAY;
 };
 
+/** A-31: the instant the work order entered its current status — the `at` of the last event that
+ *  changed the derived status, its creation time while nothing has. Re-folding the domain fold
+ *  over growing prefixes keeps the definition honest without duplicating it; a work order's
+ *  history is short enough that the quadratic walk stays cheap. */
+const statusSince = (flow: FlowDef, events: readonly WorkOrderEvent[], createdAt: EpochMs): EpochMs => {
+  let previous = deriveWorkOrderState(flow, []).status;
+  let since = createdAt;
+  for (const [index, event] of events.entries()) {
+    const status = deriveWorkOrderState(flow, events.slice(0, index + 1)).status;
+    if (status !== previous) {
+      since = event.at;
+      previous = status;
+    }
+  }
+  return since;
+};
+
+/** A-31: a card's `since` travels as an ISO-8601 UTC instant. `Date` stays banned in this layer,
+ *  so the same civil-date walk that bounds the month windows formats the stored epoch. */
+const isoInstant = (at: EpochMs): string => {
+  const days = Math.floor(at / MS_PER_DAY);
+  const msOfDay = at - days * MS_PER_DAY;
+  const { year, month } = civilFromDays(days);
+  const dayOfMonth = days - daysFromCivilMonth(year, month) + 1;
+  const pad = (value: number, width = 2): string => String(value).padStart(width, '0');
+  return `${pad(year, 4)}-${pad(month)}-${pad(dayOfMonth)}T${pad(Math.floor(msOfDay / 3_600_000))}:${pad(Math.floor((msOfDay % 3_600_000) / 60_000))}:${pad(Math.floor((msOfDay % 60_000) / 1000))}.${pad(msOfDay % 1000, 3)}Z`;
+};
+
 const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | QueryFailure> => {
   const loaded = await deps.definitions.load(repo);
   if (!loaded.ok) return { ok: false, code: 'definitions_invalid' };
@@ -1064,13 +1092,16 @@ const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | Que
   const flow = loaded.value.flows.find((candidate) => candidate.id === def.defaultFlow);
   if (flow === undefined) return { ok: false, code: 'definitions_invalid' };
 
-  const placed = new Map<StageSlug, { readonly id: string; readonly number: number; readonly title: string; readonly status: string }[]>();
+  const placed = new Map<StageSlug, { readonly id: string; readonly number: number; readonly title: string; readonly status: string; readonly account: string | null; readonly since: string }[]>();
   const done: { readonly id: string; readonly number: number; readonly title: string }[] = [];
+  // Account labels resolve once per account, not once per card (A-30).
+  const labelOf = new Map<AccountId, string | null>();
   for (const record of await deps.workOrders.list({ repo })) {
     // State derives from the work order's own flow; the columns come from the default flow.
     const ownFlow = loaded.value.flows.find((candidate) => candidate.id === record.flow);
     if (ownFlow === undefined) continue;
-    const state = deriveWorkOrderState(ownFlow, await deps.workOrders.events(record.id));
+    const events = await deps.workOrders.events(record.id);
+    const state = deriveWorkOrderState(ownFlow, events);
     // Every listed record numbers (A-29); the guard only keeps the type honest.
     const number = await deps.workOrders.number(record.id);
     if (number === undefined) continue;
@@ -1082,7 +1113,18 @@ const boardView = async (deps: AppDeps, repo: RepoSlug): Promise<BoardView | Que
     // A current stage the default flow does not have leaves the work order off this board: there
     // is no column to sit in and it is not finished.
     if (state.stage === null || !flow.stages.some((stage) => stage.id === state.stage)) continue;
-    const item = { id: record.id, number, title: record.title, status: state.status };
+    // A-30: the label of the account of the current or most recent run — the newest by startedAt,
+    // active or finished; null when there never was a run or the account no longer loads.
+    const runs = await deps.runs.listForWorkOrder(record.id);
+    const lastRun = runs[runs.length - 1];
+    let account: string | null = null;
+    if (lastRun !== undefined) {
+      if (!labelOf.has(lastRun.route.accountId)) {
+        labelOf.set(lastRun.route.accountId, (await deps.accounts.get(lastRun.route.accountId))?.label ?? null);
+      }
+      account = labelOf.get(lastRun.route.accountId) ?? null;
+    }
+    const item = { id: record.id, number, title: record.title, status: state.status, account, since: isoInstant(statusSince(ownFlow, events, record.createdAt)) };
     const column = placed.get(state.stage);
     if (column === undefined) placed.set(state.stage, [item]);
     else column.push(item);

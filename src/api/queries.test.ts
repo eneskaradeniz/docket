@@ -1,9 +1,10 @@
 // api/queries.test.ts — the read models behind createApi: the cockpit (A-22) and the repo
-// board (A-23), plus the workOrder.detail pass-through. Scenarios are seeded straight into the
-// fakes; only the query under test goes through the api.
+// board (A-23, A-30, A-31), plus the workOrder.detail pass-through. Scenarios are seeded straight
+// into the fakes; only the query under test goes through the api.
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AccountId,
   Actor,
   AgentEvent,
   FlowSlug,
@@ -262,6 +263,24 @@ const WO_B_DONE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB2');
 
 const RUN_B_RUN = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H21');
 
+// The accounts the board's account/since rules (A-30, A-31) read: two with records, one whose
+// record is gone, and the extra runs that put them on the scenario's cards.
+const ACCOUNT_SPARE = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5GB3');
+const ACCOUNT_GONE = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5GB4');
+const RUN_B_FIRST = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H22');
+const RUN_B_SPARE = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H23');
+const RUN_B_GONE = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5H24');
+const WO_B_LATE = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5GB5');
+
+const accountRecord = (id: AccountId, label: string) => ({
+  id,
+  provider: 'acme-prov',
+  label,
+  authMode: 'subscription' as const,
+  limitPolicy: 'wait_resume' as const,
+  caps: [],
+});
+
 const seedBoardScenario = async (h: Harness): Promise<Harness> => {
   await seedWorkOrder(h, WO_B_PLAN, BOARD_FLOW, 'Board plan', 100);
   await seedEvents(h, WO_B_PLAN, [runStarted(150, RUN_EARLY, PLAN), runFinished(200, RUN_EARLY, 'succeeded')]);
@@ -482,13 +501,17 @@ describe('repo.board', () => {
     const h = await seedBoardScenario(createHarness());
     const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
 
-    expect(view.columns[0]?.workOrders).toEqual([{ id: WO_B_PLAN, number: 1, title: 'Board plan', status: 'awaiting_human' }]);
-    expect(view.columns[1]?.workOrders).toEqual([
-      { id: WO_B_IMPL, number: 2, title: 'At implement', status: 'ready' },
-      { id: WO_B_RUN, number: 3, title: 'Still running', status: 'running' },
-      { id: WO_B_SIDE, number: 4, title: 'Side entry', status: 'ready' },
+    expect(view.columns[0]?.workOrders).toEqual([
+      { id: WO_B_PLAN, number: 1, title: 'Board plan', status: 'awaiting_human', account: null, since: '1970-01-01T00:00:00.200Z' },
     ]);
-    expect(view.columns[2]?.workOrders).toEqual([{ id: WO_B_CLOSE, number: 6, title: 'At close', status: 'awaiting_human' }]);
+    expect(view.columns[1]?.workOrders).toEqual([
+      { id: WO_B_IMPL, number: 2, title: 'At implement', status: 'ready', account: null, since: '1970-01-01T00:00:00.350Z' },
+      { id: WO_B_RUN, number: 3, title: 'Still running', status: 'running', account: null, since: '1970-01-01T00:00:00.500Z' },
+      { id: WO_B_SIDE, number: 4, title: 'Side entry', status: 'ready', account: null, since: '1970-01-01T00:00:00.400Z' },
+    ]);
+    expect(view.columns[2]?.workOrders).toEqual([
+      { id: WO_B_CLOSE, number: 6, title: 'At close', status: 'awaiting_human', account: null, since: '1970-01-01T00:00:00.750Z' },
+    ]);
     expect(view.done).toEqual([{ id: WO_B_DONE, number: 7, title: 'Finished' }]);
 
     // A stage the default flow does not have cannot place its work order anywhere on this board.
@@ -497,6 +520,44 @@ describe('repo.board', () => {
       ...view.done.map((item) => item.id),
     ];
     expect(shown).not.toContain(WO_B_SOLO);
+  });
+
+  it('A-30: each card carries the label of the account of its current or most recent run, null when it never had one', async () => {
+    const h = await seedBoardScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
+    await h.deps.accounts.save(accountRecord(ACCOUNT_SPARE, 'Spare'));
+    // The implement card ran twice; the newest run decides the label, not the first.
+    await seedRun(h, { ...activeRun(RUN_B_FIRST, WO_B_IMPL, PLAN, 260), endedAt: 290, outcome: 'succeeded' });
+    await seedRun(h, {
+      ...activeRun(RUN_B_SPARE, WO_B_IMPL, IMPLEMENT, 380),
+      route: { accountId: ACCOUNT_SPARE },
+      endedAt: 390,
+      outcome: 'succeeded',
+    });
+    // A run whose account record no longer loads reads as null, same as never having run.
+    await seedRun(h, { ...activeRun(RUN_B_GONE, WO_B_CLOSE, IMPLEMENT, 760), route: { accountId: ACCOUNT_GONE }, endedAt: 770, outcome: 'succeeded' });
+    const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
+
+    const cardOf = (id: WorkOrderId) => view.columns.flatMap((column) => column.workOrders).find((card) => card.id === id);
+    expect(cardOf(WO_B_IMPL)?.account).toBe('Spare');
+    expect(cardOf(WO_B_RUN)?.account).toBe('Main');
+    expect(cardOf(WO_B_SIDE)?.account).toBeNull(); // never had a run
+    expect(cardOf(WO_B_CLOSE)?.account).toBeNull(); // the run's account is gone
+  });
+
+  it('A-31: each card carries since — the ISO-8601 UTC instant of the last status change, never a clock read', async () => {
+    const h = await seedBoardScenario(createHarness());
+    // A card created at a real civil date, then an event that changes nothing: the instant must
+    // stay at the last change, not follow the newest event.
+    await seedWorkOrder(h, WO_B_LATE, BOARD_FLOW, 'Late entry', 1_759_278_000_000);
+    await seedEvents(h, WO_B_LATE, [gatePassed(1_759_278_100_000, PLAN, CLOSURE)]);
+    const view = (await createApi(h.deps).query({ type: 'repo.board', repo: 'acme' })) as BoardView;
+
+    const cardOf = (id: WorkOrderId) => view.columns.flatMap((column) => column.workOrders).find((card) => card.id === id);
+    expect(cardOf(WO_B_SIDE)?.since).toBe('1970-01-01T00:00:00.400Z'); // no event has changed the status: creation
+    expect(cardOf(WO_B_PLAN)?.since).toBe('1970-01-01T00:00:00.200Z'); // run_finished turned it awaiting_human
+    expect(cardOf(WO_B_RUN)?.since).toBe('1970-01-01T00:00:00.500Z'); // run_started turned it running
+    expect(cardOf(WO_B_LATE)?.since).toBe('2025-10-01T00:20:00.000Z'); // the ignored event must not move it
   });
 
   it('returns invalid_id for a repo that is not a slug', async () => {
