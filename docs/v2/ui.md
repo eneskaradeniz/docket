@@ -251,10 +251,13 @@ belongs to the mobile app.
   Odoo (1); the prototype's work orders by code, stage and state; two accounts with 5-hour, weekly
   and monthly windows. The same codes appear in the same place on every screen. It never touches the
   operator's data.
-- **Window sizes.** Every journey and every audit runs at 1024×640 (the minimum), 1152×720 (the
+- **Window sizes.** Journeys and the audit run at 1024×640 (the minimum), 1152×720 (the
   default window) and the primary display's work area (full screen — read at run time from the
   Electron main process, so the window is exactly as large as the real screen and never spills
-  off it), in the dark and the light theme. The sidebar is
+  off it). By default a run walks **four combinations**: dark at all three sizes, plus light at
+  the default window (the size the operator uses). `--full` — or `FULL=1` on the wrapping npm
+  script — restores the complete 3 × 2 matrix, every size in both themes, for a release run or
+  after a token/theme change; `journeys --quick` stays the default window in dark alone. The sidebar is
   always open, never collapses. The harness resizes the `BrowserWindow`; it does not scale the page.
 - **Journeys** (one `test` each, named `J-n: …`): J-1 cockpit → answer a permission ask inline →
   the item leaves Senden bekleyenler · J-2 tree → repo row → board; Kanban ⇄ Liste survives reload ·

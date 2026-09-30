@@ -4,7 +4,9 @@
 //
 // Each size × theme combination gets its own app launch on its own fresh seed: J-1 and J-3 change
 // what the seed holds (an answered ask, an approved gate), so a shared seed would make later
-// combinations start from a different world. `--quick` runs the default 1152x720 dark only.
+// combinations start from a different world. A run walks the default combination plan — dark at
+// every size, light at the default window; `--full` (FULL=1 for the npm script) restores all six,
+// and `--quick` stays the default 1152x720 dark alone.
 //
 // Copy asserted here is the rev-8 prototype's Turkish, which the seed's world is built to match —
 // except the work-order codes: the prototype's sparse İE-nnnn exist nowhere as numbers, so the
@@ -14,16 +16,17 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { SIZE_PLAN, THEMES, resolveSizes } from './layout-rules.mjs';
+import { SIZE_PLAN, comboPlan, resolveSizes } from './layout-rules.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
 mkdirSync(OUT, { recursive: true });
 await acquireE2eLock(ROOT);
 
 const quick = process.argv.includes('--quick');
-const combos = quick
-  ? [['default', 'dark']]
-  : THEMES.flatMap((theme) => SIZE_PLAN.map(({ name }) => [name, theme]));
+const full = process.argv.includes('--full') || process.env.FULL === '1';
+// Only the size names are known before the first launch; the concrete numbers come from the
+// resolved plan inside the loop, read from the first launch's primary display.
+const combos = quick ? [['default', 'dark']] : comboPlan(SIZE_PLAN, { full }).map(({ size, theme }) => [size.name, theme]);
 const WAIT = 4000; // a step that is going to pass does so in well under a second
 
 const failures = [];

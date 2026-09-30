@@ -38,6 +38,16 @@ export async function resolveSizes(app) {
 export const THEMES = ['dark', 'light'];
 export const SCREENS = ['kokpit', 'pano', 'liste', 'detay', 'yol-haritasi', 'hesap'];
 
+/** The combinations a run walks: the resolved sizes paired with the themes to measure them in.
+ *  The default is the four the operator's own screen exercises, in the fixed order — dark at
+ *  every size, light at the default window (the size the operator uses); `full` restores the
+ *  complete 3 × 2 matrix in the every-theme-then-next-size order the runs have always walked,
+ *  for a release run or after a token/theme change. */
+export const comboPlan = (sizes, { full = false } = {}) =>
+  full
+    ? THEMES.flatMap((theme) => sizes.map((size) => ({ size, theme })))
+    : sizes.flatMap((size) => (size.name === 'default' ? THEMES : ['dark']).map((theme) => ({ size, theme })));
+
 /** Per-screen main-column cap in px; `null` means "the board uses the full main width". */
 const MAIN_CAP = { kokpit: 1200, detay: 1280, 'yol-haritasi': 960, hesap: 960, pano: null, liste: null };
 
