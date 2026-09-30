@@ -135,6 +135,8 @@ export const LABEL_KEYS = [
   // components/title-bar.tsx, components/sidebar-nav.tsx, components/search-palette.tsx,
   // components/sidebar-tree.tsx, components/sidebar-accounts.tsx).
   'shell.nav',
+  'shell.nav.back',
+  'shell.nav.forward',
   'shell.wordmark',
   'shell.search',
   'nav.home',
