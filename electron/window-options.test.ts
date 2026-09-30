@@ -30,10 +30,10 @@ describe('clampDefaultWindowSize', () => {
     });
   });
 
-  it('clamps the default down to a smaller work area', () => {
-    expect(clampDefaultWindowSize({ width: 1000, height: 600 })).toStrictEqual({
-      width: 1000,
-      height: 600,
+  it('clamps the default down to a smaller work area that still holds the minimums', () => {
+    expect(clampDefaultWindowSize({ width: 1100, height: 680 })).toStrictEqual({
+      width: 1100,
+      height: 680,
     });
   });
 
