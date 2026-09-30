@@ -179,7 +179,7 @@ export function SidebarAccounts({
     return () => window.clearTimeout(timer);
   }, [spinning]);
   // Only a frame with no cards yet can carry a skeleton (U-26); a refresh keeps the cards up.
-  const { skeleton } = useSkeleton(state.loading && state.cards === null, () => Date.now());
+  const { skeleton, reveal } = useSkeleton(state.loading && state.cards === null, () => Date.now());
 
   return (
     <div
@@ -240,7 +240,7 @@ export function SidebarAccounts({
             ) : state.cards === null ? null : state.cards.length === 0 ? (
               <p className="px-1 pb-1 text-xs text-inkdim">{t(locale, 'accounts.empty')}</p>
             ) : (
-              <SkeletonReveal>
+              <SkeletonReveal active={reveal}>
                 {state.cards.map((card) => (
                   <AccountCardView
                     key={card.id}

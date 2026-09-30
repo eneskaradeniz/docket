@@ -9,7 +9,9 @@ import {
   matchProblemText,
   problemLabelEntries,
   RULE_IDS,
+  SKELETON_HEIGHT_TOLERANCE_PX,
   SIZE_PLAN,
+  skeletonVerdict,
   resolveSizes,
   sizeFromPlan,
   sizesForWorkArea,
@@ -144,4 +146,22 @@ test('the real bundles carry error.* copy in both locales for the walk to key of
   }
   assert.equal(matchProblemText('Kayıt bulunamadı.', entries)?.key, 'error.not_found');
   assert.equal(matchProblemText('The record was not found.', entries)?.key, 'error.not_found');
+});
+
+test('the skeleton verdict wants at least one composition, all contained, holders still', () => {
+  const measured = [{ blocks: 7, holderHeight: 480, insideHolder: true, contained: true }];
+  assert.equal(skeletonVerdict([], [480]).ok, false);
+  assert.equal(skeletonVerdict(measured, []).ok, false);
+  const stray = [{ blocks: 2, holderHeight: 100, insideHolder: false, contained: true }];
+  assert.equal(skeletonVerdict(stray, [100]).ok, false);
+});
+
+test('the skeleton verdict holds the holder still within the tolerance', () => {
+  const before = [{ blocks: 7, holderHeight: 480, insideHolder: true, contained: true }];
+  const ok = skeletonVerdict(before, [480 + SKELETON_HEIGHT_TOLERANCE_PX]);
+  assert.equal(ok.ok, true);
+  assert.match(ok.detail, /holder Δ 8\.0px/);
+  const moved = skeletonVerdict(before, [480 + SKELETON_HEIGHT_TOLERANCE_PX + 0.5]);
+  assert.equal(moved.ok, false);
+  assert.match(moved.detail, /moved 8\.5px/);
 });

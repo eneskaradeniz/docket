@@ -155,7 +155,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
   // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
   // rows never replaces them.
-  const { skeleton } = useSkeleton(state.loading && state.tree.length === 0, () => Date.now());
+  const { skeleton, reveal } = useSkeleton(state.loading && state.tree.length === 0, () => Date.now());
 
   return (
     <>
@@ -195,7 +195,7 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
         ) : state.tree.length === 0 ? (
           <p className="px-2.5 py-1.5 text-xs text-inkdim">{t(locale, 'nav.projects.empty')}</p>
         ) : (
-          <SkeletonReveal>
+          <SkeletonReveal active={reveal}>
             {rows.map((row) =>
             row.kind === 'flat' ? (
               <ProjectRow

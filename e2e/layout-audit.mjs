@@ -29,9 +29,9 @@
 // The run walks four combinations by default — dark at every size plus light at the default
 // window, the size the operator uses — and prints the count before the first result line;
 // `--full` (FULL=1 for the npm script) restores all six, for a release run or after a
-// token/theme change. `--slow` narrows the walk to the default dark combo and hands the app
-// DOCKET_API_DELAY_MS (the design harness's own slow mode): every API reply waits, so the run
-// also measures the loading skeletons themselves —
+// token/theme change. `--slow` hands the app DOCKET_API_DELAY_MS (the design harness's own
+// slow mode): every API reply waits, so the L rules would read mid-load placeholders — that run
+// walks no combos and measures the loading skeletons themselves instead —
 //   skeleton: <screen> ok|FAIL <detail>
 // one line per composed screen (kokpit carries the sidebar's tree and account compositions
 // with it), with the overlay extras (palette, settings panel, title bar) left to the default
@@ -643,21 +643,17 @@ async function openApp() {
   };
 }
 
-/** The loading skeletons' own measurement (U-26), one screen at a time under --slow: the page
- *  reloads so the boot loads replay under the delay (the cockpit with the sidebar's tree and
- *  account compositions beside it), and a board screen navigates after the boot content has
- *  landed so its own load replays in the standing the repo kept. Each pass measures the
- *  compositions while they are up, waits the delayed replies out, and measures the holders
- *  again — the verdict compares the two. The cockpit's fold memory is cleared first: the ready
- *  sections must stand open, exactly as the composition draws them. */
-async function skeletonCheck(target, screen) {
+/** The loading skeletons' own measurement (U-26), one screen at a time under --slow: the screen
+ *  is reached once (so the window is sized and the board's Kanban/Liste standing is the one to
+ *  replay), then the page reloads so the boot loads replay under the delay (the cockpit with the
+ *  sidebar's tree and account compositions beside it), and a board screen navigates after the
+ *  boot content has landed so its own load replays. Each pass measures the compositions while
+ *  they are up, waits the delayed replies out, and measures the holders again — the verdict
+ *  compares the two. The cockpit's fold memory is cleared first: the ready sections must stand
+ *  open, exactly as the composition draws them. */
+async function skeletonCheck(target, screen, combo) {
   const { page } = target;
-  // The Liste standing persists per repo: reach it once so the reload below replays the board
-  // in it. The Kanban standing is the storage default; the run's earlier walk already set it.
-  if (screen === 'liste') {
-    const goto = screenNavigator(page);
-    await goto.liste();
-  }
+  if (combo !== undefined) await target.show(screen, 'dark', combo);
   await page.evaluate(() => localStorage.removeItem('docket.cockpit.collapsed'));
   await page.reload();
   await page.waitForSelector('nav', { timeout: 30_000 });
@@ -712,9 +708,11 @@ const target = args.target === 'prototype' ? await openPrototype(args.path) : aw
 // The plan's real numbers, printed once so every later label can be read against them.
 for (const { name, size } of target.sizes) console.log(`size: ${name} ${size[0]}x${size[1]}`);
 let plan = comboPlan(target.sizes, { full: args.full });
-// The slow walk needs one combo — the default window in the dark theme — to spend its time on
-// the skeletons instead of the breadth the default run already covers.
-if (args.slow) plan = plan.filter((combo) => combo.size.name === 'default' && combo.theme === 'dark');
+// The slow walk measures the skeletons, not the breadth: with every reply delayed the screens
+// stand mid-load by design, so the L rules would read the placeholder, not the content — the
+// default run already walked them. Only the skeleton pass runs, on the default dark combo.
+const slowCombo = args.slow ? plan.find((combo) => combo.size.name === 'default' && combo.theme === 'dark') : undefined;
+if (args.slow) plan = [];
 // The count names the run's breadth before any result lands: four by default, six with --full.
 console.log(`combos: ${plan.length}${args.full ? ' (--full)' : ''}${args.slow ? ' (--slow)' : ''}`);
 
@@ -799,7 +797,7 @@ if (args.slow && target.selectors.skeleton) {
   for (const screen of ['kokpit', 'pano', 'liste']) {
     let r;
     try {
-      r = await skeletonCheck(target, screen);
+      r = await skeletonCheck(target, screen, slowCombo);
     } catch (error) {
       r = { ok: false, detail: `skeleton pass unreachable: ${String(error).split('\n')[0]}` };
     }
