@@ -443,9 +443,9 @@ describe('cockpit', () => {
     expect(listed).not.toContain(WO_BROKEN);
 
     expect(view.running).toEqual([
-      { workOrderId: WO_ASK, number: 7, stage: 'plan', accountId: ACCOUNT, startedAt: 4_000, title: 'Waiting on a permission', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
-      { workOrderId: WO_RUNNING, number: 8, stage: 'plan', accountId: ACCOUNT, startedAt: 4_500, title: 'Busy running', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
-      { workOrderId: WO_ASK_ANSWERED, number: 9, stage: 'plan', accountId: ACCOUNT, startedAt: 5_500, title: 'Ask already answered', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
+      { workOrderId: WO_ASK, number: 7, stage: 'plan', accountId: ACCOUNT, provider: '', startedAt: 4_000, title: 'Waiting on a permission', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
+      { workOrderId: WO_RUNNING, number: 8, stage: 'plan', accountId: ACCOUNT, provider: '', startedAt: 4_500, title: 'Busy running', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
+      { workOrderId: WO_ASK_ANSWERED, number: 9, stage: 'plan', accountId: ACCOUNT, provider: '', startedAt: 5_500, title: 'Ask already answered', stageIndex: 1, stageCount: 3, queued: false, limitResetsAt: null },
     ]);
   });
 
@@ -601,6 +601,21 @@ describe('cockpit', () => {
       [WO_CLOSED_EVENT, 'cancelled'],
       [WO_DONE, 'merged'],
     ]);
+  });
+
+  it('A-40: each row carries its route account’s provider def id, empty when the account no longer loads', async () => {
+    const h = await seedCockpitScenario(createHarness());
+    await h.deps.accounts.save(accountRecord(ACCOUNT, 'Main'));
+    // A queued row whose account record is gone: the provider resolves to '', never a guess.
+    await h.deps.queue.put(queueItem(QUEUE_BARE, WO_AWAIT_EARLY, IMPLEMENT, 6_500, REPO, { accountId: ACCOUNT_BARE }));
+
+    const view = (await createApi(h.deps).query({ type: 'cockpit' })) as CockpitView;
+
+    // The query always fills the field — running and queued rows alike.
+    expect(view.running.every((row) => row.provider !== undefined)).toBe(true);
+    const byWorkOrder = new Map(view.running.map((row) => [row.workOrderId, row]));
+    expect(byWorkOrder.get(WO_RUNNING)?.provider).toBe('acme-prov');
+    expect(byWorkOrder.get(WO_AWAIT_EARLY)?.provider).toBe('');
   });
 });
 
@@ -1000,6 +1015,25 @@ describe('providers.discovered', () => {
     const h = createHarness();
 
     expect(await createApi(h.deps).query({ type: 'providers.discovered' })).toEqual({ ok: false, code: 'not_found' });
+  });
+});
+
+describe('providers.marks', () => {
+  it('A-41: answers the composed marks source verbatim — def id → mark, null when the provider has none', async () => {
+    const h = createHarness();
+    const marks = {
+      marks: () => ({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1' }, 'provider-b': null }),
+    };
+
+    const reply = await createApi(h.deps, undefined, undefined, undefined, undefined, marks).query({ type: 'providers.marks' });
+
+    expect(reply).toEqual({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1' }, 'provider-b': null });
+  });
+
+  it('A-41: reports not_found without a marks source instead of inventing an empty record', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'providers.marks' })).toEqual({ ok: false, code: 'not_found' });
   });
 });
 

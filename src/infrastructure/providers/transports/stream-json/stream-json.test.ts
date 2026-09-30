@@ -75,6 +75,7 @@ const defOf = (binPath: string): ProviderDef => ({
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-cli' },
+  mark: null,
 });
 
 const slugOf = <B extends string>(input: string) => {
