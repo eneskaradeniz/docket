@@ -15,6 +15,15 @@ export const WINDOW_MIN_HEIGHT = 640;
 export const WINDOW_DEFAULT_WIDTH = 1152;
 export const WINDOW_DEFAULT_HEIGHT = 720;
 
+/** The default size clamped to a display's work area: `min(default, work area)`, never below the
+ *  minimums — a small display must not be handed a window that spills off it, and the shell's
+ *  layout is not designed below its own minimum. Pure so a test can cover every branch without
+ *  the electron runtime. */
+export const clampDefaultWindowSize = (workArea: Readonly<{ width: number; height: number }>) => ({
+  width: Math.max(WINDOW_MIN_WIDTH, Math.min(WINDOW_DEFAULT_WIDTH, workArea.width)),
+  height: Math.max(WINDOW_MIN_HEIGHT, Math.min(WINDOW_DEFAULT_HEIGHT, workArea.height)),
+});
+
 /** The platform-varying slice of the BrowserWindow constructor options. */
 export type TitleBarOptions = Pick<
   BrowserWindowConstructorOptions,

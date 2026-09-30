@@ -14,22 +14,30 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, launchDesignApp, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { SIZES, THEMES } from './layout-rules.mjs';
+import { SIZE_PLAN, THEMES, resolveSizes } from './layout-rules.mjs';
 
 const OUT = join(ROOT, 'e2e', '.out', 'journeys');
 mkdirSync(OUT, { recursive: true });
 await acquireE2eLock(ROOT);
 
 const quick = process.argv.includes('--quick');
-const combos = quick ? [[[1152, 720], 'dark']] : THEMES.flatMap((theme) => SIZES.map((size) => [size, theme]));
+const combos = quick
+  ? [['default', 'dark']]
+  : THEMES.flatMap((theme) => SIZE_PLAN.map(({ name }) => [name, theme]));
 const WAIT = 4000; // a step that is going to pass does so in well under a second
 
 const failures = [];
 let total = 0;
 
-for (const [size, theme] of combos) {
-  const tag = `${size[0]}x${size[1]} ${theme}`;
+// The display does not change across one run's launches: the plan is resolved once, from the
+// first launch's primary display, and every later launch picks its entry by name.
+let resolved = null;
+
+for (const [sizeName, theme] of combos) {
   const handle = await launchDesignApp();
+  if (resolved === null) resolved = await resolveSizes(handle.app);
+  const { size } = resolved.find((s) => s.name === sizeName);
+  const tag = `${size[0]}x${size[1]} ${theme}`;
   const { page } = handle;
   await setWindow(handle, size, theme);
 

@@ -5,6 +5,7 @@ import {
   WINDOW_DEFAULT_WIDTH,
   WINDOW_MIN_HEIGHT,
   WINDOW_MIN_WIDTH,
+  clampDefaultWindowSize,
   titleBarOptionsFor,
 } from './window-options';
 
@@ -14,6 +15,33 @@ describe('window default size', () => {
     expect(WINDOW_DEFAULT_HEIGHT).toBe(720);
     expect(WINDOW_DEFAULT_WIDTH).toBeGreaterThanOrEqual(WINDOW_MIN_WIDTH);
     expect(WINDOW_DEFAULT_HEIGHT).toBeGreaterThanOrEqual(WINDOW_MIN_HEIGHT);
+  });
+});
+
+describe('clampDefaultWindowSize', () => {
+  it('leaves the default unchanged on a display whose work area can hold it', () => {
+    expect(clampDefaultWindowSize({ width: 1512, height: 920 })).toStrictEqual({
+      width: 1152,
+      height: 720,
+    });
+    expect(clampDefaultWindowSize({ width: 2560, height: 1440 })).toStrictEqual({
+      width: 1152,
+      height: 720,
+    });
+  });
+
+  it('clamps the default down to a smaller work area that still holds the minimums', () => {
+    expect(clampDefaultWindowSize({ width: 1100, height: 680 })).toStrictEqual({
+      width: 1100,
+      height: 680,
+    });
+  });
+
+  it('never goes below the minimums, even when the work area cannot hold them', () => {
+    expect(clampDefaultWindowSize({ width: 800, height: 400 })).toStrictEqual({
+      width: 1024,
+      height: 640,
+    });
   });
 });
 

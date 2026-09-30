@@ -72,10 +72,19 @@ export function screenNavigator(page) {
   return goto;
 }
 
-/** Resize the real BrowserWindow (content area, so innerWidth matches) and set the theme. */
+/** Resize the real BrowserWindow (content area, so innerWidth matches) and set the theme. The
+ *  window is then moved so it lies wholly inside the primary display's work area: a size the
+ *  display cannot hold (full screen on a small screen) lands at the work area's origin instead
+ *  of spilling off it, and a size that fits keeps its position. */
 export async function setWindow({ app, page }, [width, height], theme) {
-  await app.evaluate(({ BrowserWindow }, [w, h]) => {
-    BrowserWindow.getAllWindows()[0].setContentSize(w, h);
+  await app.evaluate(({ BrowserWindow, screen }, [w, h]) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setContentSize(w, h);
+    const area = screen.getPrimaryDisplay().workArea;
+    const b = win.getBounds();
+    const x = Math.min(Math.max(b.x, area.x), area.x + area.width - b.width);
+    const y = Math.min(Math.max(b.y, area.y), area.y + area.height - b.height);
+    if (x !== b.x || y !== b.y) win.setPosition(x, y);
   }, [width, height]);
   // The theme goes through the document attribute; the app's own switch lives in Settings.
   await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
