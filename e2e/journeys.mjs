@@ -145,8 +145,8 @@ for (const [size, theme] of combos) {
   });
 
   await journey('J-7', '⌘K opens the palette and focuses its input', async () => {
-    // The palette eases in and out (backdrop 200ms; panel 220ms, 40ms behind it; the body folds
-    // in 180ms) — the waits below ride the transitions themselves, no fixed sleeps.
+    // The palette eases in and out (backdrop 320ms; panel 380ms, 90ms behind it; the body folds
+    // in 280ms) — the waits below ride the transitions themselves, no fixed sleeps.
     const panelSettled = () =>
       page.waitForFunction(
         () => {

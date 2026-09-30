@@ -1,0 +1,49 @@
+// components/motion.ts — the shell's motion numbers in one place: every duration, delay,
+// distance and easing the search palette animates with (the settings panel joins here later),
+// so retuning is a one-line change. The component pipes these into CSS custom properties on
+// the overlay's root; the reduced-motion standings stay opacity-only and short.
+import type { CSSProperties } from 'react';
+
+export const MOTION = {
+  open: {
+    backdropMs: 320,
+    panelMs: 380,
+    // The panel follows the backdrop by a beat — the ease lands in two steps, not one.
+    panelDelayMs: 90,
+    risePx: 12,
+    scaleFrom: 0.97,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  },
+  close: {
+    // The panel leaves first; the scrim follows it out.
+    panelMs: 220,
+    backdropDelayMs: 60,
+  },
+  results: {
+    heightMs: 280,
+    // The opacity legs of the results area — the listbox's fold and each row's fade.
+    fadeMs: 180,
+    staggerMs: 25,
+    // The first six rows stagger in; the rest appear with the sixth.
+    staggerRows: 6,
+  },
+  reducedMs: 80,
+} as const;
+
+/** The same numbers as CSS custom properties, computed once and set on the overlay's root:
+ *  the animation classes consume them, and the motion-reduce variants override the consumed
+ *  properties wholesale — a slower tune must never slow the reduced standings. */
+export const motionVars = (): CSSProperties =>
+  ({
+    '--motion-ease': MOTION.open.easing,
+    '--motion-open-backdrop': `${MOTION.open.backdropMs}ms`,
+    '--motion-open-panel': `${MOTION.open.panelMs}ms`,
+    '--motion-open-panel-delay': `${MOTION.open.panelDelayMs}ms`,
+    '--motion-open-rise': `${MOTION.open.risePx}px`,
+    '--motion-open-scale': `${MOTION.open.scaleFrom}`,
+    '--motion-close': `${MOTION.close.panelMs}ms`,
+    '--motion-close-backdrop-delay': `${MOTION.close.backdropDelayMs}ms`,
+    '--motion-results': `${MOTION.results.heightMs}ms`,
+    '--motion-results-fade': `${MOTION.results.fadeMs}ms`,
+    '--motion-reduced': `${MOTION.reducedMs}ms`,
+  }) as CSSProperties;

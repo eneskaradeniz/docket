@@ -85,7 +85,7 @@ async function openPrototype(path) {
 
 /** The palette's own measurement: ⌘K opens it, the panel must sit centred in the window over a
  *  scrim that covers the whole window and blurs what is behind it. The palette eases in and out
- *  (backdrop 200ms; panel 220ms, 40ms behind; the body folds in 180ms), so each measurement
+ *  (backdrop 320ms; panel 380ms, 90ms behind; the body folds in 280ms), so each measurement
  *  waits for the running transition to settle instead of sleeping. It measures both standings:
  *  the empty one shows the input row alone (zero body), a typed one grows the body under it.
  *  Esc closes it again. */
