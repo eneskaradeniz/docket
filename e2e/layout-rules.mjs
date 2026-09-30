@@ -334,13 +334,11 @@ export const matchProblemText = (text, entries) => {
   return entries.find((entry) => entry.tr === seen || entry.en === seen) ?? null;
 };
 
-/** Problem keys the walk owes their screen as a known standing: the detail and live panes are
- *  under an interactive redesign, and a cause inside their frozen files is listed in the issue's
- *  PR body instead of fixed here. Each name cites the redesign that removes it — the set is empty
- *  again the moment that lands. */
-export const L12_KNOWN_STANDINGS = {
-  detay: [],
-};
+/** Problem keys the walk owes their screen as a known standing: a cause inside a file under
+ *  interactive redesign (the detail and live panes) is listed in the issue's PR body instead of
+ *  fixed here. Each entry names the screen and the keys it owes, cited to the redesign that
+ *  removes it — the map is empty while no screen owes a standing. */
+export const L12_KNOWN_STANDINGS = {};
 
 const PROBLEM_ENTRIES = problemLabelEntries(TR, EN);
 
