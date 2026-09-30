@@ -64,6 +64,10 @@ const DownloadIcon = () => (
   </svg>
 );
 
+/** The one gap between the bar's right end and the window edge: it lives on the bar's padding so
+ *  every right-end control inherits it, not just today's button. */
+const BAR_RIGHT_INSET_PX = 16;
+
 export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
   const plan = titleBarFor(platform);
   if (!plan.visible) return null;
@@ -72,11 +76,12 @@ export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
   const button = update === null ? null : updateButton(update);
   return (
     // The lane width is platform data, not a design constant, so it travels as a style rather
-    // than a class; every colour stays on the theme tokens.
+    // than a class; the right inset is the bar's own constant, kept here so the controls carry
+    // no margin of their own; every colour stays on the theme tokens.
     <div
       data-title-bar
       className="flex h-10 w-full flex-none items-center gap-2 border-b border-hairline bg-bg text-ink [-webkit-app-region:drag]"
-      style={{ paddingInlineStart: `${plan.leftInsetPx}px` }}
+      style={{ paddingInlineStart: `${plan.leftInsetPx}px`, paddingInlineEnd: `${BAR_RIGHT_INSET_PX}px` }}
     >
       <span aria-hidden="true" className="h-4 w-[3px] flex-none bg-signal" />
       <span className="text-[13px] font-semibold">{t(locale, 'shell.wordmark')}</span>
@@ -88,7 +93,7 @@ export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
           disabled={button.disabled}
           onClick={onApply}
           title={button.percent !== null ? t(locale, 'settings.update.status.downloading') : undefined}
-          className="ml-auto mr-2 inline-flex h-7 flex-none items-center gap-1.5 rounded-control border border-signal bg-transparent px-2.5 text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
+          className="ml-auto inline-flex h-7 flex-none items-center gap-1.5 rounded-control border border-signal bg-transparent px-2.5 text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
         >
           <DownloadIcon />
           {button.percent !== null ? `%${button.percent}` : t(locale, button.labelKey)}
