@@ -1,12 +1,13 @@
 // components/title-bar.tsx — the drag strip the darwin window owes itself: the native title bar
 // is hidden there, so this bar is the only thing to move the window by. The traffic lights keep
-// their lane at its left, then the signal accent and the wordmark sign the app — nothing else;
-// the navigation lives in the sidebar's rows (U-24). The bar's one control is the Update button
-// at its right edge, the app's single call to action while an update waits: a bordered ghost
-// with a small download glyph, visible only while the update state is available, downloading or
-// ready — never for none or error. The button alone is interactive; everything else on the strip
-// stays one drag region. Platforms that keep the native frame render no bar at all
-// (title-bar-plan.ts decides).
+// their lane at its left, then the signal accent and the wordmark sign the app, then the two
+// history chevrons — back and forward, the navigation history's own doors (U-25), icon-only
+// ghosts that sit 12px after the wordmark and dim out at the history's ends. The bar's other
+// control is the Update button at its right edge, the app's single call to action while an
+// update waits: a bordered ghost with a small download glyph, visible only while the update
+// state is available, downloading or ready — never for none or error. The buttons alone are
+// interactive; everything else on the strip stays one drag region. Platforms that keep the
+// native frame render no bar at all (title-bar-plan.ts decides).
 import { t, type Locale } from '../labels/t';
 import { updateButton, type UpdateStatus } from '../stores/update';
 import { titleBarFor } from './title-bar-plan';
@@ -20,6 +21,12 @@ export interface TitleBarProps {
   readonly update: UpdateStatus | null;
   /** Starts the download and install — the apply intent, also on the ready standing (restart). */
   readonly onApply: () => void;
+  /** Whether the history has somewhere to go back / forward to (U-25) — the ends render the
+   *  chevrons dimmed and inert, never removed. */
+  readonly canBack: boolean;
+  readonly canForward: boolean;
+  readonly onBack: () => void;
+  readonly onForward: () => void;
 }
 
 /** The palette's magnifier — the palette renders it with the defaults; the icon lives here with
@@ -68,7 +75,65 @@ const DownloadIcon = () => (
  *  every right-end control inherits it, not just today's button. */
 const BAR_RIGHT_INSET_PX = 16;
 
-export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
+/** A history chevron — the pair the bar carries after the wordmark (U-25). */
+const ChevronIcon = ({ forward }: { readonly forward: boolean }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="h-[15px] w-[15px] flex-none"
+  >
+    {forward ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+  </svg>
+);
+
+/** One history door (U-25): icon-only, so its accessible name is its tooltip — the label plus the
+ *  shortcut that reaches it. At the history's end it dims and turns inert (`aria-disabled`, never
+ *  `disabled`, so it stays where it stood and focus keeps finding it). */
+const HistoryButton = ({
+  label,
+  enabled,
+  onClick,
+  dataHook,
+  extraClass,
+  forward,
+}: {
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly onClick: () => void;
+  readonly dataHook: 'data-nav-back' | 'data-nav-forward';
+  readonly extraClass: string;
+  readonly forward: boolean;
+}) => (
+  <button
+    type="button"
+    {...{ [dataHook]: true }}
+    aria-disabled={enabled ? undefined : true}
+    aria-label={label}
+    title={label}
+    onClick={() => {
+      if (enabled) onClick();
+    }}
+    className={`inline-flex h-7 w-7 flex-none items-center justify-center rounded-control bg-transparent text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] aria-disabled:pointer-events-none aria-disabled:opacity-45 [-webkit-app-region:no-drag] ${extraClass}`}
+  >
+    <ChevronIcon forward={forward} />
+  </button>
+);
+
+export function TitleBar({
+  platform,
+  locale,
+  update,
+  onApply,
+  canBack,
+  canForward,
+  onBack,
+  onForward,
+}: TitleBarProps) {
   const plan = titleBarFor(platform);
   if (!plan.visible) return null;
   // The button's plan — hidden standings render nothing at all, so the bar's right end stays
@@ -85,6 +150,24 @@ export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
     >
       <span aria-hidden="true" className="h-4 w-[3px] flex-none bg-signal" />
       <span className="text-[13px] font-semibold">{t(locale, 'shell.wordmark')}</span>
+
+      {/* The bar's own gap is 8px; the history pair starts 12px after the wordmark (U-25). */}
+      <HistoryButton
+        label={t(locale, 'shell.nav.back')}
+        enabled={canBack}
+        onClick={onBack}
+        dataHook="data-nav-back"
+        extraClass="ml-1"
+        forward={false}
+      />
+      <HistoryButton
+        label={t(locale, 'shell.nav.forward')}
+        enabled={canForward}
+        onClick={onForward}
+        dataHook="data-nav-forward"
+        extraClass=""
+        forward
+      />
 
       {button !== null && button.visible ? (
         <button

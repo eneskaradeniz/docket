@@ -112,6 +112,8 @@ export const EN: LabelBundle = {
   'live.meter.used': 'used',
   'live.meter.limit': 'limit',
   'shell.nav': 'Navigation',
+  'shell.nav.back': 'Back ⌘[',
+  'shell.nav.forward': 'Forward ⌘]',
   'shell.wordmark': 'Docket',
   'shell.search': 'Search ⌘K',
   'nav.home': 'Home',

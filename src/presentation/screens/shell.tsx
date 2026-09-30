@@ -1,13 +1,15 @@
 // screens/shell.tsx — the app shell (U-10's window): on darwin a 40px drag bar runs across the
 // top above everything (the native title strip is hidden there; the bar carries the traffic
-// lights' lane, the signal accent, the wordmark and — only while an update waits — the Update
+// lights' lane, the signal accent, the wordmark, the two history chevrons — back and forward,
+// the navigation history's own doors (U-25) — and, only while an update waits, the Update
 // button at its right edge), then a fixed 240px sidebar that is always open — the four nav rows
 // (Anasayfa with the attention badge, Ara with its ⌘K hint, Telefon, Ayarlar — U-24), the
 // project → repo tree, and the accounts frame as the foot's only content — next to the content
 // area that mounts the cockpit, a repo's board, a project's roadmap, a work order's detail, or
-// an account's view. The detail and the account view open in place of the screen they were
-// reached from (U-19): ‹ Geri returns to that screen with its scroll where the operator left
-// it. The centered search palette rides over it all: it searches the tree's own names and opens
+// an account's view. Every step between those places lands in the navigation history (U-25):
+// back and forward — the bar's chevrons, ⌘[/⌘], the detail's ‹ Geri — walk it, each entry
+// returning with its main column's scroll where the operator left it (U-19). The centered
+// search palette rides over it all: it searches the tree's own names and opens
 // what a tree row opens. The settings panel rides the same way: the nav's Telefon and Ayarlar
 // rows and the screens' shortcuts open it over the current route, which stays underneath
 // unchanged. The first-run wizard rides above everything: the shell mounts it, the wizard
@@ -27,6 +29,13 @@ import type { AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
+import {
+  START_NAV_HISTORY,
+  canBack,
+  canForward,
+  navHistoryReducer,
+  type NavRoute,
+} from '../stores/nav-history';
 import { treeSelection, type ProjectTreeStore, type TreePlace } from '../stores/project-tree';
 import type { RoadmapStore } from '../stores/roadmap';
 import {
@@ -79,13 +88,9 @@ export interface ShellScreenProps {
 
 /** Where the shell can be. Routes carry only ids; the screens load their own data. The roadmap
  *  route is the project row's and the board header's target; the page itself is its own screen.
- *  Settings is not a route: the panel overlays whichever route is current. */
-type ShellRoute =
-  | { readonly name: 'cockpit' }
-  | { readonly name: 'board'; readonly repo: string }
-  | { readonly name: 'roadmap'; readonly project: string }
-  | { readonly name: 'workOrder'; readonly id: string }
-  | { readonly name: 'account'; readonly id: string };
+ *  Settings is not a route: the panel overlays whichever route is current. The history records
+ *  these routes and nothing else (U-25). */
+type ShellRoute = NavRoute;
 
 /** The label the detail's back row carries — it names the screen the detail was opened from
  *  (U-19). */
@@ -140,7 +145,12 @@ export function ShellScreen({
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const updateState = useSyncExternalStore(update.subscribe, update.state);
-  const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
+  // Where the operator is and has been (U-25): the navigation history is the shell's one route
+  // state — the current entry's route is what renders, and each entry remembers the main
+  // column's scroll it was left at for the return.
+  const [nav, dispatchNav] = useReducer(navHistoryReducer, START_NAV_HISTORY);
+  const entry = nav.entries[nav.index];
+  const route = entry.route;
   // The search palette's whole standing lives in the pure reducer; the shell only feeds it the
   // tree and routes what it opens (U-15). The settings panel's standing lives the same way —
   // open/close and the origin the close's focus rule reads, never a route.
@@ -152,10 +162,9 @@ export function ShellScreen({
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
-  // The route a detail or an account view replaces (U-19): ‹ Geri returns to it.
-  const backRouteRef = useRef<ShellRoute>({ name: 'cockpit' });
-  // The board's scroll, kept for the return from a detail opened on it (U-19).
-  const boardScrollRef = useRef(0);
+  // The direction the operator last moved (U-25): a vanished work order is skipped onward the
+  // same way — a back that lands on it continues back, a forward continues forward.
+  const lastMoveRef = useRef<'back' | 'forward'>('back');
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     void shell.load();
@@ -217,25 +226,15 @@ export function ShellScreen({
     setSettingsSection(section);
     dispatchSettingsPanel({ type: 'open', origin });
   }, []);
-  // The board keeps its scroll across a detail round-trip: leaving a board for a detail or an
-  // account view stamps it, returning restores it once the board has painted again (U-19).
-  const prevRouteRef = useRef<ShellRoute>(route);
+  // Every arrival — a push, a back, a forward — restores the current entry's scroll once the
+  // main column has painted again (U-25): each screen returns where the operator left it, the
+  // board exactly like the roadmap and the cockpit.
   useEffect(() => {
-    const prev = prevRouteRef.current;
-    prevRouteRef.current = route;
-    if (prev.name === 'board' && (route.name === 'workOrder' || route.name === 'account')) {
-      boardScrollRef.current = mainRef.current?.scrollTop ?? 0;
-      return undefined;
-    }
-    if (prev.name !== 'board' && route.name === 'board') {
-      const restore = boardScrollRef.current;
-      const frame = requestAnimationFrame(() => {
-        if (mainRef.current !== null) mainRef.current.scrollTop = restore;
-      });
-      return () => cancelAnimationFrame(frame);
-    }
-    return undefined;
-  }, [route]);
+    const frame = requestAnimationFrame(() => {
+      if (mainRef.current !== null) mainRef.current.scrollTop = entry.scroll;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [entry]);
 
   const badge = state.badge;
   const treeState = useSyncExternalStore(tree.subscribe, tree.state);
@@ -253,16 +252,81 @@ export function ShellScreen({
     route.name === 'workOrder' || route.name === 'account' ? placeRef.current : placeOf(route),
   );
 
-  /** Opens a work order in place of the current screen (U-19): the current route becomes the
-   *  back row's target, the tree's selection stays where it was. */
+  // The history's doors (U-25). What exists answers from the stores the shell already holds —
+  // the tree for repos and projects, the frame's cards for accounts; the cockpit always is. A
+  // work order cannot be known without loading it, so its entry stands until the detail itself
+  // reports the work order gone; the effect below then walks the history on.
+  const exists = useCallback(
+    (candidate: NavRoute): boolean => {
+      switch (candidate.name) {
+        case 'cockpit':
+          return true;
+        case 'board':
+          return treeState.tree.some((item) => item.repos.some((node) => node.repo === candidate.repo));
+        case 'roadmap':
+          return treeState.tree.some((item) => item.project === candidate.project);
+        case 'account':
+          return accountsState.cards?.some((card) => card.id === candidate.id) ?? false;
+        case 'workOrder':
+          return true;
+      }
+    },
+    [treeState.tree, accountsState.cards],
+  );
+  /** Moves the history — every move stamps the scroll of the screen being left into its entry. */
+  const move = useCallback(
+    (type: 'back' | 'forward'): void => {
+      lastMoveRef.current = type;
+      dispatchNav({ type, exists, scroll: mainRef.current?.scrollTop ?? 0 });
+    },
+    [exists],
+  );
+  const goBack = useCallback((): void => move('back'), [move]);
+  const goForward = useCallback((): void => move('forward'), [move]);
+  /** Opens a route as the history's next entry (U-25): the forward part gives way, the route
+   *  already current adds nothing. */
+  const navigate = useCallback((next: NavRoute): void => {
+    lastMoveRef.current = 'back';
+    dispatchNav({ type: 'push', route: next, scroll: mainRef.current?.scrollTop ?? 0 });
+  }, []);
+  // ⌘[ and ⌘] ride the history (U-25) — ignored while an input, a textarea or something editable
+  // holds focus, and while the palette, the settings panel or the wizard owns the screen: the
+  // route underneath an overlay stays put. No other shortcut or menu claims these two keys.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || (event.key !== '[' && event.key !== ']')) return;
+      if (palette.open || settingsPanel.open || wizardUp) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, [contenteditable=""], [contenteditable="true"]') !== null
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (event.key === '[') goBack();
+      else goForward();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goBack, goForward, palette.open, settingsPanel.open, wizardUp]);
+  // A work order that no longer exists cannot be a destination (U-25): the detail's own failed
+  // read is the signal, and the shell walks the history on in the direction it was moving —
+  // silently, the way the tree's own dead entries are skipped.
+  const detailProblem = useSyncExternalStore(detail.subscribe, () => detail.state().problem);
+  useEffect(() => {
+    if (route.name !== 'workOrder' || detailProblem !== 'not_found') return;
+    move(lastMoveRef.current);
+  }, [route, detailProblem, move]);
+
+  /** Opens a work order in place of the current screen (U-19): the history records the step —
+   *  ‹ Geri is the back — and the tree's selection stays where it was. */
   const openWorkOrder = (id: string): void => {
-    backRouteRef.current = route.name === 'workOrder' ? backRouteRef.current : route;
-    setRoute({ name: 'workOrder', id });
+    navigate({ name: 'workOrder', id });
   };
-  /** Opens an account view in place; the cockpit or account card is where it returns to. */
+  /** Opens an account view in place; the history records the step the same way. */
   const openAccount = (id: string): void => {
-    backRouteRef.current = route;
-    setRoute({ name: 'account', id });
+    navigate({ name: 'account', id });
   };
 
   /** Opens a palette result the way the tree's row does (U-15): the project is stamped as used,
@@ -270,8 +334,8 @@ export function ShellScreen({
   const openFromPalette = (result: PaletteResult): void => {
     dispatchPalette({ type: 'close' });
     tree.recordUse(result.project);
-    if (result.kind === 'project') setRoute({ name: 'roadmap', project: result.project });
-    else setRoute({ name: 'board', repo: result.repo });
+    if (result.kind === 'project') navigate({ name: 'roadmap', project: result.project });
+    else navigate({ name: 'board', repo: result.repo });
   };
 
   // The board header's roadmap shortcut exists only for a single-repo project (U-15): the tree
@@ -288,6 +352,10 @@ export function ShellScreen({
         platform={navigator.platform}
         update={updateState.status}
         onApply={() => void update.apply()}
+        canBack={canBack(nav)}
+        canForward={canForward(nav)}
+        onBack={goBack}
+        onForward={goForward}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
         <nav
@@ -300,7 +368,7 @@ export function ShellScreen({
             searchCurrent={palette.open}
             settingsSection={settingsPanel.open ? settingsSection : null}
             badge={badge}
-            onHome={() => setRoute({ name: 'cockpit' })}
+            onHome={() => navigate({ name: 'cockpit' })}
             onSearch={openPalette}
             onPhone={() => openSettings('phone')}
             onSettings={() => openSettings('language')}
@@ -310,8 +378,8 @@ export function ShellScreen({
             store={tree}
             selection={selection}
             locale={locale}
-            onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
-            onOpenRepo={(_project, repo) => setRoute({ name: 'board', repo })}
+            onOpenProject={(project) => navigate({ name: 'roadmap', project })}
+            onOpenRepo={(_project, repo) => navigate({ name: 'board', repo })}
           />
 
           <SidebarAccounts
@@ -330,8 +398,8 @@ export function ShellScreen({
               marks={marks}
               locale={locale}
               onOpenWorkOrder={openWorkOrder}
-              onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
-              onOpenBoard={(repo) => setRoute({ name: 'board', repo })}
+              onOpenProject={(project) => navigate({ name: 'roadmap', project })}
+              onOpenBoard={(repo) => navigate({ name: 'board', repo })}
               accounts={accountsState.cards}
             />
           ) : null}
@@ -342,7 +410,7 @@ export function ShellScreen({
               locale={locale}
               onOpenWorkOrder={openWorkOrder}
               roadmapProject={roadmapProjectOf(route.repo)}
-              onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
+              onOpenRoadmap={(project) => navigate({ name: 'roadmap', project })}
               onOpenSettings={() => openSettings('language')}
             />
           ) : null}
@@ -352,7 +420,7 @@ export function ShellScreen({
               project={route.project}
               name={treeState.tree.find((item) => item.project === route.project)?.name ?? route.project}
               locale={locale}
-              onOpenRepo={(repo) => setRoute({ name: 'board', repo })}
+              onOpenRepo={(repo) => navigate({ name: 'board', repo })}
               onOpenWorkOrder={openWorkOrder}
             />
           ) : null}
@@ -365,7 +433,7 @@ export function ShellScreen({
               timeZone={timeZone}
               onOpenWorkOrder={openWorkOrder}
               onOpenSettings={() => openSettings('language')}
-              onBack={() => setRoute(backRouteRef.current)}
+              onBack={goBack}
             />
           ) : null}
           {route.name === 'workOrder' ? (
@@ -373,8 +441,8 @@ export function ShellScreen({
               store={detail}
               workOrderId={route.id}
               locale={locale}
-              backKey={backKindOf(backRouteRef.current)}
-              onBack={() => setRoute(backRouteRef.current)}
+              backKey={nav.index > 0 ? backKindOf(nav.entries[nav.index - 1].route) : null}
+              onBack={goBack}
             />
           ) : null}
         </main>
