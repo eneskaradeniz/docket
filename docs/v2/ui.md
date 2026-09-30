@@ -201,7 +201,10 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   Proje kartları (K-4:B — each card is a shortcut to the project's default view: multi-repo →
   roadmap, single-repo → board; it shows the active count and the waiting mark), and Son kapananlar
   (the five most recent closes, `closedAt` desc). There is no global new-work-order button on the
-  cockpit — that intent lives on the board header (IA-3).
+  cockpit — that intent lives on the board header (IA-3). An account is identified by its provider's
+  mark, everywhere a badge names one (cockpit rows, sidebar cards, account view header, Settings
+  accounts list): the logo from `providers.marks`, monochrome in the row's text colour; an unknown
+  provider shows a neutral rounded-square outline, never a letter.
 - **U-22** (work-order code) A work order is shown by its code: the locale's prefix (TR `İE-`, EN `WO-`, label key `workOrder.codePrefix`) plus its A-29 number left-padded with zeros to four digits (`İE-0014`); a number above 9999 is shown in full, never truncated. The code is set in the mono face. One pure helper formats it; no screen builds a code itself.
 - **U-23** (corner radius) Corner radius comes from three tokens and nothing else: `rounded-control` (6px — buttons, inputs, tabs and segments, icon buttons, hover rows, chips), `rounded-card` (8px — bordered boxes: cards, alerts, notices, sections, bordered list rows, the sidebar frames) and `rounded-panel` (12px — surfaces that float or hold cards: modals, the search palette, the settings panel, Kanban lanes). `rounded-full` stays for lamps and round badges. No other `rounded-*` utility and no hand-typed radius in `src/presentation`; a test scans the sources.
 - **U-24** (app update / nav doors) One update store feeds both update surfaces off the

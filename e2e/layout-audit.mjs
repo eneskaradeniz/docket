@@ -83,6 +83,7 @@ const APP_SELECTORS = {
   settingsUpdate: '[data-settings-update]',
   settingsPanel: '[data-settings-panel]',
   settingsScrim: '[data-settings-scrim]',
+  accountMark: '[data-provider-mark]',
 };
 
 const parseArgs = (argv) => {

@@ -1,9 +1,9 @@
 // components/provider-mark.tsx — the account badge (U-21): a provider's own mark as one inline
 // SVG in the row's text colour (`fill="currentColor"` follows the theme and the row it sits in),
 // and — for an id the marks do not know, an empty id, a provider without a mark — the neutral
-// glyph: a rounded-square outline of the same size, never a letter and never a name (C4). The
-// badge takes the monogram's box: 16px by default, 14px in dense rows. `data-provider-mark` is
-// the layout audit's hook.
+// glyph: a square outline in the control radius, of the same size, never a letter and never a
+// name (C4). The badge takes the monogram's box: 16px by default, 14px in dense rows.
+// `data-provider-mark` is the layout audit's hook.
 import type { ProviderMark as ProviderMarkValue } from '../stores/provider-marks';
 
 export const MARK_SIZE = { default: 16, dense: 14 } as const;
