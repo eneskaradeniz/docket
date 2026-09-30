@@ -49,11 +49,8 @@ export function BoardColumnLane({
   }
 
   return (
-    <section
-      aria-label={name}
-      className="flex min-w-[264px] max-w-[320px] flex-[1_1_280px] snap-start flex-col overflow-hidden rounded-panel border border-bord bg-band"
-    >
-      <div className="flex h-10 flex-none items-center gap-2 border-b border-hairline pl-3 pr-2">
+    <section aria-label={name} className="flex min-w-[264px] max-w-[320px] flex-[1_1_280px] snap-start flex-col">
+      <div className="flex h-10 flex-none items-center gap-2 rounded-panel border border-bord bg-band pl-3 pr-2">
         <h2 className="mr-auto min-w-0 truncate text-[13px] font-semibold text-ink" title={name}>
           {name}
         </h2>
