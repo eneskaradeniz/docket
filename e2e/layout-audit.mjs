@@ -1,4 +1,4 @@
-// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-11 rules of e2e/layout-rules.mjs
+// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-12 rules of e2e/layout-rules.mjs
 // for every screen in the run's combinations and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The run opens by printing the resolved size plan with its real numbers (`size: <name> <WxH>`,
