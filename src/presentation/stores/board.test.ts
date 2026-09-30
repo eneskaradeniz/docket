@@ -12,7 +12,9 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { BoardView, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import {
+  cardTone,
   createBoardStore,
+  kanbanColumns,
   listRows,
   listSegments,
   storedBoardView,
@@ -122,7 +124,7 @@ describe('board store', () => {
     const persistence = fakePersistence();
     const api = fakeBoardApi(boardView);
     const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
-    expect(store.state()).toEqual({ loading: false, view: null, problem: null, viewMode: 'kanban', listFilter: null });
+    expect(store.state()).toEqual({ loading: false, view: null, problem: null, viewMode: 'kanban', listFilter: null, columnOverrides: {} });
 
     await store.load('atolye');
 
@@ -330,5 +332,111 @@ describe('board store — list view (U-18)', () => {
     // A reload (another repo, or a change event) starts the list unfiltered again.
     await store.load('depo');
     expect(store.state().listFilter).toBeNull();
+  });
+});
+
+/** A board of `stages` stages named s1…sN: the cards given per stage index, everything else empty. */
+const boardOf = (stages: number, cards: Readonly<Record<number, readonly { readonly id: string; readonly status: string }[]>> = {}, done = 0): BoardView => ({
+  repo: 'atolye',
+  flow: 'bakim',
+  columns: Array.from({ length: stages }, (_, index) => ({
+    stage: `s${index + 1}`,
+    name: `Stage ${index + 1}`,
+    workOrders: (cards[index] ?? []).map((card, order) => ({ id: card.id, number: index * 10 + order + 1, title: `Card ${card.id}`, status: card.status })),
+  })),
+  done: Array.from({ length: done }, (_, index) => ({ id: `d${index + 1}`, number: 100 + index, title: `Closed ${index + 1}` })),
+});
+
+describe('board store — Kanban columns (U-18)', () => {
+  it('U-18: a card status maps to one tone — waiting kinds share amber, unknown stays unknown', () => {
+    expect(cardTone('ready')).toBe('ready');
+    expect(cardTone('running')).toBe('running');
+    expect(cardTone('gating')).toBe('gating');
+    expect(cardTone('awaiting_human')).toBe('attention');
+    expect(cardTone('limit_waiting')).toBe('attention');
+    expect(cardTone('blocked')).toBe('blocked');
+    expect(cardTone('done')).toBe('done');
+    expect(cardTone('archived')).toBe('unknown');
+  });
+
+  it('U-18: columns follow the flow order, done closes them, cards keep the api order', () => {
+    const columns = kanbanColumns(boardOf(3, { 1: [{ id: 'b', status: 'ready' }, { id: 'a', status: 'running' }] }, 2), {});
+    expect(columns.map((column) => column.key)).toEqual(['stage:s1', 'stage:s2', 'stage:s3', 'done']);
+    expect(columns.map((column) => column.kind)).toEqual(['stage', 'stage', 'stage', 'done']);
+    expect(columns[1]?.cards.map((card) => card.id)).toEqual(['b', 'a']);
+    expect(columns[3]?.cards.map((card) => [card.id, card.status, card.tone])).toEqual([
+      ['d1', 'done', 'done'],
+      ['d2', 'done', 'done'],
+    ]);
+  });
+
+  it('U-18: a column counts the cards that wait on a person — awaiting, blocked, limit', () => {
+    const columns = kanbanColumns(
+      boardOf(1, { 0: [{ id: 'a', status: 'awaiting_human' }, { id: 'b', status: 'blocked' }, { id: 'c', status: 'limit_waiting' }, { id: 'd', status: 'running' }, { id: 'e', status: 'ready' }] }),
+      {},
+    );
+    expect(columns[0]?.waiting).toBe(3);
+  });
+
+  it('U-18: done is shut by default; an empty stage stays open on a short flow', () => {
+    const columns = kanbanColumns(boardOf(5, { 0: [{ id: 'a', status: 'ready' }] }, 3), {});
+    expect(columns.map((column) => column.shut)).toEqual([false, false, false, false, false, true]);
+  });
+
+  it('U-18: on a flow of more than six stages the empty stages start shut, the filled ones open', () => {
+    const six = kanbanColumns(boardOf(6), {});
+    expect(six.slice(0, 6).every((column) => !column.shut)).toBe(true);
+    const seven = kanbanColumns(boardOf(7, { 2: [{ id: 'a', status: 'ready' }] }), {});
+    expect(seven.slice(0, 7).map((column) => column.shut)).toEqual([true, true, false, true, true, true, true]);
+  });
+
+  it('U-18: an explicit choice beats the default; a column with a waiting card is never shut', () => {
+    const view = boardOf(7, { 0: [{ id: 'a', status: 'awaiting_human' }], 1: [{ id: 'b', status: 'ready' }] }, 1);
+    const overridden = kanbanColumns(view, { 'stage:s2': 'shut', 'stage:s3': 'open', done: 'open', 'stage:s1': 'shut' });
+    const byKey = Object.fromEntries(overridden.map((column) => [column.key, column.shut]));
+    expect(byKey['stage:s1']).toBe(false);
+    expect(byKey['stage:s2']).toBe(true);
+    expect(byKey['stage:s3']).toBe(false);
+    expect(byKey['done']).toBe(false);
+  });
+
+  it('U-18: toggling a column flips its standing, persists per repo and survives a reload', async () => {
+    const persistence = fakePersistence();
+    const api = fakeBoardApi(boardOf(3, { 0: [{ id: 'a', status: 'ready' }] }, 1));
+    const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    store.toggleColumn('atolye', 'stage:s1');
+    store.toggleColumn('atolye', 'done');
+    expect(store.state().columnOverrides).toEqual({ 'stage:s1': 'shut', done: 'open' });
+    expect(persistence.store.get('docket.board.columns.atolye')).toBe(JSON.stringify({ 'stage:s1': 'shut', done: 'open' }));
+    store.toggleColumn('atolye', 'done');
+    expect(store.state().columnOverrides).toEqual({ 'stage:s1': 'shut', done: 'shut' });
+
+    const reloaded = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await reloaded.load('atolye');
+    expect(reloaded.state().columnOverrides).toEqual({ 'stage:s1': 'shut', done: 'shut' });
+    await reloaded.load('other');
+    expect(reloaded.state().columnOverrides).toEqual({});
+  });
+
+  it('U-18: toggling a column that waits on a person changes nothing', async () => {
+    const persistence = fakePersistence();
+    const api = fakeBoardApi(boardOf(2, { 0: [{ id: 'a', status: 'blocked' }] }));
+    const store = createBoardStore({ api, changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    store.toggleColumn('atolye', 'stage:s1');
+    expect(store.state().columnOverrides).toEqual({});
+    expect(persistence.store.has('docket.board.columns.atolye')).toBe(false);
+  });
+
+  it('U-18: unreadable stored column choices mean the defaults, never a broken board', async () => {
+    const persistence = fakePersistence();
+    persistence.store.set('docket.board.columns.atolye', '{"stage:s1":"sideways","done":"open",');
+    const store = createBoardStore({ api: fakeBoardApi(boardOf(2)), changes: fakeSignal().signal, actor: userActor, persistence });
+    await store.load('atolye');
+    expect(store.state().columnOverrides).toEqual({});
+    persistence.store.set('docket.board.columns.atolye', '{"stage:s1":"sideways","done":"open"}');
+    await store.load('atolye');
+    expect(store.state().columnOverrides).toEqual({ done: 'open' });
   });
 });

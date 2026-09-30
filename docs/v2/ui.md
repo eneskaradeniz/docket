@@ -160,13 +160,16 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   remaining), the title, and one mono tag per target repo; expanding a cross-repo task lists its
   work orders per repo with navigation to the board and detail; a task turns ✓ only when every
   linked work order is done (R-40). No editing on this page (Phase 5).
-- **U-18** (board) Columns are the flow's stages (A-23) and `done` is a separate strip. A
-  Kanban ⇄ Liste segmented control switches views; the choice persists per repo in local storage
+- **U-18** (board) Columns are the flow's stages (A-23) and the done work is the last column, shut
+  by default. A Kanban ⇄ Liste segmented control (icon-only) switches views; the choice persists per repo in local storage
   and survives reload. Cards are not draggable — a work order advances only through its gates. A
-  card click opens the in-place detail (K-8:A); no hover preview. The list view is a stage rail
+  card click opens the in-place detail (K-8:A); no hover preview. A column folds to a 48px rail and
+  unfolds again; each repo remembers the choices in local storage. A column holding a card that
+  waits on a person (`awaiting_human`, `blocked`, `limit_waiting`) never folds, and on a flow of
+  more than six stages the empty stages start folded. The list view is a stage rail
   plus the selected stage and one row per work order (İE, title, stage progress, status, account,
-  duration/cost, date). The header's "Akışı düzenle" is a shortcut that opens the Settings window
-  at this repo's flow; the board itself never edits definitions (K-5).
+  duration/cost, date). The pencil beside the repo name opens the Settings window, where the
+  project and its flow are edited; the board itself never edits definitions (K-5).
 - **U-19** (in-place detail) The detail opens in place of the board — no overlay; ‹ Geri returns to
   the board with its view state (Kanban/Liste, scroll) intact. The flow strip marks pending gates
   amber and dashed; the "bu aşamada senden beklenen" section and its actions map U-4's intents;

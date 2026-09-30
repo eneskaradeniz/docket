@@ -32,4 +32,9 @@ describe('MOTION', () => {
     expect(MOTION.results.highlightMs).toBe(120);
     expect(MOTION.results.highlightMs).toBeLessThan(MOTION.results.fadeMs);
   });
+
+  it('the board answers hover quicker than a column folds', () => {
+    expect(MOTION.board.hoverMs).toBeLessThan(MOTION.board.columnMs);
+    expect(MOTION.board.pulseMs).toBeGreaterThan(MOTION.board.columnMs);
+  });
 });

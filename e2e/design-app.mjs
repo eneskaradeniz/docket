@@ -45,7 +45,8 @@ export function screenNavigator(page) {
   const goto = {
     kokpit: home,
     pano: async () => { await home(); await click('antreo-api'); },
-    liste: async () => { await goto.pano(); await click('Liste'); },
+    // The view segment is icon-only: its buttons are found by their accessible name.
+    liste: async () => { await goto.pano(); await page.getByRole('button', { name: 'Liste' }).first().click({ timeout: 1500 }); },
     // The code is the seed's derived one — the prototype's İE-0014 numbers 6 (manifest in seed-design.ts).
     detay: async () => { await goto.pano(); await click('İE-0006'); },
     // The project row's target is the roadmap (U-15); the phase cards are the page's readiness

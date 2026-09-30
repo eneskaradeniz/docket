@@ -1,18 +1,23 @@
 // screens/board.tsx — the repo board screen (U-3's window, U-18's grammar): the header names the
-// repo, the flow, the board's one rule (cards do not drag), the view segment and the create
-// intent; the columns mirror the board view's stage order with the done work as its own strip.
-// A card click opens the work order in place (K-8:A) — no drag, no hover preview. The list view
-// is a stage rail plus one row per work order; the Kanban ⇄ Liste choice persists per repo. A
-// failed board query shows the repo-problem state, never an empty board.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+// repo (with the shortcut that edits the project in Settings), the icon-only view segment, the
+// roadmap shortcut and the create intent; the Kanban view is components/board-kanban.tsx — the
+// flow's stages as columns with the done work as the last one. A card click opens the work order
+// in place (K-8:A) — no drag, no hover preview. The list view is a stage rail plus one row per
+// work order; the Kanban ⇄ Liste choice persists per repo. A failed board query shows the
+// repo-problem state, never an empty board.
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { WorkOrderStatus } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
+import { BoardKanban } from '../components/board-kanban';
+import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
+import { boardMotionVars } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
+import { STATUS_KEY } from '../components/board-status';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 import type { BoardStore, CreateOutcome, CreateValidation, ListRow, ListSegment } from '../stores/board';
-import { listRows, listSegments } from '../stores/board';
+import { kanbanColumns, listRows, listSegments } from '../stores/board';
 import { failureKey } from '../stores/results';
 
 export interface BoardScreenProps {
@@ -26,16 +31,6 @@ export interface BoardScreenProps {
   readonly onOpenRoadmap: (project: string) => void;
   readonly onOpenSettings: () => void;
 }
-
-const STATUS_KEY: Readonly<Record<WorkOrderStatus, LabelKey>> = {
-  ready: 'wo.status.ready',
-  running: 'wo.status.running',
-  gating: 'wo.status.gating',
-  awaiting_human: 'wo.status.awaiting_human',
-  limit_waiting: 'wo.status.limit_waiting',
-  blocked: 'wo.status.blocked',
-  done: 'wo.status.done',
-};
 
 /** The card lamp's hue: amber asks for the operator, green runs, blue waits on a machine
  *  condition, red is stopped — the same grammar as the cockpit's rows; a queued card carries no
@@ -59,14 +54,10 @@ const INPUT_CLASS =
   'rounded-sm border border-bord bg-raised px-2 py-[5px] text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
-/** The statuses whose cards count amber in a column head — the operator is the next move or the
- *  work has stopped. */
-const WAITING_STATUSES: ReadonlySet<string> = new Set(['awaiting_human', 'blocked', 'limit_waiting']);
-
 /** A card's status travels as a plain string on the wire; a value outside the closed set renders
  *  as no lamp and its own dim slug instead of pretending a known state. */
 const cardStatus = (status: string, locale: Locale): { readonly lamp: string; readonly label: string } => {
-  const known = (STATUS_KEY as Readonly<Record<string, LabelKey>>)[status];
+  const known = STATUS_KEY[status];
   if (known === undefined) return { lamp: '', label: status };
   return { lamp: CARD_LAMP[status as WorkOrderStatus], label: t(locale, known) };
 };
@@ -78,65 +69,6 @@ const createNotice = (locale: Locale, outcome: CreateOutcome): { readonly ok: bo
   if ('validation' in outcome) return { ok: false, text: t(locale, VALIDATION_KEY[outcome.validation]) };
   return { ok: false, text: t(locale, failureKey(outcome.code)), code: outcome.code };
 };
-
-/** One stage column that holds cards: full width, the stage's name over its cards. */
-function BoardColumn({
-  name,
-  cards,
-  locale,
-  onOpenWorkOrder,
-}: {
-  readonly name: string;
-  readonly cards: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string }[];
-  readonly locale: Locale;
-  readonly onOpenWorkOrder: (workOrderId: string) => void;
-}) {
-  const waiting = cards.filter((card) => WAITING_STATUSES.has(card.status)).length;
-  return (
-    <section className="flex min-w-[220px] flex-[1_1_220px] snap-start flex-col">
-      <h2 className="flex h-8 items-center gap-2 border-b border-hairline px-3 text-[12.5px] font-semibold text-ink">
-        <span className="uppercase">{name}</span>
-        {waiting > 0 ? <span className="font-mono text-[11px] font-medium text-signal">{waiting}</span> : null}
-        <span className="ml-auto font-mono text-[11px] text-inkdim">{cards.length}</span>
-      </h2>
-      {cards.length > 0 ? (
-        <ul className="mt-2 flex flex-col gap-2">
-          {cards.map((card) => {
-            const status = cardStatus(card.status, locale);
-            return (
-              <li key={card.id}>
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkOrder(card.id)}
-                  className="block min-h-[52px] w-full rounded-lg border border-hairline bg-surface px-3 py-[9px] text-left transition-colors hover:border-bord"
-                >
-                  <span className="flex items-center gap-[7px] overflow-hidden whitespace-nowrap text-[12.5px] font-semibold text-ink">
-                    {status.lamp !== '' ? <span aria-hidden="true" className={`h-[7px] w-[7px] flex-none rounded-full ${status.lamp}`} /> : null}
-                    <span className="flex-none font-mono text-[10px] font-normal text-inkdim">{formatWorkOrderCode(card.number, locale)}</span>
-                    <span className="min-w-0 overflow-hidden text-ellipsis" title={card.title}>{card.title}</span>
-                  </span>
-                  <span className="mt-[3px] block overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-inkdim">{status.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
-/** One empty stage column: the rev-8 slim rail — the name set on its side, the count under it. */
-function SlimColumn({ name, count }: { readonly name: string; readonly count: number }) {
-  return (
-    <section className="flex w-14 flex-none snap-start flex-col">
-      <h2 className="mx-auto mt-1.5 flex h-[132px] rotate-180 items-center justify-center gap-2.5 px-0 text-[12.5px] font-semibold text-ink [writing-mode:vertical-rl]">
-        <span className="uppercase">{name}</span>
-        <span className="mt-auto font-mono text-[11px] font-normal text-inkdim">{count}</span>
-      </h2>
-    </section>
-  );
-}
 
 /** One segment of the list view's rail (U-18): the stage's name with its counts; the selected
  *  segment stands raised off the surface, clicking the selected one clears the filter. */
@@ -238,68 +170,50 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
     });
   };
 
-  // The Kanban track fades at its right edge only while it overflows — the scroll hint of the
-  // rev-8 board; a ResizeObserver keeps the measure honest without a window listener.
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const colsRef = useRef<HTMLDivElement>(null);
-  const [trackFades, setTrackFades] = useState(false);
-  useEffect(() => {
-    const cols = colsRef.current;
-    if (cols === null) return;
-    const observer = new ResizeObserver(() => {
-      setTrackFades(cols.scrollWidth > cols.clientWidth + 4);
-    });
-    observer.observe(cols);
-    return () => {
-      observer.disconnect();
-    };
-  }, [state.viewMode, view?.columns.length]);
-
-  const columns = view?.columns ?? [];
-  const done = view?.done ?? [];
+  const columns = view === null ? [] : kanbanColumns(view, state.columnOverrides);
   const segments = view === null ? [] : listSegments(view);
   const rows = view === null ? [] : listRows(view, state.listFilter);
 
   return (
-    <div className="grid gap-[18px]">
-      <header className="flex flex-wrap items-center gap-3">
+    <div
+      style={boardMotionVars()}
+      className={state.viewMode === 'kanban' ? 'flex h-full min-h-0 flex-col gap-[18px]' : 'grid gap-[18px]'}
+    >
+      <header className="flex flex-none flex-wrap items-center gap-3">
         <h1 className="truncate font-mono text-[15px] font-bold tracking-tight text-ink">{repo}</h1>
-        {view !== null ? (
-          <p className="min-w-0 whitespace-nowrap text-[12.5px] text-inkdim">Pano · {view.flow}</p>
-        ) : null}
         <button
           type="button"
-          title={t(locale, 'board.rule')}
-          aria-label={t(locale, 'board.rule.aria')}
-          className="grid h-[18px] w-[18px] flex-none place-items-center rounded-full text-[10px] text-inkdim hover:text-ink"
+          onClick={onOpenSettings}
+          aria-label={t(locale, 'board.editProject')}
+          title={t(locale, 'board.editProject.title')}
+          className="grid h-7 w-7 flex-none place-items-center rounded-lg border border-bord text-inkdim outline-none transition-colors hover:bg-raised hover:text-ink focus-visible:border-signal-soft"
         >
-          ⓘ
+          <PencilIcon />
         </button>
         <span className="flex-1" />
-        {roadmapProject !== null ? (
-          <ActionButton variant="ghost" onClick={() => onOpenRoadmap(roadmapProject)} title={t(locale, 'board.roadmap.title')}>
-            {t(locale, 'board.roadmap')}
-          </ActionButton>
-        ) : null}
-        <span role="group" aria-label={t(locale, 'board.view.aria')} className="inline-flex overflow-hidden rounded-md border border-bord">
+        <span role="group" aria-label={t(locale, 'board.view.aria')} className="inline-flex overflow-hidden rounded-lg border border-bord">
           {(['kanban', 'liste'] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => store.setViewMode(repo, mode)}
               aria-pressed={state.viewMode === mode}
-              className={`h-7 px-2.5 text-[12.5px] font-semibold transition-colors ${
+              aria-label={t(locale, mode === 'kanban' ? 'board.view.kanban' : 'board.view.liste')}
+              title={t(locale, mode === 'kanban' ? 'board.view.kanban' : 'board.view.liste')}
+              className={`grid h-7 w-8 place-items-center outline-none transition-colors focus-visible:shadow-[inset_0_0_0_1px_var(--signal-soft)] ${mode === 'liste' ? 'border-l border-bord' : ''} ${
                 state.viewMode === mode ? 'bg-raised text-ink' : 'text-inkdim hover:text-ink'
               }`}
             >
-              {t(locale, mode === 'kanban' ? 'board.view.kanban' : 'board.view.liste')}
+              {mode === 'kanban' ? <KanbanIcon /> : <ListIcon />}
             </button>
           ))}
         </span>
-        <ActionButton variant="ghost" onClick={onOpenSettings} title={t(locale, 'board.editFlow.title')}>
-          {t(locale, 'board.editFlow')}
-        </ActionButton>
-        <ActionButton variant="primary" size="md" onClick={() => setCreateOpen(!createOpen)}>
+        {roadmapProject !== null ? (
+          <ActionButton onClick={() => onOpenRoadmap(roadmapProject)} title={t(locale, 'board.roadmap.title')}>
+            {t(locale, 'board.roadmap')}
+          </ActionButton>
+        ) : null}
+        <ActionButton variant="primary" onClick={() => setCreateOpen(!createOpen)}>
           {t(locale, 'board.new')}
         </ActionButton>
       </header>
@@ -347,30 +261,12 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
       ) : null}
 
       {view !== null && state.viewMode === 'kanban' ? (
-        <div ref={wrapRef} data-board-kanban className={`relative min-w-0 ${trackFades ? 'after:absolute after:bottom-14 after:right-0 after:top-0 after:w-9 after:pointer-events-none after:bg-gradient-to-r after:from-transparent after:to-band after:content-[""]' : ''}`}>
-          <div ref={colsRef} data-board-cols className="flex min-w-0 snap-x snap-proximity items-start gap-3 overflow-x-auto pb-1">
-            {columns.map((column) =>
-              column.workOrders.length > 0 ? (
-                <BoardColumn key={column.stage} name={column.name} cards={column.workOrders} locale={locale} onOpenWorkOrder={onOpenWorkOrder} />
-              ) : (
-                <SlimColumn key={column.stage} name={column.name} count={0} />
-              ),
-            )}
-          </div>
-          <div className="mt-4 flex h-10 min-w-0 items-center gap-3 border-t border-hairline px-3.5 text-[12.5px] text-inkdim">
-            <b className="font-semibold text-ink">{t(locale, 'board.section.done')}</b>
-            <span className="font-mono text-[11px]">
-              {done.length} {t(locale, 'board.done.jobs')}
-            </span>
-            <span
-              className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
-              title={done.slice(0, 2).map((card) => `${formatWorkOrderCode(card.number, locale)} ${card.title}`).join(' · ')}
-            >
-              {done.slice(0, 2).map((card, index) => `${index > 0 ? ' · ' : ''}${formatWorkOrderCode(card.number, locale)} ${card.title}`)}
-            </span>
-            <span aria-hidden="true" className="ml-auto flex-none">▾</span>
-          </div>
-        </div>
+        <BoardKanban
+          columns={columns}
+          locale={locale}
+          onOpenWorkOrder={onOpenWorkOrder}
+          onToggleColumn={(key) => store.toggleColumn(repo, key)}
+        />
       ) : null}
 
       {view !== null && state.viewMode === 'liste' ? (
