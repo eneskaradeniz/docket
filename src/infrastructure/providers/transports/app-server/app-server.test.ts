@@ -93,6 +93,7 @@ const start = async (
       costReport: 'none',
     },
     installHint: { url: 'https://example.invalid/fake-app-server' },
+    mark: null,
   };
   const request: RunRequest = {
     runId: RUN_ID,
@@ -384,6 +385,7 @@ describe('createAppServerTransport', () => {
           costReport: 'none',
         },
         installHint: { url: 'https://example.invalid/fake-app-server' },
+        mark: null,
       });
       const noBin = await createAppServerTransport(missingDef([])).start({
         runId: RUN_ID,

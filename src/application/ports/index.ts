@@ -14,6 +14,7 @@ export * from './notifier';
 export * from './project-repo';
 export * from './proposal-repo';
 export * from './provider-discovery';
+export * from './provider-marks';
 export * from './quota-probe';
 export * from './queue-repo';
 export * from './repo-registry';

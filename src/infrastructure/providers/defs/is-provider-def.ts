@@ -73,5 +73,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];
   if (!(isRecord(installHint) && isNonEmptyString(installHint['url']))) return false;
+  const mark = value['mark'];
+  if (mark !== null && !(isRecord(mark) && isNonEmptyString(mark['viewBox']) && isNonEmptyString(mark['path']))) return false;
   return true;
 }

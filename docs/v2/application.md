@@ -567,12 +567,13 @@ export type Query =
 export interface AttentionItem { readonly workOrderId: string; readonly project: string; readonly repo: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
-  // The optional fields below (A-35 … A-37) are optional in the type only so consumers written
-  // before they existed keep compiling; the cockpit query itself always fills them.
+  // The optional fields below (A-35 … A-37, A-40) are optional in the type only so consumers
+  // written before they existed keep compiling; the cockpit query itself always fills them.
   readonly running: readonly {
     readonly workOrderId: string;
     readonly stage: string;
     readonly accountId: string;
+    readonly provider?: string;
     readonly startedAt: number;
     readonly title?: string;
     readonly stageIndex?: number;
@@ -629,6 +630,7 @@ Rules:
 - **A-37** A queued row carries `queued: true` and a `queuedReason`: `'limit'` when the route's headroom is currently blocked — the same domain call the dispatcher's tick makes, evaluated at query time — with `limitResetsAt` the blocking meters' earliest `resetsAt` (`null` when no relief instant is known); every other wait (concurrency limits, a scheduled `notBefore`, a busy work order) reads `'queue'` with `limitResetsAt: null`. Running rows carry `queued: false` and `limitResetsAt: null` and no `queuedReason`.
 - **A-38** Each `cockpit.projects[]` card carries `lastActivityAt`: the stamp of the latest status change among the project's work orders, on A-31's `since` basis (a work order whose flow no longer loads contributes its creation time); `null` when the project has no work orders.
 - **A-39** Each `cockpit.recentlyClosed[]` entry carries `outcome`: `'merged'` when the work order finished its flow — past the last stage's gates — and `'cancelled'` when a `closed` event ended it. The domain has no finer terminal status, and a `closed` event appended after a flow completion still reads `'cancelled'`: the closing act is the operator's terminal word even where the fold ignores it (R-23).
+- **A-40** Each `cockpit.running[]` row carries `provider`: the def id of the row's route account — the account record's `provider` field, resolved once per account (the board's A-30 label-cache stance), for running and queued rows alike. `''` when the account record no longer loads: the row resolves no mark and the UI's neutral glyph covers it. The account views that already carried `provider` keep theirs (`settings.accounts` rows, `AccountDetailView.account`). Optional in the type only so consumers written before it keep compiling (A-35's stance); the cockpit query itself always fills it.
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 
@@ -734,6 +736,26 @@ Rules:
   call only from `available` or `ready` — every other state answers `not_available`, emits nothing
   and leaves the state untouched. An allowed apply starts the download (the state's next read shows
   it), answers `{ ok: true }` and emits one `update.changed`.
+
+### Provider marks — query
+
+The UI's provider marks are static def data, so they travel through one query instead of riding
+every view: each account view carries only the account's `provider` def id (A-40 above), and the
+mark itself is looked up once. The source is the [ProviderMarks
+port](#provider-marks-p-25) defined in [providers.md](providers.md) → "Provider marks", passed to
+`createApi` as its sixth argument (`marks?: ProviderMarks`), the board/discovery/registry/updates
+pattern.
+
+```ts
+// queries (queries.ts)
+| { type: 'providers.marks' }          → Record<string, ProviderMark | null>
+```
+
+Rules:
+- **A-41** `providers.marks` answers the composed marks source verbatim — def id →
+  `{ viewBox, path }`, `null` when the provider has none. No derivation, no stored copy. With no
+  source composed the query answers `{ ok: false, code: 'not_found' }` (the registry-less
+  `repos.list` precedent): absence is never invented into an empty record.
 
 ---
 

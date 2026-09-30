@@ -31,6 +31,7 @@ import type {
   DiscoveredProvider,
   PermissionBoard,
   ProviderDiscovery,
+  ProviderMarks,
   UpdateChecker,
 } from '../application';
 import {
@@ -134,13 +135,16 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  provider can be reported, so `providers.discovered` answers not_found too. The repo
  *  registry joins them: without it no repo can be enumerated, so `repos.list` answers
  *  not_found as well. The update checker completes the set: without it no update state exists,
- *  so `app.update` and its intents answer not_found instead of inventing "you are current". */
+ *  so `app.update` and its intents answer not_found instead of inventing "you are current". The
+ *  marks source rides the same pattern: without it there are no provider marks to report, so
+ *  `providers.marks` answers not_found instead of inventing an empty record. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
   discovery?: ProviderDiscovery,
   registry?: RepoRegistryPort,
   updates?: UpdateChecker,
+  marks?: ProviderMarks,
 ): Api & RunEventFeed {
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
@@ -182,7 +186,7 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -477,6 +481,7 @@ const runQuery = async (
   registry: RepoRegistryPort | undefined,
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
   updates: UpdateChecker | undefined,
+  marks: ProviderMarks | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -535,6 +540,13 @@ const runQuery = async (
 
     case 'providers.discovered':
       return discoveredProviders(discovery);
+
+    case 'providers.marks': {
+      // The defs' own static data, read off the composed marks source verbatim — no derivation,
+      // no stored copy. Without a source there is nothing to report.
+      if (marks === undefined) return { ok: false, code: 'not_found' };
+      return marks.marks();
+    }
 
     case 'run.events': {
       const runId = ulidValue<'run'>(query.runId);
@@ -789,6 +801,16 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
 
   const active = await deps.runs.listActive();
   const scopedIds = new Set(scoped.map((entry) => entry.record.id));
+  // A-40: the def id of a row's route account, resolved once per account — never once per row
+  // (the board's label cache stance). A removed account's rows resolve '' rather than a guess.
+  const providerByAccount = new Map<AccountId, string>();
+  const providerOf = async (accountId: AccountId): Promise<string> => {
+    const cached = providerByAccount.get(accountId);
+    if (cached !== undefined) return cached;
+    const provider = (await deps.accounts.get(accountId))?.provider ?? '';
+    providerByAccount.set(accountId, provider);
+    return provider;
+  };
   const running: CockpitView['running'][number][] = [];
   for (const run of active) {
     if (projectFilter !== undefined && !scopedIds.has(run.workOrderId)) continue;
@@ -802,6 +824,7 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
       number,
       stage: run.stage,
       accountId: run.route.accountId,
+      provider: await providerOf(run.route.accountId),
       startedAt: run.startedAt,
       title: record.title,
       stageIndex,
@@ -832,6 +855,7 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
         number,
         stage: item.stage,
         accountId: item.route.accountId,
+        provider: await providerOf(item.route.accountId),
         startedAt: item.enqueuedAt,
         title: record.title,
         stageIndex,

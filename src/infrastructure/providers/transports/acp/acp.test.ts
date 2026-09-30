@@ -91,6 +91,7 @@ const acpDef = (scenario: string, logPath: string): ProviderDef => ({
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-acp' },
+  mark: null,
 });
 
 interface RequestOptions {
