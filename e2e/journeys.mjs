@@ -345,7 +345,12 @@ for (const [sizeName, theme] of combos) {
     const backButton = page.getByRole('button', { name: 'Geri ⌘[' });
     const forwardButton = page.getByRole('button', { name: 'İleri ⌘]' });
     const disabled = (locator) => locator.getAttribute('aria-disabled');
-    // The history starts empty: both chevrons stand dimmed at the ends (U-25).
+    // The history lives in memory alone (U-25): the journeys before this one left theirs behind —
+    // J-7 ends on a roadmap, and the helper's Anasayfa click would only push another cockpit on
+    // top of it, leaving back legitimately alive. A reload starts the history over as the
+    // cockpit's single entry, the standing the ends' dimming is measured on.
+    await page.reload();
+    await page.waitForSelector('nav');
     await see('Senden bekleyenler');
     assert.equal(await disabled(backButton), 'true', 'back must dim on the cockpit, the history’s first entry');
     assert.equal(await disabled(forwardButton), 'true', 'forward must dim with nothing to redo');
