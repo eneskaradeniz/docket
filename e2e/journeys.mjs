@@ -138,7 +138,7 @@ for (const [size, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; Esc closes and the account view is still there", async () => {
+  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; the nav's Telefon and Ayarlar rows open it on their own sections; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
     await click('Claude Max');
     await see('Ayarlar\'da düzenle');
@@ -154,11 +154,31 @@ for (const [size, theme] of combos) {
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await see('Ayarlar\'da düzenle');
     await shot('closed-back-on-account');
+    // The sidebar's nav rows are the panel's doors (U-24): Telefon opens it on the phone
+    // section's honest "not linked yet" standing; Ayarlar opens it where the gear used to.
+    await page.getByRole('button', { name: 'Telefon', exact: true }).first().click({ timeout: WAIT });
+    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await see('Telefon bağlı değil');
+    await see('Yakında');
+    await shot('settings-phone');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
+    await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
+    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await see('Dil');
+    await shot('settings-language');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
   });
 
   await journey('J-7', '⌘K opens the palette and focuses its input', async () => {
     // The palette eases in and out (backdrop 320ms; panel 380ms, 90ms behind it; the body folds
     // in 280ms) — the waits below ride the transitions themselves, no fixed sleeps.
+    // The palette's history persists in the app profile across runs; the journey starts from a
+    // known empty one — clear the key and reload before the first open.
+    await page.evaluate(() => window.localStorage.removeItem('docket.searchHistory.v1'));
+    await page.reload();
+    await page.waitForSelector('nav');
     const panelSettled = () =>
       page.waitForFunction(
         () => {
@@ -240,9 +260,66 @@ for (const [size, theme] of combos) {
     await page.keyboard.press('Enter');
     await see('Yol haritası');
     await shot('palette-opened-roadmap');
-    // The title bar's Ara button opens the same door; clearing the text folds the body away
-    // again, and Esc eases the palette out. Its accessible name is the icon's aria-label, the
-    // bundle's search label with the shortcut hint.
+    // Opening a result is what remembers a query: reopened, the palette lists it under the
+    // history's header. The row is clicked inside the palette — the roadmap beneath the scrim
+    // carries the same name and must not take the click.
+    await page.keyboard.press('Meta+K');
+    await page.waitForFunction(
+      () => document.activeElement?.closest('[data-search-palette]') !== null,
+      undefined,
+      { timeout: WAIT },
+    );
+    await panelSettled();
+    await bodySettled(true);
+    await see('Son aramalar');
+    await page.locator('[data-search-palette]').getByText('antero', { exact: true }).click({ timeout: WAIT });
+    const filled = await page.evaluate(() => document.querySelector('[data-search-palette] input')?.value ?? '');
+    assert.equal(filled, 'antero', 'a history choice must fill the input with its query');
+    await bodySettled(true);
+    await page.locator('[data-search-palette]').getByText('Antero').waitFor({ state: 'visible', timeout: WAIT });
+    await shot('palette-history-chosen');
+    // Clearing the text brings the history standing back — the × belongs to its rows alone.
+    for (let i = 0; i < 6; i += 1) await page.keyboard.press('Backspace');
+    await bodySettled(true);
+    await see('Son aramalar');
+    // The row's × removes the one entry — with the last row the header leaves too, and the body
+    // folds back to the input alone.
+    await page.getByRole('button', { name: 'Aramayı geçmişten kaldır' }).first().click({ timeout: WAIT });
+    await bodySettled(false);
+    await gone('Son aramalar');
+    const removedBody = await bodyHeight();
+    assert.ok(removedBody < 1, `an emptied history keeps a ${removedBody}px body under the input`);
+    await shot('palette-history-removed');
+    // Temizle clears the whole list at once: one more query is remembered by opening its result,
+    // and the reopened palette's rows walk out with the row-exit motion while focus stays in
+    // the input.
+    await page.keyboard.type('kadife');
+    await bodySettled(true);
+    await page.keyboard.press('Enter');
+    await see('Yol haritası');
+    await page.keyboard.press('Meta+K');
+    await page.waitForFunction(
+      () => document.activeElement?.closest('[data-search-palette]') !== null,
+      undefined,
+      { timeout: WAIT },
+    );
+    await bodySettled(true);
+    await see('Son aramalar');
+    await button('Temizle');
+    await bodySettled(false);
+    await gone('Son aramalar');
+    const focusAfterClear = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el ? `${el.tagName} ${el.getAttribute('placeholder') ?? ''}` : '';
+    });
+    assert.match(focusAfterClear, /^INPUT /i, `focus after Temizle is on ${focusAfterClear}`);
+    await shot('palette-history-cleared');
+    // The sidebar's Ara row opens the same door (U-24); clearing the text folds the body away
+    // again (the history stays empty — a query is remembered only by an opening), and Esc eases
+    // the palette out. The row's accessible name is its label plus the right-aligned ⌘K hint,
+    // the name the palette's door has always carried.
+    await page.keyboard.press('Escape');
+    await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
     await page.getByRole('button', { name: 'Ara ⌘K', exact: true }).click({ timeout: WAIT });
     await page.waitForSelector('[data-search-palette]', { timeout: WAIT });
     await page.keyboard.type('antero');

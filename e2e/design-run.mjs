@@ -38,9 +38,9 @@ export function parseDesignRunArgs(argv) {
   return flags;
 }
 
-/** Pure: the child env — the parent's plus exactly the two seed vars the harness uses. */
+/** Pure: the child env — the parent's plus exactly the three seed vars the harness uses. */
 export function designRunEnv(env, seed) {
-  return { ...env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin };
+  return { ...env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' };
 }
 
 /** Report a phase's failure and stop: the message goes to stderr with the phase named,

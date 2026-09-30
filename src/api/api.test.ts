@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps } from '../application';
+import type { AppDeps, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, executeRun } from '../application';
 import {
   createFakeCommandRunner,
@@ -15,6 +15,7 @@ import {
   createFakeEventLog,
   createFakeTransport,
   createFakeTransportResolver,
+  createFakeUpdateChecker,
   createFakeWorktrees,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -1183,6 +1184,77 @@ describe('createApi', () => {
         { type: 'run.updated', runId },
         { type: 'workOrders.changed' },
       ]);
+    });
+  });
+
+  describe('app update', () => {
+    // The checker is composed beside deps at the root, so these tests hand it straight to the api
+    // the way electron/main.ts does — no harness, no work orders, the port alone.
+    const updateApi = (updates?: UpdateChecker) =>
+      createApi(createFakeDeps(), undefined, undefined, undefined, updates);
+
+    it("A-32: app.update answers the composed checker's state verbatim; without a checker, not_found", async () => {
+      const error: UpdateState = { kind: 'error', current: '1.0.0', reason: 'offline' };
+      const api = updateApi(createFakeUpdateChecker(error));
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual(error);
+
+      // No checker composed: the query invents no state — the registry-less repos.list precedent.
+      await expect(updateApi().query({ type: 'app.update' })).resolves.toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('A-33: app.update.check re-checks, the new state answers app.update, and update.changed fires', async () => {
+      const updates = createFakeUpdateChecker({ kind: 'none', current: '1.0.0' });
+      updates.queueCheck({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+      const api = updateApi(updates);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      // CommandResult carries no payload: the new state travels out-of-band, through the event
+      // and the re-query it triggers.
+      expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'update.changed' }]);
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+    });
+
+    it('A-34: app.update.apply from available starts the download and emits update.changed', async () => {
+      const updates = createFakeUpdateChecker({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+      const api = updateApi(updates);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'update.changed' }]);
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual({
+        kind: 'downloading',
+        current: '1.0.0',
+        next: '1.1.0',
+        percent: 0,
+      });
+    });
+
+    it('A-34: app.update.apply outside available/ready answers not_available and emits nothing', async () => {
+      const refusing: readonly UpdateState[] = [
+        { kind: 'none', current: '1.0.0' },
+        { kind: 'downloading', current: '1.0.0', next: '1.1.0', percent: 40 },
+        { kind: 'error', current: '1.0.0', reason: 'failed' },
+      ];
+      for (const initial of refusing) {
+        const updates = createFakeUpdateChecker(initial);
+        const api = updateApi(updates);
+        const seen: UiEvent[] = [];
+        api.subscribe((event) => seen.push(event));
+
+        expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_available' });
+        expect(seen).toEqual([]);
+        // Refused means untouched: the state the query answers is still the state it started from.
+        await expect(api.query({ type: 'app.update' })).resolves.toEqual(initial);
+      }
+    });
+
+    it('without a composed checker the update intents answer not_found', async () => {
+      const api = updateApi();
+      expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_found' });
     });
   });
 });

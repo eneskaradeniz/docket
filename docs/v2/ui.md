@@ -116,10 +116,11 @@ Visual source of truth: the operator-approved OpenDesign prototype "Docket v2" �
 (rev 7) — the same standing as the design book for tokens. From 2026-09-30 the running app itself
 is the visual source; the rev-8 prototype is historical and is not updated. The information architecture is fixed
 by the main-screen decisions (K-1…K-8, 2026-09-28/29): the Pano navigation item is gone — a board
-is a repo's view; the app opens on the Kokpit, reached through the title bar's Anasayfa;
-project row → roadmap, repo row → board. Every current item of the title bar and the sidebar —
-Anasayfa, Ara while its palette is open, the tree's active rows, the settings control, the active
-account card — speaks one active-state language: a raised ground with a 1px `--color-signal`
+is a repo's view; the app opens on the Kokpit, reached through the sidebar's Anasayfa row;
+project row → roadmap, repo row → board. Every current item of the sidebar — Anasayfa, Ara while
+its palette is open, the nav's Telefon/Ayarlar rows while the settings panel is open on their
+section, the tree's active rows, the active account card — speaks one active-state language: a
+raised ground with a 1px `--color-signal`
 border at the row's own radius, never an inset signal bar, with a soft variant (raised ground,
 hairline border) for a selected repo's parent project.
 
@@ -140,13 +141,26 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   opens its board — the roadmap is reached only through the project row (one rule per row kind). A project's status dot mirrors its most urgent
   repo (`waiting > running > idle`, A-27) and its pill the total active work orders; a zero count
   hides the pill (U-10). Multi-repo groups collapse and expand (`aria-expanded`) with the state
-  kept for the session. The sidebar carries no search field: ⌘K or the title bar's Ara button
+  kept for the session. The sidebar's top carries the four nav rows — Anasayfa (32px, icon +
+  label, the cockpit's route, the attention badge on its right edge, U-10), Ara (the palette's
+  door, its ⌘K hint right-aligned), Telefon and Ayarlar (the settings panel's doors, on their own
+  section) — and the tree sits below them; the sidebar carries no search field beyond the Ara
+  row: ⌘K or that row
   opens the centered search palette over a blurred, dimmed backdrop — while the query is empty the
   palette is the input row alone, the results (or the no-results line) appearing with the first
   typed character and folding away when it is cleared — it searches projects and
   repos by name (no other query types), ↑/↓ move, Enter opens the selected result (project →
   roadmap, repo → board, as the tree's rows do), Esc or a backdrop click closes, focus is
-  trapped while open and restored on close. The sort control cycles stored
+  trapped while open and restored on close. An empty query with remembered searches lists them
+  under a "Son aramalar" header with a "Temizle" text button: ↑/↓ walk the rows, choosing one
+  (click or Enter) fills the input with that query and runs it at once, a row's × removes that
+  entry, and "Temizle" empties the list at once — the rows walk out with the row-exit motion and
+  the body folds back to the input alone. A query is remembered only when a result is opened
+  from the palette (Enter or click), never per keystroke or on a dismiss: trimmed, at least two
+  characters, at most 60, deduped case-insensitively with the fresh entry first, at most ten
+  (the oldest drops); it persists per viewer in local storage (`docket.searchHistory.v1`), read
+  tolerantly so a corrupt value reads as empty — queries are project and repo names, never
+  anything secret. The sort control cycles stored
   order → A→Z → recently used; the choice persists locally (manual reordering arrives later).
 - **U-16** (accounts frame) The frame collapses and expands and starts collapsed; at most two account cards are visible,
   the rest scroll. A card shows the label plus one mini bar per window (window label and normalized
@@ -190,6 +204,23 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   cockpit — that intent lives on the board header (IA-3).
 - **U-22** (work-order code) A work order is shown by its code: the locale's prefix (TR `İE-`, EN `WO-`, label key `workOrder.codePrefix`) plus its A-29 number left-padded with zeros to four digits (`İE-0014`); a number above 9999 is shown in full, never truncated. The code is set in the mono face. One pure helper formats it; no screen builds a code itself.
 - **U-23** (corner radius) Corner radius comes from three tokens and nothing else: `rounded-control` (6px — buttons, inputs, tabs and segments, icon buttons, hover rows, chips), `rounded-card` (8px — bordered boxes: cards, alerts, notices, sections, bordered list rows, the sidebar frames) and `rounded-panel` (12px — surfaces that float or hold cards: modals, the search palette, the settings panel, Kanban lanes). `rounded-full` stays for lamps and round badges. No other `rounded-*` utility and no hand-typed radius in `src/presentation`; a test scans the sources.
+- **U-24** (app update / nav doors) One update store feeds both update surfaces off the
+  `app.update` query (A-32) and re-queries on `update.changed`; the mapping from `UpdateState`
+  to the bar button is one pure function. The title bar carries the traffic lane, the signal
+  accent, the wordmark and nothing else at its left; its right edge carries the Update button —
+  a bordered 28px ghost with a download glyph and a signal border, the app's one call to action —
+  only while the state is `available`, `downloading` or `ready`: "Güncelle" (click applies),
+  "%NN" (downloading, disabled) and "Yeniden başlat" (ready; click applies again). For `none`
+  and `error` the bar's right end is empty drag region. The button is `no-drag`; the rest of the
+  bar stays one drag region. The settings panel appends two sections — Telefon (the honest
+  "Telefon bağlı değil" with one explanatory line and a disabled "Eşleştir" labelled "Yakında";
+  no fake data — the phone link feature does not exist yet) and Güncelleme (the current version,
+  a status line per `UpdateState` with the error's reason, a "Şimdi kontrol et" button issuing
+  `app.update.check`, and the same apply action as the bar). The nav's Telefon row opens the
+  panel on the phone section; the Ayarlar row opens it on the language section, as the foot's
+  gear did; the sidebar foot carries the accounts frame and nothing else. A download mutates the
+  checker while the apply command is in flight and `update.changed` fires only at its end, so
+  the store polls the query through the flight — the percent standings must be visible.
 
 ### Prototype vs rules (2026-09-29)
 
@@ -209,9 +240,9 @@ belongs to the mobile app.
 
 | Layer | File | Runs | Blocks merge |
 | --- | --- | --- | --- |
-| Store rules U-15 … U-21, U-23 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
+| Store rules U-15 … U-21, U-23, U-24 | `src/presentation/**/*.test.ts` | `npm test` (CI) | yes |
 | Journeys | `e2e/journeys.mjs` | `npm run test:journeys` (local, after build) | yes (PR evidence) |
-| Layout audit L-1 … L-10 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
+| Layout audit L-1 … L-11 | `e2e/layout-audit.mjs` | `npm run test:layout` (local, after build) | yes (PR evidence) |
 | Gallery | `e2e/gallery.mjs` → `e2e/.out/gallery/index.html` | with the two above | no (operator's eyes) |
 | Operator scenario | PR body | operator | yes (`main` gate) |
 
@@ -228,7 +259,8 @@ belongs to the mobile app.
   J-3 card → in-place detail → approve → ‹ Geri returns with view state intact · J-4 project row →
   roadmap → expand a cross-repo task → its work order opens the detail · J-5 single-repo project →
   board → "Yol haritası ↗" · J-6 account card → account view → "Ayarlar'da düzenle ↗" opens
-  Settings · J-7 ⌘K opens the search palette and focuses its input. Each step asserts visible text and saves a screenshot.
+  Settings, and the nav's Telefon and Ayarlar rows open it on their own sections · J-7 ⌘K (or the
+  sidebar's Ara row) opens the search palette and focuses its input. Each step asserts visible text and saves a screenshot.
 - **Layout audit** (pure DOM measurement, no pixel diff; each assertion named `L-n: …`, for every
   screen × size × theme):
   - **L-1** The sidebar's left edge is 0 and its width is 240px at every window size — it never
@@ -250,6 +282,8 @@ belongs to the mobile app.
     applicable.
   - **L-10** Every screen's content wrapper starts at the main column's left padding edge — its
     left edge sits within 1px of it at every size, never centred inside the column.
+  - **L-11** Every Kanban card spans its column header's width — its left and right edges sit
+    within 1px of the header row's at every size and theme.
 - **Evidence.** A UI PR attaches the pass lines of `test:journeys` and `test:layout` and the gallery
   path. The architect compares the gallery against the rev-8 reference screenshots before the
   operator scenario.

@@ -30,7 +30,8 @@ import { commandResultKey, isQueryFailure } from './results';
  *  tests inject a fake, so the type lives here until then. */
 export type DetailChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type DetailChangeSignal = (listener: (change: DetailChange) => void) => () => void;
@@ -358,9 +359,10 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (active !== undefined) void pane.attach(active);
   };
 
-  // Both event kinds concern the detail — gate decisions move the work order and runs move its
-  // state — so every notification triggers the same re-query.
-  changes(() => {
+  // Gate decisions move the work order and runs move its state, so both event kinds trigger the
+  // same re-query; the update channel does not — its state belongs to the settings surface.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     if (workOrderId === null) return;
     void load(workOrderId);
   });

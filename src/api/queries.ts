@@ -14,7 +14,8 @@ export type Query =
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'run.events'; readonly runId: string }
-  | { readonly type: 'permissions.open' };
+  | { readonly type: 'permissions.open' }
+  | { readonly type: 'app.update' };
 
 export interface AttentionItem {
   readonly workOrderId: string;
@@ -30,12 +31,20 @@ export interface AttentionItem {
 
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
+  // The optional fields below (A-35 … A-37) are optional in the type only so consumers written
+  // before they existed keep compiling; the cockpit query itself always fills them.
   readonly running: readonly {
     readonly workOrderId: string;
     readonly number: number;
     readonly stage: string;
     readonly accountId: string;
     readonly startedAt: number;
+    readonly title?: string;
+    readonly stageIndex?: number;
+    readonly stageCount?: number;
+    readonly queued?: boolean;
+    readonly queuedReason?: 'limit' | 'queue';
+    readonly limitResetsAt?: number | null;
   }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */
   readonly projects: readonly {
@@ -45,6 +54,8 @@ export interface CockpitView {
     readonly repoCount: number;
     readonly active: number;
     readonly waiting: number;
+    /** A-38 — the project's latest work-order status change; null when it has no work orders. */
+    readonly lastActivityAt?: number | null;
   }[];
   readonly recentlyClosed: readonly {
     readonly workOrderId: string;
@@ -53,6 +64,8 @@ export interface CockpitView {
     readonly project: string;
     readonly repo: string;
     readonly closedAt: number;
+    /** A-39 — how the work order ended: its flow completed, or a person closed it. */
+    readonly outcome?: 'merged' | 'cancelled';
   }[]; // closedAt desc, max 5
 }
 

@@ -20,6 +20,7 @@ export function BoardCard({
   return (
     <button
       type="button"
+      data-board-card
       onClick={() => onOpen(card.id)}
       className="flex min-h-[72px] w-full flex-col gap-2 rounded-card border border-bord bg-surface p-3 text-left outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-inkdim focus-visible:border-signal-soft focus-visible:bg-raised motion-reduce:transition-none"
     >

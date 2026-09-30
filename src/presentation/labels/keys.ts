@@ -130,21 +130,29 @@ export const LABEL_KEYS = [
   'live.usage.cost',
   'live.meter.used',
   'live.meter.limit',
-  // Screens A: the shell's nav landmark, the title bar's home and search buttons, the centered
-  // search palette, the project tree and the accounts frame (screens/shell.tsx,
-  // components/title-bar.tsx, components/search-palette.tsx, components/sidebar-tree.tsx,
-  // components/sidebar-accounts.tsx).
+  // Screens A: the shell's nav landmark, the title bar's update button, the sidebar's nav rows,
+  // the centered search palette, the project tree and the accounts frame (screens/shell.tsx,
+  // components/title-bar.tsx, components/sidebar-nav.tsx, components/search-palette.tsx,
+  // components/sidebar-tree.tsx, components/sidebar-accounts.tsx).
   'shell.nav',
   'shell.wordmark',
   'shell.search',
   'nav.home',
   'nav.cockpit',
+  'nav.search',
+  'nav.search.kbd',
+  'nav.phone',
   'palette.title',
   'palette.kbd.esc',
   'palette.placeholder',
   'palette.empty',
   'palette.kind.project',
   'palette.kind.repo',
+  // The palette's history standing (an empty query with remembered searches): the header, its
+  // clear control and the per-row remove control's accessible name.
+  'palette.history.title',
+  'palette.history.clear',
+  'palette.history.remove',
   'nav.projects',
   'nav.projects.empty',
   'nav.projects.sort',
@@ -291,6 +299,27 @@ export const LABEL_KEYS = [
   'settings.discovery.failed',
   'settings.discovery.empty',
   'settings.discovery.flags',
+  // Settings screen (U-24): the phone section's honest "not linked yet" standing, and the
+  // Güncelleme section's version line, status lines and check action.
+  'settings.section.phone',
+  'settings.phone.none',
+  'settings.phone.explain',
+  'settings.phone.pair',
+  'settings.phone.soon',
+  'settings.section.update',
+  'settings.update.version',
+  'settings.update.status.none',
+  'settings.update.status.available',
+  'settings.update.status.downloading',
+  'settings.update.status.ready',
+  'settings.update.status.error',
+  'settings.update.check',
+  'update.error.offline',
+  'update.error.failed',
+  // The title bar's Update button (U-24): the apply and restart labels; the percent standing
+  // renders the number, and its tooltip reuses the downloading status line.
+  'update.button.now',
+  'update.button.restart',
   // Language switcher (U-9): the control's own name and the languages' names — the names stay
   // native endonyms in both bundles, never translated.
   'settings.language.label',
@@ -367,6 +396,8 @@ export const LABEL_KEYS = [
   'success.account.save',
   'success.account.remove',
   'success.binding.save',
+  'success.app.update.check',
+  'success.app.update.apply',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

@@ -335,6 +335,40 @@ export interface IssueTracker {
 
 Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
 
+### Update checker port (`ports/update-checker.ts`)
+
+The app's own newer version — machine-local state with no repo data and no fitting `AuditAction`
+(the permission board's answers are unlogged the same way), so the port sits **beside `AppDeps`**
+(the forge, tracker and discovery precedent) and the composition root hands it to the api. The
+real updater (release feed check, download, install, signing) is a later contract.
+
+```ts
+export type UpdateState =
+  | { readonly kind: 'none'; readonly current: string }
+  | { readonly kind: 'available'; readonly current: string; readonly next: string }
+  | { readonly kind: 'downloading'; readonly current: string; readonly next: string; readonly percent: number }
+  | { readonly kind: 'ready'; readonly current: string; readonly next: string }
+  | { readonly kind: 'error'; readonly current: string; readonly reason: 'offline' | 'failed' };
+
+export interface UpdateChecker {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;                                              // re-checks; the answer is the new state
+  apply(): Promise<Result<void, 'not_available'>>;   // starts the install; only from available or ready
+}
+```
+
+Implementations (infrastructure, `system/`):
+- **No-op checker** `createNoopUpdateChecker(current)` — the default: `state`/`check` always answer
+  `{ kind: 'none', current }`, `apply` always refuses, and no network call is ever made.
+- **Design checker** `createDesignUpdateChecker(current, next, stepMs?)` — answers `available` with
+  `next`, and `apply` walks `downloading` → `ready` over a few seconds; a re-check never undoes
+  progress. The composition root installs it only when `DOCKET_UPDATE_FAKE` holds a version string,
+  and that one line is production's only read of the variable.
+
+Fake: `createFakeUpdateChecker(initial?)` — `queueCheck(state)` scripts the next `check` answer
+(adopted once), `apply` honours the port guard and moves to `downloading` at percent 0, and
+`applyCalls()` counts apply calls (refused included).
+
 ---
 
 ## 2. Use cases — `src/application/use-cases/`
@@ -533,10 +567,23 @@ export type Query =
 export interface AttentionItem { readonly workOrderId: string; readonly project: string; readonly repo: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
-  readonly running: readonly { readonly workOrderId: string; readonly stage: string; readonly accountId: string; readonly startedAt: number }[];
+  // The optional fields below (A-35 … A-37) are optional in the type only so consumers written
+  // before they existed keep compiling; the cockpit query itself always fills them.
+  readonly running: readonly {
+    readonly workOrderId: string;
+    readonly stage: string;
+    readonly accountId: string;
+    readonly startedAt: number;
+    readonly title?: string;
+    readonly stageIndex?: number;
+    readonly stageCount?: number;
+    readonly queued?: boolean;
+    readonly queuedReason?: 'limit' | 'queue';
+    readonly limitResetsAt?: number | null;
+  }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */
-  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number }[];
-  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[];   // closedAt desc, max 5
+  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number; readonly lastActivityAt?: number | null }[];
+  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number; readonly outcome?: 'merged' | 'cancelled' }[];   // closedAt desc, max 5
 }
 export interface RepoNode { readonly repo: string; readonly name: string; readonly main: boolean; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
 export interface ProjectTreeItem { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repos: readonly RepoNode[]; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
@@ -577,6 +624,11 @@ Rules:
 - **A-29** Work-order display number: `WorkOrderRepo.number(id)` is the 1-based position of the work order in (`createdAt` asc, `id` asc) order over every work order on this machine. Work orders are never deleted, so a number, once shown, never changes and is never reused; a converted old database numbers its work orders the same way. The ULID stays the identity; the number is display only (machine-local; team sync revisits it). Every query view item that names a work order (`workOrderId` or `id` of a work order) also carries `number: number` — attention, running and recentlyClosed items, board cards and done strip, the detail, `account.detail.activeWork`, and the per-repo work orders of a roadmap task.
 - **A-30** Each card in `BoardColumn.workOrders[]` carries `account`: the display label of the account bound to the work order's current or most recent run — the newest run by `startedAt`, active or finished; `null` when the work order never had a run, or the run's account no longer loads. The `done` entries carry neither `account` nor `since`.
 - **A-31** Each card in `BoardColumn.workOrders[]` carries `since`: the ISO-8601 UTC instant (`YYYY-MM-DDTHH:MM:SS.sssZ`) the work order entered its current status — the `at` of the last event that changed the derived status, the work order's `createdAt` while no event has. Stored event timestamps only, never a clock read.
+- **A-35** Each `cockpit.running[]` row carries `title` (the work order's title) and the stage position for the progress strip: `stageIndex` is the 1-based position of the row's stage in the work order's flow and `stageCount` the flow's stage count. When the stage is no longer in the flow — or the flow no longer loads — both are `0` and the UI hides the strip. A queued row positions its queue item's stage the same way.
+- **A-36** Queued work stays in `running` (U-21): the queue's items ride the same list after the actually-running rows, which keep today's order; queued rows follow ordered by `enqueuedAt` asc, then id asc. A queued row carries the queue item's `stage` and route `accountId`, and its `startedAt` is the instant it was queued (`enqueuedAt`), never a run start. The A-28 project filter narrows queued rows together with the rest.
+- **A-37** A queued row carries `queued: true` and a `queuedReason`: `'limit'` when the route's headroom is currently blocked — the same domain call the dispatcher's tick makes, evaluated at query time — with `limitResetsAt` the blocking meters' earliest `resetsAt` (`null` when no relief instant is known); every other wait (concurrency limits, a scheduled `notBefore`, a busy work order) reads `'queue'` with `limitResetsAt: null`. Running rows carry `queued: false` and `limitResetsAt: null` and no `queuedReason`.
+- **A-38** Each `cockpit.projects[]` card carries `lastActivityAt`: the stamp of the latest status change among the project's work orders, on A-31's `since` basis (a work order whose flow no longer loads contributes its creation time); `null` when the project has no work orders.
+- **A-39** Each `cockpit.recentlyClosed[]` entry carries `outcome`: `'merged'` when the work order finished its flow — past the last stage's gates — and `'cancelled'` when a `closed` event ended it. The domain has no finer terminal status, and a `closed` event appended after a flow completion still reads `'cancelled'`: the closing act is the operator's terminal word even where the fold ignores it (R-23).
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 
@@ -645,6 +697,43 @@ export function pollRemoteChecks(
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
 - **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the repo definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
+
+### App update — query, intents, event
+
+The app bar's update story — the contract and plumbing only; the Update button itself is later UI
+work. One query, two intents and one event over the
+[Update checker port](#update-checker-port-portsupdate-checkerts); the checker is composed beside
+`AppDeps` and passed to `createApi` as its fifth argument (`updates?: UpdateChecker`), the
+board/discovery/registry pattern.
+
+```ts
+// use-cases/app-update.ts — the port is the whole state, so the use cases take it directly
+export function getUpdateState(updates: UpdateChecker): Promise<UpdateState>;
+export function checkForUpdates(updates: UpdateChecker): Promise<UpdateState>;
+export function applyUpdate(updates: UpdateChecker): Promise<Result<void, 'not_available'>>;
+
+// commands (commands.ts)
+| { type: 'app.update.check' }
+| { type: 'app.update.apply' }
+// queries (queries.ts)
+| { type: 'app.update' }               → UpdateState
+// UiEvent (api.ts)
+| { type: 'update.changed' }
+```
+
+Rules:
+- **A-32** `app.update` answers the composed checker's `state()` verbatim — no derivation, no
+  stored copy. With no checker composed the query answers `{ ok: false, code: 'not_found' }` (the
+  registry-less `repos.list` precedent): absence is never invented into "you are current".
+- **A-33** `app.update.check` maps onto `checkForUpdates`: the checker re-checks, the command
+  answers `{ ok: true }`, and the api emits one `update.changed` after it — `CommandResult` carries
+  no payload, so the new state travels out-of-band, through the event and the re-query it triggers
+  (the `workOrders.changed` pattern). No audit entry: the update state is machine-local and no
+  `AuditAction` names it.
+- **A-34** `app.update.apply` maps onto `applyUpdate`: the guard reads the state and allows the
+  call only from `available` or `ready` — every other state answers `not_available`, emits nothing
+  and leaves the state untouched. An allowed apply starts the download (the state's next read shows
+  it), answers `{ ok: true }` and emits one `update.changed`.
 
 ---
 

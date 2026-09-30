@@ -3,7 +3,8 @@
 // repo result the board, exactly as the tree's rows do. The index is the `project.tree` query the
 // shell already holds — no second query, no other entity kinds. The reducer owns open/close, the
 // query's results and the keyboard's selection; the component renders these decisions and adds
-// only the DOM (focus, trap, scrim).
+// only the DOM (focus, trap, scrim). The module also owns the palette's own memory — the recent
+// queries (the history) as pure list computations over an injected storage slice.
 import type { ProjectTree } from '../../api/queries';
 
 /** One palette row: a project's roadmap or a repo's board — the tree's two row kinds. */
@@ -138,5 +139,99 @@ export const paletteReducer = (state: PaletteState, action: PaletteAction): Pale
       if (!state.open || count === 0) return state;
       return { ...state, selected: (state.selected + action.delta + count) % count };
     }
+  }
+};
+
+// --- the search history ------------------------------------------------------------------------------
+//
+// What the palette remembers: recent queries, recorded only when the operator opens a result
+// (Enter or a click) — never per keystroke, never on a dismiss without an opening. A recorded
+// query is trimmed, at least two characters and cut at sixty; re-querying moves the entry to the
+// top instead of duplicating it (compared case-insensitively); the list holds the newest ten,
+// most recent first. It persists per viewer in local storage beside the board's view choice — a
+// convenience, never a record: queries are project and repo names, nothing secret.
+
+/** The storage key the palette's history persists under. */
+export const SEARCH_HISTORY_KEY = 'docket.searchHistory.v1';
+export const SEARCH_HISTORY_LIMIT = 10;
+export const SEARCH_HISTORY_MIN_CHARS = 2;
+export const SEARCH_HISTORY_MAX_CHARS = 60;
+
+/** The remembered queries, most recent first. */
+export type SearchHistory = readonly string[];
+
+export const EMPTY_HISTORY: SearchHistory = [];
+
+/** Records one query: trimmed, at least two characters, cut at sixty. The previous copy of the
+ *  same query (case-insensitively) leaves so the fresh one can lead; past the limit the oldest
+ *  entry drops. A query too short or blank records nothing — the same list returns untouched. */
+export const recordSearch = (history: SearchHistory, query: string): SearchHistory => {
+  const entry = query.trim().slice(0, SEARCH_HISTORY_MAX_CHARS);
+  if (entry.length < SEARCH_HISTORY_MIN_CHARS) return history;
+  const fold = entry.toLowerCase();
+  return [entry, ...history.filter((kept) => kept.toLowerCase() !== fold)].slice(0, SEARCH_HISTORY_LIMIT);
+};
+
+/** Removes every entry that is the query (trimmed, case-insensitively) — the × beside a row. */
+export const removeSearch = (history: SearchHistory, query: string): SearchHistory => {
+  const fold = query.trim().toLowerCase();
+  return history.filter((kept) => kept.toLowerCase() !== fold);
+};
+
+/** Temizle: the whole list goes at once — ten old queries never earn a confirmation. */
+export const clearSearches = (): SearchHistory => EMPTY_HISTORY;
+
+/** What storage holds: the capped list as JSON. */
+export const serializeHistory = (history: SearchHistory): string =>
+  JSON.stringify(history.slice(0, SEARCH_HISTORY_LIMIT));
+
+/** What storage says, tolerated: anything unreadable or wrongly shaped reads as empty, and the
+ *  survivors are held to the record path's own rules — strings only, trimmed, cut at sixty,
+ *  deduped case-insensitively, at most ten — so a corrupt value can never seed the palette with
+ *  an entry the record path itself would refuse. */
+export const parseHistory = (raw: string | null): SearchHistory => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw ?? '');
+  } catch {
+    return EMPTY_HISTORY;
+  }
+  if (!Array.isArray(parsed)) return EMPTY_HISTORY;
+  const out: string[] = [];
+  for (const item of parsed) {
+    if (typeof item !== 'string') continue;
+    const entry = item.trim().slice(0, SEARCH_HISTORY_MAX_CHARS);
+    if (entry.length < SEARCH_HISTORY_MIN_CHARS) continue;
+    if (out.some((kept) => kept.toLowerCase() === entry.toLowerCase())) continue;
+    out.push(entry);
+    if (out.length === SEARCH_HISTORY_LIMIT) break;
+  }
+  return out;
+};
+
+/** The structural slice of DOM storage the history persists through; localStorage satisfies it
+ *  as-is (the same narrowing as the board's and the tree's persistence). */
+export interface SearchHistoryPersistence {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** The stored list, or empty when storage answers nothing usable — a failed read never opens a
+ *  broken palette. */
+export const readSearchHistory = (persistence: SearchHistoryPersistence): SearchHistory => {
+  try {
+    return parseHistory(persistence.getItem(SEARCH_HISTORY_KEY));
+  } catch {
+    return EMPTY_HISTORY;
+  }
+};
+
+/** Persists the list; a store that refuses the write is ignored — the history is a convenience
+ *  for this viewer, not a record the app owes anyone. */
+export const writeSearchHistory = (persistence: SearchHistoryPersistence, history: SearchHistory): void => {
+  try {
+    persistence.setItem(SEARCH_HISTORY_KEY, serializeHistory(history));
+  } catch {
+    // A full or blocked store costs the memory between sessions, nothing more.
   }
 };

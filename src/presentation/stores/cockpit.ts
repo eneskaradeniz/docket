@@ -17,7 +17,8 @@ import { isQueryFailure } from './results';
  *  tests inject a fake, so the type lives here until then. */
 export type CockpitChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type CockpitChangeSignal = (listener: (change: CockpitChange) => void) => () => void;
@@ -231,9 +232,10 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
     void loadAsks(view, attempt);
   };
 
-  // Both event kinds concern the cockpit — work orders change and runs move — so every
-  // notification triggers the same re-query.
-  changes(() => {
+  // Work-order and run events both concern the cockpit, so they trigger the same re-query; the
+  // update channel does not — its state belongs to the settings surface.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     void load();
   });
 

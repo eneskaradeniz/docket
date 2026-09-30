@@ -11,7 +11,8 @@ import { isQueryFailure } from './results';
  *  satisfies it as-is. */
 export type RoadmapChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type RoadmapChangeSignal = (listener: (change: RoadmapChange) => void) => () => void;

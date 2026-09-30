@@ -16,7 +16,9 @@ export type Command =
   | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string }
   | { readonly type: 'account.remove'; readonly id: string }
-  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] };
+  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] }
+  | { readonly type: 'app.update.check' }
+  | { readonly type: 'app.update.apply' };
 
 export type CommandResult =
   | { readonly ok: true; readonly id?: string }

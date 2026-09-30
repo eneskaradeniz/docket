@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-10 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-11 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,7 +7,7 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11'];
 
 /** The audit sizes: the window's minimum, its default, and full screen — nothing between. */
 export const SIZES = [
@@ -247,6 +247,42 @@ const l10 = async (page, ctx, sel) => {
   return result('L-10', Math.abs(m.left - m.edge) <= 1, `wrapper left ${m.left.toFixed(1)} main padding edge ${m.edge.toFixed(1)}`);
 };
 
+// L-11: in every open Kanban column each card spans the header row's width — the same left and
+// right edges within a pixel — so the lane reads as one block, not a wide title over narrow cards.
+const l11 = async (page, ctx, sel) => {
+  if (ctx.screen !== 'pano') return result('L-11', true, 'not the Kanban view');
+  const missing = ['kanbanColHead', 'kanbanCard'].find((k) => !sel[k]);
+  if (missing) return skipped('L-11', missing);
+  const m = await inPage(
+    page,
+    `const heads = [...document.querySelectorAll(arg.head)];
+    const cards = [...document.querySelectorAll(arg.card)];
+    const bad = [];
+    let worst = 0;
+    for (const card of cards) {
+      const r = card.getBoundingClientRect();
+      if (r.width === 0) continue;
+      const head = card.closest('section')?.querySelector(arg.head);
+      if (!head) continue;
+      const h = head.getBoundingClientRect();
+      const d = Math.max(Math.abs(r.left - h.left), Math.abs(r.right - h.right));
+      worst = Math.max(worst, d);
+      if (d > 1) bad.push((card.textContent || '').trim().slice(0, 16) + ' Δ' + d.toFixed(1) + 'px');
+    }
+    return { heads: heads.length, cards: cards.length, worst, bad: bad.slice(0, 3) };`,
+    { head: sel.kanbanColHead, card: sel.kanbanCard },
+  );
+  if (m.cards === 0) return result('L-11', true, `no cards to measure (${m.heads} columns)`);
+  const ok = m.bad.length === 0;
+  return result(
+    'L-11',
+    ok,
+    ok
+      ? `${m.cards} cards edge-to-edge with their header row`
+      : `cards sit up to ${m.worst.toFixed(1)}px inside their header's edges: ${m.bad.join('; ')}`,
+  );
+};
+
 const RULES = [
   ['L-1', l1],
   ['L-2', l2],
@@ -258,6 +294,7 @@ const RULES = [
   ['L-8', l8],
   ['L-9', l9],
   ['L-10', l10],
+  ['L-11', l11],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */

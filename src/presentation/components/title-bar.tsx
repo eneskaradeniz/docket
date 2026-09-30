@@ -1,18 +1,14 @@
 // components/title-bar.tsx — the drag strip the darwin window owes itself: the native title bar
 // is hidden there, so this bar is the only thing to move the window by. The traffic lights keep
-// their lane at its left, then the signal accent and the wordmark sign the app, then the bar's
-// two icon buttons: Anasayfa, the cockpit's route (carrying the one active-state language while
-// the cockpit is where the operator is, the attention badge on its corner), and Ara, which opens
-// the centered search palette and carries the same standing while the palette is open. The
-// buttons speak through their aria-label and tooltip, not visible words. The buttons alone are
-// interactive — everything else on the strip stays one drag region. Platforms that keep the
-// native frame render no bar at all (title-bar-plan.ts decides).
-import { useRef } from 'react';
-
+// their lane at its left, then the signal accent and the wordmark sign the app — nothing else;
+// the navigation lives in the sidebar's rows (U-24). The bar's one control is the Update button
+// at its right edge, the app's single call to action while an update waits: a bordered ghost
+// with a small download glyph, visible only while the update state is available, downloading or
+// ready — never for none or error. The button alone is interactive; everything else on the strip
+// stays one drag region. Platforms that keep the native frame render no bar at all
+// (title-bar-plan.ts decides).
 import { t, type Locale } from '../labels/t';
-import type { ShellBadge } from '../stores/shell';
-import type { PaletteOrigin } from '../stores/search-palette';
-import { ACTIVE_CLASS } from './active-state';
+import { updateButton, type UpdateStatus } from '../stores/update';
 import { titleBarFor } from './title-bar-plan';
 
 export interface TitleBarProps {
@@ -20,19 +16,15 @@ export interface TitleBarProps {
    *  function of its props. */
   readonly platform: string;
   readonly locale: Locale;
-  /** Whether the cockpit is the current route — Anasayfa's current-route standing. */
-  readonly homeCurrent: boolean;
-  /** Whether the search palette is open — Ara's current standing while it is. */
-  readonly searchCurrent: boolean;
-  /** The shell's attention badge; null renders nothing, never a zero (U-10). */
-  readonly badge: ShellBadge | null;
-  readonly onHome: () => void;
-  /** Opens the palette; the origin decides where focus lands on close. */
-  readonly onSearch: (origin: PaletteOrigin) => void;
+  /** The app-update standing; null renders no button (U-24). */
+  readonly update: UpdateStatus | null;
+  /** Starts the download and install — the apply intent, also on the ready standing (restart). */
+  readonly onApply: () => void;
 }
 
-/** The palette's magnifier. The defaults are the palette's own rendering; the title bar's button
- *  passes its larger, lighter stroke so one icon serves both surfaces. */
+/** The palette's magnifier — the palette renders it with the defaults; the icon lives here with
+ *  the bar so the two surfaces share one glyph (the palette imports it; this bar itself no
+ *  longer carries a search door). */
 export const SearchIcon = ({
   className = 'h-3.5 w-3.5 flex-none',
   strokeWidth = 2,
@@ -54,93 +46,52 @@ export const SearchIcon = ({
   </svg>
 );
 
-const HomeIcon = () => (
+/** The update button's download glyph. */
+const DownloadIcon = () => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="1.5"
+    strokeWidth="1.75"
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
-    className="h-4 w-4 flex-none"
+    className="h-[15px] w-[15px] flex-none"
   >
-    <path d="m3 11 9-8 9 8" />
-    <path d="M5 9.5V21h14V9.5" />
+    <path d="M12 3v12" />
+    <path d="m7 11 5 5 5-5" />
+    <path d="M4.5 20.5h15" />
   </svg>
 );
 
-/** The bar buttons' standing: 28px wordless ghosts, no border at rest, raised on hover and
- *  keyboard focus (`:focus-visible` only — a pointer click never earns the keyboard's ring); the
- *  current route or an open palette keeps the one active-state language of active-state.ts. */
-const buttonClass = (current: boolean): string =>
-  current
-    ? `relative grid h-7 w-7 flex-none place-items-center rounded-control text-ink ${ACTIVE_CLASS} [-webkit-app-region:no-drag]`
-    : 'relative grid h-7 w-7 flex-none place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink [-webkit-app-region:no-drag]';
-
-export function TitleBar({
-  platform,
-  locale,
-  homeCurrent,
-  searchCurrent,
-  badge,
-  onHome,
-  onSearch,
-}: TitleBarProps) {
+export function TitleBar({ platform, locale, update, onApply }: TitleBarProps) {
   const plan = titleBarFor(platform);
-  // A pointer press on Ara is indistinguishable from key activation by the click alone — the
-  // press is what tells them apart, so it is stamped here and read once by the click.
-  const pointerOpenRef = useRef(false);
   if (!plan.visible) return null;
+  // The button's plan — hidden standings render nothing at all, so the bar's right end stays
+  // empty drag region exactly as it was before any update existed (U-24).
+  const button = update === null ? null : updateButton(update);
   return (
     // The lane width is platform data, not a design constant, so it travels as a style rather
     // than a class; every colour stays on the theme tokens.
     <div
+      data-title-bar
       className="flex h-10 w-full flex-none items-center gap-2 border-b border-hairline bg-bg text-ink [-webkit-app-region:drag]"
       style={{ paddingInlineStart: `${plan.leftInsetPx}px` }}
     >
       <span aria-hidden="true" className="h-4 w-[3px] flex-none bg-signal" />
       <span className="text-[13px] font-semibold">{t(locale, 'shell.wordmark')}</span>
 
-      {plan.buttons.includes('home') ? (
+      {button !== null && button.visible ? (
         <button
           type="button"
-          onClick={onHome}
-          aria-current={homeCurrent ? 'page' : undefined}
-          aria-label={t(locale, 'nav.home')}
-          title={t(locale, 'nav.home')}
-          className={buttonClass(homeCurrent)}
+          data-update-button
+          disabled={button.disabled}
+          onClick={onApply}
+          title={button.percent !== null ? t(locale, 'settings.update.status.downloading') : undefined}
+          className="ml-auto mr-2 inline-flex h-7 flex-none items-center gap-1.5 rounded-control border border-signal bg-transparent px-2.5 text-[12.5px] font-semibold text-ink transition-[filter,background-color] duration-100 hover:bg-raised focus-visible:bg-raised active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 [-webkit-app-region:no-drag]"
         >
-          <HomeIcon />
-          {/* The badge hangs on the button's corner: a count pill inside a 28px square would
-              stretch it past its icon-only footprint. */}
-          {badge !== null ? (
-            <span
-              aria-label={t(locale, 'cockpit.section.attention')}
-              className="absolute -right-1.5 -top-1 inline-flex h-[14px] min-w-[18px] items-center justify-center rounded-full border border-hairline bg-raised px-1 font-mono text-[9.5px] text-inkdim"
-            >
-              {badge.count}
-            </span>
-          ) : null}
-        </button>
-      ) : null}
-
-      {plan.buttons.includes('search') ? (
-        <button
-          type="button"
-          onPointerDown={() => {
-            pointerOpenRef.current = true;
-          }}
-          onClick={() => {
-            const origin: PaletteOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
-            pointerOpenRef.current = false;
-            onSearch(origin);
-          }}
-          aria-label={t(locale, 'shell.search')}
-          title={t(locale, 'shell.search')}
-          className={buttonClass(searchCurrent)}
-        >
-          <SearchIcon className="h-4 w-4 flex-none" strokeWidth={1.5} />
+          <DownloadIcon />
+          {button.percent !== null ? `%${button.percent}` : t(locale, button.labelKey)}
         </button>
       ) : null}
     </div>

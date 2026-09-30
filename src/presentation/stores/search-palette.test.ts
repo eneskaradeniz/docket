@@ -6,13 +6,24 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectTree } from '../../api/queries';
 import {
   CLOSED_PALETTE,
+  SEARCH_HISTORY_KEY,
+  SEARCH_HISTORY_LIMIT,
+  clearSearches,
   diffRows,
   focusRestoredOnClose,
   paletteBody,
   paletteReducer,
   paletteRowId,
+  parseHistory,
+  readSearchHistory,
+  recordSearch,
+  removeSearch,
   searchTree,
+  serializeHistory,
   settlesAtOnce,
+  writeSearchHistory,
+  type SearchHistory,
+  type SearchHistoryPersistence,
 } from './search-palette';
 
 const TREE: ProjectTree = [
@@ -239,5 +250,130 @@ describe('paletteReducer', () => {
       tree: TREE,
     });
     expect(paletteReducer(opened, { type: 'move', delta: 1 }).selected).toBe(0);
+  });
+});
+
+describe('recordSearch', () => {
+  it('records a trimmed query at the top — the newest leads', () => {
+    expect(recordSearch([], '  odoo  ')).toStrictEqual(['odoo']);
+    expect(recordSearch(['odoo'], 'antero')).toStrictEqual(['antero', 'odoo']);
+  });
+
+  it('a query under two characters (after the trim) records nothing — the same list returns', () => {
+    const history: SearchHistory = ['odoo'];
+    expect(recordSearch(history, 'a')).toBe(history);
+    expect(recordSearch(history, '  x  ')).toBe(history);
+    expect(recordSearch(history, '   ')).toBe(history);
+    expect(recordSearch([], '')).toStrictEqual([]);
+  });
+
+  it('a query is stored cut at sixty characters', () => {
+    const [entry] = recordSearch([], 'a'.repeat(80));
+    expect(entry).toBe('a'.repeat(60));
+  });
+
+  it('re-querying an entry moves it to the top instead of duplicating it — compared case-insensitively', () => {
+    let history = recordSearch([], 'odoo');
+    history = recordSearch(history, 'antero');
+    history = recordSearch(history, 'ANTERO');
+    expect(history).toStrictEqual(['ANTERO', 'odoo']);
+  });
+
+  it('holds ten; the eleventh record drops the oldest', () => {
+    let history: SearchHistory = [];
+    for (let i = 0; i < 11; i += 1) history = recordSearch(history, `q${i}`);
+    expect(history).toHaveLength(SEARCH_HISTORY_LIMIT);
+    expect(history[0]).toBe('q10');
+    expect(history).not.toContain('q0');
+  });
+});
+
+describe('removeSearch', () => {
+  it('removes the query case-insensitively and keeps the rest in order', () => {
+    expect(removeSearch(['odoo', 'Antero', 'api'], 'ANTERO')).toStrictEqual(['odoo', 'api']);
+  });
+
+  it('an unknown query removes nothing', () => {
+    expect(removeSearch(['odoo'], 'zzz')).toStrictEqual(['odoo']);
+  });
+});
+
+describe('clearSearches', () => {
+  it('empties the list — Temizle owes no confirmation', () => {
+    expect(clearSearches()).toStrictEqual([]);
+  });
+});
+
+describe('serializeHistory / parseHistory', () => {
+  it('round-trips what the record path builds', () => {
+    const history = recordSearch(recordSearch([], 'odoo'), 'antero');
+    expect(parseHistory(serializeHistory(history))).toStrictEqual(history);
+  });
+
+  it('writes at most the ten entries storage owes', () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => `q${i}`);
+    expect(JSON.parse(serializeHistory(eleven))).toHaveLength(SEARCH_HISTORY_LIMIT);
+  });
+
+  it('null, blank and non-JSON garbage read as empty', () => {
+    expect(parseHistory(null)).toStrictEqual([]);
+    expect(parseHistory('')).toStrictEqual([]);
+    expect(parseHistory('{oops')).toStrictEqual([]);
+  });
+
+  it('a JSON value that is not an array reads as empty', () => {
+    expect(parseHistory('"odoo"')).toStrictEqual([]);
+    expect(parseHistory('{"q":"odoo"}')).toStrictEqual([]);
+    expect(parseHistory('42')).toStrictEqual([]);
+  });
+
+  it('drops non-strings and holds the rest to the record rules', () => {
+    expect(parseHistory(JSON.stringify(['odoo', 7, null, {}, 'antero']))).toStrictEqual(['odoo', 'antero']);
+  });
+
+  it('drops blank and too-short strings and dedupes case-insensitively', () => {
+    expect(parseHistory(JSON.stringify(['a', '  ', '', 'ODOO', 'odoo', 'antero']))).toStrictEqual(['ODOO', 'antero']);
+  });
+
+  it('caps length at sixty and count at ten', () => {
+    const parsed = parseHistory(JSON.stringify(['b'.repeat(100), ...Array.from({ length: 14 }, (_, i) => `q${i}`)]));
+    expect(parsed).toHaveLength(SEARCH_HISTORY_LIMIT);
+    expect(parsed[0]).toBe('b'.repeat(60));
+    expect(parsed).not.toContain('q9');
+  });
+});
+
+describe('readSearchHistory / writeSearchHistory', () => {
+  /** A map dressed as the storage slice the history persists through. */
+  const mapPersistence = (map: Map<string, string>): SearchHistoryPersistence => ({
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+  });
+
+  it('writes and reads back through the one versioned key', () => {
+    expect(SEARCH_HISTORY_KEY).toBe('docket.searchHistory.v1');
+    const map = new Map<string, string>();
+    const persistence = mapPersistence(map);
+    writeSearchHistory(persistence, recordSearch([], 'odoo'));
+    expect(map.get(SEARCH_HISTORY_KEY)).toBe(JSON.stringify(['odoo']));
+    expect(readSearchHistory(persistence)).toStrictEqual(['odoo']);
+  });
+
+  it('a corrupt stored value reads as empty', () => {
+    const persistence = mapPersistence(new Map([[SEARCH_HISTORY_KEY, 'nonsense']]));
+    expect(readSearchHistory(persistence)).toStrictEqual([]);
+  });
+
+  it('a storage that throws reads as empty and never breaks a write', () => {
+    const blocked: SearchHistoryPersistence = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('full');
+      },
+    };
+    expect(readSearchHistory(blocked)).toStrictEqual([]);
+    expect(() => writeSearchHistory(blocked, ['odoo'])).not.toThrow();
   });
 });

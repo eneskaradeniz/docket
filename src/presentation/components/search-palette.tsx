@@ -8,7 +8,11 @@
 // palette must not leave its button wearing the keyboard's focus ring — ↑/↓ walk the rows,
 // Enter opens the selected one, Esc or a click on the scrim closes.
 // An empty query shows the input row alone — the body (rows or the no-results line) appears
-// only once text is typed, and folds away when it is cleared.
+// only once text is typed, and folds away when it is cleared — unless the palette remembers
+// searches: then the empty query lists them under a "Son aramalar" header, a row's choice fills
+// the input and runs the query at once, a row's × walks that entry out, and Temizle empties the
+// list into the same row-exit motion. A query is remembered only when a result is opened; the
+// list itself is the pure history module's, persisted per viewer in local storage.
 // The results settle behind a debounce: the input's text updates on every keystroke, but the
 // rows recompute only after the last one has had its beat, so typing narrows the list in one
 // step instead of flashing through every intermediate standing. The first typed character
@@ -21,13 +25,20 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { t, type Locale } from '../labels/t';
 import {
+  clearSearches,
   diffRows,
+  EMPTY_HISTORY,
   focusRestoredOnClose,
   paletteBody,
   paletteRowId,
+  readSearchHistory,
+  recordSearch,
+  removeSearch,
   settlesAtOnce,
+  writeSearchHistory,
   type PaletteResult,
   type PaletteState,
+  type SearchHistory,
 } from '../stores/search-palette';
 import { ACTIVE_CLASS } from './active-state';
 import { MOTION, motionVars } from './motion';
@@ -46,6 +57,31 @@ export interface SearchPaletteProps {
 
 const LIST_ID = 'docket-palette-options';
 const optionId = (index: number): string => `docket-palette-option-${index}`;
+const historyOptionId = (index: number): string => `docket-palette-history-${index}`;
+
+/** A remembered query's clock — the history rows' own glyph, the shell icons' stroke grammar. */
+const ClockIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.5}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="h-3.5 w-3.5 flex-none text-inkdim"
+  >
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 5.2v2.9l2 1.4" />
+  </svg>
+);
+
+/** The × beside a history row: quiet until the row is hovered or holds focus, quick once it
+ *  shows — the highlight's own pace. */
+const HISTORY_REMOVE_CLASS = [
+  'grid h-6 w-6 flex-none place-items-center rounded-control text-[13px] leading-none text-inkdim',
+  'opacity-0 transition-opacity duration-[var(--motion-highlight)] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-ink motion-reduce:transition-none',
+].join(' ');
 
 // The motion numbers as custom properties on the overlay's root — the classes below consume
 // them, the constants above own them.
@@ -128,6 +164,22 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
   const liveSelectedRef = useRef(0);
   // Ghosts leave the DOM once their exit has surely ended; a new settle re-arms the timer.
   const ghostTimerRef = useRef(0);
+
+  // The palette's own memory: the recent queries, most recent first, read once from the
+  // operator's storage and rewritten on every change (the pure module owns every rule and every
+  // tolerance). Rows the × or Temizle walks out become history ghosts; the keyboard's row over
+  // the history lives here too — the query being empty, the reducer's own selection has nothing
+  // to stand on.
+  const [history, setHistory] = useState<SearchHistory>(() => readSearchHistory(window.localStorage));
+  const [historySelected, setHistorySelected] = useState(0);
+  const [historyGhosts, setHistoryGhosts] = useState<SearchHistory>(EMPTY_HISTORY);
+  const historyGhostTimerRef = useRef(0);
+
+  // The list follows the operator between sessions; the tolerant parse's normalization writes
+  // back on mount, so a repaired value heals storage without anyone asking for it.
+  useEffect(() => {
+    writeSearchHistory(window.localStorage, history);
+  }, [history]);
 
   // The overlay's life in the DOM outlives the open standing: `mounted` keeps it in the tree
   // through the exit transition, `entered` is the standing the CSS transitions chase. Mount
@@ -230,21 +282,99 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
 
   // Ghosts must never outlive the palette's own DOM — a stray timer fires into nothing.
   useEffect(() => () => window.clearTimeout(ghostTimerRef.current), []);
+  // The same for the history's own ghosts; a new walk-out re-arms this timer.
+  useEffect(() => () => window.clearTimeout(historyGhostTimerRef.current), []);
+
+  // Each open starts its keyboard on the first history row — the recorded list itself survives
+  // the close, only the standing row resets.
+  useEffect(() => {
+    if (state.open) setHistorySelected(0);
+  }, [state.open]);
+
+  // History ghosts belong to the history standing alone: typing switches the body to results,
+  // and a row still folding out beneath arriving results would belong to neither list.
+  useEffect(() => {
+    if (state.query.trim() !== '') setHistoryGhosts(EMPTY_HISTORY);
+  }, [state.query]);
 
   const body = paletteBody(state.query, settledQuery, settled.length);
+  // The history standing: an empty query over a non-empty list. Its header outlives the rows
+  // for as long as ghosts are still walking out, so Temizle keeps its label while the body
+  // folds shut beneath it.
+  const historyVisible = state.query.trim() === '' && history.length > 0;
+  const historyHead = historyVisible || historyGhosts.length > 0;
+  // The history rows rise in as one arrival — hidden until a painted frame, staggered by rank,
+  // exactly the grammar the results rows enter with.
+  const historyEntered = usePaintedFlip(historyVisible);
+  // The keyboard's row over the history, clamped to a list the × may have shortened.
+  const historyIndex = history.length === 0 ? 0 : Math.min(historySelected, history.length - 1);
+
+  // The first typed character over an empty settled query lands within a tick (settlesAtOnce):
+  // holding the body's standing across that tick keeps an open history from folding and
+  // reopening when one of its rows is chosen, and lets a collapsed body start growing with the
+  // first character itself.
+  const firstCharacterInFlight =
+    state.query.trim() !== '' && state.query !== settledQuery && settlesAtOnce(settledQuery);
   // `keep` holds the current standing through a settle: the settled rows stay on screen, and a
   // folded body (or one showing the line of a query it no longer answers) stays folded.
-  const hasBody = body === 'keep' ? settled.length > 0 : body !== 'none';
+  const hasBody =
+    historyHead ||
+    firstCharacterInFlight ||
+    (body === 'keep' ? settled.length > 0 : body !== 'none');
 
-  // The keyboard's row must stay in view when the list outgrows its cap.
+  // The keyboard's row must stay in view when the list outgrows its cap — over the history
+  // while it stands, over the results otherwise.
   useEffect(() => {
     if (!state.open) return;
     const options = panelRef.current?.querySelectorAll('[role="option"]');
-    const option = options?.[selection];
+    const option = options?.[historyVisible ? historyIndex : selection];
     option?.scrollIntoView({ block: 'nearest' });
-  }, [selection, state.open]);
+  }, [historyVisible, historyIndex, selection, state.open]);
 
   if (!mounted) return null;
+
+  /** Ghost history rows leave the DOM past their exit's end — the fold always finishes first. */
+  const armHistoryGhostTimer = (): void => {
+    window.clearTimeout(historyGhostTimerRef.current);
+    historyGhostTimerRef.current = window.setTimeout(() => setHistoryGhosts(EMPTY_HISTORY), MOTION.results.rowExitRemoveMs);
+  };
+
+  /** A history row's choice is a query, not an opening: the text lands in the input and runs at
+   *  once (nothing was settled, so the first-character rule skips the debounce), and the
+   *  keyboard stays in the input. */
+  const chooseFromHistory = (entry: string): void => {
+    onQuery(entry);
+    inputRef.current?.focus();
+  };
+
+  /** The × beside a row: the entry leaves at once, its row walks out with the exit motion, and
+   *  the keyboard's row returns home — focus never leaves the input's neighbourhood. */
+  const removeEntry = (entry: string): void => {
+    setHistory((current) => removeSearch(current, entry));
+    setHistoryGhosts((current) => [...current, entry]);
+    armHistoryGhostTimer();
+    setHistorySelected(0);
+    inputRef.current?.focus();
+  };
+
+  /** Temizle: every row walks out with the row-exit motion and the body then collapses to the
+   *  input alone — no confirmation, the stakes are ten old queries. Focus stays in the input. */
+  const clearHistory = (): void => {
+    if (history.length > 0) {
+      setHistoryGhosts((current) => [...history, ...current]);
+      setHistory(clearSearches());
+      setHistorySelected(0);
+      armHistoryGhostTimer();
+    }
+    inputRef.current?.focus();
+  };
+
+  /** Opening a result is the one moment a query is remembered — the opening records it, never
+   *  the typing; too short a query records nothing at all. */
+  const openResult = (result: PaletteResult): void => {
+    setHistory((current) => recordSearch(current, state.query));
+    onOpen(result);
+  };
 
   /** Traps Tab inside the panel: the input and the rows are the only stops, wrapping both ways. */
   const trapTab = (event: React.KeyboardEvent<HTMLElement>): void => {
@@ -266,17 +396,26 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       // The walk means nothing over a list that is about to be replaced — during the wait the
-      // keys would move over rows nobody can see.
-      if (live) onMove(1);
+      // keys would move over rows nobody can see. Over the history the walk is always live:
+      // its rows never settle, they stand.
+      if (historyVisible) setHistorySelected((current) => (current + 1 + history.length) % history.length);
+      else if (live) onMove(1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      if (live) onMove(-1);
+      if (historyVisible) setHistorySelected((current) => (current - 1 + history.length) % history.length);
+      else if (live) onMove(-1);
     } else if (event.key === 'Enter') {
       // Preventing the default keeps a focused row from firing its own click on top of this.
-      // Enter opens the row on screen, not the one still being computed.
+      // Over the history Enter runs the highlighted query; over results it opens the row on
+      // screen, not the one still being computed.
       event.preventDefault();
+      if (historyVisible) {
+        const entry = history[historyIndex];
+        if (entry !== undefined) chooseFromHistory(entry);
+        return;
+      }
       const chosen = settled[selection];
-      if (chosen !== undefined) onOpen(chosen);
+      if (chosen !== undefined) openResult(chosen);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
@@ -303,7 +442,7 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
             id={optionId(index)}
             role="option"
             aria-selected={selected}
-            onClick={() => onOpen(result)}
+            onClick={() => openResult(result)}
             className={rowClass(selected, standing, hidden)}
           >
             <span title={result.name} className="min-w-0 flex-1 truncate">
@@ -313,6 +452,48 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
               {t(locale, result.kind === 'project' ? 'palette.kind.project' : 'palette.kind.repo')}
             </span>
           </button>
+        </div>
+      </div>
+    );
+  };
+
+  /** One remembered query: the results rows' own life and paint, its clock beside the text and
+   *  its × riding the same row — quiet until the row is hovered or holds focus. */
+  const renderHistoryRow = (entry: string, index: number, standing: RowStanding): React.ReactNode => {
+    const open = historyEntered && standing !== 'leaving';
+    const selected = standing !== 'leaving' && index === historyIndex;
+    const rowStyle: CSSProperties | undefined =
+      standing === 'entering' ? ({ '--row-delay': staggerDelay(index) } as CSSProperties) : undefined;
+    return (
+      <div
+        key={`${standing}:${entry}`}
+        className={[ROW_FOLD, open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'].join(' ')}
+        style={rowStyle}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="group flex items-center gap-1 pr-1">
+            <button
+              type="button"
+              id={historyOptionId(index)}
+              role="option"
+              aria-selected={selected}
+              onClick={() => chooseFromHistory(entry)}
+              className={rowClass(selected, standing, !open)}
+            >
+              <ClockIcon />
+              <span title={entry} className="min-w-0 flex-1 truncate">
+                {entry}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={t(locale, 'palette.history.remove')}
+              onClick={() => removeEntry(entry)}
+              className={HISTORY_REMOVE_CLASS}
+            >
+              ×
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -373,7 +554,13 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
             role="combobox"
             aria-expanded={hasBody}
             aria-controls={LIST_ID}
-            aria-activedescendant={settled.length > 0 ? optionId(selection) : undefined}
+            aria-activedescendant={
+              historyVisible
+                ? historyOptionId(historyIndex)
+                : settled.length > 0
+                  ? optionId(selection)
+                  : undefined
+            }
             aria-label={t(locale, 'palette.placeholder')}
             placeholder={t(locale, 'palette.placeholder')}
             value={state.query}
@@ -398,6 +585,23 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
           ].join(' ')}
         >
           <div className="min-h-0 overflow-hidden">
+            {/* The history's own head: the label on the left, Temizle on the right — kept
+                through the walk-out so the fading rows keep their heading until the body
+                closes over them. */}
+            {historyHead ? (
+              <div data-search-history className="flex items-center justify-between px-2.5 pb-0.5 pt-2">
+                <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-inkdim">
+                  {t(locale, 'palette.history.title')}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearHistory}
+                  className="py-0.5 text-[11px] text-inkdim transition-colors duration-[var(--motion-highlight)] hover:text-ink motion-reduce:transition-none"
+                >
+                  {t(locale, 'palette.history.clear')}
+                </button>
+              </div>
+            ) : null}
             <div
               id={LIST_ID}
               role="listbox"
@@ -407,13 +611,22 @@ export function SearchPalette({ state, locale, onQuery, onMove, onOpen, onClose 
                 hasBody ? 'opacity-100' : 'opacity-0',
               ].join(' ')}
             >
-              {settled.map((result, index) =>
-                renderRow(result, index, enteringRanks.has(paletteRowId(result)) ? 'entering' : 'staying'),
+              {historyHead ? (
+                <>
+                  {history.map((entry, index) => renderHistoryRow(entry, index, 'entering'))}
+                  {historyGhosts.map((entry, index) => renderHistoryRow(entry, history.length + index, 'leaving'))}
+                </>
+              ) : (
+                <>
+                  {settled.map((result, index) =>
+                    renderRow(result, index, enteringRanks.has(paletteRowId(result)) ? 'entering' : 'staying'),
+                  )}
+                  {ghosts.map((result, index) => renderRow(result, settled.length + index, 'leaving'))}
+                  {body === 'no-results' ? (
+                    <p className="px-2.5 py-2 text-xs text-inkdim">{t(locale, 'palette.empty')}</p>
+                  ) : null}
+                </>
               )}
-              {ghosts.map((result, index) => renderRow(result, settled.length + index, 'leaving'))}
-              {body === 'no-results' ? (
-                <p className="px-2.5 py-2 text-xs text-inkdim">{t(locale, 'palette.empty')}</p>
-              ) : null}
             </div>
           </div>
         </div>
