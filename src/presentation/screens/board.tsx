@@ -13,7 +13,9 @@ import { BoardKanban } from '../components/board-kanban';
 import { BoardList } from '../components/board-list';
 import { KanbanIcon, ListIcon, PencilIcon } from '../components/board-icons';
 import { boardMotionVars } from '../components/motion';
+import { BoardSkeleton } from '../components/board-skeleton';
 import { OutcomeNotice } from '../components/outcome-notice';
+import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { BoardStore, CreateOutcome, CreateValidation } from '../stores/board';
 import { kanbanColumns, listGroups } from '../stores/board';
 import { failureKey } from '../stores/results';
@@ -52,6 +54,9 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
   useEffect(() => {
     void store.load(repo);
   }, [store, repo]);
+  // The skeletons' anti-flicker gate (U-26): only a board without a view and without a problem
+  // stands to gain one — a reload over the standing board or a repo problem never blanks it.
+  const { skeleton, reveal } = useSkeleton(state.loading && state.view === null && state.problem === null, () => Date.now());
 
   // The flow input stands on the board's own flow until the operator types one: the choice the
   // validation needs is then explicit, not silent.
@@ -116,9 +121,7 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         </ActionButton>
       </header>
 
-      {state.loading && view === null && state.problem === null ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'board.loading')}</p>
-      ) : null}
+      {skeleton ? <BoardSkeleton mode={state.viewMode} locale={locale} /> : null}
 
       {state.problem !== null ? (
         <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
@@ -158,22 +161,26 @@ export function BoardScreen({ store, repo, locale, onOpenWorkOrder, roadmapProje
         </section>
       ) : null}
 
-      {view !== null && state.viewMode === 'kanban' ? (
-        <BoardKanban
-          columns={columns}
-          locale={locale}
-          onOpenWorkOrder={onOpenWorkOrder}
-          onToggleColumn={(key) => store.toggleColumn(repo, key)}
-        />
+      {!skeleton && view !== null && state.viewMode === 'kanban' ? (
+        <SkeletonReveal active={reveal} className="flex min-h-0 flex-1 flex-col">
+          <BoardKanban
+            columns={columns}
+            locale={locale}
+            onOpenWorkOrder={onOpenWorkOrder}
+            onToggleColumn={(key) => store.toggleColumn(repo, key)}
+          />
+        </SkeletonReveal>
       ) : null}
 
-      {view !== null && state.viewMode === 'liste' ? (
-        <BoardList
-          groups={groups}
-          locale={locale}
-          onOpenWorkOrder={onOpenWorkOrder}
-          onToggleGroup={(key) => store.toggleGroup(repo, key)}
-        />
+      {!skeleton && view !== null && state.viewMode === 'liste' ? (
+        <SkeletonReveal active={reveal} className="flex min-h-0 flex-1 flex-col">
+          <BoardList
+            groups={groups}
+            locale={locale}
+            onOpenWorkOrder={onOpenWorkOrder}
+            onToggleGroup={(key) => store.toggleGroup(repo, key)}
+          />
+        </SkeletonReveal>
       ) : null}
     </div>
   );

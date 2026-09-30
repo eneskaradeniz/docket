@@ -13,6 +13,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ACTIVE_CLASS } from './active-state';
 import { MARK_SIZE, ProviderMark } from './provider-mark';
 import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
+import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
 import type { AccountCard, AccountsFrameStore } from '../stores/accounts-frame';
@@ -67,6 +68,27 @@ const RefreshIcon = () => (
     <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
     <path d="M8 16H3v5" />
   </svg>
+);
+
+/** One account card's shape as a placeholder (U-26): the card's own wrapper and line heights —
+ *  a mark box, a label line, one mini bar per window — two of them fill the frame's visible
+ *  body exactly as U-16 shows at most two cards. */
+const AccountCardSkeleton = () => (
+  <div className="block w-full rounded-card border border-hairline p-2">
+    <span className="flex items-center gap-1.5">
+      <Skeleton radius="control" width="16px" height="16px" />
+      <Skeleton radius="control" width="42%" height="17px" />
+    </span>
+    <span className="mt-1.5 grid gap-[3px]">
+      {[0, 1].map((line) => (
+        <span key={line} className="flex min-h-3 items-center gap-1.5">
+          <Skeleton radius="control" width="38px" height="12px" />
+          <Skeleton radius="full" width="56%" height="4px" />
+          <Skeleton radius="control" width="26px" height="12px" />
+        </span>
+      ))}
+    </span>
+  </div>
 );
 
 const AccountCardView = ({
@@ -156,6 +178,8 @@ export function SidebarAccounts({
     const timer = window.setTimeout(() => setSpinning(false), 820);
     return () => window.clearTimeout(timer);
   }, [spinning]);
+  // Only a frame with no cards yet can carry a skeleton (U-26); a refresh keeps the cards up.
+  const { skeleton, reveal } = useSkeleton(state.loading && state.cards === null, () => Date.now());
 
   return (
     <div
@@ -206,20 +230,28 @@ export function SidebarAccounts({
         className={`grid transition-all duration-200 ${state.open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="max-h-[138px] overflow-y-auto pr-1">
-            {state.cards === null ? null : state.cards.length === 0 ? (
+          <div className="max-h-[138px] overflow-y-auto pr-1" aria-busy={skeleton ? 'true' : undefined}>
+            {skeleton ? (
+              <div data-skeleton="" className="grid">
+                <SkeletonStyle />
+                <AccountCardSkeleton />
+                <AccountCardSkeleton />
+              </div>
+            ) : state.cards === null ? null : state.cards.length === 0 ? (
               <p className="px-1 pb-1 text-xs text-inkdim">{t(locale, 'accounts.empty')}</p>
             ) : (
-              state.cards.map((card) => (
-                <AccountCardView
-                  key={card.id}
-                  card={card}
-                  mark={marks.markFor(card.provider)}
-                  active={activeAccountId === card.id}
-                  locale={locale}
-                  onOpen={() => onOpenAccount(card.id)}
-                />
-              ))
+              <SkeletonReveal active={reveal}>
+                {state.cards.map((card) => (
+                  <AccountCardView
+                    key={card.id}
+                    card={card}
+                    mark={marks.markFor(card.provider)}
+                    active={activeAccountId === card.id}
+                    locale={locale}
+                    onOpen={() => onOpenAccount(card.id)}
+                  />
+                ))}
+              </SkeletonReveal>
             )}
           </div>
         </div>

@@ -240,6 +240,21 @@ const runStartedItem = async (api: Api & RunEventFeed, board: PermissionBoard, i
 
 // --- IPC surface ------------------------------------------------------------------------------------
 
+/** The design harness's slow mode: `DOCKET_API_DELAY_MS` holds every API reply back for this
+ *  many milliseconds so loading standings stay on screen long enough to see (and to audit).
+ *  Only e2e/design-run.mjs's --slow ever sets it; read once here — the composition root — and
+ *  nowhere else. Unset or unparsable means no delay, exactly today's behaviour. */
+const API_DELAY_MS = (() => {
+  const parsed = Number(process.env.DOCKET_API_DELAY_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+})();
+
+const withDesignDelay = async <T>(reply: Promise<T>): Promise<T> => {
+  const value = await reply;
+  if (API_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, API_DELAY_MS));
+  return value;
+};
+
 const windows = new Set<BrowserWindow>();
 
 /** The api validates ids and shapes on its own side (A-21); these guards only keep malformed
@@ -264,7 +279,7 @@ const registerIpc = (api: Api): void => {
       ? (commandValue as Parameters<Api['command']>[1])
       : undefined;
     if (actor === undefined || command === undefined) return { ok: false as const, code: 'unknown' };
-    return api.command(actor, command);
+    return withDesignDelay(api.command(actor, command));
   });
 
   ipcMain.handle('docket:query', (_event, queryValue: unknown) => {
@@ -272,7 +287,7 @@ const registerIpc = (api: Api): void => {
       ? (queryValue as Parameters<Api['query']>[0])
       : undefined;
     if (query === undefined) return { ok: false as const, code: 'unknown' };
-    return api.query(query);
+    return withDesignDelay(api.query(query));
   });
 };
 

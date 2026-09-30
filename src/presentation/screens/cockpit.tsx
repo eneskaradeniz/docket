@@ -13,7 +13,9 @@ import { formatAge } from '../components/cockpit-format';
 import { CockpitProjectCard } from '../components/cockpit-projects';
 import { CockpitSection } from '../components/cockpit-section';
 import { CockpitRunningRow } from '../components/cockpit-running';
-import { CockpitAlert, FirstRunCard, QuietRow, SectionHead, Skeleton } from '../components/cockpit-states';
+import { CockpitAlert, FirstRunCard, QuietRow, SectionHead } from '../components/cockpit-states';
+import { CockpitSkeleton } from '../components/cockpit-skeleton';
+import { SkeletonReveal, useSkeleton } from '../components/skeleton';
 import type { AccountCard } from '../stores/accounts-frame';
 import {
   COCKPIT_LIMITS,
@@ -88,6 +90,9 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
   const [expanded, setExpanded] = useState({ attention: false, running: false });
 
   const phase = cockpitPhase(state);
+  // The skeletons' anti-flicker gate (U-26): only a first load (no view yet) can show one, and
+  // only past its delay — a reload over the standing view never blanks the cockpit.
+  const { skeleton, reveal } = useSkeleton(phase === 'loading', () => Date.now());
   const view = state.view;
   const accountLabel = (accountId: string): string =>
     accounts?.find((card) => card.id === accountId)?.label ?? accountId;
@@ -128,32 +133,11 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
 
       {state.failed ? <CockpitAlert locale={locale} detail={staleDetail} onRetry={() => void store.retry()} /> : null}
 
-      {phase === 'loading' ? (
-        <div role="status" aria-label={t(locale, 'cockpit.loading')} className="grid gap-4">
-          <section className="grid gap-2">
-            <SectionHead title={t(locale, 'cockpit.section.attention')} count={null} />
-            <Skeleton className="h-14" />
-            <Skeleton className="h-14" />
-          </section>
-          <section className="grid gap-2">
-            <SectionHead title={t(locale, 'cockpit.section.running')} count={null} />
-            <Skeleton className="h-10" />
-            <Skeleton className="h-10" />
-          </section>
-          <section className="grid gap-2">
-            <SectionHead title={t(locale, 'cockpit.section.projects')} count={null} />
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
-              <Skeleton className="h-24" />
-              <Skeleton className="h-24" />
-              <Skeleton className="h-24" />
-            </div>
-          </section>
-        </div>
-      ) : null}
+      {skeleton ? <CockpitSkeleton locale={locale} /> : null}
 
-      {phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
+      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
 
-      {phase === 'failed-empty' ? (
+      {!skeleton && phase === 'failed-empty' ? (
         <>
           {(['attention', 'running', 'projects', 'closed'] as const).map((section) => (
             <section key={section} className="grid gap-2">
@@ -164,7 +148,8 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
         </>
       ) : null}
 
-      {phase === 'ready' && view !== null && attention !== null && running !== null && summary !== null ? (
+      {!skeleton && phase === 'ready' && view !== null && attention !== null && running !== null && summary !== null ? (
+        <SkeletonReveal active={reveal}>
         <div className={`grid gap-4 ${state.failed ? 'opacity-70' : ''}`}>
           <section className="grid gap-2">
             <SectionHead
@@ -261,6 +246,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
             )}
           </CockpitSection>
         </div>
+        </SkeletonReveal>
       ) : null}
     </div>
   );

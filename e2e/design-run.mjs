@@ -1,9 +1,10 @@
 // e2e/design-run.mjs — `npm run design`: opens the BUILT app on a fresh design seed for the
 // operator's eyes, no Playwright driving it. The seed comes from seedDesign() so the SEED=
 // parsing stays in design-app.mjs, and the child gets the same two env vars the E2E harness
-// uses. [--no-build] skips the build for a rerun on a fresh seed. Each phase prints a
-// `[design]` line before it starts, so the silent stretch between build and window reads as
-// progress, and a failure names its phase instead of showing a bare stack.
+// uses. [--no-build] skips the build for a rerun on a fresh seed; [--slow] delays every API
+// reply (DOCKET_API_DELAY_MS) so the loading skeletons stay on screen to be looked at. Each
+// phase prints a `[design]` line before it starts, so the silent stretch between build and
+// window reads as progress, and a failure names its phase instead of showing a bare stack.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -11,11 +12,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOT, seedDesign } from './design-app.mjs';
 
+/** The delay `--slow` asks for: long enough that every loading standing is plainly visible,
+ *  short enough that a walk through the screens stays quick. */
+export const SLOW_API_DELAY_MS = 1200;
+
 const PHASE_LINES = {
   build: '[design] building…',
   'skip-build': '[design] skipping build',
   seed: '[design] seeding…',
   launch: '[design] launching the app — close the window to end this command',
+  slow: `[design] slow mode — every API reply waits ${SLOW_API_DELAY_MS} ms`,
 };
 
 /** Pure: the line printed for a phase — the start line, or with a message the phase's
@@ -30,17 +36,20 @@ export function designPhaseLine(phase, failedMessage = null) {
 
 /** Pure: split argv into flags. An unknown word is an error so a typo cannot silently rebuild. */
 export function parseDesignRunArgs(argv) {
-  const flags = { noBuild: false };
+  const flags = { noBuild: false, slow: false };
   for (const arg of argv) {
     if (arg === '--no-build') flags.noBuild = true;
-    else throw new Error(`unknown argument: ${arg} (supported: --no-build)`);
+    else if (arg === '--slow') flags.slow = true;
+    else throw new Error(`unknown argument: ${arg} (supported: --no-build, --slow)`);
   }
   return flags;
 }
 
-/** Pure: the child env — the parent's plus exactly the three seed vars the harness uses. */
-export function designRunEnv(env, seed) {
-  return { ...env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' };
+/** Pure: the child env — the parent's plus exactly the three seed vars the harness uses, and
+ *  the slow mode's API delay only when asked for. */
+export function designRunEnv(env, seed, { slow = false } = {}) {
+  const base = { ...env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' };
+  return slow ? { ...base, DOCKET_API_DELAY_MS: String(SLOW_API_DELAY_MS) } : base;
 }
 
 /** Report a phase's failure and stop: the message goes to stderr with the phase named,
@@ -52,8 +61,9 @@ function failPhase(phase, error) {
 
 function main() {
   let noBuild;
+  let slow;
   try {
-    ({ noBuild } = parseDesignRunArgs(process.argv.slice(2)));
+    ({ noBuild, slow } = parseDesignRunArgs(process.argv.slice(2)));
   } catch (error) {
     failPhase('args', error);
   }
@@ -79,6 +89,7 @@ function main() {
   // The path is the operator's way back to the state (it stays in place until they clean tmp).
   console.log(`design data dir: ${seed.dataDir}`);
   console.log(`agent binary (fake): ${seed.agentBin}`);
+  if (slow) console.log(designPhaseLine('slow'));
   console.log(designPhaseLine('launch'));
   const electronBin = createRequire(import.meta.url)('electron');
   let child;
@@ -86,7 +97,7 @@ function main() {
     child = spawn(electronBin, [join(ROOT, 'dist-electron', 'main.js')], {
       cwd: ROOT,
       stdio: 'inherit',
-      env: designRunEnv(process.env, seed),
+      env: designRunEnv(process.env, seed, { slow }),
     });
   } catch (error) {
     failPhase('launch', error);
