@@ -39,12 +39,12 @@ describe('skeletonPhase', () => {
 
   it('a second load that starts inside the old show\'s tail still honours the minimum show', () => {
     const shownSince = 1150;
-    // The reload began at 1300; at 1320 the new load is inside its delay, but the old show's
+    // The reload began at 1400; at 1420 the new load is inside its delay, but the old show's
     // minimum (until 1450) keeps the skeleton up rather than blinking it away.
-    expect(skeletonPhase(1300, 1320, shownSince).visible).toBe(true);
+    expect(skeletonPhase(1400, 1420, shownSince).visible).toBe(true);
     // Past the minimum, still inside the new delay: hidden again until the new delay elapses.
-    expect(skeletonPhase(1300, 1440, shownSince).visible).toBe(false);
-    expect(skeletonPhase(1300, 1300 + MOTION.skeleton.delayMs, shownSince).visible).toBe(true);
+    expect(skeletonPhase(1400, 1460, shownSince).visible).toBe(false);
+    expect(skeletonPhase(1400, 1400 + MOTION.skeleton.delayMs, shownSince).visible).toBe(true);
   });
 
   it('an idle screen (never loading, never shown) stays hidden', () => {
