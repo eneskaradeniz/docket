@@ -19,6 +19,10 @@ export const formatAge = (locale: Locale, ms: number): string => {
   return relative.format(-Math.floor(hours / 24), 'day');
 };
 
+/** An instant for display (a limit's reopening): day, month and time in the active locale. */
+export const formatInstant = (locale: Locale, at: number): string =>
+  new Intl.DateTimeFormat(LOCALE_TAG[locale], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at);
+
 /** A wait older than a day reads as overdue on the row's age. */
 export const OVERDUE_MS = 24 * 60 * 60 * 1000;
 

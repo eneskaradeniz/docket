@@ -3,14 +3,17 @@
 // waiting count, the foot line the repo count and where the click leads.
 import type { CockpitView } from '../../api/queries';
 import { t, type Locale } from '../labels/t';
+import { showsLastActivity } from '../stores/cockpit';
+import { formatAge } from './cockpit-format';
 
 export interface CockpitProjectCardProps {
   readonly card: CockpitView['projects'][number];
   readonly locale: Locale;
+  readonly sinceMs: (at: number) => number;
   readonly onOpen: () => void;
 }
 
-export function CockpitProjectCard({ card, locale, onOpen }: CockpitProjectCardProps) {
+export function CockpitProjectCard({ card, locale, sinceMs, onOpen }: CockpitProjectCardProps) {
   const multi = card.repoCount > 1;
   const lamp = card.waiting > 0 ? 'bg-signal' : card.active > 0 ? 'bg-proceed' : 'border-[1.5px] border-bord';
   return (
@@ -37,7 +40,11 @@ export function CockpitProjectCard({ card, locale, onOpen }: CockpitProjectCardP
         ) : null}
       </span>
       <span className="flex items-center gap-2.5 text-[12px] text-inkdim">
-        {multi ? `${card.repoCount} ${t(locale, 'cockpit.card.repos')}` : t(locale, 'cockpit.card.singleRepo')}
+        {showsLastActivity(card) && card.lastActivityAt != null
+          ? `${t(locale, 'cockpit.card.lastActivity')} ${formatAge(locale, sinceMs(card.lastActivityAt))}`
+          : multi
+            ? `${card.repoCount} ${t(locale, 'cockpit.card.repos')}`
+            : t(locale, 'cockpit.card.singleRepo')}
         <span className="ml-auto font-mono text-[11.5px]">
           {t(locale, multi ? 'cockpit.card.toRoadmap' : 'cockpit.card.toBoard')} ›
         </span>

@@ -111,19 +111,46 @@ export const projectCardTarget = (card: Extract<CockpitView['projects'][number],
  *  the store re-asserts it so a longer reply never stretches the screen. */
 export const COCKPIT_LIMITS = { attention: 5, running: 6, closed: 5 } as const;
 
+type RunRow = CockpitView['running'][number];
+
+/** A queued row waits for a slot or a limit; every other row is an actually running stage (A-36). */
+export const isQueued = (run: RunRow): boolean => run.queued === true;
+
 /** The head's counts. `attention` is every attention item — the number the title bar's badge
- *  shows (U-10); `waiting` are those the operator or a clock holds, `blocked` the stopped ones. */
+ *  shows (U-10); `waiting` are those the operator or a clock holds, `blocked` the stopped ones.
+ *  `running` counts rows actually running, `queued` the ones waiting for their turn (A-36). */
 export const cockpitSummary = (
   view: CockpitView,
-): { readonly attention: number; readonly waiting: number; readonly blocked: number; readonly running: number } => {
+): {
+  readonly attention: number;
+  readonly waiting: number;
+  readonly blocked: number;
+  readonly running: number;
+  readonly queued: number;
+} => {
   const blocked = view.attention.filter((item) => item.kind === 'blocked').length;
+  const queued = view.running.filter(isQueued).length;
   return {
     attention: view.attention.length,
     waiting: view.attention.length - blocked,
     blocked,
-    running: view.running.length,
+    running: view.running.length - queued,
+    queued,
   };
 };
+
+/** The progress strip of a run row (A-35): the stage's 1-based position in its flow and the flow's
+ *  length; null when the api could not place the stage (both 0) or does not say. Pure. */
+export const stageStrip = (run: RunRow): { readonly index: number; readonly count: number } | null => {
+  const { stageIndex, stageCount } = run;
+  if (stageIndex === undefined || stageCount === undefined || stageIndex <= 0 || stageCount <= 0) return null;
+  return { index: Math.min(stageIndex, stageCount), count: stageCount };
+};
+
+/** Whether a project card shows "last activity": only a card with no active work and a known
+ *  stamp (A-38) — a busy card already says what is going on. Pure. */
+export const showsLastActivity = (card: CockpitView['projects'][number]): boolean =>
+  card.active === 0 && card.lastActivityAt !== undefined && card.lastActivityAt !== null;
 
 /** The rows a list shows and how many its fold hides; expanded shows everything. Pure. */
 export const limitRows = <T>(

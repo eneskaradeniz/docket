@@ -112,11 +112,12 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
         <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
         {phase === 'ready' && summary !== null ? (
           <p className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13px] text-inkdim">
-            {summary.attention === 0 && summary.running === 0 ? <Pulse tone="hollow">{t(locale, 'cockpit.head.idle')}</Pulse> : null}
-            {summary.attention === 0 && summary.running > 0 ? <Pulse tone="proceed">{t(locale, 'cockpit.head.ok')}</Pulse> : null}
+            {summary.attention === 0 && summary.running === 0 && summary.queued === 0 ? <Pulse tone="hollow">{t(locale, 'cockpit.head.idle')}</Pulse> : null}
+            {summary.attention === 0 && (summary.running > 0 || summary.queued > 0) ? <Pulse tone="proceed">{t(locale, 'cockpit.head.ok')}</Pulse> : null}
             {summary.waiting > 0 ? <Pulse tone="signal">{`${summary.waiting} ${t(locale, 'cockpit.head.waiting')}`}</Pulse> : null}
             {summary.blocked > 0 ? <Pulse tone="error">{`${summary.blocked} ${t(locale, 'cockpit.head.blocked')}`}</Pulse> : null}
             {summary.running > 0 ? <Pulse tone="proceed">{`${summary.running} ${t(locale, 'cockpit.head.running')}`}</Pulse> : null}
+            {summary.queued > 0 ? <Pulse tone="hollow">{`${summary.queued} ${t(locale, 'cockpit.head.queued')}`}</Pulse> : null}
           </p>
         ) : null}
       </header>
@@ -196,13 +197,13 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
           <section className="grid gap-2">
             <SectionHead
               title={t(locale, 'cockpit.section.running')}
-              count={view.running.length}
+              count={summary.running}
               action={fold('running', view.running.length, COCKPIT_LIMITS.running)}
             />
             {view.running.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.running.empty')} hint={t(locale, 'cockpit.running.hint')} />
             ) : (
-              <ul className="grid gap-1.5">
+              <ul className="grid gap-1.5 min-[1500px]:grid-cols-2">
                 {running.shown.map((run) => (
                   <li key={`${run.workOrderId}:${run.stage}`}>
                     <CockpitRunningRow
@@ -229,6 +230,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
                     key={card.project}
                     card={card}
                     locale={locale}
+                    sinceMs={store.sinceMs}
                     onOpen={() => (card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo))}
                   />
                 ))}

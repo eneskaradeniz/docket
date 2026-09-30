@@ -19,6 +19,8 @@ import {
   limitRows,
   projectCardTarget,
   recentClosed,
+  showsLastActivity,
+  stageStrip,
   type CockpitAsk,
   type CockpitChange,
   type CockpitChangeSignal,
@@ -351,11 +353,11 @@ describe('cockpit head and lists (U-21 redesign)', () => {
       attentionItem('d', 'limit_waiting', 4),
     ]);
     const summary = cockpitSummary({ ...view, running: [{ workOrderId: 'r', number: 2, stage: 'test', accountId: 'acc', startedAt: 1 }] });
-    expect(summary).toEqual({ attention: 4, waiting: 3, blocked: 1, running: 1 });
+    expect(summary).toEqual({ attention: 4, waiting: 3, blocked: 1, running: 1, queued: 0 });
   });
 
   it('U-21: an empty view summarises to zeros', () => {
-    expect(cockpitSummary(cockpitView([]))).toEqual({ attention: 0, waiting: 0, blocked: 0, running: 0 });
+    expect(cockpitSummary(cockpitView([]))).toEqual({ attention: 0, waiting: 0, blocked: 0, running: 0, queued: 0 });
   });
 
   it('U-21: a list shows at most its limit and reports how many are hidden; expanded shows all', () => {
@@ -397,5 +399,42 @@ describe('cockpit head and lists (U-21 redesign)', () => {
     await store.load();
     expect(store.state().failed).toBe(true);
     expect(store.state().loadedAt).toBe(7_000);
+  });
+});
+
+describe('cockpit — queue, stage strip and project activity (A-35 … A-38)', () => {
+  const runRow = (id: string, extra: Partial<CockpitView['running'][number]> = {}): CockpitView['running'][number] => ({
+    workOrderId: id,
+    number: 1,
+    stage: 'test',
+    accountId: 'acc',
+    startedAt: 1,
+    ...extra,
+  });
+
+  it('A-36: queued rows are counted apart — the head\'s "running" counts only rows actually running', () => {
+    const view: CockpitView = {
+      ...cockpitView([]),
+      running: [runRow('a', { queued: false }), runRow('b'), runRow('c', { queued: true, queuedReason: 'queue' }), runRow('d', { queued: true, queuedReason: 'limit' })],
+    };
+    expect(cockpitSummary(view)).toMatchObject({ running: 2, queued: 2 });
+  });
+
+  it('A-35: the stage strip shows the position in the flow; a zero count hides it (the stage left the flow)', () => {
+    expect(stageStrip(runRow('a', { stageIndex: 2, stageCount: 5 }))).toEqual({ index: 2, count: 5 });
+    expect(stageStrip(runRow('a', { stageIndex: 0, stageCount: 0 }))).toBeNull();
+    expect(stageStrip(runRow('a'))).toBeNull();
+    // A position past the end never draws more steps than the flow has.
+    expect(stageStrip(runRow('a', { stageIndex: 7, stageCount: 5 }))).toEqual({ index: 5, count: 5 });
+  });
+
+  it('A-38: a card with no active work shows its last activity; one with active work or no activity does not', () => {
+    const card = (active: number, lastActivityAt?: number | null): CockpitView['projects'][number] => ({
+      project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active, waiting: 0, ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
+    });
+    expect(showsLastActivity(card(0, 5_000))).toBe(true);
+    expect(showsLastActivity(card(2, 5_000))).toBe(false);
+    expect(showsLastActivity(card(0, null))).toBe(false);
+    expect(showsLastActivity(card(0))).toBe(false);
   });
 });
