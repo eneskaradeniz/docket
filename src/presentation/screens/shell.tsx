@@ -4,14 +4,16 @@
 // cockpit's route with the attention badge, and Ara, the search palette's door), then a fixed
 // 240px sidebar that is always open — the project → repo tree, the accounts frame (its own
 // disclosure) and the foot's settings control — next to the content area that mounts the
-// cockpit, a repo's board, a project's roadmap, a work order's detail, an account's view, or
-// the settings. The detail and the account view open in place of the screen they were reached
-// from (U-19): ‹ Geri returns to that screen with its scroll where the operator left it. The
-// centered search palette rides over it all: it searches the tree's own names and opens what a
-// tree row opens. The first-run wizard rides above everything: the shell mounts it, the wizard
-// store's `open` decides whether it shows at all (U-7). The badge mirrors the shell store: the
-// cockpit's attention count, present only while attention exists — zero renders nothing, never
-// a zero (U-10). Every user-visible string arrives through a label key (U-1).
+// cockpit, a repo's board, a project's roadmap, a work order's detail, or an account's view.
+// The detail and the account view open in place of the screen they were reached from (U-19):
+// ‹ Geri returns to that screen with its scroll where the operator left it. The centered search
+// palette rides over it all: it searches the tree's own names and opens what a tree row opens.
+// The settings panel rides the same way: the gear and the screens' shortcuts open it over the
+// current route, which stays underneath unchanged. The first-run wizard rides above everything:
+// the shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The
+// badge mirrors the shell store: the cockpit's attention count, present only while attention
+// exists — zero renders nothing, never a zero (U-10). Every user-visible string arrives through
+// a label key (U-1).
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ACTIVE_CLASS } from '../components/active-state';
@@ -34,6 +36,11 @@ import {
   type PaletteResult,
 } from '../stores/search-palette';
 import type { SettingsStore } from '../stores/settings';
+import {
+  CLOSED_SETTINGS_PANEL,
+  settingsPanelReducer,
+  type SettingsPanelOrigin,
+} from '../stores/settings-panel';
 import type { ShellStore } from '../stores/shell';
 import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
@@ -42,7 +49,7 @@ import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
 import { RoadmapScreen } from './roadmap';
-import { SettingsScreen } from './settings';
+import { SettingsPanel } from './settings';
 import { WizardScreen } from './wizard';
 
 export interface ShellScreenProps {
@@ -65,14 +72,14 @@ export interface ShellScreenProps {
 }
 
 /** Where the shell can be. Routes carry only ids; the screens load their own data. The roadmap
- *  route is the project row's and the board header's target; the page itself is its own screen. */
+ *  route is the project row's and the board header's target; the page itself is its own screen.
+ *  Settings is not a route: the panel overlays whichever route is current. */
 type ShellRoute =
   | { readonly name: 'cockpit' }
   | { readonly name: 'board'; readonly repo: string }
   | { readonly name: 'roadmap'; readonly project: string }
   | { readonly name: 'workOrder'; readonly id: string }
-  | { readonly name: 'account'; readonly id: string }
-  | { readonly name: 'settings' };
+  | { readonly name: 'account'; readonly id: string };
 
 /** The label the detail's back row carries — it names the screen the detail was opened from
  *  (U-19). */
@@ -91,8 +98,6 @@ const placeOf = (route: ShellRoute): TreePlace => {
   switch (route.name) {
     case 'cockpit':
       return { kind: 'cockpit' };
-    case 'settings':
-      return { kind: 'settings' };
     case 'roadmap':
       return { kind: 'roadmap', project: route.project };
     case 'board':
@@ -135,8 +140,10 @@ export function ShellScreen({
   const state = useSyncExternalStore(shell.subscribe, shell.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
   // The search palette's whole standing lives in the pure reducer; the shell only feeds it the
-  // tree and routes what it opens (U-15).
+  // tree and routes what it opens (U-15). The settings panel's standing lives the same way —
+  // open/close and the origin the close's focus rule reads, never a route.
   const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
+  const [settingsPanel, dispatchSettingsPanel] = useReducer(settingsPanelReducer, CLOSED_SETTINGS_PANEL);
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
@@ -153,14 +160,15 @@ export function ShellScreen({
   }, [route]);
   const wizardState = useSyncExternalStore(wizard.subscribe, wizard.state);
   // The wizard owns the screen and the focus while it is up: the palette stays away, or it would
-  // open beneath the wizard's overlay and steal its focus.
+  // open beneath the wizard's overlay and steal its focus. The settings panel owns the same
+  // standing while it is open.
   const wizardUp = wizardState.visible && !wizardState.checking;
   const openPalette = useCallback(
     (origin: PaletteOrigin): void => {
-      if (wizardUp) return;
+      if (wizardUp || settingsPanel.open) return;
       dispatchPalette({ type: 'open', origin });
     },
-    [wizardUp],
+    [wizardUp, settingsPanel.open],
   );
   // ⌘K (or Ctrl+K) opens the search palette (U-15) — the same door the title bar's Ara button is.
   useEffect(() => {
@@ -173,6 +181,32 @@ export function ShellScreen({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [openPalette]);
+  // The panel's three doors — the gear, the board header's shortcut, the account view's link —
+  // share the palette's one origin rule (a pointer-opened panel does not hand focus back on
+  // close). Two of the doors live in screens the shell does not own, so the pointer stamp is
+  // read here, on the window: a pointer press marks the next click a pointer's, any key press
+  // unmarks it, and the open reads the mark once.
+  const pointerOpenRef = useRef(false);
+  useEffect(() => {
+    const onPointerDown = (): void => {
+      pointerOpenRef.current = true;
+    };
+    const onKeyDown = (): void => {
+      pointerOpenRef.current = false;
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, []);
+  /** Opens the settings panel over the current route — the route stays where it is. */
+  const openSettings = useCallback((): void => {
+    const origin: SettingsPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
+    pointerOpenRef.current = false;
+    dispatchSettingsPanel({ type: 'open', origin });
+  }, []);
   // The board keeps its scroll across a detail round-trip: leaving a board for a detail or an
   // account view stamps it, returning restores it once the board has painted again (U-19).
   const prevRouteRef = useRef<ShellRoute>(route);
@@ -271,11 +305,11 @@ export function ShellScreen({
           <div className="mt-2.5 flex flex-none items-center justify-end px-0.5">
             <button
               type="button"
-              onClick={() => setRoute({ name: 'settings' })}
+              onClick={openSettings}
               aria-label={t(locale, 'nav.settings')}
               title={t(locale, 'nav.settings')}
               className={`grid h-8 w-8 flex-none place-items-center rounded-lg border ${
-                route.name === 'settings'
+                settingsPanel.open
                   ? `text-ink ${ACTIVE_CLASS}`
                   : 'border-bord text-inkdim hover:border-inkdim hover:text-ink'
               }`}
@@ -304,7 +338,7 @@ export function ShellScreen({
               onOpenWorkOrder={openWorkOrder}
               roadmapProject={roadmapProjectOf(route.repo)}
               onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
-              onOpenSettings={() => setRoute({ name: 'settings' })}
+              onOpenSettings={openSettings}
             />
           ) : null}
           {route.name === 'roadmap' ? (
@@ -324,7 +358,7 @@ export function ShellScreen({
               locale={locale}
               timeZone={timeZone}
               onOpenWorkOrder={openWorkOrder}
-              onOpenSettings={() => setRoute({ name: 'settings' })}
+              onOpenSettings={openSettings}
               onBack={() => setRoute(backRouteRef.current)}
             />
           ) : null}
@@ -337,7 +371,6 @@ export function ShellScreen({
               onBack={() => setRoute(backRouteRef.current)}
             />
           ) : null}
-          {route.name === 'settings' ? <SettingsScreen store={settings} locale={locale} localeStore={localeStore} /> : null}
         </main>
       </div>
 
@@ -348,6 +381,15 @@ export function ShellScreen({
         onMove={(delta) => dispatchPalette({ type: 'move', delta })}
         onOpen={openFromPalette}
         onClose={() => dispatchPalette({ type: 'close' })}
+      />
+
+      <SettingsPanel
+        open={settingsPanel.open}
+        origin={settingsPanel.origin}
+        onClose={() => dispatchSettingsPanel({ type: 'close' })}
+        store={settings}
+        locale={locale}
+        localeStore={localeStore}
       />
 
       <WizardScreen store={wizard} locale={locale} />

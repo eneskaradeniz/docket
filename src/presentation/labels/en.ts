@@ -215,6 +215,7 @@ export const EN: LabelBundle = {
   'success.permission.answer': 'Permission answer recorded.',
   'success.deploy.approve': 'Deploy approved and executed.',
   'nav.settings': 'Settings',
+  'settings.close': 'Close settings',
   'settings.section.accounts': 'Accounts',
   'settings.section.bindings': 'Role bindings',
   'settings.section.discovery': 'Provider discovery',

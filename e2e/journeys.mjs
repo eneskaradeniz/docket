@@ -134,14 +134,22 @@ for (const [size, theme] of combos) {
     await shot('roadmap');
   });
 
-  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens Settings", async () => {
+  await journey('J-6', "account card → account view → Ayarlar'da düzenle ↗ opens the settings panel; Esc closes and the account view is still there", async () => {
     await button('Hesapları gizle / göster'); // the frame starts collapsed; the cards need it open
     await click('Claude Max');
     await see('Ayarlar\'da düzenle');
     await shot('account');
     await click('Ayarlar\'da düzenle');
+    // The panel is an overlay, not a route: it opens over the account view, which stays
+    // underneath (blurred behind the scrim, still on the DOM) exactly as it was.
+    await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
     await see('Hesaplar');
-    await shot('settings');
+    await see('Ayarlar\'da düzenle');
+    await shot('settings-panel');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
+    await see('Ayarlar\'da düzenle');
+    await shot('closed-back-on-account');
   });
 
   await journey('J-7', '⌘K opens the palette and focuses its input', async () => {

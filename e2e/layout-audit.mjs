@@ -6,6 +6,10 @@
 // window and blurs what is behind it, the empty standing must show the input row alone and a
 // typed standing must grow the body under it:
 //   palette: kokpit <WxH> <theme> ok|FAIL <detail>
+// and one for the settings panel, opened once through the sidebar's gear: the panel must sit
+// centred and wholly inside the window at its min() size, no control it carries may reach past
+// the window or the panel's own box (L-3's rule, measured while the panel is up):
+//   settings: kokpit <WxH> <theme> ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
 // Two targets share the same rules and differ only in their selector map:
@@ -36,8 +40,8 @@ const PROTOTYPE_SELECTORS = {
 
 // Hooks the app carries: its nav landmark, <main>, and the stable hooks of the rev-8 screens —
 // the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
-// the accounts frame and its collapsible body (#377), the cockpit's closed-list heading, and
-// the search palette's panel and scrim.
+// the accounts frame and its collapsible body (#377), the cockpit's closed-list heading, the
+// search palette's panel and scrim, and the settings panel's panel and scrim.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
@@ -51,6 +55,8 @@ const APP_SELECTORS = {
   palette: '[data-search-palette]',
   paletteScrim: '[data-search-scrim]',
   paletteBody: '[data-search-body]',
+  settingsPanel: '[data-settings-panel]',
+  settingsScrim: '[data-settings-scrim]',
 };
 
 const parseArgs = (argv) => {
@@ -169,6 +175,92 @@ async function paletteCheck(target) {
   };
 }
 
+/** The settings panel's own measurement: the sidebar's gear opens it over the cockpit. The panel
+ *  must sit centred and wholly inside the window at its min() size (the 1024×640 minimum fits it
+ *  by construction), over a scrim that covers the window and blurs what is behind it, and no
+ *  control it carries may reach past the window or the panel's own box (L-3's rule, measured
+ *  while the panel is up). The panel eases in with the palette's motion numbers, so the
+ *  measurement waits for the running transition to settle. Esc closes it again. */
+async function settingsPanelCheck(target) {
+  const { page, selectors } = target;
+  const panelIdle = () =>
+    page.waitForFunction(
+      (sel) => {
+        const panel = document.querySelector(sel);
+        if (panel === null) return false;
+        // Opacity is the longest leg of the open — at 1 the rise and scale have landed too — and
+        // an idle animation set means nothing is still moving.
+        return (
+          parseFloat(getComputedStyle(panel).opacity) > 0.999 && panel.getAnimations().length === 0
+        );
+      },
+      selectors.settingsPanel,
+      { timeout: 4000 },
+    );
+
+  // The gear is icon-only; its accessible name is the bundle's settings label.
+  await page.getByRole('button', { name: 'Ayarlar' }).first().click({ timeout: 4000 });
+  await page.waitForSelector(selectors.settingsPanel, { timeout: 4000 });
+  await panelIdle();
+  const m = await page.evaluate(([panelSel, scrimSel]) => {
+    const panel = document.querySelector(panelSel);
+    const scrim = document.querySelector(scrimSel);
+    if (panel === null || scrim === null) return null;
+    const r = panel.getBoundingClientRect();
+    const s = scrim.getBoundingClientRect();
+    const cs = getComputedStyle(scrim);
+    // L-3's containment, judged against the panel itself: a control the panel carries must lie
+    // inside the panel's box, not only inside the window.
+    const outside = [];
+    const visible = (el) => {
+      const b = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return b.width > 0 && b.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    for (const el of panel.querySelectorAll('button, input, select, textarea')) {
+      if (!visible(el)) continue;
+      const b = el.getBoundingClientRect();
+      if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5) {
+        outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
+      }
+    }
+    return {
+      cx: (r.left + r.right) / 2,
+      cy: (r.top + r.bottom) / 2,
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      w: r.width,
+      h: r.height,
+      iw: innerWidth,
+      ih: innerHeight,
+      covers: s.left <= 0 && s.top <= 0 && s.right >= innerWidth && s.bottom >= innerHeight,
+      blurs: cs.backdropFilter !== '' && cs.backdropFilter !== 'none',
+      outside,
+    };
+  }, [selectors.settingsPanel, selectors.settingsScrim]);
+  await page.keyboard.press('Escape');
+  await page.locator(selectors.settingsPanel).waitFor({ state: 'detached', timeout: 4000 });
+  if (m === null) return { ok: false, detail: 'settings panel elements not found' };
+  const dx = Math.abs(m.cx - m.iw / 2);
+  const dy = Math.abs(m.cy - m.ih / 2);
+  const wantW = Math.min(880, m.iw - 64);
+  const wantH = Math.min(580, m.ih - 64);
+  const inside = m.left >= -0.5 && m.top >= -0.5 && m.right <= m.iw + 0.5 && m.bottom <= m.ih + 0.5;
+  const sized = Math.abs(m.w - wantW) <= 0.5 && Math.abs(m.h - wantH) <= 0.5;
+  const ok =
+    dx <= 0.5 && dy <= 0.5 && inside && sized && m.covers && m.blurs && m.outside.length === 0;
+  return {
+    ok,
+    detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} want ${wantW}x${wantH} ${
+      inside ? 'inside' : 'overflows the window'
+    } controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} scrim ${
+      m.covers ? 'covers' : 'gaps'
+    } blur ${m.blurs ? 'yes' : 'no'}`,
+  };
+}
+
 // --- app target --------------------------------------------------------------------------------------
 async function openApp() {
   await acquireE2eLock(ROOT);
@@ -224,7 +316,8 @@ for (const theme of THEMES) {
         lines += 1;
         console.log(`${r.id}: ${label} ${status} ${r.detail}`);
       }
-      // The palette is measured open once per size × theme, on the cockpit screen.
+      // The palette is measured open once per size × theme, on the cockpit screen; the settings
+      // panel is measured the same way, through the sidebar's gear.
       if (screen === 'kokpit' && target.selectors.palette) {
         let r;
         try {
@@ -235,6 +328,17 @@ for (const theme of THEMES) {
         if (!r.ok) failures += 1;
         lines += 1;
         console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      }
+      if (screen === 'kokpit' && target.selectors.settingsPanel) {
+        let r;
+        try {
+          r = await settingsPanelCheck(target);
+        } catch (error) {
+          r = { ok: false, detail: `settings panel unreachable: ${String(error).split('\n')[0]}` };
+        }
+        if (!r.ok) failures += 1;
+        lines += 1;
+        console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
       }
     }
   }
