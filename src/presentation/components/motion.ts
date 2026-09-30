@@ -45,6 +45,12 @@ export const MOTION = {
     pulseMs: 1800,
   },
   reducedMs: 80,
+  // The loading skeletons' anti-flicker numbers (U-26): a load faster than the delay never
+  // flashes one, and a shown skeleton holds for its minimum show even if the reply races in.
+  skeleton: {
+    delayMs: 150,
+    minShowMs: 300,
+  },
 } as const;
 
 /** The same numbers as CSS custom properties, computed once and set on the overlay's root:
