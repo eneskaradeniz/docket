@@ -3,8 +3,9 @@
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The app target adds one more line per size × theme for the search palette, measured open on the
 // cockpit screen (⌘K): the panel must sit in the window's centre over a scrim that covers the
-// window and blurs what is behind it, the empty standing must show the input row alone and a
-// typed standing must grow the body under it:
+// window and blurs what is behind it, the empty standing must show the input row alone, a typed
+// standing must grow the body under it, and the history standing (an opened query remembered,
+// then Temizle) must grow under its head and collapse back to the input alone:
 //   palette: kokpit <WxH> <theme> ok|FAIL <detail>
 // and one for the settings panel, opened once through the sidebar's gear: the panel must sit
 // centred and wholly inside the window at its min() size, no control it carries may reach past
@@ -41,7 +42,7 @@ const PROTOTYPE_SELECTORS = {
 // Hooks the app carries: its nav landmark, <main>, and the stable hooks of the rev-8 screens —
 // the board's Kanban track and scroller (#379), the detail's left column and live pane (#379),
 // the accounts frame and its collapsible body (#377), the cockpit's closed-list heading, the
-// search palette's panel and scrim, and the settings panel's panel and scrim.
+// search palette's panel, scrim, body and history head, and the settings panel's panel and scrim.
 const APP_SELECTORS = {
   sidebar: 'nav[aria-label]',
   main: 'main',
@@ -57,6 +58,7 @@ const APP_SELECTORS = {
   palette: '[data-search-palette]',
   paletteScrim: '[data-search-scrim]',
   paletteBody: '[data-search-body]',
+  paletteHistory: '[data-search-history]',
   settingsPanel: '[data-settings-panel]',
   settingsScrim: '[data-settings-scrim]',
 };
@@ -94,10 +96,15 @@ async function openPrototype(path) {
 /** The palette's own measurement: ⌘K opens it, the panel must sit centred in the window over a
  *  scrim that covers the whole window and blurs what is behind it. The palette eases in and out
  *  (backdrop 320ms; panel 380ms, 90ms behind; the body folds in 280ms), so each measurement
- *  waits for the running transition to settle instead of sleeping. It measures both standings:
- *  the empty one shows the input row alone (zero body), a typed one grows the body under it.
- *  Esc closes it again. */
-async function paletteCheck(target) {
+ *  waits for the running transition to settle instead of sleeping. It measures three standings:
+ *  the empty one shows the input row alone (zero body), a typed one grows the body under it, and
+ *  the history one — an opened query remembered — grows the body under the "Son aramalar" head
+ *  until Temizle walks the rows out and the body collapses; Temizle also leaves the stored
+ *  history empty for the next size × theme. Esc closes it again.
+ *  The palette's history persists in the app profile across runs; the check starts from a known
+ *  empty one — the key is cleared and the page reloaded (the theme attribute follows the reload
+ *  back in). */
+async function paletteCheck(target, theme) {
   const { page, selectors } = target;
   const panelSettled = () =>
     page.waitForFunction(
@@ -125,13 +132,22 @@ async function paletteCheck(target) {
       [selectors.paletteBody, `${selectors.palette} [role="listbox"]`, open],
       { timeout: 4000 },
     );
+  const paletteFocused = () =>
+    page.waitForFunction(
+      (sel) => document.activeElement?.closest(sel) !== null,
+      selectors.palette,
+      { timeout: 4000 },
+    );
+
+  await page.evaluate(() => window.localStorage.removeItem('docket.searchHistory.v1'));
+  await page.reload();
+  await page.waitForSelector('nav');
+  await page.evaluate((t) => {
+    document.documentElement.dataset.theme = t;
+  }, theme);
 
   await page.keyboard.press('Meta+K');
-  await page.waitForFunction(
-    (sel) => document.activeElement?.closest(sel) !== null,
-    selectors.palette,
-    { timeout: 4000 },
-  );
+  await paletteFocused();
   await panelSettled();
   const m = await page.evaluate(([panelSel, scrimSel, bodySel]) => {
     const panel = document.querySelector(panelSel);
@@ -160,20 +176,65 @@ async function paletteCheck(target) {
     (bodySel) => document.querySelector(bodySel)?.getBoundingClientRect().height ?? null,
     selectors.paletteBody,
   );
+  // The history standing: opening the first result remembers the query ('antero'), and the
+  // reopened palette lists it under the head. Temizle walks the rows out — the body collapses
+  // to the input alone and focus stays in the input.
+  await page.keyboard.press('Enter');
+  await page.locator(selectors.palette).waitFor({ state: 'detached', timeout: 4000 });
+  await page.keyboard.press('Meta+K');
+  await paletteFocused();
+  await panelSettled();
+  await bodySettled(true);
+  const historyM = await page.evaluate(([headSel, bodySel]) => {
+    const head = document.querySelector(headSel);
+    const body = document.querySelector(bodySel);
+    const input = document.querySelector('[data-search-palette] input');
+    return {
+      listed: head?.textContent ?? '',
+      h: body?.getBoundingClientRect().height ?? -1,
+      inputIsText: input?.type === 'text',
+    };
+  }, [selectors.paletteHistory, selectors.paletteBody]);
+  const historyOk =
+    historyM.h > 1 &&
+    historyM.listed.includes('Son aramalar') &&
+    historyM.listed.includes('Temizle') &&
+    historyM.inputIsText;
+  await page.getByRole('button', { name: 'Temizle' }).first().click({ timeout: 4000 });
+  await bodySettled(false);
+  const clearedBody = await page.evaluate(
+    (bodySel) => document.querySelector(bodySel)?.getBoundingClientRect().height ?? null,
+    selectors.paletteBody,
+  );
+  const focusAfterClear = await page.evaluate(
+    (sel) => document.activeElement?.closest(sel) !== null && document.activeElement?.tagName === 'INPUT',
+    selectors.palette,
+  );
   await page.keyboard.press('Escape');
   await page.locator(selectors.palette).waitFor({ state: 'detached', timeout: 4000 });
   if (m === null) return { ok: false, detail: 'palette elements not found' };
-  if (typedBody === null) return { ok: false, detail: 'palette body not found' };
+  if (typedBody === null || clearedBody === null) return { ok: false, detail: 'palette body not found' };
   const dx = Math.abs(m.cx - m.iw / 2);
   const dy = Math.abs(m.cy - m.ih / 2);
   // Sub-1px body is the fold's subpixel dust, not a body; a typed one clears it by an order.
   const ok =
-    dx <= 0.5 && dy <= 0.5 && m.covers && m.blurs && m.w > 0 && m.emptyBody < 1 && typedBody > 1;
+    dx <= 0.5 &&
+    dy <= 0.5 &&
+    m.covers &&
+    m.blurs &&
+    m.w > 0 &&
+    m.emptyBody < 1 &&
+    typedBody > 1 &&
+    historyOk &&
+    clearedBody < 1 &&
+    focusAfterClear;
   return {
     ok,
     detail: `centre +${dx.toFixed(1)}/+${dy.toFixed(1)} panel ${Math.round(m.w)}x${Math.round(m.h)} body ${
       Math.round(m.emptyBody)
-    }→${Math.round(typedBody)}px scrim ${m.covers ? 'covers' : 'gaps'} blur ${m.blurs ? 'yes' : 'no'}`,
+    }→${Math.round(typedBody)}px history ${Math.round(historyM.h)}→${Math.round(clearedBody)}px focus ${
+      focusAfterClear ? 'kept' : 'lost'
+    } scrim ${m.covers ? 'covers' : 'gaps'} blur ${m.blurs ? 'yes' : 'no'}`,
   };
 }
 
@@ -323,7 +384,7 @@ for (const theme of THEMES) {
       if (screen === 'kokpit' && target.selectors.palette) {
         let r;
         try {
-          r = await paletteCheck(target);
+          r = await paletteCheck(target, theme);
         } catch (error) {
           r = { ok: false, detail: `palette unreachable: ${String(error).split('\n')[0]}` };
         }

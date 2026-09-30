@@ -146,7 +146,16 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   typed character and folding away when it is cleared — it searches projects and
   repos by name (no other query types), ↑/↓ move, Enter opens the selected result (project →
   roadmap, repo → board, as the tree's rows do), Esc or a backdrop click closes, focus is
-  trapped while open and restored on close. The sort control cycles stored
+  trapped while open and restored on close. An empty query with remembered searches lists them
+  under a "Son aramalar" header with a "Temizle" text button: ↑/↓ walk the rows, choosing one
+  (click or Enter) fills the input with that query and runs it at once, a row's × removes that
+  entry, and "Temizle" empties the list at once — the rows walk out with the row-exit motion and
+  the body folds back to the input alone. A query is remembered only when a result is opened
+  from the palette (Enter or click), never per keystroke or on a dismiss: trimmed, at least two
+  characters, at most 60, deduped case-insensitively with the fresh entry first, at most ten
+  (the oldest drops); it persists per viewer in local storage (`docket.searchHistory.v1`), read
+  tolerantly so a corrupt value reads as empty — queries are project and repo names, never
+  anything secret. The sort control cycles stored
   order → A→Z → recently used; the choice persists locally (manual reordering arrives later).
 - **U-16** (accounts frame) The frame collapses and expands and starts collapsed; at most two account cards are visible,
   the rest scroll. A card shows the label plus one mini bar per window (window label and normalized
