@@ -101,6 +101,7 @@ const defOf = (overrides?: Partial<ProviderDef>): ProviderDef => ({
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-cli' },
+  mark: null,
   ...overrides,
 });
 

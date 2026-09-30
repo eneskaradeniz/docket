@@ -1,5 +1,6 @@
 // The provider definition contract: a CLI is described by pure data, never by engine code.
 // Contract: docs/v2/providers.md → "Provider definition (data)".
+import type { ProviderMark } from '../../../application/index';
 import type { ProviderCapabilities } from '../../../domain/index';
 
 /**
@@ -53,4 +54,8 @@ export interface ProviderDef {
   /** Declared; refined by probes at discovery. */
   readonly capabilities: ProviderCapabilities;
   readonly installHint: { readonly url: string };
+  /** The provider's own mark: one SVG path in its viewBox, rendered with `currentColor`. The
+   *  mark identifies the provider only and is copied unmodified from the provider's official
+   *  file; `null` when no official file exists — a mark is never redrawn. */
+  readonly mark: ProviderMark | null;
 }

@@ -348,6 +348,7 @@ const appServerDef = (logPath: string): ProviderDef => ({
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-app-server' },
+  mark: null,
 });
 
 const acpDef = (logPath: string): ProviderDef => ({
@@ -372,6 +373,7 @@ const acpDef = (logPath: string): ProviderDef => ({
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-acp' },
+  mark: null,
 });
 
 /** One leg's transport, built exactly as the composition root would wire it for that provider. */
