@@ -1,4 +1,4 @@
-// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-7 of docs/v2/ui.md → "Verifying the shell",
+// e2e/journeys.mjs — `npm run test:journeys`. J-1 … J-8 of docs/v2/ui.md → "Verifying the shell",
 // driven through the BUILT app on the design seed (e2e/seed-design.ts). Every step asserts visible
 // text and saves a screenshot to e2e/.out/journeys/.
 //
@@ -339,6 +339,54 @@ for (const [sizeName, theme] of combos) {
     await page.keyboard.press('Escape');
     await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
     await shot('palette-closed');
+  });
+
+  await journey('J-8', 'cockpit → project → back → forward; the detail’s ‹ Geri rides the same history', async () => {
+    const backButton = page.getByRole('button', { name: 'Geri ⌘[' });
+    const forwardButton = page.getByRole('button', { name: 'İleri ⌘]' });
+    const disabled = (locator) => locator.getAttribute('aria-disabled');
+    // The history starts empty: both chevrons stand dimmed at the ends (U-25).
+    await see('Senden bekleyenler');
+    assert.equal(await disabled(backButton), 'true', 'back must dim on the cockpit, the history’s first entry');
+    assert.equal(await disabled(forwardButton), 'true', 'forward must dim with nothing to redo');
+    await shot('ends-dimmed');
+    // A project from the tree is the history's second entry.
+    await click('Antero');
+    await see('Yol haritası');
+    assert.equal(await disabled(backButton), null, 'back must come alive once somewhere was left');
+    await shot('roadmap');
+    // ⌘[ returns to the cockpit — the chevrons and the keys are the same doors.
+    await page.keyboard.press('Meta+[');
+    await see('Senden bekleyenler');
+    assert.equal(await disabled(forwardButton), null, 'forward must come alive once somewhere was left');
+    await shot('back-on-cockpit');
+    // ⌘] returns to the roadmap.
+    await page.keyboard.press('Meta+]');
+    await see('Yol haritası');
+    await shot('forward-on-roadmap');
+    // While the palette is open the keys belong to it: ⌘[ changes nothing underneath.
+    await page.keyboard.press('Meta+K');
+    await page.waitForSelector('[data-search-palette]', { timeout: WAIT });
+    await page.keyboard.press('Meta+[');
+    await see('Yol haritası');
+    await page.keyboard.press('Escape');
+    await page.locator('[data-search-palette]').waitFor({ state: 'detached', timeout: WAIT });
+    await shot('palette-owns-the-keys');
+    // The bar's buttons do the same walk, and the detail's ‹ Geri is the same back (U-25): its
+    // row names the screen behind it in the history.
+    await button('Geri ⌘[');
+    await see('Senden bekleyenler');
+    await button('İleri ⌘]');
+    await see('Yol haritası');
+    await click('Mobil login');
+    await see('İE-0026');
+    await click('İE-0026');
+    await see('Bu aşamada senden beklenen');
+    await shot('detail');
+    await click('‹ Geri · yol haritası');
+    await see('Yol haritası');
+    assert.equal(await disabled(forwardButton), null, 'the detail’s Geri leaves it redoable');
+    await shot('back-from-detail');
   });
 
   await handle.app.close();

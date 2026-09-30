@@ -75,6 +75,8 @@ const APP_SELECTORS = {
   paletteHistory: '[data-search-history]',
   titleBar: '[data-title-bar]',
   updateButton: '[data-update-button]',
+  navBack: '[data-nav-back]',
+  navForward: '[data-nav-forward]',
   settingsUpdate: '[data-settings-update]',
   settingsPanel: '[data-settings-panel]',
   settingsScrim: '[data-settings-scrim]',
@@ -398,17 +400,18 @@ async function settingsPanelCheck(target) {
   };
 }
 
-/** The title bar's Update button (U-24): the bar stays a 40px strip with the wordmark at its
- *  left, and the button — the design seed fakes an available update, so it is up — sits 28px
- *  tall at the bar's right end, 16px clear of the window's right edge (the bar's own padding,
- *  so the gap belongs to the bar, not the button), outside the drag region. With `walk`, the
- *  button is also driven through its standings once per run: apply turns the label into a
- *  disabled percent, and the download's end turns it into the restart label. The ready click is
- *  left alone — it is the restart itself. */
+/** The title bar's Update button (U-24) and history chevrons (U-25): the bar stays a 40px strip
+ *  with the wordmark at its left, and the button — the design seed fakes an available update, so
+ *  it is up — sits 28px tall at the bar's right end, 16px clear of the window's right edge (the
+ *  bar's own padding, so the gap belongs to the bar, not the button), outside the drag region.
+ *  The two history chevrons sit on the bar's left half, 12px after the wordmark, 28×28, both
+ *  no-drag. With `walk`, the button is also driven through its standings once per run: apply
+ *  turns the label into a disabled percent, and the download's end turns it into the restart
+ *  label. The ready click is left alone — it is the restart itself. */
 async function titleBarCheck(target, walk) {
   const { page, selectors } = target;
   const m = await page.evaluate(
-    ([barSel, btnSel]) => {
+    ([barSel, btnSel, backSel, forwardSel]) => {
       const bar = document.querySelector(barSel);
       const btn = document.querySelector(btnSel);
       if (bar === null) return null;
@@ -416,12 +419,30 @@ async function titleBarCheck(target, walk) {
       const wordmark = [...bar.children].find((el) => (el.textContent ?? '') === 'Docket') ?? null;
       const b = btn ? btn.getBoundingClientRect() : null;
       const cs = btn ? getComputedStyle(btn) : null;
+      const navBtn = (sel) => {
+        const el = sel === null ? null : document.querySelector(sel);
+        if (el === null) return null;
+        const box = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          left: box.left,
+          top: box.top,
+          bottom: box.bottom,
+          w: box.width,
+          h: box.height,
+          noDrag: style.webkitAppRegion ?? style.getPropertyValue('-webkit-app-region'),
+        };
+      };
       return {
         h: r.height,
         top: r.top,
         right: r.right,
+        leftHalf: r.left + r.width / 2,
         windowRight: window.innerWidth,
         wordmarkLeft: wordmark ? wordmark.getBoundingClientRect().left : null,
+        wordmarkRight: wordmark ? wordmark.getBoundingClientRect().right : null,
+        navBack: navBtn(backSel),
+        navForward: navBtn(forwardSel),
         btn:
           b === null
             ? null
@@ -434,7 +455,7 @@ async function titleBarCheck(target, walk) {
               },
       };
     },
-    [selectors.titleBar, selectors.updateButton],
+    [selectors.titleBar, selectors.updateButton, selectors.navBack ?? null, selectors.navForward ?? null],
   );
   let walkNote = 'not walked';
   if (walk && m !== null && m.btn !== null) {
@@ -469,12 +490,36 @@ async function titleBarCheck(target, walk) {
   const inBar = m.btn.top >= m.top - 0.5 && m.btn.bottom <= m.top + m.h + 0.5 && m.btn.right <= m.right + 0.5;
   const rightGap = m.windowRight - m.btn.right;
   const gapOk = Math.abs(rightGap - 16) <= 1;
-  const ok = heightOk && wordmarkOk && btnHeightOk && inBar && gapOk && m.btn.noDrag === 'no-drag';
+  // The history pair (U-25): both 28×28, inside the bar, on the bar's left half after the
+  // wordmark, back leading forward, each 12px (wordmark→back) or 8px (back→forward) apart, no-drag.
+  const navMeasured = m.navBack !== null && m.navForward !== null;
+  const navOk = !navMeasured
+    ? false
+    : Math.abs(m.navBack.w - 28) <= 0.5 &&
+      Math.abs(m.navBack.h - 28) <= 0.5 &&
+      Math.abs(m.navForward.w - 28) <= 0.5 &&
+      Math.abs(m.navForward.h - 28) <= 0.5 &&
+      m.navBack.top >= m.top - 0.5 &&
+      m.navBack.bottom <= m.top + m.h + 0.5 &&
+      m.navForward.top >= m.top - 0.5 &&
+      m.navForward.bottom <= m.top + m.h + 0.5 &&
+      m.navBack.left > (m.wordmarkRight ?? Infinity) &&
+      m.navForward.left > m.navBack.left &&
+      m.navForward.left < m.leftHalf &&
+      Math.abs(m.navBack.left - (m.wordmarkRight ?? -Infinity) - 12) <= 0.5 &&
+      m.navBack.noDrag === 'no-drag' &&
+      m.navForward.noDrag === 'no-drag';
+  const navNote = !navMeasured
+    ? 'nav chevrons not found'
+    : `nav ${m.navBack.h.toFixed(0)}px ${navOk ? 'after the wordmark' : 'misplaced'} gap ${(
+        m.navBack.left - (m.wordmarkRight ?? NaN)
+      ).toFixed(1)}px drag ${m.navBack.noDrag}/${m.navForward.noDrag}`;
+  const ok = heightOk && wordmarkOk && btnHeightOk && inBar && gapOk && m.btn.noDrag === 'no-drag' && navOk;
   return {
     ok,
     detail: `bar ${m.h.toFixed(0)}px wordmark ${m.wordmarkLeft === null ? 'missing' : m.wordmarkLeft.toFixed(0)}px button ${m.btn.h.toFixed(0)}px ${
       inBar ? 'in the bar' : 'outside the bar'
-    } right gap ${rightGap.toFixed(1)}px ${gapOk ? '(want 16)' : '(want 16, off)'} drag ${m.btn.noDrag} ${walkNote}`,
+    } right gap ${rightGap.toFixed(1)}px ${gapOk ? '(want 16)' : '(want 16, off)'} drag ${m.btn.noDrag} ${navNote} ${walkNote}`,
   };
 }
 
