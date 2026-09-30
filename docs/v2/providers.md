@@ -39,6 +39,7 @@ interface ProviderDef {
   resume: 'specify' | 'capture' | 'protocol' | 'none';
   capabilities: ProviderCapabilities;           // declared; refined by probes at discovery
   installHint: { url: string };
+  mark: ProviderMark | null;                    // the provider's own mark; null when no official file exists — never redrawn
 }
 
 `buildLaunch` receives a `LaunchInput`:
@@ -268,3 +269,24 @@ dependency; the command runner is injected so tests script it):
   `AgentEvent` stream (`session_started → text → usage → finished`) and exactly one `finished`
   (reason `completed`, last event) per stage run; transport-specific kinds beyond the common set are
   expected and do not count against equality.
+
+---
+
+## Provider marks (P-25)
+
+Port (application, `ports/provider-marks.ts`); the built-in implementation sits beside the defs
+(`src/infrastructure/providers/defs/builtin-provider-marks.ts`) and the composition root hands it
+to `createApi` as its marks argument (the discovery pattern; the query side is A-41 in
+[application.md](application.md)):
+
+```ts
+export interface ProviderMark { readonly viewBox: string; readonly path: string }
+export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
+```
+
+- **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
+  `d` data copied unmodified from the provider's official file, rendered with `currentColor`,
+  24×24 viewBox — or `null` when no official file exists (`codex`, `agy`); a mark is never redrawn.
+  The marks identify the provider only. `isProviderDef` rejects a mark that is neither `null` nor
+  a `{ viewBox, path }` of non-empty strings, and `builtinProviderMarks` keys every built-in def
+  id to its own mark, so adding a provider touches no code beyond its def.
