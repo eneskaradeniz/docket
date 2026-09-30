@@ -17,6 +17,7 @@ import {
 } from '../stores/project-tree';
 import { ACTIVE_CLASS, ACTIVE_SOFT_CLASS } from './active-state';
 import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
+import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
 
 export interface SidebarTreeProps {
   readonly store: ProjectTreeStore;
@@ -139,9 +140,22 @@ const RepoRow = ({
   </button>
 );
 
+/** One project row's shape as a placeholder: the row's own height and padding, a lamp, a name
+ *  bar, a count pill — the same grammar the real rows render in (U-26). */
+const TreeRowSkeleton = () => (
+  <div className="flex h-8 items-center gap-2 rounded-control px-2.5">
+    <Skeleton radius="full" width="8px" height="8px" />
+    <Skeleton radius="control" width="52%" height="15px" />
+    <Skeleton radius="full" width="20px" height="18px" className="ml-auto" />
+  </div>
+);
+
 export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRepo }: SidebarTreeProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const rows = projectRows(orderTree(state.tree, state.sort, state.usedAt));
+  // Only a tree with nothing to show can carry a skeleton (U-26); a re-query over the standing
+  // rows never replaces them.
+  const { skeleton } = useSkeleton(state.loading && state.tree.length === 0, () => Date.now());
 
   return (
     <>
@@ -170,11 +184,19 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {state.tree.length === 0 ? (
+      <div className="min-h-0 flex-1 overflow-y-auto" aria-busy={skeleton ? 'true' : undefined}>
+        {skeleton ? (
+          <div data-skeleton="" className="grid py-1">
+            <SkeletonStyle />
+            {[0, 1, 2, 3, 4].map((row) => (
+              <TreeRowSkeleton key={row} />
+            ))}
+          </div>
+        ) : state.tree.length === 0 ? (
           <p className="px-2.5 py-1.5 text-xs text-inkdim">{t(locale, 'nav.projects.empty')}</p>
         ) : (
-          rows.map((row) =>
+          <SkeletonReveal>
+            {rows.map((row) =>
             row.kind === 'flat' ? (
               <ProjectRow
                 key={row.item.project}
@@ -228,7 +250,8 @@ export function SidebarTree({ store, selection, locale, onOpenProject, onOpenRep
                 </div>
               </div>
             ),
-          )
+          )}
+          </SkeletonReveal>
         )}
       </div>
     </>

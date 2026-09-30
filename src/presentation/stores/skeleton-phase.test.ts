@@ -7,14 +7,14 @@ import { MOTION } from '../components/motion';
 import { skeletonPhase } from './skeleton-phase';
 
 describe('skeletonPhase', () => {
-  it('a fast load never shows the skeleton: before the delay, and gone once loading ends', () => {
+  it('U-26: a fast load never shows the skeleton: before the delay, and gone once loading ends', () => {
     // Loading since 1000; the reply lands at 1100 — well inside the 150ms delay.
     expect(skeletonPhase(1000, 1050, null).visible).toBe(false);
     expect(skeletonPhase(1000, 1099, null).visible).toBe(false);
     expect(skeletonPhase(null, 1100, null).visible).toBe(false);
   });
 
-  it('a slow load shows the skeleton exactly at the delay boundary, not a moment earlier', () => {
+  it('U-26: a slow load shows the skeleton exactly at the delay boundary, not a moment earlier', () => {
     expect(skeletonPhase(1000, 1000 + MOTION.skeleton.delayMs - 1, null).visible).toBe(false);
     const at = skeletonPhase(1000, 1000 + MOTION.skeleton.delayMs, null);
     expect(at.visible).toBe(true);
@@ -22,7 +22,7 @@ describe('skeletonPhase', () => {
     expect(at.shownSince).toBe(1000 + MOTION.skeleton.delayMs);
   });
 
-  it('content that arrives 200ms into the display keeps the skeleton until the minimum show ends', () => {
+  it('U-26: content that arrives 200ms into the display keeps the skeleton until the minimum show ends', () => {
     const shownSince = 1150;
     // Still loading: visible with the stamp carried through untouched.
     const loading = skeletonPhase(1000, 1200, shownSince);
@@ -37,7 +37,7 @@ describe('skeletonPhase', () => {
     });
   });
 
-  it('a second load that starts inside the old show\'s tail still honours the minimum show', () => {
+  it('U-26: a second load that starts inside the old show\'s tail still honours the minimum show', () => {
     const shownSince = 1150;
     // The reload began at 1400; at 1420 the new load is inside its delay, but the old show's
     // minimum (until 1450) keeps the skeleton up rather than blinking it away.
@@ -47,7 +47,7 @@ describe('skeletonPhase', () => {
     expect(skeletonPhase(1400, 1400 + MOTION.skeleton.delayMs, shownSince).visible).toBe(true);
   });
 
-  it('an idle screen (never loading, never shown) stays hidden', () => {
+  it('U-26: an idle screen (never loading, never shown) stays hidden', () => {
     expect(skeletonPhase(null, 5000, null)).toEqual({ visible: false, shownSince: null });
   });
 });

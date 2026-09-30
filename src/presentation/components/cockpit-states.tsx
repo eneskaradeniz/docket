@@ -1,11 +1,11 @@
 // components/cockpit-states.tsx — the cockpit's non-data standings: the section head, the quiet
-// row an empty section shows, the skeleton, the error alert and the first-run card. An empty or
-// failed section always says what it means and what happens next — never a bare grey line.
+// row an empty section shows, the error alert and the first-run card. An empty or failed section
+// always says what it means and what happens next — never a bare grey line; the loading standing
+// is the shared skeleton composition (components/cockpit-skeleton.tsx).
 import type { ReactNode } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from './action-button';
-import { MOTION } from './motion';
 
 export interface SectionHeadProps {
   readonly title: string;
@@ -54,17 +54,6 @@ export function QuietRow({ title, hint, tone }: QuietRowProps) {
         {hint !== undefined ? <span>{hint}</span> : null}
       </span>
     </div>
-  );
-}
-
-/** One skeleton block; the shimmer is a slow pulse that stops under prefers-reduced-motion. */
-export function Skeleton({ className }: { readonly className: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`rounded-card border border-hairline bg-raised motion-safe:animate-pulse ${className}`}
-      style={{ animationDuration: `${MOTION.results.fadeMs * 8}ms` }}
-    />
   );
 }
 
