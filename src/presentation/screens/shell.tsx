@@ -1,24 +1,24 @@
 // screens/shell.tsx — the app shell (U-10's window): on darwin a 40px drag bar runs across the
 // top above everything (the native title strip is hidden there; the bar carries the traffic
-// lights' lane, the signal accent, the wordmark and the bar's two buttons — Anasayfa, the
-// cockpit's route with the attention badge, and Ara, the search palette's door), then a fixed
-// 240px sidebar that is always open — the project → repo tree, the accounts frame (its own
-// disclosure) and the foot's settings control — next to the content area that mounts the
-// cockpit, a repo's board, a project's roadmap, a work order's detail, or an account's view.
-// The detail and the account view open in place of the screen they were reached from (U-19):
-// ‹ Geri returns to that screen with its scroll where the operator left it. The centered search
-// palette rides over it all: it searches the tree's own names and opens what a tree row opens.
-// The settings panel rides the same way: the gear and the screens' shortcuts open it over the
-// current route, which stays underneath unchanged. The first-run wizard rides above everything:
-// the shell mounts it, the wizard store's `open` decides whether it shows at all (U-7). The
-// badge mirrors the shell store: the cockpit's attention count, present only while attention
-// exists — zero renders nothing, never a zero (U-10). Every user-visible string arrives through
-// a label key (U-1).
+// lights' lane, the signal accent, the wordmark and — only while an update waits — the Update
+// button at its right edge), then a fixed 240px sidebar that is always open — the four nav rows
+// (Anasayfa with the attention badge, Ara with its ⌘K hint, Telefon, Ayarlar — U-24), the
+// project → repo tree, and the accounts frame as the foot's only content — next to the content
+// area that mounts the cockpit, a repo's board, a project's roadmap, a work order's detail, or
+// an account's view. The detail and the account view open in place of the screen they were
+// reached from (U-19): ‹ Geri returns to that screen with its scroll where the operator left
+// it. The centered search palette rides over it all: it searches the tree's own names and opens
+// what a tree row opens. The settings panel rides the same way: the nav's Telefon and Ayarlar
+// rows and the screens' shortcuts open it over the current route, which stays underneath
+// unchanged. The first-run wizard rides above everything: the shell mounts it, the wizard
+// store's `open` decides whether it shows at all (U-7). The badge mirrors the shell store: the
+// cockpit's attention count, present only while attention exists — zero renders nothing, never
+// a zero (U-10). Every user-visible string arrives through a label key (U-1).
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
-import { ACTIVE_CLASS } from '../components/active-state';
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
+import { SidebarNav } from '../components/sidebar-nav';
 import { SidebarTree } from '../components/sidebar-tree';
 import { TitleBar } from '../components/title-bar';
 import { t, type Locale } from '../labels/t';
@@ -42,6 +42,7 @@ import {
   type SettingsPanelOrigin,
 } from '../stores/settings-panel';
 import type { ShellStore } from '../stores/shell';
+import type { UpdateStore } from '../stores/update';
 import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
 import { AccountViewScreen } from './account-view';
@@ -49,7 +50,7 @@ import { BoardScreen } from './board';
 import { CockpitScreen } from './cockpit';
 import { WorkOrderDetailScreen } from './detail';
 import { RoadmapScreen } from './roadmap';
-import { SettingsPanel } from './settings';
+import { SettingsPanel, type SettingsSection } from './settings';
 import { WizardScreen } from './wizard';
 
 export interface ShellScreenProps {
@@ -62,6 +63,8 @@ export interface ShellScreenProps {
   readonly detail: WorkOrderDetailStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
+  /** The app-update standing the title bar's button and the panel's Güncelleme section read. */
+  readonly update: UpdateStore;
   readonly wizard: WizardStore;
   /** The locale store's handle for the settings screen's language control (U-9); the active
    *  bundle itself travels as `locale`, refreshed by the root's subscription. */
@@ -84,13 +87,6 @@ type ShellRoute =
 /** The label the detail's back row carries — it names the screen the detail was opened from
  *  (U-19). */
 type BackKind = 'detail.back.board' | 'detail.back.cockpit' | 'detail.back.account' | 'detail.back.roadmap';
-
-const GearIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="block h-[15px] w-[15px]">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
 
 /** The route as the tree reads it — a work order's detail and an account view keep the place
  *  they were opened from, so the tree's selection stays where the operator left it. */
@@ -132,18 +128,23 @@ export function ShellScreen({
   detail,
   accountView,
   settings,
+  update,
   wizard,
   localeStore,
   locale,
   timeZone,
 }: ShellScreenProps) {
   const state = useSyncExternalStore(shell.subscribe, shell.state);
+  const updateState = useSyncExternalStore(update.subscribe, update.state);
   const [route, setRoute] = useState<ShellRoute>({ name: 'cockpit' });
   // The search palette's whole standing lives in the pure reducer; the shell only feeds it the
   // tree and routes what it opens (U-15). The settings panel's standing lives the same way —
   // open/close and the origin the close's focus rule reads, never a route.
   const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
   const [settingsPanel, dispatchSettingsPanel] = useReducer(settingsPanelReducer, CLOSED_SETTINGS_PANEL);
+  // The panel's section is the shell's, not the panel's own: the nav's Telefon and Ayarlar rows
+  // name it on open and read their current standing from it (U-24).
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('language');
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
@@ -154,7 +155,9 @@ export function ShellScreen({
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     void shell.load();
-  }, [shell]);
+    // The bar's Update button reads the standing from startup, not from the panel's first open.
+    void update.load();
+  }, [shell, update]);
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
   }, [route]);
@@ -201,10 +204,13 @@ export function ShellScreen({
       window.removeEventListener('keydown', onKeyDown, true);
     };
   }, []);
-  /** Opens the settings panel over the current route — the route stays where it is. */
-  const openSettings = useCallback((): void => {
+  /** Opens the settings panel over the current route on a named section — the route stays where
+   *  it is; the nav's rows name their own section, the screens' shortcuts keep the language
+   *  section the gear used to open. */
+  const openSettings = useCallback((section: SettingsSection): void => {
     const origin: SettingsPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
     pointerOpenRef.current = false;
+    setSettingsSection(section);
     dispatchSettingsPanel({ type: 'open', origin });
   }, []);
   // The board keeps its scroll across a detail round-trip: leaving a board for a detail or an
@@ -276,17 +282,26 @@ export function ShellScreen({
       <TitleBar
         locale={locale}
         platform={navigator.platform}
-        homeCurrent={route.name === 'cockpit'}
-        searchCurrent={palette.open}
-        badge={badge}
-        onHome={() => setRoute({ name: 'cockpit' })}
-        onSearch={openPalette}
+        update={updateState.status}
+        onApply={() => void update.apply()}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)] overflow-hidden">
         <nav
           aria-label={t(locale, 'shell.nav')}
           className="flex min-h-0 flex-col border-r border-hairline bg-surface px-2.5 pb-3 pt-3.5"
         >
+          <SidebarNav
+            locale={locale}
+            homeCurrent={route.name === 'cockpit'}
+            searchCurrent={palette.open}
+            settingsSection={settingsPanel.open ? settingsSection : null}
+            badge={badge}
+            onHome={() => setRoute({ name: 'cockpit' })}
+            onSearch={openPalette}
+            onPhone={() => openSettings('phone')}
+            onSettings={() => openSettings('language')}
+          />
+
           <SidebarTree
             store={tree}
             selection={selection}
@@ -294,29 +309,13 @@ export function ShellScreen({
             onOpenProject={(project) => setRoute({ name: 'roadmap', project })}
             onOpenRepo={(_project, repo) => setRoute({ name: 'board', repo })}
           />
-  
+
           <SidebarAccounts
             store={accounts}
             locale={locale}
             activeAccountId={route.name === 'account' ? route.id : null}
             onOpenAccount={openAccount}
           />
-  
-          <div className="mt-2.5 flex flex-none items-center justify-end px-0.5">
-            <button
-              type="button"
-              onClick={openSettings}
-              aria-label={t(locale, 'nav.settings')}
-              title={t(locale, 'nav.settings')}
-              className={`grid h-8 w-8 flex-none place-items-center rounded-control border ${
-                settingsPanel.open
-                  ? `text-ink ${ACTIVE_CLASS}`
-                  : 'border-bord text-inkdim hover:border-inkdim hover:text-ink'
-              }`}
-            >
-              <GearIcon />
-            </button>
-          </div>
         </nav>
   
         <main ref={mainRef} className="@container min-w-0 overflow-y-auto px-[22px] py-[18px]">
@@ -338,7 +337,7 @@ export function ShellScreen({
               onOpenWorkOrder={openWorkOrder}
               roadmapProject={roadmapProjectOf(route.repo)}
               onOpenRoadmap={(project) => setRoute({ name: 'roadmap', project })}
-              onOpenSettings={openSettings}
+              onOpenSettings={() => openSettings('language')}
             />
           ) : null}
           {route.name === 'roadmap' ? (
@@ -358,7 +357,7 @@ export function ShellScreen({
               locale={locale}
               timeZone={timeZone}
               onOpenWorkOrder={openWorkOrder}
-              onOpenSettings={openSettings}
+              onOpenSettings={() => openSettings('language')}
               onBack={() => setRoute(backRouteRef.current)}
             />
           ) : null}
@@ -386,8 +385,11 @@ export function ShellScreen({
       <SettingsPanel
         open={settingsPanel.open}
         origin={settingsPanel.origin}
+        section={settingsSection}
+        onSection={setSettingsSection}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}
+        update={update}
         locale={locale}
         localeStore={localeStore}
       />
