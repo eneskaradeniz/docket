@@ -1,4 +1,4 @@
-// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-10 rules of e2e/layout-rules.mjs
+// e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-11 rules of e2e/layout-rules.mjs
 // for every screen × window size × theme and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The app target adds one more line per size × theme for the search palette, measured open on the
@@ -49,6 +49,8 @@ const APP_SELECTORS = {
   accountsBody: '[data-accounts-body]',
   kanbanWrap: '[data-board-kanban]',
   kanbanScroller: '[data-board-cols]',
+  kanbanColHead: '[data-board-col-head]',
+  kanbanCard: '[data-board-card]',
   detailAsk: '[data-detail-ask]',
   livePane: '[data-detail-live]',
   closedHeading: { css: 'h2', text: 'Son kapananlar' },

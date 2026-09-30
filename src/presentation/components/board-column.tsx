@@ -50,7 +50,7 @@ export function BoardColumnLane({
 
   return (
     <section aria-label={name} className="flex min-w-[264px] max-w-[320px] flex-[1_1_280px] snap-start flex-col">
-      <div className="flex h-10 flex-none items-center gap-2 rounded-panel border border-bord bg-band pl-3 pr-2">
+      <div data-board-col-head className="flex h-10 flex-none items-center gap-2 rounded-panel border border-bord bg-band pl-3 pr-2">
         <h2 className="mr-auto min-w-0 truncate text-[13px] font-semibold text-ink" title={name}>
           {name}
         </h2>
@@ -75,7 +75,7 @@ export function BoardColumnLane({
         </button>
       </div>
       {column.cards.length > 0 ? (
-        <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+        <ul data-board-col-cards className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-2">
           {column.cards.map((card) => (
             <li key={card.id}>
               <BoardCard card={card} locale={locale} onOpen={onOpenWorkOrder} />
