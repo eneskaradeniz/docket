@@ -209,6 +209,8 @@ export const LABEL_KEYS = [
   'cockpit.closed.hint',
   'cockpit.ask.wants',
   'cockpit.more',
+  'cockpit.hide',
+  'cockpit.show',
   'cockpit.less',
   'cockpit.card.repos',
   'cockpit.card.singleRepo',

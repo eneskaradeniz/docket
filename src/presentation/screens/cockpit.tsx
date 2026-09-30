@@ -55,11 +55,12 @@ function Pulse({ tone, children }: { readonly tone: LampTone; readonly children:
   );
 }
 
-function FoldButton({ label, onClick }: { readonly label: string; readonly onClick: () => void }) {
+function FoldButton({ label, onClick, expanded }: { readonly label: string; readonly onClick: () => void; readonly expanded?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-expanded={expanded}
       className="rounded-control px-1.5 py-0.5 text-[12.5px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
     >
       {label}
@@ -80,6 +81,7 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
     void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
   };
   const [expanded, setExpanded] = useState({ attention: false, running: false });
+  const [closedOpen, setClosedOpen] = useState(true);
 
   const phase = cockpitPhase(state);
   const view = state.view;
@@ -235,8 +237,20 @@ export function CockpitScreen({ store, locale, onOpenWorkOrder, onOpenProject, o
           </section>
 
           <section className="grid gap-2">
-            <SectionHead title={t(locale, 'cockpit.section.closed')} count={null} />
-            {closed.length === 0 ? (
+            <SectionHead
+              title={t(locale, 'cockpit.section.closed')}
+              count={null}
+              action={
+                closed.length > 0 ? (
+                  <FoldButton
+                    label={t(locale, closedOpen ? 'cockpit.hide' : 'cockpit.show')}
+                    expanded={closedOpen}
+                    onClick={() => setClosedOpen(!closedOpen)}
+                  />
+                ) : undefined
+              }
+            />
+            {!closedOpen && closed.length > 0 ? null : closed.length === 0 ? (
               <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
             ) : (
               <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} />
