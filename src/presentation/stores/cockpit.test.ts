@@ -11,9 +11,14 @@ import type { AttentionItem, CockpitView, Query } from '../../api/queries';
 import type { Command, CommandResult } from '../../api/commands';
 import type { Actor, AgentEvent } from '../../domain/index';
 import {
+  COCKPIT_LIMITS,
+  cockpitPhase,
+  cockpitSummary,
   createCockpitStore,
   earliestOpenAsk,
+  limitRows,
   projectCardTarget,
+  recentClosed,
   type CockpitAsk,
   type CockpitChange,
   type CockpitChangeSignal,
@@ -104,7 +109,7 @@ describe('cockpit store', () => {
     const api = fakeCockpitApi(view);
     const store = createCockpitStore({ api, changes: fakeSignal().signal, now: () => 1_000, actor: userActor });
 
-    expect(store.state()).toEqual({ loading: false, view: null, failed: false, asks: {} });
+    expect(store.state()).toEqual({ loading: false, view: null, failed: false, asks: {}, loadedAt: null });
     const loading = store.load();
     expect(store.state().loading).toBe(true);
     await loading;
@@ -172,7 +177,7 @@ describe('cockpit store', () => {
     api.setReply(recovered);
     await store.retry();
     expect(api.queries.filter((query) => query.type === 'cockpit').length).toBe(3);
-    expect(store.state()).toEqual({ loading: false, view: recovered, failed: false, asks: {} });
+    expect(store.state()).toEqual({ loading: false, view: recovered, failed: false, asks: {}, loadedAt: 0 });
   });
 
   it('U-2: a first failed query leaves no view but still exposes retry', async () => {
@@ -187,7 +192,7 @@ describe('cockpit store', () => {
     const good = cockpitView([]);
     api.setReply(good);
     await store.retry();
-    expect(store.state()).toEqual({ loading: false, view: good, failed: false, asks: {} });
+    expect(store.state()).toEqual({ loading: false, view: good, failed: false, asks: {}, loadedAt: 0 });
   });
 });
 
@@ -325,5 +330,72 @@ describe('earliestOpenAsk (U-21)', () => {
         { type: 'tool_result', at: 30, id: 'ask-1', ok: true },
       ]),
     ).toBeNull();
+  });
+});
+
+const closedEntry = (id: string, closedAt: number): CockpitView['recentlyClosed'][number] => ({
+  workOrderId: id,
+  number: 1,
+  title: id,
+  project: 'atolye',
+  repo: 'atolye',
+  closedAt,
+});
+
+describe('cockpit head and lists (U-21 redesign)', () => {
+  it('U-10: the head\'s attention count equals the attention items; blocked ones are counted apart from the waiting', () => {
+    const view = cockpitView([
+      attentionItem('a', 'permission_ask', 1),
+      attentionItem('b', 'awaiting_human', 2),
+      attentionItem('c', 'blocked', 3),
+      attentionItem('d', 'limit_waiting', 4),
+    ]);
+    const summary = cockpitSummary({ ...view, running: [{ workOrderId: 'r', number: 2, stage: 'test', accountId: 'acc', startedAt: 1 }] });
+    expect(summary).toEqual({ attention: 4, waiting: 3, blocked: 1, running: 1 });
+  });
+
+  it('U-21: an empty view summarises to zeros', () => {
+    expect(cockpitSummary(cockpitView([]))).toEqual({ attention: 0, waiting: 0, blocked: 0, running: 0 });
+  });
+
+  it('U-21: a list shows at most its limit and reports how many are hidden; expanded shows all', () => {
+    const rows = Array.from({ length: 8 }, (_, i) => i);
+    expect(limitRows(rows, 5, false)).toEqual({ shown: [0, 1, 2, 3, 4], hidden: 3 });
+    expect(limitRows(rows, 5, true)).toEqual({ shown: rows, hidden: 0 });
+    expect(limitRows(rows.slice(0, 5), 5, false)).toEqual({ shown: rows.slice(0, 5), hidden: 0 });
+    expect(limitRows([], 5, false)).toEqual({ shown: [], hidden: 0 });
+  });
+
+  it('U-21: the limits are attention 5, running 6, closed 5', () => {
+    expect(COCKPIT_LIMITS).toEqual({ attention: 5, running: 6, closed: 5 });
+  });
+
+  it('U-21: Son kapananlar is the five most recent closes, closedAt descending, whatever order arrives', () => {
+    const arrived = [3, 9, 1, 7, 5, 8, 2].map((at) => closedEntry(`wo-${at}`, at * 1_000));
+    expect(recentClosed(arrived).map((entry) => entry.workOrderId)).toEqual(['wo-9', 'wo-8', 'wo-7', 'wo-5', 'wo-3']);
+    expect(arrived).toHaveLength(7);
+  });
+
+  it('U-21: the phase names what the screen shows — loading, first run, failed with nothing, or ready', () => {
+    const base = { loading: false, failed: false, asks: {}, loadedAt: null } as const;
+    expect(cockpitPhase({ ...base, loading: true, view: null })).toBe('loading');
+    expect(cockpitPhase({ ...base, failed: true, view: null })).toBe('failed-empty');
+    expect(cockpitPhase({ ...base, view: cockpitView([]) })).toBe('first-run');
+    expect(cockpitPhase({ ...base, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
+    // A failed reload never blanks a view the screen already has (U-2).
+    expect(cockpitPhase({ ...base, failed: true, view: { ...cockpitView([]), projects: [{ project: 'p', name: 'P', mainRepo: 'r', repoCount: 1, active: 0, waiting: 0 }] } })).toBe('ready');
+  });
+
+  it('U-2: loadedAt stamps the last successful load and survives a failed one', async () => {
+    let current = 7_000;
+    const api = fakeCockpitApi(cockpitView([]));
+    const store = createCockpitStore({ api, changes: fakeSignal().signal, now: () => current, actor: userActor });
+    await store.load();
+    expect(store.state().loadedAt).toBe(7_000);
+    current = 9_000;
+    api.setReply({ ok: false, code: 'unavailable' });
+    await store.load();
+    expect(store.state().failed).toBe(true);
+    expect(store.state().loadedAt).toBe(7_000);
   });
 });

@@ -56,6 +56,9 @@ export interface CockpitState {
   /** The permission ask of each waiting row that carries one, keyed by work order id (U-21);
    *  a row without a derivable ask renders its own kind copy instead. */
   readonly asks: Readonly<Record<string, CockpitAsk>>;
+  /** The clock reading of the last successful load; null before the first one. A failed reload
+   *  keeps it, so the screen can say how old the view it still shows is. */
+  readonly loadedAt: number | null;
 }
 
 export interface AnswerIntentInput {
@@ -103,10 +106,59 @@ export const projectCardTarget = (card: Extract<CockpitView['projects'][number],
     ? { kind: 'roadmap', project: card.project }
     : { kind: 'board', repo: card.mainRepo };
 
+/** How many rows each list shows before its fold; Son kapananlar is capped by the api too (A-28),
+ *  the store re-asserts it so a longer reply never stretches the screen. */
+export const COCKPIT_LIMITS = { attention: 5, running: 6, closed: 5 } as const;
+
+/** The head's counts. `attention` is every attention item — the number the title bar's badge
+ *  shows (U-10); `waiting` are those the operator or a clock holds, `blocked` the stopped ones. */
+export const cockpitSummary = (
+  view: CockpitView,
+): { readonly attention: number; readonly waiting: number; readonly blocked: number; readonly running: number } => {
+  const blocked = view.attention.filter((item) => item.kind === 'blocked').length;
+  return {
+    attention: view.attention.length,
+    waiting: view.attention.length - blocked,
+    blocked,
+    running: view.running.length,
+  };
+};
+
+/** The rows a list shows and how many its fold hides; expanded shows everything. Pure. */
+export const limitRows = <T>(
+  rows: readonly T[],
+  limit: number,
+  expanded: boolean,
+): { readonly shown: readonly T[]; readonly hidden: number } =>
+  expanded || rows.length <= limit
+    ? { shown: rows, hidden: 0 }
+    : { shown: rows.slice(0, limit), hidden: rows.length - limit };
+
+/** Son kapananlar: the most recent closes, `closedAt` descending, at most five. Pure. */
+export const recentClosed = (
+  closed: CockpitView['recentlyClosed'],
+): CockpitView['recentlyClosed'] =>
+  [...closed].sort((a, b) => b.closedAt - a.closedAt).slice(0, COCKPIT_LIMITS.closed);
+
+export type CockpitPhase = 'loading' | 'failed-empty' | 'first-run' | 'ready';
+
+/** What the screen shows as a whole: a failed reload over an existing view stays `ready` — an
+ *  error never blanks the cockpit (U-2); a view with no project, work and history is a first run. */
+export const cockpitPhase = (state: CockpitState): CockpitPhase => {
+  const view = state.view;
+  if (view === null) return state.failed ? 'failed-empty' : 'loading';
+  const empty =
+    view.projects.length === 0 &&
+    view.attention.length === 0 &&
+    view.running.length === 0 &&
+    view.recentlyClosed.length === 0;
+  return empty ? 'first-run' : 'ready';
+};
+
 export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
   const { api, changes, now, actor } = deps;
 
-  let state: CockpitState = { loading: false, view: null, failed: false, asks: {} };
+  let state: CockpitState = { loading: false, view: null, failed: false, asks: {}, loadedAt: null };
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher view when change events stack up.
@@ -175,7 +227,7 @@ export const createCockpitStore = (deps: CockpitStoreDeps): CockpitStore => {
     }
     // The contract of the cockpit query: a reply that is not a failure is a CockpitView.
     const view = reply as CockpitView;
-    set({ loading: false, view, failed: false, asks: {} });
+    set({ loading: false, view, failed: false, asks: {}, loadedAt: now() });
     void loadAsks(view, attempt);
   };
 
