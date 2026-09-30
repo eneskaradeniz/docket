@@ -753,9 +753,12 @@ pattern.
 
 Rules:
 - **A-41** `providers.marks` answers the composed marks source verbatim — def id →
-  `{ viewBox, path }`, `null` when the provider has none. No derivation, no stored copy. With no
-  source composed the query answers `{ ok: false, code: 'not_found' }` (the registry-less
-  `repos.list` precedent): absence is never invented into an empty record.
+  `{ viewBox, path, fillRule }`, `null` when the provider has none. No derivation, no stored
+  copy. With no source composed the query answers `{ ok: false, code: 'not_found' }` (the
+  registry-less `repos.list` precedent): absence is never invented into an empty record.
+- **A-42** A mark travels with its fill rule: the query answers a source mark's `fillRule`
+  byte-identical and never assumes `nonzero` — the same `d` renders differently under the two
+  rules, so the rule is the mark's data, not the renderer's guess.
 
 ---
 

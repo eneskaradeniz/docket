@@ -39,7 +39,7 @@ interface ProviderDef {
   resume: 'specify' | 'capture' | 'protocol' | 'none';
   capabilities: ProviderCapabilities;           // declared; refined by probes at discovery
   installHint: { url: string };
-  mark: ProviderMark | null;                    // the provider's own mark; null when no official file exists — never redrawn
+  mark: ProviderMark | null;                    // the provider's own mark, with its fill rule; null when no file exists — never redrawn
 }
 
 `buildLaunch` receives a `LaunchInput`:
@@ -280,13 +280,26 @@ to `createApi` as its marks argument (the discovery pattern; the query side is A
 [application.md](application.md)):
 
 ```ts
-export interface ProviderMark { readonly viewBox: string; readonly path: string }
+export interface ProviderMark {
+  readonly viewBox: string;
+  readonly path: string;
+  readonly fillRule: 'nonzero' | 'evenodd';
+}
 export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
 ```
 
 - **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
-  `d` data copied unmodified from the provider's official file, rendered with `currentColor`,
-  24×24 viewBox — or `null` when no official file exists (`codex`, `agy`); a mark is never redrawn.
-  The marks identify the provider only. `isProviderDef` rejects a mark that is neither `null` nor
-  a `{ viewBox, path }` of non-empty strings, and `builtinProviderMarks` keys every built-in def
+  `d` data copied unmodified from the file it came from, rendered with `currentColor`,
+  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. All seven built-ins
+  have a mark: the five with an official file plus `codex` and `agy`, whose files were placed by
+  the operator from an MIT-licensed icon set (the marks remain their owners' trademarks, used
+  unmodified only to identify the provider; they are not the owners' official brand kits — if
+  official files arrive, only the def's path changes). The marks identify the provider only.
+  `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
+  non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
   id to its own mark, so adding a provider touches no code beyond its def.
+- **P-26** A mark carries the fill rule its file declares: `nonzero` for the five official
+  marks, `evenodd` for the two placed files (both set `fill-rule="evenodd"`; the codex path also
+  `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
+  query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
+  under the two rules.

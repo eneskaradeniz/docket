@@ -234,9 +234,14 @@ describe('provider definitions (P-1)', () => {
       rejectsWith({ ...createValidDef(), installHint: {} }, 'missing url');
     });
 
-    it('P-25: isProviderDef rejects a mark that is neither null nor a non-empty { viewBox, path }', () => {
-      rejectsWith({ ...createValidDef(), mark: { viewBox: '', path: 'M1 1' } }, 'empty viewBox');
-      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24', path: '' } }, 'empty path');
+    it('P-25: isProviderDef rejects a mark that is neither null nor a non-empty { viewBox, path, fillRule }', () => {
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '', path: 'M1 1', fillRule: 'nonzero' } }, 'empty viewBox');
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24', path: '', fillRule: 'nonzero' } }, 'empty path');
+      rejectsWith(
+        { ...createValidDef(), mark: { viewBox: '0 0 24 24', path: 'M1 1', fillRule: 'winding' } },
+        'unknown fillRule',
+      );
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24', path: 'M1 1' } }, 'missing fillRule');
       rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24' } }, 'missing path');
       rejectsWith({ ...createValidDef(), mark: 'logo.svg' }, 'mark is a string');
       const { mark: _dropped, ...withoutMark } = createValidDef() as unknown as Record<string, unknown>;
@@ -246,20 +251,27 @@ describe('provider definitions (P-1)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25: the five providers with an official file carry one mark each — a single path in a 24×24 viewBox', () => {
-    for (const id of ['claude-code', 'gemini', 'copilot', 'cursor', 'opencode'] as const) {
-      const mark = defById(id).mark;
-      expect(mark, id).not.toBeNull();
-      expect(mark?.viewBox, id).toBe('0 0 24 24');
+  it('P-25: all seven providers carry one mark each — a single path in a 24×24 viewBox', () => {
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      const mark = defById(def.id).mark;
+      expect(mark, def.id).not.toBeNull();
+      expect(mark?.viewBox, def.id).toBe('0 0 24 24');
       // One path's own data: path commands only, never svg markup or a second shape.
-      expect(mark?.path.length, id).toBeGreaterThan(0);
-      expect(mark?.path, id).not.toMatch(/[<>]/);
+      expect(mark?.path.length, def.id).toBeGreaterThan(0);
+      expect(mark?.path, def.id).not.toMatch(/[<>]/);
     }
   });
 
-  it('P-25: codex and agy carry mark null — a mark is never redrawn without an official file', () => {
-    expect(defById('codex').mark).toBeNull();
-    expect(defById('agy').mark).toBeNull();
+  it('P-26: the five official marks draw nonzero and the two placed stand-ins draw evenodd', () => {
+    for (const id of ['claude-code', 'gemini', 'copilot', 'cursor', 'opencode'] as const) {
+      expect(defById(id).mark?.fillRule, id).toBe('nonzero');
+    }
+    // Both stand-in files set fill-rule="evenodd" (codex also clip-rule="evenodd"); the paths
+    // are injected unmodified and byte-checked against those files — the prefixes pin them.
+    expect(defById('codex').mark?.fillRule).toBe('evenodd');
+    expect(defById('agy').mark?.fillRule).toBe('evenodd');
+    expect(defById('codex').mark?.path.startsWith('M8.086.457')).toBe(true);
+    expect(defById('agy').mark?.path.startsWith('M21.751 22.607')).toBe(true);
   });
 
   it('P-25: builtinProviderMarks keys every built-in def id to its own mark', () => {

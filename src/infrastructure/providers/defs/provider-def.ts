@@ -54,8 +54,9 @@ export interface ProviderDef {
   /** Declared; refined by probes at discovery. */
   readonly capabilities: ProviderCapabilities;
   readonly installHint: { readonly url: string };
-  /** The provider's own mark: one SVG path in its viewBox, rendered with `currentColor`. The
-   *  mark identifies the provider only and is copied unmodified from the provider's official
-   *  file; `null` when no official file exists — a mark is never redrawn. */
+  /** The provider's own mark: one SVG path in its viewBox, rendered with `currentColor` under
+   *  the fill rule its file declares. The mark identifies the provider only and is copied
+   *  unmodified from the file it was taken from; `null` when no such file exists — a mark is
+   *  never redrawn. */
   readonly mark: ProviderMark | null;
 }

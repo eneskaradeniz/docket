@@ -8,6 +8,7 @@ const RESUME_MODES: readonly ProviderDef['resume'][] = ['specify', 'capture', 'p
 const CONFIG_MECHANISMS: readonly ProviderDef['config']['mechanism'][] = ['env-var', 'flag'];
 const QUOTA_REPORTS: readonly ProviderCapabilities['quotaReport'][] = ['stream', 'query', 'error_only', 'none'];
 const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'none'];
+const FILL_RULES: readonly NonNullable<ProviderDef['mark']>['fillRule'][] = ['nonzero', 'evenodd'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -74,6 +75,11 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   const installHint = value['installHint'];
   if (!(isRecord(installHint) && isNonEmptyString(installHint['url']))) return false;
   const mark = value['mark'];
-  if (mark !== null && !(isRecord(mark) && isNonEmptyString(mark['viewBox']) && isNonEmptyString(mark['path']))) return false;
+  if (
+    mark !== null &&
+    !(isRecord(mark) && isNonEmptyString(mark['viewBox']) && isNonEmptyString(mark['path']) && FILL_RULES.includes(mark['fillRule'] as NonNullable<ProviderDef['mark']>['fillRule']))
+  ) {
+    return false;
+  }
   return true;
 }

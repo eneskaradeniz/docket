@@ -1022,12 +1022,29 @@ describe('providers.marks', () => {
   it('A-41: answers the composed marks source verbatim — def id → mark, null when the provider has none', async () => {
     const h = createHarness();
     const marks = {
-      marks: () => ({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1' }, 'provider-b': null }),
+      marks: () => ({
+        'provider-a': { viewBox: '0 0 24 24', path: 'M1 1', fillRule: 'nonzero' as const },
+        'provider-b': null,
+      }),
     };
 
     const reply = await createApi(h.deps, undefined, undefined, undefined, undefined, marks).query({ type: 'providers.marks' });
 
-    expect(reply).toEqual({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1' }, 'provider-b': null });
+    expect(reply).toEqual({
+      'provider-a': { viewBox: '0 0 24 24', path: 'M1 1', fillRule: 'nonzero' },
+      'provider-b': null,
+    });
+  });
+
+  it('A-42: a mark travels with its fill rule — evenodd reaches the reply untouched', async () => {
+    const h = createHarness();
+    const marks = {
+      marks: () => ({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1h2v2z', fillRule: 'evenodd' as const } }),
+    };
+
+    const reply = await createApi(h.deps, undefined, undefined, undefined, undefined, marks).query({ type: 'providers.marks' });
+
+    expect(reply).toEqual({ 'provider-a': { viewBox: '0 0 24 24', path: 'M1 1h2v2z', fillRule: 'evenodd' } });
   });
 
   it('A-41: reports not_found without a marks source instead of inventing an empty record', async () => {
