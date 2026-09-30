@@ -25,7 +25,7 @@ export async function launchDesignApp() {
   const seed = seedDesign();
   const app = await electron.launch({
     args: [join(ROOT, 'dist-electron', 'main.js')],
-    env: { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin },
+    env: { ...process.env, DOCKET_DATA_DIR: seed.dataDir, DOCKET_OPENCODE_BIN: seed.agentBin, DOCKET_UPDATE_FAKE: '0.9.0' },
   });
   const page = await app.firstWindow();
   await page.waitForSelector('nav', { timeout: 30_000 });

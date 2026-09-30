@@ -6,7 +6,8 @@
 //   1. Node deps (SQLite, YAML definitions, keychain, worktrees) — everything except Electron
 //      objects, which arrive as injected adapters (safeStorage, Notification).
 //   2. The permission board — in-process state beside the ports, never a port itself.
-//   3. The api over deps + board + discovery; its runUpdated and workOrdersChanged members are
+//   3. The api over deps + board + discovery + the update checker; its runUpdated and
+//      workOrdersChanged members are
 //      the executor's notify hooks, so run events and the executor's run-finished append reach
 //      the subscribed stores without the executor knowing the api.
 //   4. The dispatcher/executor loop: tick → start → executeRun → limit/gate follow-ups.
@@ -32,7 +33,9 @@ import {
 import type { CipherFns, NodeDeps } from '../src/infrastructure/index';
 import {
   BUILTIN_PROVIDER_DEFS,
+  createDesignUpdateChecker,
   createNodeDeps,
+  createNoopUpdateChecker,
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
@@ -334,9 +337,17 @@ const startApp = async (): Promise<void> => {
   deps = nodeDeps;
 
   const board = createPermissionBoard();
+  // The app's update story in one seam: the no-op checker is the default (no updater ships
+  // yet), and a DOCKET_UPDATE_FAKE version string swaps in the scripted checker the design seed
+  // reviews with. This line is production's only read of the variable.
+  const updateFake = process.env.DOCKET_UPDATE_FAKE;
+  const updates =
+    updateFake === undefined
+      ? createNoopUpdateChecker(app.getVersion())
+      : createDesignUpdateChecker(app.getVersion(), updateFake);
   // The repo registry rides beside deps (NodeDeps exposes it); the api reads it for
   // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on.
-  const api = createApi(nodeDeps, board, discovery, node.repos);
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).

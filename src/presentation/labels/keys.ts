@@ -346,6 +346,8 @@ export const LABEL_KEYS = [
   'success.account.save',
   'success.account.remove',
   'success.binding.save',
+  'success.app.update.check',
+  'success.app.update.apply',
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];

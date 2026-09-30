@@ -68,6 +68,8 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'account.save': 'success.account.save',
   'account.remove': 'success.account.remove',
   'binding.save': 'success.binding.save',
+  'app.update.check': 'success.app.update.check',
+  'app.update.apply': 'success.app.update.apply',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;

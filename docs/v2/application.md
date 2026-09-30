@@ -335,6 +335,40 @@ export interface IssueTracker {
 
 Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
 
+### Update checker port (`ports/update-checker.ts`)
+
+The app's own newer version — machine-local state with no repo data and no fitting `AuditAction`
+(the permission board's answers are unlogged the same way), so the port sits **beside `AppDeps`**
+(the forge, tracker and discovery precedent) and the composition root hands it to the api. The
+real updater (release feed check, download, install, signing) is a later contract.
+
+```ts
+export type UpdateState =
+  | { readonly kind: 'none'; readonly current: string }
+  | { readonly kind: 'available'; readonly current: string; readonly next: string }
+  | { readonly kind: 'downloading'; readonly current: string; readonly next: string; readonly percent: number }
+  | { readonly kind: 'ready'; readonly current: string; readonly next: string }
+  | { readonly kind: 'error'; readonly current: string; readonly reason: 'offline' | 'failed' };
+
+export interface UpdateChecker {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;                                              // re-checks; the answer is the new state
+  apply(): Promise<Result<void, 'not_available'>>;   // starts the install; only from available or ready
+}
+```
+
+Implementations (infrastructure, `system/`):
+- **No-op checker** `createNoopUpdateChecker(current)` — the default: `state`/`check` always answer
+  `{ kind: 'none', current }`, `apply` always refuses, and no network call is ever made.
+- **Design checker** `createDesignUpdateChecker(current, next, stepMs?)` — answers `available` with
+  `next`, and `apply` walks `downloading` → `ready` over a few seconds; a re-check never undoes
+  progress. The composition root installs it only when `DOCKET_UPDATE_FAKE` holds a version string,
+  and that one line is production's only read of the variable.
+
+Fake: `createFakeUpdateChecker(initial?)` — `queueCheck(state)` scripts the next `check` answer
+(adopted once), `apply` honours the port guard and moves to `downloading` at percent 0, and
+`applyCalls()` counts apply calls (refused included).
+
 ---
 
 ## 2. Use cases — `src/application/use-cases/`
@@ -645,6 +679,43 @@ export function pollRemoteChecks(
 - **E-17** Append one `gate_evaluated` event with the `remoteChecks` evidence. `pending` → do not append (gate stays pending, re-polled by the dispatcher later).
 - **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the repo definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
+
+### App update — query, intents, event
+
+The app bar's update story — the contract and plumbing only; the Update button itself is later UI
+work. One query, two intents and one event over the
+[Update checker port](#update-checker-port-portsupdate-checkerts); the checker is composed beside
+`AppDeps` and passed to `createApi` as its fifth argument (`updates?: UpdateChecker`), the
+board/discovery/registry pattern.
+
+```ts
+// use-cases/app-update.ts — the port is the whole state, so the use cases take it directly
+export function getUpdateState(updates: UpdateChecker): Promise<UpdateState>;
+export function checkForUpdates(updates: UpdateChecker): Promise<UpdateState>;
+export function applyUpdate(updates: UpdateChecker): Promise<Result<void, 'not_available'>>;
+
+// commands (commands.ts)
+| { type: 'app.update.check' }
+| { type: 'app.update.apply' }
+// queries (queries.ts)
+| { type: 'app.update' }               → UpdateState
+// UiEvent (api.ts)
+| { type: 'update.changed' }
+```
+
+Rules:
+- **A-32** `app.update` answers the composed checker's `state()` verbatim — no derivation, no
+  stored copy. With no checker composed the query answers `{ ok: false, code: 'not_found' }` (the
+  registry-less `repos.list` precedent): absence is never invented into "you are current".
+- **A-33** `app.update.check` maps onto `checkForUpdates`: the checker re-checks, the command
+  answers `{ ok: true }`, and the api emits one `update.changed` after it — `CommandResult` carries
+  no payload, so the new state travels out-of-band, through the event and the re-query it triggers
+  (the `workOrders.changed` pattern). No audit entry: the update state is machine-local and no
+  `AuditAction` names it.
+- **A-34** `app.update.apply` maps onto `applyUpdate`: the guard reads the state and allows the
+  call only from `available` or `ready` — every other state answers `not_available`, emits nothing
+  and leaves the state untouched. An allowed apply starts the download (the state's next read shows
+  it), answers `{ ok: true }` and emits one `update.changed`.
 
 ---
 

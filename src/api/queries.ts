@@ -14,7 +14,8 @@ export type Query =
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'run.events'; readonly runId: string }
-  | { readonly type: 'permissions.open' };
+  | { readonly type: 'permissions.open' }
+  | { readonly type: 'app.update' };
 
 export interface AttentionItem {
   readonly workOrderId: string;
