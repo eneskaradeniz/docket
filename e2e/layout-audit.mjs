@@ -1,5 +1,5 @@
 // e2e/layout-audit.mjs — `npm run test:layout`. Runs the L-1 … L-11 rules of e2e/layout-rules.mjs
-// for every screen × window size × theme and prints one line per result:
+// for every screen in the run's combinations and prints one line per result:
 //   L-n: <screen> <WxH> <theme> ok|FAIL|skipped <detail>
 // The run opens by printing the resolved size plan with its real numbers (`size: <name> <WxH>`,
 // full screen being the primary display's work area), and the app target adds one line per
@@ -26,6 +26,11 @@
 //   titlebar-plain: ok|FAIL <detail>
 // Exit code is 1 when any line is FAIL.
 //
+// The run walks four combinations by default — dark at every size plus light at the default
+// window, the size the operator uses — and prints the count before the first result line;
+// `--full` (FULL=1 for the npm script) restores all six, for a release run or after a
+// token/theme change.
+//
 // Two targets share the same rules and differ only in their selector map:
 //   --target=prototype <path/to/index.html>  the frozen rev-8 prototype in Chromium (file://)
 //   (default)                                 the built Electron app, window resized in main
@@ -38,7 +43,7 @@ import { pathToFileURL } from 'node:url';
 import { _electron as electron, chromium } from 'playwright-core';
 import { ROOT, launchDesignApp, screenNavigator, seedDesign, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { runRules, RULE_IDS, resolveSizes, sizesForWorkArea, THEMES, SCREENS } from './layout-rules.mjs';
+import { runRules, RULE_IDS, resolveSizes, sizesForWorkArea, comboPlan, SCREENS } from './layout-rules.mjs';
 
 /** Selector maps. A key the target lacks is reported by the rule as `skipped: no hook <key>`. */
 const PROTOTYPE_SELECTORS = {
@@ -83,7 +88,7 @@ const APP_SELECTORS = {
 const parseArgs = (argv) => {
   const target = argv.find((a) => a.startsWith('--target='))?.slice('--target='.length) ?? 'app';
   const rest = argv.filter((a) => !a.startsWith('--'));
-  return { target, path: rest[0] };
+  return { target, path: rest[0], full: argv.includes('--full') || process.env.FULL === '1' };
 };
 
 // --- prototype target --------------------------------------------------------------------------------
@@ -580,83 +585,84 @@ const target = args.target === 'prototype' ? await openPrototype(args.path) : aw
 
 // The plan's real numbers, printed once so every later label can be read against them.
 for (const { name, size } of target.sizes) console.log(`size: ${name} ${size[0]}x${size[1]}`);
+const plan = comboPlan(target.sizes, { full: args.full });
+// The count names the run's breadth before any result lands: four by default, six with --full.
+console.log(`combos: ${plan.length}${args.full ? ' (--full)' : ''}`);
 
 let failures = 0;
 let lines = 0;
 // The Update button's state walk runs once per run — the first cockpit combo carries it.
 let walkedUpdate = false;
-for (const theme of THEMES) {
-  for (const entry of target.sizes) {
-    for (const screen of SCREENS) {
-      const { name: sizeName, size } = entry;
-      const [width, height] = size;
-      const label = `${screen} ${width}x${height} ${theme}`;
-      let results;
+for (const { size: entry, theme } of plan) {
+  for (const screen of SCREENS) {
+    const { name: sizeName, size } = entry;
+    const [width, height] = size;
+    const label = `${screen} ${width}x${height} ${theme}`;
+    let results;
+    try {
+      await target.show(screen, theme, entry);
+      results = await runRules(target.page, { screen, width, height, theme, sizeName }, target.selectors);
+    } catch (error) {
+      const why = String(error).split('\n')[0];
+      results = RULE_IDS.map((id) => ({
+        id, ok: false, detail: `screen unreachable: ${why}`,
+      }));
+    }
+    for (const r of results) {
+      const status = r.skipped ? 'skipped' : r.ok ? 'ok' : 'FAIL';
+      if (status === 'FAIL') failures += 1;
+      lines += 1;
+      console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+    }
+    // The window's own containment is asserted once per size × theme, on the first screen of
+    // the size: it must lie wholly inside the primary display's work area.
+    if (screen === 'kokpit' && target.windowCheck !== undefined) {
+      let r;
       try {
-        await target.show(screen, theme, entry);
-        results = await runRules(target.page, { screen, width, height, theme, sizeName }, target.selectors);
+        r = await target.windowCheck();
       } catch (error) {
-        const why = String(error).split('\n')[0];
-        results = RULE_IDS.map((id) => ({
-          id, ok: false, detail: `screen unreachable: ${why}`,
-        }));
+        r = { ok: false, detail: `window unreachable: ${String(error).split('\n')[0]}` };
       }
-      for (const r of results) {
-        const status = r.skipped ? 'skipped' : r.ok ? 'ok' : 'FAIL';
-        if (status === 'FAIL') failures += 1;
-        lines += 1;
-        console.log(`${r.id}: ${label} ${status} ${r.detail}`);
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`window: ${sizeName} ${width}x${height} ${theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    }
+    // The palette is measured open once per size × theme, on the cockpit screen; the settings
+    // panel is measured the same way, through the nav's Ayarlar row; the title bar's Update
+    // button is measured the same way, and the first combo of the run also walks its states.
+    if (screen === 'kokpit' && target.selectors.palette) {
+      let r;
+      try {
+        r = await paletteCheck(target, theme);
+      } catch (error) {
+        r = { ok: false, detail: `palette unreachable: ${String(error).split('\n')[0]}` };
       }
-      // The window's own containment is asserted once per size × theme, on the first screen of
-      // the size: it must lie wholly inside the primary display's work area.
-      if (screen === 'kokpit' && target.windowCheck !== undefined) {
-        let r;
-        try {
-          r = await target.windowCheck();
-        } catch (error) {
-          r = { ok: false, detail: `window unreachable: ${String(error).split('\n')[0]}` };
-        }
-        if (!r.ok) failures += 1;
-        lines += 1;
-        console.log(`window: ${sizeName} ${width}x${height} ${theme} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    }
+    if (screen === 'kokpit' && target.selectors.settingsPanel) {
+      let r;
+      try {
+        r = await settingsPanelCheck(target);
+      } catch (error) {
+        r = { ok: false, detail: `settings panel unreachable: ${String(error).split('\n')[0]}` };
       }
-      // The palette is measured open once per size × theme, on the cockpit screen; the settings
-      // panel is measured the same way, through the nav's Ayarlar row; the title bar's Update
-      // button is measured the same way, and the first combo of the run also walks its states.
-      if (screen === 'kokpit' && target.selectors.palette) {
-        let r;
-        try {
-          r = await paletteCheck(target, theme);
-        } catch (error) {
-          r = { ok: false, detail: `palette unreachable: ${String(error).split('\n')[0]}` };
-        }
-        if (!r.ok) failures += 1;
-        lines += 1;
-        console.log(`palette: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
+    }
+    if (screen === 'kokpit' && target.selectors.titleBar) {
+      let r;
+      try {
+        r = await titleBarCheck(target, !walkedUpdate);
+        walkedUpdate = true;
+      } catch (error) {
+        r = { ok: false, detail: `title bar unreachable: ${String(error).split('\n')[0]}` };
       }
-      if (screen === 'kokpit' && target.selectors.settingsPanel) {
-        let r;
-        try {
-          r = await settingsPanelCheck(target);
-        } catch (error) {
-          r = { ok: false, detail: `settings panel unreachable: ${String(error).split('\n')[0]}` };
-        }
-        if (!r.ok) failures += 1;
-        lines += 1;
-        console.log(`settings: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
-      }
-      if (screen === 'kokpit' && target.selectors.titleBar) {
-        let r;
-        try {
-          r = await titleBarCheck(target, !walkedUpdate);
-          walkedUpdate = true;
-        } catch (error) {
-          r = { ok: false, detail: `title bar unreachable: ${String(error).split('\n')[0]}` };
-        }
-        if (!r.ok) failures += 1;
-        lines += 1;
-        console.log(`titlebar: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
-      }
+      if (!r.ok) failures += 1;
+      lines += 1;
+      console.log(`titlebar: ${label} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`);
     }
   }
 }

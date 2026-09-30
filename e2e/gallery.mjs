@@ -1,6 +1,8 @@
-// e2e/gallery.mjs — the operator's-eyes gallery: for every screen × size × theme, a screenshot of
-// the built app next to the rev-8 reference PNG, written to e2e/.out/gallery/index.html. It does
-// not block a merge; it exists so the architect and the operator compare the two by looking.
+// e2e/gallery.mjs — the operator's-eyes gallery: for every screen in the run's combinations, a
+// screenshot of the built app next to the rev-8 reference PNG, written to
+// e2e/.out/gallery/index.html. It does not block a merge; it exists so the architect and the
+// operator compare the two by looking. The combinations follow the default plan — dark at every
+// size, light at the default window; `--full` (FULL=1 for the npm script) restores all six.
 //
 // Screens the app cannot reach yet (labels missing from the current shell) get an "unreachable"
 // tile instead of an app image, so the grid still shows what the reference expects there.
@@ -10,13 +12,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT, launchDesignApp, screenNavigator, setWindow } from './design-app.mjs';
 import { acquireE2eLock } from './lock.mjs';
-import { SCREENS, THEMES, resolveSizes } from './layout-rules.mjs';
+import { SCREENS, comboPlan, resolveSizes } from './layout-rules.mjs';
 
 const REF_DIR = process.env.DOCKET_REV8_REF ?? join(homedir(), 'source', 'docket-tasarim', 'rev8', 'ref');
 const OUT = join(ROOT, 'e2e', '.out', 'gallery');
 mkdirSync(join(OUT, 'app'), { recursive: true });
 await acquireE2eLock(ROOT);
 
+const full = process.argv.includes('--full') || process.env.FULL === '1';
 const handle = await launchDesignApp();
 const goto = screenNavigator(handle.page);
 // The plan resolves against the app's own display: full screen is the real work area, so the
@@ -25,23 +28,22 @@ const goto = screenNavigator(handle.page);
 const sizes = await resolveSizes(handle.app);
 const tiles = [];
 
-for (const theme of THEMES) {
-  for (const { size } of sizes) {
-    await setWindow(handle, size, theme);
-    for (const screen of SCREENS) {
-      const name = `${screen}-${size[0]}x${size[1]}-${theme}`;
-      let app = null;
-      try {
-        await goto[screen]();
-        await handle.page.waitForTimeout(450);
-        await handle.page.screenshot({ path: join(OUT, 'app', `${name}.png`) });
-        app = `app/${name}.png`;
-      } catch (error) {
-        console.log(`unreachable ${name}: ${String(error).split('\n')[0]}`);
-      }
-      const ref = join(REF_DIR, `${name}.png`);
-      tiles.push({ name, screen, size: `${size[0]}x${size[1]}`, theme, app, ref: existsSync(ref) ? pathToFileURL(ref).href : null });
+for (const { size: entry, theme } of comboPlan(sizes, { full })) {
+  const [width, height] = entry.size;
+  await setWindow(handle, entry.size, theme);
+  for (const screen of SCREENS) {
+    const name = `${screen}-${width}x${height}-${theme}`;
+    let app = null;
+    try {
+      await goto[screen]();
+      await handle.page.waitForTimeout(450);
+      await handle.page.screenshot({ path: join(OUT, 'app', `${name}.png`) });
+      app = `app/${name}.png`;
+    } catch (error) {
+      console.log(`unreachable ${name}: ${String(error).split('\n')[0]}`);
     }
+    const ref = join(REF_DIR, `${name}.png`);
+    tiles.push({ name, screen, size: `${width}x${height}`, theme, app, ref: existsSync(ref) ? pathToFileURL(ref).href : null });
   }
 }
 await handle.app.close();

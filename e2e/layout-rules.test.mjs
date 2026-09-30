@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { SIZE_PLAN, resolveSizes, sizeFromPlan, sizesForWorkArea } from './layout-rules.mjs';
+import { comboPlan, SIZE_PLAN, resolveSizes, sizeFromPlan, sizesForWorkArea } from './layout-rules.mjs';
 
 test('the plan holds three named sizes, full screen being the display itself', () => {
   assert.deepEqual(
@@ -50,4 +50,35 @@ test('resolveSizes reads the primary display through the app and resolves the pl
     { name: 'default', size: [1152, 720] },
     { name: 'fullscreen', size: [1512, 920] },
   ]);
+});
+
+test('the default combination plan is exactly the four, in the fixed order', () => {
+  assert.deepEqual(comboPlan(sizesForWorkArea({ width: 1512, height: 920 })), [
+    { size: { name: 'minimum', size: [1024, 640] }, theme: 'dark' },
+    { size: { name: 'default', size: [1152, 720] }, theme: 'dark' },
+    { size: { name: 'default', size: [1152, 720] }, theme: 'light' },
+    { size: { name: 'fullscreen', size: [1512, 920] }, theme: 'dark' },
+  ]);
+});
+
+test('the full combination plan restores all six, dark sizes first then light', () => {
+  const plan = comboPlan(sizesForWorkArea({ width: 1920, height: 1080 }), { full: true });
+  assert.deepEqual(
+    plan.map(({ size, theme }) => [size.name, theme]),
+    [
+      ['minimum', 'dark'],
+      ['default', 'dark'],
+      ['fullscreen', 'dark'],
+      ['minimum', 'light'],
+      ['default', 'light'],
+      ['fullscreen', 'light'],
+    ],
+  );
+});
+
+test('the combination plan carries the concrete resolved sizes through', () => {
+  for (const { size } of comboPlan(sizesForWorkArea({ width: 1280, height: 800 }))) {
+    assert.equal(size.size[0] <= 1280, true);
+    assert.equal(size.size[1] <= 800, true);
+  }
 });
