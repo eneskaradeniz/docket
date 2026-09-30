@@ -1,4 +1,4 @@
-// e2e/layout-rules.mjs — the L-1 … L-11 measurements of docs/v2/ui.md → "Verifying the shell".
+// e2e/layout-rules.mjs — the L-1 … L-13 measurements of docs/v2/ui.md → "Verifying the shell".
 // Pure DOM measurement, no pixel diff. Each rule takes a Playwright `page`, the run context
 // ({ screen, width, height, theme }) and the target's selector map, and returns
 // { id, ok, detail }. A selector the target does not have makes the rule report
@@ -7,7 +7,7 @@
 //
 // A selector is a CSS string, or { css, text } to pick the first match whose text contains `text`.
 
-export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12'];
+export const RULE_IDS = ['L-1', 'L-2', 'L-3', 'L-4', 'L-5', 'L-6', 'L-7', 'L-8', 'L-9', 'L-10', 'L-11', 'L-12', 'L-13'];
 
 /** The audit size plan: the window's minimum, its default, and full screen — nothing between.
  *  The first two are numbers; full screen is `'display'`, resolved to the primary display's work
@@ -384,6 +384,78 @@ const l12 = async (page, ctx, sel) => {
   return result('L-12', m.out.length === 0, m.out.length === 0 ? `${m.counted} badges carry their mark inside the row` : `${m.out.join('; ')}`);
 };
 
+
+// L-13: no audited screen shows a problem state. A rendered `error.*` label is content standing in
+// for a query that failed against the design seed — a wrong id, a query the state cannot answer, a
+// stale problem never cleared — so the walk treats its text as a defect, named by screen. The texts
+// are keyed by the app's own label bundles (both locales), never re-typed here.
+const { TR } = await import('../src/presentation/labels/tr.ts');
+const { EN } = await import('../src/presentation/labels/en.ts');
+
+/** Every `error.*` key with its copy in both locales, straight from the bundles. Pure. */
+export const problemLabelEntries = (tr, en) =>
+  Object.keys(tr)
+    .filter((key) => key.startsWith('error.'))
+    .map((key) => ({ key, tr: tr[key], en: en[key] ?? tr[key] }));
+
+/** The entry a visible text renders, when it equals one in either locale; null when it does not.
+ *  Surrounding whitespace is nothing a screen shows, so it is trimmed first — anything else makes
+ *  the text a different string. Pure. */
+export const matchProblemText = (text, entries) => {
+  const seen = text.trim();
+  return entries.find((entry) => entry.tr === seen || entry.en === seen) ?? null;
+};
+
+/** Problem keys the walk owes their screen as a known standing: a cause inside a file under
+ *  interactive redesign (the detail and live panes) is listed in the issue's PR body instead of
+ *  fixed here. Each entry names the screen and the keys it owes, cited to the redesign that
+ *  removes it — the map is empty while no screen owes a standing. */
+export const L13_KNOWN_STANDINGS = {};
+
+const PROBLEM_ENTRIES = problemLabelEntries(TR, EN);
+
+const l13 = async (page, ctx) => {
+  const known = L13_KNOWN_STANDINGS[ctx.screen] ?? [];
+  const hits = await inPage(
+    page,
+    `const texts = new Map();
+    for (const entry of arg) { texts.set(entry.tr, entry); texts.set(entry.en, entry); }
+    const visible = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const matched = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (!visible(el)) continue;
+      const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+      const full = (el.textContent || '').trim();
+      const hit = texts.get(own) ?? texts.get(full);
+      if (hit) matched.push({ el, key: hit.key, text: own || full, tag: el.tagName.toLowerCase() });
+    }
+    // A wrapper whose whole text is the label still matched alongside the element that holds it;
+    // only the innermost element names the finding.
+    return matched
+      .filter((m) => !matched.some((other) => other !== m && m.el.contains(other.el)))
+      .map(({ key, text, tag }) => ({ key, text, tag }));`,
+    PROBLEM_ENTRIES,
+  );
+  if (hits.length === 0) return result('L-13', true, 'no problem text on the screen');
+  const knownHits = hits.filter((hit) => known.includes(hit.key));
+  const fresh = hits.filter((hit) => !known.includes(hit.key));
+  if (fresh.length > 0) {
+    return result(
+      'L-13',
+      false,
+      `${fresh.length} problem text${fresh.length === 1 ? '' : 's'}: ${fresh
+        .map((hit) => `${hit.key} "${hit.text}" <${hit.tag}>`)
+        .slice(0, 3)
+        .join('; ')}`,
+    );
+  }
+  return result('L-13', true, `known standing: ${knownHits.map((hit) => hit.key).join(', ')}`);
+};
+
 const RULES = [
   ['L-1', l1],
   ['L-2', l2],
@@ -397,6 +469,7 @@ const RULES = [
   ['L-10', l10],
   ['L-11', l11],
   ['L-12', l12],
+  ['L-13', l13],
 ];
 
 /** Run every rule for one screen/size/theme; a throwing rule is reported as FAIL, not a crash. */
