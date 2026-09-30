@@ -24,7 +24,7 @@ describe('ProviderMark', () => {
     expect(html).toContain(`width:${MARK_SIZE.default}px`);
     expect(html).toContain(`height:${MARK_SIZE.default}px`);
     // The mark is the whole badge — no letter, no name rides along.
-    expect(html.replace(/<[^>]*>/g, '')).toBe('');
+    expect(/>[^<]+</.test(html)).toBe(false);
   });
 
   it('renders the dense size where the row is dense', () => {
@@ -42,6 +42,6 @@ describe('ProviderMark', () => {
     expect(html).toContain(`width:${MARK_SIZE.default}px`);
     // The neutral glyph is an empty outline — no letter, no vendor name.
     expect(html.includes('svg')).toBe(false);
-    expect(html.replace(/<[^>]*>/g, '')).toBe('');
+    expect(/>[^<]+</.test(html)).toBe(false);
   });
 });
