@@ -54,6 +54,10 @@
    this layer alone. The alias keeps the historical utility names usable while the book's own
    short names (--dim) stay the source of truth. */
 @theme {
+  /* The corner-radius scale (U-23): the only radii a presentation file may name. */
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-panel: 12px;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-raised: var(--raised);

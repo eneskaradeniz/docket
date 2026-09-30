@@ -122,7 +122,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       </header>
 
       {state.ask !== null ? (
-        <div className="grid gap-2 rounded-md border border-signal/45 bg-surface p-3">
+        <div className="grid gap-2 rounded-card border border-signal/45 bg-surface p-3">
           <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-signal">{t(locale, 'live.ask.title')}</span>
           <div>
             <span className="font-mono text-[13px] text-ink">{state.ask.tool}</span>
@@ -155,7 +155,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       ) : (
         <ol className="grid gap-1.5">
           {state.items.map((item, index) => (
-            <li key={index} className="rounded-md border border-hairline bg-surface px-3 py-2">
+            <li key={index} className="rounded-card border border-hairline bg-surface px-3 py-2">
               <LiveItemRow item={item} locale={locale} />
             </li>
           ))}
@@ -163,7 +163,7 @@ export function LivePaneScreen({ store, locale }: LivePaneScreenProps) {
       )}
 
       {state.ended ? (
-        <p className="rounded-md border border-hairline bg-surface px-3 py-2 text-[13px] text-inkdim">{t(locale, 'live.ended')}</p>
+        <p className="rounded-card border border-hairline bg-surface px-3 py-2 text-[13px] text-inkdim">{t(locale, 'live.ended')}</p>
       ) : null}
     </aside>
   );

@@ -121,7 +121,7 @@ function AccountRow({
   readonly onRemove: (accountId: string) => void;
 }) {
   return (
-    <li className="grid gap-2.5 rounded-[10px] border border-hairline bg-surface px-4 py-3">
+    <li className="grid gap-2.5 rounded-card border border-hairline bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span className="text-[13.5px] font-semibold text-ink">{account.label}</span>
@@ -161,7 +161,7 @@ function AccountPicker({
     <ul className="grid gap-1">
       {accounts.map((account) => (
         <li key={account.id}>
-          <label className="flex w-full items-center gap-2.5 rounded-sm border border-hairline bg-raised px-2.5 py-1.5 text-left text-[13px] text-ink">
+          <label className="flex w-full items-center gap-2.5 rounded-control border border-hairline bg-raised px-2.5 py-1.5 text-left text-[13px] text-ink">
             <input
               type="checkbox"
               checked={selected.includes(account.id)}
@@ -392,7 +392,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
           // less that gap and the min() pair only caps the panel at its rest size — together
           // they keep it inside the window down to the 1024×640 minimum, and the columns never
           // let it grow.
-          'flex h-[min(580px,100%)] w-[min(880px,100%)] flex-col overflow-hidden rounded-xl border border-bord bg-surface shadow-2xl outline-none',
+          'flex h-[min(580px,100%)] w-[min(880px,100%)] flex-col overflow-hidden rounded-panel border border-bord bg-surface shadow-2xl outline-none',
           'transition-[opacity,translate,scale] [transition-timing-function:var(--motion-ease)]',
           entered
             ? 'opacity-100 translate-y-0 scale-100 duration-[var(--motion-open-panel)] delay-[var(--motion-open-panel-delay)]'
@@ -408,7 +408,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
             onClick={onClose}
             aria-label={t(locale, 'settings.close')}
             title={t(locale, 'settings.close')}
-            className="grid h-7 w-7 place-items-center rounded-md text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+            className="grid h-7 w-7 place-items-center rounded-control text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
           >
             <CloseIcon />
           </button>
@@ -424,7 +424,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                   type="button"
                   onClick={() => setSection(entry)}
                   aria-current={current ? 'true' : undefined}
-                  className={`flex h-8 items-center rounded-md border px-2.5 text-left text-[13px] ${
+                  className={`flex h-8 items-center rounded-control border px-2.5 text-left text-[13px] ${
                     current
                       ? `font-semibold text-ink ${ACTIVE_CLASS}`
                       : 'border-transparent text-inkdim hover:bg-raised hover:text-ink'
@@ -438,7 +438,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
 
           <div data-settings-content className="grid content-start gap-5 overflow-y-auto p-5">
             {state.problem !== null ? (
-              <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+              <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
                 {t(locale, failureKey(state.problem))}
               </div>
             ) : null}
@@ -452,7 +452,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
             ) : null}
 
             {showRemoveWarning && removeWarning !== null ? (
-              <div role="alert" className="grid gap-2 rounded-md border border-signal/40 bg-signal/10 px-3 py-2.5">
+              <div role="alert" className="grid gap-2 rounded-card border border-signal/40 bg-signal/10 px-3 py-2.5">
                 <p className="text-[13px] text-ink">
                   {t(locale, 'settings.remove.warning')}{' '}
                   <span className="font-mono text-[12.5px] text-signal">{removeWarning.roles.join(', ')}</span>
@@ -501,7 +501,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                         return (
                           <li
                             key={`${binding.scope.level}:${binding.role}:${scopeName(binding.scope)}`}
-                            className="grid gap-1.5 rounded-md border border-hairline bg-surface px-3 py-2"
+                            className="grid gap-1.5 rounded-card border border-hairline bg-surface px-3 py-2"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex min-w-0 flex-wrap items-baseline gap-2">
@@ -553,7 +553,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                   )}
 
                   {editRole === null ? (
-                    <div className="grid gap-2.5 rounded-md border border-hairline bg-band p-3">
+                    <div className="grid gap-2.5 rounded-card border border-hairline bg-band p-3">
                       <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
                         {t(locale, 'settings.binding.add')}
                       </span>
@@ -566,7 +566,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                             value={newRole}
                             onChange={(event) => setNewRole(event.target.value)}
                             placeholder={t(locale, 'settings.binding.rolePlaceholder')}
-                            className="rounded-sm border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
+                            className="rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
                           />
                         </label>
                         <ActionButton variant="primary" size="md" disabled={newRole.trim() === '' || newAccounts.length === 0} onClick={saveNew}>
@@ -610,7 +610,7 @@ export function SettingsPanel({ open, origin, onClose, store, locale, localeStor
                   ) : (
                     <ul className="grid gap-2">
                       {state.discovery.rows.map((row: DiscoveryRow) => (
-                        <li key={row.defId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
+                        <li key={row.defId} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <code className="font-mono text-[13px] text-ink">{row.defId}</code>
                             <DiscoveryBadges binPath={row.binPath} loggedIn={row.loggedIn} locale={locale} />

@@ -22,7 +22,7 @@ export function OutcomeNotice({ ok, text, code }: OutcomeNoticeProps) {
     </>
   );
   return (
-    <div role="status" className={`flex items-center gap-2.5 rounded-md border bg-band px-3 py-2 ${edge}`}>
+    <div role="status" className={`flex items-center gap-2.5 rounded-card border bg-band px-3 py-2 ${edge}`}>
       {body}
     </div>
   );

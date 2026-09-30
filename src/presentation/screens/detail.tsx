@@ -105,7 +105,7 @@ const RUN_OUTCOME_LAMP: Readonly<Record<'running' | 'succeeded' | 'failed' | 'li
 };
 
 const INPUT_CLASS =
-  'rounded-sm border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
+  'rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal';
 const LABEL_CLASS = 'font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim';
 
 /** Only a person opens these two kinds; every other gate is machine-evaluated, so only these
@@ -139,7 +139,7 @@ function DeployApprovalForm({
     });
   };
   return (
-    <div className="mt-2 grid gap-2 rounded-md border border-hairline bg-band p-3">
+    <div className="mt-2 grid gap-2 rounded-card border border-hairline bg-band p-3">
       <div className="flex flex-wrap items-center gap-2">
         <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>
         {deploy.protectedEnvironment ? <StateBadge tone="signal">{t(locale, 'gate.deploy.protected')}</StateBadge> : null}
@@ -199,7 +199,7 @@ function GateRow({
   // cockpit's rows carry; machine gates keep the plain hairline.
   const edge = actionable && (isHumanDecision(gate) || gate.kind === 'deploy') ? 'border-signal/40' : 'border-hairline';
   return (
-    <li className={`rounded-md border bg-surface px-3 py-2 ${edge}`}>
+    <li className={`rounded-card border bg-surface px-3 py-2 ${edge}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <span className="text-[13.5px] font-semibold text-ink">{t(locale, GATE_KIND_KEY[gate.kind])}</span>
@@ -240,7 +240,7 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         chip.kind === 'stage' ? (
           <span
             key={`${chip.name}:${index}`}
-            className={`inline-flex h-[26px] flex-none items-center gap-[5px] rounded-md px-2.5 text-[12.5px] ${
+            className={`inline-flex h-[26px] flex-none items-center gap-[5px] rounded-control px-2.5 text-[12.5px] ${
               chip.standing === 'done' ? 'bg-raised text-ink' : chip.standing === 'current'
               ? 'bg-raised text-ink shadow-[0_0_0_1.5px_var(--signal)]'
               : 'bg-raised text-inkdim'
@@ -256,7 +256,7 @@ function FlowStrip({ stages, locale }: { readonly stages: readonly StageGates[];
         ) : (
           <span
             key={`gate:${chip.name}:${index}`}
-            className="inline-flex h-[26px] flex-none items-center rounded-md border border-dashed border-signal px-2.5 text-[11.5px] text-signal"
+            className="inline-flex h-[26px] flex-none items-center rounded-control border border-dashed border-signal px-2.5 text-[11.5px] text-signal"
           >
             {t(locale, 'detail.flow.gate')} · {chip.name}
           </span>
@@ -333,7 +333,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
       </header>
 
       {state.problem !== null ? (
-        <div role="alert" className="rounded-md border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
+        <div role="alert" className="rounded-card border border-error/40 bg-surface px-3 py-2 text-[13px] text-error">
           {t(locale, failureKey(state.problem))}
         </div>
       ) : null}
@@ -354,7 +354,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <SectionCard title={t(locale, 'detail.section.asks')}>
               <ul className="grid gap-2">
                 {asks.map((ask) => (
-                  <li key={ask.askId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-signal/40 bg-surface px-3 py-2">
+                  <li key={ask.askId} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-signal/40 bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-signal motion-safe:animate-pulse" />
                       <div className="min-w-0">
@@ -379,7 +379,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
           <section className="grid gap-2.5">
             <h2 className="text-[12.5px] font-semibold text-inkdim">{t(locale, 'detail.section.expected')}</h2>
             {view === null ? null : pendingHumanGate !== undefined ? (
-              <div className="rounded-lg border border-hairline bg-surface p-4">
+              <div className="rounded-card border border-hairline bg-surface p-4">
                 <p className="text-[14px] font-semibold text-ink">{pendingHumanGate.label ?? pendingHumanGate.id}</p>
                 <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.body')}</p>
                 <div className="mt-3.5 flex gap-2">
@@ -392,7 +392,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 </div>
               </div>
             ) : canStart ? (
-              <div className="rounded-lg border border-hairline bg-surface p-4">
+              <div className="rounded-card border border-hairline bg-surface p-4">
                 <p className="mt-1.5 text-[13px] text-inkdim">{t(locale, 'detail.expected.empty')}</p>
                 <div className="mt-3.5">
                   <ActionButton variant="primary" size="md" onClick={() => void store.enqueue()}>
@@ -401,7 +401,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-hairline bg-surface p-4">
+              <div className="rounded-card border border-hairline bg-surface p-4">
                 <p className="mt-1.5 text-[13px] text-inkdim">
                   {t(locale, view.state.status === 'done' ? 'detail.expected.done' : 'detail.expected.empty')}
                 </p>
@@ -447,7 +447,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
                 {view.runs.map((run) => {
                   const outcome = run.endedAt === undefined ? 'running' : (run.outcome ?? 'running');
                   return (
-                    <li key={run.id} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-hairline bg-surface px-3 py-2">
+                    <li key={run.id} className="grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-card border border-hairline bg-surface px-3 py-2">
                       <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${RUN_OUTCOME_LAMP[outcome]}`} />
                       <div className="flex min-w-0 items-baseline gap-2">
                         <code className="truncate font-mono text-[12px] text-ink">{run.id}</code>
@@ -465,7 +465,7 @@ export function WorkOrderDetailScreen({ store, workOrderId, locale, backKey, onB
             <SectionCard title={t(locale, 'detail.section.environments')}>
               <ul className="grid gap-1.5">
                 {environments.map((deploy) => (
-                  <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-hairline bg-surface px-3 py-2">
+                  <li key={deploy.environment} className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface px-3 py-2">
                     <div className="flex min-w-0 items-center gap-3">
                       <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
                       <code className="font-mono text-[13px] text-ink">{deploy.environment}</code>

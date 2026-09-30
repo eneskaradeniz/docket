@@ -9,7 +9,7 @@ import { BoardCard } from './board-card';
 import { FoldIcon, UnfoldIcon } from './board-icons';
 
 const ICON_BUTTON_CLASS =
-  'grid h-6 w-6 flex-none place-items-center rounded-lg border border-transparent text-inkdim outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-bord hover:text-ink focus-visible:border-signal-soft disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none';
+  'grid h-6 w-6 flex-none place-items-center rounded-control border border-transparent text-inkdim outline-none transition-colors duration-[var(--motion-board-hover)] hover:border-bord hover:text-ink focus-visible:border-signal-soft disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none';
 
 const PILL_CLASS = 'inline-flex h-5 flex-none items-center gap-1.5 rounded-full bg-raised px-2 font-mono text-[12px] font-medium leading-none';
 
@@ -31,7 +31,7 @@ export function BoardColumnLane({
     return (
       <section
         aria-label={`${name}, ${t(locale, 'board.column.shut')}`}
-        className="flex w-12 flex-none snap-start flex-col items-center gap-3 rounded-xl border border-bord bg-band pb-3 pt-2"
+        className="flex w-12 flex-none snap-start flex-col items-center gap-3 rounded-panel border border-bord bg-band pb-3 pt-2"
       >
         <button
           type="button"
@@ -51,7 +51,7 @@ export function BoardColumnLane({
   return (
     <section
       aria-label={name}
-      className="flex min-w-[264px] max-w-[320px] flex-[1_1_280px] snap-start flex-col overflow-hidden rounded-xl border border-bord bg-band"
+      className="flex min-w-[264px] max-w-[320px] flex-[1_1_280px] snap-start flex-col overflow-hidden rounded-panel border border-bord bg-band"
     >
       <div className="flex h-10 flex-none items-center gap-2 border-b border-hairline pl-3 pr-2">
         <h2 className="mr-auto min-w-0 truncate text-[13px] font-semibold text-ink" title={name}>
@@ -87,7 +87,7 @@ export function BoardColumnLane({
         </ul>
       ) : (
         <div className="p-2">
-          <p className="grid min-h-24 place-items-center rounded-lg border border-dashed border-hairline p-4 text-center text-[12.5px] text-inkdim">
+          <p className="grid min-h-24 place-items-center rounded-card border border-dashed border-hairline p-4 text-center text-[12.5px] text-inkdim">
             {t(locale, 'board.empty.stage')}
           </p>
         </div>

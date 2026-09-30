@@ -81,7 +81,7 @@ const AccountCardView = ({
     type="button"
     onClick={onOpen}
     aria-current={active ? 'true' : undefined}
-    className={`block w-full rounded-lg border p-2 text-left ${
+    className={`block w-full rounded-card border p-2 text-left ${
       active ? ACTIVE_CLASS : 'border-hairline bg-surface hover:border-bord'
     }`}
   >
@@ -148,7 +148,7 @@ export function SidebarAccounts({
   return (
     <div
       data-accounts-frame=""
-      className={`mt-2.5 flex-none rounded-[10px] border border-hairline bg-band px-1 ${state.open ? 'pb-2' : ''}`}
+      className={`mt-2.5 flex-none rounded-card border border-hairline bg-band px-1 ${state.open ? 'pb-2' : ''}`}
     >
       {/* The header row's classes never change with the state — its top offset and height are the
           same collapsed and expanded, so expanding only adds the body below. Collapsed, the row's
@@ -160,7 +160,7 @@ export function SidebarAccounts({
           type="button"
           onClick={() => store.toggle()}
           aria-expanded={state.open}
-          className="flex min-w-0 flex-1 items-center rounded bg-transparent py-0.5 text-left"
+          className="flex min-w-0 flex-1 items-center rounded-control bg-transparent py-0.5 text-left"
         >
           <span className="truncate font-mono text-[10.5px] font-medium text-inkdim">
             {t(locale, 'accounts.title')}
@@ -175,7 +175,7 @@ export function SidebarAccounts({
           }}
           aria-label={t(locale, 'accounts.refresh')}
           title={t(locale, 'accounts.refresh')}
-          className={`grid h-[22px] w-[22px] flex-none place-items-center rounded border border-hairline text-inkdim hover:border-bord hover:text-ink ${
+          className={`grid h-[22px] w-[22px] flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink ${
             spinning || state.refreshing ? 'animate-spin' : ''
           }`}
         >
@@ -186,7 +186,7 @@ export function SidebarAccounts({
           onClick={() => store.toggle()}
           aria-label={t(locale, 'accounts.toggle')}
           title={t(locale, 'accounts.toggle')}
-          className="grid h-[22px] w-[22px] flex-none place-items-center rounded border border-hairline text-inkdim hover:border-bord hover:text-ink"
+          className="grid h-[22px] w-[22px] flex-none place-items-center rounded-control border border-hairline text-inkdim hover:border-bord hover:text-ink"
         >
           <Chevron open={state.open} />
         </button>
