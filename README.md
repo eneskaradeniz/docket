@@ -29,6 +29,18 @@ npm run check:boundaries
 
 Contributors and coding agents: read `CLAUDE.md` first.
 
+## Providers
+
+Agent CLIs Docket can run, with the route kinds of each. Support levels and model data come
+from the capability registry; regenerate with `npm run gen:provider-matrix`.
+
+<!-- provider-matrix:start -->
+| Provider | Route kind | Models | Thinking | Context | Cost | Support level |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Code (`claude-code`) | `anthropic-subscription` | — | — | — | equivalent | isolated |
+| Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | isolated |
+<!-- provider-matrix:end -->
+
 ## License
 
 [Apache License 2.0](LICENSE). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Security
