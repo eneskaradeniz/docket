@@ -9,6 +9,9 @@ export type Headroom =
 
 export function matchesModel(pool: Pool, model: string): boolean {
   if (pool.appliesTo === 'all') return true;
+  // Unknown applicability is information, not a match: the pool is never routed to a model, so
+  // its meters cannot block any run.
+  if (pool.appliesTo === 'unknown') return false;
   const lower = model.toLowerCase();
   return pool.appliesTo.some((matcher) =>
     'exact' in matcher ? matcher.exact.toLowerCase() === lower : lower.startsWith(matcher.prefix.toLowerCase()),
