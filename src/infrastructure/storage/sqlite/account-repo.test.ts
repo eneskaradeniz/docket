@@ -250,6 +250,30 @@ describe('createSqliteAccountRepo', () => {
       expect('label' in readMeter).toBe(false);
     });
 
+    it('A-44: records are JSON — a record stored before the route fields reads back unchanged, and the new fields round-trip', async () => {
+      const repo = makeRepo();
+      const old = account(A1, 'before');
+      await repo.save(old);
+      const readOld = await repo.get(accountId(A1));
+      expect(readOld).toStrictEqual(old);
+      if (readOld === undefined) throw new Error('account must read back');
+      expect('routeKind' in readOld).toBe(false);
+      expect('endpoint' in readOld).toBe(false);
+      expect('identityDir' in readOld).toBe(false);
+      expect('tierModels' in readOld).toBe(false);
+
+      const routed: AccountRecord = {
+        ...account(A1, 'after'),
+        routeKind: 'compatible-endpoint',
+        endpoint: 'https://api.compatible.example/v1',
+        identityDir: '/Users/op/.config/agent-a',
+        tierModels: { strong: 'm-strong', balanced: 'm-balanced', fast: 'm-fast' },
+      };
+      await repo.save(routed);
+      expect(await repo.get(accountId(A1))).toStrictEqual(routed);
+      expect((await repo.list())[0]).toStrictEqual(routed);
+    });
+
     it('I-6: index columns are rewritten from the record on every write — a meter that moves pools changes account ownership', async () => {
       const repo = makeRepo();
       await repo.savePools(accountId(A1), [pool(P1, A1)]);
