@@ -1,10 +1,16 @@
 // The capability record contract and its pure derivations. Contract: docs/v2/provider-capabilities.md
-// sections 1–2. The registry data itself is infrastructure — provider names may not appear in the
-// domain — so every function here takes its input as a parameter and knows no provider id.
+// sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
+// the domain — so every function here takes its input as a parameter and knows no provider id.
 import type { AuthMode } from '../quota/index';
 import type { ProviderCapabilities } from './capabilities';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
+
+/**
+ * How a model's use is paid for on a route. `included` and `metered` are verified states;
+ * `unknown` is never assumed to be free nor to cost a given amount.
+ */
+export type Billing = 'included' | 'metered' | 'unknown';
 
 /**
  * Effort levels in ascending order. `'none'` is the provider's thinking-off setting — the lowest
@@ -44,6 +50,8 @@ export interface ModelRecord {
   readonly thinking: Thinking;
   readonly contextWindow?: number;
   readonly retired?: true;
+  /** Absent means `unknown` — never assumed free. */
+  readonly billing?: Billing;
 }
 
 export interface RouteKindRecord {
