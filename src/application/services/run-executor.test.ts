@@ -718,8 +718,13 @@ describe('executeRun', () => {
 
   it('A-17: a hit on an account with no record has no policy to follow and asks', async () => {
     const h = await harness({ withAccount: false, script: [limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })] });
+    // The account stays absent so the `?? 'ask'` fallback really fires; the route pins an
+    // included model so the spend-consent preflight does not refuse the run beforehand.
+    const input = { ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model: 'model-free' } } };
+    const models: readonly CatalogModel[] = [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included' }];
+    const deps = { ...h.deps, modelCatalog: createFakeModelCatalog({ [ACCOUNT]: models }) };
 
-    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+    const outcome = await executeRun(deps, permissionGate().permissions, input);
 
     expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'ask', reason: 'policy' } });
   });
@@ -1134,6 +1139,26 @@ describe('executeRun — spend consent', () => {
 
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a byok account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'byok' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on a cloud account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'cloud' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
   });
 
   it('P-40: an unpinned run on a route kind that fixes defaultBilling metered is refused', async () => {

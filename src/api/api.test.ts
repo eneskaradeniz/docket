@@ -172,13 +172,15 @@ const createHarness = async (): Promise<Harness> => {
   return { deps, definitions, commands, worktrees, log };
 };
 
-/** Everything a routed command needs: one existing account and a global binding to it. */
+/** Everything a routed command needs: one existing account and a global binding to it. The
+ *  account is a subscription: the feed tests run the route unpinned, and an unpinned route on a
+ *  metered-by-default mode is refused before it starts (P-40). */
 const seedRouting = async (h: Harness): Promise<void> => {
   await h.deps.accounts.save({
     id: ACCOUNT,
     provider: 'acme-prov',
     label: 'Main',
-    authMode: 'api_key',
+    authMode: 'subscription',
     limitPolicy: 'wait_resume',
     caps: [],
   });
@@ -1152,6 +1154,7 @@ describe('createApi', () => {
     it('U-12: run executor events arrive as run.updated with the runId through the injected notify hook', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);
+      await seedRouting(h); // the executor's preflight needs an account the route can read
       const seen: UiEvent[] = [];
       api.subscribe((event) => seen.push(event));
 
@@ -1254,6 +1257,7 @@ describe('createApi', () => {
       script: readonly AgentEvent[],
       ids: { readonly workOrder: Ulid<'work-order'>; readonly queueItem: Ulid<'queue-item'> },
     ): Promise<RunId> => {
+      await seedRouting(h); // the executor's preflight needs an account the route can read
       const transports = createFakeTransportResolver();
       transports.register(ACCOUNT, createFakeTransport([...script]));
       await h.deps.workOrders.create({

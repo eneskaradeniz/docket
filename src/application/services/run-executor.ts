@@ -211,8 +211,8 @@ const buildFallbackPrompt = async (
 const DEFAULT_MODEL_CONSENT = '*';
 
 /** An unpinned route runs the CLI's default model, whose billing the catalog cannot name. The
- *  route kind fixes it when it knows (`defaultBilling`); an API-key account is billed per use by
- *  nature, anything else rides a plan. */
+ *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, every
+ *  other auth mode is billed per use by nature. */
 const defaultBillingOf = (
   capabilities: Pick<AppDeps, 'capabilities'>['capabilities'],
   account: AccountRecord | undefined,
@@ -223,7 +223,7 @@ const defaultBillingOf = (
       : capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
   const fixed = routeId === undefined ? undefined : capabilities.routeKind(routeId)?.defaultBilling;
   if (fixed !== undefined) return fixed;
-  return account?.authMode === 'api_key' ? 'metered' : 'included';
+  return account?.authMode === 'subscription' ? 'included' : 'metered';
 };
 
 /** P-40: a run whose model may spend real money starts only with the user's recorded consent and
