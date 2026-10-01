@@ -14,7 +14,8 @@ route, not to the provider alone.
 - One data file is the single source of truth: `src/infrastructure/providers/registry/capability-registry.ts`, plain `as const` data checked with `satisfies` against the domain types. The types and the pure derivations live in `src/domain/providers/capability.ts` (domain rules: no npm packages, no Node builtins, no classes). The data sits in infrastructure because vendor names are banned outside `src/infrastructure/providers/`; an application port `CapabilityCatalog` exposes route kinds to `saveAccount`.
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
   evidence, and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
-  source, `tierModels`, cost kind, quota probe kind, model source. Per model: `id`, `family`, `tier`,
+  source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
+  live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`.
 - Everything derived from it is a pure function in the domain module: support level, thinking options
   for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
@@ -64,7 +65,8 @@ Four layers, merged per route:
 3. **Merge:** live ∪ bundled. Each model carries its source (`live | bundled`). The cache is keyed by
    account and route, never by provider alone, so a plan-dependent list (for example a model only a
    higher subscription plan offers) never leaks to another account. A failed refresh keeps the last good
-   list and marks it stale.
+   list and marks it stale. When the route kind sets `liveIsAuthoritative`, bundled models missing from
+   the live list are dropped instead of kept.
 4. **Unknown model:** never rejected. A live id missing from the registry is selectable with unknown
    capabilities: thinking control hidden, price unknown. If its family is recognised by id pattern it gets
    a tier automatically and is labelled auto-classified. `retired` models stay in the registry so old
@@ -74,11 +76,16 @@ The model source is data per provider: one of `sdk | app-server | acp-session | 
 Which source each CLI really offers is established per provider by a discovery spike, from the CLI's own
 documentation and by running the installed CLI, and the result is written into the registry, not guessed.
 Multi-vendor providers (Cursor, Copilot, OpenCode) list many models: the unknown-model rule applies and only
-the most used models get full registry entries. Observed: one provider's ACP session reports only a stub
-model, so its catalog comes from the CLI's documentation (`static`), not from the session.
+the most used models get full registry entries. Observed: on a plan limited to automatic model choice, one
+provider's session lists only its automatic choice with three quality settings (efficiency, balance,
+intelligence); the list is plan-scoped, so it is authoritative, and the registry's model entries for that
+provider are not shown on such a plan.
 
 Tier resolution: a route's strong/balanced/fast tier resolves to the highest-version available model of
-that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly).
+that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly). A route may
+map a tier to a provider-side quality setting instead of a model id (the automatic mode above maps strong,
+balanced and fast to its intelligence, balance and efficiency settings); `tierModels` then holds the name
+of that setting.
 The registry is updated by Docket releases. Fetching the registry from the internet is out of scope until
 the operator decides it (open decision O-4).
 
