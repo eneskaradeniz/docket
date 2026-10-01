@@ -22,7 +22,7 @@ provider's chat app, IDE plugins) and Docket's own accounting is never authorita
 
 | Provider · plan | Pools / windows | Best channel | Reset time |
 | --- | --- | --- | --- |
-| Claude Code · Pro/Max | account; 5h + 7d; 7d per model family (Opus/Sonnet) | stream event + SDK `get_usage` | exact |
+| Claude Code · Pro/Max | account; 5h + 7d; 7d per model family (Opus/Sonnet); model-scoped rows (for example Fable) arrive in the usage report's model-scoped list and are matched by display name; on Max the Fable row is its own weekly meter that the documentation describes as a share of the weekly limit, and the operator observed that it also lowers the 5-hour and weekly meters (the 5-hour part is not documented); on Pro, Fable is outside the plan limits and billed through usage credits at API rates, only with extra usage enabled | stream event + SDK `get_usage` | exact |
 | Claude Code · API key | per-minute throughput + monthly spend cap | own spend tracking | month start |
 | Codex · ChatGPT plans | primary ≈5h, secondary ≈weekly; read `windowDurationMins`; the window set depends on the plan: a free plan reports one 30-day window and no secondary window (observed live) | app-server `account/rateLimits/*` | exact |
 | Antigravity `agy` · Google AI Pro/Ultra | **per model group** ("Gemini models", "Claude and GPT models"), each 5h + weekly | `/usage` JSON in print mode (verified, see below) | exact via query; relative in errors |
