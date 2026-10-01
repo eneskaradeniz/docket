@@ -2,6 +2,7 @@
 import type { AccountRepo } from './account-repo';
 import type { TransportResolver } from './agent-transport';
 import type { BindingRepo } from './binding-repo';
+import type { CapabilityCatalog } from './capability-catalog';
 import type { Clock } from './clock';
 import type { DefinitionStore } from './definition-store';
 import type { EventLog } from './event-log';
@@ -24,6 +25,7 @@ export interface AppDeps {
   readonly workOrders: WorkOrderRepo;
   readonly runs: RunRepo;
   readonly accounts: AccountRepo;
+  readonly capabilities: CapabilityCatalog;
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;
   readonly bindings: BindingRepo;

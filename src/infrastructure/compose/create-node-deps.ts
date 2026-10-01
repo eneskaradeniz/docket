@@ -23,6 +23,7 @@ import {
 } from '../storage/sqlite/index';
 import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
 import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
+import { createCapabilityCatalog } from '../providers/registry/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -57,6 +58,7 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     workOrders: createSqliteWorkOrderRepo(db),
     runs: createSqliteRunRepo(db),
     accounts: createSqliteAccountRepo(db),
+    capabilities: createCapabilityCatalog(),
     projects,
     repos,
     bindings: createSqliteBindingRepo(db),

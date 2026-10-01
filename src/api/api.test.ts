@@ -807,6 +807,50 @@ describe('createApi', () => {
       expect(await h.deps.secrets.get(secretRef)).toBe('sk-keep-me');
     });
 
+    it('A-44: an update through the API keeps the stored route fields (serialisation round-trip)', async () => {
+      const h = await createHarness();
+      const tierModels = { strong: 'm-strong', balanced: 'm-balanced', fast: 'm-fast' };
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        routeKind: 'compatible-endpoint',
+        endpoint: 'https://api.compatible.example/v1',
+        identityDir: '/Users/op/.config/agent-a',
+        tierModels,
+        caps: [],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      // The command's editable surface does not name the route fields, so an update carries them
+      // over verbatim — an account saved with a route keeps riding it.
+      expect(await h.deps.accounts.get(ACCOUNT)).toEqual({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+        plan: undefined,
+        limitPolicy: 'wait_resume',
+        caps: [],
+        secretRef: undefined,
+        routeKind: 'compatible-endpoint',
+        endpoint: 'https://api.compatible.example/v1',
+        identityDir: '/Users/op/.config/agent-a',
+        tierModels,
+      });
+    });
+
     it('U-13: an unknown authMode is rejected at the boundary and nothing is written', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

@@ -20,6 +20,10 @@ export interface AccountRecord {
   readonly plan?: string;
   readonly limitPolicy: LimitPolicy;
   readonly secretRef?: string; // key into SecretVault; never the secret itself
+  readonly routeKind?: string; // route kind id from the capability registry (data); absent → derived from provider + authMode
+  readonly endpoint?: string; // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
+  readonly identityDir?: string; // absolute path of the user's own config directory; subscription route kinds only
+  readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 

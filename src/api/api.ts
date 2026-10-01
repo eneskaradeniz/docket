@@ -399,8 +399,9 @@ const runCommand = async (
       const authMode = AUTH_MODES.find((mode) => mode === command.authMode);
       if (authMode === undefined) return invalidId();
 
-      // The command owns only the editable surface; policy, caps and the secret ref belong to
-      // later surfaces and to the vault, so an update keeps whatever the store already holds.
+      // The command owns only the editable surface; policy, caps, the secret ref and the route
+      // fields belong to later surfaces and to the vault, so an update keeps whatever the store
+      // already holds — an account saved with a route keeps riding it.
       const existing = id === undefined ? undefined : await deps.accounts.get(id);
       const record: AccountRecord = {
         id: id ?? deps.ids.next<'account'>(),
@@ -411,9 +412,20 @@ const runCommand = async (
         limitPolicy: existing?.limitPolicy ?? 'wait_resume',
         caps: existing?.caps ?? [],
         secretRef: existing?.secretRef,
+        routeKind: existing?.routeKind,
+        endpoint: existing?.endpoint,
+        identityDir: existing?.identityDir,
+        tierModels: existing?.tierModels,
       };
       const saved = await saveAccount(
-        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts, secrets: deps.secrets },
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          accounts: deps.accounts,
+          secrets: deps.secrets,
+          capabilities: deps.capabilities,
+        },
         { record, actor },
       );
       return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };

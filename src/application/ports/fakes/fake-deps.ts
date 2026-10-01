@@ -3,6 +3,7 @@ import type { AppDeps } from '../deps';
 
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
+import { createFakeCapabilityCatalog } from './fake-capability-catalog';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
 import { createFakeDefinitionStore } from './fake-definition-store';
@@ -30,6 +31,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   workOrders: createFakeWorkOrderRepo(),
   runs: createFakeRunRepo(),
   accounts: createFakeAccountRepo(),
+  capabilities: createFakeCapabilityCatalog(),
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),
   bindings: createFakeBindingRepo(),

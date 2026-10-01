@@ -18,6 +18,7 @@ import type {
   TransportResolver,
 } from './agent-transport';
 import type { BindingRepo, BindingScope } from './binding-repo';
+import type { CapabilityCatalog } from './capability-catalog';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
 import type { AppDeps } from './deps';
@@ -48,6 +49,7 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['workOrders']>().toEqualTypeOf<WorkOrderRepo>();
     expectTypeOf<AppDeps['runs']>().toEqualTypeOf<RunRepo>();
     expectTypeOf<AppDeps['accounts']>().toEqualTypeOf<AccountRepo>();
+    expectTypeOf<AppDeps['capabilities']>().toEqualTypeOf<CapabilityCatalog>();
     expectTypeOf<AppDeps['projects']>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<AppDeps['repos']>().toEqualTypeOf<RepoRegistry>();
     expectTypeOf<AppDeps['bindings']>().toEqualTypeOf<BindingRepo>();
@@ -72,6 +74,7 @@ describe('AppDeps', () => {
       | 'workOrders'
       | 'runs'
       | 'accounts'
+      | 'capabilities'
       | 'projects'
       | 'repos'
       | 'bindings'
@@ -103,6 +106,7 @@ describe('AppDeps', () => {
     expectTypeOf<Application.RunRepo>().toEqualTypeOf<RunRepo>();
     expectTypeOf<Application.AccountRecord>().toEqualTypeOf<AccountRecord>();
     expectTypeOf<Application.AccountRepo>().toEqualTypeOf<AccountRepo>();
+    expectTypeOf<Application.CapabilityCatalog>().toEqualTypeOf<CapabilityCatalog>();
     expectTypeOf<Application.ProjectRepo>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<Application.RepoRegistry>().toEqualTypeOf<RepoRegistry>();
     expectTypeOf<Application.GitProbe>().toEqualTypeOf<GitProbe>();
