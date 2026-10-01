@@ -123,15 +123,14 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
   account token. **The endpoint is observed behaviour of the operator's own tooling, not a published
   contract; it can change.** Failure → quota `unknown`, the run is not blocked; spend caps and 429 mapping
   to `limit_hit` still protect. Response windows map to meters: the 5-hour token window and the monthly
-  tool window. Cache 60 s, show the last good value with a stale mark. No weekly window exists on this route.
+  tool window. Cache 60 s, show the last good value with a stale mark. The observed endpoint reports no weekly window (quota.md lists one; the probe issue confirms).
 - Cost kind per route: subscription `equivalent`; API key `reported` when the SDK reports it, otherwise
   `computed` from the registry price table (labelled estimate); GLM preset `equivalent`. The Anthropic
   price table never applies to a compatible endpoint.
 - Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
   a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
   whose headroom is checked.
-- Some providers bill per request with a per-model multiplier rather than per token. If that is confirmed
-  from the provider's documentation, `CostKind` gains `requests` (open decision O-7).
+- Some providers bill in credits or requests rather than tokens (quota.md lists Copilot as monthly AI credits). If a discovery spike confirms a non-token unit, `CostKind` gains it (open decision O-7).
 
 ## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
