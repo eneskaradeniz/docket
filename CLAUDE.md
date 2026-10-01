@@ -31,8 +31,7 @@ ask; do not pick one yourself.
 5. **Before every commit:** `npm run typecheck && npm test && npm run check:boundaries` — all green.
 6. **v1 is reference only**, reached through the exact path an issue names:
    `git show v1-final:<path>`. Never restore v1 documents; never follow a v1 rule or ADR.
-7. **No third-party code.** Do not copy source code from other projects, and do not name them in
-   code or comments. Integrations are written from the CLI's or protocol's own documentation.
+7. **Reference projects.** Take only ideas and behaviour from other projects; write the code independently, under this repo's layer rules. Never copy source code. If a part cannot be solved without staying near-verbatim, stop and ask the operator. Never name another project in code, comments, documents, or the `NOTICE` file. Integrations are written from the CLI's or protocol's own documentation. The agent/provider-name restriction in Code rules applies to code and comments under `src/`; the README and product documents may name providers.
 8. **No new npm dependencies** unless the issue names them.
 9. Ambiguity → stop and ask on the issue. Never decide architecture.
 

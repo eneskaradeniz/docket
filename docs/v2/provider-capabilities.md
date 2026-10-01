@@ -1,8 +1,9 @@
 # Provider capabilities and routes
 
-Design for Phase 3.6 (not yet implemented). It extends `providers.md` and `quota.md`; where they
+Design, not yet contract. It extends `providers.md` and `quota.md`; where they
 disagree, this file wins for the topics below and the other two are corrected in the same PR that
-implements the change. Rule ids continue the `P-n` series.
+implements the change. Rule ids continue the `P-n` series; the rule-coverage check does not scan this
+file, so each rule moves into `providers.md` together with its tests when it is implemented.
 
 Vocabulary: a **provider** is an agent CLI (one definition). An **account** is a credential of a
 provider. A **route** is an account plus a model (and, for compatible endpoints, an endpoint). Two
@@ -122,14 +123,15 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
   account token. **The endpoint is observed behaviour of the operator's own tooling, not a published
   contract; it can change.** Failure → quota `unknown`, the run is not blocked; spend caps and 429 mapping
   to `limit_hit` still protect. Response windows map to meters: the 5-hour token window and the monthly
-  tool window. Cache 60 s, show the last good value with a stale mark. The observed endpoint reports no weekly window (quota.md lists one; the probe issue confirms).
+  tool window. Cache 60 s, show the last good value with a stale mark. No weekly window exists on this route.
 - Cost kind per route: subscription `equivalent`; API key `reported` when the SDK reports it, otherwise
   `computed` from the registry price table (labelled estimate); GLM preset `equivalent`. The Anthropic
   price table never applies to a compatible endpoint.
 - Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
   a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
   whose headroom is checked.
-- Some providers bill in credits or requests rather than tokens (quota.md lists Copilot as monthly AI credits). If a discovery spike confirms a non-token unit, `CostKind` gains it (open decision O-7).
+- Some providers bill per request with a per-model multiplier rather than per token. If that is confirmed
+  from the provider's documentation, `CostKind` gains `requests` (open decision O-7).
 
 ## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
@@ -138,7 +140,7 @@ event mapping, resume, stop). New providers enter as `experimental` or `isolated
 through the gates. Candidate classes, by how they fit today's transports:
 
 | Class | Providers | Effort |
-| --- | --- |
+| --- | --- | --- |
 | Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot | model layer only |
 | ACP, existing transport | kilo, vibe, hermes, devin, trae-cli, reasonix | S each |
 | ACP with a special case | kimi, kiro, amr | M each |
@@ -204,5 +206,5 @@ from the pack, the stage checks pass.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
-- O-7 Whether `CostKind` gains `requests` for per-request billing.
+- O-7 Whether `CostKind` gains a non-token unit (credits or requests), decided after the Copilot discovery spike.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
