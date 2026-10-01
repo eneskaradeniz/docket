@@ -77,7 +77,7 @@ interface LaunchInput {
    `protocol` (`session/load`, thread resume). If resume fails, start fresh with a summary of the
    previous transcript.
 
-Subscription identity on the SDK leg (no per-run config directory today) is specified in provider-capabilities.md (P-31).
+Subscription identity on the SDK leg (no per-run config directory today) is specified in provider-capabilities.md (P-32).
 
 ## Support tiers
 
@@ -92,7 +92,7 @@ Subscription identity on the SDK leg (no per-run config directory today) is spec
 Whether each ACP agent's `session/request_permission` really blocks until answered is verified by a
 Phase 0 probe per agent. Agents that do not block drop to `isolated`.
 
-The tier shown to users is derived from the capability record described in [provider-capabilities.md](provider-capabilities.md) (P-26, P-27); the model catalog, routes and account discovery are specified there.
+The tier shown to users is derived from the capability record described in [provider-capabilities.md](provider-capabilities.md) (P-27, P-28); the model catalog, routes and account discovery are specified there.
 
 ---
 

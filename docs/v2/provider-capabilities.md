@@ -9,7 +9,7 @@ provider. A **route** is an account plus a model (and, for compatible endpoints,
 routes of one provider can differ in models, thinking, quota and cost, so capabilities attach to the
 route, not to the provider alone.
 
-## 1. The capability record (P-26)
+## 1. The capability record (P-27)
 - One data file is the single source of truth: `src/domain/providers/capability-registry.ts`, plain
   `as const` data checked with `satisfies`. No npm packages, no Node builtins, no classes (domain rules).
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
@@ -17,7 +17,7 @@ route, not to the provider alone.
   source, `tierModels`, cost kind, quota probe kind, model source. Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`.
 - Everything derived from it is a pure function in the same module: support level, thinking options
-  for a model, tier resolution. The README matrix is generated from it (P-35). No second table exists.
+  for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
 
 ```ts
 type Tier = 'strong' | 'balanced' | 'fast'
@@ -30,7 +30,7 @@ type SupportLevel = 'planned' | 'experimental' | 'isolated' | 'full'
 type CostKind = 'reported' | 'computed' | 'equivalent' | 'none'   // as in ProviderCapabilities.costReport
 ```
 
-## 2. Support levels and promotion to full (P-27)
+## 2. Support levels and promotion to full (P-28)
 A gate is passed only with evidence: a test name or a recorded scripted-agent scenario, or an operator
 run id. A gate may be `waived` with a written reason (only G5). Nobody writes a level by hand except
 `planned`.
@@ -52,7 +52,7 @@ Level derivation (pure, replaces the tier computed from capabilities alone):
 The existing `supportTier(capabilities)` stays until the registry lands; the registry issue deletes it so
 only one derivation exists.
 
-## 3. Models and the catalog (P-28)
+## 3. Models and the catalog (P-29)
 Four layers, merged per route:
 1. **Bundled registry** (the data file): capabilities for known models. The only place that knows
    thinking levels, context window and price kind.
@@ -72,7 +72,7 @@ that tier, unless the route kind fixes `tierModels` (compatible endpoints map th
 The registry is updated by Docket releases. Fetching the registry from the internet is out of scope until
 the operator decides it (open decision O-4).
 
-## 4. Thinking levels (P-29)
+## 4. Thinking levels (P-30)
 - The user sees Fast / Balanced / Deep. They map to the model's supported levels: Fast → lowest,
   Balanced → `medium` (else the nearest lower), Deep → the highest level up to `xhigh`; `max` is
   reachable only from advanced settings. The mapping table is data, not code.
@@ -81,7 +81,7 @@ the operator decides it (open decision O-4).
   level; an unsupported level is clamped down, never sent.
 - Thinking tokens are counted as output and shown as a separate usage line.
 
-## 5. Accounts and route kinds (P-30)
+## 5. Accounts and route kinds (P-31)
 New account fields (all non-secret): `routeKind`, `endpoint?` (URL), `identityDir?` (path),
 `tierModels?`. Secrets stay in the OS keychain behind `secretRef`; records never carry environment values.
 Route kinds are data: `anthropic-subscription`, `anthropic-api`, and presets for compatible endpoints
@@ -89,7 +89,7 @@ Route kinds are data: `anthropic-subscription`, `anthropic-api`, and presets for
 `zai-http`). The definition builds the child environment from these fields (base URL, token, tier model
 aliases); Docket never stores those environment values.
 
-## 6. Subscription identity (P-31)
+## 6. Subscription identity (P-32)
 Finding: the SDK leg passes no config directory, so every subscription run falls back to the single
 machine login. A second subscription account on the same machine cannot be selected.
 Rule: a subscription account carries `identityDir`, the user's own config directory, passed to the child as
@@ -98,7 +98,7 @@ runs; MCP servers stay inline. Docket never writes into `identityDir` and never 
 it. Needs verification before the issue is cut: how the CLI keys its stored login per config directory on
 macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored under `identityDir`.
 
-## 7. Local account discovery (P-32)
+## 7. Local account discovery (P-33)
 - A port `AccountDiscovery` scans the user's home for Claude-style config directories and proposes
   **candidates**; it never adds an account silently.
 - Classification uses only key names and the endpoint host: an endpoint host matching a preset → that
@@ -107,7 +107,7 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
   with explicit consent that moves the value into the keychain.
 - Several accounts of one provider are normal: each is its own candidate and its own route.
 
-## 8. Quota and cost per route (P-33)
+## 8. Quota and cost per route (P-34)
 - Subscription: SDK usage query and rate-limit events, as today (`claude-probe`).
 - Compatible-endpoint preset (GLM): an HTTP quota probe against the provider's monitor endpoint with the
   account token. **The endpoint is observed behaviour of the operator's own tooling, not a published
@@ -118,7 +118,7 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
   `computed` from the registry price table (labelled estimate); GLM preset `equivalent`. The Anthropic
   price table never applies to a compatible endpoint.
 
-## 9. Adding a provider (P-34)
+## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
 A conformance suite runs the same fixture scenarios against every definition (launch via stdin or file,
 event mapping, resume, stop). New providers enter as `experimental` or `isolated` and are promoted only
@@ -135,7 +135,7 @@ through the gates. Candidate classes, by how they fit today's transports:
 S ≈ one issue (definition, argument builder, scripted-agent test); M ≈ two; L = a transport. This list is a
 backlog, not a promise. Priority is the operator's own providers: Claude Code, Codex, then the GLM route.
 
-## 10. README matrix (P-35)
+## 10. README matrix (P-36)
 `scripts/gen-provider-matrix.mjs` writes the provider × model table (thinking, context, cost kind, support
 level) into the README between marker comments, from the capability record. A test regenerates it in memory
 and fails on any difference. The README is a product document and may name providers; the provider-name
