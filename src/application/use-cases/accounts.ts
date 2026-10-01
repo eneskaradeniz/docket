@@ -1,6 +1,6 @@
-// use-cases/accounts.ts — exact contract from docs/v2/application.md § 2 (rules A-13, A-14).
-// Secrets cross this boundary in one direction only: into the vault. A secret is stored through
-// SecretVault.put and is never written into a record, an audit entry, or a return value.
+// use-cases/accounts.ts — exact contract from docs/v2/application.md § 2 (rules A-13, A-14, A-43,
+// A-44). Secrets cross this boundary in one direction only: into the vault. A secret is stored
+// through SecretVault.put and is never written into a record, an audit entry, or a return value.
 import type { Actor, RoleBinding, RoleSlug } from '../../domain/index';
 import { err, ok, type AccountId, type Result } from '../../domain/index';
 
@@ -12,14 +12,54 @@ export interface BindingExists {
   readonly roles: readonly RoleSlug[];
 }
 
+// A-43: `URL` normalises the protocol and host, so a non-https or unparsable endpoint reads invalid
+// and a host mismatch compares against the lowercased form the registry data carries.
+const httpsUrlOf = (endpoint: string): URL | undefined => {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === 'https:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// A-43: the config directory is a POSIX absolute path — the app runs on macOS and Linux.
+const isAbsolutePath = (path: string): boolean => path.startsWith('/');
+
 export async function saveAccount(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>,
   input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor },
-): Promise<Result<void, 'secret_without_ref'>> {
-  if (input.secret !== undefined) {
-    const ref = input.record.secretRef;
-    if (ref === undefined) return err('secret_without_ref');
-    await deps.secrets.put(ref, input.secret);
+): Promise<
+  Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>
+> {
+  const secret = input.secret;
+  const secretRef = input.record.secretRef;
+  // Everything is validated before anything is written: A-13's ref rule first, then A-43's route
+  // fields in the order the contract lists them.
+  if (secret !== undefined && secretRef === undefined) return err('secret_without_ref');
+
+  if (input.record.endpoint !== undefined) {
+    const url = httpsUrlOf(input.record.endpoint);
+    if (url === undefined) return err('invalid_endpoint');
+    const routeId = deps.capabilities.routeKindOf({
+      provider: input.record.provider,
+      authMode: input.record.authMode,
+      routeKind: input.record.routeKind,
+    });
+    const kind = routeId === undefined ? undefined : deps.capabilities.routeKind(routeId);
+    const fixedHost = kind?.endpointHost;
+    if (fixedHost !== undefined && url.host !== fixedHost.toLowerCase()) return err('endpoint_mismatch');
+  }
+  if (
+    input.record.identityDir !== undefined &&
+    (!isAbsolutePath(input.record.identityDir) || input.record.authMode !== 'subscription')
+  ) {
+    return err('identity_dir_not_allowed');
+  }
+
+  // The second conjunct is provably true after the guard above; it is what lets the compiler see it.
+  if (secret !== undefined && secretRef !== undefined) {
+    await deps.secrets.put(secretRef, secret);
   }
   // The record is stored verbatim — the secret itself lives only behind the ref in the vault.
   await deps.accounts.save(input.record);

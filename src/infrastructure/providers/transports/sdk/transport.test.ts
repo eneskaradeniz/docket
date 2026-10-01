@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSdkTransport, type QueryFn } from './transport';
 import {
   createFakeAccountRepo,
+  createFakeCapabilityCatalog,
   createFakeClock,
   createFakeSecretVault,
 } from '../../../../application/ports/fakes/index';
@@ -52,6 +53,10 @@ const ROLE: RoleSlug = slugOf<'role'>('implementer');
 // Credential-looking values are assembled at runtime, never written as one literal.
 const API_KEY = 'AKIA' + 'X'.repeat(16);
 const ENV_VALUE = 'docket-env' + '-' + 'never-in-events';
+const ROUTE_TOKEN = 'zai-' + 'endpoint' + '-token';
+const ZAI_ENDPOINT = 'https://api.z.ai/api/anthropic';
+const CONFIG_DIR = '/Users/fixture/.claude-second-login';
+const STRAY_BASE_URL = 'https://stray.example.invalid';
 const START_AT: EpochMs = 1770000000000;
 
 const ROLE_DEF: RoleDef = {
@@ -63,7 +68,11 @@ const ROLE_DEF: RoleDef = {
   active: true,
 };
 
-function account(authMode: AccountRecord['authMode'], secretRef?: string): AccountRecord {
+function account(
+  authMode: AccountRecord['authMode'],
+  secretRef?: string,
+  overrides?: Partial<AccountRecord>,
+): AccountRecord {
   return {
     id: ACCOUNT,
     provider: 'agent-cli',
@@ -72,6 +81,7 @@ function account(authMode: AccountRecord['authMode'], secretRef?: string): Accou
     limitPolicy: 'wait_resume',
     ...(secretRef === undefined ? {} : { secretRef }),
     caps: [],
+    ...(overrides === undefined ? {} : overrides),
   };
 }
 
@@ -462,6 +472,7 @@ describe('createSdkTransport', () => {
       expect(calls[0]?.options.env).toEqual({
         DOCKET_HOME: '/tmp/docket-home',
         SHELL: '/bin/zsh',
+        CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
         ANTHROPIC_API_KEY: API_KEY,
       });
     });
@@ -637,6 +648,239 @@ describe('createSdkTransport', () => {
       expect(started.ok).toBe(false);
       if (!started.ok) expect(started.error.code).toBe('not_logged_in');
       expect(calls.length).toBe(0);
+    });
+
+    describe('route-aware environment (I-34)', () => {
+      // The scripted catalog maps the fixture provider to the registry's real kinds, so resolution
+      // rides the port and the record data comes from the real registry; the compatible endpoint
+      // is reached through the account's explicit routeKind.
+      const routeCatalog = createFakeCapabilityCatalog([
+        { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
+        { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
+      ]);
+
+      /** baseEnv with every stripped variable carrying a stray value of another account. */
+      const strayRouteEnv = {
+        ANTHROPIC_API_KEY: 'stale-not-the-real-key',
+        ANTHROPIC_AUTH_TOKEN: 'stale-inherited-token',
+        ANTHROPIC_BASE_URL: STRAY_BASE_URL,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'stale-opus',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'stale-sonnet',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'stale-haiku',
+      };
+
+      it('I-34: an api-key account strips all six route variables, adds the vault key and disables auto memory', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-key'));
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-key', API_KEY);
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets,
+          capabilities: routeCatalog,
+          baseEnv: {
+            DOCKET_HOME: '/tmp/docket-home',
+            SHELL: '/bin/zsh',
+            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+            ...strayRouteEnv,
+          },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env).toEqual({
+          DOCKET_HOME: '/tmp/docket-home',
+          SHELL: '/bin/zsh',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+          ANTHROPIC_API_KEY: API_KEY,
+        });
+      });
+
+      it('I-34: a compatible-endpoint account whose vault entry is missing fails with not_logged_in', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-absent', { routeKind: 'zai-glm', endpoint: ZAI_ENDPOINT }));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: {},
+          query,
+        });
+
+        const started = await transport.start(request());
+
+        expect(started.ok).toBe(false);
+        if (!started.ok) expect(started.error.code).toBe('not_logged_in');
+        expect(calls.length).toBe(0);
+      });
+
+      it('I-34: a compatible-endpoint account adds the base URL, the token and the route kind three tier models', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-zai', { routeKind: 'zai-glm', endpoint: ZAI_ENDPOINT }));
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-zai', ROUTE_TOKEN);
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets,
+          capabilities: routeCatalog,
+          baseEnv: { PATH: '/usr/bin:/bin', ...strayRouteEnv },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env).toEqual({
+          PATH: '/usr/bin:/bin',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+          ANTHROPIC_BASE_URL: ZAI_ENDPOINT,
+          ANTHROPIC_AUTH_TOKEN: ROUTE_TOKEN,
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
+          ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3-flash',
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
+        });
+      });
+
+      it('I-34: the account tierModels override the route kind defaults per tier', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(
+          account('api_key', 'ref-zai', {
+            routeKind: 'zai-glm',
+            endpoint: ZAI_ENDPOINT,
+            tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3', fast: 'glm-5.3-flash' },
+          }),
+        );
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-zai', ROUTE_TOKEN);
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets,
+          capabilities: routeCatalog,
+          baseEnv: {},
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        // Only balanced is overridden away from the kind default; strong and fast stay as the
+        // registry fixes them.
+        expect(calls[0]?.options.env).toMatchObject({
+          ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3',
+          ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3',
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash',
+        });
+      });
+
+      it('I-34: a subscription account with an identityDir passes it as the config directory and an inherited auth token is gone', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription', undefined, { identityDir: CONFIG_DIR }));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh', ...strayRouteEnv },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env).toEqual({
+          SHELL: '/bin/zsh',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+          CLAUDE_CONFIG_DIR: CONFIG_DIR,
+        });
+      });
+
+      it('I-34: a subscription account without an identityDir keeps the I-28 environment with no config directory', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh', ...strayRouteEnv },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env).toEqual({
+          SHELL: '/bin/zsh',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+        });
+      });
+
+      it('I-34: a compatible-endpoint run reports usage with the route kind costKind equivalent', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-zai', { routeKind: 'zai-glm', endpoint: ZAI_ENDPOINT }));
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-zai', ROUTE_TOKEN);
+        const { query } = scriptedQuery(async function* () {
+          yield successResult(0.04);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets,
+          capabilities: routeCatalog,
+          baseEnv: {},
+          query,
+        });
+
+        const events = await collect(unwrap(await transport.start(request())).events);
+        const usage = events.find((event) => event.type === 'usage');
+
+        expect(usage).toBeDefined();
+        if (usage?.type === 'usage') expect(usage.costKind).toBe('equivalent');
+      });
+
+      it('I-34: an explicit route kind the registry does not know is unsupported', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('api_key', 'ref-key', { routeKind: 'no-such-kind' }));
+        const secrets = createFakeSecretVault();
+        await secrets.put('ref-key', API_KEY);
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets,
+          capabilities: routeCatalog,
+          baseEnv: {},
+          query,
+        });
+
+        const started = await transport.start(request());
+
+        expect(started.ok).toBe(false);
+        if (!started.ok) expect(started.error.code).toBe('unsupported');
+        expect(calls.length).toBe(0);
+      });
     });
   });
 

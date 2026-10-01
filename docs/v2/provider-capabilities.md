@@ -14,7 +14,8 @@ route, not to the provider alone.
 - One data file is the single source of truth: `src/infrastructure/providers/registry/capability-registry.ts`, plain `as const` data checked with `satisfies` against the domain types. The types and the pure derivations live in `src/domain/providers/capability.ts` (domain rules: no npm packages, no Node builtins, no classes). The data sits in infrastructure because vendor names are banned outside `src/infrastructure/providers/`; an application port `CapabilityCatalog` exposes route kinds to `saveAccount`.
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
   evidence, and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
-  source, `tierModels`, cost kind, quota probe kind, model source. Per model: `id`, `family`, `tier`,
+  source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
+  live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`.
 - Everything derived from it is a pure function in the domain module: support level, thinking options
   for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
@@ -64,7 +65,8 @@ Four layers, merged per route:
 3. **Merge:** live ∪ bundled. Each model carries its source (`live | bundled`). The cache is keyed by
    account and route, never by provider alone, so a plan-dependent list (for example a model only a
    higher subscription plan offers) never leaks to another account. A failed refresh keeps the last good
-   list and marks it stale.
+   list and marks it stale. When the route kind sets `liveIsAuthoritative`, bundled models missing from
+   the live list are dropped instead of kept.
 4. **Unknown model:** never rejected. A live id missing from the registry is selectable with unknown
    capabilities: thinking control hidden, price unknown. If its family is recognised by id pattern it gets
    a tier automatically and is labelled auto-classified. `retired` models stay in the registry so old
@@ -74,17 +76,24 @@ The model source is data per provider: one of `sdk | app-server | acp-session | 
 Which source each CLI really offers is established per provider by a discovery spike, from the CLI's own
 documentation and by running the installed CLI, and the result is written into the registry, not guessed.
 Multi-vendor providers (Cursor, Copilot, OpenCode) list many models: the unknown-model rule applies and only
-the most used models get full registry entries.
+the most used models get full registry entries. Observed: on a plan limited to automatic model choice, one
+provider's session lists only its automatic choice with three quality settings (efficiency, balance,
+intelligence); the list is plan-scoped, so it is authoritative, and the registry's model entries for that
+provider are not shown on such a plan.
 
 Tier resolution: a route's strong/balanced/fast tier resolves to the highest-version available model of
-that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly).
+that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly). A route may
+map a tier to a provider-side quality setting instead of a model id (the automatic mode above maps strong,
+balanced and fast to its intelligence, balance and efficiency settings); `tierModels` then holds the name
+of that setting.
 The registry is updated by Docket releases. Fetching the registry from the internet is out of scope until
 the operator decides it (open decision O-4).
 
 ## 4. Thinking levels (P-30)
 - The user sees Fast / Balanced / Deep. They map to the model's supported levels: Fast → lowest,
   Balanced → `medium` (else the nearest lower), Deep → the highest level up to `xhigh`; `max` is
-  reachable only from advanced settings. The mapping table is data, not code.
+  reachable only from advanced settings. The mapping table is data, not code. Effort sets are per model,
+  never per provider: one model of a provider lists `ultra`, another has no `max`.
 - A model with `thinking: none` hides the control and says the model offers no thinking level.
 - The provider-specific parameter is produced by the definition's `buildLaunch`/transport from the chosen
   level; an unsupported level is clamped down, never sent.
@@ -136,7 +145,7 @@ copies it.
 - Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
   a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
   whose headroom is checked.
-- Some providers bill in credits or requests rather than tokens (quota.md lists Copilot as monthly AI credits). If a discovery spike confirms a non-token unit, `CostKind` gains it (open decision O-7).
+- Two providers meter usage in credits (one documents 1 credit = $0.01, token based; its quota snapshot carries entitlement counts and percentages, spend arrives as nano units on the usage channel). `CostKind` gains `credits` (O-7 resolved).
 
 ## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
@@ -211,5 +220,5 @@ from the pack, the stage checks pass.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
-- O-7 Whether `CostKind` gains a non-token unit (credits or requests), decided after the Copilot discovery spike.
+- O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.

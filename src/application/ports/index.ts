@@ -2,6 +2,7 @@
 export * from './account-repo';
 export * from './agent-transport';
 export * from './binding-repo';
+export * from './capability-catalog';
 export * from './clock';
 export * from './definition-store';
 export * from './deps';
