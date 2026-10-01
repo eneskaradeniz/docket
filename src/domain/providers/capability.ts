@@ -64,6 +64,9 @@ export interface RouteKindRecord {
   readonly costKind: CostKind;
   readonly quotaProbe: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'none';
   readonly modelSource: 'sdk' | 'app-server' | 'acp-session' | 'cli-command' | 'api' | 'static';
+  /** The live list is plan-scoped: on a successful refresh, bundled models it does not contain
+   * are dropped instead of kept. */
+  readonly liveIsAuthoritative?: true;
   readonly models: readonly ModelRecord[];
 }
 

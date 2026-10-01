@@ -4,7 +4,16 @@
 // no provider can read as `full`; without usage visibility (G4) none can read as `isolated`, so
 // today only the sdk provider tops out at `isolated` and the rest stay `experimental`. Model data
 // (models, effort levels, prices) lands with the model-catalog issues; the route kinds start empty.
-import type { CapabilityRegistry, ProviderRecord, RouteKindRecord } from '../../../domain/index';
+import type { CapabilityRegistry, FamilyPattern, ProviderRecord, RouteKindRecord } from '../../../domain/index';
+
+/** Family recognition as data (P-29 section 4): an unknown live id containing `contains` gets that
+ * tier automatically. The Fable family has no entry on purpose — it stays unclassified (selectable,
+ * no automatic tier) until the architect decides its tier. */
+export const FAMILY_PATTERNS: readonly FamilyPattern[] = [
+  { contains: 'opus', tier: 'strong' },
+  { contains: 'sonnet', tier: 'balanced' },
+  { contains: 'haiku', tier: 'fast' },
+];
 
 export const CAPABILITY_REGISTRY = {
   providers: [
@@ -92,6 +101,7 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'equivalent',
       quotaProbe: 'sdk_usage',
       modelSource: 'sdk',
+      liveIsAuthoritative: true,
       models: [],
     },
     {
@@ -104,6 +114,7 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'reported',
       quotaProbe: 'rate_limit_events',
       modelSource: 'api',
+      liveIsAuthoritative: true,
       models: [],
     },
     {
@@ -119,6 +130,7 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'equivalent',
       quotaProbe: 'http_monitor',
       modelSource: 'static',
+      liveIsAuthoritative: true,
       models: [],
       tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
     },

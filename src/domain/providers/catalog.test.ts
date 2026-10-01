@@ -104,6 +104,43 @@ describe('mergeCatalog (P-29)', () => {
     ]);
   });
 
+  it('P-29: an authoritative live list drops bundled models it does not contain', () => {
+    const merged = mergeCatalog(
+      [{ id: 'claude-sonnet-5-1' }],
+      [OPUS_4_9, SONNET_5_1, HAIKU_4_5],
+      FAMILY_PATTERNS,
+      undefined,
+      { authoritative: true },
+    );
+    expect(merged).toEqual([
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+    ]);
+  });
+
+  it('P-29: an authoritative live list keeps retired bundled models live still offers — only the unconfirmed drop', () => {
+    const merged = mergeCatalog(
+      [{ id: 'claude-opus-4-1' }],
+      [SONNET_5_1, OPUS_4_1_RETIRED],
+      FAMILY_PATTERNS,
+      undefined,
+      { authoritative: true },
+    );
+    expect(merged).toEqual([
+      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown' },
+    ]);
+  });
+
+  it('P-29: a failed refresh ignores the authoritative flag — the previous list is kept, never dropped', () => {
+    const previous: readonly CatalogModel[] = [
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
+    ];
+    expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous, { authoritative: true })).toEqual([
+      { ...previous[0], stale: true },
+      { ...previous[1], stale: true },
+    ]);
+  });
+
   it('P-29: retired bundled models are listed only when live also lists them', () => {
     const withoutLive = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_5_1, OPUS_4_1_RETIRED], FAMILY_PATTERNS);
     expect(withoutLive).toEqual([

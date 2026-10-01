@@ -11,6 +11,7 @@ export * from './forge';
 export * from './git-probe';
 export * from './id-gen';
 export * from './issue-tracker';
+export * from './model-catalog';
 export * from './notifier';
 export * from './project-repo';
 export * from './proposal-repo';

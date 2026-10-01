@@ -8,6 +8,7 @@ import type { DefinitionStore } from './definition-store';
 import type { EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
+import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
 import type { ProposalRepo } from './proposal-repo';
@@ -26,6 +27,7 @@ export interface AppDeps {
   readonly runs: RunRepo;
   readonly accounts: AccountRepo;
   readonly capabilities: CapabilityCatalog;
+  readonly modelCatalog: ModelCatalog;
   readonly projects: ProjectRepo;
   readonly repos: RepoRegistry;
   readonly bindings: BindingRepo;
