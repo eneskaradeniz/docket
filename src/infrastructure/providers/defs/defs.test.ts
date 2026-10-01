@@ -140,6 +140,21 @@ describe('provider definitions (P-1)', () => {
     }
   });
 
+  it('P-8: the opencode launch environment is exactly the config dir plus the documented Claude-compatibility switch', () => {
+    expect(defById('opencode').buildLaunch(LAUNCH_INPUT).env).toEqual({
+      OPENCODE_CONFIG_DIR: '/run/dir',
+      OPENCODE_DISABLE_CLAUDE_CODE: '1',
+    });
+  });
+
+  it('P-8: a baseEnv carrying a different OPENCODE_DISABLE_CLAUDE_CODE is overridden by the opencode literal', () => {
+    // The transports spread the allowlisted machine env first and the def's launch env last;
+    // the literal must survive that order so the machine value can never re-enable the read.
+    const baseEnv: Readonly<Record<string, string>> = { OPENCODE_DISABLE_CLAUDE_CODE: '0' };
+    const env = { ...baseEnv, ...defById('opencode').buildLaunch(LAUNCH_INPUT).env };
+    expect(env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1');
+  });
+
   it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the seven built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
