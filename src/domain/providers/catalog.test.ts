@@ -3,9 +3,9 @@
 // patterns and the registry-side data is validated in infrastructure.
 import { describe, expect, it } from 'vitest';
 
-import { catalogCacheKey, mergeCatalog, resolveTier, thinkingFor } from './catalog';
+import { autoSelectable, catalogCacheKey, mergeCatalog, resolveTier, thinkingFor } from './catalog';
 import type { CatalogModel, FamilyPattern, LiveModel } from './catalog';
-import type { ModelRecord } from './capability';
+import type { Billing, ModelRecord } from './capability';
 
 const FAMILY_PATTERNS: readonly FamilyPattern[] = [
   { contains: 'opus', tier: 'strong' },
@@ -53,8 +53,9 @@ describe('mergeCatalog (P-29)', () => {
         source: 'live',
         tier: 'balanced',
         thinking: { kind: 'levels', levels: ['none', 'low', 'medium', 'high'] },
+        billing: 'unknown',
       },
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' } },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
     ]);
   });
 
@@ -67,8 +68,9 @@ describe('mergeCatalog (P-29)', () => {
         tier: 'strong',
         thinking: { kind: 'levels', levels: ['low', 'high'] },
         autoClassified: true,
+        billing: 'unknown',
       },
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
   });
 
@@ -79,8 +81,8 @@ describe('mergeCatalog (P-29)', () => {
       FAMILY_PATTERNS,
     );
     expect(merged).toEqual([
-      { id: 'grok-4-fast', source: 'live', thinking: 'unknown' },
-      { id: 'grok-4-deep', source: 'live', thinking: { kind: 'levels', levels: ['low', 'high'] } },
+      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'grok-4-deep', source: 'live', thinking: { kind: 'levels', levels: ['low', 'high'] }, billing: 'unknown' },
     ]);
     expect(merged[0].tier).toBeUndefined();
     expect(merged[0].autoClassified).toBeUndefined();
@@ -91,21 +93,21 @@ describe('mergeCatalog (P-29)', () => {
   it('P-29: bundled models missing from a successful live list stay listed with source bundled', () => {
     const merged = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [OPUS_4_9, SONNET_5_1, HAIKU_4_5], FAMILY_PATTERNS);
     expect(merged).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking },
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: HAIKU_4_5.thinking },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: HAIKU_4_5.thinking, billing: 'unknown' },
     ]);
     // An empty live array is a successful refresh, not a failed one — the registry stays listed.
     const emptyLive: readonly LiveModel[] = [];
     expect(mergeCatalog(emptyLive, [SONNET_5_1], FAMILY_PATTERNS)).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
   });
 
   it('P-29: retired bundled models are listed only when live also lists them', () => {
     const withoutLive = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_5_1, OPUS_4_1_RETIRED], FAMILY_PATTERNS);
     expect(withoutLive).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
     const withLive = mergeCatalog(
       [{ id: 'claude-opus-4-1' }, { id: 'claude-sonnet-5-1' }],
@@ -113,15 +115,15 @@ describe('mergeCatalog (P-29)', () => {
       FAMILY_PATTERNS,
     );
     expect(withLive).toEqual([
-      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking },
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
   });
 
   it('P-29: a failed refresh keeps the previous list and marks every entry stale', () => {
     const previous: readonly CatalogModel[] = [
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
     ];
     expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous)).toEqual([
       { ...previous[0], stale: true },
@@ -131,19 +133,80 @@ describe('mergeCatalog (P-29)', () => {
 
   it('P-29: a failed refresh without a previous list falls back to the non-retired bundled models', () => {
     expect(mergeCatalog(undefined, [OPUS_4_9, SONNET_5_1, OPUS_4_1_RETIRED], FAMILY_PATTERNS)).toEqual([
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking },
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
   });
 });
 
+describe('mergeCatalog billing (P-40)', () => {
+  const SONNET_INCLUDED: ModelRecord = { ...SONNET_5_1, billing: 'included' };
+
+  it('P-40: a live row matching a bundled record takes the record billing — the live row own report wins', () => {
+    const fromRecord = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_INCLUDED], FAMILY_PATTERNS);
+    expect(fromRecord[0].billing).toBe('included');
+    const fromLive = mergeCatalog(
+      [{ id: 'claude-sonnet-5-1', billing: 'metered' }],
+      [SONNET_INCLUDED],
+      FAMILY_PATTERNS,
+    );
+    expect(fromLive[0].billing).toBe('metered');
+  });
+
+  it('P-40: a matched record without billing, and a live-only row without billing, merge as unknown', () => {
+    const matched = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_5_1], FAMILY_PATTERNS);
+    expect(matched[0].billing).toBe('unknown');
+    const liveOnly = mergeCatalog(
+      [{ id: 'grok-4-fast' }, { id: 'grok-4-deep', billing: 'metered' }],
+      [],
+      FAMILY_PATTERNS,
+    );
+    expect(liveOnly[0].billing).toBe('unknown');
+    expect(liveOnly[1].billing).toBe('metered');
+  });
+
+  it('P-40: a bundled model missing from the live list keeps the record billing', () => {
+    const opusMetered: ModelRecord = { ...OPUS_4_9, billing: 'metered' };
+    const merged = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [opusMetered, SONNET_5_1], FAMILY_PATTERNS);
+    expect(merged.find((model) => model.id === 'claude-opus-4-9')?.billing).toBe('metered');
+  });
+
+  it('P-40: billing survives a failed refresh — the stale previous entries keep theirs', () => {
+    const previous: readonly CatalogModel[] = [
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'included' },
+      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown' },
+    ];
+    expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous)).toEqual([
+      { ...previous[0], stale: true },
+      { ...previous[1], stale: true },
+    ]);
+  });
+});
+
+describe('autoSelectable (P-40)', () => {
+  it('P-40: only an included model is auto-selectable — metered and unknown never are', () => {
+    const entry = (billing: Billing): CatalogModel => ({
+      id: 'claude-opus-5-1',
+      source: 'live',
+      thinking: 'unknown',
+      billing,
+    });
+    expect(autoSelectable(entry('included'))).toBe(true);
+    expect(autoSelectable(entry('metered'))).toBe(false);
+    expect(autoSelectable(entry('unknown'))).toBe(false);
+  });
+});
+
 describe('resolveTier (P-29)', () => {
+  // Billing is orthogonal to version comparison; `included` keeps these models selectable so the
+  // assertions below keep their pre-billing meaning.
   const model = (id: string): CatalogModel => ({
     id,
     source: 'live',
     tier: 'strong',
     thinking: 'unknown',
     autoClassified: true,
+    billing: 'included',
   });
 
   it('P-29: a non-empty tierModels entry for the tier wins; an empty one falls through to the catalog', () => {
@@ -164,9 +227,39 @@ describe('resolveTier (P-29)', () => {
 
   it('P-29: a tier with no catalog model resolves to undefined', () => {
     const catalog: readonly CatalogModel[] = [
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' } },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
     ];
     expect(resolveTier('strong', catalog)).toBeUndefined();
+  });
+});
+
+describe('resolveTier billing (P-40)', () => {
+  const entry = (id: string, billing: Billing): CatalogModel => ({
+    id,
+    source: 'live',
+    tier: 'strong',
+    thinking: 'unknown',
+    autoClassified: true,
+    billing,
+  });
+
+  it('P-40: a tier whose only model is metered — or unknown — resolves to undefined without tierModels', () => {
+    expect(resolveTier('strong', [entry('claude-opus-5-10', 'metered')])).toBeUndefined();
+    expect(resolveTier('strong', [entry('claude-opus-5-10', 'unknown')])).toBeUndefined();
+  });
+
+  it('P-40: an explicit non-empty tierModels entry still wins for a model that is not auto-selectable', () => {
+    const tierModels = { strong: 'claude-opus-5-10', balanced: '', fast: '' };
+    expect(resolveTier('strong', [entry('claude-opus-5-10', 'metered')], tierModels)).toBe('claude-opus-5-10');
+  });
+
+  it('P-40: the automatic pick takes the highest-version included model and skips metered and unknown ones', () => {
+    const catalog: readonly CatalogModel[] = [
+      entry('claude-opus-5-10', 'metered'),
+      entry('claude-opus-4-1', 'unknown'),
+      entry('claude-opus-4-9', 'included'),
+    ];
+    expect(resolveTier('strong', catalog)).toBe('claude-opus-4-9');
   });
 });
 
