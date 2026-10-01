@@ -444,7 +444,7 @@ export function decideProposalUseCase(
 ): Promise<Result<ProposalRecord, ApplyError>>;
 
 // accounts.ts
-export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
+export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
 export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
 
