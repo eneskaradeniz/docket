@@ -174,7 +174,7 @@ export interface SettingsPoolView {
   readonly id: string;
   readonly label: string;
   readonly kind: string;
-  readonly appliesTo: readonly ModelMatcher[] | 'all';
+  readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';
 }
 
 export interface SettingsAccountView {

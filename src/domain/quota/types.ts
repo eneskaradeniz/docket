@@ -23,7 +23,9 @@ export interface Pool {
   readonly accountId: AccountId;
   readonly label: string; // server-supplied, verbatim
   readonly kind: PoolKind;
-  readonly appliesTo: readonly ModelMatcher[] | 'all';
+  /** 'unknown': which models draw from this pool is not known — shown for information, never
+   * matched (so it takes no part in headroom and never blocks a run). */
+  readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';
 }
 
 export type ModelMatcher = { readonly exact: string } | { readonly prefix: string };

@@ -6,7 +6,11 @@ import type { Meter, ModelMatcher, PoolKind, Result } from '../../domain/index';
 export type QuotaProbeError = 'not_installed' | 'not_logged_in' | 'probe_failed' | 'unknown_provider';
 
 export interface MeterReading {
-  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' };
+  readonly pool: {
+    readonly label: string;
+    readonly kind: PoolKind;
+    readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';
+  };
   readonly meter: Omit<Meter, 'id' | 'poolId'>;
 }
 
