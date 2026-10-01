@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { HOUR, MINUTE, type AccountId, type EpochMs, type PoolId } from '../shared/index';
+import { HOUR, MINUTE, type AccountId, type Billing, type EpochMs, type PoolId } from '../shared/index';
 import { RESUME_JITTER_MS, decideOnLimit } from './limit-policy';
-import type { LimitContext, LimitDecision, LimitPolicy } from './limit-policy';
+import type {
+  FallbackCandidate,
+  LimitContext,
+  LimitDecision,
+  LimitPolicy,
+  PoolCandidate,
+} from './limit-policy';
 import type { AccountRoute, LimitClass, LimitHit } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
@@ -15,6 +21,18 @@ const POOL_SECOND = '01ARZ3NDEKTSV4RRFFQ69G5FQB' as PoolId;
 
 const ROUTE_NEXT: AccountRoute = { accountId: ACCOUNT_NEXT };
 const ROUTE_THIRD: AccountRoute = { accountId: ACCOUNT_THIRD, model: 'sonnet-large' };
+
+const poolCandidate = (poolId: PoolId, billing: Billing = 'included', consented = false): PoolCandidate => ({
+  poolId,
+  billing,
+  consented,
+});
+
+const fallbackCandidate = (
+  route: AccountRoute,
+  billing: Billing = 'included',
+  consented = false,
+): FallbackCandidate => ({ route, billing, consented });
 
 const NOT_RESUMABLE_CLASSES = [
   'fair_use',
@@ -45,8 +63,8 @@ interface CtxInit {
   readonly policy?: LimitPolicy;
   readonly autoResumesUsed?: number;
   readonly maxAutoResumes?: number;
-  readonly alternativePools?: readonly PoolId[];
-  readonly fallbackAccounts?: readonly AccountRoute[];
+  readonly alternativePools?: readonly PoolCandidate[];
+  readonly fallbackAccounts?: readonly FallbackCandidate[];
   readonly now?: EpochMs;
 }
 
@@ -93,7 +111,11 @@ describe('decideOnLimit', () => {
     for (const policy of ['wait_resume', 'switch_pool', 'fallback_account', 'ask'] as const) {
       const decision = decideOnLimit(
         hitOf({ class: 'throughput', retryAfterMs: MINUTE }),
-        ctxOf({ policy, alternativePools: [POOL_FIRST], fallbackAccounts: [ROUTE_NEXT] }),
+        ctxOf({
+        policy,
+        alternativePools: [poolCandidate(POOL_FIRST)],
+        fallbackAccounts: [fallbackCandidate(ROUTE_NEXT)],
+      }),
       );
       expect(decision).toEqual({ kind: 'schedule_resume', at: NOW + MINUTE, requeryFirst: true });
     }
@@ -125,7 +147,10 @@ describe('decideOnLimit', () => {
   it('R-30: a not-resumable class with policy fallback_account and a fallback routes to the first account', () => {
     const decision = decideOnLimit(
       hitOf({ class: 'balance_exhausted' }),
-      ctxOf({ policy: 'fallback_account', fallbackAccounts: [ROUTE_NEXT, ROUTE_THIRD] }),
+      ctxOf({
+        policy: 'fallback_account',
+        fallbackAccounts: [fallbackCandidate(ROUTE_NEXT), fallbackCandidate(ROUTE_THIRD)],
+      }),
     );
     expect(decision).toEqual({ kind: 'fallback', route: ROUTE_NEXT });
   });
@@ -141,13 +166,13 @@ describe('decideOnLimit', () => {
   it('R-30: a not-resumable class ignores alternative pools under switch_pool policy', () => {
     const decision = decideOnLimit(
       hitOf({ class: 'spend_cap' }),
-      ctxOf({ policy: 'switch_pool', alternativePools: [POOL_FIRST] }),
+      ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST)] }),
     );
     expect(decision).toEqual({ kind: 'ask', reason: 'not_resumable' });
   });
 
   it('R-30: the ask reasons are exactly the four contract members', () => {
-    type ContractAskReasons = 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable';
+    type ContractAskReasons = 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' | 'billing_boundary';
     type AskReason = Extract<LimitDecision, { kind: 'ask' }>['reason'];
     const exact: UnionIsExactly<AskReason, ContractAskReasons> = true;
     expect(exact).toBe(true);
@@ -165,7 +190,10 @@ describe('decideOnLimit', () => {
   it('R-30: policy switch_pool switches to the first alternative pool', () => {
     const decision = decideOnLimit(
       hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
-      ctxOf({ policy: 'switch_pool', alternativePools: [POOL_FIRST, POOL_SECOND] }),
+      ctxOf({
+        policy: 'switch_pool',
+        alternativePools: [poolCandidate(POOL_FIRST), poolCandidate(POOL_SECOND)],
+      }),
     );
     expect(decision).toEqual({ kind: 'switch_pool', poolId: POOL_FIRST });
   });
@@ -185,7 +213,10 @@ describe('decideOnLimit', () => {
   it('R-30: policy fallback_account with a route falls back to the first account', () => {
     const decision = decideOnLimit(
       hitOf({ class: 'window_exhausted' }),
-      ctxOf({ policy: 'fallback_account', fallbackAccounts: [ROUTE_NEXT, ROUTE_THIRD] }),
+      ctxOf({
+        policy: 'fallback_account',
+        fallbackAccounts: [fallbackCandidate(ROUTE_NEXT), fallbackCandidate(ROUTE_THIRD)],
+      }),
     );
     expect(decision).toEqual({ kind: 'fallback', route: ROUTE_NEXT });
   });
@@ -244,8 +275,8 @@ describe('decideOnLimit', () => {
     const hit = hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR, retryAfterMs: MINUTE });
     const ctx = ctxOf({
       policy: 'switch_pool',
-      alternativePools: [POOL_FIRST, POOL_SECOND],
-      fallbackAccounts: [ROUTE_NEXT, ROUTE_THIRD],
+      alternativePools: [poolCandidate(POOL_FIRST), poolCandidate(POOL_SECOND)],
+      fallbackAccounts: [fallbackCandidate(ROUTE_NEXT), fallbackCandidate(ROUTE_THIRD)],
     });
     const hitBefore = { ...hit, remedies: [...hit.remedies] };
     const ctxBefore = {
@@ -258,5 +289,147 @@ describe('decideOnLimit', () => {
 
     expect(hit).toStrictEqual(hitBefore);
     expect(ctx).toStrictEqual(ctxBefore);
+  });
+});
+
+describe('decideOnLimit — billing boundary', () => {
+  it('P-40: included → included still switches to the first alternative pool', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST), poolCandidate(POOL_SECOND)] }),
+    );
+    expect(decision).toEqual({ kind: 'switch_pool', poolId: POOL_FIRST });
+  });
+
+  it('P-40: included → metered without consent never switches; the run waits instead', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST, 'metered')] }),
+    );
+    expect(decision).toEqual({
+      kind: 'schedule_resume',
+      at: NOW + HOUR + RESUME_JITTER_MS,
+      requeryFirst: true,
+    });
+  });
+
+  it('P-40: included → metered with consent switches', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST, 'metered', true)] }),
+    );
+    expect(decision).toEqual({ kind: 'switch_pool', poolId: POOL_FIRST });
+  });
+
+  it('P-40: unknown billing behaves like metered — no switch without consent, switch with', () => {
+    const hit = hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR });
+    expect(
+      decideOnLimit(hit, ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST, 'unknown')] })),
+    ).toEqual({ kind: 'schedule_resume', at: NOW + HOUR + RESUME_JITTER_MS, requeryFirst: true });
+    expect(
+      decideOnLimit(
+        hit,
+        ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST, 'unknown', true)] }),
+      ),
+    ).toEqual({ kind: 'switch_pool', poolId: POOL_FIRST });
+  });
+
+  it('P-40: the first eligible candidate wins; ineligible ones are skipped, not fatal', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({
+        policy: 'switch_pool',
+        alternativePools: [poolCandidate(POOL_FIRST, 'metered'), poolCandidate(POOL_SECOND)],
+      }),
+    );
+    expect(decision).toEqual({ kind: 'switch_pool', poolId: POOL_SECOND });
+  });
+
+  it('P-40: no eligible pool falls back to the existing wait behaviour', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({
+        policy: 'switch_pool',
+        alternativePools: [poolCandidate(POOL_FIRST, 'metered'), poolCandidate(POOL_SECOND, 'unknown')],
+      }),
+    );
+    expect(decision).toEqual({
+      kind: 'schedule_resume',
+      at: NOW + HOUR + RESUME_JITTER_MS,
+      requeryFirst: true,
+    });
+  });
+
+  it('P-40: no eligible pool with no waitable time asks, naming the billing boundary', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted' }),
+      ctxOf({ policy: 'switch_pool', alternativePools: [poolCandidate(POOL_FIRST, 'metered')] }),
+    );
+    expect(decision).toEqual({ kind: 'ask', reason: 'billing_boundary' });
+  });
+
+  it('P-40: no eligible pool with resumes exhausted asks, naming the billing boundary', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({
+        policy: 'switch_pool',
+        alternativePools: [poolCandidate(POOL_FIRST, 'metered')],
+        autoResumesUsed: 3,
+        maxAutoResumes: 3,
+      }),
+    );
+    expect(decision).toEqual({ kind: 'ask', reason: 'billing_boundary' });
+  });
+
+  it('P-40: a metered fallback route without consent waits instead of switching accounts', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({ policy: 'fallback_account', fallbackAccounts: [fallbackCandidate(ROUTE_NEXT, 'metered')] }),
+    );
+    expect(decision).toEqual({
+      kind: 'schedule_resume',
+      at: NOW + HOUR + RESUME_JITTER_MS,
+      requeryFirst: true,
+    });
+  });
+
+  it('P-40: a consented fallback route switches even when the run is resumable', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'window_exhausted', resetsAt: NOW + HOUR }),
+      ctxOf({ policy: 'fallback_account', fallbackAccounts: [fallbackCandidate(ROUTE_NEXT, 'metered', true)] }),
+    );
+    expect(decision).toEqual({ kind: 'fallback', route: ROUTE_NEXT });
+  });
+
+  it('P-40: no eligible fallback route falls back to the existing wait behaviour', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'unknown', retryAfterMs: 2 * MINUTE }),
+      ctxOf({ policy: 'fallback_account', fallbackAccounts: [fallbackCandidate(ROUTE_NEXT, 'metered')] }),
+    );
+    expect(decision).toEqual({ kind: 'schedule_resume', at: NOW + 2 * MINUTE, requeryFirst: true });
+  });
+
+  it('P-40: a not-resumable class with only ineligible fallbacks asks at the billing boundary, never switches', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'balance_exhausted' }),
+      ctxOf({
+        policy: 'fallback_account',
+        fallbackAccounts: [fallbackCandidate(ROUTE_NEXT, 'metered'), fallbackCandidate(ROUTE_THIRD, 'unknown')],
+      }),
+    );
+    expect(decision).toEqual({ kind: 'ask', reason: 'billing_boundary' });
+  });
+
+  it('P-40: a not-resumable class with a consented fallback falls back', () => {
+    const decision = decideOnLimit(
+      hitOf({ class: 'balance_exhausted' }),
+      ctxOf({ policy: 'fallback_account', fallbackAccounts: [fallbackCandidate(ROUTE_NEXT, 'metered', true)] }),
+    );
+    expect(decision).toEqual({ kind: 'fallback', route: ROUTE_NEXT });
+  });
+
+  it('P-40: a not-resumable class with no fallbacks at all still asks with not_resumable', () => {
+    const decision = decideOnLimit(hitOf({ class: 'balance_exhausted' }), ctxOf({ policy: 'fallback_account' }));
+    expect(decision).toEqual({ kind: 'ask', reason: 'not_resumable' });
   });
 });
