@@ -3,4 +3,5 @@
 export * from './agy/index';
 export * from './codex/index';
 export * from './claude/index';
+export * from './zai/index';
 export * from './probe-resolver';
