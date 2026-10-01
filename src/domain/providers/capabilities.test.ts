@@ -56,7 +56,7 @@ describe('supportTier', () => {
             for (const skills of tris) {
               for (const images of tris) {
                 for (const quotaReport of ['stream', 'query', 'error_only', 'none'] as const) {
-                  for (const costReport of ['reported', 'computed', 'equivalent', 'none'] as const) {
+                  for (const costReport of ['reported', 'computed', 'equivalent', 'credits', 'none'] as const) {
                     const caps = capsOf({ ...base, resume, mcp, hooks, skills, images, quotaReport, costReport });
                     expect(supportTier(caps)).toBe(expected);
                   }

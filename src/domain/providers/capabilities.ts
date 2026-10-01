@@ -11,7 +11,9 @@ export interface ProviderCapabilities {
   readonly skills: Tri;
   readonly images: Tri;
   readonly quotaReport: 'stream' | 'query' | 'error_only' | 'none';
-  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'none';
+  // 'credits': the provider meters usage in its own credit unit (O-7); 'none' stays last as the
+  // no-cost-visibility sentinel.
+  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'credits' | 'none';
 }
 
 export type SupportTier = 'full' | 'isolated' | 'experimental';
