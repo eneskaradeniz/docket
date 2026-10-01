@@ -6,8 +6,11 @@ import type { ProviderCapabilities } from './capabilities';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
 
-/** Effort levels in ascending order: the lowest is the fastest, the highest the deepest. */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/**
+ * Effort levels in ascending order. `'none'` is the provider's thinking-off setting — the lowest
+ * step, not the absence of the list — and `'ultra'` is the deepest step reported today.
+ */
+export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 
 export type Thinking =
   | { readonly kind: 'none' }

@@ -83,4 +83,21 @@ describe('thinkingOptions (P-28)', () => {
     expect(thinkingOptions(noneModel)).toEqual([]);
     expect(thinkingOptions(levelsModel)).toEqual(['low', 'high']);
   });
+
+  it('P-28: thinkingOptions returns the widened effort unions verbatim — none…max and low…ultra', () => {
+    const noneToMax: ModelRecord = {
+      id: 'fixture-none-to-max',
+      family: 'fixture',
+      tier: 'strong',
+      thinking: { kind: 'levels', levels: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
+    };
+    const lowToUltra: ModelRecord = {
+      id: 'fixture-low-to-ultra',
+      family: 'fixture',
+      tier: 'fast',
+      thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+    };
+    expect(thinkingOptions(noneToMax)).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(thinkingOptions(lowToUltra)).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+  });
 });
