@@ -19,6 +19,8 @@ route, not to the provider alone.
 - Everything derived from it is a pure function in the same module: support level, thinking options
   for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
 
+`ProviderCapabilities` also gains `plugins` (the same tri-state as `mcp`, `hooks` and `skills`).
+
 ```ts
 type Tier = 'strong' | 'balanced' | 'fast'
 type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -67,6 +69,13 @@ Four layers, merged per route:
    capabilities: thinking control hidden, price unknown. If its family is recognised by id pattern it gets
    a tier automatically and is labelled auto-classified. `retired` models stay in the registry so old
    records still render.
+
+The model source is data per provider: one of `sdk | app-server | acp-session | cli-command | api | static`.
+Which source each CLI really offers is established per provider by a discovery spike, from the CLI's own
+documentation and by running the installed CLI, and the result is written into the registry, not guessed.
+Multi-vendor providers (Cursor, Copilot, OpenCode) list many models: the unknown-model rule applies and only
+the most used models get full registry entries.
+
 Tier resolution: a route's strong/balanced/fast tier resolves to the highest-version available model of
 that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly).
 The registry is updated by Docket releases. Fetching the registry from the internet is out of scope until
@@ -117,6 +126,11 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
 - Cost kind per route: subscription `equivalent`; API key `reported` when the SDK reports it, otherwise
   `computed` from the registry price table (labelled estimate); GLM preset `equivalent`. The Anthropic
   price table never applies to a compatible endpoint.
+- Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
+  a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
+  whose headroom is checked.
+- Some providers bill per request with a per-model multiplier rather than per token. If that is confirmed
+  from the provider's documentation, `CostKind` gains `requests` (open decision O-7).
 
 ## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
@@ -126,12 +140,17 @@ through the gates. Candidate classes, by how they fit today's transports:
 
 | Class | Providers | Effort |
 | --- | --- |
-| Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot, Gemini | model layer only |
+| Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot | model layer only |
 | ACP, existing transport | kilo, vibe, hermes, devin, trae-cli, reasonix | S each |
 | ACP with a special case | kimi, kiro, amr | M each |
 | Stream JSON, new dialect (one per family) | amp, codebuddy (Claude-style stream); qoder; mimo (OpenCode-style) | M per family |
 | Plain text, experimental only | grok-build, qwen, deepseek, aider, atomcode | S each |
 | New transport | pi, deepseek-harness | L, later |
+
+Gemini CLI is retired because Antigravity replaces it. It is marked `retired` in the registry, hidden from
+discovery and from new accounts; existing Gemini accounts stay and show a notice to move to Antigravity; the
+definition and its code are removed one release later.
+
 S ≈ one issue (definition, argument builder, scripted-agent test); M ≈ two; L = a transport. This list is a
 backlog, not a promise. Priority is the operator's own providers: Claude Code, Codex, then the GLM route.
 
@@ -141,9 +160,50 @@ level) into the README between marker comments, from the capability record. A te
 and fails on any difference. The README is a product document and may name providers; the provider-name
 restriction applies to code and comments under `src/` only.
 
+## 11. Instruction files (P-37)
+Providers read different project instruction files: one reads `CLAUDE.md`, others read `AGENTS.md` or their
+own rule files. The registry records, per provider, which file names it reads natively (data).
+- Docket computes the **effective instructions** of a run: the instruction files the chosen provider reads
+  natively, plus the Docket layers (flow, stage, role), which are always delivered in the prompt. The same
+  Docket layers go to every provider, so behaviour does not depend on the provider.
+- If the repo has instructions that the chosen provider does not read natively (for example only
+  `CLAUDE.md` while the run goes to another provider), Docket inlines that file's content at the start of
+  the prompt, within the prompt budget. Nothing is written to the repo.
+- Docket AI may propose a one-time repo change that makes one file canonical (the other imports it or is
+  generated from it) as a normal diff in a work order; it is never applied silently. Which file is
+  canonical is open decision O-6.
+- An instruction file is written by the repo's authors. It reaches the agent as project context below the
+  Docket layers and never becomes a Docket instruction.
+- Edits to instruction files follow the code path: proposed diff, work order, review.
+
+## 12. Handoff between providers (P-38)
+When a run cannot continue on its account (limit, cap, outage) and the limit policy picks a route on
+another provider, the next run starts from a **handoff pack**. Native resume exists only within one
+provider and is never mixed with the pack: two continuation mechanisms in one run would send the same
+turn twice. Docket assembles the pack, not the failing agent:
+1. The stage prompt and acceptance criteria as originally given.
+2. The effective instructions (P-37), so both providers follow the same rules.
+3. Task state derived deterministically from run events: plan, done and remaining list, the last command
+   and its result, files touched.
+4. Code state: the same worktree. Docket makes checkpoint commits (on a schedule and at each tool-result
+   boundary that changed files) so the work survives; the diff since the stage started is part of the pack.
+5. A bounded conversation summary maintained continuously during the run (a rolling note), so it exists
+   even when the account is already blocked. Deterministic extraction comes first; an optional
+   model-written summary uses the fast tier on a route that still has headroom (open decision O-8).
+6. Raw transcripts do not travel.
+The pack is sized to the smallest context window among the candidate routes (from the registry). The new
+agent first runs the stage's checks, then continues. A stage written on a fallback model is reviewed at
+the strong tier. Autonomy and approvals travel as policy, not as session state. Acceptance: a scripted
+three-leg scenario in the style of P-24: the first provider hits a limit mid-stage, the second continues
+from the pack, the stage checks pass.
+
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
 - O-2 Subscription sessions stored under the user's config directory, or copied per run.
 - O-3 Pilot providers for the add-a-provider path (proposed: kilo, hermes, amp).
 - O-4 Whether Docket may fetch an updated model registry from the internet.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
+- O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
+  as the repo has it, inline the missing one; offer a canonical-file diff only on request).
+- O-7 Whether `CostKind` gains `requests` for per-request billing.
+- O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
