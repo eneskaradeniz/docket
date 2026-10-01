@@ -40,6 +40,9 @@ const SECTIONS = [
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
 const PENDING = new Map([
+  ['application:A-43', '#503'],
+  ['application:A-44', '#503'],
+  ['infrastructure:I-34', '#504'],
 ]);
 
 function walk(dir, acc = []) {

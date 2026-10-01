@@ -26,10 +26,10 @@ provider's chat app, IDE plugins) and Docket's own accounting is never authorita
 | Claude Code · API key | per-minute throughput + monthly spend cap | own spend tracking | month start |
 | Codex · ChatGPT plans | primary ≈5h, secondary ≈weekly; read `windowDurationMins` | app-server `account/rateLimits/*` | exact |
 | Antigravity `agy` · Google AI Pro/Ultra | **per model group** ("Gemini models", "Claude and GPT models"), each 5h + weekly | `/usage` JSON in print mode (verified, see below) | exact via query; relative in errors |
-| Gemini CLI · Code Assist Std/Ent | requests per day | none headless | unverified |
+| Gemini CLI · Code Assist Std/Ent — retired, replaced by Antigravity | requests per day | none headless | unverified |
 | Copilot CLI | monthly AI credits; hidden session/weekly guardrails | SDK `account.getQuota` | monthly exact; weekly only retry-after |
 | opencode Go | per-model $ over 5h / week / month | the CLI waits itself; surface its retry time | exact |
-| z.ai GLM Coding | 5h (from first use) + weekly, credits | unofficial quota endpoint; 429 error codes | message text (assume UTC+8, confirm) |
+| z.ai GLM Coding | 5h (from first use) + weekly, credits; the endpoint observed by the operator reports a 5-hour token window and a monthly tool window, no weekly one (the probe issue confirms) | unofficial quota endpoint; 429 error codes | message text (assume UTC+8, confirm) |
 | Cursor, Qwen, Kiro, Mistral | monthly / opaque | none | unknown → ask |
 
 Pitfalls: Claude's `utilization` is 0–1 in pushed `unifiedWindows` but 0–100 in `get_usage`; resets
