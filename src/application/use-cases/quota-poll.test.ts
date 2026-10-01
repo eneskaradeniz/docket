@@ -6,7 +6,7 @@ import { err, isUlid, ok, parseUlid, type Result, type Ulid } from '../../domain
 
 import type { AccountRecord, QuotaProbe, QuotaProbeError, QuotaProbeResolver } from '../ports';
 import { MeterReading } from '../ports';
-import { createFakeDeps } from '../ports/fakes';
+import { createFakeCapabilityCatalog, createFakeDeps } from '../ports/fakes';
 
 import { pollQuota } from './quota-poll';
 
@@ -74,9 +74,27 @@ const scriptedProbe = (
   };
 };
 
-const resolverFor = (provider: string, probe: QuotaProbe): QuotaProbeResolver => ({
-  forProvider: (defId) => (defId === provider ? probe : undefined),
+/**
+ * The resolver as the use case asks it: the route-kind question (provider id + kind) answers only
+ * a dedicated kind probe, the provider question (provider id alone) the provider's probe — so the
+ * test can see which id won exactly as the use case must.
+ */
+const resolverFor = (
+  provider: string,
+  probe: QuotaProbe,
+  kindProbes: Readonly<Record<string, QuotaProbe>> = {},
+): QuotaProbeResolver => ({
+  forProvider: (defId, routeKind) => (routeKind !== undefined ? kindProbes[routeKind] : defId === provider ? probe : undefined),
 });
+
+// A catalog of neutral route kinds: one the provider's subscription accounts default to, one with
+// a dedicated probe (a compatible endpoint's monitor), one without — vendor names live in
+// infrastructure, never here.
+const ROUTE_KIND_CATALOG = createFakeCapabilityCatalog([
+  { id: 'acme-subscription', provider: 'acme', authMode: 'subscription' },
+  { id: 'acme-monitor', authMode: 'api_key' },
+  { id: 'acme-plain', authMode: 'api_key' },
+]);
 
 // --- the use case -----------------------------------------------------------------------------------
 
@@ -246,5 +264,63 @@ describe('pollQuota', () => {
     const result = await pollQuota(deps, resolverFor('agy', probe), { accountId: ACCOUNT });
 
     expect(result).toEqual(err('probe_failed'));
+  });
+
+  it('P-34: a route kind with a dedicated probe is polled under its kind id, not the provider probe', async () => {
+    const deps = createFakeDeps({ capabilities: ROUTE_KIND_CATALOG });
+    await deps.accounts.save(accountRecord({ provider: 'acme', authMode: 'api_key', routeKind: 'acme-monitor' }));
+    const sdk = scriptedProbe(ok([reading('Provider Pool', 'Weekly Limit Remaining')]));
+    const monitor = scriptedProbe(ok([reading('Monitor Pool', 'Monitor Meter')]));
+    const resolver = resolverFor('acme', sdk, { 'acme-monitor': monitor });
+
+    const result = await pollQuota(deps, resolver, { accountId: ACCOUNT });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(monitor.calls).toEqual([{ defId: 'acme-monitor', binPath: null }]);
+    expect(sdk.calls).toEqual([]); // the provider's own probe is never asked
+    expect((await deps.accounts.pools(ACCOUNT)).map((pool) => pool.label)).toEqual(['Monitor Pool']);
+  });
+
+  it('P-34: a subscription account is still polled through the provider probe under its provider id', async () => {
+    const deps = createFakeDeps({ capabilities: ROUTE_KIND_CATALOG });
+    await deps.accounts.save(accountRecord({ provider: 'acme' })); // subscription, no explicit kind
+    const sdk = scriptedProbe(ok([reading('Provider Pool', 'Weekly Limit Remaining')]));
+    const monitor = scriptedProbe(ok([reading('Monitor Pool', 'Monitor Meter')]));
+    const resolver = resolverFor('acme', sdk, { 'acme-monitor': monitor });
+
+    const result = await pollQuota(deps, resolver, { accountId: ACCOUNT });
+
+    expect(result.ok).toBe(true);
+    expect(sdk.calls).toEqual([{ defId: 'acme', binPath: null }]);
+    expect(monitor.calls).toEqual([]); // the derived subscription kind has no dedicated probe
+  });
+
+  it('P-34: a route kind with no dedicated probe falls back to the provider probe under its provider id', async () => {
+    const deps = createFakeDeps({ capabilities: ROUTE_KIND_CATALOG });
+    await deps.accounts.save(accountRecord({ provider: 'acme', authMode: 'api_key', routeKind: 'acme-plain' }));
+    const sdk = scriptedProbe(ok([reading('Provider Pool', 'Weekly Limit Remaining')]));
+    const monitor = scriptedProbe(ok([reading('Monitor Pool', 'Monitor Meter')]));
+    const resolver = resolverFor('acme', sdk, { 'acme-monitor': monitor });
+
+    const result = await pollQuota(deps, resolver, { accountId: ACCOUNT });
+
+    expect(result.ok).toBe(true);
+    expect(sdk.calls).toEqual([{ defId: 'acme', binPath: null }]);
+    expect(monitor.calls).toEqual([]);
+  });
+
+  it('P-34: an account whose route kind the catalog cannot resolve falls back to the provider probe', async () => {
+    const deps = createFakeDeps({ capabilities: ROUTE_KIND_CATALOG }); // knows no default for 'other'
+    await deps.accounts.save(accountRecord({ provider: 'other' })); // subscription, no explicit kind
+    const sdk = scriptedProbe(ok([reading('Provider Pool', 'Weekly Limit Remaining')]));
+    const monitor = scriptedProbe(ok([reading('Monitor Pool', 'Monitor Meter')]));
+    const resolver = resolverFor('other', sdk, { 'acme-monitor': monitor });
+
+    const result = await pollQuota(deps, resolver, { accountId: ACCOUNT });
+
+    expect(result.ok).toBe(true);
+    expect(sdk.calls).toEqual([{ defId: 'other', binPath: null }]);
+    expect(monitor.calls).toEqual([]);
   });
 });

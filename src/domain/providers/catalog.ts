@@ -1,15 +1,17 @@
 // The model catalog: merging a route's live model list with the bundled registry, resolving a
 // tier to a concrete model, and mapping the user's Fast/Balanced/Deep to a provider effort level.
-// Contract: docs/v2/provider-capabilities.md sections 3–4. The registry data and the family-id
-// patterns are infrastructure — provider and family names may not appear in the domain — so every
-// function here takes them as a parameter.
-import type { EffortLevel, ModelRecord, Thinking, Tier } from './capability';
+// Contract: docs/v2/provider-capabilities.md sections 3–4 and 14. The registry data and the
+// family-id patterns are infrastructure — provider and family names may not appear in the domain —
+// so every function here takes them as a parameter.
+import type { Billing, EffortLevel, ModelRecord, Thinking, Tier } from './capability';
 
 /** A model as a live route reported it; `efforts` is the list the route itself advertises. */
 export interface LiveModel {
   readonly id: string;
   readonly displayName?: string;
   readonly efforts?: readonly EffortLevel[];
+  /** The billing state the route itself reported; it wins over the registry's when present. */
+  readonly billing?: Billing;
 }
 
 /** One merged catalog entry: registry capabilities where known, unknown-but-selectable otherwise. */
@@ -19,6 +21,8 @@ export interface CatalogModel {
   readonly source: 'live' | 'bundled';
   readonly tier?: Tier;
   readonly thinking: Thinking | 'unknown';
+  /** Always explicit on a merged entry — `unknown` when neither the live row nor the registry knows. */
+  readonly billing: Billing;
   /** Set when the tier came from a family-id pattern, not from the registry. */
   readonly autoClassified?: true;
   /** Set on every entry when a refresh failed and the last good list is being kept. */
@@ -36,6 +40,7 @@ const bundledEntry = (record: ModelRecord): CatalogModel => ({
   source: 'bundled',
   tier: record.tier,
   thinking: record.thinking,
+  billing: record.billing ?? 'unknown',
 });
 
 const liveEntry = (
@@ -44,14 +49,30 @@ const liveEntry = (
   familyPatterns: readonly FamilyPattern[],
 ): CatalogModel => {
   if (record !== undefined) {
-    return { id: model.id, displayName: model.displayName, source: 'live', tier: record.tier, thinking: record.thinking };
+    return {
+      id: model.id,
+      displayName: model.displayName,
+      source: 'live',
+      tier: record.tier,
+      thinking: record.thinking,
+      billing: model.billing ?? record.billing ?? 'unknown',
+    };
   }
   const thinking: Thinking | 'unknown' =
     model.efforts === undefined ? 'unknown' : { kind: 'levels', levels: model.efforts };
+  const billing: Billing = model.billing ?? 'unknown';
   const pattern = familyPatterns.find((candidate) => model.id.includes(candidate.contains));
   return pattern === undefined
-    ? { id: model.id, displayName: model.displayName, source: 'live', thinking }
-    : { id: model.id, displayName: model.displayName, source: 'live', tier: pattern.tier, thinking, autoClassified: true };
+    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing }
+    : {
+        id: model.id,
+        displayName: model.displayName,
+        source: 'live',
+        tier: pattern.tier,
+        thinking,
+        autoClassified: true,
+        billing,
+      };
 };
 
 /** Merge knobs: `authoritative` marks the live list plan-scoped — bundled models it does not
@@ -96,6 +117,12 @@ const isHigherVersion = (candidate: readonly number[], best: readonly number[]):
   return candidate.length > best.length;
 };
 
+// The automatic pick must never select a model that may spend real money without consent — only a
+// verified-included model qualifies; `unknown` is never assumed to be free.
+export function autoSelectable(model: CatalogModel): boolean {
+  return model.billing === 'included';
+}
+
 export function resolveTier(
   tier: Tier,
   catalog: readonly CatalogModel[],
@@ -106,6 +133,9 @@ export function resolveTier(
   let best: { id: string; version: readonly number[] } | undefined;
   for (const model of catalog) {
     if (model.tier !== tier) continue;
+    // An explicit tierModels entry above is the user's own configuration and may name any model;
+    // this scan may not.
+    if (!autoSelectable(model)) continue;
     const version = numericSegments(model.id);
     if (best === undefined || isHigherVersion(version, best.version)) best = { id: model.id, version };
   }

@@ -15,5 +15,12 @@ export interface QuotaProbe {
 }
 
 export interface QuotaProbeResolver {
-  forProvider(defId: string): QuotaProbe | undefined;
+  /**
+   * The probe for one provider id — or, with `routeKind`, the probe dedicated to that route kind:
+   * a compatible endpoint's quota is its own monitor, not the CLI provider's surface. A route
+   * kind without a dedicated probe answers `undefined` rather than the provider's probe, because
+   * the caller polls under the id that resolved (provider probes answer only to their provider
+   * id) and must know which one won.
+   */
+  forProvider(defId: string, routeKind?: string): QuotaProbe | undefined;
 }
