@@ -122,6 +122,7 @@ describe('createModelCatalog (P-29)', () => {
         displayName: 'Fable [1m]',
         source: 'live',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'unknown',
       },
     ]);
     // The newest family carries no pattern: selectable, but no automatic tier and no label.
@@ -233,7 +234,13 @@ describe('createModelCatalog (P-29)', () => {
     const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[glmRow]]).query), accounts, secrets });
 
     expect(await catalog.list(ACCOUNT_A)).toEqual([
-      { id: 'glm-5.3', displayName: 'GLM 5.3', source: 'live', thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] } },
+      {
+        id: 'glm-5.3',
+        displayName: 'GLM 5.3',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] },
+        billing: 'unknown',
+      },
     ]);
   });
 

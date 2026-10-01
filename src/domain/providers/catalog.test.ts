@@ -113,7 +113,7 @@ describe('mergeCatalog (P-29)', () => {
       { authoritative: true },
     );
     expect(merged).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
     ]);
   });
 
@@ -126,14 +126,14 @@ describe('mergeCatalog (P-29)', () => {
       { authoritative: true },
     );
     expect(merged).toEqual([
-      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking },
+      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown' },
     ]);
   });
 
   it('P-29: a failed refresh ignores the authoritative flag — the previous list is kept, never dropped', () => {
     const previous: readonly CatalogModel[] = [
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
     ];
     expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous, { authoritative: true })).toEqual([
       { ...previous[0], stale: true },
