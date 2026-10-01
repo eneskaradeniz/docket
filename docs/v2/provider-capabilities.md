@@ -1,8 +1,9 @@
 # Provider capabilities and routes
 
-Design for Phase 3.6 (not yet implemented). It extends `providers.md` and `quota.md`; where they
+Design, not yet contract. It extends `providers.md` and `quota.md`; where they
 disagree, this file wins for the topics below and the other two are corrected in the same PR that
-implements the change. Rule ids continue the `P-n` series.
+implements the change. Rule ids continue the `P-n` series; the rule-coverage check does not scan this
+file, so each rule moves into `providers.md` together with its tests when it is implemented.
 
 Vocabulary: a **provider** is an agent CLI (one definition). An **account** is a credential of a
 provider. A **route** is an account plus a model (and, for compatible endpoints, an endpoint). Two
@@ -139,7 +140,7 @@ event mapping, resume, stop). New providers enter as `experimental` or `isolated
 through the gates. Candidate classes, by how they fit today's transports:
 
 | Class | Providers | Effort |
-| --- | --- |
+| --- | --- | --- |
 | Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot | model layer only |
 | ACP, existing transport | kilo, vibe, hermes, devin, trae-cli, reasonix | S each |
 | ACP with a special case | kimi, kiro, amr | M each |
@@ -205,5 +206,5 @@ from the pack, the stage checks pass.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
-- O-7 Whether `CostKind` gains `requests` for per-request billing.
+- O-7 Whether `CostKind` gains a non-token unit (credits or requests), decided after the Copilot discovery spike.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
