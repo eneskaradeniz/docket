@@ -1,0 +1,60 @@
+// Registry validity (P-28): the data file stays honest. Waivers may exist only on G5, provider
+// ids stay unique, route kinds name existing providers, and every built-in definition has a
+// record. Gate evidence names real tests of this repository — cited by exact `it(...)` title;
+// keeping that true is a review duty, so the validity check here is structural, not textual.
+import { describe, expect, it } from 'vitest';
+
+import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
+import type { CapabilityRegistry, Evidence, GateId, ProviderRecord } from '../../../domain/index';
+import { CAPABILITY_REGISTRY, findProvider, findRouteKind } from './capability-registry';
+
+const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
+
+const violationsOf = (registry: CapabilityRegistry): readonly string[] => {
+  const found: string[] = [];
+  const known = new Set<string>();
+  for (const provider of registry.providers) {
+    if (known.has(provider.providerId)) found.push(`duplicate provider id ${provider.providerId}`);
+    known.add(provider.providerId);
+    for (const gate of ALL_GATES) {
+      const evidence: Evidence | undefined = provider.gates[gate];
+      if (evidence?.kind === 'waived' && gate !== 'G5') {
+        found.push(`${provider.providerId} waives ${gate} — waiver is valid on G5 only`);
+      }
+    }
+  }
+  for (const routeKind of registry.routeKinds) {
+    if (!known.has(routeKind.providerId)) {
+      found.push(`route kind ${routeKind.id} names unknown provider ${routeKind.providerId}`);
+    }
+  }
+  return found;
+};
+
+describe('capability registry validity (P-28)', () => {
+  it('P-28: the registry is valid — waivers only on G5, provider ids unique, route kinds name known providers', () => {
+    expect(violationsOf(CAPABILITY_REGISTRY)).toEqual([]);
+  });
+
+  it('P-28: a waiver outside G5 is rejected', () => {
+    const providers: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers.map((provider, index) =>
+      index === 0
+        ? { ...provider, gates: { ...provider.gates, G2: { kind: 'waived', reason: 'fixture waiver' } } }
+        : provider,
+    );
+    expect(violationsOf({ ...CAPABILITY_REGISTRY, providers })).not.toEqual([]);
+  });
+
+  it('P-28: every built-in def id has a ProviderRecord', () => {
+    const defIds = BUILTIN_PROVIDER_DEFS.map((def) => def.id).sort();
+    const recordIds = CAPABILITY_REGISTRY.providers.map((provider) => provider.providerId).sort();
+    expect(recordIds).toEqual(defIds);
+  });
+
+  it('P-28: findProvider and findRouteKind resolve entries and stay undefined for the unknown', () => {
+    expect(findProvider('claude-code')?.providerId).toBe('claude-code');
+    expect(findProvider('no-such-provider')).toBeUndefined();
+    expect(findRouteKind('anthropic-subscription')?.providerId).toBe('claude-code');
+    expect(findRouteKind('no-such-route-kind')).toBeUndefined();
+  });
+});
