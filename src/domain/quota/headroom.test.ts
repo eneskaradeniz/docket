@@ -25,7 +25,7 @@ interface PoolInit {
   readonly id: PoolId;
   readonly accountId?: AccountId;
   readonly kind?: PoolKind;
-  readonly appliesTo?: readonly ModelMatcher[] | 'all';
+  readonly appliesTo?: readonly ModelMatcher[] | 'all' | 'unknown';
   readonly label?: string;
 }
 
@@ -101,6 +101,13 @@ describe('matchesModel', () => {
     const empty = poolOf({ id: POOL_GEMINI, appliesTo: [] });
     expect(matchesModel(empty, 'gemini-pro')).toBe(false);
   });
+
+  it('R-25: a pool with unknown applicability matches no model', () => {
+    const pool = poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' });
+    expect(matchesModel(pool, 'gemini-pro')).toBe(false);
+    expect(matchesModel(pool, 'gpt-5')).toBe(false);
+    expect(matchesModel(pool, '')).toBe(false);
+  });
 });
 
 describe('poolsForModel', () => {
@@ -127,6 +134,15 @@ describe('poolsForModel', () => {
 
   it('returns an empty array for empty input', () => {
     expect(poolsForModel([], ACCOUNT_MAIN, 'gemini-pro')).toEqual([]);
+  });
+
+  it('R-25: a pool with unknown applicability is never returned, whatever the model', () => {
+    const pools: readonly Pool[] = [
+      poolOf({ id: POOL_SHARED }),
+      poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' }),
+    ];
+    expect(poolsForModel(pools, ACCOUNT_MAIN, 'gemini-pro').map((pool) => pool.id)).toEqual([POOL_SHARED]);
+    expect(poolsForModel([poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' })], ACCOUNT_MAIN, 'gpt-5')).toEqual([]);
   });
 });
 
@@ -433,6 +449,28 @@ describe('headroom', () => {
     const result = headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW);
     expect(result).toEqual({ ok: false, blockedBy: [M_GEMINI_WEEKLY] });
     expect(result).not.toHaveProperty('earliestRelief');
+  });
+
+  it('R-28: a pool with unknown applicability never blocks a run — its meters take no part', () => {
+    const pools: readonly Pool[] = [
+      poolOf({ id: POOL_SHARED }),
+      poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' }),
+    ];
+    const meters: readonly Meter[] = [
+      meterOf({ id: M_SHARED, poolId: POOL_SHARED, remaining: 50, limit: 100 }),
+      // exhausted with the reset still ahead, but which models draw from this pool is unknown:
+      // the meter is information, never a block.
+      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
+    ];
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.5 });
+  });
+
+  it('R-28: an account whose every pool has unknown applicability answers no_data, not a block', () => {
+    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' })];
+    const meters: readonly Meter[] = [
+      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
+    ];
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
   });
 
   it('does not mutate its inputs', () => {

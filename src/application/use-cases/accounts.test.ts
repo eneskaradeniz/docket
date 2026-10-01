@@ -240,6 +240,65 @@ describe('saveAccount', () => {
     expect(await h.deps.accounts.list()).toHaveLength(1);
   });
 
+  it('A-43: an identityDir may be a POSIX path, a Windows drive path with either separator, or a UNC share', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const posix = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+    const driveBackslash = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:\\Users\\op\\.claude' }),
+      actor: USER,
+    });
+    const driveSlash = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:/Users/op/.claude' }),
+      actor: USER,
+    });
+    const driveLowercase = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'c:\\users\\op\\.claude' }),
+      actor: USER,
+    });
+    const unc = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '\\\\fileserver\\shares\\agent-a' }),
+      actor: USER,
+    });
+
+    expect(posix).toEqual({ ok: true, value: undefined });
+    expect(driveBackslash).toEqual({ ok: true, value: undefined });
+    expect(driveSlash).toEqual({ ok: true, value: undefined });
+    expect(driveLowercase).toEqual({ ok: true, value: undefined });
+    expect(unc).toEqual({ ok: true, value: undefined });
+    expect(await h.deps.accounts.list()).toHaveLength(1); // the same id upserts
+  });
+
+  it('A-43: an identityDir that is empty, relative, home-relative, or a bare drive stays invalid', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const empty = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '' }),
+      actor: USER,
+    });
+    const relative = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'configs\\agent-a' }),
+      actor: USER,
+    });
+    const homeRelative = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: '~/agent-a' }),
+      actor: USER,
+    });
+    const bareDrive = await saveAccount(h.deps, {
+      record: accountRecord({ identityDir: 'C:' }),
+      actor: USER,
+    });
+
+    expect(empty).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(relative).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(homeRelative).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(bareDrive).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(await h.deps.accounts.list()).toEqual([]); // no rejected leg wrote anything
+  });
+
   it('A-43: validation order — secret_without_ref first, then invalid_endpoint, endpoint_mismatch, identity_dir_not_allowed', async () => {
     const h = makeHarness(ROUTE_KINDS);
 
