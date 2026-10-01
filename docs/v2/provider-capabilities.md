@@ -218,7 +218,7 @@ Parsers turn whatever a provider reports into meters: the provider's own label (
 - Only pools whose applicability is known take part in the headroom check before a run; the strictest applicable pool wins.
 - A payload the parser cannot read is never shown as numbers: the probe reports `probe_failed` with a diagnostic naming the unrecognised field names (never values).
 - A meter carries its unit (percent, credits, currency, tokens); a meter with an unknown unit is not rendered as a percentage.
-- Observed (Claude): a model-scoped bucket arrives inside the usage report's model-scoped list, and an extra-usage section carries credit fields. A model-scoped weekly row is a share of the same weekly limit, not a separate allowance (support documentation, 2026-10-02); whether such a model also draws from the five-hour window is not documented. Real responses are recorded as fixtures per provider version and kept as tests.
+- Observed (Claude): a model-scoped bucket arrives inside the usage report's model-scoped list, and an extra-usage section carries credit fields. A model-scoped weekly row arrives as its own meter; the support documentation describes it as a share of the weekly limit, and the operator observed that using that model also lowers the five-hour and weekly meters (the documentation does not confirm the five-hour part). Docket depends on neither reading: the row is one more meter that applies to that model together with the five-hour and weekly meters. Real responses are recorded as fixtures per provider version and kept as tests.
 
 ## 14. No surprise spend (P-40)
 Docket never starts a run that may spend real money without the user's explicit consent and a spend cap.
@@ -240,4 +240,4 @@ Docket never starts a run that may spend real money without the user's explicit 
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
 - O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
-- O-9 Tier of the Fable model: it spends limits fast, is a share of the same weekly limit on one plan and outside the limits on another (`metered`); decided: no automatic tier, selectable by hand only.
+- O-9 Tier of the Fable model: it spends limits fast, has its own weekly meter on one plan and outside the limits on another (`metered`); decided: no automatic tier, selectable by hand only.
