@@ -59,6 +59,8 @@ export function createQuotaProbeResolver(config: ProbeResolverConfig): QuotaProb
     }
   }
   return {
-    forProvider: (defId) => probes[defId],
+    // With a route kind the lookup answers only that kind's dedicated probe (the http_monitor
+    // kinds above); without one it answers the provider's probe, as before route kinds existed.
+    forProvider: (defId, routeKind) => probes[routeKind ?? defId],
   };
 }

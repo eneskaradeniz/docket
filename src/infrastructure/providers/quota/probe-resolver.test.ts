@@ -165,4 +165,53 @@ describe('createQuotaProbeResolver', () => {
 
     expect(resolver.forProvider('zai-glm')).toBeUndefined();
   });
+
+  it('answers the route-kind question: provider id plus kind id resolves the kind probe, polled under the kind id', async () => {
+    const server = await monitors.start({
+      status: 200,
+      body: JSON.stringify({
+        data: {
+          limits: [
+            { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 40, nextResetTime: 1_759_100_000_000 },
+            { type: 'TIME_LIMIT', unit: 5, percentage: 10, nextResetTime: 1_762_000_000_000 },
+          ],
+        },
+      }),
+    });
+    const account: AccountRecord = {
+      id: ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FA2'),
+      provider: 'claude-code',
+      label: 'GLM Coding',
+      authMode: 'api_key',
+      limitPolicy: 'wait_resume',
+      routeKind: 'zai-glm',
+      endpoint: server.endpoint,
+      secretRef: 'token-acct-glm',
+      caps: [],
+    };
+    const resolver = createQuotaProbeResolver({
+      now: () => 1_790_000_000_000,
+      accounts: { list: async () => [account] },
+      secrets: { get: async (ref) => (ref === 'token-acct-glm' ? FAKE_MONITOR_TOKEN : undefined) },
+    });
+    // The two-argument question a compatible-endpoint account asks: its provider id plus its
+    // route kind must resolve the kind's monitor probe, never the provider's SDK probe.
+    const probe = resolver.forProvider('claude-code', 'zai-glm');
+    if (probe === undefined) throw new Error('zai-glm probe not registered');
+
+    const result = await probe.poll('zai-glm', null);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value).toHaveLength(2);
+    expect(server.requests()).toEqual([
+      { method: 'GET', url: '/api/monitor/usage/quota/limit', auth: 'raw-match' },
+    ]);
+  });
+
+  it('a route kind with no dedicated probe answers undefined, leaving the provider id as the fallback', () => {
+    const resolver = makeResolver(undefined);
+
+    expect(resolver.forProvider('claude-code', 'anthropic-subscription')).toBeUndefined();
+  });
 });
