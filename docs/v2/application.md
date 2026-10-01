@@ -129,6 +129,10 @@ export interface AccountRecord {
   readonly plan?: string;
   readonly limitPolicy: LimitPolicy;
   readonly secretRef?: string;           // key into SecretVault; never the secret itself
+  readonly routeKind?: string;           // route kind id from the capability registry (data); absent → derived from provider + authMode
+  readonly endpoint?: string;            // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
+  readonly identityDir?: string;         // absolute path of the user's own config directory; subscription route kinds only
+  readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 export interface AccountRepo {
@@ -440,7 +444,7 @@ export function decideProposalUseCase(
 ): Promise<Result<ProposalRecord, ApplyError>>;
 
 // accounts.ts
-export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref'>>;
+export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
 export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
 
@@ -759,6 +763,8 @@ Rules:
 - **A-42** A mark travels with its fill rule: the query answers a source mark's `fillRule`
   byte-identical and never assumes `nonzero` — the same `d` renders differently under the two
   rules, so the rule is the mark's data, not the renderer's guess.
+- **A-43** `saveAccount` validates the route fields (see [provider-capabilities.md](provider-capabilities.md), P-31, P-32): an `endpoint` that is not an `https` URL → `invalid_endpoint`; an `endpoint` whose host differs from the host fixed by the account's route kind → `endpoint_mismatch`; an `identityDir` that is not an absolute path, or is set on an account whose `authMode` is not `subscription` → `identity_dir_not_allowed`. None of these fields is a secret; the token stays behind `secretRef` (A-13).
+- **A-44** Records saved before these fields existed read back unchanged: accounts are stored as JSON, so there is no migration. An absent `routeKind` resolves to `anthropic-subscription` for a `claude-code` account with `authMode: 'subscription'` and to `anthropic-api` for `authMode: 'api_key'`.
 
 ---
 
