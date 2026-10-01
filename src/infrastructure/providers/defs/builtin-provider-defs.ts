@@ -171,7 +171,14 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     helpArgs: ['--help'],
     transport: 'acp',
     config: { mechanism: 'env-var', name: 'OPENCODE_CONFIG_DIR' },
-    buildLaunch: (input) => ({ args: ['acp'], env: { OPENCODE_CONFIG_DIR: input.configDir }, stdin: 'prompt' }),
+    // Without its documented switch the CLI also reads the user's own ~/.claude files
+    // (CLAUDE.md, skills), so a run would carry the operator's personal instructions; the
+    // literal pins the run to the run-scoped config tree only.
+    buildLaunch: (input) => ({
+      args: ['acp'],
+      env: { OPENCODE_CONFIG_DIR: input.configDir, OPENCODE_DISABLE_CLAUDE_CODE: '1' },
+      stdin: 'prompt',
+    }),
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
