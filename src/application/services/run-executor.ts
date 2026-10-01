@@ -32,7 +32,8 @@ export interface ExecuteRunInput {
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
@@ -205,8 +206,25 @@ const buildFallbackPrompt = async (
   return lines.join('\n');
 };
 
+/** P-40: a run whose pinned model may spend real money starts only with the user's recorded
+ *  consent and a spend cap on the account. The refusal happens before any write, so every store
+ *  reads back exactly as it was; a model the catalog does not list counts as `unknown`, which is
+ *  never assumed to be free. A route without a pinned model is not gated here — the automatic
+ *  selection never picks a non-included model, so only a hand-chosen model needs the consent. */
+const spendConsentSatisfied = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog'>,
+  accountId: AccountId,
+  model: string,
+): Promise<boolean> => {
+  const entry = (await deps.modelCatalog.list(accountId)).find((candidate) => candidate.id === model);
+  if ((entry?.billing ?? 'unknown') === 'included') return true;
+  const account = await deps.accounts.get(accountId);
+  const consented = account?.consentedModels?.includes(model) ?? false;
+  return consented && (account?.caps.length ?? 0) > 0;
+};
+
 export async function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
@@ -214,6 +232,10 @@ export async function executeRun(
   workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
+  const model = item.route.model;
+  if (model !== undefined && !(await spendConsentSatisfied(deps, item.route.accountId, model))) {
+    return { kind: 'refused', error: 'needs_spend_consent' };
+  }
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );

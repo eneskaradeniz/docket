@@ -402,6 +402,8 @@ export const LABEL_KEYS = [
   'success.deploy.approve',
   'success.account.save',
   'success.account.remove',
+  'success.account.consent.grant',
+  'success.account.consent.revoke',
   'success.binding.save',
   'success.app.update.check',
   'success.app.update.apply',

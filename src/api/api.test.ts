@@ -950,6 +950,146 @@ describe('createApi', () => {
       }
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
+
+    it('P-40: account.consent.grant records the model and the cap, audited as account.consent.granted', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT,
+        model: 'model-x',
+        cap: { scope: 'account_day', amountUsd: 5, warnPercent: 80 },
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({
+        action: 'account.consent.granted',
+        subject: { kind: 'account', id: ACCOUNT },
+      });
+    });
+
+    it('P-40: account.consent.grant without a cap touches only consentedModels; an unknown account reports not_found', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [{ scope: 'account_month', cap: { amountUsd: 50, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const granted = await api.command(ACTOR, { type: 'account.consent.grant', id: ACCOUNT, model: 'model-x' });
+      const missing = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT_OTHER,
+        model: 'model-x',
+      });
+
+      expect(granted).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_month', cap: { amountUsd: 50, warnPercent: 80 } }],
+      });
+      expect(missing).toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('P-40: account.consent.grant rejects a malformed id or an unknown cap scope at the boundary', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const api = createApi(h.deps);
+      const save = vi.spyOn(h.deps.accounts, 'save');
+
+      const badId = await api.command(ACTOR, { type: 'account.consent.grant', id: 'not-a-ulid', model: 'model-x' });
+      const badScope = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT,
+        model: 'model-x',
+        cap: { scope: 'account_year', amountUsd: 5, warnPercent: 80 },
+      });
+
+      expect(badId).toEqual({ ok: false, code: 'invalid_id' });
+      expect(badScope).toEqual({ ok: false, code: 'invalid_id' });
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('P-40: account.consent.revoke removes the model and audits account.consent.revoked', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        consentedModels: ['model-x', 'model-y'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.consent.revoke', id: ACCOUNT, model: 'model-x' });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-y'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({
+        action: 'account.consent.revoked',
+        subject: { kind: 'account', id: ACCOUNT },
+      });
+    });
+
+    it('P-40: an update through account.save keeps the recorded consent — the editable surface does not own it', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        label: 'Renamed',
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+    });
   });
 
   describe('subscribe', () => {

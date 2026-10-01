@@ -46,10 +46,12 @@ import {
   enqueueStage,
   getUpdateState,
   getWorkOrder,
+  grantSpendConsent,
   openTaskWorkOrders,
   openWorkOrder,
   registerRepo,
   removeAccount,
+  revokeSpendConsent,
   saveAccount,
   saveBinding,
   unblockWorkOrder,
@@ -416,6 +418,7 @@ const runCommand = async (
         endpoint: existing?.endpoint,
         identityDir: existing?.identityDir,
         tierModels: existing?.tierModels,
+        consentedModels: existing?.consentedModels,
       };
       const saved = await saveAccount(
         {
@@ -450,6 +453,37 @@ const runCommand = async (
       return typeof removed.error === 'string'
         ? { ok: false, code: removed.error }
         : { ok: false, code: removed.error.code, roles: removed.error.roles };
+    }
+
+    case 'account.consent.grant': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      // The scope is a closed set in the record but a plain string on the wire; an unknown value
+      // is rejected at the edge like a malformed id, because it must never reach a stored cap.
+      const capRaw = command.cap;
+      let cap: AccountRecord['caps'][number] | undefined;
+      if (capRaw !== undefined) {
+        const scope = CAP_SCOPES.find((candidate) => candidate === capRaw.scope);
+        if (scope === undefined) return invalidId();
+        cap = { scope, cap: { amountUsd: capRaw.amountUsd, warnPercent: capRaw.warnPercent } };
+      }
+
+      const granted = await grantSpendConsent(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
+        { accountId: id, model: command.model, ...(cap !== undefined ? { cap } : {}), actor },
+      );
+      return granted.ok ? { ok: true } : { ok: false, code: granted.error };
+    }
+
+    case 'account.consent.revoke': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+
+      const revoked = await revokeSpendConsent(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
+        { accountId: id, model: command.model, actor },
+      );
+      return revoked.ok ? { ok: true } : { ok: false, code: revoked.error };
     }
 
     case 'binding.save': {
@@ -591,6 +625,9 @@ const runQuery = async (
 
 /** The closed auth-mode set of the record; the wire type stays a plain string. */
 const AUTH_MODES: readonly AuthMode[] = ['subscription', 'api_key', 'cloud', 'byok'];
+
+/** The cap scopes an account may carry; the wire type stays a plain string. */
+const CAP_SCOPES: readonly AccountRecord['caps'][number]['scope'][] = ['account_day', 'account_week', 'account_month'];
 
 /** A discovery pass kicks on every query; results arrive per provider and the promise of the pass
  *  ending is the promise of the answer. A provider's failure is its own null fields, never the

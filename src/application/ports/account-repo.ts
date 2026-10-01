@@ -24,6 +24,9 @@ export interface AccountRecord {
   readonly endpoint?: string; // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
   readonly identityDir?: string; // absolute path of the user's own config directory; subscription route kinds only
   readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
+  // Non-secret model ids the user allowed for metered or unverified use (P-40). Records saved
+  // before the field existed carry none; the JSON store reads them back unchanged.
+  readonly consentedModels?: readonly string[];
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 

@@ -354,6 +354,8 @@ export const EN: LabelBundle = {
   'errorBoundary.reload': 'Reload',
   'success.account.save': 'Account saved.',
   'success.account.remove': 'Account removed.',
+  'success.account.consent.grant': 'Spend consent recorded.',
+  'success.account.consent.revoke': 'Spend consent withdrawn.',
   'success.binding.save': 'Role binding saved.',
   'success.app.update.check': 'Updates checked.',
   'success.app.update.apply': 'Update download started.',

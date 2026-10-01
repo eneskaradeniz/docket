@@ -353,6 +353,8 @@ export const TR: LabelBundle = {
   'errorBoundary.reload': 'Yeniden yükle',
   'success.account.save': 'Hesap kaydedildi.',
   'success.account.remove': 'Hesap kaldırıldı.',
+  'success.account.consent.grant': 'Harcama onayı verildi.',
+  'success.account.consent.revoke': 'Harcama onayı kaldırıldı.',
   'success.binding.save': 'Rol bağlantısı kaydedildi.',
   'success.app.update.check': 'Güncellemeler kontrol edildi.',
   'success.app.update.apply': 'Güncelleme indirmesi başladı.',
