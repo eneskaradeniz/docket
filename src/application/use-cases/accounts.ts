@@ -23,8 +23,12 @@ const httpsUrlOf = (endpoint: string): URL | undefined => {
   }
 };
 
-// A-43: the config directory is a POSIX absolute path — the app runs on macOS and Linux.
-const isAbsolutePath = (path: string): boolean => path.startsWith('/');
+// A-43: an identityDir must be absolute wherever the account's CLI may run — a POSIX path, a
+// Windows drive path with either separator (drive letter case-insensitive), or a UNC share. The
+// application layer has no path module, so this is a pure prefix check on the stored form: no
+// normalisation, no existence probe.
+const isAbsolutePath = (path: string): boolean =>
+  path.startsWith('/') || /^[a-z]:[\\/]/i.test(path) || /^\\\\[^\\]/.test(path);
 
 export async function saveAccount(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>,
