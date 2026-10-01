@@ -2,15 +2,14 @@
 // sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
 // the domain — so every function here takes its input as a parameter and knows no provider id.
 import type { AuthMode } from '../quota/index';
+import type { Billing } from '../shared/index';
 import type { ProviderCapabilities } from './capabilities';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
 
-/**
- * How a model's use is paid for on a route. `included` and `metered` are verified states;
- * `unknown` is never assumed to be free nor to cost a given amount.
- */
-export type Billing = 'included' | 'metered' | 'unknown';
+// Re-exported so the capability contract keeps naming it while the limit policy reads it from
+// shared (the module map lets quota import only shared).
+export type { Billing };
 
 /**
  * Effort levels in ascending order. `'none'` is the provider's thinking-off setting — the lowest
