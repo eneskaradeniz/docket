@@ -31,6 +31,7 @@ import {
 import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, TransportError } from '../ports';
 import {
   createFakeAccountRepo,
+  createFakeCapabilityCatalog,
   createFakeClock,
   createFakeDeps,
   createFakeEventLog,
@@ -44,6 +45,7 @@ import {
   type FakeClock,
   type FakeEventLog,
   type FakeIdGen,
+  type FakeRouteKind,
   type FakeRunRepo,
   type FakeTransport,
   type FakeTransportResolver,
@@ -228,6 +230,7 @@ const harness = async (options: {
   readonly priorRuns?: readonly RunRecord[];
   readonly withTransport?: boolean;
   readonly models?: readonly CatalogModel[];
+  readonly routeKinds?: readonly FakeRouteKind[];
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -248,6 +251,7 @@ const harness = async (options: {
     accounts,
     transports,
     ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
+    ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
   });
 
   await workOrders.create({ ...WORK_ORDER_RECORD });
@@ -1103,12 +1107,43 @@ describe('executeRun — spend consent', () => {
     expect(allowed).toEqual({ kind: 'finished', outcome: 'succeeded' });
   });
 
-  it('P-40: a route without a pinned model is not gated — billing is resolved only for a chosen model', async () => {
+  it('P-40: an unpinned run on an api_key account without consent and a cap is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on an api_key account runs with the account-level consent marker and a cap', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key', consentedModels: ['*'], caps: [DAY_CAP] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a subscription account runs without consent', async () => {
     const h = await harness({ models: [catalogModel('model-x', 'metered')] });
 
     const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
 
     expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
     expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a route kind that fixes defaultBilling metered is refused', async () => {
+    const h = await harness({
+      routeKinds: [{ id: 'route-metered-default', provider: 'provider-x', authMode: 'subscription', defaultBilling: 'metered' }],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
   });
 });
