@@ -16,7 +16,7 @@ route, not to the provider alone.
   evidence, and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
   source, `tierModels`, cost kind, quota probe kind, model source, `liveIsAuthoritative` (a plan-scoped
   live list hides the registry models it does not contain). Per model: `id`, `family`, `tier`,
-  `thinking`, `contextWindow?`, `retired?`.
+  `thinking`, `contextWindow?`, `retired?`, `billing?` (`included`, `metered` or `unknown`; see P-40).
 - Everything derived from it is a pure function in the domain module: support level, thinking options
   for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
 
@@ -212,6 +212,24 @@ the strong tier. Autonomy and approvals travel as policy, not as session state. 
 three-leg scenario in the style of P-24: the first provider hits a limit mid-stage, the second continues
 from the pack, the stage checks pass.
 
+## 13. Dynamic quota meters (P-39)
+Parsers turn whatever a provider reports into meters: the provider's own label (verbatim), window length, remaining fraction, reset time and unit. No window name or count is fixed in code; a new bucket shows up without a release.
+- Which models draw from a bucket is data: a small table maps known bucket names to model matchers (`Pool.appliesTo`), matched by the display name the provider reports. A bucket the table does not know is shown for information only ("which models draw from this bucket is unknown") and never blocks a run; exhaustion still surfaces through `limit_hit`.
+- Only pools whose applicability is known take part in the headroom check before a run; the strictest applicable pool wins.
+- A payload the parser cannot read is never shown as numbers: the probe reports `probe_failed` with a diagnostic naming the unrecognised field names (never values).
+- A meter carries its unit (percent, credits, currency, tokens); a meter with an unknown unit is not rendered as a percentage.
+- Observed (Claude): a model-scoped bucket arrives inside the usage report's model-scoped list, and an extra-usage section carries credit fields. A model-scoped weekly row is a share of the same weekly limit, not a separate allowance (support documentation, 2026-10-02); whether such a model also draws from the five-hour window is not documented. Real responses are recorded as fixtures per provider version and kept as tests.
+
+## 14. No surprise spend (P-40)
+Docket never starts a run that may spend real money without the user's explicit consent and a spend cap.
+- Every route and model has a billing state: `included` (the plan covers it, verified), `metered` (billed per use, verified) or `unknown`. `unknown` is never assumed to be free or to cost a given amount.
+- The UI shows `unknown` with a question mark and the text that Docket could not verify whether the plan covers it and that using it may be billed. It shows no amount and no claim of a price for `unknown`. `metered` shows a currency mark and, when the registry holds a price, an estimate.
+- Tier resolution and fallbacks never pick a `metered` or `unknown` model on their own. Choosing one by hand asks for explicit consent per account and model and requires a spend cap (account day, week or month) before the run starts; without a cap the run is refused (`needs_spend_consent`).
+- An automatic switch caused by a limit (switch pool, fallback account) never crosses from `included` to `metered` or `unknown`; the policy falls back to waiting or asking. Full autonomy needs the cap as well.
+- If the provider reports an account-side overage or extra-usage setting, Docket shows it and warns that reaching a limit may be billed; it never changes that setting.
+- Observed (Claude): a model outside a plan's limits (documented for one plan: billed at standard API rates through usage credits, and only when extra usage is enabled) is `metered`; with extra usage disabled it cannot be used. The CLI's non-interactive mode may spend credits without asking, so Docket enforces the cap and does not leave it to the CLI.
+- Ambient API keys never reach a run (P-8, I-34): a key is used only when the account is an API-key account.
+
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
 - O-2 Resolved: sessions stay under the user's config directory; a per-run copy cannot keep the macOS login.
@@ -222,3 +240,4 @@ from the pack, the stage checks pass.
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
 - O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
+- O-9 Tier of the Fable model: it spends limits fast, is a share of the same weekly limit on one plan and outside the limits on another (`metered`); decided: no automatic tier, selectable by hand only.
