@@ -2,7 +2,11 @@
 import type { LimitHit, Meter } from '../quota/index';
 import type { EpochMs } from '../shared/index';
 
-export type CostKind = 'reported' | 'computed' | 'equivalent';
+/**
+ * Where a run's cost number comes from. `credits`: the provider meters usage in its own credit
+ * unit — the amount is a number of credits, carried in the provider's smallest unit (O-7).
+ */
+export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';
 
 export type AgentEvent =
   | { readonly type: 'session_started'; readonly at: EpochMs; readonly sessionRef: string }
