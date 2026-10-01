@@ -4,6 +4,7 @@ import type {
   AccountId,
   Actor,
   AgentEvent,
+  Billing,
   CapabilityDef,
   EpochMs,
   LimitDecision,
@@ -17,7 +18,7 @@ import type {
 } from '../../domain/index';
 import { decideOnLimit, foldRun } from '../../domain/index';
 
-import type { AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
+import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
 import type { BoardHooks } from './permission-board';
 
@@ -32,7 +33,8 @@ export interface ExecuteRunInput {
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 
 export interface PermissionGate {
   onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'>;
@@ -205,8 +207,47 @@ const buildFallbackPrompt = async (
   return lines.join('\n');
 };
 
+/** The account-level consent marker: the user allowed the route's own default model (P-40). */
+const DEFAULT_MODEL_CONSENT = '*';
+
+/** An unpinned route runs the CLI's default model, whose billing the catalog cannot name. The
+ *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, every
+ *  other auth mode is billed per use by nature. */
+const defaultBillingOf = (
+  capabilities: Pick<AppDeps, 'capabilities'>['capabilities'],
+  account: AccountRecord | undefined,
+): Billing => {
+  const routeId =
+    account === undefined
+      ? undefined
+      : capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
+  const fixed = routeId === undefined ? undefined : capabilities.routeKind(routeId)?.defaultBilling;
+  if (fixed !== undefined) return fixed;
+  return account?.authMode === 'subscription' ? 'included' : 'metered';
+};
+
+/** P-40: a run whose model may spend real money starts only with the user's recorded consent and
+ *  a spend cap on the account. The refusal happens before any write, so every store reads back
+ *  exactly as it was. A pinned model the catalog does not list counts as `unknown`, which is never
+ *  assumed to be free; an unpinned route is gated by its default billing, consented through the
+ *  account-level marker. */
+const spendConsentSatisfied = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  accountId: AccountId,
+  model: string | undefined,
+): Promise<boolean> => {
+  const account = await deps.accounts.get(accountId);
+  const billing: Billing =
+    model !== undefined
+      ? (await deps.modelCatalog.list(accountId)).find((candidate) => candidate.id === model)?.billing ?? 'unknown'
+      : defaultBillingOf(deps.capabilities, account);
+  if (billing === 'included') return true;
+  const consented = account?.consentedModels?.includes(model ?? DEFAULT_MODEL_CONSENT) ?? false;
+  return consented && (account?.caps.length ?? 0) > 0;
+};
+
 export async function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
   board?: BoardHooks,
@@ -214,6 +255,9 @@ export async function executeRun(
   workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
+  if (!(await spendConsentSatisfied(deps, item.route.accountId, item.route.model))) {
+    return { kind: 'refused', error: 'needs_spend_consent' };
+  }
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );

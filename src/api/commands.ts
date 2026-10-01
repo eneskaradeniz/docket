@@ -16,6 +16,8 @@ export type Command =
   | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string }
   | { readonly type: 'account.remove'; readonly id: string }
+  | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }
+  | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
   | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] }
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' };

@@ -5,6 +5,7 @@ export * from './routing';
 export * from './projects';
 export * from './proposals';
 export * from './accounts';
+export * from './spend-consent';
 export * from './app-update';
 export * from './deploy-gate';
 export * from './quota-poll';
