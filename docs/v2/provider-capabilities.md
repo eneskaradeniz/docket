@@ -11,13 +11,12 @@ routes of one provider can differ in models, thinking, quota and cost, so capabi
 route, not to the provider alone.
 
 ## 1. The capability record (P-27)
-- One data file is the single source of truth: `src/domain/providers/capability-registry.ts`, plain
-  `as const` data checked with `satisfies`. No npm packages, no Node builtins, no classes (domain rules).
+- One data file is the single source of truth: `src/infrastructure/providers/registry/capability-registry.ts`, plain `as const` data checked with `satisfies` against the domain types. The types and the pure derivations live in `src/domain/providers/capability.ts` (domain rules: no npm packages, no Node builtins, no classes). The data sits in infrastructure because vendor names are banned outside `src/infrastructure/providers/`; an application port `CapabilityCatalog` exposes route kinds to `saveAccount`.
 - It holds, per provider: `planned` (manual flag), the six promotion gates (section 2) each with
   evidence, and its route kinds. Per route kind: auth mode, endpoint host (preset only), identity
   source, `tierModels`, cost kind, quota probe kind, model source. Per model: `id`, `family`, `tier`,
   `thinking`, `contextWindow?`, `retired?`.
-- Everything derived from it is a pure function in the same module: support level, thinking options
+- Everything derived from it is a pure function in the domain module: support level, thinking options
   for a model, tier resolution. The README matrix is generated from it (P-36). No second table exists.
 
 `ProviderCapabilities` also gains `plugins` (the same tri-state as `mcp`, `hooks` and `skills`).
@@ -45,13 +44,13 @@ run id. A gate may be `waived` with a written reason (only G5). Nobody writes a 
 | G3 Permission wait | on `permission_ask` the run stops and continues with the answer | scripted-agent scenario |
 | G4 Usage visibility | `usage` event reaches the record with a cost kind | usage mapping test |
 | G5 Quota probe | `quotaReport` is not `none`, or waived: provider reports no quota and a limit error maps to `limit_hit` | probe test or waiver text |
-| G6 Tests | scripted-process scenario plus one operator-gate run on the real CLI | scenario name, run id |
+| G6 Tests | scripted-process scenario; the operator-gate run on the real CLI is recorded separately in `operatorRuns` and only `full` needs it | scenario name |
 
 Level derivation (pure, replaces the tier computed from capabilities alone):
 - `planned`: the manual flag is set.
 - `experimental`: G1 or G2 is missing, or the stream is plain text passed through raw.
-- `isolated`: G1, G2, G4, G6 pass and G3 does not (the agent cannot ask; it runs sandboxed).
-- `full`: G1–G6 pass (G5 may be waived).
+- `isolated`: G1, G2, G4 and G6 (scripted scenario) pass; G3 may be missing (the agent cannot ask; it runs sandboxed).
+- `full`: G1–G5 pass (G5 may be waived), G6 passes, and at least one operator-gate run is recorded in `operatorRuns`.
 The existing `supportTier(capabilities)` stays until the registry lands; the registry issue deletes it so
 only one derivation exists.
 
@@ -96,7 +95,7 @@ New account fields (all non-secret): `routeKind`, `endpoint?` (URL), `identityDi
 `tierModels?`. Secrets stay in the OS keychain behind `secretRef`; records never carry environment values.
 Route kinds are data: `anthropic-subscription`, `anthropic-api`, and presets for compatible endpoints
 (the GLM preset fixes the endpoint host, the three tier models, cost kind `equivalent`, quota probe
-`zai-http`). The definition builds the child environment from these fields (base URL, token, tier model
+`http_monitor`). The definition builds the child environment from these fields (base URL, token, tier model
 aliases); Docket never stores those environment values.
 
 ## 6. Subscription identity (P-32)
