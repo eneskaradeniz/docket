@@ -43,6 +43,8 @@ import {
   closeWorkOrder,
   decideHumanGate,
   decideProposalUseCase,
+  DEFAULT_MODEL_CONSENT,
+  defaultBillingOf,
   enqueueStage,
   getUpdateState,
   getWorkOrder,
@@ -61,6 +63,7 @@ import {
 import type { Command, CommandResult } from './commands';
 import type {
   AccountDetailView,
+  AccountModelsView,
   AttentionItem,
   BoardView,
   CockpitView,
@@ -564,6 +567,12 @@ const runQuery = async (
       const id = ulidValue<'account'>(query.id);
       if (id === undefined) return invalidId();
       return accountDetailView(deps, id);
+    }
+
+    case 'account.models': {
+      const id = ulidValue<'account'>(query.accountId);
+      if (id === undefined) return invalidId();
+      return accountModelsView(deps, id, query.refresh === true);
     }
 
     case 'project.spend': {
@@ -1159,6 +1168,38 @@ const accountDetailView = async (
     activeWork: [...collected]
       .sort((a, b) => a.since - b.since)
       .map(({ workOrderId, number, title, stage, status }) => ({ workOrderId, number, title, stage, status })),
+  };
+};
+
+/** The account's model catalog as the surface sees it (P-29): the merged list read through the
+ *  port, joined with the account's recorded consents (P-40). `refresh` rides straight through to
+ *  the port — the cache it bypasses lives there, not here. */
+const accountModelsView = async (
+  deps: AppDeps,
+  id: AccountId,
+  refresh: boolean,
+): Promise<AccountModelsView | QueryFailure> => {
+  const record = await deps.accounts.get(id);
+  if (record === undefined) return { ok: false, code: 'not_found' };
+
+  const consented = record.consentedModels ?? [];
+  const models = await deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined);
+  return {
+    models: models.map((model) => ({
+      id: model.id,
+      displayName: model.displayName,
+      tier: model.tier,
+      thinking: model.thinking === 'unknown' ? { kind: 'unknown' } : model.thinking,
+      billing: model.billing,
+      source: model.source,
+      stale: model.stale === true,
+      autoClassified: model.autoClassified === true,
+      consented: consented.includes(model.id),
+    })),
+    // The marker names the route's own default model, never a catalog row; the unpinned run's
+    // billing is the same rule the executor gates runs with.
+    defaultConsented: consented.includes(DEFAULT_MODEL_CONSENT),
+    defaultBilling: defaultBillingOf(deps.capabilities, record),
   };
 };
 
