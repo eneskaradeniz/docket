@@ -102,10 +102,15 @@ aliases); Docket never stores those environment values.
 Finding: the SDK leg passes no config directory, so every subscription run falls back to the single
 machine login. A second subscription account on the same machine cannot be selected.
 Rule: a subscription account carries `identityDir`, the user's own config directory, passed to the child as
-the config-directory variable. `settingSources` stays empty so the user's settings and hooks do not affect
-runs; MCP servers stay inline. Docket never writes into `identityDir` and never reads credential values from
-it. Needs verification before the issue is cut: how the CLI keys its stored login per config directory on
-macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored under `identityDir`.
+the config-directory variable. Verified: two directories give two different logins, and on macOS the CLI
+keys its keychain entry to the directory path, so a copied directory loses the login and copying per run is
+not an option. `settingSources` stays empty so the user's settings and hooks do not affect runs, but the
+directory's own `env` settings still apply to the child, so a subscription directory must carry no endpoint
+or token overrides; MCP servers stay inline. Docket itself never writes into `identityDir` and never reads
+credential values from it. The CLI's own session storage under `identityDir` is accepted (O-2 resolved): it
+keeps native resume working; a one-off run that does not need resume may turn persistence off. On Linux the
+CLI keeps its credentials file inside `identityDir`: Docket treats the directory as sensitive and never
+copies it.
 
 ## 7. Local account discovery (P-33)
 - A port `AccountDiscovery` scans the user's home for Claude-style config directories and proposes
@@ -114,6 +119,8 @@ macOS and Linux. Consequence to decide (O-2): sessions of such runs are stored u
   preset; an OAuth account present → subscription; neither → ignored (side-tool directories).
 - Credential values are never read into Docket's records or logs. Importing a token is a separate step
   with explicit consent that moves the value into the keychain.
+- A directory whose own settings set an endpoint or token override is classified by those settings, never
+  as a subscription; a subscription candidate that carries such overrides is shown with a warning.
 - Several accounts of one provider are normal: each is its own candidate and its own route.
 
 ## 8. Quota and cost per route (P-34)
@@ -198,7 +205,7 @@ from the pack, the stage checks pass.
 
 ## Open decisions
 - O-1 Where endpoint and model mapping live: account fields (proposed) or a separate preset record.
-- O-2 Subscription sessions stored under the user's config directory, or copied per run.
+- O-2 Resolved: sessions stay under the user's config directory; a per-run copy cannot keep the macOS login.
 - O-3 Pilot providers for the add-a-provider path (proposed: kilo, hermes, amp).
 - O-4 Whether Docket may fetch an updated model registry from the internet.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
