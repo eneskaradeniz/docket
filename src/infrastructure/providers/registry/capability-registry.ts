@@ -106,6 +106,22 @@ export const CAPABILITY_REGISTRY = {
       modelSource: 'api',
       models: [],
     },
+    {
+      // A compatible endpoint reached through the vendor CLI's Anthropic-style variables: the
+      // registry fixes the endpoint host and the three tier aliases (ids and host follow the
+      // provider's own coding-plan documentation), the account fixes the exact URL and its token.
+      // The Anthropic price table never applies to such an endpoint, so costs read as equivalents.
+      id: 'zai-glm',
+      providerId: 'claude-code',
+      authMode: 'api_key',
+      endpointHost: 'api.z.ai',
+      identity: 'secret',
+      costKind: 'equivalent',
+      quotaProbe: 'http_monitor',
+      modelSource: 'static',
+      models: [],
+      tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
+    },
   ],
 } as const satisfies CapabilityRegistry;
 
