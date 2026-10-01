@@ -39,6 +39,13 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | --- | --- | --- | --- | --- | --- | --- |
 | Claude Code (`claude-code`) | `anthropic-subscription` | — | — | — | equivalent | isolated |
 | Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | isolated |
+| Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | isolated |
+| Codex (`codex`) | — | — | — | — | — | experimental |
+| Antigravity (`agy`) | — | — | — | — | — | experimental |
+| Gemini CLI (`gemini`) | — | — | — | — | — | experimental |
+| Copilot CLI (`copilot`) | — | — | — | — | — | experimental |
+| Cursor Agent (`cursor`) | — | — | — | — | — | experimental |
+| opencode (`opencode`) | — | — | — | — | — | experimental |
 <!-- provider-matrix:end -->
 
 ## License

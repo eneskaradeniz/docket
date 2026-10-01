@@ -1,7 +1,8 @@
 // The README matrix rows built from the capability registry (P-36), plus the marker block the
 // generator script rewrites. Provider display names come from the builtin definitions, joined by
-// provider id; an id without a definition shows the id itself. Providers without route kinds take
-// no row — the table describes routes, and a definition alone states nothing about models.
+// provider id; an id without a definition shows the id itself. Every provider record gets a row —
+// one per route kind, in registry order; a provider without route kinds keeps one row with
+// placeholders in the route columns, so the table lists the whole record, not only routed ones.
 import type {
   CapabilityRegistry,
   EffortLevel,
@@ -77,9 +78,20 @@ const rowOf = (provider: ProviderRecord, route: RouteKindRecord): MatrixRow => (
 export function buildProviderMatrixRows(registry: CapabilityRegistry): readonly MatrixRow[] {
   const rows: MatrixRow[] = [];
   for (const provider of registry.providers) {
-    for (const route of registry.routeKinds) {
-      if (route.providerId === provider.providerId) rows.push(rowOf(provider, route));
+    const routes = registry.routeKinds.filter((route) => route.providerId === provider.providerId);
+    if (routes.length === 0) {
+      rows.push({
+        provider: displayNameOf(provider.providerId),
+        routeKind: NO_VALUE,
+        models: NO_VALUE,
+        thinking: NO_VALUE,
+        context: NO_VALUE,
+        cost: NO_VALUE,
+        level: supportLevel(provider),
+      });
+      continue;
     }
+    for (const route of routes) rows.push(rowOf(provider, route));
   }
   return rows;
 }

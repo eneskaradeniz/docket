@@ -7,7 +7,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { renderRegistryMatrix, PROVIDER_MATRIX_END, PROVIDER_MATRIX_START } from './provider-matrix';
+import type { CapabilityRegistry, ProviderRecord } from '../../../domain/index';
+import {
+  buildProviderMatrixRows,
+  renderRegistryMatrix,
+  PROVIDER_MATRIX_END,
+  PROVIDER_MATRIX_START,
+} from './provider-matrix';
 
 const ROOT = join(fileURLToPath(new URL('../../../../', import.meta.url)));
 const README_PATH = join(ROOT, 'README.md');
@@ -28,5 +34,21 @@ describe('README provider matrix (P-36)', () => {
     const committed = blockOf(readme);
     expect(committed).not.toBe('');
     expect(committed).toBe(renderRegistryMatrix());
+  });
+
+  it('P-36: a provider without route kinds still gets a row — placeholders in every route column', () => {
+    const provider: ProviderRecord = { providerId: 'fixture', gates: { G1: { kind: 'test', name: 'fixture' } } };
+    const registry: CapabilityRegistry = { providers: [provider], routeKinds: [] };
+    expect(buildProviderMatrixRows(registry)).toEqual([
+      {
+        provider: 'fixture',
+        routeKind: '—',
+        models: '—',
+        thinking: '—',
+        context: '—',
+        cost: '—',
+        level: 'experimental',
+      },
+    ]);
   });
 });
