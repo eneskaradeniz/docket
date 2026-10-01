@@ -74,7 +74,8 @@ The model source is data per provider: one of `sdk | app-server | acp-session | 
 Which source each CLI really offers is established per provider by a discovery spike, from the CLI's own
 documentation and by running the installed CLI, and the result is written into the registry, not guessed.
 Multi-vendor providers (Cursor, Copilot, OpenCode) list many models: the unknown-model rule applies and only
-the most used models get full registry entries.
+the most used models get full registry entries. Observed: one provider's ACP session reports only a stub
+model, so its catalog comes from the CLI's documentation (`static`), not from the session.
 
 Tier resolution: a route's strong/balanced/fast tier resolves to the highest-version available model of
 that tier, unless the route kind fixes `tierModels` (compatible endpoints map them explicitly).
@@ -84,7 +85,8 @@ the operator decides it (open decision O-4).
 ## 4. Thinking levels (P-30)
 - The user sees Fast / Balanced / Deep. They map to the model's supported levels: Fast → lowest,
   Balanced → `medium` (else the nearest lower), Deep → the highest level up to `xhigh`; `max` is
-  reachable only from advanced settings. The mapping table is data, not code.
+  reachable only from advanced settings. The mapping table is data, not code. Effort sets are per model,
+  never per provider: one model of a provider lists `ultra`, another has no `max`.
 - A model with `thinking: none` hides the control and says the model offers no thinking level.
 - The provider-specific parameter is produced by the definition's `buildLaunch`/transport from the chosen
   level; an unsupported level is clamped down, never sent.
@@ -136,7 +138,7 @@ copies it.
 - Antigravity reports two quota pools (a Gemini family and a Claude family). The registry maps each model to
   a pool through the existing `Pool.appliesTo` matchers (`quota.md`), so choosing a model selects the pool
   whose headroom is checked.
-- Some providers bill in credits or requests rather than tokens (quota.md lists Copilot as monthly AI credits). If a discovery spike confirms a non-token unit, `CostKind` gains it (open decision O-7).
+- Two providers meter usage in credits (one documents 1 credit = $0.01, token based; its quota snapshot carries entitlement counts and percentages, spend arrives as nano units on the usage channel). `CostKind` gains `credits` (O-7 resolved).
 
 ## 9. Adding a provider (P-35)
 A new provider is a definition plus the argument builder, nothing else, when it fits an existing transport.
@@ -211,5 +213,5 @@ from the pack, the stage checks pass.
 - O-5 Minimum supported CLI versions, as data, for the capability scan.
 - O-6 Which instruction file is canonical when a repo serves several providers (proposed: keep each file
   as the repo has it, inline the missing one; offer a canonical-file diff only on request).
-- O-7 Whether `CostKind` gains a non-token unit (credits or requests), decided after the Copilot discovery spike.
+- O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
