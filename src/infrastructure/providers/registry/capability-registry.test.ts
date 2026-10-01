@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
-import type { CapabilityRegistry, Evidence, GateId, ProviderRecord } from '../../../domain/index';
-import { CAPABILITY_REGISTRY, findProvider, findRouteKind } from './capability-registry';
+import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, Tier } from '../../../domain/index';
+import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind } from './capability-registry';
 
 const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
 
@@ -56,5 +56,28 @@ describe('capability registry validity (P-28)', () => {
     expect(findProvider('no-such-provider')).toBeUndefined();
     expect(findRouteKind('anthropic-subscription')?.providerId).toBe('claude-code');
     expect(findRouteKind('no-such-route-kind')).toBeUndefined();
+  });
+});
+
+describe('model catalog data (P-29)', () => {
+  it('P-29: the two Claude route kinds and the compatible-endpoint kind mark their live list authoritative', () => {
+    // A plan-scoped list hides models the account cannot use: subscription directories answer per
+    // plan, and a compatible endpoint answers per env-overridden tiers, so both must be able to
+    // drop bundled entries the live list does not contain.
+    const authoritative = CAPABILITY_REGISTRY.routeKinds
+      .filter((kind) => kind.liveIsAuthoritative === true)
+      .map((kind) => kind.id)
+      .sort();
+    expect(authoritative).toEqual(['anthropic-api', 'anthropic-subscription', 'zai-glm']);
+  });
+
+  it('P-29: family patterns classify exactly the three tiers and name no further family', () => {
+    expect(FAMILY_PATTERNS).toEqual([
+      { contains: 'opus', tier: 'strong' },
+      { contains: 'sonnet', tier: 'balanced' },
+      { contains: 'haiku', tier: 'fast' },
+    ]);
+    const tiers: readonly Tier[] = FAMILY_PATTERNS.map((pattern) => pattern.tier);
+    expect(new Set(tiers).size).toBe(FAMILY_PATTERNS.length);
   });
 });

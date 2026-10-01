@@ -7,7 +7,7 @@ const TRANSPORTS: readonly ProviderTransport[] = ['sdk', 'app-server', 'acp', 's
 const RESUME_MODES: readonly ProviderDef['resume'][] = ['specify', 'capture', 'protocol', 'none'];
 const CONFIG_MECHANISMS: readonly ProviderDef['config']['mechanism'][] = ['env-var', 'flag'];
 const QUOTA_REPORTS: readonly ProviderCapabilities['quotaReport'][] = ['stream', 'query', 'error_only', 'none'];
-const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'none'];
+const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'credits', 'none'];
 const FILL_RULES: readonly NonNullable<ProviderDef['mark']>['fillRule'][] = ['nonzero', 'evenodd'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

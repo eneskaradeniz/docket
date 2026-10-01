@@ -11,6 +11,7 @@ export * from './fake-forge';
 export * from './fake-git-probe';
 export * from './fake-id-gen';
 export * from './fake-issue-tracker';
+export * from './fake-model-catalog';
 export * from './fake-notifier';
 export * from './fake-project-repo';
 export * from './fake-proposal-repo';

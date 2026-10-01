@@ -24,7 +24,7 @@ describe('AgentEvent', () => {
   });
 
   it('CostKind is the closed cost-provenance union', () => {
-    expectTypeOf<CostKind>().toEqualTypeOf<'reported' | 'computed' | 'equivalent'>();
+    expectTypeOf<CostKind>().toEqualTypeOf<'reported' | 'computed' | 'equivalent' | 'credits'>();
   });
 
   it('timestamps are EpochMs on every variant', () => {

@@ -165,6 +165,15 @@ describe('provider definitions (P-1)', () => {
     }
   });
 
+  it('P-1: isProviderDef accepts a def whose costReport is credits', () => {
+    expect(
+      isProviderDef({
+        ...createValidDef(),
+        capabilities: { ...createValidDef().capabilities, costReport: 'credits' },
+      }),
+    ).toBe(true);
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');

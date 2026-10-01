@@ -24,6 +24,7 @@ import {
 import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
 import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
+import { createModelCatalog } from '../providers/catalog/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -51,21 +52,26 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const repos = createSqliteRepoRegistry(db);
   const projects = createSqliteProjectRepo(db);
   const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
+  const accounts = createSqliteAccountRepo(db);
+  const secrets = createKeychainVault(db, config.cipher);
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
     log: createSqliteEventLog(db),
     workOrders: createSqliteWorkOrderRepo(db),
     runs: createSqliteRunRepo(db),
-    accounts: createSqliteAccountRepo(db),
+    accounts,
     capabilities: createCapabilityCatalog(),
+    // The catalog call builds its environment from the same allowlist the transports do, so a
+    // listing never sees a different child than a run of the same account would.
+    modelCatalog: createModelCatalog({ accounts, secrets, baseEnv: config.commandEnv, clock }),
     projects,
     repos,
     bindings: createSqliteBindingRepo(db),
     queue: createSqliteQueueRepo(db),
     definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
-    secrets: createKeychainVault(db, config.cipher),
+    secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),

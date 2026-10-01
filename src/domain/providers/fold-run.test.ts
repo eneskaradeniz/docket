@@ -12,7 +12,7 @@ const usage = (over: {
   readonly outputTokens: number;
   readonly cachedInputTokens?: number;
   readonly costUsd?: number;
-  readonly costKind?: 'reported' | 'computed' | 'equivalent';
+  readonly costKind?: 'reported' | 'computed' | 'equivalent' | 'credits';
 }): AgentEvent => ({ type: 'usage', ...over });
 
 describe('foldRun', () => {
@@ -116,6 +116,16 @@ describe('foldRun', () => {
       usage({ at: at(1), inputTokens: 1, outputTokens: 1, costUsd: 0.2, costKind: 'computed' }),
     ];
     expect(foldRun(events).costKind).toBe('reported');
+  });
+
+  it('a credits-kind cost folds through with its credit amount', () => {
+    const events = [
+      usage({ at: at(0), inputTokens: 1, outputTokens: 1, costUsd: 2.5, costKind: 'credits' }),
+      usage({ at: at(1), inputTokens: 1, outputTokens: 1, costUsd: 1.5, costKind: 'credits' }),
+    ];
+    const summary = foldRun(events);
+    expect(summary.costUsd).toBeCloseTo(4);
+    expect(summary.costKind).toBe('credits');
   });
 
   it('a first costed event without a kind does not inherit a kind from later events', () => {
