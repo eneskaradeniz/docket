@@ -54,11 +54,18 @@ const liveEntry = (
     : { id: model.id, displayName: model.displayName, source: 'live', tier: pattern.tier, thinking, autoClassified: true };
 };
 
+/** Merge knobs: `authoritative` marks the live list plan-scoped — bundled models it does not
+ * contain are hidden, not kept. A failed refresh never drops anything, flag or not. */
+export interface MergeOptions {
+  readonly authoritative?: true;
+}
+
 export function mergeCatalog(
   live: readonly LiveModel[] | undefined,
   bundled: readonly ModelRecord[],
   familyPatterns: readonly FamilyPattern[],
   previous?: readonly CatalogModel[],
+  options?: MergeOptions,
 ): readonly CatalogModel[] {
   // A failed refresh keeps the last good list, marked stale; with nothing to keep, the non-retired
   // registry is the fallback.
@@ -70,7 +77,9 @@ export function mergeCatalog(
   const liveIds = new Set(live.map((model) => model.id));
   const liveEntries = live.map((model) => liveEntry(model, bundledById.get(model.id), familyPatterns));
   // Registry models the live list did not confirm stay selectable; retired ones drop out unless
-  // live still offers them.
+  // live still offers them. An authoritative list is plan-scoped: what it does not contain the
+  // account cannot use, so the unconfirmed bundled models drop out too.
+  if (options?.authoritative === true) return liveEntries;
   const unconfirmed = bundled.filter((record) => !liveIds.has(record.id) && record.retired !== true).map(bundledEntry);
   return [...liveEntries, ...unconfirmed];
 }

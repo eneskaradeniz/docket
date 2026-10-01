@@ -10,6 +10,7 @@ import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
+import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
 import { createFakeProjectRepo } from './fake-project-repo';
 import { createFakeProposalRepo } from './fake-proposal-repo';
@@ -32,6 +33,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   runs: createFakeRunRepo(),
   accounts: createFakeAccountRepo(),
   capabilities: createFakeCapabilityCatalog(),
+  modelCatalog: createFakeModelCatalog(),
   projects: createFakeProjectRepo(),
   repos: createFakeRepoRegistry(),
   bindings: createFakeBindingRepo(),
