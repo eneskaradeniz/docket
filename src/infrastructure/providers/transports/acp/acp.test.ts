@@ -772,6 +772,54 @@ describe('acp transport', () => {
     });
   });
 
+  describe('model and thought_level (qoder shape)', () => {
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-43: a pinned tier alias is selected first and the effort joins through the thought_level option after it', async () => {
+      const run = await startRun(
+        'models-qoder',
+        requestOf(runCwd(), { model: 'ultimate', effort: 'xhigh' }),
+        { kind: 'session-option', category: 'thought_level' },
+      );
+      await collect(run.handle.events);
+
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: 'ultimate' },
+        { sessionId: 'sess_fake_1', configId: 'thought_level', value: 'xhigh' },
+      ]);
+    });
+
+    it('P-43: a level the thought_level option does not list is never sent, and the session-level option needs no pinned model', async () => {
+      // `none` names no value the option offers, so the run selects the alias and stops there.
+      const off = await startRun(
+        'models-qoder',
+        requestOf(runCwd(), { model: 'ultimate', effort: 'none' }),
+        { kind: 'session-option', category: 'thought_level' },
+      );
+      await collect(off.handle.events);
+      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'ultimate' }]);
+
+      // Without a pinned model the session stays on its own default alias, and the effort still
+      // travels: the option belongs to the session, not to a model choice.
+      const bare = await startRun('models-qoder', requestOf(runCwd(), { effort: 'max' }), {
+        kind: 'session-option',
+        category: 'thought_level',
+      });
+      await collect(bare.handle.events);
+      expect(setsOf(bare.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'thought_level', value: 'max' }]);
+    });
+  });
+
   describe('modes only (kiro shape)', () => {
     it('P-15: the kiro session shape — modes without configOptions, custom _kiro.dev notifications — opens a session and maps its turn without an error', async () => {
       // The live agent answers session/new with modes and nothing else, then floods its own

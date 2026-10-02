@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo' || scenario === 'models-qoder' || scenario === 'models-qoder-loggedout';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -212,6 +212,30 @@ const qwenModelsSession = () => ({
   configOptions: qwenConfigOptions(),
 });
 
+// The qoder shape: initialize offers the CLI's own login as the one auth method, and a logged-in
+// machine answers session/new with config options only — the tier-alias model select, a
+// thought_level select whose five values are level names, and the mode list whose bypass far end a
+// launch never picks. The live initialize advertises session close, so this one does too.
+const QODER_SCENARIOS = ['models-qoder', 'models-qoder-loggedout'];
+const QODER_TIERS = [
+  { value: 'auto', name: 'Auto' },
+  { value: 'ultimate', name: 'Ultimate' },
+  { value: 'performance', name: 'Performance' },
+  { value: 'efficient', name: 'Efficient' },
+];
+let qoderModel = 'auto';
+const qoderConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: qoderModel, options: QODER_TIERS },
+  {
+    id: 'thought_level',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: 'high',
+    options: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'accept_edits', 'bypass_permissions', 'dont_ask', 'auto'].map((value) => ({ value, name: value })) },
+];
+
 // The kiro shape: initialize names the CLI's terminal login as its one auth method, and
 // session/new answers modes only — no configOptions, no models, the model list rides the CLI's
 // own listing command instead — followed by the CLI's own custom `_kiro.dev/*` notifications
@@ -317,7 +341,9 @@ const initializeResult = () => ({
         ? [{ id: 'kiro-login', name: "Run 'kiro-cli login' in terminal" }]
         : QWEN_SCENARIOS.includes(scenario)
           ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
-          : [],
+          : QODER_SCENARIOS.includes(scenario)
+            ? [{ id: 'qodercli-login', name: 'Use your existing qodercli login' }]
+            : [],
   ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
@@ -510,6 +536,19 @@ const onLine = (line) => {
       respond(message.id, { sessionId: freshSessionId, configOptions: qwenConfigOptions().slice(1) });
       return;
     }
+    if (scenario === 'models-qoder') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: qoderConfigOptions() });
+      return;
+    }
+    // The refusal a logged-out machine answers with (observed live).
+    if (scenario === 'models-qoder-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required: Authentication is required.' },
+      });
+      return;
+    }
     if (scenario === 'models-vibe-nokey') {
       send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Missing API key for mistral provider.' } });
       return;
@@ -557,6 +596,12 @@ const onLine = (line) => {
       const { configId, value } = message.params;
       if (configId === 'model' && QWEN_MODELS.some((model) => model.modelId === value)) qwenModel = value;
       respond(message.id, qwenModelsSession());
+      return;
+    }
+    if (scenario === 'models-qoder') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && QODER_TIERS.some((tier) => tier.value === value)) qoderModel = value;
+      respond(message.id, { sessionId: freshSessionId, configOptions: qoderConfigOptions() });
       return;
     }
     if (scenario === 'models-kilo') {

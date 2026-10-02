@@ -23,6 +23,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   vibe: { subscription: 'vibe-login' },
   mimo: { subscription: 'mimo-login' },
   qwen: { subscription: 'qwen-login' },
+  qoder: { subscription: 'qoder-login' },
   kiro: { subscription: 'kiro-login' },
 };
 

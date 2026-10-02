@@ -351,6 +351,44 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(listed).toEqual({ ok: true, value: [] });
   });
 
+  it('P-29: a configured qoder session lists the tier aliases once each with the session\'s thought levels, closes the session and never prompts', async () => {
+    const harness = makeSpawn('models-qoder');
+    const listed = await listAcpSessionModels(accountOf('qoder'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'qoder', args: ['--acp'] }]);
+    // The session answer carries config options only: the model select lists the tier aliases the
+    // documentation names, and the thought_level sibling's values are level names Docket knows, so
+    // every row offers them (which levels a chosen alias takes is model-dependent, the live list's
+    // own answer once an operator run shows it).
+    expect(listed.value).toEqual([
+      { id: 'auto', displayName: 'Auto', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'ultimate', displayName: 'Ultimate', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'performance', displayName: 'Performance', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'efficient', displayName: 'Efficient', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    ]);
+    // The live initialize advertises session close, so a listing that opened one closes it.
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).toEqual(['initialize', 'session/new', 'session/close']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+  });
+
+  it('P-45: a logged-out qoder session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
+    const harness = makeSpawn('models-qoder-loggedout');
+
+    const listed = await listAcpSessionModels(accountOf('qoder'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed).toEqual({
+      ok: false,
+      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
+    });
+    expect(JSON.stringify(listed)).not.toContain('Authentication required');
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
+
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
     const harness = makeSpawn('models-atomcode');
     const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });

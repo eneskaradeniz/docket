@@ -215,7 +215,9 @@ export const loggedInFromProviderKeys = (output: string): boolean | null => {
 
 /** The login answer of a command that prints JSON with a `loggedIn` boolean: the CLI reports the
  * same field on its logged-in exit 0 and its logged-out exit 1, so the boolean is read on either
- * exit code; nothing else in the object is looked at, so no account value can reach a log. */
+ * exit code; nothing else in the object is looked at, so no account value can reach a log. A CLI
+ * that spells the field `logged_in` reads the same way — the boolean is the answer, the spelling
+ * is not a contract. */
 export const loggedInFromAuthStatus = (output: string): boolean | null => {
   let parsed: unknown;
   try {
@@ -224,7 +226,8 @@ export const loggedInFromAuthStatus = (output: string): boolean | null => {
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
-  const flag = (parsed as Record<string, unknown>)['loggedIn'];
+  const record = parsed as Record<string, unknown>;
+  const flag = record['loggedIn'] ?? record['logged_in'];
   return typeof flag === 'boolean' ? flag : null;
 };
 
@@ -296,13 +299,13 @@ const probeAuth = async (
     return probeAcpLogin({
       command: binPath,
       args: def.authProbe.args,
-      env: buildChildEnv(def.id, env, {}),
+      env: buildChildEnv(def.id, env, def.authProbe.env ?? {}),
       rule: def.authProbe.acpSession.notLoggedIn,
       timeoutMs,
       spawn: (command, args, options) => spawn(command, args, { timeout: timeoutMs, env: options.env ?? env }),
     });
   }
-  const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, env);
+  const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, { ...env, ...def.authProbe.env });
   if (outcome.timedOut || outcome.exitCode === null) return null;
   if (def.authProbe.parse === 'logged-out-text') {
     const text = def.authProbe.loggedOutText;

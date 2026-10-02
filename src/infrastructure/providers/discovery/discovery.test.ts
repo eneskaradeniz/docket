@@ -572,6 +572,64 @@ describe('logged-in-json login probe (claude-code)', () => {
   });
 });
 
+describe('logged-in-json login probe (qoder)', () => {
+  // The CLI's own `status -o json` answer, snake_case: only the logged_in boolean is read, never
+  // the version or the BYOK flag beside it.
+  const LOGGED_IN = JSON.stringify({ logged_in: true, version: '1.1.65-fake', allow_byok: 0 });
+  const LOGGED_OUT = JSON.stringify({ logged_in: false, version: '1.1.65-fake', allow_byok: 0 });
+
+  it('G1: the logged_in boolean is the answer; anything else is unknown', () => {
+    expect(loggedInFromAuthStatus(LOGGED_IN)).toBe(true);
+    expect(loggedInFromAuthStatus(LOGGED_OUT)).toBe(false);
+    expect(loggedInFromAuthStatus('{"version": "1.1.65-fake", "allow_byok": 0}')).toBeNull();
+    expect(loggedInFromAuthStatus('{"logged_in": "yes"}')).toBeNull();
+    expect(loggedInFromAuthStatus('not json')).toBeNull();
+  });
+
+  it('G1: the qoder definition probes `status -o json` with CI=1 in the child environment, so no browser can open', async () => {
+    const qoder = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'qoder');
+    expect(qoder?.authProbe).toEqual({ args: ['status', '-o', 'json'], parse: 'logged-in-json', env: { CI: '1' } });
+    // The staged CLI refuses to answer without CI=1, so the probe's environment is under test too.
+    const body = (answer: string): string =>
+      `case "$1" in\n  --version) echo "1.1.65-fake"; exit 0;;\n  --help) echo "Usage: qoder [options]"; exit 0;;\n  status) [ "$CI" = "1" ] || exit 9; echo '${answer}'; exit 0;;\nesac\nexit 0`;
+    const def = defOf({
+      id: 'qoder-like',
+      bins: ['qoder-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: qoder?.authProbe,
+    });
+    for (const [answer, expected] of [
+      [LOGGED_IN, true],
+      [LOGGED_OUT, false],
+      ['garbage', null],
+    ] as const) {
+      writeBin('home/.local/bin/qoder-like', body(answer));
+      const { discovery, calls } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      expect(results[0]?.loggedIn, answer).toBe(expected);
+      const probe = calls.find((call) => call.args.join(' ') === 'status -o json');
+      expect(probe).toBeDefined();
+      expect(probe?.options.env['CI']).toBe('1');
+    }
+  });
+
+  it('G1: a machine without the binary answers loggedIn null and no probe ever runs', async () => {
+    const qoder = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'qoder');
+    const def = defOf({
+      id: 'qoder-missing',
+      bins: ['qoder-missing'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: qoder?.authProbe,
+    });
+    const { discovery, calls } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    expect(results[0]).toMatchObject({ defId: 'qoder-missing', binPath: null, loggedIn: null });
+    expect(calls).toEqual([]);
+  });
+});
+
 describe('provider-key login probe (reasonix)', () => {
   const doctor = (...flags: readonly unknown[]): string =>
     JSON.stringify({ version: 'v1', providers: flags.map((key_present) => ({ name: 'p', key_present, api_key_env: 'SOME_ENV' })) });

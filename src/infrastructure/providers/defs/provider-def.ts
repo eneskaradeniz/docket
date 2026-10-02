@@ -110,9 +110,9 @@ export interface ProviderAuthProbe {
   readonly args: string[];
   /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
    * output that names no count = unknown.
-   * `logged-in-json`: the command prints JSON whose `loggedIn` boolean is the answer on either
-   * exit code; an output without that boolean = unknown. Only the boolean is read, never another
-   * field of the object, so no account value can reach a log.
+   * `logged-in-json`: the command prints JSON whose `loggedIn` (or `logged_in`) boolean is the
+   * answer on either exit code; an output without that boolean = unknown. Only the boolean is
+   * read, never another field of the object, so no account value can reach a log.
    * `account-null-json`: the command prints JSON whose `account` is null when logged out and an
    * object when logged in (both with exit 0); an unparseable answer, a missing key or a value
    * that is neither null nor an object = unknown. Only that one key's null-ness is read, never a
@@ -124,6 +124,9 @@ export interface ProviderAuthProbe {
    * `key_present`; any `true` = logged in, every entry `false` = not, anything else = unknown. Only
    * those booleans are read: the output is never stored and no key value is ever looked at. */
   readonly loggedOutText?: string;
+  /** Extra environment the probe command itself needs, merged over the discovery environment
+   * (never logged): a variable that keeps a CLI from opening a browser during a status read. */
+  readonly env?: Readonly<Record<string, string>>;
   readonly acpSession?: {
     readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
   };
