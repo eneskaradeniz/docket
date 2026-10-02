@@ -8,7 +8,10 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { SettingsAccountView, SettingsMeterView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
-import { RECOMMENDED, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
+import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
+import { NO_CAP, RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
+
+export { CAP_SCOPES, mayHaveCap };
 
 export type EditorTab = 'general' | 'usage' | 'limits' | 'models';
 
@@ -192,6 +195,7 @@ export const diffValueLabel = (locale: Locale, key: SettingDiff['key'], value: s
       return fill(t(locale, 'editor.value.reserve'), { short: percentText(short), long: percentText(long) });
     }
     case 'cap': {
+      if (text === NO_CAP) return t(locale, 'editor.value.noCap');
       const [scope = '', amount = ''] = text.split(':');
       const scopeKey = CAP_SCOPE_LABEL[scope];
       return fill(t(locale, 'editor.value.cap'), { amount, scope: scopeKey === undefined ? scope : t(locale, scopeKey) });
@@ -200,6 +204,133 @@ export const diffValueLabel = (locale: Locale, key: SettingDiff['key'], value: s
       return fill(t(locale, 'editor.value.warn'), { value: text });
   }
 };
+
+type LimitPolicy = SettingsAccountView['limitPolicy'];
+
+const POLICY_ORDER: readonly LimitPolicy[] = ['wait_resume', 'switch_pool', 'fallback_account', 'ask'];
+
+const POLICY_PURPOSE_KEY: Readonly<Record<LimitPolicy, LabelKey>> = {
+  wait_resume: 'editor.policy.purpose.wait_resume',
+  switch_pool: 'editor.policy.purpose.switch_pool',
+  fallback_account: 'editor.policy.purpose.fallback_account',
+  ask: 'editor.policy.purpose.ask',
+};
+
+export interface PolicyOption {
+  readonly policy: LimitPolicy;
+  readonly labelKey: LabelKey;
+  readonly purposeKey: LabelKey;
+  readonly recommended: boolean;
+  /** Present when the option cannot be chosen on this account, and why. */
+  readonly disabledReasonKey?: LabelKey;
+}
+
+/** "Limit dolunca": all four policies; switching pool needs a second pool to switch to. */
+export const policyOptions = (account: SettingsAccountView): readonly PolicyOption[] =>
+  POLICY_ORDER.map((policy) => ({
+    policy,
+    labelKey: POLICY_KEY[policy],
+    purposeKey: POLICY_PURPOSE_KEY[policy],
+    recommended: policy === RECOMMENDED.limitPolicy,
+    ...(policy === 'switch_pool' && account.pools.length < 2 ? { disabledReasonKey: 'editor.limits.policy.singlePool' as const } : {}),
+  }));
+
+export const policySaveCommand = (account: SettingsAccountView, policy: LimitPolicy): Command => ({
+  ...accountFields(account),
+  limitPolicy: policy,
+});
+
+/** The share presets of "Kendi kullanımın için ayır", in percent. */
+export const RESERVE_PRESETS: readonly number[] = [10, 20, 30];
+
+/** The reserve's ceiling in percent (A-45: shares 0..0.95). */
+export const RESERVE_MAX_PERCENT = 95;
+
+const toPercent = (share: number | null): number => Math.round((share ?? 0) * 100);
+
+export type ReserveChoice = 'none' | 10 | 20 | 30 | 'split';
+
+/** Which option of the reserve row the stored reserve reads as; anything else is a split. */
+export const reserveChoice = (account: SettingsAccountView): ReserveChoice => {
+  const short = toPercent(account.reserve.short);
+  const long = toPercent(account.reserve.long);
+  if (short !== long) return 'split';
+  if (short === 0) return 'none';
+  return short === 10 || short === 20 || short === 30 ? short : 'split';
+};
+
+/** The separate short/long fields start open whenever the reserve is not one of the presets. */
+export const reserveSplitStartsOpen = (account: SettingsAccountView): boolean => reserveChoice(account) === 'split';
+
+export interface ReserveFieldMeter {
+  readonly name: string;
+  /** A `larger` meter: it answers to both fields and the larger share governs. */
+  readonly larger: boolean;
+}
+
+/** The meters each split field governs, by name; a `larger` meter is named under both. */
+export const reserveFieldMeters = (
+  account: SettingsAccountView,
+): { readonly short: readonly ReserveFieldMeter[]; readonly long: readonly ReserveFieldMeter[] } => {
+  const named = (meter: SettingsMeterView, larger: boolean): ReserveFieldMeter => ({
+    name: meter.label ?? account.pools.find((pool) => pool.id === meter.poolId)?.label ?? meter.poolId,
+    larger,
+  });
+  const forField = (field: 'short' | 'long'): readonly ReserveFieldMeter[] =>
+    account.meters
+      .filter((meter) => meter.reserveClass === field || meter.reserveClass === 'larger')
+      .map((meter) => named(meter, meter.reserveClass === 'larger'));
+  return { short: forField('short'), long: forField('long') };
+};
+
+/** A reserve field: an integer percent from 0 to 95; null when the text is anything else. */
+export const parseReservePercent = (raw: string): number | null => {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  return value <= RESERVE_MAX_PERCENT ? value : null;
+};
+
+/** The complete reserve, both windows, as shares on the wire (percent ÷ 100). */
+export const reserveSaveCommand = (account: SettingsAccountView, shortPercent: number, longPercent: number): Command => ({
+  ...accountFields(account),
+  reserve: { short: shortPercent / 100, long: longPercent / 100 },
+});
+
+export interface CapFormInput {
+  readonly amount: string;
+  readonly scope: CapScope;
+  readonly warn: string;
+}
+
+export type CapFormParse =
+  | { readonly ok: true; readonly amountUsd: number; readonly scope: CapScope; readonly warnPercent: number }
+  | { readonly ok: false; readonly field: 'amount' | 'warn' };
+
+/** An amount above zero, a period, and a warn percent that is an integer from 1 to 100. */
+export const parseCapForm = (input: CapFormInput): CapFormParse => {
+  const amountUsd = parseAmountUsd(input.amount);
+  if (amountUsd === null) return { ok: false, field: 'amount' };
+  const warn = input.warn.trim();
+  const warnPercent = /^\d+$/.test(warn) ? Number(warn) : 0;
+  if (warnPercent < 1 || warnPercent > 100) return { ok: false, field: 'warn' };
+  return { ok: true, amountUsd, scope: input.scope, warnPercent };
+};
+
+/** The cap saved, then every other period's cap removed so one cap remains (the account never
+ *  has none in between, so a consented account is not refused). */
+export const capSaveCommands = (
+  account: SettingsAccountView,
+  cap: { readonly amountUsd: number; readonly scope: string; readonly warnPercent: number },
+): readonly Command[] => [
+  capSave(account.id, cap.scope, cap.amountUsd, cap.warnPercent),
+  ...account.caps
+    .filter((existing) => existing.scope !== cap.scope)
+    .map((existing): Command => ({ type: 'account.cap.remove', id: account.id, scope: existing.scope })),
+];
+
+/** The warn-percent fine-tune starts open when the stored warn percent is not the recommended one. */
+export const capFormStartsOpen = (account: SettingsAccountView): boolean => disclosureStartsOpen(account, 'warnPercent');
 
 export interface EditorOutcome {
   readonly result: CommandResult;
@@ -227,6 +358,11 @@ export interface AccountEditorStore {
   /** Whether "Kaydedildi" shows beside this row right now. */
   isSaved(row: string): boolean;
   saveLabel(account: SettingsAccountView, label: string): Promise<void>;
+  savePolicy(account: SettingsAccountView, policy: SettingsAccountView['limitPolicy']): Promise<void>;
+  /** Raw field text; a value outside 0–95 stays under the row and issues nothing. */
+  saveReserve(account: SettingsAccountView, shortRaw: string, longRaw: string): Promise<void>;
+  /** `row` is the row whose control was committed; a bad field lands under its own row. */
+  saveCap(account: SettingsAccountView, row: 'cap' | 'warnPercent', input: CapFormInput): Promise<void>;
   reset(account: SettingsAccountView, key: SettingKey): Promise<void>;
   resetAll(account: SettingsAccountView): Promise<void>;
 }
@@ -263,6 +399,39 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
       const next = label.trim();
       if (next === '' || next === account.label) return;
       await runAll('label', [labelSaveCommand(account, next)]);
+    },
+    savePolicy: async (account, policy) => {
+      if (policy === account.limitPolicy) return;
+      await runAll('limitPolicy', [policySaveCommand(account, policy)]);
+    },
+    saveReserve: async (account, shortRaw, longRaw) => {
+      const short = parseReservePercent(shortRaw);
+      const long = parseReservePercent(longRaw);
+      if (short === null || long === null) {
+        set({ ...state, failure: { row: 'reserve', labelKey: 'editor.limits.reserve.invalid' } });
+        return;
+      }
+      if (short === toPercent(account.reserve.short) && long === toPercent(account.reserve.long)) {
+        if (state.failure?.row === 'reserve') set({ ...state, failure: null });
+        return;
+      }
+      await runAll('reserve', [reserveSaveCommand(account, short, long)]);
+    },
+    saveCap: async (account, row, input) => {
+      const parsed = parseCapForm(input);
+      if (!parsed.ok) {
+        const labelKey = parsed.field === 'amount' ? 'editor.limits.cap.invalidAmount' : 'editor.limits.cap.invalidWarn';
+        set({ ...state, failure: { row: parsed.field === 'amount' ? 'cap' : 'warnPercent', labelKey } });
+        return;
+      }
+      const stored = account.caps.find((cap) => cap.scope === parsed.scope);
+      const unchanged =
+        account.caps.length === 1 && stored !== undefined && stored.amountUsd === parsed.amountUsd && stored.warnPercent === parsed.warnPercent;
+      if (unchanged) {
+        if (state.failure?.row === row) set({ ...state, failure: null });
+        return;
+      }
+      await runAll(row, capSaveCommands(account, parsed));
     },
     reset: (account, key) => runAll(key, resetCommands(account, key)),
     resetAll: async (account) => {

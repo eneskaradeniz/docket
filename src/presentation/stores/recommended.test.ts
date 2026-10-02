@@ -64,6 +64,14 @@ describe('recommended', () => {
     ]);
   });
 
+  it('U-29: a pay-per-use account with no cap differs from the recommendation, a subscription does not', () => {
+    const paid = { ...ACCOUNT, authMode: 'api_key' };
+    expect(settingDiffs(paid)).toEqual([{ key: 'cap', current: 'none', recommended: 'account_month:50' }]);
+    expect(settingDiffs({ ...paid, caps: [{ scope: 'account_month', amountUsd: 50, warnPercent: 80 }] })).toEqual([]);
+    expect(settingDiffs({ ...ACCOUNT, consentedModels: ['*'] }).map((diff) => diff.key)).toEqual(['cap']);
+    expect(settingDiffs(ACCOUNT)).toEqual([]);
+  });
+
   it('U-29: a zero reserve is no reserve and an absent cap is no diff', () => {
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: 0, long: null } })).toEqual([]);
     expect(settingDiffs({ ...ACCOUNT, reserve: { short: null, long: 0.1 } }).map((diff) => diff.key)).toEqual(['reserve']);

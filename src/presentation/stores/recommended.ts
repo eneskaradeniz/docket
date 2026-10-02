@@ -35,6 +35,15 @@ export interface SettingDiff {
   readonly recommended: string | number;
 }
 
+/** The value a cap diff carries while the account has no cap at all. */
+export const NO_CAP = 'none';
+
+/** An account that is billed per use: every connection except a subscription. */
+export const isPayPerUse = (account: SettingsAccountView): boolean => account.authMode !== 'subscription';
+
+/** Whether the account may spend money, so a cap row belongs on it (U-30). */
+export const mayHaveCap = (account: SettingsAccountView): boolean => isPayPerUse(account) || account.consentedModels.length > 0;
+
 export const settingDiffs = (account: SettingsAccountView): readonly SettingDiff[] => {
   const diffs: SettingDiff[] = [];
   if (account.limitPolicy !== RECOMMENDED.limitPolicy) {
@@ -44,6 +53,9 @@ export const settingDiffs = (account: SettingsAccountView): readonly SettingDiff
   const long = account.reserve.long ?? 0;
   if (short > 0 || long > 0) {
     diffs.push({ key: 'reserve', current: `${short}/${long}`, recommended: `${RECOMMENDED.reserve.short}/${RECOMMENDED.reserve.long}` });
+  }
+  if (mayHaveCap(account) && account.caps.length === 0) {
+    diffs.push({ key: 'cap', current: NO_CAP, recommended: `${RECOMMENDED.cap.scope}:${RECOMMENDED.cap.amountUsd}` });
   }
   const offCap = account.caps.find((cap) => cap.scope !== RECOMMENDED.cap.scope || cap.amountUsd !== RECOMMENDED.cap.amountUsd);
   if (offCap !== undefined) {
