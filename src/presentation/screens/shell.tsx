@@ -473,6 +473,10 @@ export function ShellScreen({
         update={update}
         locale={locale}
         localeStore={localeStore}
+        onOpenAccount={(id) => {
+          dispatchSettingsPanel({ type: 'close' });
+          openAccount(id);
+        }}
       />
 
       <WizardScreen store={wizard} locale={locale} />
