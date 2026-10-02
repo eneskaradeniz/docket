@@ -37,6 +37,7 @@ import {
   createDesignUpdateChecker,
   createNodeDeps,
   createNoopUpdateChecker,
+  createLoginStates,
   createPathDiscovery,
   createProviderTransportFactory,
 } from '../src/infrastructure/index';
@@ -111,6 +112,10 @@ const electronNotifier = (): Notifier => ({
  *  run loop) runs strictly after that point. */
 let deps: AppDeps | undefined;
 
+/** Every discovery pass records here; the model catalog reads it to know whether a listing that
+ *  needs a login may run. */
+const loginStates = createLoginStates();
+
 let node: NodeDeps | undefined;
 let dispatchTimer: NodeJS.Timeout | undefined;
 
@@ -126,6 +131,7 @@ const buildTransportFactory = (
     (command, args, options) => spawn(command, [...args], options),
     env,
     homedir(),
+    { loginStates },
   )
     .discover((result) => {
       binPaths[result.defId] = result.binPath;
@@ -336,6 +342,7 @@ const startApp = async (): Promise<void> => {
     (command, args, options) => spawn(command, [...args], options),
     env,
     homedir(),
+    { loginStates },
   );
 
   const opened = createNodeDeps({
@@ -344,6 +351,7 @@ const startApp = async (): Promise<void> => {
     transports: discoveredTransports(baseEnv, env),
     notifier: electronNotifier(),
     commandEnv: baseEnv,
+    loginStates,
   });
   if (!opened.ok) {
     dialog.showErrorBox('Docket', `Storage could not be opened: ${JSON.stringify(opened.error)}`);

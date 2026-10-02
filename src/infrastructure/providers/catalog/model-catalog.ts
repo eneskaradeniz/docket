@@ -43,7 +43,7 @@ export interface ModelAdapterDeps {
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
   readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection, and the Copilot session's
   readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
-  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
+  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn; readonly needsLogin?: true }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
   readonly levelNames?: Readonly<Record<string, LevelNames>>; // provider id → its own level names
   readonly loggedIn?: Readonly<Record<string, boolean | null>>; // provider id → the login probe's answer
@@ -67,10 +67,12 @@ export interface ModelCatalogConfig {
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
   readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection, and the Copilot session's
   readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
-  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
+  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn; readonly needsLogin?: true }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
   readonly levelNames?: Readonly<Record<string, LevelNames>>; // provider id → its own level names; default: the built-in definitions'
   readonly loggedIn?: Readonly<Record<string, boolean | null>>; // provider id → the login probe's answer; absent = unknown
+  /** Discovery's latest login answers, read at every listing; wins over `loggedIn` for a provider it has reported. */
+  readonly loginStates?: { get(providerId: string): boolean | null | undefined };
   readonly ttlMs?: number; // cache lifetime; the default is six hours
   /** Live-list adapters per model source; default: the built-in map below. A source the chosen
    * map leaves uncovered answers from the bundled registry — the built-in map's own answer for
@@ -83,6 +85,7 @@ const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 interface CacheEntry {
   readonly models: readonly CatalogModel[];
   readonly at: EpochMs;
+  readonly loggedIn: boolean; // whether the login was confirmed when the entry was made
 }
 
 /** The SDK leg's adapter: one supported-models query on the account's shared route environment.
@@ -191,8 +194,11 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
     ...(config.cli === undefined ? {} : { cli: config.cli }),
     ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
     levelNames: config.levelNames ?? levelNamesOf(BUILTIN_PROVIDER_DEFS),
-    ...(config.loggedIn === undefined ? {} : { loggedIn: config.loggedIn }),
   };
+
+  // Only a confirmed login lets a `needsLogin` command run: false, null and unknown all skip it.
+  const loginOf = (provider: string): boolean | null | undefined =>
+    config.loginStates?.get(provider) ?? config.loggedIn?.[provider];
 
   return {
     list: async (accountId, options) => {
@@ -207,8 +213,17 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
       if (routeKind === undefined) return [];
 
       const key = catalogCacheKey(accountId, routeKind.id);
+      const login = loginOf(account.provider);
+      const loggedIn = login === true;
       const cached = cache.get(key);
-      if (cached !== undefined && options?.refresh !== true && config.clock.now() - cached.at < ttl) {
+      // A login state that changed since the entry was made voids it: a list built while logged
+      // out must not hide the live one for the rest of the cache lifetime.
+      if (
+        cached !== undefined &&
+        options?.refresh !== true &&
+        cached.loggedIn === loggedIn &&
+        config.clock.now() - cached.at < ttl
+      ) {
         return cached.models;
       }
 
@@ -217,10 +232,13 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
         // No live fetch exists for this source: the registry is the answer, and a later
         // refresh of the same data changes nothing, so staleness never applies.
         const merged = mergeCatalog(undefined, routeKind.models, FAMILY_PATTERNS);
-        cache.set(key, { models: merged, at: config.clock.now() });
+        cache.set(key, { models: merged, at: config.clock.now(), loggedIn });
         return merged;
       }
-      const live = await adapter(account, routeKind, adapterDeps);
+      const live = await adapter(account, routeKind, {
+        ...adapterDeps,
+        ...(login === undefined ? {} : { loggedIn: { [account.provider]: login } }),
+      });
       if (live.ok) {
         const merged = mergeCatalog(
           live.value,
@@ -229,14 +247,16 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
           cached?.models,
           mergeOptionsOf(routeKind),
         );
-        cache.set(key, { models: merged, at: config.clock.now() });
+        cache.set(key, { models: merged, at: config.clock.now(), loggedIn });
         return merged;
       }
       // A failed refresh keeps the last good list marked stale. The kept entry keeps its original
       // timestamp, so the cache does not award the failed answer another TTL of silence — the next
       // call after expiry retries the live call.
       const kept = mergeCatalog(undefined, routeKind.models, FAMILY_PATTERNS, cached?.models);
-      if (cached === undefined) cache.set(key, { models: kept, at: config.clock.now() });
+      if (cached === undefined || cached.loggedIn !== loggedIn) {
+        cache.set(key, { models: kept, at: config.clock.now(), loggedIn });
+      }
       return kept;
     },
   };
