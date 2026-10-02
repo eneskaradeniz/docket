@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -104,6 +104,29 @@ const kiloConfigOptions = () => [
     options: KILO_EFFORTS[kiloModel].map((value) => ({ value, name: value })),
   },
   { id: 'mode', category: 'mode', type: 'select', currentValue: 'code', options: [{ value: 'code', name: 'Code' }, { value: 'plan', name: 'Plan' }] },
+];
+
+// The reasonix shape as its documentation gives it: select options named by id only (model,
+// effort, tool_approval), model values as `provider/model`, effort levels that depend on the
+// selected model and include `auto`, which names no level, and a rebuild on a model change that
+// resets the effort.
+const REASONIX_MODELS = ['deepseek-flash/deepseek-flash', 'deepseek-pro/deepseek-v4-pro'];
+const REASONIX_EFFORTS = {
+  'deepseek-flash/deepseek-flash': ['auto'],
+  'deepseek-pro/deepseek-v4-pro': ['auto', 'high', 'max'],
+};
+let reasonixModel = REASONIX_MODELS[0];
+let reasonixEffort = 'auto';
+let reasonixApproval = 'workspace-write';
+const reasonixConfigOptions = () => [
+  { id: 'model', type: 'select', currentValue: reasonixModel, options: REASONIX_MODELS.map((value) => ({ value, name: value })) },
+  { id: 'effort', type: 'select', currentValue: reasonixEffort, options: REASONIX_EFFORTS[reasonixModel].map((value) => ({ value, name: value })) },
+  {
+    id: 'tool_approval',
+    type: 'select',
+    currentValue: reasonixApproval,
+    options: ['read-only', 'workspace-write', 'danger-full-access'].map((value) => ({ value, name: value })),
+  },
 ];
 
 // The atomcode shape: a mode select with four modes and a `reasoning_effort` thought-level select
@@ -383,6 +406,10 @@ const onLine = (line) => {
       respond(message.id, { sessionId: freshSessionId, configOptions: kiloConfigOptions() });
       return;
     }
+    if (scenario === 'models-reasonix') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: reasonixConfigOptions() });
+      return;
+    }
     if (scenario === 'models-atomcode' || scenario === 'models-atomcode-configured') {
       respond(message.id, {
         sessionId: freshSessionId,
@@ -410,6 +437,19 @@ const onLine = (line) => {
       if (configId === 'model' && ATOMCODE_MODELS.includes(value)) atomcodeModel = value;
       if (configId === 'reasoning_effort' && ['off', 'high', 'max'].includes(value)) atomcodeEffort = value;
       respond(message.id, { configOptions: atomcodeConfigOptions(scenario === 'models-atomcode-configured') });
+      return;
+    }
+    if (scenario === 'models-reasonix') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && REASONIX_MODELS.includes(value)) {
+        reasonixModel = value;
+        reasonixEffort = 'auto';
+      } else if (configId === 'effort' && REASONIX_EFFORTS[reasonixModel].includes(value)) {
+        reasonixEffort = value;
+      } else if (configId === 'tool_approval') {
+        reasonixApproval = value;
+      }
+      respond(message.id, { configOptions: reasonixConfigOptions() });
       return;
     }
     if (scenario === 'models-vibe') {

@@ -581,6 +581,43 @@ describe('acp transport', () => {
       expect(clientMethodSequence(clientMessages(bare.logPath))).not.toContain('session/set_config_option');
     });
   });
+  describe('model then effort (reasonix shape)', () => {
+    const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'effort' };
+    const PRO = 'deepseek-pro/deepseek-v4-pro';
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-41: the model (a select named only by its id) is set first, then effort by its id, then the prompt; tool_approval is never touched', async () => {
+      const run = await startRun('models-reasonix', requestOf(runCwd(), { model: PRO, effort: 'high' }), EFFORT_ID);
+      await collect(run.handle.events);
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: PRO },
+        { sessionId: 'sess_fake_1', configId: 'effort', value: 'high' },
+      ]);
+    });
+
+    it('P-43: a level only the new model offers is sent, and one it lacks (low) or the provider-only auto is not', async () => {
+      const low = await startRun('models-reasonix', requestOf(runCwd(), { model: PRO, effort: 'low' }), EFFORT_ID);
+      await collect(low.handle.events);
+      expect(setsOf(low.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
+    });
+
+    it('P-41: an absent effort sends nothing, and an absent model sends no model', async () => {
+      const bare = await startRun('models-reasonix', requestOf(runCwd()), EFFORT_ID);
+      await collect(bare.handle.events);
+      expect(setsOf(bare.logPath)).toEqual([]);
+    });
+  });
+
   describe('model then effort (atomcode shape)', () => {
     const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'reasoning_effort' };
     const NAMES = { none: 'off', high: 'high', max: 'max' } as const;
