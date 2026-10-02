@@ -951,6 +951,22 @@ describe('createApi', () => {
       });
     });
 
+    it('U-13: binding.save stores a valid thinking choice and rejects a malformed one with invalid_id', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const role = slugOf<'role'>('worker');
+      const accounts = [{ accountId: ACCOUNT }];
+
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking: { level: 'deep' } })).toEqual({ ok: true });
+      expect((await h.deps.bindings.get({ level: 'global' }, role))?.thinking).toEqual({ level: 'deep' });
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking: { effort: 'ultra' } })).toEqual({ ok: true });
+      expect((await h.deps.bindings.get({ level: 'global' }, role))?.thinking).toEqual({ effort: 'ultra' });
+
+      for (const thinking of [{}, { level: 'extreme' }, { effort: 'deep' }, { level: 'fast', effort: 'low' }]) {
+        expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking })).toEqual({ ok: false, code: 'invalid_id' });
+      }
+    });
+
     it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

@@ -262,6 +262,7 @@ export async function enqueueStage(
     route: { ...routed.value.chain[0] },
     priority: input.priority ?? 0,
     enqueuedAt: deps.clock.now(),
+    ...(routed.value.thinking !== undefined ? { thinking: routed.value.thinking } : {}),
   });
   return ok(queued);
 }

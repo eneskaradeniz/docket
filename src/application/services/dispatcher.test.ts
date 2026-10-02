@@ -285,6 +285,24 @@ describe('enqueueStage', () => {
     });
   });
 
+  it('A-19: the queue item carries the resolved binding thinking, and none when the binding has none', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.bindings.save({ level: 'global' }, {
+      role: IMPLEMENTER,
+      accounts: [route(A1)],
+      thinking: { effort: 'high' },
+    });
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.thinking).toEqual({ effort: 'high' });
+
+    await h.deps.bindings.save({ level: 'global' }, { role: IMPLEMENTER, accounts: [route(A1)] });
+    await enqueueStage(h.deps, { id: WO1 });
+    expect(await queueAfter(h)).toHaveLength(1);
+    expect((await queueAfter(h))[0]).not.toHaveProperty('thinking');
+  });
+
   it('A-19: the given priority lands on the queue item, and the work order history is untouched', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);

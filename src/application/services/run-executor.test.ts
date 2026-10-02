@@ -377,6 +377,43 @@ describe('executeRun', () => {
     ]);
   });
 
+  describe('effort (A-46)', () => {
+    const LEVELS = { kind: 'levels', levels: ['low', 'medium', 'high'] } as const;
+    const entry = (id: string, extra: Partial<CatalogModel> = {}): CatalogModel => ({
+      id,
+      source: 'live',
+      thinking: LEVELS,
+      billing: 'included',
+      ...extra,
+    });
+    const run = async (item: QueueItem, models: readonly CatalogModel[]) => {
+      const h = await harness({ models });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+      return h;
+    };
+
+    it('A-46: a pinned model resolves the choice on its own entry and records it on run.started', async () => {
+      const item: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'm-1' }, thinking: { level: 'deep' } };
+      const h = await run(item, [entry('m-0', { isDefault: true, thinking: { kind: 'levels', levels: ['low'] } }), entry('m-1')]);
+      expect(h.transport.requests()[0]?.effort).toBe('high');
+      expect(auditShape(h.log.entries())[0]?.detail).toEqual({ effort: 'high' });
+    });
+
+    it('A-46: an unpinned route uses the isDefault entry; an absent choice is balanced', async () => {
+      const h = await run(ITEM, [entry('m-0'), entry('m-1', { isDefault: true, thinking: { kind: 'levels', levels: ['low', 'high'] } })]);
+      expect(h.transport.requests()[0]?.effort).toBe('low');
+    });
+
+    it('A-46: an unknown model or no default entry sends no effort and records no detail', async () => {
+      const pinned: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'ghost' }, thinking: { level: 'deep' } };
+      const a = await run(pinned, [entry('m-1'), entry('ghost', { thinking: 'unknown' })]);
+      expect(a.transport.requests()[0]).not.toHaveProperty('effort');
+      expect(auditShape(a.log.entries())[0]?.detail).toBeUndefined();
+      const b = await run({ ...ITEM, thinking: { level: 'deep' } }, [entry('m-1')]);
+      expect(b.transport.requests()[0]).not.toHaveProperty('effort');
+    });
+  });
+
   it('A-15: the run record, run_started event and run.started audit are written before the transport starts', async () => {
     const h = await harness({ script: [finished('completed')] });
     const seen: {
