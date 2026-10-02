@@ -19,7 +19,7 @@ export type Command =
   | { readonly type: 'account.remove'; readonly id: string }
   | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }
   | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
-  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[]; readonly thinking?: { readonly level?: string; readonly effort?: string } }
+  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[]; readonly thinking?: { readonly level?: string; readonly effort?: string }; readonly tier?: string }
   | { readonly type: 'app.update.check' }
   | { readonly type: 'app.update.apply' };
 

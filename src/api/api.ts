@@ -17,6 +17,7 @@ import type {
   StageSlug,
   TaskSlug,
   ThinkingChoice,
+  Tier,
   EffortLevel,
   Ulid,
   WorkOrderId,
@@ -143,6 +144,12 @@ const thinkingValue = (
     return { effort };
   }
   return null;
+};
+
+/** `null` = not one of the three tiers, undefined = absent. */
+const tierValue = (input: string | undefined): Tier | undefined | null => {
+  if (input === undefined) return undefined;
+  return input === 'strong' || input === 'balanced' || input === 'fast' ? input : null;
 };
 
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
@@ -374,6 +381,7 @@ const runCommand = async (
           bindings: deps.bindings,
           accounts: deps.accounts,
           projects: deps.projects,
+          runs: deps.runs,
         },
         { id },
       );
@@ -576,12 +584,19 @@ const runCommand = async (
       }
       const thinking = thinkingValue(command.thinking);
       if (thinking === null) return invalidId();
+      const tier = tierValue(command.tier);
+      if (tier === null) return invalidId();
       // The settings command carries no scope: it edits the machine-global baseline that every
       // repo inherits unless a more specific level overrides it.
       return commandOf(
         await saveBinding(
           { clock: deps.clock, ids: deps.ids, log: deps.log, bindings: deps.bindings },
-          { scope: { level: 'global' }, binding: { role, accounts, ...(thinking !== undefined ? { thinking } : {}) }, actor },
+          { scope: { level: 'global' }, binding: {
+            role,
+            accounts,
+            ...(thinking !== undefined ? { thinking } : {}),
+            ...(tier !== undefined ? { tier } : {}),
+          }, actor },
         ),
       );
     }

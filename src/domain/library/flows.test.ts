@@ -51,6 +51,8 @@ describe('BUILTIN_FLOWS', () => {
         id: 'review',
         name: 'Gözden geçirme',
         role: 'reviewer',
+        tier: 'strong',
+        reviewOf: 'implement',
         exit: [
           { kind: 'agent_verdict', id: 'review-verdict', role: 'reviewer' },
           { kind: 'human', id: 'review-approval', label: 'Gözden geçirme onayı' },
@@ -99,6 +101,8 @@ describe('BUILTIN_FLOWS', () => {
       id: 'security',
       name: 'Güvenlik incelemesi',
       role: 'security-auditor',
+      tier: 'strong',
+      reviewOf: 'implement',
       exit: [
         { kind: 'agent_verdict', id: 'security-verdict', role: 'security-auditor' },
         { kind: 'human', id: 'security-approval', label: 'Güvenlik onayı' },
@@ -152,6 +156,17 @@ describe('the built-in library', () => {
     }
     expect(result.value.roles).toHaveLength(BUILTIN_ROLES.length);
     expect(result.value.flows).toHaveLength(BUILTIN_FLOWS.length);
+  });
+
+  it('R-45: review and security stages are strong-tier reviews of implement; no other stage sets a tier or thinking', () => {
+    for (const flow of BUILTIN_FLOWS) {
+      for (const stage of flow.stages) {
+        const reviewing = stage.role === 'reviewer' || stage.role === 'security-auditor';
+        expect(stage.tier).toBe(reviewing ? 'strong' : undefined);
+        expect(stage.reviewOf).toBe(reviewing ? 'implement' : undefined);
+        expect(stage.thinking).toBeUndefined();
+      }
+    }
   });
 
   it('fails validation when the repo lacks the tests command set the flows reference', () => {

@@ -967,6 +967,21 @@ describe('createApi', () => {
       }
     });
 
+    it('U-13: binding.save stores a valid tier and rejects an unknown one with invalid_id', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const role = slugOf<'role'>('worker');
+      const accounts = [{ accountId: ACCOUNT }];
+
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, tier: 'strong' })).toEqual({ ok: true });
+      expect((await h.deps.bindings.get({ level: 'global' }, role))?.tier).toBe('strong');
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts })).toEqual({ ok: true });
+      expect(await h.deps.bindings.get({ level: 'global' }, role)).not.toHaveProperty('tier');
+      for (const tier of ['huge', '', 'Strong']) {
+        expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, tier })).toEqual({ ok: false, code: 'invalid_id' });
+      }
+    });
+
     it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {
       const h = await createHarness();
       const api = createApi(h.deps);

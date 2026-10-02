@@ -94,8 +94,32 @@ const DEFINITIONS_BODY = {
       capabilities: [],
       active: true,
     },
+    {
+      id: 'reviewer',
+      name: 'Reviewer',
+      instructions: 'review the change',
+      writeScope: { kind: 'none' },
+      capabilities: [],
+      active: true,
+    },
   ],
   flows: [
+    {
+      id: 'reviewed',
+      name: 'Reviewed',
+      stages: [
+        { id: 'implement', name: 'Implement', role: 'implementer', exit: [] },
+        {
+          id: 'review',
+          name: 'Review',
+          role: 'reviewer',
+          tier: 'strong',
+          thinking: { level: 'deep' },
+          reviewOf: 'implement',
+          exit: [],
+        },
+      ],
+    },
     {
       id: 'standard',
       name: 'Standard',
@@ -114,7 +138,7 @@ const DEFINITIONS_BODY = {
     id: 'ws',
     name: 'Repo',
     repos: [],
-    flows: ['standard', 'manual'],
+    flows: ['standard', 'manual', 'reviewed'],
     defaultFlow: 'standard',
     commandSets: {},
     roleOverrides: [],
@@ -143,9 +167,10 @@ const route = (accountId: AccountId, model?: string): AccountRoute =>
 const account = (
   id: AccountId,
   caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[] = [],
+  provider = 'provider-x',
 ): AccountRecord => ({
   id,
-  provider: 'provider-x',
+  provider,
   label: `account ${id}`,
   authMode: 'subscription',
   limitPolicy: 'ask',
@@ -255,6 +280,98 @@ const expectEnqueueErr = (
 };
 
 // --- enqueueStage (A-19) ----------------------------------------------------------------------------
+
+const REVIEWER = slugOf<'role'>('reviewer');
+const REVIEW: StageSlug = slugOf('review');
+
+/** A work order of the `reviewed` flow whose implement stage succeeded on `writer`, so review is next. */
+const reviewReady = async (h: Harness, writer: AccountId | undefined): Promise<void> => {
+  await createWorkOrder(h, WO1, REPO, 'reviewed');
+  if (writer === undefined) {
+    // No succeeded run recorded; the flow still reaches review through the events alone.
+  } else {
+    await createRun(h, RUN1, WO1, route(writer));
+    await h.deps.runs.update(RUN1, { endedAt: 1_100, outcome: 'succeeded' });
+  }
+  await h.deps.workOrders.appendEvent(WO1, { type: 'run_started', at: 1_000, runId: RUN1, stage: IMPLEMENT, attempt: 1 });
+  await h.deps.workOrders.appendEvent(WO1, { type: 'run_finished', at: 1_100, runId: RUN1, outcome: 'succeeded' });
+};
+
+describe('enqueueStage routing and review', () => {
+  it('A-19: a stage tier and thinking override the binding; the binding fills what the stage leaves out', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1)], tier: 'fast', thinking: { level: 'fast' } });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.stage).toBe(REVIEW);
+    expect(item?.tier).toBe('strong');
+    expect(item?.thinking).toEqual({ level: 'deep' });
+  });
+
+  it('A-19: a binding tier reaches a stage that sets none', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.bindings.save({ level: 'global' }, { role: IMPLEMENTER, accounts: [route(A1)], tier: 'balanced' });
+
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.tier).toBe('balanced');
+  });
+
+  it('A-19: a review stage moves an account of another provider to the front', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2, 'm-2')] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A2, model: 'm-2' });
+    expect(item).not.toHaveProperty('sameProviderReview');
+  });
+
+  it('A-19: with no other provider in the chain the first account stays and sameProviderReview is set', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-one'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A1 });
+    expect(item?.sameProviderReview).toBe(true);
+  });
+
+  it('A-19: without a succeeded run of the reviewed stage the chain is unchanged', async () => {
+    const h = makeHarness();
+    await reviewReady(h, undefined);
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    expect((await enqueueStage(h.deps, { id: WO1 })).ok).toBe(true);
+    const item = (await queueAfter(h))[0];
+    expect(item?.route).toEqual({ accountId: A1 });
+    expect(item).not.toHaveProperty('sameProviderReview');
+  });
+
+  it('A-19: a failed run of the reviewed stage does not count as the writer', async () => {
+    const h = makeHarness();
+    await reviewReady(h, A1);
+    await h.deps.runs.update(RUN1, { outcome: 'failed' });
+    await h.deps.accounts.save(account(A1, [], 'p-one'));
+    await h.deps.accounts.save(account(A2, [], 'p-two'));
+    await h.deps.bindings.save({ level: 'global' }, { role: REVIEWER, accounts: [route(A1), route(A2)] });
+
+    await enqueueStage(h.deps, { id: WO1 });
+    expect((await queueAfter(h))[0]?.route).toEqual({ accountId: A1 });
+  });
+});
 
 describe('enqueueStage', () => {
   it('A-19: enqueues the current stage when the next action is start_run, routed to the first account of the chain', async () => {
@@ -392,7 +509,7 @@ describe('enqueueStage', () => {
     const h = makeHarness();
     h.definitions.seed({ kind: 'global' }, 'definitions.json', JSON.stringify({
       ...DEFINITIONS_BODY,
-      flows: [DEFINITIONS_BODY.flows[0]], // only 'standard' remains
+      flows: DEFINITIONS_BODY.flows.filter((flow) => flow.id === 'standard'), // only 'standard' remains
       repo: { ...DEFINITIONS_BODY.repo, flows: ['standard'] },
     }));
     const flowId = slugOf<'flow'>('manual');

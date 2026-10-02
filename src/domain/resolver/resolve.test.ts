@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { RoleDef, RoleOverride } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
-import type { RoleSlug, ThinkingChoice } from '../shared/index';
+import type { RoleSlug, ThinkingChoice, Tier } from '../shared/index';
 import type { Layer, Level, Resolved, RoleBinding } from './resolve';
 import { LEVEL_ORDER, applyRoleOverrides, resolve, resolveBinding } from './resolve';
 
@@ -251,6 +251,7 @@ describe('resolveBinding', () => {
       readonly role: RoleSlug;
       readonly accounts: readonly AccountRoute[];
       readonly thinking?: ThinkingChoice;
+      readonly tier?: Tier;
     }>();
     expectTypeOf(resolveBinding([])).toEqualTypeOf<Resolved<RoleBinding> | undefined>();
   });

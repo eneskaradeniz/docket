@@ -183,6 +183,23 @@ describe('load', () => {
     expect(result.value.project).toBeUndefined();
   });
 
+  it('I-12: the stage tier, thinking and reviewOf fields survive a YAML round trip through load', async () => {
+    await seedLibrary(globalRoot);
+    const flow = BUILTIN_FLOWS[0];
+    const stages = (flow?.stages ?? []).map((stage) =>
+      stage.id === 'review' ? { ...stage, thinking: { effort: 'high' } } : stage,
+    );
+    await writeYaml(globalRoot, 'flows/standard.yaml', { ...flow, stages });
+    await writeYaml(repoRoot, 'repo.yaml', repoDef());
+
+    const result = await makeStore().load(REPO);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const review = result.value.flows.find((f) => f.id === 'standard')?.stages.find((stage) => stage.id === 'review');
+    expect(review).toMatchObject({ tier: 'strong', reviewOf: 'implement', thinking: { effort: 'high' } });
+  });
+
   it('I-12: an unknown repo is a missing_field issue on path "repo"', async () => {
     const result = await makeStore().load(UNKNOWN_REPO);
 
