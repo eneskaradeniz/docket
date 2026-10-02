@@ -563,9 +563,9 @@ Rules:
 ```ts
 // use-cases/instructions.ts — the effective-instructions service (P-37)
 export interface RunPrompt { readonly prompt: string; readonly plan: InstructionPlan }
-export type PromptError = 'unknown_account' | 'definitions_invalid';
+export type PromptError = 'unknown_account' | 'definitions_invalid' | 'not_found';
 export function composeRunPrompt(
-  deps: Pick<AppDeps, 'definitions' | 'accounts' | 'capabilities' | 'instructionFiles'>,
+  deps: Pick<AppDeps, 'definitions' | 'workOrders' | 'accounts' | 'capabilities' | 'instructionFiles'>,
   input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly cwd: string;
            readonly stage: StageSlug; readonly role: RoleSlug; readonly route: AccountRoute },
 ): Promise<Result<RunPrompt, PromptError>>;
@@ -587,7 +587,10 @@ export function buildHandoff(
 ```
 
 `composeRunPrompt` is the single prompt entry point: the composition root's start callback stops
-building `prompt: role.instructions` itself and calls this instead. `buildHandoff` loads the failed
+building `prompt: role.instructions` itself and calls this instead. The use case loads the work
+order record itself: `flow` comes from the record's `record.flow` — the value the dispatcher and
+the gates resolve against — and the title from the same record; the input shape does not change.
+`buildHandoff` loads the failed
 run and its events, the work order and definitions, the rolling note, the stage base (falling back
 to the worktree base ref), the diff, and the candidates' context windows (`null` where none is
 known); assembles the pack **for the target provider** (its native files), sizes it (fixed
@@ -595,7 +598,7 @@ ceilings first; a known window only tightens them — A-63), renders it, and app
 `run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
 
 Rules:
-- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies.
+- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies. A missing work order record is `not_found`.
 - **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt. The registry row is the provider's best-known set, not a fixed law of the CLI — some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it) — so a file the CLI reads natively but the row misses is inlined as well: the content reaching the agent twice is the safe failure, missing it is not.
 - **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
 - **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
