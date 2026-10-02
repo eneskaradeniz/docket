@@ -142,6 +142,21 @@ describe('run-scoped config writer (P-7)', () => {
     expect([...after.entries()].sort()).toEqual([...before.entries()].sort());
   });
 
+  it('P-44: a none config sets no home variable and no flag, and hermes never gets HERMES_HOME', async () => {
+    const { runDir } = await createRoot();
+    const hermes = defById('hermes');
+    expect(hermes.config).toEqual({ mechanism: 'none' });
+
+    const fragment = await writeRunConfig(runDir, hermes, RUN_CAPABILITIES);
+    expect(fragment.env).toEqual({});
+    expect(fragment.args).toEqual([]);
+    expect(JSON.stringify(fragment)).not.toContain('HERMES_HOME');
+
+    const launch = hermes.buildLaunch({ configDir: fragment.configDir } as Parameters<ProviderDef['buildLaunch']>[0]);
+    expect(Object.keys(launch.env)).toEqual([]);
+    expect(launch.args).not.toContain(fragment.configDir);
+  });
+
   it('P-7: the config dir reaches the CLI through the provider config mechanism', async () => {
     const { runDir } = await createRoot();
 
