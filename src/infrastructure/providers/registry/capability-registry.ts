@@ -100,6 +100,17 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose: the variables that would keep the CLI from reading the
+      // user's other tool files appear only as strings in its binary, so the P-44 cap holds.
+      providerId: 'kilo',
+      gates: {
+        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -290,6 +301,22 @@ export const CAPABILITY_REGISTRY = {
       authMode: 'subscription',
       identity: 'machine_login',
       costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // Same session-listed surface as the opencode kind: the model select and its thought-level
+      // sibling arrive as config options. The login may be a gateway account or a bring-your-own-key
+      // credential and no plan source inside the CLI separates them, so every live row reads
+      // unknown (P-40) and stays a hand pick with spend consent; no machine-readable quota exists.
+      id: 'kilo-login',
+      providerId: 'kilo',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'equivalent',
       quotaProbe: 'none',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,

@@ -46,6 +46,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Cursor Agent (`cursor`) | `cursor-subscription` | — | — | — | equivalent | experimental |
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
 | Hermes Agent (`hermes`) | `hermes-subscription` | — | — | — | none | experimental |
+| Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
 <!-- provider-matrix:end -->
 
 ## License

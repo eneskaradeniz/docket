@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['hermes'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -129,6 +129,7 @@ describe('provider definitions (P-1)', () => {
       cursor: 'HOME',
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: 'HERMES_HOME',
+      kilo: 'KILO_CONFIG_DIR',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       expect(def.config.mechanism, def.id).toBe('env-var');
@@ -164,6 +165,17 @@ describe('provider definitions (P-1)', () => {
     expect(env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1');
   });
 
+  it('P-44: the kilo launch carries the run-scoped config dir and the unverified Claude-file switches, never the auto-approve switch', () => {
+    const kilo = defById('kilo');
+    const launch = kilo.buildLaunch({ ...LAUNCH_INPUT, effort: 'high', model: 'kilo/anthropic/claude-opus-5' });
+    expect(launch.args).toEqual(['acp']);
+    expect(launch.env).toEqual({ KILO_CONFIG_DIR: '/run/dir' });
+    expect(kilo.isolation?.env).toEqual({ KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' });
+    expect(JSON.stringify([launch, kilo.isolation])).not.toContain('--auto');
+    expect(kilo.levelNames).toBeUndefined();
+    expect(kilo.capabilities.permissionAsk).toBe('unknown');
+  });
+
   it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
@@ -197,6 +209,7 @@ describe('provider definitions (P-1)', () => {
       agy: { kind: 'flag', flag: '--effort' },
       copilot: { kind: 'flag', flag: '--reasoning-effort' },
       opencode: { kind: 'session-option', category: 'thought_level' },
+      kilo: { kind: 'session-option', configId: 'effort' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -220,7 +233,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -466,7 +479,7 @@ describe('hermes definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless ones carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {

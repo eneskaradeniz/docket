@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
-import { createPathDiscovery, type ProbeSpawn } from './path-discovery';
+import { createPathDiscovery, loggedInFromCredentialCount, type ProbeSpawn } from './path-discovery';
 
 let root: string;
 
@@ -423,4 +423,44 @@ exit 0`,
       expect(calls[1]?.options.env['HOME'], scenario).toBe(HOME());
     }
   }, 30_000);
+});
+
+describe('credential-count login probe (kilo)', () => {
+  it('G1: "<N> credentials" gives logged in for N > 0, not logged in for 0, and unknown for anything else', () => {
+    const ESC = String.fromCharCode(27);
+    expect(loggedInFromCredentialCount('0 credentials')).toBe(false);
+    expect(loggedInFromCredentialCount('3 credentials')).toBe(true);
+    expect(loggedInFromCredentialCount('1 credential')).toBe(true);
+    expect(loggedInFromCredentialCount('garbage')).toBeNull();
+    expect(loggedInFromCredentialCount('')).toBeNull();
+    // Colour codes and a leading INFO log line surround the real answer.
+    const noisy = `INFO  2026-10-02T18:27:53 +49ms service=default\n${ESC}[0m\n┌  Credentials ${ESC}[90m~/.local/share/kilo/auth.json\n│\n└  ${ESC}[0m2 credentials\n`;
+    expect(loggedInFromCredentialCount(noisy)).toBe(true);
+    expect(loggedInFromCredentialCount(noisy.replace('2 credentials', '0 credentials'))).toBe(false);
+  });
+
+  it('G1: the kilo definition probes `kilo auth list` and reads the count, never an exit code alone', async () => {
+    const kilo = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'kilo');
+    expect(kilo?.authProbe).toEqual({ args: ['auth', 'list'], parse: 'credential-count' });
+    const body = (answer: string, exit = 0): string =>
+      `case "$1" in\n  --version) echo "7.8.3"; exit 0;;\n  auth) echo "INFO log line"; echo "${answer}"; exit ${exit};;\nesac\nexit 0`;
+    const def = defOf({
+      id: 'kilo-like',
+      bins: ['kilo-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: kilo?.authProbe,
+    });
+    for (const [answer, exit, expected] of [
+      ['0 credentials', 0, false],
+      ['3 credentials', 0, true],
+      ['nothing useful', 0, null],
+      ['3 credentials', 1, null],
+    ] as const) {
+      writeBin('home/.local/bin/kilo-like', body(answer, exit));
+      const { discovery } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      expect(results[0]?.loggedIn, `${answer} / exit ${exit}`).toBe(expected);
+    }
+  });
 });

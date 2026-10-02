@@ -211,7 +211,9 @@ from the public ACP specification. Tests drive a scripted fake agent process.
 - **P-16** `session/request_permission` becomes a `permission_ask` and the agent is expected to wait;
   the client never auto-approves. The only automated answer is `deny`, sent by `stop()`. (Whether a
   given CLI really waits is probe #139's table; non-blocking agents drop to `isolated` via
-  capabilities data, not code.)
+  capabilities data, not code.) A user's `allow` answers with the agent's one-time option
+  (`allow_once`); a standing grant (`allow_session`, `allow_always`) is never chosen on the user's
+  behalf, and when the agent offers no one-time option the answer is `cancelled`.
 - **P-17** Resume uses `session/load` with the captured session id. If loading fails, the client
   starts a fresh `session/new` and prefixes the prompt with a bounded summary of the previous
   transcript.
@@ -306,6 +308,7 @@ export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
   `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
   non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
   id to its own mark, so adding a provider touches no code beyond its def.
+- **P-25a** A built-in definition whose provider has no mark file carries `mark: null`; the marks test lists those ids explicitly, so a missing mark is a recorded fact, never an omission.
 - **P-26** A mark carries the fill rule its file declares: `nonzero` for the five official
   marks, `evenodd` for the two placed files (both set `fill-rule="evenodd"`; the codex path also
   `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks

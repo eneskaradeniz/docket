@@ -510,9 +510,26 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
             return;
           }
           sessionId = createdId;
+          // A pinned model is selected before anything else: a session's own default can be a
+          // model that cannot do the work (an image model), and the thought levels on offer
+          // belong to the selected model, so they are read from the answer to the model change.
+          let levelSession = createdSession;
+          const modelOptionId =
+            request.route.model === undefined ? undefined : effortOptionId(createdSession, { category: 'model' }, request.route.model);
+          if (modelOptionId !== undefined) {
+            const selected = await requestRpc('session/set_config_option', {
+              sessionId,
+              configId: modelOptionId,
+              value: request.route.model,
+            });
+            const answered = selected.kind === 'result' ? asRecord(selected.result) : null;
+            if (answered !== null && Array.isArray(answered.configOptions) && answered.configOptions.length > 0) {
+              levelSession = answered;
+            }
+          }
           const effortValue = providerLevelOf(def.levelNames, request.effort);
           if (def.effortArg?.kind === 'session-option' && effortValue !== undefined) {
-            const configId = effortOptionId(createdSession, def.effortArg, effortValue);
+            const configId = effortOptionId(levelSession, def.effortArg, effortValue);
             // A refused effort leaves the session on its own default; it never fails the run.
             if (configId !== undefined) {
               await requestRpc('session/set_config_option', { sessionId, configId, value: effortValue });

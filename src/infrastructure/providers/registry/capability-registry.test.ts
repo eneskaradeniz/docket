@@ -86,6 +86,7 @@ describe('model catalog data (P-29)', () => {
       'copilot-subscription',
       'cursor-subscription',
       'hermes-subscription',
+      'kilo-login',
       'opencode-subscription',
       'zai-glm',
     ]);
@@ -292,13 +293,16 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but hermes carries isolation evidence, and hermes stays capped at experimental', () => {
-    // hermes reads its own home and auto-injected instruction files; without a run-scoped home no
-    // isolation can be evidenced, so the record carries none and the cap applies.
+  it('P-44: every built-in record but kilo and hermes carries isolation evidence, and both stay capped at experimental', () => {
+    // kilo's switches are unverified and hermes reads its own home with auto-injected instruction
+    // files; neither can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (provider.providerId === 'hermes') expect(provider.isolation, provider.providerId).toBeUndefined();
-      else expect(provider.isolation, provider.providerId).toBeDefined();
+      if (provider.providerId === 'kilo' || provider.providerId === 'hermes') {
+        expect(provider.isolation, provider.providerId).toBeUndefined();
+      } else {
+        expect(provider.isolation, provider.providerId).toBeDefined();
+      }
     }
     const levels = Object.fromEntries(CAPABILITY_REGISTRY.providers.map((p) => [p.providerId, supportLevel(p)]));
     expect(levels).toEqual({
@@ -309,6 +313,7 @@ describe('isolation evidence (P-44)', () => {
       cursor: 'experimental',
       opencode: 'experimental',
       hermes: 'experimental',
+      kilo: 'experimental',
     });
   });
 

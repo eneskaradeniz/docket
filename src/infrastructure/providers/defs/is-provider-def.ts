@@ -103,6 +103,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']))) {
     return false;
   }
+  if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count') return false;
   const helpArgs = value['helpArgs'];
   if (helpArgs !== undefined && !isStringArray(helpArgs)) return false;
   if (value['helpNeedsLogin'] !== undefined && value['helpNeedsLogin'] !== true) return false;

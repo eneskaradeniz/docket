@@ -106,7 +106,11 @@ export type ProviderResumeMode = 'specify' | 'capture' | 'protocol' | 'none';
  * out, and anything else — including an unparseable answer — is unknown.
  */
 export interface ProviderAuthProbe {
+  /** Without `parse`, exit 0 = logged in. */
   readonly args: string[];
+  /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
+   * output that names no count = unknown. */
+  readonly parse?: 'credential-count';
   readonly acpSession?: {
     readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
   };

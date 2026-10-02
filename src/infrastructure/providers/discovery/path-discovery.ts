@@ -176,6 +176,19 @@ const probeOptionalFlags = async (
   return Object.keys(def.optionalFlags).filter((flag) => combined.includes(flag));
 };
 
+// Colour codes and leading log lines (the CLI prints INFO lines before its answer) are noise.
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+const CREDENTIAL_COUNT_RE = /(\d+)\s+credentials?\b/i;
+
+/** The login answer of a command that prints how many credentials are configured; `null` when
+ * the output names no count. */
+export const loggedInFromCredentialCount = (output: string): boolean | null => {
+  const clean = output.replace(ANSI_RE, '');
+  const match = CREDENTIAL_COUNT_RE.exec(clean);
+  if (match === null) return null;
+  return Number(match[1]) > 0;
+};
+
 const probeAuth = async (
   spawn: ProbeSpawn,
   def: ProviderDef,
@@ -198,6 +211,9 @@ const probeAuth = async (
   }
   const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, env);
   if (outcome.timedOut || outcome.exitCode === null) return null;
+  if (def.authProbe.parse === 'credential-count') {
+    return outcome.exitCode === 0 ? loggedInFromCredentialCount(outcome.stdout) : null;
+  }
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
 };
 

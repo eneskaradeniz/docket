@@ -16,6 +16,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   cursor: { subscription: 'cursor-subscription' },
   opencode: { subscription: 'opencode-subscription' },
   hermes: { subscription: 'hermes-subscription' },
+  kilo: { subscription: 'kilo-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
