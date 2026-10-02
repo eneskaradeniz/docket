@@ -67,6 +67,7 @@ Four layers, merged per route:
    higher subscription plan offers) never leaks to another account. A failed refresh keeps the last good
    list and marks it stale. When the route kind sets `liveIsAuthoritative`, bundled models missing from
    the live list are dropped instead of kept.
+   Alias rows (a provider listing `default` or a family name instead of a full id) match the registry through the canonical id the provider reports for them (P-42 in providers.md).
 4. **Unknown model:** never rejected. A live id missing from the registry is selectable with unknown
    capabilities: thinking control hidden, price unknown. If its family is recognised by id pattern it gets
    a tier automatically and is labelled auto-classified. `retired` models stay in the registry so old
@@ -98,6 +99,7 @@ the operator decides it (open decision O-4).
 - The provider-specific parameter is produced by the definition's `buildLaunch`/transport from the chosen
   level; an unsupported level is clamped down, never sent.
 - Thinking tokens are counted as output and shown as a separate usage line.
+- Decided (2026-10-02): the choice lives on the role binding, one setting per role, mapped per model at run time (`RoleBinding.thinking`, `effortForChoice` R-50 in domain.md; provider parameters P-41 in providers.md).
 
 ## 5. Accounts and route kinds (P-31)
 New account fields (all non-secret): `routeKind`, `endpoint?` (URL), `identityDir?` (path),
