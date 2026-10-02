@@ -123,7 +123,7 @@ describe('provider definitions (P-1)', () => {
   it('P-1: config carries the documented config-dir mechanism of its CLI', () => {
     const DOCUMENTED_CONFIG_NAME_BY_ID: Readonly<Record<string, string>> = {
       'claude-code': 'CLAUDE_CONFIG_DIR',
-      codex: 'CODEX_HOME',
+      codex: '',
       agy: 'HOME',
       copilot: 'HOME',
       cursor: 'HOME',
@@ -135,7 +135,7 @@ describe('provider definitions (P-1)', () => {
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
-        // The CLI's login lives in its own home, so no variable is set for it.
+        // The CLI's login lives in its own home, so no variable is set for it (hermes, codex).
         expect(DOCUMENTED_CONFIG_NAME_BY_ID[def.id], def.id).toBe('');
         continue;
       }
