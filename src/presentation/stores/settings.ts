@@ -69,6 +69,9 @@ export interface AccountDisplay {
   readonly plan: string | null;
   readonly pools: readonly SettingsPoolView[];
   readonly meters: readonly MeterDisplay[];
+  /** The account exactly as `settings.accounts` reported it (A-48): the account editor reads its
+   *  facts, reserve, policy and caps from here. */
+  readonly detail: SettingsAccountView;
 }
 
 export interface SettingsView {
@@ -144,6 +147,8 @@ export interface SettingsStore {
   resetsAtLabel(resetsAt: number | null): string | null;
   saveAccount(input: AccountSaveInput): Promise<SettingsIntentOutcome>;
   saveBinding(input: BindingSaveInput): Promise<SettingsIntentOutcome>;
+  /** Issue any command as the user and re-query (the account editor's writes, U-29). */
+  runCommand(command: Command): Promise<SettingsIntentOutcome>;
   /** Remove an account; with bindings still referencing it, issues nothing and surfaces the
    *  `binding_exists` warning with the referencing roles. */
   removeAccount(accountId: string): Promise<SettingsIntentOutcome>;
@@ -161,6 +166,7 @@ const accountDisplay = (account: SettingsAccountView): AccountDisplay => {
     authMode: account.authMode,
     plan: account.plan,
     pools: account.pools,
+    detail: account,
     meters: account.meters.map((meter) => ({
       id: meter.id,
       poolId: meter.poolId,
@@ -306,6 +312,7 @@ export const createSettingsStore = (deps: SettingsStoreDeps): SettingsStore => {
         authMode: input.authMode,
         ...(input.plan !== undefined ? { plan: input.plan } : {}),
       }),
+    runCommand: runIntent,
     saveBinding: (input) =>
       runIntent({
         type: 'binding.save',

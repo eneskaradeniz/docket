@@ -9,16 +9,16 @@
 // The section is the shell's, not the panel's own: the sidebar's Telefon and Ayarlar rows open
 // the panel on a named section and read their current standing from it (U-24), so the panel
 // receives the section and reports every move.
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
 import { ACTIVE_CLASS } from '../components/active-state';
+import { AccountEditor } from '../components/account-editor';
 import { DiscoveryBadges } from '../components/discovery-badges';
 import { countedLabel } from '../components/counted-label';
 import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { LocaleSwitcher } from '../components/locale-switcher';
-import { ModelList } from '../components/model-list';
 import { motionVars, MOTION } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
 import { ProviderMark, type ProviderMarkProps } from '../components/provider-mark';
@@ -26,7 +26,9 @@ import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
 import type { LocaleStore } from '../stores/locale';
-import type { AccountModelsStore, ModelRowDisplay } from '../stores/account-models';
+import { accountStatus, createAccountEditorStore, policyLabelKey, type AccountStatus } from '../stores/account-editor';
+import { settingDiffs } from '../stores/recommended';
+import type { AccountModelsStore } from '../stores/account-models';
 import { focusRestoredOnClose } from '../stores/search-palette';
 import {
   SETTINGS_MENU,
@@ -61,6 +63,8 @@ export interface SettingsPanelProps {
   readonly onSection: (section: SettingsSection) => void;
   /** The back row: leaves the sub-page. */
   readonly onBack: () => void;
+  /** Opens a sub-page of the section (an account id in Hesaplar). */
+  readonly onEnterSubPage: (id: string) => void;
   /** Esc: leaves the sub-page first, then closes (the reducer decides). */
   readonly onEscape: () => void;
   readonly onClose: () => void;
@@ -79,6 +83,8 @@ export interface SettingsPanelProps {
   /** The language control binds straight to the locale store: a selection swaps the bundle for the
    *  whole app through the root's subscription and persists the choice (U-9). */
   readonly localeStore: LocaleStore;
+  /** Closes the panel and opens the account's own view ("Hesap görünümünü aç", U-30). */
+  readonly onOpenAccount?: (accountId: string) => void;
 }
 
 // The sections and their menu groups are the store's (U-28); the type stays importable from here.
@@ -129,20 +135,6 @@ function ThemeSwitcher({ store, locale }: { readonly store: ThemeStore; readonly
     </div>
   );
 }
-
-const AUTH_MODE_KEY: Readonly<Record<string, LabelKey>> = {
-  subscription: 'auth.mode.subscription',
-  api_key: 'auth.mode.api_key',
-  cloud: 'auth.mode.cloud',
-  byok: 'auth.mode.byok',
-};
-
-/** An account's auth mode is a closed set in the record; a value outside it renders as its own dim
- * slug instead of pretending a known mode. */
-const AuthModeBadge = ({ mode, locale }: { readonly mode: string; readonly locale: Locale }) => {
-  const key = AUTH_MODE_KEY[mode];
-  return <StateBadge tone="dim">{key === undefined ? mode : t(locale, key)}</StateBadge>;
-};
 
 const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
   global: 'settings.binding.scope.global',
@@ -199,58 +191,51 @@ export function MeterRow({ meter, locale, resetsAt }: { readonly meter: MeterDis
   );
 }
 
-function AccountRow({
+/** One Hesaplar list row (U-30): mark, label · plan, the limit policy, the U-29 diff count, the
+ *  status and a chevron; the whole row opens the account sub-page. */
+function AccountListRow({
   account,
   mark,
   locale,
-  store,
-  onRemove,
-  modelsOpen,
-  onToggleModels,
-  modelList,
+  onOpen,
 }: {
   readonly account: AccountDisplay;
   readonly mark: ProviderMarkProps['mark'];
   readonly locale: Locale;
-  readonly store: SettingsStore;
-  readonly onRemove: (accountId: string) => void;
-  /** The model list's fold standing and its toggle (P-40); the list itself arrives composed. */
-  readonly modelsOpen: boolean;
-  readonly onToggleModels: () => void;
-  readonly modelList: ReactNode;
+  readonly onOpen: () => void;
 }) {
+  const diffs = settingDiffs(account.detail).length;
+  const status = accountStatus(account.detail);
   return (
-    <li className="grid gap-2.5 rounded-card border border-hairline bg-surface px-4 py-3" data-account-row={account.id}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-          <ProviderMark mark={mark} className="self-center" />
-          <span className="text-[13.5px] font-semibold text-ink">{account.label}</span>
-          <code className="font-mono text-[11.5px] text-inkdim">{account.provider}</code>
-          <AuthModeBadge mode={account.authMode} locale={locale} />
-          {account.plan !== null ? <span className="font-mono text-[11px] text-inkdim">{account.plan}</span> : null}
-        </div>
-        <span className="flex items-center gap-2">
-          <ActionButton variant="neutral" ariaExpanded={modelsOpen} onClick={onToggleModels}>
-            {t(locale, 'settings.models.toggle')}
-          </ActionButton>
-          <ActionButton variant="neutral" onClick={() => onRemove(account.id)}>
-            {t(locale, 'settings.account.remove')}
-          </ActionButton>
+    <li data-account-row={account.id}>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-3 text-left hover:bg-raised"
+      >
+        <ProviderMark mark={mark} />
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
+          {account.label}
+          {account.plan !== null ? <span className="font-normal text-inkdim"> · {account.plan}</span> : null}
         </span>
-      </div>
-      {account.meters.length === 0 ? (
-        <p className="text-[12.5px] text-inkdim">{t(locale, 'settings.meters.empty')}</p>
-      ) : (
-        <ul className="grid gap-2 border-t border-hairline pt-2.5">
-          {account.meters.map((meter) => (
-            <MeterRow key={meter.id} meter={meter} locale={locale} resetsAt={store.resetsAtLabel(meter.resetsAt)} />
-          ))}
-        </ul>
-      )}
-      {modelList}
+        <span className="text-[12px] text-inkdim">{t(locale, policyLabelKey(account.detail.limitPolicy))}</span>
+        {diffs > 0 ? <StateBadge tone="signal">{t(locale, 'editor.row.diffs').replace('{n}', String(diffs))}</StateBadge> : null}
+        <StateBadge tone={status === 'reserve' ? 'signal' : status === 'ready' ? 'proceed' : 'dim'}>
+          {t(locale, STATUS_KEY[status])}
+        </StateBadge>
+        <span aria-hidden="true" className="text-inkdim">
+          ›
+        </span>
+      </button>
     </li>
   );
 }
+
+const STATUS_KEY: Readonly<Record<AccountStatus, LabelKey>> = {
+  ready: 'editor.status.ready',
+  reserve: 'editor.status.reserve',
+  noData: 'editor.status.noData',
+};
 
 /** The account picker behind a binding editor: the checked accounts become the chain, in the
  * order they are saved. */
@@ -341,12 +326,10 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, themeStore, store, marks, models, update, locale, localeStore }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
-  // The model list of the one account whose fold is open (P-40) re-renders with its store.
-  const modelsState = useSyncExternalStore(models.subscribe, models.state);
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
   // only subscribes.
   const updateState = useSyncExternalStore(update.subscribe, update.state);
@@ -362,8 +345,17 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
   const [editAccounts, setEditAccounts] = useState<readonly string[]>([]);
   const [newRole, setNewRole] = useState('');
   const [newAccounts, setNewAccounts] = useState<readonly string[]>([]);
-  // Which account's model list is folded open — one at a time, matching the store's single list.
-  const [modelsFor, setModelsFor] = useState<string | null>(null);
+  const editor = useMemo(
+    () =>
+      createAccountEditorStore({
+        run: async (command) => {
+          const outcome = await store.runCommand(command);
+          return { result: outcome.result, labelKey: outcome.labelKey };
+        },
+        now: () => Date.now(),
+      }),
+    [store],
+  );
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -412,39 +404,8 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
     void store.confirmRemoveAccount(accountId);
   };
 
-  // The model list's fold (P-40): opening an account loads its catalog; switching to another
-  // account cancels any consent draft still open for the first — a draft never rides along.
-  const toggleModels = (accountId: string): void => {
-    if (modelsFor === accountId) {
-      setModelsFor(null);
-      return;
-    }
-    if (modelsFor !== null) models.cancel();
-    setModelsFor(accountId);
-    void models.load(accountId);
-  };
-  const selectModel = (row: ModelRowDisplay): void => {
-    models.beginConsent({ model: row.id, name: row.name, billing: row.billing });
-  };
-  const selectDefaultModel = (): void => {
-    models.beginConsent({ model: '*', name: null, billing: modelsState.defaultModel?.billing ?? 'included' });
-  };
-  const modelListOf = (accountId: string): ReactNode =>
-    modelsFor !== accountId ? null : (
-      <ModelList
-        locale={locale}
-        state={modelsState}
-        onSelect={selectModel}
-        onSelectDefault={selectDefaultModel}
-        onRefresh={() => void models.refresh()}
-        onEditCap={(input) => models.editCap(input)}
-        onAllow={() => void models.allow()}
-        onCancel={() => models.cancel()}
-        onRevoke={(model) => void models.revoke(model)}
-      />
-    );
-
   const accounts = view?.accounts ?? [];
+  const openAccount = subPage === null ? undefined : accounts.find((account) => account.id === subPage);
   const toggle = (list: readonly string[], id: string): readonly string[] =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
 
@@ -633,7 +594,44 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
               </div>
             ) : null}
 
-            {subPage !== null && listSection === null ? (
+            {subPage !== null && listSection === null && section === 'accounts' ? (
+              openAccount === undefined ? null : (
+                <div className="grid gap-3">
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="flex h-7 w-fit items-center gap-1 rounded-control px-2 text-[13px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+                  >
+                    {t(locale, 'editor.back')}
+                  </button>
+                  <SectionCard
+                    title={openAccount.label}
+                    action={
+                      <span className="flex items-center gap-2">
+                        {onOpenAccount !== undefined ? (
+                          <ActionButton variant="neutral" onClick={() => onOpenAccount(openAccount.id)}>
+                            {t(locale, 'editor.openView')}
+                          </ActionButton>
+                        ) : null}
+                        <ActionButton variant="neutral" onClick={() => remove(openAccount.id)}>
+                          {t(locale, 'settings.account.remove')}
+                        </ActionButton>
+                      </span>
+                    }
+                  >
+                    <AccountEditor
+                      account={openAccount.detail}
+                      locale={locale}
+                      store={editor}
+                      formatTime={store.resetsAtLabel}
+                      onRefresh={() => void store.load()}
+                    />
+                  </SectionCard>
+                </div>
+              )
+            ) : null}
+
+            {subPage !== null && listSection === null && section !== 'accounts' ? (
               <div className="grid gap-3">
                 <button
                   type="button"
@@ -675,16 +673,12 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                 ) : (
                   <ul className="grid gap-2">
                     {accounts.map((account) => (
-                      <AccountRow
+                      <AccountListRow
                         key={account.id}
                         account={account}
                         mark={marks.markFor(account.provider)}
                         locale={locale}
-                        store={store}
-                        onRemove={remove}
-                        modelsOpen={modelsFor === account.id}
-                        onToggleModels={() => toggleModels(account.id)}
-                        modelList={modelListOf(account.id)}
+                        onOpen={() => onEnterSubPage(account.id)}
                       />
                     ))}
                   </ul>
