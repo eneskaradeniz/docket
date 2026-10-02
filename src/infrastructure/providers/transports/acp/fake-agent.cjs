@@ -169,6 +169,19 @@ process.on('SIGTERM', () => {
   setTimeout(() => process.exit(0), 500);
 });
 
+// The grok-style initialize answer: the model list rides `_meta.modelState` (given even when
+// logged out), each model with its own reasoning efforts, and the only auth method is a browser
+// login. Its session/new is refused with -32000 until a login exists, so a catalog flow that
+// opened a session would fail on it.
+const grokModelState = () => ({
+  currentModelId: 'grok-4.6',
+  availableModels: [
+    { modelId: 'grok-4.6', name: 'Grok 4.6', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'xhigh' }, { value: 'high' }, { value: 'medium' }, { value: 'low' }] } },
+    { modelId: 'grok-4.5', name: 'Grok 4.5', _meta: { totalContextTokens: 256000, supportsReasoningEffort: true, reasoningEfforts: [{ value: 'high' }, { value: 'medium' }, { value: 'low' }, { value: 'ludicrous' }] } },
+    { modelId: 'grok-code-fast', name: 'Grok Code Fast', _meta: { supportsReasoningEffort: false } },
+  ],
+});
+
 const initializeResult = () => ({
   protocolVersion: 1,
   agentCapabilities: {
@@ -176,7 +189,8 @@ const initializeResult = () => ({
     ...(advertiseSessionClose ? { sessionCapabilities: { close: {} } } : {}),
   },
   agentInfo: { name: 'fake-agent', version: '1.0.0' },
-  authMethods: [],
+  authMethods: scenario === 'models-grok' ? [{ id: 'grok.com' }] : [],
+  ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
 const echoPromptText = (promptBlocks) =>
@@ -291,6 +305,10 @@ const onLine = (line) => {
   }
   if (message.method === 'session/new') {
     sessionId = freshSessionId;
+    if (scenario === 'models-grok') {
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Authentication required', data: 'no auth method id provided' } });
+      return;
+    }
     if (scenario === 'models-cursor') {
       respond(message.id, cursorModelsSession());
       return;

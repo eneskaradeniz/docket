@@ -89,6 +89,12 @@ function isAcpSessionProbe(value: unknown): boolean {
   return isRecord(rule) && Number.isInteger(rule['rpcCode']) && isNonEmptyString(rule['textContains']);
 }
 
+function isPresenceFileProbe(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return isNonEmptyString(value['homeEnv']) && isNonEmptyString(value['homeDir']) && isNonEmptyString(value['file']);
+}
+
 function isTimeoutMs(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
 }
@@ -100,7 +106,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isNonEmptyStringArray(value['bins'])) return false;
   if (!isNonEmptyStringArray(value['versionArgs'])) return false;
   const authProbe = value['authProbe'];
-  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']))) {
+  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isPresenceFileProbe(authProbe['presenceFile']))) {
     return false;
   }
   if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count') return false;

@@ -85,6 +85,7 @@ describe('model catalog data (P-29)', () => {
       'codex-subscription',
       'copilot-subscription',
       'cursor-subscription',
+      'grok-build-login',
       'hermes-subscription',
       'kilo-login',
       'opencode-subscription',
@@ -293,12 +294,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but kilo and hermes carries isolation evidence, and both stay capped at experimental', () => {
+  it('P-44: every built-in record but kilo, hermes and grok-build carries isolation evidence, and all three stay capped at experimental', () => {
     // kilo's switches are unverified and hermes reads its own home with auto-injected instruction
     // files; neither can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (provider.providerId === 'kilo' || provider.providerId === 'hermes') {
+      if (provider.providerId === 'kilo' || provider.providerId === 'hermes' || provider.providerId === 'grok-build') {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -314,6 +315,7 @@ describe('isolation evidence (P-44)', () => {
       opencode: 'experimental',
       hermes: 'experimental',
       kilo: 'experimental',
+      'grok-build': 'experimental',
     });
   });
 
@@ -322,6 +324,18 @@ describe('isolation evidence (P-44)', () => {
     expect((findProvider('hermes')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
     expect(findRouteKind('hermes-subscription')).toMatchObject({
       providerId: 'hermes',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
+  it('P-28: the grok-build record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {
+    expect(findProvider('grok-build')?.gates.G5).toMatchObject({ kind: 'waived' });
+    expect((findProvider('grok-build')?.gates.G5 as { reason: string }).reason).toContain('limit_hit');
+    expect(findRouteKind('grok-build-login')).toMatchObject({
+      providerId: 'grok-build',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',

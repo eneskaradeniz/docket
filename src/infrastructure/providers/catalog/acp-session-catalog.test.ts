@@ -172,6 +172,31 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(methods).not.toContain('session/set_config_option');
   });
 
+  it('P-29: the grok-build listing reads the initialize answer, gives each model its own levels and the default row, and never opens a session even though session/new would be refused', async () => {
+    const harness = makeSpawn('models-grok');
+    const envs: Array<Readonly<Record<string, string>> | undefined> = [];
+    const spawn: AcpSpawn = (command, args, options) => {
+      envs.push(options.env);
+      return harness.spawn(command, args, options);
+    };
+
+    const listed = await listAcpSessionModels(accountOf('grok-build'), { baseEnv: { PATH: '/bin', XAI_API_KEY: 'ambient' }, spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'grok', args: ['agent', '--no-leader', 'stdio'] }]);
+    expect(envs[0]).toMatchObject({ GROK_TELEMETRY_ENABLED: '0' });
+    expect(envs[0]).not.toHaveProperty('XAI_API_KEY');
+    // 'ludicrous' names no level, so it is not offered; a model without levels carries none.
+    expect(listed.value).toEqual([
+      { id: 'grok-4.6', displayName: 'Grok 4.6', efforts: ['xhigh', 'high', 'medium', 'low'], isDefault: true },
+      { id: 'grok-4.5', displayName: 'Grok 4.5', efforts: ['high', 'medium', 'low'] },
+      { id: 'grok-code-fast', displayName: 'Grok Code Fast' },
+    ]);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).toEqual(['initialize']);
+  });
+
   it('P-29: a slow cold start is not cut short by a caller ceiling below the kilo floor', async () => {
     const harness = makeSpawn('models-silent');
     // A 300 ms ceiling would end the wait almost at once; the floor keeps it open well past that.
