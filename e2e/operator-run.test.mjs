@@ -114,10 +114,11 @@ test('redaction masks tokens, secret-named assignments and long opaque runs, and
   assert.ok(redact('x '.repeat(500)).length <= 200);
 });
 
-test('the login state: an auth error beats the probe; a started session proves an unreadable probe', () => {
-  assert.equal(loginState(true, [{ type: 'error', at, class: 'auth', message: 'm' }]), 'no');
+test('the login state: the probe is the answer; an auth error or a started session only speaks when the probe had none', () => {
+  assert.equal(loginState(true, [{ type: 'error', at, class: 'auth', message: 'm' }]), 'yes');
   assert.equal(loginState(true, []), 'yes');
   assert.equal(loginState(false, []), 'no');
+  assert.equal(loginState(null, [{ type: 'error', at, class: 'auth', message: 'm' }]), 'no');
   assert.equal(loginState(null, [{ type: 'session_started', at, sessionRef: 's' }]), 'yes');
   assert.equal(loginState(null, []), 'unknown');
 });
@@ -145,7 +146,9 @@ test('the summary answers each question and carries no event text beyond the ans
 });
 
 test('a run with no output, usage or ask says so', () => {
-  const summary = buildSummary({ ...base, events: [{ type: 'error', at: 1000, class: 'auth', message: 'not logged in, token sk-abcdefghijklmnop1234' }], outcome: 'failed' });
+  // The probe had already answered logged-out, so the auth error agrees with it rather than
+  // overwriting a yes — the failing run itself stays in errors and the outcome.
+  const summary = buildSummary({ ...base, discoveredLoggedIn: false, events: [{ type: 'error', at: 1000, class: 'auth', message: 'not logged in, token sk-abcdefghijklmnop1234' }], outcome: 'failed' });
   assert.deepEqual(summary.firstOutput, { seen: false });
   assert.deepEqual(summary.usage, { seen: false });
   assert.equal(summary.permission.asked, 0);

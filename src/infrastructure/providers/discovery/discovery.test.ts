@@ -517,18 +517,21 @@ describe('credential-count login probe (kilo)', () => {
 });
 
 describe('logged-in-json login probe (claude-code)', () => {
-  // The CLI's own `auth status` answer: only the loggedIn boolean is read, never another field.
+  // The CLI's own `auth status` answer, in the shape 2.1.287 prints (six fields, fixture values
+  // only): just the loggedIn boolean is read, never another field.
   const LOGGED_IN = JSON.stringify({
     loggedIn: true,
-    authMethod: 'oauth_token',
-    analyticsDisabled: false,
+    authMethod: 'claude.ai',
+    apiProvider: 'anthropic',
+    analyticsDisabled: true,
     projectsDirectory: '/tmp/fixture/projects',
-    configDirectory: '/tmp/fixture/.claude',
+    configDirectory: '/tmp/fixture/.claude-anthropic',
   });
   const LOGGED_OUT = JSON.stringify({
     loggedIn: false,
     authMethod: 'none',
-    analyticsDisabled: false,
+    apiProvider: 'anthropic',
+    analyticsDisabled: true,
     projectsDirectory: '/tmp/fixture/projects',
     configDirectory: '/tmp/fixture/.claude',
   });
@@ -568,6 +571,32 @@ describe('logged-in-json login probe (claude-code)', () => {
       expect(results[0]?.loggedIn, `exit ${exit}`).toBe(expected);
       expect(calls.some((call) => call.args.join(' ') === 'auth status')).toBe(true);
     }
+  });
+
+  it('P-44: the probe answers for the environment the CLI would see — an ambient config directory rides the spawn verbatim', async () => {
+    const claude = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'claude-code');
+    const def = defOf({
+      id: 'claude-like',
+      bins: ['claude-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: claude?.authProbe,
+    });
+    const body = (answer: string, exit: number): string =>
+      `case "$1" in\n  --version) echo "2.1.287-fake"; exit 0;;\n  auth) echo '${answer}'; exit ${exit};;\nesac\nexit 0`;
+    writeBin('home/.local/bin/claude-like', body(LOGGED_IN, 0));
+    const { discovery, calls } = makeDiscovery(
+      [def],
+      { PATH: EMPTY_PATH(), CLAUDE_CONFIG_DIR: '/tmp/fixture/ambient-config' },
+      { probeTimeoutMs: 2000 },
+    );
+    const results = await collect(discovery);
+
+    // The machine login lives where the CLI's own override variable points, so the probe must
+    // read exactly that environment — never a stripped one — and its boolean is the answer.
+    const probe = calls.find((call) => call.args.join(' ') === 'auth status');
+    expect(probe?.options.env.CLAUDE_CONFIG_DIR).toBe('/tmp/fixture/ambient-config');
+    expect(results[0]?.loggedIn).toBe(true);
   });
 });
 
