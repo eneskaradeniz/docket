@@ -39,6 +39,19 @@ const freshRoot = (): string => {
 // module; the body is verbatim. Clears observed WO tables + session first so it is safe to call on
 // an already-seeded DB.
 function seedFixtureWorkOrders(db: DatabaseSync): void {
+  // One transaction: each autocommitted insert is its own journal fsync, and hundreds of them make
+  // the seeding time depend on disk contention instead of the work done.
+  db.exec('BEGIN');
+  try {
+    insertFixtureWorkOrders(db);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function insertFixtureWorkOrders(db: DatabaseSync): void {
   db.exec('DELETE FROM session');
   for (const t of ['track_depends_on', 'track', 'work_order_source', 'work_order']) db.exec(`DELETE FROM ${t}`);
   for (const wo of workOrders) {

@@ -30,6 +30,15 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Waits until the pid is gone. A SIGKILLed process stays visible to signal 0 until its parent (or
+ * init, once the parent died too) reaps it, and that reap lags under CPU load.
+ */
+async function waitForDeath(pid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (pidAlive(pid) && Date.now() < deadline) await delay(50);
+}
+
 /** Waits until the command has written its pid file, tolerating the create/write window. */
 async function pollForPid(pidFile: string): Promise<number> {
   const deadline = Date.now() + 5_000;
@@ -103,8 +112,7 @@ describePosix('createCommandRunner', () => {
       expect(result.durationMs).toBeLessThan(10_000);
       const pid = Number.parseInt(result.outputTail.trim(), 10);
       expect(Number.isNaN(pid)).toBe(false);
-      const deadline = Date.now() + 5_000;
-      while (pidAlive(pid) && Date.now() < deadline) await delay(50);
+      await waitForDeath(pid);
       expect(pidAlive(pid)).toBe(false);
     },
     15_000,
@@ -150,6 +158,7 @@ describePosix('createCommandRunner', () => {
       expect(result.durationMs).toBeGreaterThanOrEqual(timeoutMs + killGraceMs);
       expect(result.durationMs).toBeLessThan(5_000);
       // The background sleep ignores SIGTERM too, so its death shows the group signal reached it.
+      await waitForDeath(pid);
       expect(pidAlive(pid)).toBe(false);
     },
     10_000,
