@@ -19,10 +19,12 @@ export interface SettingRowProps {
   readonly saved?: boolean;
   /** The resolved U-8 copy of a failed save, shown under the row. */
   readonly failure?: string;
+  /** An amber line under the row, e.g. a standing warning that is not a failure. */
+  readonly note?: string;
   readonly disclosure?: { readonly label: string; readonly startsOpen: boolean; readonly children: ReactNode };
 }
 
-export function SettingRow({ locale, title, purpose, control, differsFrom, onReset, saved = false, failure, disclosure }: SettingRowProps) {
+export function SettingRow({ locale, title, purpose, control, differsFrom, onReset, saved = false, failure, note, disclosure }: SettingRowProps) {
   const [open, setOpen] = useState(disclosure?.startsOpen ?? false);
   return (
     <div className="grid gap-1.5 border-b border-hairline py-3 last:border-b-0" data-setting-row={title}>
@@ -50,6 +52,7 @@ export function SettingRow({ locale, title, purpose, control, differsFrom, onRes
           ) : null}
         </p>
       ) : null}
+      {note !== undefined ? <p className="text-[12px] text-signal-soft">{note}</p> : null}
       {failure !== undefined ? (
         <p role="alert" className="text-[12px] text-error">
           {failure}

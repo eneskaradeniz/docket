@@ -33,9 +33,9 @@ describe('recommended', () => {
   });
 
   it('U-29: a role work style follows the role, and an unlisted role is balanced', () => {
-    expect(recommendedWorkStyle('planner')).toBe('deep');
-    expect(recommendedWorkStyle('reviewer')).toBe('deep');
-    expect(recommendedWorkStyle('security-auditor')).toBe('deep');
+    expect(recommendedWorkStyle('planner')).toBe('careful');
+    expect(recommendedWorkStyle('reviewer')).toBe('careful');
+    expect(recommendedWorkStyle('security-auditor')).toBe('careful');
     expect(recommendedWorkStyle('developer')).toBe('balanced');
     expect(recommendedWorkStyle('test-writer')).toBe('balanced');
     expect(recommendedWorkStyle('analyst')).toBe('fast');
