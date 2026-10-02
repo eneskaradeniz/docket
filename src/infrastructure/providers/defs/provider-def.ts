@@ -109,6 +109,18 @@ export interface ProviderConfig {
   readonly name: string;
 }
 
+/**
+ * How a CLI is kept from reading the user's configuration of other tools (another agent's
+ * instruction files, skills, hooks and MCP servers). `env` and `args` are the CLI's own documented
+ * switches; `runScopedHome` names a home-directory variable the launch points at the run's config
+ * directory, never at the user's real home.
+ */
+export interface ProviderIsolation {
+  readonly env?: Readonly<Record<string, string>>;
+  readonly args?: readonly string[];
+  readonly runScopedHome?: string;
+}
+
 export interface ProviderLaunch {
   readonly args: string[];
   readonly env: Readonly<Record<string, string>>;
@@ -140,6 +152,10 @@ export interface ProviderDef {
   readonly effortArg?: EffortArg;
   /** The provider's own names for effort levels; absent means its names are the level names. */
   readonly levelNames?: LevelNames;
+  /** Applied by the launch module; a provider without it is capped at `experimental`. */
+  readonly isolation?: ProviderIsolation;
+  /** The CLI's own telemetry-off flags, added to argv on every run. */
+  readonly telemetryOff?: readonly string[];
   readonly buildLaunch: (input: LaunchInput) => ProviderLaunch;
   readonly resume: ProviderResumeMode;
   /** Declared; refined by probes at discovery. */

@@ -35,6 +35,9 @@ export interface ProviderRecord {
   /** Manual flag: the definition exists but nothing is verified; it overrides every gate. */
   readonly planned?: true;
   readonly gates: Readonly<Partial<Record<GateId, Evidence>>>;
+  /** Evidence that a run keeps the CLI from reading the user's configuration of other tools; a
+   * provider without it is capped at `experimental`. */
+  readonly isolation?: Evidence;
   /** Recorded operator-gate run ids on the real CLI; without one, `full` is unreachable. */
   readonly operatorRuns?: readonly string[];
 }
@@ -83,9 +86,11 @@ export interface CapabilityRegistry {
 // every gate (G5 may be waived), the scripted end-to-end scenario as G6 test evidence, and at
 // least one recorded operator run. `isolated` needs the gates that make a run inspectable
 // (discovery, mapping, usage, scenario) but not the permission wait. Anything less is
-// `experimental`.
+// `experimental`, and so is a provider with no isolation evidence: a CLI that may read the user's
+// other tools' instructions and skills cannot be trusted with a run that claims to be inspectable.
 export function supportLevel(record: ProviderRecord): SupportLevel {
   if (record.planned === true) return 'planned';
+  if (record.isolation === undefined) return 'experimental';
   const passed = (gate: GateId): boolean => record.gates[gate] !== undefined;
   const scenarioIsTestEvidence = record.gates.G6?.kind === 'test';
   const operatorRunRecorded = record.operatorRuns !== undefined && record.operatorRuns.length > 0;

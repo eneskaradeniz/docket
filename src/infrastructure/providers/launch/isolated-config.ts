@@ -59,9 +59,11 @@ export interface WrittenHook {
 export interface RunConfig {
   /** Absolute path of the run-scoped config directory (inside the run directory). */
   readonly configDir: string;
-  /** mechanism 'flag': the flag and the config dir the CLI is invoked with. */
+  /** mechanism 'flag': the flag and the config dir the CLI is invoked with, then the definition's
+   * isolation flags and telemetry-off flags. */
   readonly args: readonly string[];
-  /** mechanism 'env-var': the config-dir variable of this CLI, pointing inside the run. */
+  /** The config-dir variable of this CLI (mechanism 'env-var') and the definition's isolation
+   * variables, all pointing inside the run or at fixed switches. */
   readonly env: Readonly<Record<string, string>>;
   /** The parsed config, so transports that carry config inline (e.g. a session-create field)
    * pass exactly what the files hold. */
@@ -114,8 +116,18 @@ export async function writeRunConfig(
 
   return {
     configDir,
-    args: def.config.mechanism === 'flag' ? [def.config.name, configDir] : [],
-    env: def.config.mechanism === 'env-var' ? { [def.config.name]: configDir } : {},
+    args: [
+      ...(def.config.mechanism === 'flag' ? [def.config.name, configDir] : []),
+      ...(def.isolation?.args ?? []),
+      ...(def.telemetryOff ?? []),
+    ],
+    env: {
+      ...def.isolation?.env,
+      // The run's own directory is the only value a home variable can take: the user's real home
+      // would let the CLI read every other tool's configuration.
+      ...(def.isolation?.runScopedHome === undefined ? {} : { [def.isolation.runScopedHome]: configDir }),
+      ...(def.config.mechanism === 'env-var' ? { [def.config.name]: configDir } : {}),
+    },
     mcpServers,
     skills,
     hooks,

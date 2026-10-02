@@ -71,6 +71,17 @@ function isLevelNames(value: unknown): boolean {
   );
 }
 
+function isIsolation(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const { env, args, runScopedHome } = value;
+  if (env !== undefined && !(isRecord(env) && Object.entries(env).every(([name, v]) => name.length > 0 && typeof v === 'string'))) {
+    return false;
+  }
+  if (args !== undefined && !(isStringArray(args) && args.every((entry) => entry.length > 0))) return false;
+  return runScopedHome === undefined || isNonEmptyString(runScopedHome);
+}
+
 function isTimeoutMs(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
 }
@@ -102,6 +113,9 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isBuildLaunch(value['buildLaunch'])) return false;
   if (!isEffortArg(value['effortArg'])) return false;
   if (!isLevelNames(value['levelNames'])) return false;
+  if (!isIsolation(value['isolation'])) return false;
+  const telemetryOff = value['telemetryOff'];
+  if (telemetryOff !== undefined && !(isStringArray(telemetryOff) && telemetryOff.every((entry) => entry.length > 0))) return false;
   if (!RESUME_MODES.includes(value['resume'] as ProviderDef['resume'])) return false;
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];

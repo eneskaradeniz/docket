@@ -292,6 +292,25 @@ describe('provider definitions (P-1)', () => {
     });
   });
 
+  describe('isolation fields (P-44)', () => {
+    it('P-44: isProviderDef accepts well-formed isolation and telemetryOff and rejects malformed ones', () => {
+      expect(
+        isProviderDef({
+          ...createValidDef(),
+          isolation: { env: { X: '1' }, args: ['--no-x'], runScopedHome: 'HOME' },
+          telemetryOff: ['--no-telemetry'],
+        }),
+      ).toBe(true);
+      expect(isProviderDef({ ...createValidDef(), isolation: {} })).toBe(true);
+      for (const isolation of [{ env: { X: 1 } }, { args: [''] }, { args: 'x' }, { runScopedHome: '' }, 'on', null]) {
+        rejectsWith({ ...createValidDef(), isolation }, JSON.stringify(isolation));
+      }
+      for (const telemetryOff of ['--x', [''], [1]]) {
+        rejectsWith({ ...createValidDef(), telemetryOff }, JSON.stringify(telemetryOff));
+      }
+    });
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');
