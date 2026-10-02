@@ -410,7 +410,6 @@ export const EN: LabelBundle = {
   'editor.limits.cap.invalidAmount': 'Enter an amount above zero.',
   'editor.limits.cap.invalidWarn': 'Enter a whole number from 1 to 100.',
   'editor.limits.cap.none': 'No cap',
-  'editor.value.noCap': 'no cap',
   'editor.limits.p40note': 'An automatic switch never moves from an included model to a paid or unverified one.',
   'editor.policy.wait_resume': 'Wait and resume',
   'editor.policy.switch_pool': 'Switch pool',

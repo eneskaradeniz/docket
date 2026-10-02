@@ -9,7 +9,7 @@ import type { SettingsAccountView, SettingsMeterView } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
-import { NO_CAP, RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
+import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
 
 export { CAP_SCOPES, mayHaveCap };
 
@@ -195,7 +195,6 @@ export const diffValueLabel = (locale: Locale, key: SettingDiff['key'], value: s
       return fill(t(locale, 'editor.value.reserve'), { short: percentText(short), long: percentText(long) });
     }
     case 'cap': {
-      if (text === NO_CAP) return t(locale, 'editor.value.noCap');
       const [scope = '', amount = ''] = text.split(':');
       const scopeKey = CAP_SCOPE_LABEL[scope];
       return fill(t(locale, 'editor.value.cap'), { amount, scope: scopeKey === undefined ? scope : t(locale, scopeKey) });

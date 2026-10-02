@@ -408,7 +408,6 @@ export const TR: LabelBundle = {
   'editor.limits.cap.invalidAmount': 'Sıfırdan büyük bir tutar yazın.',
   'editor.limits.cap.invalidWarn': '1–100 arası tam sayı yazın.',
   'editor.limits.cap.none': 'Tavan yok',
-  'editor.value.noCap': 'tavan yok',
   'editor.limits.p40note': 'Otomatik geçiş, plana dahil bir modelden ücretli ya da doğrulanamamış bir modele asla geçmez.',
   'editor.policy.wait_resume': 'Bekle ve devam et',
   'editor.policy.switch_pool': 'Havuz değiştir',

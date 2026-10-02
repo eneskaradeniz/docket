@@ -441,7 +441,6 @@ export const LABEL_KEYS = [
   'editor.limits.cap.invalidAmount',
   'editor.limits.cap.invalidWarn',
   'editor.limits.cap.none',
-  'editor.value.noCap',
   'editor.limits.p40note',
   'editor.policy.wait_resume',
   'editor.policy.switch_pool',
