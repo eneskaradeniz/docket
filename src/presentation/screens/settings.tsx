@@ -16,6 +16,7 @@ import { ActionButton } from '../components/action-button';
 import { ACTIVE_CLASS } from '../components/active-state';
 import { DiscoveryBadges } from '../components/discovery-badges';
 import { countedLabel } from '../components/counted-label';
+import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { LocaleSwitcher } from '../components/locale-switcher';
 import { motionVars, MOTION } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
@@ -133,13 +134,15 @@ const scopeName = (scope: SettingsBindingScope): string =>
  * pool is a list, not a stack of cards. The store already resolved the meter's naming context;
  * remaining and reset segments render only when the meter carries them — absence is omitted,
  * never faked. */
-function MeterRow({ meter, locale, store }: { readonly meter: MeterDisplay; readonly locale: Locale; readonly store: SettingsStore }) {
-  const resetsAt = store.resetsAtLabel(meter.resetsAt);
+export function MeterRow({ meter, locale, resetsAt }: { readonly meter: MeterDisplay; readonly locale: Locale; readonly resetsAt: string | null }) {
+  const unitLabel = meterUnitLabel(locale, meter.unit);
   return (
     <li className="flex flex-wrap items-baseline gap-2">
       <span className="text-[13px] text-ink">{meter.label}</span>
       <span className="font-mono text-[11.5px] text-inkdim">
-        {meter.remaining !== null ? `${t(locale, 'settings.meter.remaining')} ${meter.remaining} ${meter.unit}` : meter.unit}
+        {meter.remaining !== null
+          ? `${t(locale, 'settings.meter.remaining')} ${formatMeterValue(locale, meter.unit, meter.remaining)}`
+          : (unitLabel ?? '')}
         {resetsAt !== null ? ` · ${t(locale, 'settings.meter.resetsAt')} ${resetsAt}` : ''}
       </span>
       <span className="ml-auto">
@@ -181,7 +184,7 @@ function AccountRow({
       ) : (
         <ul className="grid gap-2 border-t border-hairline pt-2.5">
           {account.meters.map((meter) => (
-            <MeterRow key={meter.id} meter={meter} locale={locale} store={store} />
+            <MeterRow key={meter.id} meter={meter} locale={locale} resetsAt={store.resetsAtLabel(meter.resetsAt)} />
           ))}
         </ul>
       )}

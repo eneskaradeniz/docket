@@ -6,6 +6,7 @@ import { useState, useSyncExternalStore } from 'react';
 import type { CommandResult } from '../../api/commands';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
+import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
 import { ActionButton } from '../components/action-button';
 import { OutcomeNotice } from '../components/outcome-notice';
 import { StateBadge, type BadgeTone } from '../components/state-badge';
@@ -38,7 +39,8 @@ const formatCost = (locale: Locale, value: number): string =>
 
 /** The meter's own name when the provider gave one; the unit stands in — meters without any name
  *  still read as an instrument line, never as a blank. */
-const meterName = (meter: QuotaSignalMeter): string => meter.label ?? meter.poolLabel ?? meter.unit;
+const meterName = (locale: Locale, meter: QuotaSignalMeter): string =>
+  meter.label ?? meter.poolLabel ?? meterUnitLabel(locale, meter.unit) ?? '';
 
 function UsageLine({ item, locale }: { readonly item: Extract<LivePaneItem, { readonly kind: 'usage' }>; readonly locale: Locale }) {
   return (
@@ -54,13 +56,13 @@ function MeterLine({ item, locale }: { readonly item: Extract<LivePaneItem, { re
   const meter = item.meter;
   const usage =
     meter.used !== undefined
-      ? ` · ${t(locale, 'live.meter.used')} ${formatTokens(locale, meter.used)}` +
-        (meter.limit !== undefined ? ` / ${t(locale, 'live.meter.limit')} ${formatTokens(locale, meter.limit)}` : '')
+      ? ` · ${t(locale, 'live.meter.used')} ${formatMeterValue(locale, meter.unit, meter.used)}` +
+        (meter.limit !== undefined ? ` / ${t(locale, 'live.meter.limit')} ${formatMeterValue(locale, meter.unit, meter.limit)}` : '')
       : '';
   return (
     <span>
-      {meterName(meter)}
-      {usage} {meter.unit}
+      {meterName(locale, meter)}
+      {usage}
     </span>
   );
 }
