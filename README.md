@@ -37,7 +37,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 <!-- provider-matrix:start -->
 | Provider | Route kind | Models | Thinking | Context | Cost | Support level |
 | --- | --- | --- | --- | --- | --- | --- |
-| Claude Code (`claude-code`) | `anthropic-subscription` | — | — | — | equivalent | isolated |
+| Claude Code (`claude-code`) | `anthropic-subscription` | `claude-opus-5-5` (strong), `claude-sonnet-5-5` (balanced), `claude-haiku-4-5` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | equivalent | isolated |
 | Claude Code (`claude-code`) | `anthropic-api` | — | — | — | reported | isolated |
 | Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | isolated |
 | Codex (`codex`) | — | — | — | — | — | experimental |

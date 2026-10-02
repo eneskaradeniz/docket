@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, Tier } from '../../../domain/index';
+import { mergeCatalog, resolveTier } from '../../../domain/index';
 import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind } from './capability-registry';
 
 const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
@@ -88,5 +89,98 @@ describe('model catalog data (P-29)', () => {
     ]);
     const tiers: readonly Tier[] = FAMILY_PATTERNS.map((pattern) => pattern.tier);
     expect(new Set(tiers).size).toBe(FAMILY_PATTERNS.length);
+  });
+});
+
+describe('bundled model records (P-29, P-40)', () => {
+  // `included` is a statement about a plan, so it can only ever sit on a subscription route
+  // kind — every other kind bills per use or reads costs as equivalents.
+  const includedOffSubscription = (registry: CapabilityRegistry): readonly string[] => {
+    const violations: string[] = [];
+    for (const kind of registry.routeKinds) {
+      for (const model of kind.models) {
+        if (model.billing === 'included' && kind.authMode !== 'subscription') {
+          violations.push(`${kind.id} carries included model ${model.id}`);
+        }
+      }
+    }
+    return violations;
+  };
+
+  it('P-40: every included record sits on a subscription route kind', () => {
+    expect(includedOffSubscription(CAPABILITY_REGISTRY)).toEqual([]);
+  });
+
+  it('P-40: an included record on a non-subscription kind is a violation', () => {
+    const leaked = CAPABILITY_REGISTRY.routeKinds.map((kind) =>
+      kind.id === 'anthropic-api'
+        ? {
+            ...kind,
+            models: [
+              ...kind.models,
+              { id: 'claude-sonnet-5-5', family: 'sonnet', tier: 'balanced' as const, thinking: { kind: 'none' as const }, billing: 'included' as const },
+            ],
+          }
+        : kind,
+    );
+    expect(includedOffSubscription({ ...CAPABILITY_REGISTRY, routeKinds: leaked })).not.toEqual([]);
+  });
+
+  it('P-40: a live list over the subscription registry merges a verified model as included and an unverified one as unknown', () => {
+    const subscription = findRouteKind('anthropic-subscription');
+    expect(subscription).toBeDefined();
+    const merged = mergeCatalog(
+      [
+        { id: 'claude-sonnet-5-5', displayName: 'Sonnet 5.5' },
+        { id: 'claude-fable-5-1', displayName: 'Fable 5.1' },
+      ],
+      subscription?.models ?? [],
+      FAMILY_PATTERNS,
+      undefined,
+      { authoritative: true },
+    );
+    // A verified row takes the registry's tier, thinking and billing — no consent ask, no cap.
+    const sonnet = merged.find((model) => model.id === 'claude-sonnet-5-5');
+    expect(sonnet?.source).toBe('live');
+    expect(sonnet?.tier).toBe('balanced');
+    expect(sonnet?.thinking).toEqual({ kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] });
+    expect(sonnet?.billing).toBe('included');
+    // A family the registry does not vouch for stays unknown even though the plan lists it, and
+    // without a family pattern it never even gets an automatic tier.
+    const fable = merged.find((model) => model.id === 'claude-fable-5-1');
+    expect(fable?.billing).toBe('unknown');
+    expect(fable?.tier).toBeUndefined();
+    expect(fable?.autoClassified).toBeUndefined();
+  });
+
+  it('P-40: tier resolution picks the verified strong model and never an unverified one', () => {
+    const subscription = findRouteKind('anthropic-subscription');
+    const merged = mergeCatalog(
+      // A higher-version strong id the registry does not vouch for must lose to the verified one.
+      [
+        { id: 'claude-opus-5-5' },
+        { id: 'claude-sonnet-5-5' },
+        { id: 'claude-haiku-4-5' },
+        { id: 'claude-opus-6-0', efforts: ['low', 'high'] },
+        { id: 'claude-fable-5-1' },
+      ],
+      subscription?.models ?? [],
+      FAMILY_PATTERNS,
+      undefined,
+      { authoritative: true },
+    );
+    expect(resolveTier('strong', merged)).toBe('claude-opus-5-5');
+    expect(resolveTier('balanced', merged)).toBe('claude-sonnet-5-5');
+    expect(resolveTier('fast', merged)).toBe('claude-haiku-4-5');
+  });
+
+  it('P-40: with no live list yet the bundled included records still resolve every tier', () => {
+    const subscription = findRouteKind('anthropic-subscription');
+    const merged = mergeCatalog(undefined, subscription?.models ?? [], FAMILY_PATTERNS);
+    expect(merged.length).toBeGreaterThan(0);
+    expect(merged.every((model) => model.billing === 'included')).toBe(true);
+    expect(resolveTier('strong', merged)).toBe('claude-opus-5-5');
+    expect(resolveTier('balanced', merged)).toBe('claude-sonnet-5-5');
+    expect(resolveTier('fast', merged)).toBe('claude-haiku-4-5');
   });
 });
