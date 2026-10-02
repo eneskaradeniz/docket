@@ -20,10 +20,12 @@ import type {
   ScopedSpend,
   SpendStatus,
   WorkOrderId,
+  StageSlug,
+  ChainEntry,
 } from '../../domain/index';
-import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok } from '../../domain/index';
+import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
 
-import type { AccountRecord, AppDeps } from '../ports/index';
+import type { AccountRecord, AppDeps, RunRecord } from '../ports/index';
 import { resolveRoute, type RouteError } from '../use-cases/index';
 
 export interface DispatcherConfig {
@@ -230,7 +232,7 @@ export async function applyLimitDecision(
 }
 
 export async function enqueueStage(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts' | 'projects'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'queue' | 'workOrders' | 'definitions' | 'bindings' | 'accounts' | 'projects' | 'runs'>,
   input: { readonly id: WorkOrderId; readonly priority?: number },
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>> {
   const record = await deps.workOrders.get(input.id);
@@ -249,6 +251,28 @@ export async function enqueueStage(
   const routed = await resolveRoute(deps, { repo: record.repo, workOrderId: input.id, role: next.role });
   if (!routed.ok) return routed;
 
+  const stageDef = flow.stages.find((candidate) => candidate.id === next.stage);
+  const routing = stageDef === undefined ? {} : stageRouting(stageDef, routed.value.binding);
+
+  // A review stage prefers an account on another provider than the one that wrote the work.
+  let chain: readonly AccountRoute[] = routed.value.chain;
+  let sameProviderReview = false;
+  if (stageDef?.reviewOf !== undefined) {
+    const reviewed = await lastSucceededRun(deps, input.id, stageDef.reviewOf);
+    const reviewedProvider =
+      reviewed === undefined ? undefined : (await deps.accounts.get(reviewed.route.accountId))?.provider;
+    const entries: ChainEntry[] = [];
+    for (const route of chain) {
+      const provider = (await deps.accounts.get(route.accountId))?.provider;
+      if (provider !== undefined) entries.push({ route, provider });
+    }
+    const ordered = orderForReview(entries, reviewedProvider);
+    chain = ordered.chain.map((entry) => entry.route);
+    sameProviderReview = ordered.sameProvider;
+  }
+  const first = chain[0];
+  if (first === undefined) return err('no_account');
+
   const queued = deps.ids.next<'queue-item'>();
   // One item per work order: whatever waited before gives way to the current stage and route.
   for (const existing of await deps.queue.list()) {
@@ -259,10 +283,22 @@ export async function enqueueStage(
     workOrderId: input.id,
     repo: record.repo,
     stage: next.stage,
-    route: { ...routed.value.chain[0] },
+    route: { ...first },
     priority: input.priority ?? 0,
     enqueuedAt: deps.clock.now(),
-    ...(routed.value.thinking !== undefined ? { thinking: routed.value.thinking } : {}),
+    ...(routing.thinking !== undefined ? { thinking: routing.thinking } : {}),
+    ...(routing.tier !== undefined ? { tier: routing.tier } : {}),
+    ...(sameProviderReview ? { sameProviderReview: true as const } : {}),
   });
   return ok(queued);
+}
+
+/** The newest run of `stage` in this work order that succeeded; the runs come oldest first. */
+async function lastSucceededRun(
+  deps: Pick<AppDeps, 'runs'>,
+  workOrderId: WorkOrderId,
+  stage: StageSlug,
+): Promise<RunRecord | undefined> {
+  const runs = await deps.runs.listForWorkOrder(workOrderId);
+  return runs.filter((run) => run.stage === stage && run.outcome === 'succeeded').at(-1);
 }

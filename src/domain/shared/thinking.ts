@@ -12,3 +12,7 @@ export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhig
 export type ThinkingChoice =
   | { readonly level: 'fast' | 'balanced' | 'deep' }
   | { readonly effort: EffortLevel };
+
+/** A model class a route resolves to a concrete model; shared because definitions (stages), the
+ *  resolver (bindings) and providers (capability records) all name it. */
+export type Tier = 'strong' | 'balanced' | 'fast';

@@ -2,14 +2,12 @@
 // sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
 // the domain — so every function here takes its input as a parameter and knows no provider id.
 import type { AuthMode } from '../quota/index';
-import type { Billing, EffortLevel } from '../shared/index';
+import type { Billing, EffortLevel, Tier } from '../shared/index';
 import type { ProviderCapabilities } from './capabilities';
-
-export type Tier = 'strong' | 'balanced' | 'fast';
 
 // Re-exported so the capability contract keeps naming it while the limit policy reads it from
 // shared (the module map lets quota import only shared).
-export type { Billing };
+export type { Billing, Tier };
 
 // Re-exported so the capability contract keeps naming it; the scale itself lives in shared.
 export type { EffortLevel };

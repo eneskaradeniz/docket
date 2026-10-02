@@ -1,7 +1,7 @@
 // definitions/validate.ts — narrows untyped (parsed YAML/JSON) input into typed Definitions.
 // Field-by-field narrowing only; every issue is collected before deciding (all-or-nothing).
 import type { SpendCap } from '../budget';
-import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug } from '../shared';
+import { err, ok, parseSlug, type Result, type Slug, type CapabilitySlug, type EnvSlug, type FlowSlug, type ProjectSlug, type RepoSlug, type RoleSlug, type StageSlug, type EffortLevel, type ThinkingChoice, type Tier } from '../shared';
 import type {
   CapabilityDef,
   Definitions,
@@ -29,7 +29,7 @@ export type DefinitionIssueCode =
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
   | 'env_command_set_missing' | 'duplicate_env_order'
-  | 'empty_repos' | 'main_repo_not_listed';
+  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -63,6 +63,9 @@ interface StageDraft {
   readonly role: RoleSlug | null;
   readonly exit: readonly (GateDef | undefined)[];
   readonly onFail: OnFailDraft | undefined;
+  readonly tier: Tier | undefined;
+  readonly thinking: ThinkingChoice | undefined;
+  readonly reviewOf: StageSlug | undefined;
 }
 
 interface FlowDraft {
@@ -427,6 +430,36 @@ const parseCapability = (issues: DefinitionIssue[], container: UnknownRecord, pa
   return undefined;
 };
 
+const TIERS: readonly string[] = ['strong', 'balanced', 'fast'];
+const LEVELS: readonly string[] = ['fast', 'balanced', 'deep'];
+const EFFORTS: readonly string[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
+const readOptionalTier = (issues: DefinitionIssue[], container: UnknownRecord, path: string): Tier | undefined => {
+  const raw: unknown = container['tier'];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'string' && TIERS.includes(raw)) return raw as Tier;
+  addIssue(issues, path, 'wrong_type', `${path} must be one of strong, balanced, fast`);
+  return undefined;
+};
+
+const readOptionalThinking = (issues: DefinitionIssue[], container: UnknownRecord, path: string): ThinkingChoice | undefined => {
+  const raw: unknown = container['thinking'];
+  if (raw === undefined) return undefined;
+  if (isRecord(raw)) {
+    const keys = Object.keys(raw);
+    const level: unknown = raw['level'];
+    const effort: unknown = raw['effort'];
+    if (keys.length === 1 && typeof level === 'string' && LEVELS.includes(level)) {
+      return { level: level as 'fast' | 'balanced' | 'deep' };
+    }
+    if (keys.length === 1 && typeof effort === 'string' && EFFORTS.includes(effort)) {
+      return { effort: effort as EffortLevel };
+    }
+  }
+  addIssue(issues, path, 'wrong_type', `${path} must be { level: fast|balanced|deep } or { effort: <effort level> }`);
+  return undefined;
+};
+
 const parseStage = (issues: DefinitionIssue[], container: UnknownRecord, path: string): StageDraft | undefined => {
   const id = readSlugField<'stage'>(issues, container, 'id', `${path}.id`);
   const name = readStringField(issues, container, 'name', `${path}.name`);
@@ -487,8 +520,12 @@ const parseStage = (issues: DefinitionIssue[], container: UnknownRecord, path: s
     onFail = { goto, maxAttempts };
   }
 
+  const tier = readOptionalTier(issues, container, `${path}.tier`);
+  const thinking = readOptionalThinking(issues, container, `${path}.thinking`);
+  const reviewOf = readOptionalSlugField<'stage'>(issues, container, 'reviewOf', `${path}.reviewOf`);
+
   if (id === undefined || name === undefined || role === undefined || exit === undefined) return undefined;
-  return { id, name, role, exit, onFail };
+  return { id, name, role, exit, onFail, tier, thinking, reviewOf };
 };
 
 const parseRole = (issues: DefinitionIssue[], container: UnknownRecord, path: string): RoleDraft | undefined => {
@@ -855,6 +892,13 @@ const crossCheck = (
           addIssue(issues, `${gatePath}.environment`, 'unknown_environment', `"${gate.environment}" is not a defined environment`);
         }
       });
+      if (stage.reviewOf !== undefined) {
+        const target = stageIdsAtIndex.findIndex((stageId) => stageId === stage.reviewOf);
+        const targetRole = target === -1 ? undefined : draft.stages[target]?.role;
+        if (target === -1 || target >= stageIndex || targetRole === null || targetRole === undefined) {
+          addIssue(issues, `${stagePath}.reviewOf`, 'bad_review_of', `reviewOf "${stage.reviewOf}" must name an earlier stage of this flow that has a role`);
+        }
+      }
       if (stage.onFail !== undefined && stage.onFail.goto !== undefined) {
         const goto = stage.onFail.goto;
         const gotoPath = `${stagePath}.onFail.goto`;
@@ -970,11 +1014,16 @@ const crossCheck = (
 
 const buildStageDef = (stage: StageDraft): StageDef | undefined => {
   const exit = stage.exit.filter((gate): gate is GateDef => gate !== undefined);
+  const extras = {
+    ...(stage.tier !== undefined ? { tier: stage.tier } : {}),
+    ...(stage.thinking !== undefined ? { thinking: stage.thinking } : {}),
+    ...(stage.reviewOf !== undefined ? { reviewOf: stage.reviewOf } : {}),
+  };
   if (stage.onFail === undefined) {
-    return { id: stage.id, name: stage.name, role: stage.role, exit };
+    return { id: stage.id, name: stage.name, role: stage.role, exit, ...extras };
   }
   if (stage.onFail.goto === undefined || stage.onFail.maxAttempts === undefined) return undefined;
-  return { id: stage.id, name: stage.name, role: stage.role, exit, onFail: { goto: stage.onFail.goto, maxAttempts: stage.onFail.maxAttempts } };
+  return { id: stage.id, name: stage.name, role: stage.role, exit, onFail: { goto: stage.onFail.goto, maxAttempts: stage.onFail.maxAttempts }, ...extras };
 };
 
 const buildFlowDef = (flow: FlowDraft): FlowDef | undefined => {
