@@ -233,6 +233,37 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
   });
 
+  it('P-29: a vibe session lists the model aliases with their names, reads the thinking category through the level names, launches the ACP binary bare and never prompts', async () => {
+    const harness = makeSpawn('models-vibe');
+    const listed = await listAcpSessionModels(accountOf('vibe'), {
+      baseEnv: { MISTRAL_API_KEY: 'sk-ambient' },
+      spawn: harness.spawn,
+      levelNames: { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' },
+    });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'vibe-acp', args: [] }]);
+    expect(listed.value.map((model) => [model.id, model.displayName])).toEqual([
+      ['mistral-medium-3.5', 'mistral-vibe-cli-latest'],
+      ['local', 'devstral'],
+    ]);
+    expect(listed.value.every((model) => model.efforts?.join() === 'none,low,medium,high,max')).toBe(true);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+    expect(methods).toContain('session/close');
+  });
+
+  it('P-29: a vibe session refused for a missing key is an error, never a prompt, and carries none of the agent text', async () => {
+    const harness = makeSpawn('models-vibe-nokey');
+    const listed = await listAcpSessionModels(accountOf('vibe'), { baseEnv: {}, spawn: harness.spawn });
+    expect(listed.ok).toBe(false);
+    if (listed.ok) throw new Error('unreachable');
+    expect(JSON.stringify(listed.error)).not.toContain('API key');
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
+  });
+
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
     const harness = makeSpawn('models-atomcode');
     const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });

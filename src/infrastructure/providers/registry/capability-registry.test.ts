@@ -90,6 +90,7 @@ describe('model catalog data (P-29)', () => {
       'hermes-subscription',
       'kilo-login',
       'opencode-subscription',
+      'vibe-login',
       'zai-glm',
     ]);
   });
@@ -295,12 +296,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode and grok-build carries isolation evidence, and all five stay capped at experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build and vibe carries isolation evidence, and all six stay capped at experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'vibe'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -318,6 +319,7 @@ describe('isolation evidence (P-44)', () => {
       kilo: 'experimental',
       'grok-build': 'experimental',
       atomcode: 'experimental',
+      vibe: 'experimental',
     });
   });
 
@@ -350,6 +352,20 @@ describe('isolation evidence (P-44)', () => {
     expect((findProvider('atomcode')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
     expect(findRouteKind('atomcode-login')).toMatchObject({
       providerId: 'atomcode',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
+  it('P-28: the vibe record waives G5 with the limit_hit reason, claims no login or permission gate, and its route kind lists session models with unknown billing', () => {
+    const gates = findProvider('vibe')?.gates;
+    expect(gates?.G5).toMatchObject({ kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' });
+    expect(gates?.G1).toBeUndefined();
+    expect(gates?.G3).toBeUndefined();
+    expect(findRouteKind('vibe-login')).toMatchObject({
+      providerId: 'vibe',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',

@@ -49,6 +49,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Grok Build (`grok-build`) | `grok-build-login` | — | — | — | none | experimental |
 | Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
 | AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
+| Mistral Vibe (`vibe`) | `vibe-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License

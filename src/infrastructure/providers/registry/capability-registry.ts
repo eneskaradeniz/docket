@@ -138,6 +138,19 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI documents no switch that keeps it from
+      // reading other tools' files and its home variable holds the API key, so the home is left
+      // alone and the level stays capped at experimental. G1 is absent: the CLI has no status
+      // command, so no login probe exists. G3 and G4 are absent: the permission request and the
+      // usage update are known from source only.
+      providerId: 'vibe',
+      gates: {
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -373,6 +386,22 @@ export const CAPABILITY_REGISTRY = {
       // row reads unknown (P-40) and stays a hand pick with spend consent; no quota channel exists.
       id: 'atomcode-login',
       providerId: 'atomcode',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The CLI runs on an API key, and no plan source inside it says how that key is billed, so
+      // every row reads unknown (P-40) and stays a hand pick with spend consent. The model list
+      // is the user's local configuration, answered by the session as the `model` select; no
+      // quota channel exists.
+      id: 'vibe-login',
+      providerId: 'vibe',
       authMode: 'subscription',
       identity: 'machine_login',
       costKind: 'none',
