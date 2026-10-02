@@ -103,4 +103,12 @@ describe('child environment allowlist (P-8)', () => {
     expect(env.HOME).toBe(BASE_ENV.HOME);
     expect('EVERYTHING_ELSE' in env).toBe(false);
   });
+
+  it("P-44: the claude CLI's own config-dir override passes through; another provider's child never sees it", () => {
+    const ambient = { ...BASE_ENV, CLAUDE_CONFIG_DIR: '/Users/someone/.claude-anthropic' };
+    // A machine login lives where the CLI's documented override variable points, so the value
+    // must survive the allowlist — the CLI resolves its own home, Docket never names one for it.
+    expect(buildChildEnv('claude-code', ambient, {}).CLAUDE_CONFIG_DIR).toBe('/Users/someone/.claude-anthropic');
+    expect('CLAUDE_CONFIG_DIR' in buildChildEnv('codex', ambient, {})).toBe(false);
+  });
 });

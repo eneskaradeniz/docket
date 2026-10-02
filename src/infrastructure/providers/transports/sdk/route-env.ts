@@ -115,11 +115,11 @@ export async function buildRouteEnvironment(
   } else if ((routeKind?.authMode ?? account.authMode) === 'subscription') {
     // The user's own config directory selects the login; Docket never writes into it and never
     // reads credential values from it — it only names the path to the child. The machine login
-    // (no identityDir) reads the CLI's own directory, so the variable is left unset whatever the
-    // allowlist carried: an ambient value would point the run at a stranger's config tree, and on
-    // macOS the login is keyed to the directory's path, so any other directory means logged out.
+    // (no identityDir) reads the CLI's own directory as the CLI itself resolves it, its documented
+    // override variable included, so an ambient value passes through untouched and the variable
+    // is never set here: Docket has no directory of its own to name, and on macOS the login is
+    // keyed to the directory's path, so any other directory means logged out.
     if (account.identityDir !== undefined) env.CLAUDE_CONFIG_DIR = account.identityDir;
-    else delete env.CLAUDE_CONFIG_DIR;
     costKind = eventCostKind(routeKind?.costKind, 'equivalent');
   } else {
     return err({ code: 'unsupported', message: `auth mode ${account.authMode} is not supported by this transport` });

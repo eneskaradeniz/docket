@@ -36,11 +36,14 @@ const BASE_ENV_ALLOWLIST: readonly string[] = [
 ];
 
 /** Non-credential, non-billing variables a provider documents for normal operation, beyond the
- * base set. No built-in CLI needs one today. A provider's config-dir variable is deliberately
- * never listed: the run-scoped value from the config writer replaces whatever the ambient
- * environment carries, so a stray value can never redirect a run into the user's own config tree. */
+ * base set. A provider whose config mechanism redirects to a run-scoped directory is deliberately
+ * never listed here: the config writer's value replaces whatever the ambient environment carries.
+ * A provider whose login lives in its own home (mechanism 'none') lists that home's variable, so
+ * an ambient override reaches the child exactly as the CLI itself would resolve it. */
 const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
-  'claude-code': [],
+  // The CLI's own documented config-dir override: a machine login lives where it points, so the
+  // login probe and a run must read the same one.
+  'claude-code': ['CLAUDE_CONFIG_DIR'],
   codex: [],
   agy: [],
   copilot: [],
