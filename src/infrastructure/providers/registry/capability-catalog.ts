@@ -21,6 +21,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   atomcode: { subscription: 'atomcode-login' },
   reasonix: { subscription: 'reasonix-login' },
   vibe: { subscription: 'vibe-login' },
+  mimo: { subscription: 'mimo-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

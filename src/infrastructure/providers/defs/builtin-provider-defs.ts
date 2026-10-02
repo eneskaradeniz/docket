@@ -414,4 +414,40 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://github.com/mistralai/mistral-vibe' },
     mark: null,
   },
+  {
+    id: 'mimo',
+    displayName: 'MiMo Code',
+    bins: ['mimo'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `mimo providers list` prints "N credentials" without opening a browser; N > 0 means only
+    // that some credential is stored. The CLI's own `providers login` is never run by discovery.
+    authProbe: { args: ['providers', 'list'], parse: 'credential-count' },
+    transport: 'acp',
+    // The CLI has no thought-level option: its model select lists every model plain and once per
+    // level (`<model>/low|medium|high`), so the level joins the model id. `mimo models --verbose`
+    // names the same three variants; no other level is offered.
+    effortArg: { kind: 'model-suffix', separator: '/' },
+    levelNames: { low: 'low', medium: 'medium', high: 'high' },
+    // The login lives in the CLI's own data directory, so no run-scoped directory is passed: the
+    // launch sets no variable and no flag, and no isolation is claimed.
+    config: { mechanism: 'none' },
+    // Never `--yolo` or `--dangerously-skip-permissions`: what the default agent does not allow
+    // itself is asked of the user.
+    buildLaunch: () => ({ args: ['acp'], env: {}, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://github.com/XiaomiMiMo/MiMo-Code' },
+    mark: null,
+  },
 ];

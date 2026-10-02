@@ -15,7 +15,7 @@ import type { AccountRecord } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
 import { BUILTIN_PROVIDER_DEFS } from '../defs/builtin-provider-defs';
-import { effortOfProviderLevel, type LevelNames } from '../defs/provider-def';
+import { effortOfProviderLevel, type EffortArg, type LevelNames } from '../defs/provider-def';
 import { buildChildEnv } from '../launch/index';
 import {
   ACP_INITIALIZE_PARAMS,
@@ -64,6 +64,9 @@ const ACP_SESSION_LAUNCHES: Readonly<
   // reads its own home, which also holds its key, so no run-scoped redirection exists for it.
   vibe: { command: 'vibe-acp', args: [] },
   // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
+  // The ACP server needs no login to open a session; its model select carries every model plain
+  // and once per level (`<model>/<level>`), which the listing folds back into one row.
+  mimo: { command: 'mimo', args: ['acp'], minTimeoutMs: 30_000 },
   kilo: {
     command: 'kilo',
     args: ['acp'],
@@ -76,6 +79,10 @@ const ACP_SESSION_LAUNCHES: Readonly<
  * one place that text lives. */
 const notLoggedInRuleOf = (provider: string) =>
   BUILTIN_PROVIDER_DEFS.find((def) => def.id === provider)?.authProbe?.acpSession?.notLoggedIn;
+
+/** The effort parameter of the provider's own definition — the one place that declares it. */
+const effortArgOf = (provider: string): EffortArg | undefined =>
+  BUILTIN_PROVIDER_DEFS.find((def) => def.id === provider)?.effortArg;
 
 export interface AcpSessionCatalogConfig {
   /** Overrides the provider's launch command and ACP arguments (tests point it at a fixture). */
@@ -124,6 +131,36 @@ const configOptionEntries = (options: readonly unknown[]): readonly ConfigOption
   return entries;
 };
 
+/** A provider whose levels ride the model id lists each model plain and once per level. A row
+ * whose id is `<listed row><separator><level name>` folds into that listed row, which then offers
+ * the levels its variants stood for. A suffixed id with no plain row listed stays whole: it is
+ * then the only id the session accepts for that model, and splitting it would invent one. */
+const foldSuffixedModels = (
+  rows: readonly LiveModel[],
+  separator: string,
+  levelNames: LevelNames | undefined,
+): readonly LiveModel[] => {
+  const listed = new Set(rows.map((row) => row.id));
+  const levelsOf = new Map<string, EffortLevel[]>();
+  const kept: LiveModel[] = [];
+  for (const row of rows) {
+    const cut = row.id.lastIndexOf(separator);
+    const base = cut > 0 ? row.id.slice(0, cut) : undefined;
+    const level = cut > 0 ? effortOfProviderLevel(levelNames, row.id.slice(cut + separator.length)) : undefined;
+    if (base === undefined || level === undefined || !listed.has(base)) {
+      kept.push(row);
+      continue;
+    }
+    const levels = levelsOf.get(base) ?? [];
+    if (!levels.includes(level)) levels.push(level);
+    levelsOf.set(base, levels);
+  }
+  return kept.map((row) => {
+    const levels = levelsOf.get(row.id);
+    return levels === undefined ? row : { ...row, efforts: levels };
+  });
+};
+
 interface ParsedSession {
   readonly models: readonly LiveModel[];
   readonly efforts?: readonly EffortLevel[];
@@ -136,6 +173,7 @@ const parseSessionAnswer = (
   result: unknown,
   levelNames: LevelNames | undefined,
   modelOptionOptional: boolean,
+  effortArg: EffortArg | undefined,
 ): ParsedSession | undefined => {
   if (!isRecord(result)) return undefined;
   const rows: LiveModel[] = [];
@@ -187,7 +225,8 @@ const parseSessionAnswer = (
   }
 
   if (!Array.isArray(models) && !modelOptionSeen && !(modelOptionOptional && isRecord(result))) return undefined;
-  return { models: rows, ...(efforts === undefined ? {} : { efforts }) };
+  const folded = effortArg?.kind === 'model-suffix' ? foldSuffixedModels(rows, effortArg.separator, levelNames) : rows;
+  return { models: folded, ...(efforts === undefined ? {} : { efforts }) };
 };
 
 /** A provider that lists its models in the initialize answer itself (`_meta.modelState`), before
@@ -274,13 +313,13 @@ export async function listAcpSessionModels(
       }
       return err(toCatalogError(created.error));
     }
-    const parsed = parseSessionAnswer(created.value, config.levelNames, launch.modelOptionOptional === true);
+    const parsed = parseSessionAnswer(created.value, config.levelNames, launch.modelOptionOptional === true, effortArgOf(account.provider));
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }
 
     await closeAcpSession(connection, initialized.value, created.value);
-    return ok(parsed.models.map((row) => ({ ...row, ...(parsed.efforts === undefined ? {} : { efforts: parsed.efforts }) })));
+    return ok(parsed.models.map((row) => ({ ...(parsed.efforts === undefined ? {} : { efforts: parsed.efforts }), ...row })));
   } finally {
     connection.close();
     rmSync(scratch, { recursive: true, force: true });

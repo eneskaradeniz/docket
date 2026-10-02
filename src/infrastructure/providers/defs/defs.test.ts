@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -134,6 +134,7 @@ describe('provider definitions (P-1)', () => {
       atomcode: '',
       reasonix: '',
       vibe: '',
+      mimo: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -255,6 +256,7 @@ describe('provider definitions (P-1)', () => {
       atomcode: { kind: 'session-option', configId: 'reasoning_effort' },
       reasonix: { kind: 'session-option', configId: 'effort' },
       vibe: { kind: 'session-option', category: 'thinking' },
+      mimo: { kind: 'model-suffix', separator: '/' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -278,7 +280,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -579,7 +581,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -653,5 +655,53 @@ describe('vibe definition (P-35)', () => {
 
   it('P-1: permissionAsk stays unknown until a live request proves it, and no quota or cost is reported', () => {
     expect(vibe().capabilities).toMatchObject({ permissionAsk: 'unknown', quotaReport: 'none', costReport: 'none' });
+  });
+});
+
+describe('mimo definition (P-35)', () => {
+  const mimo = (): ProviderDef => defById('mimo');
+
+  it('P-35: mimo launches its ACP subcommand, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    expect(mimo().bins).toEqual(['mimo']);
+    expect(mimo().versionArgs).toEqual(['--version']);
+    expect(mimo().helpArgs).toEqual(['--help']);
+    expect(mimo().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['acp'], env: {}, stdin: 'prompt' });
+    expect(mimo().resume).toBe('protocol');
+    expect(isProviderDef(mimo())).toBe(true);
+  });
+
+  it('P-44: the login stays in the CLI home, so the launch sets no config variable, never auto-approves and claims no isolation', () => {
+    expect(mimo().config).toEqual({ mechanism: 'none' });
+    expect(mimo().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'xiaomi/mimo-v2.6-pro' }]) {
+      const launch = mimo().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      expect(JSON.stringify(launch)).not.toMatch(/yolo|skip-permissions|never-ask|trust|--model|--variant/);
+    }
+  });
+
+  it('P-43: the effort joins the model id after a slash and only the three documented levels are named', () => {
+    expect(mimo().effortArg).toEqual({ kind: 'model-suffix', separator: '/' });
+    expect(mimo().levelNames).toEqual({ low: 'low', medium: 'medium', high: 'high' });
+    const run = (model: string | undefined, effort: LaunchInput['effort']): string | undefined =>
+      effortModelId(mimo().effortArg, model, effort, mimo().levelNames);
+    expect(run('xiaomi/mimo-v2.6-pro', 'high')).toBe('xiaomi/mimo-v2.6-pro/high');
+    expect(run('mimo/mimo-auto', 'low')).toBe('mimo/mimo-auto/low');
+    expect(run('xiaomi/mimo-v2.6-pro', undefined)).toBe('xiaomi/mimo-v2.6-pro');
+    expect(run(undefined, 'high')).toBeUndefined();
+    expect(run('xiaomi/mimo-v2.6-pro', 'xhigh')).toBe('xiaomi/mimo-v2.6-pro');
+    expect(run('xiaomi/mimo-v2.6-pro', 'max')).toBe('xiaomi/mimo-v2.6-pro');
+  });
+
+  it('P-45: the login probe is the credential listing, and no probe could start a login', () => {
+    expect(mimo().authProbe).toEqual({ args: ['providers', 'list'], parse: 'credential-count' });
+    expect(mimo().helpNeedsLogin).toBeUndefined();
+    for (const probe of [mimo().versionArgs, mimo().helpArgs, mimo().authProbe?.args]) {
+      expect(JSON.stringify(probe)).not.toMatch(/login|upgrade|uninstall/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a live request proves it, and no quota or cost is reported', () => {
+    expect(mimo().capabilities).toMatchObject({ permissionAsk: 'unknown', quotaReport: 'none', costReport: 'none' });
   });
 });
