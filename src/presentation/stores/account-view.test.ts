@@ -5,9 +5,10 @@
 // stays in the Settings window. Api and change signal are injected fakes.
 import { describe, expect, it } from 'vitest';
 
+import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
 import type { Api } from '../../api/api';
 import type { AccountDetailView, Query } from '../../api/queries';
-import { createAccountViewStore, policyKey, windowBars, type AccountViewChange, type AccountViewChangeSignal } from './account-view';
+import { createAccountViewStore, editInSettingsTarget, limitBand, policyKey, windowBars, type AccountViewChange, type AccountViewChangeSignal } from './account-view';
 
 const detailView: AccountDetailView = {
   account: { id: 'acc-1', provider: 'claude-code', label: 'Claude Max', authMode: 'subscription', plan: 'Max', limitPolicy: 'wait_resume' },
@@ -155,5 +156,28 @@ describe('policy band (U-20)', () => {
     expect(policyKey('fallback_account')).toBe('account.policy.fallback_account');
     expect(policyKey('ask')).toBe('account.policy.ask');
     expect(policyKey('baska-bir-sey')).toBe('account.policy.wait_resume');
+  });
+});
+
+describe('U-37: the account view links into Settings', () => {
+  it('U-37: the limit band is one sentence — policy plus reserve (Yok, one share, or kısa · uzun)', () => {
+    expect(limitBand('tr', 'wait_resume', { short: null, long: null })).toBe('Limit dolunca: Sıfırlanınca sürdür · Rezerv: Yok');
+    expect(limitBand('tr', 'wait_resume', { short: 0, long: 0 })).toContain('Rezerv: Yok');
+    expect(limitBand('tr', 'ask', { short: 0.1, long: 0.1 })).toBe('Limit dolunca: Bana sor · Rezerv: %10');
+    expect(limitBand('tr', 'switch_pool', { short: 0.1, long: 0.25 })).toBe(
+      'Limit dolunca: Başka havuza geç · Rezerv: kısa %10 · uzun %25',
+    );
+    expect(limitBand('en', 'wait_resume', { short: 0.1, long: 0.25 })).toBe(
+      'When the limit is full: Resume on reset · Reserve: short 10% · long 25%',
+    );
+  });
+
+  it('U-37: a band whose reserve is unknown still reads as one sentence (Yok)', () => {
+    expect(limitBand('tr', 'wait_resume', null)).toBe('Limit dolunca: Sıfırlanınca sürdür · Rezerv: Yok');
+  });
+
+  it("U-37: Ayarlar'da düzenle opens Settings on that account's sub-page, Limitler tab", () => {
+    const state = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', ...editInSettingsTarget('acc-1') });
+    expect(state).toMatchObject({ open: true, section: 'accounts', subPage: 'acc-1', tab: 'limits' });
   });
 });

@@ -159,8 +159,12 @@ for (const [sizeName, theme] of combos) {
     // underneath (blurred behind the scrim, still on the DOM) exactly as it was.
     await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
     await see('Hesaplar');
+    // U-37: it lands on that account's sub-page, Limitler tab, not on the list.
+    await page.getByRole('tab', { name: 'Limitler', selected: true }).waitFor({ state: 'visible', timeout: WAIT });
     await see('Ayarlar\'da düzenle');
     await shot('settings-panel');
+    // Esc leaves the sub-page first (U-28), then closes the panel.
+    await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await see('Ayarlar\'da düzenle');
