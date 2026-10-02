@@ -10,7 +10,7 @@ import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../.
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
-import { providerLevelOf, type ProviderDef } from '../../defs/index';
+import { effortModelId, providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { ACP_INITIALIZE_PARAMS, ACP_PROTOCOL_VERSION } from './connection';
 import { mapSessionUpdate, transcriptEntryOf, type TranscriptEntry } from './map-update';
@@ -514,13 +514,21 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
           // model that cannot do the work (an image model), and the thought levels on offer
           // belong to the selected model, so they are read from the answer to the model change.
           let levelSession = createdSession;
+          // A `model-suffix` effort rides the model id itself, so the id the session is asked for
+          // is `<model><separator><level>`; a session that does not offer that id gets the plain
+          // model (the effort is dropped, never guessed), and an unpinned route sends no effort.
+          const suffixedModel = effortModelId(def.effortArg, request.route.model, request.effort, def.levelNames);
+          const wantedModel =
+            suffixedModel !== undefined && effortOptionId(createdSession, { category: 'model' }, suffixedModel) !== undefined
+              ? suffixedModel
+              : request.route.model;
           const modelOptionId =
-            request.route.model === undefined ? undefined : effortOptionId(createdSession, { category: 'model' }, request.route.model);
+            wantedModel === undefined ? undefined : effortOptionId(createdSession, { category: 'model' }, wantedModel);
           if (modelOptionId !== undefined) {
             const selected = await requestRpc('session/set_config_option', {
               sessionId,
               configId: modelOptionId,
-              value: request.route.model,
+              value: wantedModel,
             });
             const answered = selected.kind === 'result' ? asRecord(selected.result) : null;
             if (answered !== null && Array.isArray(answered.configOptions) && answered.configOptions.length > 0) {

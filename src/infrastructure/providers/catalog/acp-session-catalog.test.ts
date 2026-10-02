@@ -264,6 +264,44 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
   });
 
+  it('P-43: a mimo session lists each model once — the `<model>/<level>` variants fold into the plain row and its efforts — and never prompts', async () => {
+    const harness = makeSpawn('models-mimo');
+    const listed = await listAcpSessionModels(accountOf('mimo'), {
+      baseEnv: {},
+      spawn: harness.spawn,
+      levelNames: { low: 'low', medium: 'medium', high: 'high' },
+    });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'mimo', args: ['acp'] }]);
+    expect(listed.value.map((model) => model.id)).toEqual(['mimo/mimo-auto', 'xiaomi/mimo-v2.6-pro']);
+    expect(listed.value.every((model) => model.efforts?.join() === 'low,medium,high')).toBe(true);
+    expect(listed.value.some((model) => model.id.endsWith('/high'))).toBe(false);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+    expect(methods).toContain('session/close');
+  });
+
+  it('P-43: a level the CLI does not name keeps its variant out of the efforts, and a row with no plain sibling stays whole', async () => {
+    const harness = makeSpawn('models-mimo');
+    const listed = await listAcpSessionModels(accountOf('mimo'), {
+      baseEnv: {},
+      spawn: harness.spawn,
+      levelNames: { high: 'high' },
+    });
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    // `/low` and `/medium` name no known level, so they are not folded: they stay listed whole.
+    expect(listed.value.filter((model) => model.id.startsWith('mimo/mimo-auto')).map((model) => model.id)).toEqual([
+      'mimo/mimo-auto',
+      'mimo/mimo-auto/low',
+      'mimo/mimo-auto/medium',
+    ]);
+    expect(listed.value.find((model) => model.id === 'mimo/mimo-auto')?.efforts).toEqual(['high']);
+  });
+
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
     const harness = makeSpawn('models-atomcode');
     const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });

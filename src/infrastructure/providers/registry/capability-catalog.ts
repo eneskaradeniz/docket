@@ -20,6 +20,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   'grok-build': { subscription: 'grok-build-login' },
   atomcode: { subscription: 'atomcode-login' },
   vibe: { subscription: 'vibe-login' },
+  mimo: { subscription: 'mimo-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

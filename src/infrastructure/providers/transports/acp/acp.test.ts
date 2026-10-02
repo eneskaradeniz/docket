@@ -647,4 +647,58 @@ describe('acp transport', () => {
       expect(setsOf(xhigh.logPath)).toEqual([]);
     });
   });
+
+  describe('model-suffix effort (mimo shape)', () => {
+    const SUFFIX: EffortArg = { kind: 'model-suffix', separator: '/' };
+    const NAMES = { low: 'low', medium: 'medium', high: 'high' } as const;
+    const PRO = 'xiaomi/mimo-v2.6-pro';
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-43: a pinned model with an effort selects `<model>/<level>` as the model, sets no other option and then prompts', async () => {
+      const run = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'high' }), SUFFIX, NAMES);
+      await collect(run.handle.events);
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: `${PRO}/high` }]);
+    });
+
+    it('P-43: the separator is not a model boundary — a model id that itself contains slashes gets exactly one suffix', async () => {
+      const run = await startRun('models-mimo', requestOf(runCwd(), { model: 'mimo/mimo-auto', effort: 'low' }), SUFFIX, NAMES);
+      await collect(run.handle.events);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'mimo/mimo-auto/low' }]);
+    });
+
+    it('P-43: an unpinned route sends no effort and no model change', async () => {
+      const run = await startRun('models-mimo', requestOf(runCwd(), { effort: 'high' }), SUFFIX, NAMES);
+      await collect(run.handle.events);
+      expect(setsOf(run.logPath)).toEqual([]);
+    });
+
+    it('P-43: no effort selects the plain model id, and a level the CLI does not name (xhigh) is never suffixed', async () => {
+      const plain = await startRun('models-mimo', requestOf(runCwd(), { model: PRO }), SUFFIX, NAMES);
+      await collect(plain.handle.events);
+      expect(setsOf(plain.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
+
+      const xhigh = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'xhigh' }), SUFFIX, NAMES);
+      await collect(xhigh.handle.events);
+      expect(setsOf(xhigh.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
+    });
+
+    it('P-43: a suffixed id the session does not offer falls back to the plain model, and an unlisted model sets nothing', async () => {
+      const fallback = await startRun('models-mimo', requestOf(runCwd(), { model: PRO, effort: 'minimal' }), SUFFIX, { minimal: 'minimal' });
+      await collect(fallback.handle.events);
+      expect(setsOf(fallback.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: PRO }]);
+
+      const unlisted = await startRun('models-mimo', requestOf(runCwd(), { model: 'xiaomi/not-listed', effort: 'high' }), SUFFIX, NAMES);
+      await collect(unlisted.handle.events);
+      expect(setsOf(unlisted.logPath)).toEqual([]);
+    });
+  });
 });
