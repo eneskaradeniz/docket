@@ -593,6 +593,56 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     mark: null,
   },
   {
+    id: 'kimi',
+    displayName: 'Kimi Code',
+    bins: ['kimi'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // The CLI has no status command, and the credential file's name after login is not
+    // documented, so the login state is whether any file exists under its credentials directory.
+    // Presence only: nothing is ever opened or read, and presence does not prove the credential
+    // is still valid. The terminal device-code login and the local `web` server are the user's
+    // own commands — no probe ever starts either.
+    authProbe: { args: [], presenceDir: { homeEnv: 'KIMI_CODE_HOME', homeDir: '.kimi-code', dir: 'credentials' } },
+    transport: 'acp',
+    // The thought-level selector is found by its reserved category, never by its id `thinking`:
+    // the level list belongs to the selected model and is read from the answer to the model
+    // change. The level names are the level names Docket knows, so no map exists — a value that
+    // names no level (`off`, `on`) is never offered, and `off` in particular never rides a run.
+    effortArg: { kind: 'session-option', category: 'thought_level' },
+    // The login, config and sessions all live in the CLI's own global home (`~/.kimi-code`, or
+    // wherever the machine's own KIMI_CODE_HOME points), so no run-scoped redirection exists and
+    // the variable is never set: a per-run home would drop the login (P-44).
+    config: { mechanism: 'none' },
+    // The ACP entry is the subcommand `acp`. Never `--yolo` or `--auto`: the CLI's `default` mode
+    // asks for approval and every ask reaches the user, and the session's `mode` option is never
+    // moved to its far ends. Telemetry and the auto-updater are turned off by their documented
+    // variables on every run.
+    buildLaunch: () => ({
+      args: ['acp'],
+      env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
+      stdin: 'prompt',
+    }),
+    // The live `initialize` advertises loadSession.
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      // The session/request_permission round trip is unproven until an operator run.
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      // The live `initialize` advertises image prompts.
+      images: true,
+      quotaReport: 'none',
+      // The ACP usage_update carries context size only — the engine itself has no cost data.
+      costReport: 'none',
+    },
+    installHint: { url: 'https://moonshotai.github.io/kimi-code/' },
+    mark: null,
+  },
+  {
     id: 'amp',
     displayName: 'Amp',
     bins: ['amp'],

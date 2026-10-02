@@ -820,6 +820,69 @@ describe('acp transport', () => {
     });
   });
 
+  describe('model then thinking by category (kimi shape)', () => {
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-15: the kimi session shape — model select plus a thinking thought_level select recomputed on a model change — opens a session, maps its turn and never sends a level the model does not list', async () => {
+      // The level list belongs to the selected model, so the effort is found in the answer to the
+      // model change: k3 lists no `xhigh`, and the run must not send what the model does not offer.
+      const run = await startRun(
+        'models-kimi',
+        requestOf(runCwd(), { model: 'kimi-code/k3', effort: 'xhigh' }),
+        { kind: 'session-option', category: 'thought_level' },
+      );
+      const events = await collect(run.handle.events);
+
+      expect(events.some((event) => event.type === 'session_started')).toBe(true);
+      expect(events.filter((event) => event.type === 'finished')).toHaveLength(1);
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/k3' }]);
+    });
+
+    it('P-43: a level the selected model lists joins after the model selection, and the option is found by its category, never by its id', async () => {
+      const run = await startRun(
+        'models-kimi',
+        requestOf(runCwd(), { model: 'kimi-code/k3', effort: 'high' }),
+        { kind: 'session-option', category: 'thought_level' },
+      );
+      await collect(run.handle.events);
+
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/k3' },
+        { sessionId: 'sess_fake_1', configId: 'thinking', value: 'high' },
+      ]);
+    });
+
+    it('P-43: `off` is never sent — the `none` level names no value the option offers, and the mode option is never touched', async () => {
+      const off = await startRun(
+        'models-kimi',
+        requestOf(runCwd(), { model: 'kimi-code/kimi-for-coding', effort: 'none' }),
+        { kind: 'session-option', category: 'thought_level' },
+      );
+      await collect(off.handle.events);
+      expect(setsOf(off.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: 'kimi-code/kimi-for-coding' },
+      ]);
+      // The asking `default` mode stays: no launch ever moves the session to `auto` or `yolo`.
+      expect(setsOf(off.logPath).some((params) => params['configId'] === 'mode')).toBe(false);
+    });
+  });
+
   describe('modes only (kiro shape)', () => {
     it('P-15: the kiro session shape — modes without configOptions, custom _kiro.dev notifications — opens a session and maps its turn without an error', async () => {
       // The live agent answers session/new with modes and nothing else, then floods its own

@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'amp'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'amp'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -104,7 +104,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
     expect(defById('amp').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -140,6 +140,7 @@ describe('provider definitions (P-1)', () => {
       qwen: '',
       qoder: '',
       kiro: '',
+      kimi: '',
       amp: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
@@ -273,6 +274,7 @@ describe('provider definitions (P-1)', () => {
       mimo: { kind: 'model-suffix', separator: '/' },
       qoder: { kind: 'session-option', category: 'thought_level' },
       kiro: { kind: 'flag', flag: '--effort' },
+      kimi: { kind: 'session-option', category: 'thought_level' },
       // The CLI documents no effort flag: the mode bundles the effort with the model (P-41: ignored).
       amp: undefined,
     };
@@ -298,7 +300,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'amp']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi', 'amp']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -635,7 +637,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, qoder, kiro) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, qoder, kiro, kimi) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -922,6 +924,69 @@ describe('kiro definition (P-35)', () => {
 
   it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
     expect(kiro().capabilities).toMatchObject({
+      permissionAsk: 'unknown',
+      quotaReport: 'none',
+      costReport: 'none',
+      images: true,
+      mcp: true,
+    });
+  });
+});
+
+describe('kimi definition (P-35)', () => {
+  const kimi = (): ProviderDef => defById('kimi');
+
+  it('P-35: kimi launches its ACP subcommand, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    expect(kimi().bins).toEqual(['kimi']);
+    expect(kimi().versionArgs).toEqual(['--version']);
+    expect(kimi().helpArgs).toEqual(['--help']);
+    expect(kimi().buildLaunch(LAUNCH_INPUT)).toEqual({
+      args: ['acp'],
+      env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
+      stdin: 'prompt',
+    });
+    expect(kimi().resume).toBe('protocol');
+    expect(isProviderDef(kimi())).toBe(true);
+  });
+
+  it('P-44: the login reaches a run through the CLI\'s global home, so the launch never sets KIMI_CODE_HOME, never leaves the default approval mode and claims no isolation', () => {
+    expect(kimi().config).toEqual({ mechanism: 'none' });
+    expect(kimi().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'kimi-code/kimi-for-coding' }]) {
+      const launch = kimi().buildLaunch(input);
+      expect(Object.keys(launch.env)).not.toContain('KIMI_CODE_HOME');
+      expect(launch.args).toEqual(['acp']);
+      // `yolo` and `auto` are the far ends of the CLI\'s mode list and no switch may reach a
+      // launch that picks them; the run stays in the asking default and each ask reaches the user.
+      expect(JSON.stringify(launch)).not.toMatch(/--yolo|--auto|--plan|yolo|approval/);
+    }
+  });
+
+  it('P-43: the effort is the thought_level session option found by its category — the CLI\'s level names are the level names Docket knows, so no map exists and `off` is never offered', () => {
+    expect(kimi().effortArg).toEqual({ kind: 'session-option', category: 'thought_level' });
+    expect(kimi().levelNames).toBeUndefined();
+    expect(providerLevelOf(kimi().levelNames, 'high')).toBe('high');
+    expect(effortOfProviderLevel(kimi().levelNames, 'xhigh')).toBe('xhigh');
+    // `off` and `on` appear in the CLI's own thinking surface and name no level: never offered,
+    // so the run never sends a thinking-off value the user did not pick as a level.
+    expect(effortOfProviderLevel(kimi().levelNames, 'off')).toBeUndefined();
+    expect(effortOfProviderLevel(kimi().levelNames, 'on')).toBeUndefined();
+  });
+
+  it('P-45: the login probe reads only whether a file exists under the CLI\'s credentials directory, and no probe could start a login', () => {
+    expect(kimi().authProbe).toEqual({
+      args: [],
+      presenceDir: { homeEnv: 'KIMI_CODE_HOME', homeDir: '.kimi-code', dir: 'credentials' },
+    });
+    expect(kimi().helpNeedsLogin).toBeUndefined();
+    for (const probe of [kimi().versionArgs, kimi().helpArgs, kimi().authProbe?.args]) {
+      // The terminal device-code login and the local web server are the user's own commands.
+      expect(JSON.stringify(probe)).not.toMatch(/login|logout|web|provider|upgrade|migrate/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
+    expect(kimi().capabilities).toMatchObject({
       permissionAsk: 'unknown',
       quotaReport: 'none',
       costReport: 'none',

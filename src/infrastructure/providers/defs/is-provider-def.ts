@@ -99,6 +99,12 @@ function isPresenceFileProbe(value: unknown): boolean {
   return isNonEmptyString(value['homeEnv']) && isNonEmptyString(value['homeDir']) && isNonEmptyString(value['file']);
 }
 
+function isPresenceDirProbe(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return isNonEmptyString(value['homeEnv']) && isNonEmptyString(value['homeDir']) && isNonEmptyString(value['dir']);
+}
+
 function isTimeoutMs(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
 }
@@ -117,7 +123,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isAgentDelegate(value['agentDelegate'])) return false;
   if (!isNonEmptyStringArray(value['versionArgs'])) return false;
   const authProbe = value['authProbe'];
-  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isPresenceFileProbe(authProbe['presenceFile']) && isProbeEnv(authProbe['env']))) {
+  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isPresenceFileProbe(authProbe['presenceFile']) && isPresenceDirProbe(authProbe['presenceDir']) && isProbeEnv(authProbe['env']))) {
     return false;
   }
   if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count' && authProbe['parse'] !== 'logged-out-text' && authProbe['parse'] !== 'provider-key-present' && authProbe['parse'] !== 'logged-in-json' && authProbe['parse'] !== 'account-null-json') {
