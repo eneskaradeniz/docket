@@ -133,6 +133,7 @@ export interface AccountRecord {
   readonly endpoint?: string;            // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
   readonly identityDir?: string;         // absolute path of the user's own config directory; subscription route kinds only
   readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
+  readonly consentedModels?: readonly string[]; // model ids the user allowed for metered or unverified use; the asterisk means the route's default model
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 export interface AccountRepo {
@@ -445,8 +446,13 @@ export function decideProposalUseCase(
 
 // accounts.ts
 export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
-export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
+export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
+
+// spend-consent.ts
+type AccountCap = AccountRecord['caps'][number];
+export function grantSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly cap?: AccountCap; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model' | 'invalid_cap'>>;
+export function revokeSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model'>>;
 
 // projects.ts — the Project & Repo layer (Phase 3.5, S1/S3/S4)
 export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
@@ -499,10 +505,11 @@ export interface ExecuteRunInput { readonly item: QueueItem; readonly role: Role
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -525,6 +532,12 @@ export function enqueueStage(
   input: { readonly id: WorkOrderId; readonly priority?: number },
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>>;
 ```
+
+A run whose model billing is not `included` is refused with `needs_spend_consent` unless the model
+is in the account's `consentedModels` and the account has at least one spend cap; an unpinned model
+takes the route kind's default billing, else `included` for a subscription account and `metered`
+for every other auth mode. Billing comes from the `ModelCatalog` port. The refusal happens before
+any write, so a refused run leaves every store unchanged.
 
 Rules:
 - **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
@@ -800,7 +813,7 @@ Ports and use cases for Phase 3 are specified with their rules in
 // ports/quota-probe.ts
 export type QuotaProbeError = 'not_installed' | 'not_logged_in' | 'probe_failed' | 'unknown_provider';
 export interface MeterReading {
-  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' };
+  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown' };
   readonly meter: Omit<Meter, 'id' | 'poolId'>;
 }
 export interface QuotaProbe {
@@ -810,7 +823,7 @@ export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | u
 
 // use-cases/quota-poll.ts
 export function pollQuota(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'capabilities'>,
   probes: QuotaProbeResolver,
   input: { readonly accountId: AccountId },
 ): Promise<Result<readonly Meter[], QuotaProbeError>>;
