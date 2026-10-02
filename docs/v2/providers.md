@@ -73,6 +73,9 @@ interface LaunchInput {
 3. **Billing mode is Docket's decision.** The run environment is built from an allowlist; a stray
    `ANTHROPIC_API_KEY` (or similar) is removed unless the chosen account is that API key.
 4. **Kill the whole process group** on stop; inactivity and first-output watchdogs per provider.
+   A watchdog that fires stops the run and emits `error` with `class: 'timeout'` and
+   `reason: 'first_output_timeout' | 'inactivity_timeout'`, then `finished` with `reason: 'failed'`.
+   The timers are paused while a permission question is unanswered and while a tool call is in flight.
 5. **Resume:** `specify` (Docket passes a session id), `capture` (read it from the stream),
    `protocol` (`session/load`, thread resume). If resume fails, start fresh with a summary of the
    previous transcript.
