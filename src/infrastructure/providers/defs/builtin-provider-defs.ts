@@ -76,7 +76,14 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     // run directory until a dedicated variable exists.
     config: { mechanism: 'env-var', name: 'HOME' },
     buildLaunch: (input) => ({
-      args: ['--input-format', 'stream-json', '--output-format', 'stream-json', ...effortFlagArgs(AGY_EFFORT, input.effort)],
+      args: [
+        '--input-format',
+        'stream-json',
+        '--output-format',
+        'stream-json',
+        ...(input.resume === undefined ? [] : ['--conversation', input.resume.sessionRef]),
+        ...effortFlagArgs(AGY_EFFORT, input.effort),
+      ],
       env: { HOME: input.configDir },
       stdin: 'prompt',
     }),

@@ -197,6 +197,7 @@ describe('createModelCatalog (P-29)', () => {
     expect(listed).toEqual([
       {
         id: 'claude-fable-5-1[1m]',
+        resolvedId: 'claude-fable-5-1',
         displayName: 'Fable [1m]',
         source: 'live',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
@@ -385,6 +386,7 @@ describe('createModelCatalog (P-29)', () => {
     expect(await catalog.list(ACCOUNT_A)).toEqual([
       {
         id: 'glm-5.3',
+        resolvedId: 'glm-5.3',
         displayName: 'GLM 5.3',
         source: 'live',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] },
