@@ -10,6 +10,7 @@ export type Query =
   | { readonly type: 'repo.board'; readonly repo: string }
   | { readonly type: 'cockpit'; readonly project?: string }
   | { readonly type: 'account.detail'; readonly id: string }
+  | { readonly type: 'account.models'; readonly accountId: string; readonly refresh?: boolean }
   | { readonly type: 'project.spend'; readonly project: string }
   | { readonly type: 'repos.list' }
   | { readonly type: 'settings.accounts' }
@@ -202,6 +203,36 @@ export interface SettingsBindingView {
 export interface SettingsAccountsView {
   readonly accounts: readonly SettingsAccountView[];
   readonly bindings: readonly SettingsBindingView[];
+}
+
+// --- account.models (P-29, P-40) -----------------------------------------------------------------
+
+/** One model of the account's merged catalog as the surface sees it: registry capabilities where
+ *  known, unknown-but-selectable otherwise. `stale` marks the last good list kept after a failed
+ *  refresh; `autoClassified` marks a tier that came from a family-id pattern, not the registry. */
+export interface ModelView {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly tier?: 'strong' | 'balanced' | 'fast';
+  readonly thinking:
+    | { readonly kind: 'none' }
+    | { readonly kind: 'levels'; readonly levels: readonly string[] }
+    | { readonly kind: 'unknown' };
+  readonly billing: 'included' | 'metered' | 'unknown';
+  readonly source: 'live' | 'bundled';
+  readonly stale: boolean;
+  readonly autoClassified: boolean;
+  /** This account's recorded per-model consent (P-40); the account-level marker never lands here. */
+  readonly consented: boolean;
+}
+
+export interface AccountModelsView {
+  readonly models: readonly ModelView[];
+  /** True when the account-level marker `'*'` sits in the account's consents (P-40): the route's
+   *  own default model is consented. */
+  readonly defaultConsented: boolean;
+  /** The billing an unpinned run on this account would take (P-40). */
+  readonly defaultBilling: 'included' | 'metered' | 'unknown';
 }
 
 // --- run.events ---------------------------------------------------------------------------------------

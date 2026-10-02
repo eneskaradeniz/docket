@@ -208,12 +208,12 @@ const buildFallbackPrompt = async (
 };
 
 /** The account-level consent marker: the user allowed the route's own default model (P-40). */
-const DEFAULT_MODEL_CONSENT = '*';
+export const DEFAULT_MODEL_CONSENT = '*';
 
 /** An unpinned route runs the CLI's default model, whose billing the catalog cannot name. The
  *  route kind fixes it when it knows (`defaultBilling`); only a subscription rides a plan, every
  *  other auth mode is billed per use by nature. */
-const defaultBillingOf = (
+export const defaultBillingOf = (
   capabilities: Pick<AppDeps, 'capabilities'>['capabilities'],
   account: AccountRecord | undefined,
 ): Billing => {
