@@ -1062,6 +1062,22 @@ describe('executeRun — spend consent', () => {
     expect(h.transport.requests()).toEqual([]);
   });
 
+  it('P-40: an unknown-billing model the account has no reading for yet runs only after its allowance pool exists', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+
+    // No quota reading exists, so the catalog answer stands: unknown asks for consent.
+    const before = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(before).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+
+    // The usage report arrives with a bucket scoped to the model: the plan covers it, no consent.
+    await h.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'model-x weekly', kind: 'allowance', appliesTo: [{ exact: 'model-x' }] },
+    ]);
+    const after = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(after).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
   it('P-40: a consented model without any spend cap on the account is still refused', async () => {
     const h = await harness({ models: [catalogModel('model-x', 'metered')] });
     await h.accounts.save({ ...(await theAccount(h)), consentedModels: ['model-x'], caps: [] });
