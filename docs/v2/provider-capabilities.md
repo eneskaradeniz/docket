@@ -162,9 +162,7 @@ through the gates. Candidate classes, by how they fit today's transports:
 | Plain text, experimental only | grok-build, qwen, deepseek, aider, atomcode | S each |
 | New transport | pi, deepseek-harness | L, later |
 
-Gemini CLI is retired because Antigravity replaces it. It is marked `retired` in the registry, hidden from
-discovery and from new accounts; existing Gemini accounts stay and show a notice to move to Antigravity; the
-definition and its code are removed one release later.
+Gemini CLI is removed because Antigravity replaces it. v2 has not shipped, so there is no deprecation period. A stored account whose provider id has no definition is listed as unsupported and never breaks loading or quota polling.
 
 S ≈ one issue (definition, argument builder, scripted-agent test); M ≈ two; L = a transport. This list is a
 backlog, not a promise. Priority is the operator's own providers: Claude Code, Codex, then the GLM route.
