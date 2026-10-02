@@ -317,12 +317,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi, amp and devin carries isolation evidence, and all fourteen stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi, amp, codebuddy and devin carries isolation evidence, and all fifteen stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -348,6 +348,7 @@ describe('isolation evidence (P-44)', () => {
       kiro: 'experimental',
       kimi: 'experimental',
       amp: 'experimental',
+      codebuddy: 'experimental',
       devin: 'planned',
     });
   });
@@ -390,6 +391,86 @@ describe('isolation evidence (P-44)', () => {
       expect(model.family).toBe('tier');
     }
     expect(kind?.tierModels).toBeUndefined();
+  });
+
+  it('P-28: the codebuddy record waives G5, cites the ACP login probe and the dialect fixtures, claims no permission or scenario gate, and stays experimental', () => {
+    const gates = findProvider('codebuddy')?.gates;
+    expect(gates?.G1).toMatchObject({
+      kind: 'test',
+      name: 'P-45: an ACP login probe reads an opened session as logged in, the documented refusal as logged out and any other answer as unknown',
+    });
+    expect(gates?.G2).toMatchObject({
+      kind: 'test',
+      name: 'P-11: the text turn fixture maps to session_started, one text, usage with the reported cost and one completed finished',
+    });
+    expect(gates?.G4).toMatchObject({
+      kind: 'test',
+      name: 'P-11: a quota result ends usage, limit_hit and one finished limit, so exhausted runs still fold into one finished',
+    });
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
+    });
+    // The headless canUseTool ask is unverified until an operator run, and the end-to-end
+    // scenario test covers sdk, app-server and acp, not stream-json.
+    expect(gates?.G3).toBeUndefined();
+    expect(gates?.G6).toBeUndefined();
+    expect(findProvider('codebuddy')?.isolation).toBeUndefined();
+    expect(supportLevel(findProvider('codebuddy') ?? { providerId: 'codebuddy', gates: {} })).toBe('experimental');
+  });
+
+  it('P-29: the codebuddy route kind lists the help text ids as its whole static catalog, every row billing-unknown, with the reported cost and no live list', () => {
+    const kind: RouteKindRecord | undefined = findRouteKind('codebuddy-login');
+    expect(kind).toMatchObject({
+      providerId: 'codebuddy',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'reported',
+      quotaProbe: 'none',
+      modelSource: 'static',
+    });
+    // No logged-out machine can read the account's real list, so nothing live can be
+    // authoritative; the rows the help text lists are the whole answer and the default their
+    // billing takes is unknown (P-40).
+    expect(kind?.liveIsAuthoritative).toBeUndefined();
+    expect(kind?.defaultBilling).toBe('unknown');
+    expect(kind?.tierModels).toBeUndefined();
+    expect(kind?.models.map((model) => model.id)).toEqual([
+      'default-model',
+      'fast-model',
+      'balanced-model',
+      'primary-model',
+      'deep-model',
+      'hy4-preview',
+      'hy3',
+      'deepseek-v4.1-flash',
+      'gpt-6-astra',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+      'gpt-5.4',
+      'gemini-3.5-flash',
+      'glm-5.3-flash',
+      'glm-5.3',
+      'glm-5.2',
+      'kimi-k3',
+      'kimi-k2.6',
+      'kimi-k2.8-preview',
+    ]);
+    for (const model of kind?.models ?? []) {
+      // The effort flag's CLI-wide vocabulary rides every row; per-model support is an
+      // operator-run refinement, and no plan source says what a login covers.
+      expect(model.thinking).toEqual({ kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] });
+      expect(model.billing, model.id).toBeUndefined();
+    }
+    expect(kind?.models.filter((model) => model.family === 'tier').map((model) => [model.id, model.tier])).toEqual([
+      ['default-model', 'balanced'],
+      ['fast-model', 'fast'],
+      ['balanced-model', 'balanced'],
+      ['primary-model', 'strong'],
+      ['deep-model', 'strong'],
+    ]);
   });
 
   it('P-28: the hermes record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {

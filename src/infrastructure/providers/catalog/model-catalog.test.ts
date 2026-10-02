@@ -547,6 +547,36 @@ describe('createModelCatalog (P-29)', () => {
     expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(await catalog.list(ACCOUNT_A));
   });
 
+  it('P-29: the static codebuddy route kind answers with exactly its registry rows, every one billing-unknown with the effort vocabulary', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'codebuddy' }));
+    const { query } = scriptedQuery([[PRO_ROW]]);
+    // The static source has no adapter (the help-text list is registry data, not a live fetch),
+    // so no query leg ever runs and the twenty-one rows are the whole answer — each carries the
+    // effort flag's documented vocabulary and bills unknown (P-40).
+    const catalog = createModelCatalog({
+      ...baseConfig(query),
+      accounts,
+      capabilities: createFakeCapabilityCatalog([{ id: 'codebuddy-login', authMode: 'subscription', provider: 'codebuddy' }]),
+    });
+
+    const rows = await catalog.list(ACCOUNT_A);
+    expect(rows).toHaveLength(21);
+    expect(rows[0]).toEqual({
+      id: 'default-model',
+      source: 'bundled',
+      tier: 'balanced',
+      thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
+      billing: 'unknown',
+    });
+    for (const row of rows) {
+      expect(row.billing, row.id).toBe('unknown');
+      expect(row.thinking).toEqual({ kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] });
+    }
+    // A refresh of source-less data changes nothing: the registry is still the whole answer.
+    expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(rows);
+  });
+
   it('P-29: a cli-command route kind dispatches to the CLI adapter — a live list with no billing claim', async () => {
     // The fake binary prints the recorded shape of the CLI's own models table; the spawn rides
     // the real node machinery, so the dispatch itself is what is under test here.

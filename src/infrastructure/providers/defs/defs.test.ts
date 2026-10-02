@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -104,6 +104,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
     expect(defById('amp').transport).toBe('stream-json');
+    expect(defById('codebuddy').transport).toBe('stream-json');
     for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi']) {
       expect(defById(id).transport, id).toBe('acp');
     }
@@ -120,6 +121,7 @@ describe('provider definitions (P-1)', () => {
     }
     expect(defById('agy').streamDialect).toBe('agy');
     expect(defById('amp').streamDialect).toBe('amp');
+    expect(defById('codebuddy').streamDialect).toBe('codebuddy');
   });
 
   it('P-1: config carries the documented config-dir mechanism of its CLI', () => {
@@ -142,6 +144,7 @@ describe('provider definitions (P-1)', () => {
       kiro: '',
       kimi: '',
       amp: '',
+      codebuddy: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -275,6 +278,7 @@ describe('provider definitions (P-1)', () => {
       qoder: { kind: 'session-option', category: 'thought_level' },
       kiro: { kind: 'flag', flag: '--effort' },
       kimi: { kind: 'session-option', category: 'thought_level' },
+      codebuddy: { kind: 'flag', flag: '--effort' },
       // The CLI documents no effort flag: the mode bundles the effort with the model (P-41: ignored).
       amp: undefined,
     };
@@ -288,7 +292,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a flag definition puts the flag and the level in argv, and nothing when the effort is absent', () => {
-      for (const id of ['agy', 'copilot', 'grok-build']) {
+      for (const id of ['agy', 'copilot', 'grok-build', 'codebuddy']) {
         const def = defById(id);
         const flag = def.effortArg?.kind === 'flag' ? def.effortArg.flag : undefined;
         expect(flag, id).toBeDefined();
@@ -993,5 +997,87 @@ describe('kimi definition (P-35)', () => {
       images: true,
       mcp: true,
     });
+  });
+});
+
+describe('codebuddy definition (P-35)', () => {
+  const codebuddy = (): ProviderDef => defById('codebuddy');
+
+  it('P-35: codebuddy searches both documented bins, launches print mode with the stream-json output and prompts over stdin', () => {
+    expect(codebuddy().bins).toEqual(['codebuddy', 'cbc']);
+    expect(codebuddy().versionArgs).toEqual(['--version']);
+    expect(codebuddy().helpArgs).toEqual(['--help']);
+    expect(codebuddy().buildLaunch(LAUNCH_INPUT)).toEqual({
+      args: ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'default'],
+      env: {},
+      stdin: 'prompt',
+    });
+    expect(codebuddy().resume).toBe('none');
+    expect(isProviderDef(codebuddy())).toBe(true);
+  });
+
+  it('P-44: no resume flag is documented, so a session ref never reaches the launch', () => {
+    const resumed = codebuddy().buildLaunch(LAUNCH_INPUT).args;
+    expect(resumed).not.toContain('session-1');
+    expect(resumed).not.toContain('--resume');
+    expect(resumed).not.toContain('--continue');
+  });
+
+  it('P-44: the launch always pins the asking default permission mode and never carries a bypass, an acceptance mode or a redirected home', () => {
+    expect(codebuddy().config).toEqual({ mechanism: 'none' });
+    expect(codebuddy().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'max' as const, model: 'glm-5.3' }, { prompt: 'x', configDir: '/run/dir' }]) {
+      const launch = codebuddy().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      // The mode list's far ends (`bypassPermissions`, `acceptEdits`, `auto`) and the skip switch
+      // may never reach a launch; `default` is the asking mode and must be on every launch.
+      expect(launch.args.join(' ')).not.toMatch(/-y\b|dangerously|skip-permissions|bypassPermissions|acceptEdits|dontAsk|auto/i);
+      expect(launch.args).toContain('default');
+    }
+  });
+
+  it('P-43: the effort flag carries exactly the six documented levels, and none and ultra are never sent', () => {
+    expect(codebuddy().effortArg).toEqual({ kind: 'flag', flag: '--effort' });
+    expect(codebuddy().levelNames).toEqual({
+      minimal: 'minimal',
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
+    });
+    expect(effortFlagArgs(codebuddy().effortArg, 'xhigh', codebuddy().levelNames)).toEqual(['--effort', 'xhigh']);
+    // The CLI lists no name for these levels, so no value is sent for them.
+    expect(effortFlagArgs(codebuddy().effortArg, 'none', codebuddy().levelNames)).toEqual([]);
+    expect(effortFlagArgs(codebuddy().effortArg, 'ultra', codebuddy().levelNames)).toEqual([]);
+  });
+
+  it('P-45: the login probe is the ACP session with the documented refusal as its logout, and no probe could start a login or hang', () => {
+    expect(codebuddy().authProbe).toEqual({
+      args: ['--acp'],
+      acpSession: { notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' } },
+    });
+    expect(codebuddy().helpNeedsLogin).toBeUndefined();
+    for (const probe of [codebuddy().versionArgs, codebuddy().helpArgs, codebuddy().authProbe?.args]) {
+      // The interactive login, the browser flows and the hanging doctor are the user's own commands.
+      expect(JSON.stringify(probe)).not.toMatch(/login|logout|doctor|update|install/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until an operator run verifies the headless ask, and the cost is the reported USD total', () => {
+    expect(codebuddy().capabilities).toMatchObject({
+      permissionAsk: 'unknown',
+      resume: false,
+      mcp: 'unknown',
+      quotaReport: 'none',
+      costReport: 'reported',
+    });
+  });
+
+  it('P-1: the run model reaches the launch as the CLI\'s own --model pair, and nothing else changes', () => {
+    const withModel = codebuddy().buildLaunch({ ...LAUNCH_INPUT, model: 'fast-model' }).args;
+    const at = withModel.indexOf('--model');
+    expect(withModel.slice(at, at + 2)).toEqual(['--model', 'fast-model']);
+    expect(codebuddy().buildLaunch(LAUNCH_INPUT).args).not.toContain('--model');
   });
 });
