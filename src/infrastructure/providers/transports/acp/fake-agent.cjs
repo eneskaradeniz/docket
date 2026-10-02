@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-hermes-close';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -104,6 +104,30 @@ const kiloConfigOptions = () => [
     options: KILO_EFFORTS[kiloModel].map((value) => ({ value, name: value })),
   },
   { id: 'mode', category: 'mode', type: 'select', currentValue: 'code', options: [{ value: 'code', name: 'Code' }, { value: 'plan', name: 'Plan' }] },
+];
+
+// The atomcode shape: a mode select with four modes and a `reasoning_effort` thought-level select
+// (off, high, max), and a `model` select only when a provider is configured. The levels do not
+// depend on the model.
+const ATOMCODE_MODELS = ['deepseek-chat', 'glm-5.2'];
+let atomcodeModel = ATOMCODE_MODELS[0];
+let atomcodeEffort = 'off';
+const atomcodeConfigOptions = (configured) => [
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: ['build', 'accept_edits', 'bypass', 'plan'].map((value) => ({ value, name: value })) },
+  ...(configured
+    ? [{ id: 'model', category: 'model', type: 'select', currentValue: atomcodeModel, options: ATOMCODE_MODELS.map((value) => ({ value, name: value })) }]
+    : []),
+  {
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: atomcodeEffort,
+    options: [
+      { value: 'off', name: 'Off (API default)' },
+      { value: 'high', name: 'High' },
+      { value: 'max', name: 'Max' },
+    ],
+  },
 ];
 
 const opencodeModelsSession = () => ({
@@ -338,12 +362,27 @@ const onLine = (line) => {
       respond(message.id, { sessionId: freshSessionId, configOptions: kiloConfigOptions() });
       return;
     }
+    if (scenario === 'models-atomcode' || scenario === 'models-atomcode-configured') {
+      respond(message.id, {
+        sessionId: freshSessionId,
+        modes: { currentModeId: 'build', availableModes: [{ id: 'build' }, { id: 'accept_edits' }, { id: 'bypass' }, { id: 'plan' }] },
+        configOptions: atomcodeConfigOptions(scenario === 'models-atomcode-configured'),
+      });
+      return;
+    }
     if (scenario === 'models-silent') return; // never answers: the client's timeout is under test
     if (scenario === 'models-die') process.exit(1);
     respond(message.id, { sessionId });
     return;
   }
   if (message.method === 'session/set_config_option') {
+    if (scenario === 'models-atomcode' || scenario === 'models-atomcode-configured') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && ATOMCODE_MODELS.includes(value)) atomcodeModel = value;
+      if (configId === 'reasoning_effort' && ['off', 'high', 'max'].includes(value)) atomcodeEffort = value;
+      respond(message.id, { configOptions: atomcodeConfigOptions(scenario === 'models-atomcode-configured') });
+      return;
+    }
     if (scenario === 'models-kilo') {
       const { configId, value } = message.params;
       if (configId === 'model' && KILO_MODELS.includes(value)) {

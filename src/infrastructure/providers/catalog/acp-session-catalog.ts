@@ -40,6 +40,9 @@ const ACP_SESSION_LAUNCHES: Readonly<
       readonly env?: Readonly<Record<string, string>>;
       /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
       readonly minTimeoutMs?: number;
+      /** The model select exists only once the user configured an inference provider, so a session
+       * without one is an empty list, not a malformed answer. */
+      readonly modelOptionOptional?: true;
     }
   >
 > = {
@@ -52,6 +55,8 @@ const ACP_SESSION_LAUNCHES: Readonly<
   // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
   // initialize answer, so no session is ever opened for it.
   'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
+  // Telemetry is on by default and the flag is documented for this subcommand.
+  atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
   // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
   kilo: {
     command: 'kilo',
@@ -121,7 +126,11 @@ interface ParsedSession {
 /** The session/new answer reduced to live models and the thought levels the session offers.
  * Undefined means the answer carries no shape the listing knows — a protocol answer no observed
  * agent gives, which is an error rather than an empty list. */
-const parseSessionAnswer = (result: unknown, levelNames: LevelNames | undefined): ParsedSession | undefined => {
+const parseSessionAnswer = (
+  result: unknown,
+  levelNames: LevelNames | undefined,
+  modelOptionOptional: boolean,
+): ParsedSession | undefined => {
   if (!isRecord(result)) return undefined;
   const rows: LiveModel[] = [];
   const seen = new Set<string>();
@@ -169,7 +178,7 @@ const parseSessionAnswer = (result: unknown, levelNames: LevelNames | undefined)
     }
   }
 
-  if (!Array.isArray(models) && !modelOptionSeen) return undefined;
+  if (!Array.isArray(models) && !modelOptionSeen && !(modelOptionOptional && isRecord(result))) return undefined;
   return { models: rows, ...(efforts === undefined ? {} : { efforts }) };
 };
 
@@ -257,7 +266,7 @@ export async function listAcpSessionModels(
       }
       return err(toCatalogError(created.error));
     }
-    const parsed = parseSessionAnswer(created.value, config.levelNames);
+    const parsed = parseSessionAnswer(created.value, config.levelNames, launch.modelOptionOptional === true);
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }

@@ -48,6 +48,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Hermes Agent (`hermes`) | `hermes-subscription` | — | — | — | none | experimental |
 | Grok Build (`grok-build`) | `grok-build-login` | — | — | — | none | experimental |
 | Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
+| AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License

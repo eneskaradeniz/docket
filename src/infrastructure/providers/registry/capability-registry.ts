@@ -124,6 +124,19 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI documents no switch that keeps it from
+      // reading other tools' instruction files and its login lives in its own home, so the level
+      // stays capped at experimental. Only the telemetry-off flag is declared. G3 and G4 are
+      // absent: the permission request is known from source only and no usage mapping is proven.
+      providerId: 'atomcode',
+      gates: {
+        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -343,6 +356,22 @@ export const CAPABILITY_REGISTRY = {
       // unknown (P-40) and stays a hand pick with spend consent; no machine-readable quota exists.
       id: 'grok-build-login',
       providerId: 'grok-build',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The model select exists only when the user configured a provider (or signed in to the
+      // CodingPlan), so a session without it lists no models. Whether the plan behind a row is
+      // free or metered depends on that configuration and no source in the CLI says, so every
+      // row reads unknown (P-40) and stays a hand pick with spend consent; no quota channel exists.
+      id: 'atomcode-login',
+      providerId: 'atomcode',
       authMode: 'subscription',
       identity: 'machine_login',
       costKind: 'none',

@@ -581,4 +581,40 @@ describe('acp transport', () => {
       expect(clientMethodSequence(clientMessages(bare.logPath))).not.toContain('session/set_config_option');
     });
   });
+  describe('model then effort (atomcode shape)', () => {
+    const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'reasoning_effort' };
+    const NAMES = { none: 'off', high: 'high', max: 'max' } as const;
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-41: the model is selected first, then reasoning_effort by its own id, then the prompt; no mode is ever set', async () => {
+      const run = await startRun('models-atomcode-configured', requestOf(runCwd(), { model: 'glm-5.2', effort: 'max' }), EFFORT_ID, NAMES);
+      await collect(run.handle.events);
+      const sequence = clientMethodSequence(clientMessages(run.logPath));
+      expect(sequence).toEqual(['initialize', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt']);
+      expect(sequence).not.toContain('session/set_mode');
+      expect(setsOf(run.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: 'glm-5.2' },
+        { sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'max' },
+      ]);
+    });
+
+    it('P-43: none is sent as the CLI name off, and a level the CLI does not list (low) is never sent', async () => {
+      const off = await startRun('models-atomcode-configured', requestOf(runCwd(), { effort: 'none' }), EFFORT_ID, NAMES);
+      await collect(off.handle.events);
+      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'off' }]);
+
+      const low = await startRun('models-atomcode-configured', requestOf(runCwd(), { model: 'deepseek-chat', effort: 'low' }), EFFORT_ID, NAMES);
+      await collect(low.handle.events);
+      expect(setsOf(low.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'deepseek-chat' }]);
+    });
+
+    it('P-41: without a model option the pinned model is not sent, and the effort still is', async () => {
+      const run = await startRun('models-atomcode', requestOf(runCwd(), { model: 'glm-5.2', effort: 'high' }), EFFORT_ID, NAMES);
+      await collect(run.handle.events);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'high' }]);
+    });
+  });
 });
