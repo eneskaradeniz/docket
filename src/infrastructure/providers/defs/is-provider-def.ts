@@ -5,7 +5,7 @@ import { EFFORT_LEVELS, type LaunchInput, type ProviderDef, type ProviderLaunch,
 
 const TRANSPORTS: readonly ProviderTransport[] = ['sdk', 'app-server', 'acp', 'stream-json'];
 const RESUME_MODES: readonly ProviderDef['resume'][] = ['specify', 'capture', 'protocol', 'none'];
-const CONFIG_MECHANISMS: readonly ProviderDef['config']['mechanism'][] = ['env-var', 'flag'];
+const CONFIG_MECHANISMS: readonly ProviderDef['config']['mechanism'][] = ['env-var', 'flag', 'none'];
 const QUOTA_REPORTS: readonly ProviderCapabilities['quotaReport'][] = ['stream', 'query', 'error_only', 'none'];
 const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'credits', 'none'];
 const FILL_RULES: readonly NonNullable<ProviderDef['mark']>['fillRule'][] = ['nonzero', 'evenodd'];
@@ -126,7 +126,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   const config = value['config'];
   if (!isRecord(config)) return false;
   if (!CONFIG_MECHANISMS.includes(config['mechanism'] as ProviderDef['config']['mechanism'])) return false;
-  if (!isNonEmptyString(config['name'])) return false;
+  if (config['mechanism'] !== 'none' && !isNonEmptyString(config['name'])) return false;
   if (!isBuildLaunch(value['buildLaunch'])) return false;
   if (!isEffortArg(value['effortArg'])) return false;
   if (!isLevelNames(value['levelNames'])) return false;
