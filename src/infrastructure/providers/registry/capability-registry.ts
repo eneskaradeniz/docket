@@ -52,17 +52,6 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
-      // No G4 (the acp transport maps no usage event) and no G5 (no quota probe; no waiver — no
-      // limit-error mapping exists either).
-      providerId: 'gemini',
-      gates: {
-        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
-        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
-        G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
-      },
-    },
-    {
       providerId: 'copilot',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
@@ -102,7 +91,36 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'sdk_usage',
       modelSource: 'sdk',
       liveIsAuthoritative: true,
-      models: [],
+      // The plan table covers the opus, sonnet and haiku families on every subscription tier, so
+      // their current flagships are bundled as included — a pinned model on a plan no longer asks
+      // for spend consent. The fable family splits per plan (inside the weekly limits on some,
+      // usage-credits-only on others) and the record shape carries one billing per model, so it
+      // stays unbundled: live-only rows read unknown and remain hand-pick-with-consent. The ids,
+      // effort sets and plan rows follow the provider's current model-configuration and plan
+      // documentation.
+      models: [
+        {
+          id: 'claude-opus-5-5',
+          family: 'opus',
+          tier: 'strong',
+          thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          billing: 'included',
+        },
+        {
+          id: 'claude-sonnet-5-5',
+          family: 'sonnet',
+          tier: 'balanced',
+          thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          billing: 'included',
+        },
+        {
+          id: 'claude-haiku-4-5',
+          family: 'haiku',
+          tier: 'fast',
+          thinking: { kind: 'none' },
+          billing: 'included',
+        },
+      ],
     },
     {
       // API-key runs take the key from the keychain and report costs straight from the stream;
