@@ -17,6 +17,8 @@ import { listClaudeRouteModels } from './claude-catalog';
 import { listCliCommandRouteModels } from './cli-command-catalog';
 import type { CliModelSpawn } from './cli-command-catalog';
 import { listCopilotRouteModels } from './copilot-catalog';
+import { BUILTIN_PROVIDER_DEFS } from '../defs/builtin-provider-defs';
+import type { LevelNames, ProviderDef } from '../defs/provider-def';
 import type { QueryFn } from '../transports/sdk/transport';
 
 /** A live-list adapter's failure: the transport error codes the adapters share, the HTTP leg's
@@ -43,6 +45,8 @@ export interface ModelAdapterDeps {
   readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
+  readonly levelNames?: Readonly<Record<string, LevelNames>>; // provider id → its own level names
+  readonly loggedIn?: Readonly<Record<string, boolean | null>>; // provider id → the login probe's answer
 }
 
 /** One source's live list: the rows the route itself reports for this account. */
@@ -65,6 +69,8 @@ export interface ModelCatalogConfig {
   readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
+  readonly levelNames?: Readonly<Record<string, LevelNames>>; // provider id → its own level names; default: the built-in definitions'
+  readonly loggedIn?: Readonly<Record<string, boolean | null>>; // provider id → the login probe's answer; absent = unknown
   readonly ttlMs?: number; // cache lifetime; the default is six hours
   /** Live-list adapters per model source; default: the built-in map below. A source the chosen
    * map leaves uncovered answers from the bundled registry — the built-in map's own answer for
@@ -123,6 +129,7 @@ const acpSessionAdapter: ModelSourceAdapter = (account, route, deps) =>
       })
     : listAcpSessionModels(account, {
         baseEnv: deps.baseEnv,
+        ...(deps.levelNames?.[account.provider] === undefined ? {} : { levelNames: deps.levelNames[account.provider] }),
         ...(deps.acp === undefined ? {} : deps.acp),
         ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
       });
@@ -131,6 +138,8 @@ const acpSessionAdapter: ModelSourceAdapter = (account, route, deps) =>
  * run, no print-mode prompt, so no agent turn ever starts. */
 const cliCommandAdapter: ModelSourceAdapter = (account, _route, deps) =>
   listCliCommandRouteModels(account, {
+    ...(deps.levelNames?.[account.provider] === undefined ? {} : { levelNames: deps.levelNames[account.provider] }),
+    ...(deps.loggedIn?.[account.provider] === undefined ? {} : { loggedIn: deps.loggedIn[account.provider] }),
     ...(deps.cli === undefined ? {} : deps.cli),
     ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
   });
@@ -157,6 +166,14 @@ const mergeOptionsOf = (kind: RouteKindRecord): MergeOptions | undefined => {
   return Object.keys(options).length === 0 ? undefined : options;
 };
 
+const levelNamesOf = (defs: readonly ProviderDef[]): Readonly<Record<string, LevelNames>> => {
+  const byProvider: Record<string, LevelNames> = {};
+  for (const def of defs) {
+    if (def.levelNames !== undefined) byProvider[def.id] = def.levelNames;
+  }
+  return byProvider;
+};
+
 export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
   const capabilities = config.capabilities ?? createCapabilityCatalog();
   const adapters = config.adapters ?? MODEL_SOURCE_ADAPTERS;
@@ -173,6 +190,8 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
     ...(config.acp === undefined ? {} : { acp: config.acp }),
     ...(config.cli === undefined ? {} : { cli: config.cli }),
     ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
+    levelNames: config.levelNames ?? levelNamesOf(BUILTIN_PROVIDER_DEFS),
+    ...(config.loggedIn === undefined ? {} : { loggedIn: config.loggedIn }),
   };
 
   return {

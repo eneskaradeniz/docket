@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import type { AccountRecord } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
+import { effortOfProviderLevel, type LevelNames } from '../defs/provider-def';
 import { buildChildEnv } from '../launch/index';
 import {
   ACP_INITIALIZE_PARAMS,
@@ -22,7 +23,6 @@ import {
   type AcpConnectionError,
   type AcpSpawn,
 } from '../transports/acp/index';
-import { KNOWN_EFFORT_LEVELS } from './claude-catalog';
 import type { CatalogError } from './model-catalog';
 
 /** The ACP-mode launch of each provider whose live list rides a session — the same subcommand the
@@ -45,6 +45,9 @@ export interface AcpSessionCatalogConfig {
   /** The allowlisted environment a run of the same provider builds from: the machine login lives
    * in it (its home), ambient credentials do not. */
   readonly baseEnv: Readonly<Record<string, string>>;
+  /** The provider's own names for levels (its definition's `levelNames`); the advertised levels
+   * are read back through them. */
+  readonly levelNames?: LevelNames;
   /** Ceiling per request; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
@@ -89,7 +92,7 @@ interface ParsedSession {
 /** The session/new answer reduced to live models and the thought levels the session offers.
  * Undefined means the answer carries no shape the listing knows — a protocol answer no observed
  * agent gives, which is an error rather than an empty list. */
-const parseSessionAnswer = (result: unknown): ParsedSession | undefined => {
+const parseSessionAnswer = (result: unknown, levelNames: LevelNames | undefined): ParsedSession | undefined => {
   if (!isRecord(result)) return undefined;
   const rows: LiveModel[] = [];
   const seen = new Set<string>();
@@ -119,11 +122,12 @@ const parseSessionAnswer = (result: unknown): ParsedSession | undefined => {
       const options = raw['options'];
       if (!Array.isArray(options)) continue;
       if (category === 'thought_level') {
-        // The session-level selector names the levels the provider offers; a level the domain
-        // does not know (a "default" among them) is dropped rather than passed through.
+        // The session-level selector names the levels the provider offers in its own words; a
+        // value that stands for no level Docket knows (a "default" among them) is dropped rather
+        // than passed through.
         const kept = configOptionEntries(options)
-          .map((entry) => entry.value)
-          .filter((level): level is EffortLevel => (KNOWN_EFFORT_LEVELS as readonly string[]).includes(level));
+          .map((entry) => effortOfProviderLevel(levelNames, entry.value))
+          .filter((level): level is EffortLevel => level !== undefined);
         efforts = kept.length === 0 ? undefined : kept;
         continue;
       }
@@ -173,7 +177,7 @@ export async function listAcpSessionModels(
 
     const created = await connection.request('session/new', { cwd: scratch, mcpServers: [] });
     if (!created.ok) return err(toCatalogError(created.error));
-    const parsed = parseSessionAnswer(created.value);
+    const parsed = parseSessionAnswer(created.value, config.levelNames);
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }

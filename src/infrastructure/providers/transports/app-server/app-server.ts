@@ -10,7 +10,7 @@ import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../.
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
-import type { ProviderDef } from '../../defs/index';
+import { providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { describeApprovalRequest, type ApprovalAsk } from './approvals';
 import { INITIALIZE_PARAMS } from './connection';
@@ -140,6 +140,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
         runCapabilities.push({ ...capability });
       }
 
+      const effortValue = providerLevelOf(def.levelNames, request.effort);
       const effortField = def.effortArg?.kind === 'request-field' ? def.effortArg.name : undefined;
       const runConfig = await writeRunConfig(request.cwd, def, runCapabilities);
       const launch = def.buildLaunch({
@@ -147,6 +148,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
         ...(request.effort === undefined ? {} : { effort: request.effort }),
+        ...(request.route.model === undefined ? {} : { model: request.route.model }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -378,7 +380,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
           const turnResponse = await requestRpc('turn/start', {
             threadId,
             input: [textInput(request.prompt)],
-            ...(effortField !== undefined && request.effort !== undefined ? { [effortField]: request.effort } : {}),
+            ...(effortField !== undefined && effortValue !== undefined ? { [effortField]: effortValue } : {}),
           });
           const turnId = nestedString(turnResponse, 'turn', 'id');
           if (turnId !== undefined) activeTurnId = turnId;

@@ -20,7 +20,12 @@ const allGates = (): Readonly<Partial<Record<GateId, Evidence>>> => ({
 const recordOf = (
   gates: Readonly<Partial<Record<GateId, Evidence>>>,
   extra?: Partial<ProviderRecord>,
-): ProviderRecord => ({ providerId: 'fixture-cli', gates, ...extra });
+): ProviderRecord => ({
+  providerId: 'fixture-cli',
+  gates,
+  isolation: scenarioEvidence('fixture isolation'),
+  ...extra,
+});
 
 describe('supportLevel (P-28)', () => {
   it('P-28: the planned flag alone sets the level — gate evidence never overrides it', () => {
@@ -63,6 +68,14 @@ describe('supportLevel (P-28)', () => {
       delete gates[missing];
       expect(supportLevel(recordOf(gates))).toBe('experimental');
     }
+  });
+});
+
+describe('supportLevel isolation cap (P-28)', () => {
+  it('P-28: a record without isolation evidence stays experimental whatever its gates and operator runs say', () => {
+    const { isolation: _evidence, ...bare } = recordOf(allGates(), { operatorRuns: ['fixture-run'] });
+    expect(supportLevel(bare)).toBe('experimental');
+    expect(supportLevel({ ...bare, planned: true })).toBe('planned');
   });
 });
 

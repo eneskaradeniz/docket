@@ -145,6 +145,21 @@ describe('listAcpSessionModels (P-29)', () => {
     ]);
   });
 
+  it('P-43: advertised thought levels are read back through the level names, dropping values that name no level', async () => {
+    const harness = makeSpawn('models-opencode');
+
+    const listed = await listAcpSessionModels(accountOf('opencode'), {
+      baseEnv: {},
+      spawn: harness.spawn,
+      levelNames: { xhigh: 'max', none: 'low' },
+    });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    // 'high' and 'default' are provider values no entry names, so they are not offered.
+    expect(listed.value.map((row) => row.efforts)).toEqual([['none', 'xhigh'], ['none', 'xhigh'], ['none', 'xhigh']]);
+  });
+
   it('P-29: the session opens in a scratch working directory with no MCP servers and session/prompt is never sent', async () => {
     const harness = makeSpawn('models-opencode');
 

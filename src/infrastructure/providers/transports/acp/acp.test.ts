@@ -69,13 +69,19 @@ const CONTEXT_CAPABILITY: CapabilityDef = {
   path: 'docs/design.md',
 };
 
-const acpDef = (scenario: string, logPath: string, effortArg?: EffortArg): ProviderDef => ({
+const acpDef = (
+  scenario: string,
+  logPath: string,
+  effortArg?: EffortArg,
+  levelNames?: ProviderDef['levelNames'],
+): ProviderDef => ({
   id: 'fake-acp',
   displayName: 'Fake ACP Agent',
   bins: [FAKE_AGENT_BIN],
   versionArgs: ['--version'],
   transport: 'acp',
   ...(effortArg === undefined ? {} : { effortArg }),
+  ...(levelNames === undefined ? {} : { levelNames }),
   config: { mechanism: 'env-var', name: 'FAKE_ACP_HOME' },
   // The scenario and the log path are how a test scripts its fake agent.
   buildLaunch: () => ({ args: [scenario, logPath], env: {}, stdin: 'none' }),
@@ -126,9 +132,10 @@ const startRun = async (
   scenario: string,
   request: RunRequest,
   effortArg?: EffortArg,
+  levelNames?: ProviderDef['levelNames'],
 ): Promise<{ readonly handle: RunHandle; readonly logPath: string }> => {
   const logPath = join(request.cwd, 'agent-log.jsonl');
-  const transport = createAcpTransport(acpDef(scenario, logPath, effortArg));
+  const transport = createAcpTransport(acpDef(scenario, logPath, effortArg, levelNames));
   return { handle: unwrap(await transport.start(request)), logPath };
 };
 
@@ -441,6 +448,40 @@ describe('acp transport', () => {
       const unoffered = await startRun('models-opencode', requestOf(runCwd(), { effort: 'xhigh' }), SESSION_OPTION);
       await collect(unoffered.handle.events);
       expect(clientMethodSequence(clientMessages(unoffered.logPath))).not.toContain('session/set_config_option');
+    });
+
+    it('P-43: a session-option named by configId is set under that id, with the provider level name as its value', async () => {
+      const run = await startRun(
+        'models-opencode',
+        requestOf(runCwd(), { effort: 'xhigh' }),
+        { kind: 'session-option', configId: 'effort' },
+        { xhigh: 'max' },
+      );
+      await collect(run.handle.events);
+
+      expect(paramsOf(messageOf(clientMessages(run.logPath), 'session/set_config_option'))).toEqual({
+        sessionId: 'sess_fake_1',
+        configId: 'effort',
+        value: 'max',
+      });
+    });
+
+    it('P-43: a configId that names no option, or an effort the level names do not map, sends nothing', async () => {
+      const wrongId = await startRun('models-opencode', requestOf(runCwd(), { effort: 'high' }), {
+        kind: 'session-option',
+        configId: 'thinking',
+      });
+      await collect(wrongId.handle.events);
+      expect(clientMethodSequence(clientMessages(wrongId.logPath))).not.toContain('session/set_config_option');
+
+      const unmapped = await startRun(
+        'models-opencode',
+        requestOf(runCwd(), { effort: 'high' }),
+        { kind: 'session-option', configId: 'effort' },
+        { xhigh: 'max' },
+      );
+      await collect(unmapped.handle.events);
+      expect(clientMethodSequence(clientMessages(unmapped.logPath))).not.toContain('session/set_config_option');
     });
 
     it('P-41: a definition without an effort parameter ignores the effort', async () => {

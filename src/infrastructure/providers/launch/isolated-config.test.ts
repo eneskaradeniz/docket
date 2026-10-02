@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildChildEnv } from './launch-env';
 import { BUILTIN_PROVIDER_DEFS } from '../defs';
 import type { ProviderDef } from '../defs';
 import { writeRunConfig } from './isolated-config';
@@ -193,5 +194,49 @@ describe('run-scoped config writer (P-7)', () => {
     expect(fragment.hooks).toEqual([]);
     const mcp = JSON.parse(await readFile(join(fragment.configDir, 'mcp.json'), 'utf8')) as unknown;
     expect(mcp).toEqual({ mcpServers: {} });
+  });
+});
+
+describe('isolation and telemetry (P-44)', () => {
+  const isolatedDef = (): ProviderDef => ({
+    ...flagDef(),
+    id: 'isolated-probe',
+    isolation: {
+      env: { PROBE_NO_EXTERNAL_CONFIG: '1' },
+      args: ['--no-external-config'],
+      runScopedHome: 'PROBE_HOME',
+    },
+    telemetryOff: ['--no-telemetry'],
+  });
+
+  it('P-44: the isolation env and args and the telemetry-off flags are applied to the launch', async () => {
+    const { runDir } = await createRoot();
+
+    const config = await writeRunConfig(runDir, isolatedDef(), []);
+
+    expect(config.args).toEqual(['--mcp-config', config.configDir, '--no-external-config', '--no-telemetry']);
+    expect(config.env['PROBE_NO_EXTERNAL_CONFIG']).toBe('1');
+  });
+
+  it('P-44: a run-scoped home points at the run config dir and never at the real home, whatever the machine carries', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = join(root, 'real-home');
+    const def: ProviderDef = { ...isolatedDef(), isolation: { runScopedHome: 'HOME' } };
+
+    const config = await writeRunConfig(runDir, def, []);
+    // The transports spread the allowlisted machine env first and the run config on top of it.
+    const childEnv = { ...buildChildEnv(def.id, { HOME: realHome, PATH: '/bin' }, {}), ...config.env };
+
+    expect(childEnv['HOME']).toBe(config.configDir);
+    expect(Object.values(childEnv).some((value) => value.startsWith(realHome))).toBe(false);
+  });
+
+  it('P-44: a definition without isolation or telemetry flags launches exactly as before', async () => {
+    const { runDir } = await createRoot();
+
+    const config = await writeRunConfig(runDir, defById('claude-code'), []);
+
+    expect(config.args).toEqual([]);
+    expect(config.env).toEqual({ CLAUDE_CONFIG_DIR: config.configDir });
   });
 });
