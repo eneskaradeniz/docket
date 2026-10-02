@@ -140,11 +140,13 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
         runCapabilities.push({ ...capability });
       }
 
+      const effortField = def.effortArg?.kind === 'request-field' ? def.effortArg.name : undefined;
       const runConfig = await writeRunConfig(request.cwd, def, runCapabilities);
       const launch = def.buildLaunch({
         prompt: request.prompt,
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -373,7 +375,11 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
           if (newThreadId === undefined) throw new Error('the thread response carried no thread id');
           threadId = newThreadId;
           push({ type: 'session_started', at: clock.now(), sessionRef: newThreadId });
-          const turnResponse = await requestRpc('turn/start', { threadId, input: [textInput(request.prompt)] });
+          const turnResponse = await requestRpc('turn/start', {
+            threadId,
+            input: [textInput(request.prompt)],
+            ...(effortField !== undefined && request.effort !== undefined ? { [effortField]: request.effort } : {}),
+          });
           const turnId = nestedString(turnResponse, 'turn', 'id');
           if (turnId !== undefined) activeTurnId = turnId;
         } catch (message) {

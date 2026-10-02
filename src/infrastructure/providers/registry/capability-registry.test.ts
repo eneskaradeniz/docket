@@ -162,6 +162,16 @@ describe('model catalog data (P-29)', () => {
     expect(findRouteKind('zai-glm')?.defaultBilling).toBeUndefined();
   });
 
+  it('P-42: the Claude subscription kind lists exactly the opus, sonnet and haiku families as included — no other route kind does', () => {
+    expect(findRouteKind('anthropic-subscription')?.familyBilling).toEqual([
+      { contains: 'opus', billing: 'included' },
+      { contains: 'sonnet', billing: 'included' },
+      { contains: 'haiku', billing: 'included' },
+    ]);
+    expect(findRouteKind('anthropic-api')?.familyBilling).toBeUndefined();
+    expect(findRouteKind('zai-glm')?.familyBilling).toBeUndefined();
+  });
+
   it('P-40: the Codex subscription kind defaults its live models to included — the plan coverage is documented', () => {
     // The provider documents that Codex is included across ChatGPT plans, usage limits varying
     // by plan, so a listed model the row itself says nothing about reads as covered by the plan.

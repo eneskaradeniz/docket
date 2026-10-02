@@ -490,4 +490,49 @@ describe('saveBinding', () => {
     expect(await h.deps.bindings.get(WORK_ORDER_SCOPE, role)).toEqual(bindingFor('worker', [{ accountId: OTHER_ACCOUNT }]));
     expect(h.log.entries()).toHaveLength(2);
   });
+
+  // --- reserve (A-45) ------------------------------------------------------------------------------
+
+  it('A-45: a reserve that is NaN, infinite, negative or above 0.95 fails with invalid_reserve and writes nothing', async () => {
+    const h = makeHarness();
+    const bad: readonly { readonly short?: number; readonly long?: number }[] = [
+      { short: Number.NaN },
+      { long: Number.NaN },
+      { short: Number.POSITIVE_INFINITY },
+      { long: Number.NEGATIVE_INFINITY },
+      { short: -0.01 },
+      { long: -1 },
+      { short: 0.96 },
+      { long: 1 },
+      { short: 0.5, long: 0.951 },
+    ];
+    for (const reserve of bad) {
+      const result = await saveAccount(h.deps, {
+        record: accountRecord({ secretRef: SECRET_REF, reserve }),
+        secret: SECRET,
+        actor: USER,
+      });
+      expect(result).toEqual({ ok: false, error: 'invalid_reserve' });
+    }
+    expect(await h.deps.accounts.list()).toEqual([]);
+    expect(await h.deps.secrets.get(SECRET_REF)).toBeUndefined();
+    expect(h.log.entries()).toEqual([]);
+  });
+
+  it('A-45: 0, 0.95, a value between and an absent reserve are saved verbatim', async () => {
+    const h = makeHarness();
+    const reserves: readonly ({ readonly short?: number; readonly long?: number } | undefined)[] = [
+      { short: 0 },
+      { long: 0.95 },
+      { short: 0.95, long: 0.95 },
+      { short: 0.2, long: 0.4 },
+      {},
+      undefined,
+    ];
+    for (const reserve of reserves) {
+      const record = accountRecord(reserve === undefined ? {} : { reserve });
+      expect(await saveAccount(h.deps, { record, actor: USER })).toEqual({ ok: true, value: undefined });
+      expect(await h.deps.accounts.get(record.id)).toEqual(record);
+    }
+  });
 });

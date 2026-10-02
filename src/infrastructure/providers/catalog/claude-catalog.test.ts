@@ -195,12 +195,13 @@ describe('listClaudeRouteModels (P-29)', () => {
       expect(result.value).toEqual([
         {
           id: 'claude-fable-5-1[1m]',
+          resolvedId: 'claude-fable-5-1',
           displayName: 'Fable [1m]',
           efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
         },
-        { id: 'claude-opus-5-5', displayName: 'Opus 5.5', efforts: ['low', 'medium', 'high'] },
-        { id: 'claude-sonnet-5-5', displayName: 'Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh'] },
-        { id: 'claude-haiku-4-5', displayName: 'Haiku 4.5' },
+        { id: 'claude-opus-5-5', resolvedId: 'claude-opus-5-5', displayName: 'Opus 5.5', efforts: ['low', 'medium', 'high'] },
+        { id: 'claude-sonnet-5-5', resolvedId: 'claude-sonnet-5-5', displayName: 'Sonnet 5.5', efforts: ['low', 'medium', 'high', 'xhigh'] },
+        { id: 'claude-haiku-4-5', resolvedId: 'claude-haiku-4-5', displayName: 'Haiku 4.5' },
       ]);
     }
     expect(scripted.closed()).toBe(true);
@@ -222,8 +223,8 @@ describe('listClaudeRouteModels (P-29)', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toEqual([
-        { id: 'glm-5.3', displayName: 'GLM 5.3', efforts: ['low', 'medium', 'high'] },
-        { id: 'glm-5.3-flash[1m]', displayName: 'GLM 5.3 Flash [1m]', efforts: ['low', 'medium', 'high'] },
+        { id: 'glm-5.3', resolvedId: 'glm-5.3', displayName: 'GLM 5.3', efforts: ['low', 'medium', 'high'] },
+        { id: 'glm-5.3-flash[1m]', resolvedId: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash [1m]', efforts: ['low', 'medium', 'high'] },
       ]);
     }
   });
@@ -248,6 +249,31 @@ describe('listClaudeRouteModels (P-29)', () => {
       expect(result.value).toEqual([
         { id: 'model-x', displayName: 'X', efforts: ['low', 'medium'] },
         { id: 'model-y', displayName: 'Y' },
+      ]);
+    }
+  });
+
+  it('P-42: an alias row keeps its own id, carries the resolved id, and the default row is marked', async () => {
+    const scripted = scriptedQuery(async () => [
+      { value: 'default', resolvedModel: 'claude-opus-5-5[1m]', displayName: 'Default', description: '' },
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5', displayName: 'Sonnet', description: '' },
+      { value: 'haiku', displayName: 'Haiku', description: '' },
+      { value: 'opus', resolvedModel: '', displayName: 'Opus', description: '' },
+    ]);
+    const result = await listClaudeRouteModels(account(), {
+      secrets: createFakeSecretVault(),
+      baseEnv: {},
+      capabilities: routeCatalog,
+      query: scripted.query,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([
+        { id: 'default', resolvedId: 'claude-opus-5-5[1m]', isDefault: true, displayName: 'Default' },
+        { id: 'sonnet', resolvedId: 'claude-sonnet-5-5', displayName: 'Sonnet' },
+        { id: 'haiku', displayName: 'Haiku' },
+        { id: 'opus', displayName: 'Opus' },
       ]);
     }
   });

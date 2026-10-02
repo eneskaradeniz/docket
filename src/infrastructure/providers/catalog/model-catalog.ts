@@ -152,6 +152,7 @@ const mergeOptionsOf = (kind: RouteKindRecord): MergeOptions | undefined => {
   const options: MergeOptions = {
     ...(kind.liveIsAuthoritative === true ? { authoritative: true } : {}),
     ...(kind.defaultBilling !== undefined ? { defaultBilling: kind.defaultBilling } : {}),
+    ...(kind.familyBilling !== undefined ? { familyBilling: kind.familyBilling } : {}),
   };
   return Object.keys(options).length === 0 ? undefined : options;
 };

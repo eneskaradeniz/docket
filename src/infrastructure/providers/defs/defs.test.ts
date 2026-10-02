@@ -180,6 +180,55 @@ describe('provider definitions (P-1)', () => {
     rejectsWith({ ...createValidDef(), inactivityTimeoutMs: '600' }, 'string inactivity');
   });
 
+  describe('effort parameter (P-41)', () => {
+    const EFFORT_ARG_BY_ID: Readonly<Record<string, unknown>> = {
+      'claude-code': { kind: 'request-field', name: 'effort' },
+      codex: { kind: 'request-field', name: 'effort' },
+      agy: { kind: 'flag', flag: '--effort' },
+      copilot: { kind: 'flag', flag: '--reasoning-effort' },
+      opencode: { kind: 'session-option', category: 'thought_level' },
+    };
+
+    it('P-41: each built-in declares exactly its documented effort parameter, and cursor declares none', () => {
+      for (const def of BUILTIN_PROVIDER_DEFS) {
+        expect(def.effortArg, def.id).toEqual(EFFORT_ARG_BY_ID[def.id]);
+      }
+      expect(defById('cursor').effortArg).toBeUndefined();
+    });
+
+    it('P-41: a flag definition puts the flag and the level in argv, and nothing when the effort is absent', () => {
+      for (const id of ['agy', 'copilot']) {
+        const def = defById(id);
+        const flag = def.effortArg?.kind === 'flag' ? def.effortArg.flag : undefined;
+        expect(flag, id).toBeDefined();
+        const withEffort = def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }).args;
+        const at = withEffort.indexOf(flag ?? '');
+        expect(withEffort.slice(at, at + 2), id).toEqual([flag, 'high']);
+        expect(def.buildLaunch(LAUNCH_INPUT).args, id).not.toContain(flag);
+      }
+    });
+
+    it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode']) {
+        const def = defById(id);
+        expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
+      }
+    });
+
+    it('P-41: isProviderDef accepts a valid effortArg of each kind and rejects a malformed one', () => {
+      for (const effortArg of [
+        { kind: 'flag', flag: '--x' },
+        { kind: 'request-field', name: 'x' },
+        { kind: 'session-option', category: 'x' },
+      ]) {
+        expect(isProviderDef({ ...createValidDef(), effortArg })).toBe(true);
+      }
+      for (const effortArg of [{ kind: 'flag' }, { kind: 'flag', flag: '' }, { kind: 'other' }, 'high', null]) {
+        rejectsWith({ ...createValidDef(), effortArg }, JSON.stringify(effortArg));
+      }
+    });
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');

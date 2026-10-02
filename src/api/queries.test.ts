@@ -1084,6 +1084,34 @@ describe('account.models', () => {
     expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('metered');
   });
 
+  it('P-42: defaultBilling takes the merged default entry’s billing; without one the route rule answers', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const withDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included' },
+          { id: 'default', source: 'live', thinking: { kind: 'none' }, billing: 'metered', isDefault: true },
+        ],
+      }),
+    };
+    const view = (await createApi(withDefault).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+    // The subscription rule alone would say included; the provider's own default row says metered.
+    expect(view.defaultBilling).toBe('metered');
+    // The selectable id stays the alias.
+    expect(view.models.map((model) => model.id)).toEqual(['atlas-max', 'default']);
+
+    const withoutDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'metered' }],
+      }),
+    };
+    const plain = (await createApi(withoutDefault).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+    expect(plain.defaultBilling).toBe('included');
+  });
+
   it('P-29: refresh reaches the catalog port, so it bypasses the cache', async () => {
     const h = createHarness();
     await saveAccount(h);

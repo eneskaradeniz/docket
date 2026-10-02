@@ -770,6 +770,26 @@ describe('createApi', () => {
       expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: result.id } });
     });
 
+    it('U-13: account.save stores a reserve, keeps it when absent on update, and answers invalid_reserve for an out-of-range share', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const base = { type: 'account.save', provider: 'acme-prov', label: 'Main', authMode: 'api_key' } as const;
+
+      const created = await api.command(ACTOR, { ...base, reserve: { short: 0.1, long: 0.3 } });
+      if (!created.ok || created.id === undefined) throw new Error('account.save must return an id');
+      const id = ulidOf<'account'>(created.id);
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+
+      expect((await api.command(ACTOR, { ...base, id: created.id, label: 'Renamed' })).ok).toBe(true);
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+
+      expect(await api.command(ACTOR, { ...base, id: created.id, reserve: { long: 0.96 } })).toEqual({
+        ok: false,
+        code: 'invalid_reserve',
+      });
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+    });
+
     it('U-13: account.save with an id updates the editable fields and keeps the stored policy, caps and secret ref', async () => {
       const h = await createHarness();
       const secretRef = `account/${ACCOUNT}/api-key`;
@@ -929,6 +949,22 @@ describe('createApi', () => {
         ok: false,
         code: 'empty_chain',
       });
+    });
+
+    it('U-13: binding.save stores a valid thinking choice and rejects a malformed one with invalid_id', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const role = slugOf<'role'>('worker');
+      const accounts = [{ accountId: ACCOUNT }];
+
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking: { level: 'deep' } })).toEqual({ ok: true });
+      expect((await h.deps.bindings.get({ level: 'global' }, role))?.thinking).toEqual({ level: 'deep' });
+      expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking: { effort: 'ultra' } })).toEqual({ ok: true });
+      expect((await h.deps.bindings.get({ level: 'global' }, role))?.thinking).toEqual({ effort: 'ultra' });
+
+      for (const thinking of [{}, { level: 'extreme' }, { effort: 'deep' }, { level: 'fast', effort: 'low' }]) {
+        expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts, thinking })).toEqual({ ok: false, code: 'invalid_id' });
+      }
     });
 
     it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {

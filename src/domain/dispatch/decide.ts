@@ -1,6 +1,6 @@
 // The dispatcher's decision rule: which queued items start now, and why the others wait.
 // Contract: docs/v2/domain.md section 8.
-import type { AccountId, EpochMs, QueueItemId, StageSlug, WorkOrderId, RepoSlug } from '../shared/index';
+import type { AccountId, EpochMs, QueueItemId, StageSlug, WorkOrderId, RepoSlug, ThinkingChoice } from '../shared/index';
 import type { AccountRoute, Headroom } from '../quota/index';
 import type { SpendStatus } from '../budget/index';
 
@@ -13,6 +13,7 @@ export interface QueueItem {
   readonly priority: number; // higher first
   readonly enqueuedAt: EpochMs;
   readonly notBefore?: EpochMs; // e.g. a scheduled resume
+  readonly thinking?: ThinkingChoice; // from the resolved binding; absent → balanced
 }
 
 export interface RunningRun {

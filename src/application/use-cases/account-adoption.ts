@@ -14,7 +14,8 @@ export type AdoptError =
   | 'secret_without_ref'
   | 'invalid_endpoint'
   | 'endpoint_mismatch'
-  | 'identity_dir_not_allowed';
+  | 'identity_dir_not_allowed'
+  | 'invalid_reserve';
 
 export type AdoptDeps = Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'> & {
   readonly discovery: AccountDiscovery;

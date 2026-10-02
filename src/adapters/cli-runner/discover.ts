@@ -1,8 +1,8 @@
 // src/adapters/cli-runner/discover.ts — agent auto-discovery (WO-0107 / Faz D, issue #108).
 //
 // An Electron-launched process's PATH is thinner than a login shell's (no rc-file additions) —
-// the problem nexu-io/open-design solved by scanning PATH PLUS well-known toolchain
-// directories (their executables.ts:94-108; the same lesson, our own list). This module finds
+// the problem solved by scanning PATH PLUS well-known toolchain
+// directories (our own list). This module finds
 // each known vendor's binary in that union, honoring a per-vendor `<ID>_BIN` override (the
 // escape hatch when detection still misses), and streams ONE RESULT PER VENDOR as each probe
 // finishes — the wizard's "found on this machine" checklist never blocks on all of them.
@@ -46,7 +46,7 @@ export function pathDirs(pathEnv: string | undefined): string[] {
 }
 
 /**
- * The well-known toolchain directories (open-design's set, our own spelling): Homebrew (both
+ * The well-known toolchain directories (our own list): Homebrew (both
  * arms), ~/.local/bin, ~/.bun/bin, volta, ~/bin, and every nvm-managed node's bin. Pure over
  * its inputs; `listDir` is injected so tests fake an nvm tree without touching the real home.
  */

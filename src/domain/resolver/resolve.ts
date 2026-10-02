@@ -2,7 +2,7 @@
 // Contract: docs/v2/domain.md section 3.
 import type { RoleDef, RoleOverride } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
-import type { RoleSlug } from '../shared/index';
+import type { RoleSlug, ThinkingChoice } from '../shared/index';
 
 export type Level = 'workOrder' | 'repo' | 'project' | 'global' | 'builtin';
 
@@ -62,6 +62,7 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
 export interface RoleBinding {
   readonly role: RoleSlug;
   readonly accounts: readonly AccountRoute[];
+  readonly thinking?: ThinkingChoice; // absent → { level: 'balanced' }
 }
 
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined {
