@@ -128,9 +128,9 @@ describe('provider definitions (P-1)', () => {
     const DOCUMENTED_CONFIG_NAME_BY_ID: Readonly<Record<string, string>> = {
       'claude-code': '',
       codex: '',
-      agy: 'HOME',
-      copilot: 'HOME',
-      cursor: 'HOME',
+      agy: '',
+      copilot: '',
+      cursor: '',
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: '',
       kilo: 'KILO_CONFIG_DIR',
@@ -162,6 +162,53 @@ describe('provider definitions (P-1)', () => {
     expect(def.config).toEqual({ mechanism: 'none' });
     const launch = def.buildLaunch(LAUNCH_INPUT);
     expect(launch.env).toEqual({});
+    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
+  });
+
+  it('P-44: agy sets no config-dir variable — a run-scoped HOME could cut the CLI off from its login home', () => {
+    // The CLI documents no config-dir override and no login location, so HOME is never redirected:
+    // the machine's home reaches the child unchanged and the run directory never appears.
+    const def = defById('agy');
+    expect(def.config).toEqual({ mechanism: 'none' });
+    const launch = def.buildLaunch(LAUNCH_INPUT);
+    expect(launch.env).toEqual({});
+    expect(Object.keys(launch.env)).not.toContain('HOME');
+    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
+  });
+
+  it('P-44: copilot sets no config-dir variable and never names COPILOT_HOME — the login stays where the CLI keeps it', () => {
+    // The CLI documents COPILOT_HOME as the override of the directory holding its configuration
+    // and state (the stored login among them), so Docket neither redirects HOME nor points
+    // COPILOT_HOME anywhere: an ambient value is the machine's own relocation and passes through.
+    const def = defById('copilot');
+    expect(def.config).toEqual({ mechanism: 'none' });
+    const launch = def.buildLaunch(LAUNCH_INPUT);
+    expect(launch.env).toEqual({});
+    expect(Object.keys(launch.env)).not.toContain('HOME');
+    expect(JSON.stringify(launch)).not.toContain('COPILOT_HOME');
+    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
+  });
+
+  it('P-44: cursor sets no config-dir variable — a run-scoped HOME could cut the CLI off from its login home', () => {
+    // The CLI documents no config-dir or home override (only CURSOR_API_KEY and
+    // CURSOR_API_ENDPOINT) and says nothing about where the stored authentication lives, so HOME
+    // is never redirected and the machine's home reaches the child unchanged.
+    const def = defById('cursor');
+    expect(def.config).toEqual({ mechanism: 'none' });
+    const launch = def.buildLaunch(LAUNCH_INPUT);
+    expect(launch.env).toEqual({});
+    expect(Object.keys(launch.env)).not.toContain('HOME');
+    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
+  });
+
+  it('P-44: codex sets no config-dir variable — its login lives under the home CODEX_HOME names', () => {
+    // The CLI documents CODEX_HOME (its --profile help names $CODEX_HOME/<name>.config.toml on
+    // top of the base user config) and keeps auth.json there, so the launch names no home.
+    const def = defById('codex');
+    expect(def.config).toEqual({ mechanism: 'none' });
+    const launch = def.buildLaunch(LAUNCH_INPUT);
+    expect(launch.env).toEqual({});
+    expect(JSON.stringify(launch)).not.toContain('CODEX_HOME');
     expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
   });
 

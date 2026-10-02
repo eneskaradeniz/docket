@@ -47,9 +47,10 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       // No G3 — the dialect surfaces no permission asks — and no G6, the end-to-end scenario has
-      // no stream-json leg.
+      // no stream-json leg. No isolation evidence on purpose (P-44): the CLI documents no
+      // config-dir override and no login location, so HOME is left alone (a run-scoped home could
+      // cut the CLI off from its login) and the CLI reads its own configuration; the cap holds.
       providerId: 'agy',
-      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
@@ -58,8 +59,10 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
+      // No isolation evidence on purpose (P-44): the CLI's documented home override
+      // (COPILOT_HOME) is also where its stored login lives, so neither HOME nor that variable is
+      // ever redirected or named and the CLI reads its own configuration; the cap holds.
       providerId: 'copilot',
-      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
@@ -68,8 +71,11 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
+      // No isolation evidence on purpose (P-44): the CLI documents no config-dir or home override
+      // and says only that the stored authentication is kept locally, so HOME is left alone (a
+      // run-scoped home could cut the CLI off from its login) and the CLI reads its own
+      // configuration; the cap holds.
       providerId: 'cursor',
-      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },

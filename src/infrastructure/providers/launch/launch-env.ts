@@ -44,9 +44,14 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   // The CLI's own documented config-dir override: a machine login lives where it points, so the
   // login probe and a run must read the same one.
   'claude-code': ['CLAUDE_CONFIG_DIR'],
-  codex: [],
+  // The CLI's documented home (its --profile help names $CODEX_HOME), where auth.json lives: the
+  // login probe and a run must read the same one.
+  codex: ['CODEX_HOME'],
   agy: [],
-  copilot: [],
+  // The CLI's documented home override ("override the directory where configuration and state
+  // files are stored"), the stored login among them: an ambient value is the machine's own
+  // relocation, so the probe and a run read the same one.
+  copilot: ['COPILOT_HOME'],
   cursor: [],
   opencode: [],
   hermes: [],

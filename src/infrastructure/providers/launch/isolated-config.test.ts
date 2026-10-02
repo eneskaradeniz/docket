@@ -246,6 +246,24 @@ describe('isolation and telemetry (P-44)', () => {
     expect(Object.values(childEnv).some((value) => value.startsWith(realHome))).toBe(false);
   });
 
+  it('P-44: an agy, copilot or cursor run never replaces HOME — the machine home reaches the child, and none is invented when the machine carries no HOME', async () => {
+    const { root, runDir } = await createRoot();
+    const realHome = join(root, 'real-home');
+    for (const id of ['agy', 'copilot', 'cursor']) {
+      const def = defById(id);
+      const config = await writeRunConfig(runDir, def, []);
+      const launch = def.buildLaunch({ prompt: 'x', configDir: config.configDir });
+      // The transports spread the allowlisted machine env first and the def's launch env last.
+      const withHome = { ...buildChildEnv(def.id, { HOME: realHome, PATH: '/bin' }, {}), ...config.env, ...launch.env };
+      expect(withHome.HOME, id).toBe(realHome);
+      expect(JSON.stringify(withHome), id).not.toContain(config.configDir);
+      // A machine without HOME gets none: neither the writer nor the launch names a home for a
+      // CLI whose login lives in the home it resolves itself.
+      const withoutHome = { ...buildChildEnv(def.id, { PATH: '/bin' }, {}), ...config.env, ...launch.env };
+      expect('HOME' in withoutHome, id).toBe(false);
+    }
+  });
+
   it('P-44: a definition without isolation or telemetry flags launches exactly as before', async () => {
     const { runDir } = await createRoot();
 

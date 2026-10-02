@@ -98,9 +98,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     transport: 'stream-json',
     streamDialect: 'agy',
     effortArg: AGY_EFFORT,
-    // This CLI documents no config-dir override of its own; the run-scoped HOME carries the
-    // run directory until a dedicated variable exists.
-    config: { mechanism: 'env-var', name: 'HOME' },
+    // The CLI documents no config-dir override and no login location, so HOME is never
+    // redirected: a run-scoped home could cut the CLI off from wherever it keeps its login, and
+    // the machine's home reaches the child as the CLI itself resolves it. No isolation is claimed.
+    config: { mechanism: 'none' },
     buildLaunch: (input) => ({
       args: [
         '--input-format',
@@ -110,7 +111,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
         ...(input.resume === undefined ? [] : ['--conversation', input.resume.sessionRef]),
         ...effortFlagArgs(AGY_EFFORT, input.effort),
       ],
-      env: { HOME: input.configDir },
+      env: {},
       stdin: 'prompt',
     }),
     resume: 'specify',
@@ -135,12 +136,15 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     versionArgs: ['--version'],
     helpArgs: ['--help'],
     transport: 'acp',
-    // No dedicated config-dir variable is documented; the run-scoped HOME isolates the config tree.
-    config: { mechanism: 'env-var', name: 'HOME' },
+    // The CLI documents COPILOT_HOME as the override of the directory holding its configuration
+    // and state files — the stored login among them — so neither HOME nor COPILOT_HOME is ever
+    // redirected or named: an ambient value is the machine's own relocation and passes through.
+    // The run's MCP servers ride the ACP session itself (session/new), never a config dir.
+    config: { mechanism: 'none' },
     effortArg: COPILOT_EFFORT,
     buildLaunch: (input) => ({
       args: ['--acp', '--stdio', ...effortFlagArgs(COPILOT_EFFORT, input.effort)],
-      env: { HOME: input.configDir },
+      env: {},
       stdin: 'prompt',
     }),
     resume: 'protocol',
@@ -166,9 +170,12 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     versionArgs: ['--version'],
     helpArgs: ['--help'],
     transport: 'acp',
-    // No dedicated config-dir variable is documented; the run-scoped HOME isolates the config tree.
-    config: { mechanism: 'env-var', name: 'HOME' },
-    buildLaunch: (input) => ({ args: ['acp'], env: { HOME: input.configDir }, stdin: 'prompt' }),
+    // The CLI documents no config-dir or home override (its help names only the API variables)
+    // and says only that the stored authentication is kept locally, so HOME is never redirected:
+    // the machine's home reaches the child as the CLI itself resolves it. The run's MCP servers
+    // ride the ACP session itself (session/new), never a config dir.
+    config: { mechanism: 'none' },
+    buildLaunch: () => ({ args: ['acp'], env: {}, stdin: 'prompt' }),
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
