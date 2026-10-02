@@ -499,6 +499,12 @@ export type Headroom =
  *  monthly). Absent or 0 → no reserve. */
 export interface QuotaReserve { readonly short?: number; readonly long?: number }
 export const RESERVE_MAX: number;           // 0.95
+/** The class R-49 puts a meter in; `larger` = no window length and no calendar cadence, so the
+ *  larger of the two values governs it. */
+export type ReserveClass = 'short' | 'long' | 'larger';
+export function reserveClassOf(meter: Meter): ReserveClass;
+/** The reserve share that governs this meter under R-49 (0 when none). */
+export function reserveFor(meter: Meter, reserve: QuotaReserve): number;
 export function headroom(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId, model: string, now: EpochMs, reserve?: QuotaReserve): Headroom;
 
 // quota/limit-policy.ts
@@ -540,7 +546,7 @@ Rules:
 - **R-27** `isStale`: `staleAfterMs` given and `now - observedAt > staleAfterMs`.
 - **R-28** `headroom` ANDs every meter of every pool matching the model: any meter with normalized remaining `0` (or `remaining <= 0`) and (`resetsAt` undefined or `> now`) blocks. A meter whose `resetsAt <= now` is treated as unknown-but-not-blocking. `throughput` pools never block (they are transient). No meters at all → `{ok:'unknown', reason:'no_data'}`; all relevant meters stale → `'stale'`.
 - **R-29** `earliestRelief` = the minimum `resetsAt` among blocking meters, if any.
-- **R-49** Reserve: with a `reserve`, a non-throughput meter whose normalized remaining is known and `<=` its class's reserve (and `> 0`) blocks like an exhausted one (same `earliestRelief` rule). Class: `durationMs < 86_400_000` → `short`; `durationMs >= 86_400_000` → `long`; no `durationMs` → `long` for cadence `calendar` or `billing_cycle`, otherwise the larger of the two values. A meter whose normalized remaining is unknown never blocks by reserve. `byReserve: true` only when every blocking meter blocks by reserve alone. A reserve of `0` or absent changes nothing (R-28 unchanged).
+- **R-49** Reserve: with a `reserve`, a non-throughput meter whose normalized remaining is known and `<=` its class's reserve (and `> 0`) blocks like an exhausted one (same `earliestRelief` rule). Class: `durationMs < 86_400_000` → `short`; `durationMs >= 86_400_000` → `long`; no `durationMs` → `long` for cadence `calendar` or `billing_cycle`, otherwise the larger of the two values. A meter whose normalized remaining is unknown never blocks by reserve. `byReserve: true` only when every blocking meter blocks by reserve alone. A reserve of `0` or absent changes nothing (R-28 unchanged). `reserveClassOf` returns that class (`larger` for the no-length, non-calendar case) and `reserveFor` the governing share (the class's value, the larger of the two for `larger`, 0 when absent); `headroom` uses `reserveFor`.
 - **R-30** `decideOnLimit`:
   - `class` `throughput` → `schedule_resume` at `now + (retryAfterMs ?? MINUTE)` (does not consume an auto-resume).
   - `fair_use`, `entitlement`, `plan_expired`, `balance_exhausted`, `spend_cap` → `ask` with `not_resumable`, unless policy is `fallback_account` and a fallback exists.

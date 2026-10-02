@@ -906,7 +906,8 @@ Nothing here reads or returns a secret value.
 
 ```ts
 // queries.ts — SettingsMeterView gains
-readonly reserveClass: 'short' | 'long';          // the class R-49 puts the meter in
+readonly reserveClass: 'short' | 'long' | 'larger'; // reserveClassOf (R-49)
+readonly reserveShare: number;                    // reserveFor with the account's reserve; 0 = none
 // queries.ts — SettingsAccountView gains
 readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
 readonly reserve: { readonly short: number | null; readonly long: number | null };
@@ -945,8 +946,9 @@ Rules:
   values are the record's or `null`; `caps` in `account_day`, `account_week`, `account_month`
   order; `consentedModels` verbatim; `endpointHost` is the host of `endpoint` (`null` without one);
   `hasSecret` is `secretRef !== undefined`. No field carries a secret value or an environment
-  value. Each meter's `reserveClass` is the class R-49 assigns it (the same domain call the
-  headroom check makes), so the surface never re-derives the rule.
+  value. Each meter's `reserveClass` is `reserveClassOf(meter)` and its `reserveShare` is
+  `reserveFor(meter, reserve)` — the same domain calls the headroom check makes — so the surface
+  never re-derives the rule.
 - **A-49** `settings.accounts` bindings carry the stored `thinking` and `tier` (`null` when the
   binding has none). `binding.save` replaces the whole binding at its scope — a field the command
   leaves out is cleared, never kept — so a surface that changes one field sends the binding's
