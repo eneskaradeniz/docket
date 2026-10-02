@@ -19,10 +19,17 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     bins: ['claude'],
     versionArgs: ['--version'],
     helpArgs: ['--help'],
+    // `auth status` prints JSON whose `loggedIn` boolean is the answer on either exit code;
+    // only that boolean is read, never another field of the object.
+    authProbe: { args: ['auth', 'status'], parse: 'logged-in-json' },
     transport: 'sdk',
     effortArg: { kind: 'request-field', name: 'effort' },
-    config: { mechanism: 'env-var', name: 'CLAUDE_CONFIG_DIR' },
-    buildLaunch: (input) => ({ args: [], env: { CLAUDE_CONFIG_DIR: input.configDir }, stdin: 'prompt' }),
+    // The CLI keeps its login in its own config directory (a keychain entry keyed to the
+    // directory's path on macOS), so the variable stays unset: pointing it at a run directory
+    // would leave the run logged out. The run's MCP servers and settings reach the SDK inline
+    // (`settingSources: []`, inline `mcpServers`), never a run config dir.
+    config: { mechanism: 'none' },
+    buildLaunch: () => ({ args: [], env: {}, stdin: 'prompt' }),
     resume: 'specify',
     capabilities: {
       structuredStream: true,

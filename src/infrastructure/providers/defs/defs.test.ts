@@ -122,7 +122,7 @@ describe('provider definitions (P-1)', () => {
 
   it('P-1: config carries the documented config-dir mechanism of its CLI', () => {
     const DOCUMENTED_CONFIG_NAME_BY_ID: Readonly<Record<string, string>> = {
-      'claude-code': 'CLAUDE_CONFIG_DIR',
+      'claude-code': '',
       codex: '',
       agy: 'HOME',
       copilot: 'HOME',
@@ -145,6 +145,14 @@ describe('provider definitions (P-1)', () => {
       expect(def.config.mechanism, def.id).toBe('env-var');
       expect(def.config.name, def.id).toBe(DOCUMENTED_CONFIG_NAME_BY_ID[def.id]);
     }
+  });
+
+  it('P-44: claude-code sets no config-dir variable — its login lives in its own config directory', () => {
+    const def = defById('claude-code');
+    expect(def.config).toEqual({ mechanism: 'none' });
+    const launch = def.buildLaunch(LAUNCH_INPUT);
+    expect(launch.env).toEqual({});
+    expect(JSON.stringify(launch)).not.toContain(LAUNCH_INPUT.configDir);
   });
 
   it('P-1: buildLaunch never places the prompt in argv and carries it on stdin', () => {

@@ -12,7 +12,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
 import { createLoginStates } from './login-states';
-import { createPathDiscovery, loggedInFromCredentialCount, loggedInFromProviderKeys, type ProbeSpawn } from './path-discovery';
+import {
+  createPathDiscovery,
+  loggedInFromAuthStatus,
+  loggedInFromCredentialCount,
+  loggedInFromProviderKeys,
+  type ProbeSpawn,
+} from './path-discovery';
 
 let root: string;
 
@@ -506,6 +512,61 @@ describe('credential-count login probe (kilo)', () => {
       const { discovery } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
       const results = await collect(discovery);
       expect(results[0]?.loggedIn, `${answer} / exit ${exit}`).toBe(expected);
+    }
+  });
+});
+
+describe('logged-in-json login probe (claude-code)', () => {
+  // The CLI's own `auth status` answer: only the loggedIn boolean is read, never another field.
+  const LOGGED_IN = JSON.stringify({
+    loggedIn: true,
+    authMethod: 'oauth_token',
+    analyticsDisabled: false,
+    projectsDirectory: '/tmp/fixture/projects',
+    configDirectory: '/tmp/fixture/.claude',
+  });
+  const LOGGED_OUT = JSON.stringify({
+    loggedIn: false,
+    authMethod: 'none',
+    analyticsDisabled: false,
+    projectsDirectory: '/tmp/fixture/projects',
+    configDirectory: '/tmp/fixture/.claude',
+  });
+
+  it('G1: the loggedIn boolean is the answer; anything else is unknown', () => {
+    expect(loggedInFromAuthStatus(LOGGED_IN)).toBe(true);
+    expect(loggedInFromAuthStatus(LOGGED_OUT)).toBe(false);
+    expect(loggedInFromAuthStatus('')).toBeNull();
+    expect(loggedInFromAuthStatus('not json')).toBeNull();
+    expect(loggedInFromAuthStatus('{"authMethod": "oauth_token"}')).toBeNull();
+    expect(loggedInFromAuthStatus('{"loggedIn": "yes"}')).toBeNull();
+    expect(loggedInFromAuthStatus('["loggedIn"]')).toBeNull();
+  });
+
+  it('G1: the claude-code definition probes `claude auth status` and reads the JSON on either exit code', async () => {
+    const claude = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'claude-code');
+    expect(claude?.authProbe).toEqual({ args: ['auth', 'status'], parse: 'logged-in-json' });
+    // The JSON answer is one line, so echo (a shell builtin) carries it; the probe environment
+    // resolves no external command on purpose.
+    const body = (answer: string, exit: number): string =>
+      `case "$1" in\n  --version) echo "2.1.287-fake"; exit 0;;\n  --help) echo "Usage: claude [options]"; exit 0;;\n  auth) echo '${answer}'; exit ${exit};;\nesac\nexit 0`;
+    const def = defOf({
+      id: 'claude-like',
+      bins: ['claude-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: claude?.authProbe,
+    });
+    for (const [answer, exit, expected] of [
+      [LOGGED_IN, 0, true],
+      [LOGGED_OUT, 1, false],
+      ['garbage', 0, null],
+    ] as const) {
+      writeBin('home/.local/bin/claude-like', body(answer, exit));
+      const { discovery, calls } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      expect(results[0]?.loggedIn, `exit ${exit}`).toBe(expected);
+      expect(calls.some((call) => call.args.join(' ') === 'auth status')).toBe(true);
     }
   });
 });

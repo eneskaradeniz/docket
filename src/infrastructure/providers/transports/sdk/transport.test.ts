@@ -183,6 +183,47 @@ function assistantToolUse(id: string, name: string, input: unknown): SDKMessage 
   };
 }
 
+type AssistantErrorValue = Extract<SDKMessage, { type: 'assistant' }>['error'];
+
+function assistantBody(): AssistantMessageBody {
+  return {
+    id: 'msg_1',
+    container: null,
+    content: [],
+    context_management: null,
+    diagnostics: null,
+    model: 'test-model',
+    role: 'assistant',
+    stop_details: null,
+    stop_reason: null,
+    stop_sequence: null,
+    type: 'message',
+    usage: betaUsage(),
+  };
+}
+
+function assistantErrorMessage(error: AssistantErrorValue): SDKMessage {
+  return {
+    type: 'assistant',
+    message: assistantBody(),
+    parent_tool_use_id: null,
+    error,
+    uuid: UUID_A,
+    session_id: SESSION_ID,
+  };
+}
+
+function assistantMessageWithText(text: string): SDKMessage {
+  const block: AssistantBlock = { type: 'text', text, citations: null };
+  return {
+    type: 'assistant',
+    message: { ...assistantBody(), content: [block] },
+    parent_tool_use_id: null,
+    uuid: UUID_A,
+    session_id: SESSION_ID,
+  };
+}
+
 function resultUsage(inputTokens: number, outputTokens: number): ResultUsage {
   return {
     cache_creation: { ephemeral_1h_input_tokens: 1, ephemeral_5m_input_tokens: 2 },
@@ -909,6 +950,55 @@ describe('createSdkTransport', () => {
         });
       });
 
+      it('P-32: a subscription account on the machine login carries no config directory and keeps the run inline', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh' },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        // The CLI reads its own config directory (the machine login); the run's own settings
+        // never ride one — they reach the SDK inline, never a run config dir.
+        expect(calls[0]?.options.env).toEqual({
+          SHELL: '/bin/zsh',
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+        });
+        expect(calls[0]?.options.settingSources).toEqual([]);
+        expect(calls[0]?.options.mcpServers).toEqual({});
+      });
+
+      it('P-44: a subscription account on the machine login leaves the config directory unset, whatever the ambient environment carries', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh', CLAUDE_CONFIG_DIR: '/tmp/docket-sdk-transport/config' },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        const env = calls[0]?.options.env;
+        expect(env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+        expect(JSON.stringify(env)).not.toContain('/tmp/docket-sdk-transport');
+      });
+
       it('I-34: a compatible-endpoint run reports usage with the route kind costKind equivalent', async () => {
         const accounts = createFakeAccountRepo();
         await accounts.save(account('api_key', 'ref-zai', { routeKind: 'zai-glm', endpoint: ZAI_ENDPOINT }));
@@ -955,6 +1045,79 @@ describe('createSdkTransport', () => {
         expect(started.ok).toBe(false);
         if (!started.ok) expect(started.error.code).toBe('unsupported');
         expect(calls.length).toBe(0);
+      });
+    });
+
+    describe('finish after stream errors (R-44)', () => {
+      it('R-44: an auth error turns the finish failed, so the run is never recorded succeeded', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query } = scriptedQuery(async function* () {
+          yield systemInit();
+          yield assistantErrorMessage('authentication_failed');
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          baseEnv: {},
+          query,
+        });
+
+        const events = await collect(unwrap(await transport.start(request())).events);
+
+        // The CLI closes an auth-failed turn with a success result; the outcome maps from the
+        // last finished, so the transport must say failed, not completed.
+        const last = events[events.length - 1];
+        expect(last).toStrictEqual({ type: 'finished', at: START_AT, reason: 'failed' });
+        expect(events.some((event) => event.type === 'error' && event.class === 'auth')).toBe(true);
+      });
+
+      it('R-44: an auth error after assistant output still finishes failed', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query } = scriptedQuery(async function* () {
+          yield systemInit();
+          yield assistantMessageWithText('partial answer');
+          yield assistantErrorMessage('authentication_failed');
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          baseEnv: {},
+          query,
+        });
+
+        const events = await collect(unwrap(await transport.start(request())).events);
+
+        const last = events[events.length - 1];
+        expect(last?.type).toBe('finished');
+        if (last?.type === 'finished') expect(last.reason).toBe('failed');
+      });
+
+      it('R-44: a clean session still finishes completed', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query } = scriptedQuery(async function* () {
+          yield systemInit();
+          yield assistantMessageWithText('done');
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          baseEnv: {},
+          query,
+        });
+
+        const events = await collect(unwrap(await transport.start(request())).events);
+
+        const last = events[events.length - 1];
+        expect(last).toStrictEqual({ type: 'finished', at: START_AT, reason: 'completed' });
       });
     });
   });
