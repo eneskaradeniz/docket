@@ -52,8 +52,7 @@ Level derivation (pure, replaces the tier computed from capabilities alone):
 - `experimental`: G1 or G2 is missing, or the stream is plain text passed through raw.
 - `isolated`: G1, G2, G4 and G6 (scripted scenario) pass; G3 may be missing (the agent cannot ask; it runs sandboxed).
 - `full`: G1–G5 pass (G5 may be waived), G6 passes, and at least one operator-gate run is recorded in `operatorRuns`.
-The existing `supportTier(capabilities)` stays until the registry lands; the registry issue deletes it so
-only one derivation exists.
+`supportLevel` is the only derivation; the earlier capability-only tier function is removed.
 
 ## 3. Models and the catalog (P-29)
 Four layers, merged per route:
@@ -158,11 +157,13 @@ through the gates. Candidate classes, by how they fit today's transports:
 | Class | Providers | Effort |
 | --- | --- | --- |
 | Already supported | Claude Code, Codex, Antigravity, OpenCode, Cursor, Copilot | model layer only |
-| ACP, existing transport | kilo, vibe, hermes, devin, trae-cli, reasonix | S each |
-| ACP with a special case | kimi, kiro, amr | M each |
-| Stream JSON, new dialect (one per family) | amp, codebuddy (Claude-style stream); qoder; mimo (OpenCode-style) | M per family |
-| Plain text, experimental only | grok-build, qwen, deepseek, aider, atomcode | S each |
-| New transport | pi, deepseek-harness | L, later |
+| ACP, existing transport | kilo, hermes, vibe, devin, reasonix, atomcode, grok-build, qoder, trae-cli | S each (S–M for grok-build, atomcode, qoder) |
+| ACP with a special case | kimi (login before any model list), qwen (models from the user's own settings), kiro (desktop-bundled binary, models by CLI command), mimo (effort as a model-id suffix) | M each |
+| Stream JSON, new dialect (one per family) | amp, codebuddy (Claude-style stream) | M per family |
+| Plain text, experimental only | aider | S |
+| New transport | pi | L, later |
+
+Discovery of 2026-10-02 (evidence notes outside the repo, one per provider) moved mimo, qwen, grok-build and atomcode to ACP and qoder from stream JSON to ACP. Dropped: amr (no such agent CLI could be identified), deepseek (no official terminal agent; reasonix covers the provider), deepseek-harness (a desktop application with no headless channel). amp and trae-cli could not be installed in discovery and need an operator run first. Almost none of the candidates exposes machine-readable quota: they enter with G5 waived ("no machine-readable quota; a limit error maps to `limit_hit`").
 
 Gemini CLI is removed because Antigravity replaces it. v2 has not shipped, so there is no deprecation period. A stored account whose provider id has no definition is listed as unsupported and never breaks loading or quota polling.
 

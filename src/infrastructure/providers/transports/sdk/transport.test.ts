@@ -844,6 +844,26 @@ describe('createSdkTransport', () => {
         });
       });
 
+      it('P-32: the identityDir reaches the child as the config directory variable, verbatim', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription', undefined, { identityDir: CONFIG_DIR }));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh' },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env).toMatchObject({ CLAUDE_CONFIG_DIR: CONFIG_DIR });
+      });
+
       it('I-34: a subscription account without an identityDir keeps the I-28 environment with no config directory', async () => {
         const accounts = createFakeAccountRepo();
         await accounts.save(account('subscription'));

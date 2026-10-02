@@ -712,8 +712,6 @@ export interface ProviderCapabilities {
   readonly quotaReport: 'stream' | 'query' | 'error_only' | 'none';
   readonly costReport: 'reported' | 'computed' | 'equivalent' | 'credits' | 'none';
 }
-export type SupportTier = 'full' | 'isolated' | 'experimental';
-export function supportTier(c: ProviderCapabilities): SupportTier;
 
 // providers/agent-event.ts
 export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';

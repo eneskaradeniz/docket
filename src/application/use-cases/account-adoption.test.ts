@@ -102,7 +102,7 @@ describe('adoptAccountCandidate', () => {
     expect(h.reads).toEqual([]);
   });
 
-  it('adopts a compatible-endpoint candidate without a secret: https endpoint, a secretRef, empty vault', async () => {
+  it('P-33: adopts a compatible-endpoint candidate without a secret: https endpoint, a secretRef, empty vault', async () => {
     const h = makeHarness();
     const result = await adoptAccountCandidate(h.deps, { sourcePath: ENDPOINT.sourcePath, label: 'GLM', actor: USER });
     if (!result.ok) throw new Error('adoption must succeed');

@@ -404,6 +404,12 @@ describe('executeRun', () => {
       expect(h.transport.requests()[0]?.effort).toBe('low');
     });
 
+    it('P-30: a model with thinking none offers no level — a deep choice sends no effort', async () => {
+      const item: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'm-1' }, thinking: { level: 'deep' } };
+      const h = await run(item, [entry('m-1', { thinking: { kind: 'none' } })]);
+      expect(h.transport.requests()[0]).not.toHaveProperty('effort');
+    });
+
     it('A-46: an unknown model or no default entry sends no effort and records no detail', async () => {
       const pinned: QueueItem = { ...ITEM, route: { accountId: ACCOUNT, model: 'ghost' }, thinking: { level: 'deep' } };
       const a = await run(pinned, [entry('m-1'), entry('ghost', { thinking: 'unknown' })]);
