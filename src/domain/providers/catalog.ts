@@ -3,7 +3,8 @@
 // Contract: docs/v2/provider-capabilities.md sections 3–4 and 14. The registry data and the
 // family-id patterns are infrastructure — provider and family names may not appear in the domain —
 // so every function here takes them as a parameter.
-import type { Billing, EffortLevel, ModelRecord, Thinking, Tier } from './capability';
+import type { EffortLevel, ThinkingChoice } from '../shared/index';
+import type { Billing, ModelRecord, Thinking, Tier } from './capability';
 
 /** A model as a live route reported it; `efforts` is the list the route itself advertises. */
 export interface LiveModel {
@@ -12,6 +13,10 @@ export interface LiveModel {
   readonly efforts?: readonly EffortLevel[];
   /** The billing state the route itself reported; it wins over the registry's when present. */
   readonly billing?: Billing;
+  /** The canonical id an alias row stands for, as the provider reports it. */
+  readonly resolvedId?: string;
+  /** The row the provider uses when no model is pinned. */
+  readonly isDefault?: true;
 }
 
 /** One merged catalog entry: registry capabilities where known, unknown-but-selectable otherwise. */
@@ -27,6 +32,8 @@ export interface CatalogModel {
   readonly autoClassified?: true;
   /** Set on every entry when a refresh failed and the last good list is being kept. */
   readonly stale?: true;
+  /** The row the provider uses when no model is pinned. */
+  readonly isDefault?: true;
 }
 
 /** Family recognition as data: an id containing `contains` belongs to `tier`. */
@@ -43,11 +50,28 @@ const bundledEntry = (record: ModelRecord): CatalogModel => ({
   billing: record.billing ?? 'unknown',
 });
 
-const liveEntry = (
-  model: LiveModel,
-  record: ModelRecord | undefined,
-  familyPatterns: readonly FamilyPattern[],
-): CatalogModel => {
+/** The id a registry record is compared by: one trailing bracketed variant (`[1m]`) and one
+ * trailing `-YYYYMMDD` date are dropped, so an alias target, a variant and a dated snapshot all
+ * meet the record that names the undated model. Case is kept. */
+export function canonicalModelId(id: string): string {
+  return id.replace(/\[[^\]]*\]$/, '').replace(/-\d{8}$/, '');
+}
+
+/** A route kind's billing for a whole model family: an id containing `contains` bills as `billing`. */
+export interface FamilyBilling {
+  readonly contains: string;
+  readonly billing: Billing;
+}
+
+interface LiveContext {
+  readonly familyPatterns: readonly FamilyPattern[];
+  readonly familyBilling: readonly FamilyBilling[];
+  readonly defaultBilling: Billing | undefined;
+}
+
+const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: LiveContext): CatalogModel => {
+  const reported = model.resolvedId ?? model.id;
+  const marker = model.isDefault === true ? { isDefault: true as const } : {};
   if (record !== undefined) {
     return {
       id: model.id,
@@ -56,14 +80,18 @@ const liveEntry = (
       tier: record.tier,
       thinking: record.thinking,
       billing: model.billing ?? record.billing ?? 'unknown',
+      ...marker,
     };
   }
   const thinking: Thinking | 'unknown' =
     model.efforts === undefined ? 'unknown' : { kind: 'levels', levels: model.efforts };
-  const billing: Billing = model.billing ?? 'unknown';
-  const pattern = familyPatterns.find((candidate) => model.id.includes(candidate.contains));
+  // The route kind's family and default answers come only when the row itself is silent; the
+  // registry's own answer (the matched-record branch above) is never overridden by them.
+  const family = context.familyBilling.find((candidate) => reported.includes(candidate.contains));
+  const billing: Billing = model.billing ?? family?.billing ?? context.defaultBilling ?? 'unknown';
+  const pattern = context.familyPatterns.find((candidate) => reported.includes(candidate.contains));
   return pattern === undefined
-    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing }
+    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing, ...marker }
     : {
         id: model.id,
         displayName: model.displayName,
@@ -72,13 +100,18 @@ const liveEntry = (
         thinking,
         autoClassified: true,
         billing,
+        ...marker,
       };
 };
 
 /** Merge knobs: `authoritative` marks the live list plan-scoped — bundled models it does not
- * contain are hidden, not kept. A failed refresh never drops anything, flag or not. */
+ * contain are hidden, not kept. `defaultBilling` fills live-only rows that report no billing
+ * (P-40) with the route kind's verified answer; `familyBilling` does the same per model family and
+ * answers first. A failed refresh never drops anything, flag or not. */
 export interface MergeOptions {
   readonly authoritative?: true;
+  readonly defaultBilling?: Billing;
+  readonly familyBilling?: readonly FamilyBilling[];
 }
 
 export function mergeCatalog(
@@ -94,14 +127,28 @@ export function mergeCatalog(
     if (previous !== undefined) return previous.map((model): CatalogModel => ({ ...model, stale: true }));
     return bundled.filter((record) => record.retired !== true).map(bundledEntry);
   }
-  const bundledById = new Map(bundled.map((record) => [record.id, record] as const));
-  const liveIds = new Set(live.map((model) => model.id));
-  const liveEntries = live.map((model) => liveEntry(model, bundledById.get(model.id), familyPatterns));
+  const bundledByCanonical = new Map<string, ModelRecord>();
+  for (const record of bundled) {
+    const key = canonicalModelId(record.id);
+    if (!bundledByCanonical.has(key)) bundledByCanonical.set(key, record);
+  }
+  const context: LiveContext = {
+    familyPatterns,
+    familyBilling: options?.familyBilling ?? [],
+    defaultBilling: options?.defaultBilling,
+  };
+  const confirmed = new Set<string>();
+  const liveEntries = live.map((model) => {
+    const key = canonicalModelId(model.resolvedId ?? model.id);
+    const record = bundledByCanonical.get(key);
+    if (record !== undefined) confirmed.add(record.id);
+    return liveEntry(model, record, context);
+  });
   // Registry models the live list did not confirm stay selectable; retired ones drop out unless
   // live still offers them. An authoritative list is plan-scoped: what it does not contain the
   // account cannot use, so the unconfirmed bundled models drop out too.
   if (options?.authoritative === true) return liveEntries;
-  const unconfirmed = bundled.filter((record) => !liveIds.has(record.id) && record.retired !== true).map(bundledEntry);
+  const unconfirmed = bundled.filter((record) => !confirmed.has(record.id) && record.retired !== true).map(bundledEntry);
   return [...liveEntries, ...unconfirmed];
 }
 
@@ -164,6 +211,22 @@ export function thinkingFor(
   if (medium !== -1) return 'medium';
   const belowMedium = reachable.filter((candidate) => rank(candidate) < rank('medium'));
   return belowMedium.length > 0 ? belowMedium[belowMedium.length - 1] : reachable[0];
+}
+
+/** The effort a run sends for a role's choice on one model; undefined → send nothing. */
+export function effortForChoice(
+  choice: ThinkingChoice | undefined,
+  thinking: Thinking | 'unknown',
+): EffortLevel | undefined {
+  if (thinking === 'unknown' || thinking.kind === 'none') return undefined;
+  const resolved = choice ?? { level: 'balanced' as const };
+  if ('level' in resolved) return thinkingFor(resolved.level, thinking);
+  const wanted = rank(resolved.effort);
+  // Clamp down, never up: a deeper level than asked would spend more than the user chose.
+  const atOrBelow = thinking.levels
+    .filter((candidate) => rank(candidate) <= wanted)
+    .sort((a, b) => rank(a) - rank(b));
+  return atOrBelow[atOrBelow.length - 1];
 }
 
 export function catalogCacheKey(accountId: string, routeKind: string): string {

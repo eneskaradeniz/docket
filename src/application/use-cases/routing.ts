@@ -1,5 +1,5 @@
 // use-cases/routing.ts — the role and account chain a stage run uses (docs/v2/application.md A-10).
-import type { AccountRoute, RoleDef, RoleSlug, Result, WorkOrderId, RepoSlug } from '../../domain/index';
+import type { AccountRoute, RoleDef, RoleSlug, Result, ThinkingChoice, WorkOrderId, RepoSlug } from '../../domain/index';
 import { applyRoleOverrides, err, resolveBinding } from '../../domain/index';
 
 import type { AppDeps } from '../ports/index';
@@ -10,7 +10,10 @@ export type RouteError = 'unknown_role' | 'no_binding' | 'no_account';
 export async function resolveRoute(
   deps: Pick<AppDeps, 'definitions' | 'bindings' | 'accounts' | 'projects'>,
   input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly role: RoleSlug },
-): Promise<Result<{ readonly role: RoleDef; readonly chain: readonly AccountRoute[] }, RouteError>> {
+): Promise<Result<
+  { readonly role: RoleDef; readonly chain: readonly AccountRoute[]; readonly thinking?: ThinkingChoice },
+  RouteError
+>> {
   // Without loadable definitions the role cannot be shown to exist, which is `unknown_role` by A-10.
   const loaded = await deps.definitions.load(input.repo);
   if (!loaded.ok) return err('unknown_role');
@@ -45,5 +48,6 @@ export async function resolveRoute(
   }
   if (chain.length === 0) return err('no_account');
 
-  return { ok: true, value: { role, chain } };
+  const { thinking } = resolved.value;
+  return { ok: true, value: { role, chain, ...(thinking !== undefined ? { thinking } : {}) } };
 }

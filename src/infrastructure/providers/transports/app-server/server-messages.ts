@@ -68,6 +68,7 @@ function tokenUsage(params: unknown, at: EpochMs): readonly AgentEvent[] {
   const last = usage !== undefined && isRecord(usage['last']) ? usage['last'] : undefined;
   if (last === undefined) return [];
   const cached = numberField(last, 'cachedInputTokens');
+  const reasoning = numberField(last, 'reasoningOutputTokens');
   return [
     {
       type: 'usage',
@@ -75,6 +76,7 @@ function tokenUsage(params: unknown, at: EpochMs): readonly AgentEvent[] {
       inputTokens: numberField(last, 'inputTokens') ?? 0,
       outputTokens: numberField(last, 'outputTokens') ?? 0,
       ...(cached === undefined ? {} : { cachedInputTokens: cached }),
+      ...(reasoning === undefined ? {} : { reasoningTokens: reasoning }),
     },
   ];
 }

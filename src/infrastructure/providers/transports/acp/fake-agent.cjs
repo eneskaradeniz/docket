@@ -37,6 +37,69 @@ const update = (updateBody) =>
 const advertiseLoadSession = scenario !== 'load-unsupported';
 const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupported' ? 'sess_fake_fresh' : 'sess_fake_1';
 
+// The models-* scenarios answer session/new the way the live CLIs do (observed 2026-10: one
+// answers with a models object plus a model config option; the other with config options only,
+// among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
+// exactly as its live counterpart does; the available-models shape does not advertise it.
+const advertiseSessionClose = scenario === 'models-opencode';
+
+const cursorModelsSession = () => ({
+  sessionId: freshSessionId,
+  modes: {},
+  models: {
+    currentModelId: 'default[]',
+    availableModels: [
+      { modelId: 'default[]', name: 'Auto' },
+      { modelId: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
+      { modelId: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+    ],
+  },
+  configOptions: [
+    { id: 'mode', category: 'mode', type: 'select', currentValue: 'agent', options: [{ value: 'agent', name: 'Agent' }, { value: 'plan', name: 'Plan' }] },
+    {
+      id: 'model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'default[]',
+      options: [
+        { value: 'default[]', name: 'Auto' },
+        { value: 'grok-4.7[context=256k,reasoning_effort=high,fast=true]', name: 'grok-4.7' },
+        { value: 'claude-opus-5-5[context=300k,effort=medium,fast=false]', name: 'claude-opus-5-5' },
+      ],
+    },
+  ],
+});
+
+const opencodeModelsSession = () => ({
+  sessionId: freshSessionId,
+  configOptions: [
+    {
+      id: 'model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'opencode/fledge-alpha-free',
+      options: [
+        { value: 'opencode/big-pickle', name: 'opencode/Big Pickle' },
+        { value: 'opencode/fledge-alpha-free', name: 'opencode/Fledge Alpha Free' },
+        { value: 'opencode/space-bunny-free', name: 'opencode/Space Bunny Free' },
+      ],
+    },
+    {
+      id: 'effort',
+      category: 'thought_level',
+      type: 'select',
+      currentValue: 'default',
+      options: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+        { value: 'max', name: 'Max' },
+        { value: 'default', name: 'Default' },
+      ],
+    },
+    { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }] },
+  ],
+});
+
 process.on('SIGTERM', () => {
   // Drain what is already in the pipe, then leave; a hard hang would wedge stop(). The grace
   // is generous because the test suite runs many files in parallel on a loaded machine.
@@ -45,7 +108,10 @@ process.on('SIGTERM', () => {
 
 const initializeResult = () => ({
   protocolVersion: 1,
-  agentCapabilities: advertiseLoadSession ? { loadSession: true } : {},
+  agentCapabilities: {
+    ...(advertiseLoadSession ? { loadSession: true } : {}),
+    ...(advertiseSessionClose ? { sessionCapabilities: { close: {} } } : {}),
+  },
   agentInfo: { name: 'fake-agent', version: '1.0.0' },
   authMethods: [],
 });
@@ -128,7 +194,25 @@ const onLine = (line) => {
   }
   if (message.method === 'session/new') {
     sessionId = freshSessionId;
+    if (scenario === 'models-cursor') {
+      respond(message.id, cursorModelsSession());
+      return;
+    }
+    if (scenario === 'models-opencode') {
+      respond(message.id, opencodeModelsSession());
+      return;
+    }
+    if (scenario === 'models-silent') return; // never answers: the client's timeout is under test
+    if (scenario === 'models-die') process.exit(1);
     respond(message.id, { sessionId });
+    return;
+  }
+  if (message.method === 'session/set_config_option') {
+    respond(message.id, { configOptions: [] });
+    return;
+  }
+  if (message.method === 'session/close') {
+    respond(message.id, {});
     return;
   }
   if (message.method === 'session/load') {

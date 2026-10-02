@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MINUTE, type AccountId, type EpochMs, type MeterId, type PoolId } from '../shared/index';
-import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel } from './headroom';
-import type { Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
+import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel, RESERVE_MAX } from './headroom';
+import type { Cadence, Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
 
 const ACCOUNT_MAIN = '01ARZ3NDEKTSV4RRFFQ69G5FAV' as AccountId;
 const ACCOUNT_OTHER = '01ARZ3NDEKTSV4RRFFQ69G5FBV' as AccountId;
 
-const POOL_GEMINI = '01ARZ3NDEKTSV4RRFFQ69G5FP1' as PoolId;
+const POOL_ATLAS = '01ARZ3NDEKTSV4RRFFQ69G5FP1' as PoolId;
 const POOL_SECOND = '01ARZ3NDEKTSV4RRFFQ69G5FP2' as PoolId;
 const POOL_SHARED = '01ARZ3NDEKTSV4RRFFQ69G5FP3' as PoolId;
 const POOL_TPUT = '01ARZ3NDEKTSV4RRFFQ69G5FP4' as PoolId;
 const POOL_OTHER_ACCOUNT = '01ARZ3NDEKTSV4RRFFQ69G5FP5' as PoolId;
 
-const M_GEMINI_WEEKLY = '01ARZ3NDEKTSV4RRFFQ69G5FM1' as MeterId;
-const M_GEMINI_5H = '01ARZ3NDEKTSV4RRFFQ69G5FM2' as MeterId;
+const M_ATLAS_WEEKLY = '01ARZ3NDEKTSV4RRFFQ69G5FM1' as MeterId;
+const M_ATLAS_5H = '01ARZ3NDEKTSV4RRFFQ69G5FM2' as MeterId;
 const M_SECOND_WEEKLY = '01ARZ3NDEKTSV4RRFFQ69G5FM3' as MeterId;
 const M_SHARED = '01ARZ3NDEKTSV4RRFFQ69G5FM4' as MeterId;
 const M_TPUT = '01ARZ3NDEKTSV4RRFFQ69G5FM5' as MeterId;
@@ -41,6 +41,8 @@ interface MeterInit {
   readonly id: MeterId;
   readonly poolId: PoolId;
   readonly unit?: MeterUnit;
+  readonly cadence?: Cadence;
+  readonly durationMs?: number;
   readonly used?: number;
   readonly limit?: number;
   readonly remaining?: number;
@@ -52,7 +54,8 @@ interface MeterInit {
 const meterOf = (init: MeterInit): Meter => ({
   id: init.id,
   poolId: init.poolId,
-  cadence: 'fixed',
+  cadence: init.cadence ?? 'fixed',
+  durationMs: init.durationMs,
   unit: init.unit ?? 'requests',
   used: init.used,
   limit: init.limit,
@@ -67,44 +70,44 @@ const meterOf = (init: MeterInit): Meter => ({
 describe('matchesModel', () => {
   it('R-25: appliesTo "all" matches every model', () => {
     const pool = poolOf({ id: POOL_SHARED });
-    expect(matchesModel(pool, 'gemini-pro')).toBe(true);
+    expect(matchesModel(pool, 'atlas-pro')).toBe(true);
     expect(matchesModel(pool, 'claude-opus-4-6')).toBe(true);
     expect(matchesModel(pool, '')).toBe(true);
   });
 
   it('R-25: an exact matcher compares case-insensitively', () => {
-    const pool = poolOf({ id: POOL_GEMINI, appliesTo: [{ exact: 'gemini-pro' }] });
-    expect(matchesModel(pool, 'gemini-pro')).toBe(true);
-    expect(matchesModel(pool, 'GEMINI-PRO')).toBe(true);
-    expect(matchesModel(pool, 'Gemini-Pro')).toBe(true);
-    expect(matchesModel(pool, 'gemini-pro-preview')).toBe(false);
-    expect(matchesModel(pool, 'geminipro')).toBe(false);
+    const pool = poolOf({ id: POOL_ATLAS, appliesTo: [{ exact: 'atlas-pro' }] });
+    expect(matchesModel(pool, 'atlas-pro')).toBe(true);
+    expect(matchesModel(pool, 'ATLAS-PRO')).toBe(true);
+    expect(matchesModel(pool, 'Atlas-Pro')).toBe(true);
+    expect(matchesModel(pool, 'atlas-pro-preview')).toBe(false);
+    expect(matchesModel(pool, 'atlaspro')).toBe(false);
   });
 
   it('R-25: a prefix matcher is a case-insensitive prefix of the model name', () => {
-    const pool = poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] });
-    expect(matchesModel(pool, 'GEMINI-PRO')).toBe(true);
-    expect(matchesModel(pool, 'gemini-flash-lite')).toBe(true);
+    const pool = poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] });
+    expect(matchesModel(pool, 'ATLAS-PRO')).toBe(true);
+    expect(matchesModel(pool, 'atlas-flash-lite')).toBe(true);
     expect(matchesModel(pool, 'gpt-5-code')).toBe(false);
-    expect(matchesModel(pool, 'xgemini-pro')).toBe(false);
+    expect(matchesModel(pool, 'xatlas-pro')).toBe(false);
   });
 
   it('R-25: a pool matches when any matcher in the list matches, and an empty list matches nothing', () => {
     const pool = poolOf({
-      id: POOL_GEMINI,
-      appliesTo: [{ exact: 'claude-opus-4-6' }, { prefix: 'gemini-' }],
+      id: POOL_ATLAS,
+      appliesTo: [{ exact: 'claude-opus-4-6' }, { prefix: 'atlas-' }],
     });
-    expect(matchesModel(pool, 'gemini-pro')).toBe(true);
+    expect(matchesModel(pool, 'atlas-pro')).toBe(true);
     expect(matchesModel(pool, 'claude-opus-4-6')).toBe(true);
     expect(matchesModel(pool, 'gpt-5')).toBe(false);
 
-    const empty = poolOf({ id: POOL_GEMINI, appliesTo: [] });
-    expect(matchesModel(empty, 'gemini-pro')).toBe(false);
+    const empty = poolOf({ id: POOL_ATLAS, appliesTo: [] });
+    expect(matchesModel(empty, 'atlas-pro')).toBe(false);
   });
 
   it('R-25: a pool with unknown applicability matches no model', () => {
-    const pool = poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' });
-    expect(matchesModel(pool, 'gemini-pro')).toBe(false);
+    const pool = poolOf({ id: POOL_ATLAS, appliesTo: 'unknown' });
+    expect(matchesModel(pool, 'atlas-pro')).toBe(false);
     expect(matchesModel(pool, 'gpt-5')).toBe(false);
     expect(matchesModel(pool, '')).toBe(false);
   });
@@ -113,36 +116,36 @@ describe('matchesModel', () => {
 describe('poolsForModel', () => {
   it('R-25: keeps only the account\'s pools whose matchers fit the model', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_OTHER_ACCOUNT, accountId: ACCOUNT_OTHER, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_OTHER_ACCOUNT, accountId: ACCOUNT_OTHER, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SHARED }),
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SECOND, appliesTo: [{ prefix: 'claude-' }] }),
     ];
-    const ids = poolsForModel(pools, ACCOUNT_MAIN, 'gemini-pro').map((pool) => pool.id);
-    expect(ids).toEqual([POOL_SHARED, POOL_GEMINI]);
+    const ids = poolsForModel(pools, ACCOUNT_MAIN, 'atlas-pro').map((pool) => pool.id);
+    expect(ids).toEqual([POOL_SHARED, POOL_ATLAS]);
   });
 
   it('preserves the input order and returns a new array', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SHARED }),
     ];
-    const result = poolsForModel(pools, ACCOUNT_MAIN, 'gemini-pro');
-    expect(result.map((pool) => pool.id)).toEqual([POOL_GEMINI, POOL_SHARED]);
+    const result = poolsForModel(pools, ACCOUNT_MAIN, 'atlas-pro');
+    expect(result.map((pool) => pool.id)).toEqual([POOL_ATLAS, POOL_SHARED]);
     expect(result).not.toBe(pools);
   });
 
   it('returns an empty array for empty input', () => {
-    expect(poolsForModel([], ACCOUNT_MAIN, 'gemini-pro')).toEqual([]);
+    expect(poolsForModel([], ACCOUNT_MAIN, 'atlas-pro')).toEqual([]);
   });
 
   it('R-25: a pool with unknown applicability is never returned, whatever the model', () => {
     const pools: readonly Pool[] = [
       poolOf({ id: POOL_SHARED }),
-      poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' }),
+      poolOf({ id: POOL_ATLAS, appliesTo: 'unknown' }),
     ];
-    expect(poolsForModel(pools, ACCOUNT_MAIN, 'gemini-pro').map((pool) => pool.id)).toEqual([POOL_SHARED]);
-    expect(poolsForModel([poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' })], ACCOUNT_MAIN, 'gpt-5')).toEqual([]);
+    expect(poolsForModel(pools, ACCOUNT_MAIN, 'atlas-pro').map((pool) => pool.id)).toEqual([POOL_SHARED]);
+    expect(poolsForModel([poolOf({ id: POOL_ATLAS, appliesTo: 'unknown' })], ACCOUNT_MAIN, 'gpt-5')).toEqual([]);
   });
 });
 
@@ -225,20 +228,20 @@ describe('isStale', () => {
 describe('headroom', () => {
   it('R-28: model-group routing — only the matching pool\'s meters are ANDed', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_GEMINI, label: 'gemini group', appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, label: 'atlas group', appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SECOND, label: 'claude group', appliesTo: [{ prefix: 'claude-' }] }),
     ];
     const weeklyReset = NOW + 30 * HOUR;
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: weeklyReset }),
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 40, limit: 200, resetsAt: NOW + 3 * HOUR }),
-      // the sibling group is equally exhausted; it must not affect the gemini verdict
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: weeklyReset }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 40, limit: 200, resetsAt: NOW + 3 * HOUR }),
+      // the sibling group is equally exhausted; it must not affect the atlas verdict
       meterOf({ id: M_SECOND_WEEKLY, poolId: POOL_SECOND, remaining: 0, limit: 50, resetsAt: weeklyReset }),
     ];
 
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY],
+      blockedBy: [M_ATLAS_WEEKLY],
       earliestRelief: weeklyReset,
     });
     expect(headroom(pools, meters, ACCOUNT_MAIN, 'claude-opus-4-6', NOW)).toEqual({
@@ -247,13 +250,13 @@ describe('headroom', () => {
       earliestRelief: weeklyReset,
     });
 
-    // with the gemini weekly meter healthy, the 5-hour meter is the only constraint left
+    // with the atlas weekly meter healthy, the 5-hour meter is the only constraint left
     const healthy: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 80, limit: 100, resetsAt: weeklyReset }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 80, limit: 100, resetsAt: weeklyReset }),
       meters[1],
       meters[2],
     ];
-    expect(headroom(pools, healthy, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.2 });
+    expect(headroom(pools, healthy, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0.2 });
   });
 
   it('R-28: a throughput pool at 0 never blocks', () => {
@@ -261,81 +264,81 @@ describe('headroom', () => {
     const meters: readonly Meter[] = [
       meterOf({ id: M_TPUT, poolId: POOL_TPUT, remaining: 0, limit: 100 }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0 });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0 });
 
     // a throughput pool at 0 next to an exhausted allowance pool blocks on the allowance only
     const mixedPools: readonly Pool[] = [
       poolOf({ id: POOL_TPUT, kind: 'throughput' }),
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
     ];
     const mixedMeters: readonly Meter[] = [
       meterOf({ id: M_TPUT, poolId: POOL_TPUT, remaining: 0, limit: 100 }),
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
     ];
-    expect(headroom(mixedPools, mixedMeters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(mixedPools, mixedMeters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY],
+      blockedBy: [M_ATLAS_WEEKLY],
       earliestRelief: NOW + HOUR,
     });
   });
 
   it('R-28: a meter whose resetsAt <= now does not block and carries no signal', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
 
     // boundary: the reset is due exactly now
-    const dueNow = meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW });
-    expect(headroom(pools, [dueNow], ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true });
+    const dueNow = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW });
+    expect(headroom(pools, [dueNow], ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true });
 
     // already reset a while ago, and it must not drag the lowest down either
-    const past = meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW - MINUTE });
-    const healthy = meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 30, limit: 100 });
-    expect(headroom(pools, [past, healthy], ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.3 });
+    const past = meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW - MINUTE });
+    const healthy = meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 30, limit: 100 });
+    expect(headroom(pools, [past, healthy], ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0.3 });
   });
 
   it('R-28: blocks on a normalized remaining of 0 computed from used / limit', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, used: 100, limit: 100, resetsAt: NOW + HOUR }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, used: 100, limit: 100, resetsAt: NOW + HOUR }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY],
+      blockedBy: [M_ATLAS_WEEKLY],
       earliestRelief: NOW + HOUR,
     });
   });
 
   it('R-28: blocks on remaining <= 0 even when the numbers cannot normalize, with no relief time', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0 }),
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: -3, limit: 10 }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0 }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: -3, limit: 10 }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY, M_GEMINI_5H],
+      blockedBy: [M_ATLAS_WEEKLY, M_ATLAS_5H],
     });
   });
 
   it('R-28: no meters at all is unknown with reason no_data', () => {
-    expect(headroom([], [], ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
+    expect(headroom([], [], ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
 
     // pools exist for the model but nothing has been observed yet
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
-    expect(headroom(pools, [], ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
+    expect(headroom(pools, [], ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
 
     // meters exist, but they belong to other pools
     const foreign: readonly Meter[] = [
       meterOf({ id: M_SECOND_WEEKLY, poolId: POOL_SECOND, remaining: 0, limit: 50, resetsAt: NOW + HOUR }),
     ];
-    expect(headroom(pools, foreign, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
+    expect(headroom(pools, foreign, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
   });
 
   it('R-28: all relevant meters stale is unknown with reason stale, even at zero', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
     const meters: readonly Meter[] = [
       meterOf({
-        id: M_GEMINI_WEEKLY,
-        poolId: POOL_GEMINI,
+        id: M_ATLAS_WEEKLY,
+        poolId: POOL_ATLAS,
         remaining: 0,
         limit: 100,
         resetsAt: NOW + HOUR,
@@ -343,45 +346,45 @@ describe('headroom', () => {
         staleAfterMs: 5 * MINUTE,
       }),
       meterOf({
-        id: M_GEMINI_5H,
-        poolId: POOL_GEMINI,
+        id: M_ATLAS_5H,
+        poolId: POOL_ATLAS,
         remaining: 40,
         limit: 100,
         observedAt: NOW - 6 * MINUTE,
         staleAfterMs: MINUTE,
       }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'stale' });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: 'unknown', reason: 'stale' });
   });
 
   it('R-28: a meter without staleAfterMs counts as fresh and keeps the verdict off "stale"', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
     const meters: readonly Meter[] = [
       meterOf({
-        id: M_GEMINI_WEEKLY,
-        poolId: POOL_GEMINI,
+        id: M_ATLAS_WEEKLY,
+        poolId: POOL_ATLAS,
         remaining: 0,
         limit: 100,
         resetsAt: NOW + HOUR,
         observedAt: NOW - 10 * MINUTE,
         staleAfterMs: 5 * MINUTE,
       }),
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 50, limit: 100 }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 50, limit: 100 }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY],
+      blockedBy: [M_ATLAS_WEEKLY],
       earliestRelief: NOW + HOUR,
     });
   });
 
   it('R-28: a stale zero still blocks while at least one fresh meter exists', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 40, limit: 100, staleAfterMs: 5 * MINUTE }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 40, limit: 100, staleAfterMs: 5 * MINUTE }),
       meterOf({
-        id: M_GEMINI_WEEKLY,
-        poolId: POOL_GEMINI,
+        id: M_ATLAS_WEEKLY,
+        poolId: POOL_ATLAS,
         remaining: 0,
         limit: 100,
         resetsAt: NOW + HOUR,
@@ -389,105 +392,210 @@ describe('headroom', () => {
         staleAfterMs: 5 * MINUTE,
       }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY],
+      blockedBy: [M_ATLAS_WEEKLY],
       earliestRelief: NOW + HOUR,
     });
   });
 
   it('R-28: ok carries the lowest normalized remaining across every matching pool', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SHARED }),
     ];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 50, limit: 100 }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 50, limit: 100 }),
       meterOf({ id: M_SHARED, poolId: POOL_SHARED, remaining: 40, limit: 200 }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.2 });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0.2 });
   });
 
   it('R-28: ok omits lowest when no relevant meter carries usable numbers', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
-    const meters: readonly Meter[] = [meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI })];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true });
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
+    const meters: readonly Meter[] = [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS })];
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true });
   });
 
   it('R-28: only the given account\'s pools are considered', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_OTHER_ACCOUNT, accountId: ACCOUNT_OTHER, appliesTo: [{ prefix: 'gemini-' }] }),
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_OTHER_ACCOUNT, accountId: ACCOUNT_OTHER, appliesTo: [{ prefix: 'atlas-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
     ];
     const meters: readonly Meter[] = [
       meterOf({ id: M_OTHER_ACCOUNT, poolId: POOL_OTHER_ACCOUNT, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 70, limit: 100 }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 70, limit: 100 }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.7 });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0.7 });
   });
 
   it('R-29: earliestRelief is the minimum resetsAt among blocking meters', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_SHARED }),
     ];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + 10 * HOUR }),
-      meterOf({ id: M_GEMINI_5H, poolId: POOL_GEMINI, remaining: 0 }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW + 10 * HOUR }),
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 0 }),
       meterOf({ id: M_SHARED, poolId: POOL_SHARED, remaining: 0, limit: 100, resetsAt: NOW + 2 * HOUR }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({
       ok: false,
-      blockedBy: [M_GEMINI_WEEKLY, M_GEMINI_5H, M_SHARED],
+      blockedBy: [M_ATLAS_WEEKLY, M_ATLAS_5H, M_SHARED],
       earliestRelief: NOW + 2 * HOUR,
     });
   });
 
   it('R-29: earliestRelief is omitted when no blocking meter carries a resetsAt', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] })];
-    const meters: readonly Meter[] = [meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100 })];
-    const result = headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW);
-    expect(result).toEqual({ ok: false, blockedBy: [M_GEMINI_WEEKLY] });
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
+    const meters: readonly Meter[] = [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100 })];
+    const result = headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW);
+    expect(result).toEqual({ ok: false, blockedBy: [M_ATLAS_WEEKLY] });
     expect(result).not.toHaveProperty('earliestRelief');
   });
 
   it('R-28: a pool with unknown applicability never blocks a run — its meters take no part', () => {
     const pools: readonly Pool[] = [
       poolOf({ id: POOL_SHARED }),
-      poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' }),
+      poolOf({ id: POOL_ATLAS, appliesTo: 'unknown' }),
     ];
     const meters: readonly Meter[] = [
       meterOf({ id: M_SHARED, poolId: POOL_SHARED, remaining: 50, limit: 100 }),
       // exhausted with the reset still ahead, but which models draw from this pool is unknown:
       // the meter is information, never a block.
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: true, lowest: 0.5 });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: true, lowest: 0.5 });
   });
 
   it('R-28: an account whose every pool has unknown applicability answers no_data, not a block', () => {
-    const pools: readonly Pool[] = [poolOf({ id: POOL_GEMINI, appliesTo: 'unknown' })];
+    const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: 'unknown' })];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW + HOUR }),
     ];
-    expect(headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
+    expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW)).toEqual({ ok: 'unknown', reason: 'no_data' });
   });
 
   it('does not mutate its inputs', () => {
     const pools: readonly Pool[] = [
-      poolOf({ id: POOL_GEMINI, appliesTo: [{ prefix: 'gemini-' }] }),
+      poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] }),
       poolOf({ id: POOL_TPUT, kind: 'throughput' }),
     ];
     const meters: readonly Meter[] = [
-      meterOf({ id: M_GEMINI_WEEKLY, poolId: POOL_GEMINI, remaining: 0, limit: 100, resetsAt: NOW + HOUR, staleAfterMs: MINUTE }),
+      meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW + HOUR, staleAfterMs: MINUTE }),
       meterOf({ id: M_TPUT, poolId: POOL_TPUT, remaining: 3, limit: 100 }),
     ];
     const poolsBefore = pools.map((pool) => ({ ...pool }));
     const metersBefore = meters.map((meter) => ({ ...meter }));
 
-    headroom(pools, meters, ACCOUNT_MAIN, 'gemini-pro', NOW);
+    headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW);
 
     expect(pools).toStrictEqual(poolsBefore);
     expect(meters).toStrictEqual(metersBefore);
+  });
+});
+
+describe('headroom reserve', () => {
+  const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
+  const DAY_MS = 24 * HOUR;
+  const five = (remaining: number, extra: Partial<MeterInit> = {}): Meter =>
+    meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining, limit: 100, durationMs: 5 * HOUR, resetsAt: NOW + HOUR, ...extra });
+  const weekly = (remaining: number, extra: Partial<MeterInit> = {}): Meter =>
+    meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining, limit: 100, durationMs: 7 * DAY_MS, resetsAt: NOW + 30 * HOUR, ...extra });
+  const run = (meters: readonly Meter[], reserve?: { readonly short?: number; readonly long?: number }) =>
+    headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, reserve);
+
+  it('R-49: RESERVE_MAX is 0.95', () => {
+    expect(RESERVE_MAX).toBe(0.95);
+  });
+
+  it('R-49: durationMs under a day uses the short reserve, a day or longer the long reserve', () => {
+    expect(run([five(20)], { short: 0.2, long: 0 })).toEqual({ ok: false, blockedBy: [M_ATLAS_5H], earliestRelief: NOW + HOUR, byReserve: true });
+    expect(run([five(20)], { short: 0, long: 0.9 })).toEqual({ ok: true, lowest: 0.2 });
+    expect(run([weekly(20)], { short: 0.9, long: 0.2 })).toEqual({ ok: false, blockedBy: [M_ATLAS_WEEKLY], earliestRelief: NOW + 30 * HOUR, byReserve: true });
+    expect(run([weekly(20)], { short: 0.2, long: 0 })).toEqual({ ok: true, lowest: 0.2 });
+    // exactly one day is long, one millisecond less is short
+    const oneDay = weekly(20, { durationMs: DAY_MS });
+    expect(run([oneDay], { short: 0.9, long: 0.1 })).toEqual({ ok: true, lowest: 0.2 });
+    const justUnder = weekly(20, { durationMs: DAY_MS - 1 });
+    expect(run([justUnder], { short: 0.2, long: 0 }).ok).toBe(false);
+  });
+
+  it('R-49: without durationMs, calendar and billing_cycle are long, any other cadence uses the larger value', () => {
+    const noDuration = (cadence: Cadence): Meter =>
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 30, limit: 100, cadence });
+    expect(run([noDuration('calendar')], { short: 0.9, long: 0.1 }).ok).toBe(true);
+    expect(run([noDuration('calendar')], { short: 0, long: 0.3 }).ok).toBe(false);
+    expect(run([noDuration('billing_cycle')], { short: 0.9, long: 0.1 }).ok).toBe(true);
+    expect(run([noDuration('billing_cycle')], { short: 0, long: 0.3 }).ok).toBe(false);
+    for (const cadence of ['fixed', 'rolling_continuous', 'rolling_from_first_use', 'none'] as const) {
+      expect(run([noDuration(cadence)], { short: 0.3, long: 0.1 }).ok).toBe(false);
+      expect(run([noDuration(cadence)], { short: 0.1, long: 0.3 }).ok).toBe(false);
+      expect(run([noDuration(cadence)], { short: 0.1, long: 0.1 }).ok).toBe(true);
+      expect(run([noDuration(cadence)], { short: 0.1 }).ok).toBe(true);
+    }
+  });
+
+  it('R-49: remaining exactly at the reserve blocks, just above does not', () => {
+    expect(run([five(20)], { short: 0.2 }).ok).toBe(false);
+    expect(run([five(21)], { short: 0.2 })).toEqual({ ok: true, lowest: 0.21 });
+    expect(run([five(19)], { short: 0.2 }).ok).toBe(false);
+  });
+
+  it('R-49: a meter whose remaining is unknown never blocks by reserve', () => {
+    const unknown = meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, durationMs: 5 * HOUR });
+    expect(run([unknown], { short: 0.9, long: 0.9 })).toEqual({ ok: true });
+  });
+
+  it('R-49: a throughput pool never blocks by reserve', () => {
+    const tputPools: readonly Pool[] = [poolOf({ id: POOL_TPUT, kind: 'throughput' })];
+    const meters: readonly Meter[] = [meterOf({ id: M_TPUT, poolId: POOL_TPUT, remaining: 5, limit: 100, durationMs: HOUR })];
+    expect(headroom(tputPools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, { short: 0.9, long: 0.9 })).toEqual({ ok: true, lowest: 0.05 });
+  });
+
+  it('R-49: byReserve is set only when every blocker blocks by reserve alone', () => {
+    const both = run([five(10), weekly(10)], { short: 0.2, long: 0.2 });
+    expect(both).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + HOUR, byReserve: true });
+
+    const mixed = run([five(0), weekly(10)], { short: 0.2, long: 0.2 });
+    expect(mixed).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + HOUR });
+    expect('byReserve' in mixed).toBe(false);
+
+    // an exhausted meter without reserve keeps the old shape
+    const plain = run([five(0)], { short: 0.2 });
+    expect('byReserve' in plain).toBe(false);
+  });
+
+  it('R-49: earliestRelief comes from the reserve blockers', () => {
+    const verdict = run([five(10, { resetsAt: NOW + 4 * HOUR }), weekly(10, { resetsAt: NOW + 2 * HOUR })], { short: 0.2, long: 0.2 });
+    expect(verdict).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + 2 * HOUR, byReserve: true });
+    const noReset = run([five(10, { resetsAt: undefined })], { short: 0.2 });
+    expect(noReset).toEqual({ ok: false, blockedBy: [M_ATLAS_5H], byReserve: true });
+  });
+
+  it('R-49: a reserve of 0, an empty reserve or none leaves the R-28 verdicts unchanged', () => {
+    const scenarios: readonly (readonly Meter[])[] = [
+      [weekly(0), five(40)],
+      [weekly(80), five(40)],
+      [weekly(1), five(1)],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, used: 100, limit: 100, resetsAt: NOW + HOUR })],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0 }), meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: -3, limit: 10 })],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW })],
+      [],
+    ];
+    for (const meters of scenarios) {
+      const baseline = run(meters);
+      expect(run(meters, {})).toEqual(baseline);
+      expect(run(meters, { short: 0, long: 0 })).toEqual(baseline);
+      expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, undefined)).toEqual(baseline);
+    }
+  });
+
+  it('R-49: does not mutate its inputs', () => {
+    const meters = [five(10)];
+    const reserve = { short: 0.2 };
+    const before = structuredClone({ meters, reserve });
+    run(meters, reserve);
+    expect({ meters, reserve }).toStrictEqual(before);
   });
 });

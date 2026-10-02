@@ -945,6 +945,24 @@ describe('settings.accounts', () => {
     ]);
   });
 
+  it('U-13: a stale account naming a provider id with no definition still lists — the settings surface never fails on it', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'gemini', // an id no composed def carries anymore
+      label: 'Leftover',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view.accounts).toEqual([
+      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, pools: [], meters: [] },
+    ]);
+  });
+
   it('U-13: an empty store yields empty account and binding lists', async () => {
     const h = createHarness();
 
@@ -1022,6 +1040,31 @@ describe('account.models', () => {
     expect(view.models.some((model) => model.id === '*')).toBe(false);
   });
 
+  it('P-40: a model the catalog leaves unknown reads included once the account reports an allowance bucket for it', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown' },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+        ],
+      }),
+    };
+    await deps.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'atlas-max weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+    ]);
+
+    const view = (await createApi(deps).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+
+    // The bucket names only atlas-max, so it resolves only that model; metered passes through.
+    expect(view.models.map((model) => [model.id, model.billing])).toEqual([
+      ['atlas-max', 'included'],
+      ['atlas-mini', 'metered'],
+    ]);
+  });
+
   it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
     const h = createHarness();
     await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
@@ -1039,6 +1082,34 @@ describe('account.models', () => {
     // Without a fixed kind, only a subscription rides a plan; every other auth mode pays per use.
     expect(((await answer(h.deps, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('included');
     expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('metered');
+  });
+
+  it('P-42: defaultBilling takes the merged default entry’s billing; without one the route rule answers', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const withDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included' },
+          { id: 'default', source: 'live', thinking: { kind: 'none' }, billing: 'metered', isDefault: true },
+        ],
+      }),
+    };
+    const view = (await createApi(withDefault).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+    // The subscription rule alone would say included; the provider's own default row says metered.
+    expect(view.defaultBilling).toBe('metered');
+    // The selectable id stays the alias.
+    expect(view.models.map((model) => model.id)).toEqual(['atlas-max', 'default']);
+
+    const withoutDefault: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'metered' }],
+      }),
+    };
+    const plain = (await createApi(withoutDefault).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+    expect(plain.defaultBilling).toBe('included');
   });
 
   it('P-29: refresh reaches the catalog port, so it bypasses the cache', async () => {

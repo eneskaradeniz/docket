@@ -2,7 +2,7 @@
 // sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
 // the domain — so every function here takes its input as a parameter and knows no provider id.
 import type { AuthMode } from '../quota/index';
-import type { Billing } from '../shared/index';
+import type { Billing, EffortLevel } from '../shared/index';
 import type { ProviderCapabilities } from './capabilities';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
@@ -11,11 +11,8 @@ export type Tier = 'strong' | 'balanced' | 'fast';
 // shared (the module map lets quota import only shared).
 export type { Billing };
 
-/**
- * Effort levels in ascending order. `'none'` is the provider's thinking-off setting — the lowest
- * step, not the absence of the list — and `'ultra'` is the deepest step reported today.
- */
-export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+// Re-exported so the capability contract keeps naming it; the scale itself lives in shared.
+export type { EffortLevel };
 
 export type Thinking =
   | { readonly kind: 'none' }
@@ -61,11 +58,19 @@ export interface RouteKindRecord {
   readonly identity: 'machine_login' | 'identity_dir' | 'secret';
   readonly tierModels?: Readonly<Record<Tier, string>>;
   readonly costKind: CostKind;
-  readonly quotaProbe: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'none';
+  /** `provider_query`: the quota is polled through the provider's own query call (its app-server
+   * control surface), not an SDK usage leg, pushed events or an HTTP monitor. */
+  readonly quotaProbe: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
   readonly modelSource: 'sdk' | 'app-server' | 'acp-session' | 'cli-command' | 'api' | 'static';
   /** The live list is plan-scoped: on a successful refresh, bundled models it does not contain
    * are dropped instead of kept. */
   readonly liveIsAuthoritative?: true;
+  /** The route's verified billing for live models that report none (P-40): an API-key route
+   * meters every model, so its live-only entries default to `metered`, never to `unknown`. */
+  readonly defaultBilling?: Billing;
+  /** Billing per model family for live-only rows (P-42): an id containing `contains` bills as
+   * `billing`. Lists only the families the provider's plan covers on every plan. */
+  readonly familyBilling?: readonly { readonly contains: string; readonly billing: Billing }[];
   readonly models: readonly ModelRecord[];
 }
 

@@ -13,10 +13,9 @@ import { createSystemClock } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { describeApprovalRequest, type ApprovalAsk } from './approvals';
+import { INITIALIZE_PARAMS } from './connection';
 import { isRecord, rateLimitEvents } from './rate-limits';
 import { mapServerNotification } from './server-messages';
-
-const CLIENT_INFO = { name: 'docket', title: 'Docket', version: '0.0.0' } as const;
 
 // How long stop() lets its final writes (deny answers, the interrupt) reach the server before the
 // process group dies; without this grace the kill could beat the pipe.
@@ -141,11 +140,13 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
         runCapabilities.push({ ...capability });
       }
 
+      const effortField = def.effortArg?.kind === 'request-field' ? def.effortArg.name : undefined;
       const runConfig = await writeRunConfig(request.cwd, def, runCapabilities);
       const launch = def.buildLaunch({
         prompt: request.prompt,
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -355,10 +356,7 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
 
       const runHandshake = async (): Promise<void> => {
         try {
-          await requestRpc('initialize', {
-            clientInfo: CLIENT_INFO,
-            capabilities: { experimentalApi: false, requestAttestation: false },
-          });
+          await requestRpc('initialize', INITIALIZE_PARAMS);
           // Seed the account's quota before any turn runs. The read is not awaited — a server
           // that cannot or will not answer it must not delay or fail the prompt.
           void requestRpc('account/rateLimits/read')
@@ -377,7 +375,11 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
           if (newThreadId === undefined) throw new Error('the thread response carried no thread id');
           threadId = newThreadId;
           push({ type: 'session_started', at: clock.now(), sessionRef: newThreadId });
-          const turnResponse = await requestRpc('turn/start', { threadId, input: [textInput(request.prompt)] });
+          const turnResponse = await requestRpc('turn/start', {
+            threadId,
+            input: [textInput(request.prompt)],
+            ...(effortField !== undefined && request.effort !== undefined ? { [effortField]: request.effort } : {}),
+          });
           const turnId = nestedString(turnResponse, 'turn', 'id');
           if (turnId !== undefined) activeTurnId = turnId;
         } catch (message) {

@@ -93,7 +93,7 @@ function resultUsage(inputTokens: number, outputTokens: number, cachedRead: numb
     input_tokens: inputTokens,
     iterations: [],
     output_tokens: outputTokens,
-    output_tokens_details: { thinking_tokens: 0 },
+    output_tokens_details: { thinking_tokens: 12 },
     server_tool_use: { web_fetch_requests: 0, web_search_requests: 0 },
     service_tier: 'standard',
     speed: 'standard',
@@ -260,6 +260,11 @@ describe('mapSdkMessage', () => {
     expect(mapSdkMessage(userMessage('a plain prompt'), AT, context('reported'))).toStrictEqual([]);
   });
 
+  it('P-41: the result usage reports the thinking token count as reasoningTokens, inside outputTokens', () => {
+    const usage = mapSdkMessage(successResult(0.01), AT, context('reported'))[0];
+    expect(usage).toMatchObject({ type: 'usage', outputTokens: 45, reasoningTokens: 12 });
+  });
+
   it('I-27: result maps to usage carrying the context costKind, then finished completed', () => {
     const expected: readonly AgentEvent[] = [
       {
@@ -268,6 +273,7 @@ describe('mapSdkMessage', () => {
         inputTokens: 120,
         outputTokens: 45,
         cachedInputTokens: 30,
+        reasoningTokens: 12,
         costUsd: 0.0123,
         costKind: 'reported',
       },
@@ -284,6 +290,7 @@ describe('mapSdkMessage', () => {
         inputTokens: 120,
         outputTokens: 45,
         cachedInputTokens: 30,
+        reasoningTokens: 12,
         costUsd: 0.02,
         costKind: 'equivalent',
       },

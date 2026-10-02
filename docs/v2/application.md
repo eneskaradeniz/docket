@@ -50,7 +50,7 @@ export interface IdGen { next<B extends string>(): Ulid<B> }
 export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
-  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved'
+  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'account.adopted' | 'binding.saved'
   | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
@@ -133,7 +133,9 @@ export interface AccountRecord {
   readonly endpoint?: string;            // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
   readonly identityDir?: string;         // absolute path of the user's own config directory; subscription route kinds only
   readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
+  readonly consentedModels?: readonly string[]; // model ids the user allowed for metered or unverified use; the asterisk means the route's default model
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
+  readonly reserve?: QuotaReserve;       // share of each window kept back for the user's own use (R-49); no money involved
 }
 export interface AccountRepo {
   save(record: AccountRecord): Promise<void>;           // upsert
@@ -221,6 +223,7 @@ export interface RunRequest {
   readonly prompt: string;
   readonly resume?: { readonly sessionRef: string };
   readonly capabilities: readonly CapabilityDef[];
+  readonly effort?: EffortLevel;         // resolved by executeRun (A-46); absent → the CLI's own default
 }
 export interface RunHandle {
   readonly events: AsyncIterable<AgentEvent>;       // ends after a 'finished' event
@@ -444,9 +447,14 @@ export function decideProposalUseCase(
 ): Promise<Result<ProposalRecord, ApplyError>>;
 
 // accounts.ts
-export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
-export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
+export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed' | 'invalid_reserve'>>;
+export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
+
+// spend-consent.ts
+type AccountCap = AccountRecord['caps'][number];
+export function grantSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly cap?: AccountCap; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model' | 'invalid_cap'>>;
+export function revokeSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model'>>;
 
 // projects.ts — the Project & Repo layer (Phase 3.5, S1/S3/S4)
 export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
@@ -499,10 +507,11 @@ export interface ExecuteRunInput { readonly item: QueueItem; readonly role: Role
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -526,14 +535,20 @@ export function enqueueStage(
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>>;
 ```
 
+A run whose model billing is not `included` is refused with `needs_spend_consent` unless the model
+is in the account's `consentedModels` and the account has at least one spend cap; an unpinned model
+takes the route kind's default billing, else `included` for a subscription account and `metered`
+for every other auth mode. Billing comes from the `ModelCatalog` port. The refusal happens before
+any write, so a refused run leaves every store unchanged.
+
 Rules:
 - **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
 - **A-16** While streaming, every event is persisted with `RunRepo.appendEvents` in arrival order (batched is fine, order is not negotiable). `session_started` sets `sessionRef`. `permission_ask` is passed to `PermissionGate.onAsk` and the answer to `answerPermission`. `quota_signal` → `AccountRepo.saveMeter` (a new `MeterId` from `IdGen` unless a meter with the same pool label and duration exists). `usage` with a cost → `recordSpend`.
 - **A-17** On `limit_hit`: build a `LimitHit` for the run's account, ask the domain `decideOnLimit` with the account's policy and `autoResumesUsed`, end the run with outcome `limit`, append `run_finished: limit`, and return `{ kind: 'limit', decision }`. Scheduling the resume is the caller's job.
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
-- **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced).
-- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
+- **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced). The queue item carries the resolved binding's `thinking` (absent when the binding has none).
+- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now, account.reserve)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
 
 ---
 
@@ -765,6 +780,8 @@ Rules:
   rules, so the rule is the mark's data, not the renderer's guess.
 - **A-43** `saveAccount` validates the route fields (see [provider-capabilities.md](provider-capabilities.md), P-31, P-32): an `endpoint` that is not an `https` URL → `invalid_endpoint`; an `endpoint` whose host differs from the host fixed by the account's route kind (looked up through the same port) → `endpoint_mismatch`; an `identityDir` that is not an absolute path, or is set on an account whose `authMode` is not `subscription` → `identity_dir_not_allowed`. None of these fields is a secret; the token stays behind `secretRef` (A-13).
 - **A-44** Records saved before these fields existed read back unchanged: accounts are stored as JSON, so there is no migration. An absent `routeKind` resolves to `anthropic-subscription` for a `claude-code` account with `authMode: 'subscription'` and to `anthropic-api` for `authMode: 'api_key'`. The mapping lives behind the `CapabilityCatalog` application port, implemented in `src/infrastructure/providers/registry/`.
+- **A-45** `saveAccount`: every present `reserve` value is a finite number in `0..RESERVE_MAX`; otherwise `invalid_reserve`, and nothing is written.
+- **A-46** `executeRun` resolves `RunRequest.effort` with `effortForChoice(item.thinking, thinking)`, where `thinking` is the catalog entry's for the route's model, or, for an unpinned route, the entry the route's default resolves to (`isDefault`, P-42); no entry → `unknown` → no effort is sent. The resolved effort is recorded on the run's `run_started` detail so the record shows what was asked.
 
 ---
 
@@ -800,7 +817,7 @@ Ports and use cases for Phase 3 are specified with their rules in
 // ports/quota-probe.ts
 export type QuotaProbeError = 'not_installed' | 'not_logged_in' | 'probe_failed' | 'unknown_provider';
 export interface MeterReading {
-  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' };
+  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown' };
   readonly meter: Omit<Meter, 'id' | 'poolId'>;
 }
 export interface QuotaProbe {
@@ -810,7 +827,7 @@ export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | u
 
 // use-cases/quota-poll.ts
 export function pollQuota(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'capabilities'>,
   probes: QuotaProbeResolver,
   input: { readonly accountId: AccountId },
 ): Promise<Result<readonly Meter[], QuotaProbeError>>;

@@ -8,8 +8,13 @@ import type {
   SecretVault,
   TransportResolver,
 } from '../../../application/index';
-import { err } from '../../../domain/index';
-import type { ProviderDef } from '../defs/index';
+import { err, ok } from '../../../domain/index';
+import {
+  DEFAULT_FIRST_OUTPUT_TIMEOUT_MS,
+  DEFAULT_INACTIVITY_TIMEOUT_MS,
+  type ProviderDef,
+} from '../defs/index';
+import { realWatchdogTimers, wrapWithWatchdog, type WatchdogTimers } from '../launch/watchdog';
 import { createAppServerTransport } from '../transports/app-server/index';
 import {
   BUILTIN_STREAM_DIALECTS,
@@ -33,6 +38,8 @@ export interface ProviderTransportFactoryConfig {
   /** Injectable stream dialects for tests; default: the built-in registry. An id without an
    * entry is reported as unsupported when the transport starts, never a crash. */
   readonly streamDialects?: Readonly<Record<string, StreamDialect>>;
+  /** Injectable watchdog timers for tests; default: real timers. */
+  readonly watchdogTimers?: WatchdogTimers;
 }
 
 const unsupportedTransport = (def: ProviderDef, detail?: string): AgentTransport => ({
@@ -46,49 +53,70 @@ const unsupportedTransport = (def: ProviderDef, detail?: string): AgentTransport
 export function createProviderTransportFactory(config: ProviderTransportFactoryConfig): TransportResolver {
   const defById = new Map(config.defs.map((def) => [def.id, def]));
 
+  // One wrapping point for every transport kind, so no transport carries its own watchdog.
+  const withWatchdog = (transport: AgentTransport, def: ProviderDef): AgentTransport => ({
+    start: async (request) => {
+      const started = await transport.start(request);
+      if (!started.ok) return started;
+      return ok(
+        wrapWithWatchdog(started.value, {
+          clock: config.clock,
+          timers: config.watchdogTimers ?? realWatchdogTimers,
+          firstOutputTimeoutMs: def.firstOutputTimeoutMs ?? DEFAULT_FIRST_OUTPUT_TIMEOUT_MS,
+          inactivityTimeoutMs: def.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS,
+        }),
+      );
+    },
+  });
+
+  const build = (def: ProviderDef): AgentTransport => {
+    if (def.transport === 'stream-json') {
+      const dialectId = def.streamDialect ?? '';
+      const dialect = (config.streamDialects ?? BUILTIN_STREAM_DIALECTS)[dialectId];
+      if (dialect === undefined) {
+        return unsupportedTransport(
+          def,
+          `stream-json dialect "${dialectId}" of provider ${def.id} is not available yet`,
+        );
+      }
+      const binPath = config.binPaths[def.id] ?? null;
+      // Discovery's result replaces the candidate list: the spawned path is exactly the
+      // probed path, and "not found" becomes an empty list the transport reports as
+      // not_installed rather than re-searching PATH behind discovery's back.
+      return createStreamJsonTransport(
+        { ...def, bins: binPath === null ? [] : [binPath] },
+        dialect,
+      );
+    }
+    if (def.transport === 'acp') {
+      const binPath = config.binPaths[def.id] ?? null;
+      // Discovery's result replaces the candidate list, as with the other spawned transports.
+      return createAcpTransport({ ...def, bins: binPath === null ? [] : [binPath] });
+    }
+    if (def.transport === 'app-server') {
+      const binPath = config.binPaths[def.id] ?? null;
+      // Discovery's result replaces the candidate list, exactly as for stream-json: the spawned
+      // path is the probed path, and "not found" becomes the transport's not_installed report.
+      return createAppServerTransport({ ...def, bins: binPath === null ? [] : [binPath] });
+    }
+    if (def.transport !== 'sdk') return unsupportedTransport(def);
+    return createSdkTransport({
+      clock: config.clock,
+      accounts: config.accounts,
+      secrets: config.secrets,
+      baseEnv: config.baseEnv,
+      executablePath: config.binPaths[def.id] ?? undefined,
+      query: config.query,
+      sendsEffort: def.effortArg?.kind === 'request-field',
+    });
+  };
+
   return {
     forAccount: async (accountId) => {
       const account = await config.accounts.get(accountId);
       const def = account === undefined ? undefined : defById.get(account.provider);
-      if (account === undefined || def === undefined) return undefined;
-      if (def.transport === 'stream-json') {
-        const dialectId = def.streamDialect ?? '';
-        const dialect = (config.streamDialects ?? BUILTIN_STREAM_DIALECTS)[dialectId];
-        if (dialect === undefined) {
-          return unsupportedTransport(
-            def,
-            `stream-json dialect "${dialectId}" of provider ${def.id} is not available yet`,
-          );
-        }
-        const binPath = config.binPaths[def.id] ?? null;
-        // Discovery's result replaces the candidate list: the spawned path is exactly the
-        // probed path, and "not found" becomes an empty list the transport reports as
-        // not_installed rather than re-searching PATH behind discovery's back.
-        return createStreamJsonTransport(
-          { ...def, bins: binPath === null ? [] : [binPath] },
-          dialect,
-        );
-      }
-      if (def.transport === 'acp') {
-        const binPath = config.binPaths[def.id] ?? null;
-        // Discovery's result replaces the candidate list, as with the other spawned transports.
-        return createAcpTransport({ ...def, bins: binPath === null ? [] : [binPath] });
-      }
-      if (def.transport === 'app-server') {
-        const binPath = config.binPaths[def.id] ?? null;
-        // Discovery's result replaces the candidate list, exactly as for stream-json: the spawned
-        // path is the probed path, and "not found" becomes the transport's not_installed report.
-        return createAppServerTransport({ ...def, bins: binPath === null ? [] : [binPath] });
-      }
-      if (def.transport !== 'sdk') return unsupportedTransport(def);
-      return createSdkTransport({
-        clock: config.clock,
-        accounts: config.accounts,
-        secrets: config.secrets,
-        baseEnv: config.baseEnv,
-        executablePath: config.binPaths[def.id] ?? undefined,
-        query: config.query,
-      });
+      if (def === undefined) return undefined;
+      return withWatchdog(build(def), def);
     },
   };
 }

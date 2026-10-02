@@ -15,7 +15,7 @@ named in code or comments.
 | --- | --- | --- |
 | `sdk` | Claude Code via the Agent SDK | Richest channel: permission callback, resume, usage, `rate_limit_event`, `get_usage` |
 | `app-server` | Codex (`codex app-server`, JSON-RPC over stdio) | Streaming deltas, approval requests, `account/rateLimits/read` + `updated`, thread resume. Do **not** use `codex exec --json` (no quota, no streaming deltas) |
-| `acp` | Agent Client Protocol agents (Gemini CLI, Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
+| `acp` | Agent Client Protocol agents (Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
 | `stream-json` | CLIs with a JSON-lines output mode but no ACP (e.g. Antigravity `agy`, Amp) | One parser per stream dialect |
 
 Plain-text-only CLIs are supported in the `experimental` tier through `stream-json`'s raw passthrough
@@ -49,8 +49,8 @@ interface LaunchInput {
   readonly prompt: string;                        // travels via stdin/envelope, never argv
   readonly configDir: string;                     // the run-scoped config dir (launch module)
   readonly resume?: { readonly sessionRef: string };
+  readonly effort?: EffortLevel;                  // already clamped to the model (R-50, A-46)
 }
-```
 ```
 
 ## Discovery
@@ -73,6 +73,9 @@ interface LaunchInput {
 3. **Billing mode is Docket's decision.** The run environment is built from an allowlist; a stray
    `ANTHROPIC_API_KEY` (or similar) is removed unless the chosen account is that API key.
 4. **Kill the whole process group** on stop; inactivity and first-output watchdogs per provider.
+   A watchdog that fires stops the run and emits `error` with `class: 'timeout'` and
+   `reason: 'first_output_timeout' | 'inactivity_timeout'`, then `finished` with `reason: 'failed'`.
+   The timers are paused while a permission question is unanswered and while a tool call is in flight.
 5. **Resume:** `specify` (Docket passes a session id), `capture` (read it from the stream),
    `protocol` (`session/load`, thread resume). If resume fails, start fresh with a summary of the
    previous transcript.
@@ -111,7 +114,7 @@ application.md for signatures.
   `transport` one of the four; `streamDialect` present exactly when `transport === 'stream-json'`;
   `config.mechanism` matches how the CLI accepts a config dir), and `buildLaunch` never places the
   prompt in `argv` — `stdin: 'prompt'` carries it. Initial set: `claude-code` (sdk), `codex`
-  (app-server), `agy` (stream-json, dialect `agy`), `gemini`, `copilot`, `cursor`, `opencode` (acp).
+  (app-server), `agy` (stream-json, dialect `agy`), `copilot`, `cursor`, `opencode` (acp).
   Flag accuracy is data, verified by operator probes; a wrong flag is a data fix, not a contract change.
 
 ### Discovery (P-2 … P-6)
@@ -307,3 +310,11 @@ export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
   `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
   query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
   under the two rules.
+
+## Thinking levels and model ids (P-41, P-42)
+
+Design: [provider-capabilities.md](provider-capabilities.md) §3–§4.
+
+- **P-41** `buildLaunch` turns `LaunchInput.effort` into the provider's own parameter, defined as data in the definition (`effortArg`, from the CLI's own documentation or help output): a flag with the level as its value, a config key, or a session option; the ACP and app-server transports send it through their session or turn request instead of argv. An absent effort adds nothing. A definition without an effort parameter ignores the effort and never fails the launch. A transport that reports reasoning or thinking token counts maps them to the `usage` event's `reasoningTokens`, still counted inside `outputTokens`.
+- **P-42** Live model ids resolve to registry records: `LiveModel` carries `resolvedId?` (the canonical id an alias row stands for, as the provider reports it) and `isDefault?: true` (the row the provider uses when no model is pinned). Matching uses `canonicalModelId(resolvedId ?? id)`, which drops one trailing bracketed variant (`[...]`) and one trailing `-YYYYMMDD` date, compared with the record's `canonicalModelId(id)`; family patterns test `resolvedId ?? id`. Billing of a live row, first answer wins: the row's own `billing`; the matched record's `billing`; the route kind's `familyBilling` (data: `{ contains, billing }[]`, matched like family patterns); the route kind's `defaultBilling`; `unknown`. The selectable id stays the row's own `id` (an alias row stays an alias); `isDefault` travels to the merged entry. A subscription route kind lists in `familyBilling` only the families the provider's plan documentation covers on every plan; a family that splits per plan is left out and stays `unknown` until the account's own quota report settles it (`billingFromPools`).
+

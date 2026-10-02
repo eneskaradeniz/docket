@@ -1,12 +1,23 @@
 // The ModelCatalog port implementation (P-29 section 3, layer 3): one cached merged list per
-// account and route, refreshed through the Claude catalog adapter, keeping the last good list
-// marked stale when a refresh fails. The merge rules themselves live in the domain tests; these
-// tests pin the caching, the fetcher choice per route kind, and the failure behaviour.
-import { describe, expect, it } from 'vitest';
+// account and route, refreshed through the Claude catalog adapter or — on an API-key route — the
+// documented model-list endpoint adapter, keeping the last good list marked stale when a refresh
+// fails. The merge rules themselves live in the domain tests; these tests pin the caching, the
+// fetcher choice per route kind, and the failure behaviour.
+import { spawn as nodeSpawn } from 'node:child_process';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 
-import { createModelCatalog } from './model-catalog';
+import { createModelCatalog, MODEL_SOURCE_ADAPTERS } from './model-catalog';
 import type { QueryFn } from '../transports/sdk/transport';
+import {
+  createFakeModelListPool,
+  FAKE_MODEL_LIST_KEY,
+  type FakeModelListPool,
+} from './fixtures/fake-model-list-server-harness';
 import {
   createFakeAccountRepo,
   createFakeCapabilityCatalog,
@@ -103,12 +114,79 @@ const baseConfig = (query: QueryFn) => ({
   capabilities: createFakeCapabilityCatalog([
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
+    { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
+    { id: 'copilot-subscription', authMode: 'subscription', provider: 'copilot' },
+    { id: 'agy-subscription', authMode: 'subscription', provider: 'agy' },
+    { id: 'opencode-subscription', authMode: 'subscription', provider: 'opencode' },
   ]),
   query,
   ttlMs: 6 * 60 * 60 * 1000,
 });
 
+/** One documented row of the model-list endpoint answer, the shape the adapter parses. */
+const endpointRow = (id: string): Record<string, unknown> => ({ type: 'model', id, display_name: `${id} display` });
+const endpointPage = (rows: readonly Record<string, unknown>[]): string => JSON.stringify({ data: rows, has_more: false, last_id: null });
+
+let pool: FakeModelListPool;
+
+beforeAll(() => {
+  pool = createFakeModelListPool();
+});
+
+afterAll(() => {
+  pool.dispose();
+});
+
 describe('createModelCatalog (P-29)', () => {
+  it('P-42: a live-only opus row is included on the subscription route kind, while a fable row stays unknown', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const opusRow: ModelInfo = { value: 'claude-opus-5', displayName: 'Opus', description: '' };
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[opusRow, PRO_ROW]]).query), accounts });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.billing])).toEqual([
+      ['claude-opus-5', 'included'],
+      ['claude-fable-5-1[1m]', 'unknown'],
+    ]);
+  });
+
+  it('P-42: alias rows resolve to the bundled records through the adapter — the alias stays selectable, no bundled duplicate, the default is marked', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const rows: readonly ModelInfo[] = [
+      { value: 'default', resolvedModel: 'claude-opus-5-5[1m]', displayName: 'Default', description: '' },
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5', displayName: 'Sonnet', description: '' },
+      { value: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001', displayName: 'Haiku', description: '' },
+      PRO_ROW,
+    ];
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([rows]).query), accounts });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.tier, model.billing, model.source])).toEqual([
+      ['default', 'strong', 'included', 'live'],
+      ['sonnet', 'balanced', 'included', 'live'],
+      ['haiku', 'fast', 'included', 'live'],
+      ['claude-fable-5-1[1m]', undefined, 'unknown', 'live'],
+    ]);
+    expect(listed.filter((model) => model.isDefault === true).map((model) => model.id)).toEqual(['default']);
+  });
+
+  it('P-42: the same live-only opus row is metered on the API-key route kind, not included', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-opus-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.billing])).toEqual([['claude-opus-5', 'metered']]);
+  });
+
   it('P-29: a subscription account lists the live answer — the [1m] value verbatim, family-classified tiers from the pattern data', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A));
@@ -193,12 +271,35 @@ describe('createModelCatalog (P-29)', () => {
       accounts,
     });
 
-    // The registry's subscription kind carries no bundled models yet, so the fallback is empty —
-    // but it is a failure-shaped fallback, not an error, and nothing is marked stale.
-    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    // A failure-shaped fallback, not an error: the subscription kind's bundled models answer,
+    // and nothing is marked stale because nothing was ever successfully refreshed.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'claude-opus-5-5',
+        source: 'bundled',
+        tier: 'strong',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-sonnet-5-5',
+        source: 'bundled',
+        tier: 'balanced',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-haiku-4-5',
+        source: 'bundled',
+        tier: 'fast',
+        thinking: { kind: 'none' },
+        billing: 'included',
+      },
+    ]);
   });
 
-  it('P-29: a route kind whose live list does not ride the SDK leg runs no query and answers from the registry', async () => {
+  it('P-29: an API-key account lists from the documented model-list endpoint, never the SDK query', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-fable-5-1[1m]'), endpointRow('claude-opus-5-5')]) }]);
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
     const { query } = scriptedQuery([[PRO_ROW]]);
@@ -208,12 +309,60 @@ describe('createModelCatalog (P-29)', () => {
       return query(params);
     };
     const secrets = createFakeSecretVault();
-    await secrets.put('ref-key', 'key' + '-value');
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
     // The api-key default kind declares its live list on the documented endpoint, not the SDK call.
-    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, secrets });
+    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, secrets, apiBaseUrl: server.endpoint });
 
-    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'claude-fable-5-1[1m]',
+        displayName: 'claude-fable-5-1[1m] display',
+        source: 'live',
+        thinking: 'unknown',
+        billing: 'metered',
+      },
+      {
+        id: 'claude-opus-5-5',
+        displayName: 'claude-opus-5-5 display',
+        source: 'live',
+        tier: 'strong',
+        thinking: 'unknown',
+        autoClassified: true,
+        billing: 'metered',
+      },
+    ]);
+    // The family pattern classifies opus from the id; the endpoint reports no thinking levels,
+    // and the route kind's default meters every row the endpoint left silent about.
     expect(calls).toBe(0);
+  });
+
+  it('P-40: every model an API-key route lists is metered — the route kind default, not an endpoint report', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-sonnet-5-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.length).toBe(1);
+    expect(listed.every((model) => model.billing === 'metered')).toBe(true);
+  });
+
+  it('P-29: a failed endpoint refresh keeps the previous list and marks every entry stale', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-sonnet-5-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const first = await catalog.list(ACCOUNT_A);
+    server.setPayload([{ status: 500, body: 'overloaded' }]);
+    const refreshed = await catalog.list(ACCOUNT_A, { refresh: true });
+
+    expect(refreshed).toEqual(first.map((model) => ({ ...model, stale: true })));
   });
 
   it('P-29: a compatible-endpoint account lists through the SDK call with its route environment', async () => {
@@ -242,6 +391,182 @@ describe('createModelCatalog (P-29)', () => {
         billing: 'unknown',
       },
     ]);
+  });
+
+  it('P-29: an app-server route kind dispatches to the app-server adapter — a plan-authoritative list with the kind billing', async () => {
+    // The fake app-server rides on the node binary; the listing's model/list answer is scripted.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'app-server', 'fixtures', 'fake-app-server.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-app-server-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'model-list', join(dir, 'rpc.log')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'codex' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, appServer: { spawn } });
+
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'gpt-5.3-codex',
+        displayName: 'GPT-5.3 Codex',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+        billing: 'included',
+      },
+      {
+        id: 'gpt-5.3-mini',
+        displayName: 'GPT-5.3 mini',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh'] },
+        billing: 'included',
+      },
+      {
+        id: 'gpt-5.3-nano',
+        displayName: 'GPT-5.3 nano',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high'] },
+        billing: 'included',
+      },
+      { id: 'gpt-5.3', displayName: 'GPT-5.3', source: 'live', thinking: 'unknown', billing: 'included' },
+    ]);
+  });
+
+  it('P-29: an acp-session route kind dispatches to the ACP adapter — a plan-authoritative list whose rows bill unknown without a verified default', async () => {
+    // The fake ACP agent rides on the node binary; its session/new answer is scripted.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly env?: Readonly<Record<string, string>>; readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'models-opencode', join(dir, 'agent-log.jsonl')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'opencode' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, acp: { spawn } });
+
+    // No bundled records and no verified default billing: the live rows are the whole list and
+    // each reads unknown — never assumed free (P-40), because the provider's documentation ties
+    // no listed model to a covered plan.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'opencode/big-pickle',
+        displayName: 'opencode/Big Pickle',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/fledge-alpha-free',
+        displayName: 'opencode/Fledge Alpha Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/space-bunny-free',
+        displayName: 'opencode/Space Bunny Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+    ]);
+  });
+
+  it('P-29: an acp-session route kind dispatches to the session adapter — the plan-limited answer lists the settings, billing unknown', async () => {
+    // The fake agent rides on the node binary; the scenario answers the recorded shape of a
+    // plan limited to the automatic choice, which the adapter expands to the route's settings.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-session.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'auto-only', join(dir, 'rpc.log')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'copilot' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, appServer: { spawn } });
+
+    // The kind fixes no billing default, so every setting reads unknown — hand-pick with
+    // consent, never assumed free; the tiers resolve to these ids through the kind's data.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown' },
+    ]);
+  });
+
+  it('P-29: a source no adapter covers answers from the bundled registry alone', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const { query } = scriptedQuery([[PRO_ROW]]);
+    let calls = 0;
+    const counting: QueryFn = (params) => {
+      calls += 1;
+      return query(params);
+    };
+    // No adapter registered: the route kind's source has no live leg, so the SDK query never runs
+    // and the bundled records are the whole answer — the subscription kind's bundled flagships.
+    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, adapters: {} });
+
+    const listed = await catalog.list(ACCOUNT_A);
+    expect(listed).toEqual([
+      {
+        id: 'claude-opus-5-5',
+        source: 'bundled',
+        tier: 'strong',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-sonnet-5-5',
+        source: 'bundled',
+        tier: 'balanced',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'included' },
+    ]);
+    expect(calls).toBe(0);
+  });
+
+  it('P-29: a cli-command route kind dispatches to the CLI adapter — a live list with no billing claim', async () => {
+    // The fake binary prints the recorded shape of the CLI's own models table; the spawn rides
+    // the real node machinery, so the dispatch itself is what is under test here.
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-cli-'));
+    const binPath = join(dir, 'agy');
+    const table = [
+      'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+      'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)',
+      'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+    ].join('\n');
+    writeFileSync(binPath, `#!/bin/sh\ncat <<'DOCKET_MODELS'\n${table}\nDOCKET_MODELS\n`);
+    chmodSync(binPath, 0o755);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'agy' }));
+    const catalog = createModelCatalog({
+      ...baseConfig(scriptedQuery([[]]).query),
+      accounts,
+      cli: { command: binPath, spawn: nodeSpawn },
+    });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed).toHaveLength(3);
+    expect(listed.find((model) => model.id === 'gemini-3.8-flash-high')).toEqual({
+      id: 'gemini-3.8-flash-high',
+      displayName: 'Gemini 3.8 Flash (High)',
+      source: 'live',
+      thinking: { kind: 'levels', levels: ['high'] },
+      billing: 'unknown',
+    });
+    // The Claude rows are unknown ids the family patterns classify (P-29 section 4), and their
+    // billing stays unknown — the route kind fixes no default, so picking one asks for consent.
+    expect(listed.find((model) => model.id === 'claude-opus-4-6-thinking')).toMatchObject({
+      tier: 'strong',
+      autoClassified: true,
+      billing: 'unknown',
+    });
+    expect(listed.find((model) => model.id === 'claude-sonnet-4-6')).toMatchObject({
+      tier: 'balanced',
+      autoClassified: true,
+      billing: 'unknown',
+    });
+  });
+
+  it('P-29: the built-in adapter map covers exactly the sources with a live leg today', () => {
+    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['acp-session', 'api', 'app-server', 'cli-command', 'sdk']);
   });
 
   it('P-29: an unknown account, or one whose provider resolves no route kind, answers an empty list', async () => {

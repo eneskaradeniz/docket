@@ -16,17 +16,23 @@ import type {
   Slug,
   StageSlug,
   TaskSlug,
+  ThinkingChoice,
+  EffortLevel,
   Ulid,
   WorkOrderId,
   WorkOrderEvent,
   WorkOrderStatus,
   RepoSlug,
 } from '../domain/index';
-import { deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
+import { billingFromPools, deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
 
 import type {
+  AccountCandidate,
+  AccountCandidateList,
+  AccountDiscovery,
   AccountRecord,
   AppDeps,
+  CredentialImporter,
   BindingScope,
   DiscoveredProvider,
   PermissionBoard,
@@ -35,12 +41,14 @@ import type {
   UpdateChecker,
 } from '../application';
 import {
+  adoptAccountCandidate,
   approveAndDeploy,
   applyUpdate,
   attachProject,
   blockWorkOrder,
   checkForUpdates,
   closeWorkOrder,
+  createAccountCandidateList,
   decideHumanGate,
   decideProposalUseCase,
   DEFAULT_MODEL_CONSENT,
@@ -116,6 +124,27 @@ export interface RepoRegistryPort {
 }
 
 /** A fresh literal every time: results are the caller's data, never shared module state. */
+const isUserLevel = (value: string): value is 'fast' | 'balanced' | 'deep' =>
+  value === 'fast' || value === 'balanced' || value === 'deep';
+const isEffortLevel = (value: string): value is EffortLevel =>
+  ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
+
+/** A thinking choice is exactly one of `level` or `effort`, each from its closed set; anything
+ *  else is a malformed command. `null` = invalid, undefined = absent. */
+const thinkingValue = (
+  input: { readonly level?: string; readonly effort?: string } | undefined,
+): ThinkingChoice | undefined | null => {
+  if (input === undefined) return undefined;
+  const { level, effort } = input;
+  if (level !== undefined && effort === undefined && isUserLevel(level)) {
+    return { level };
+  }
+  if (effort !== undefined && level === undefined && isEffortLevel(effort)) {
+    return { effort };
+  }
+  return null;
+};
+
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
 
 /** undefined = the input is not a valid slug; the caller answers with invalid_id and runs nothing. */
@@ -130,6 +159,16 @@ const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
   return parsed.ok ? parsed.value : undefined;
 };
 
+/** The ports account adoption needs, composed beside AppDeps at the root like the discovery port. */
+export interface AccountAdoption {
+  readonly discovery: AccountDiscovery;
+  readonly importer: CredentialImporter;
+}
+
+interface Adopting extends AccountAdoption {
+  readonly candidates: AccountCandidateList;
+}
+
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
@@ -142,7 +181,9 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  not_found as well. The update checker completes the set: without it no update state exists,
  *  so `app.update` and its intents answer not_found instead of inventing "you are current". The
  *  marks source rides the same pattern: without it there are no provider marks to report, so
- *  `providers.marks` answers not_found instead of inventing an empty record. */
+ *  `providers.marks` answers not_found instead of inventing an empty record. The adoption ports
+ *  are the last of the set: without them `accounts.candidates` and `account.adopt` answer
+ *  not_found. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
@@ -150,7 +191,11 @@ export function createApi(
   registry?: RepoRegistryPort,
   updates?: UpdateChecker,
   marks?: ProviderMarks,
+  adoption?: AccountAdoption,
 ): Api & RunEventFeed {
+  // One cache per api instance: the candidates query reads it, an adoption drops it.
+  const adopting: Adopting | undefined =
+    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(adoption.discovery) };
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
   const listeners = new Set<(e: UiEvent) => void>();
@@ -181,7 +226,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates);
+      const result = await runCommand(tracked, actor, command, board, updates, adopting);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -191,7 +236,7 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -209,6 +254,7 @@ const runCommand = async (
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
+  adopting: Adopting | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -422,6 +468,8 @@ const runCommand = async (
         identityDir: existing?.identityDir,
         tierModels: existing?.tierModels,
         consentedModels: existing?.consentedModels,
+        // An absent reserve keeps what the store holds, like the other fields this command does not own.
+        reserve: command.reserve ?? existing?.reserve,
       };
       const saved = await saveAccount(
         {
@@ -435,6 +483,34 @@ const runCommand = async (
         { record, actor },
       );
       return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };
+    }
+
+    case 'account.adopt': {
+      // Without the discovery and importer ports no candidate can be found, so the command
+      // answers not_found instead of inventing an account. The command carries no kind: the
+      // adoption re-scans and classifies by source path alone.
+      if (adopting === undefined) return { ok: false, code: 'not_found' };
+      const adopted = await adoptAccountCandidate(
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          accounts: deps.accounts,
+          secrets: deps.secrets,
+          capabilities: deps.capabilities,
+          discovery: adopting.discovery,
+          importer: adopting.importer,
+        },
+        {
+          sourcePath: command.sourcePath,
+          label: command.label,
+          ...(command.importToken !== undefined ? { importToken: command.importToken } : {}),
+          actor,
+        },
+      );
+      // The candidates' alreadyAdded flags are stale after any attempt that reached a record.
+      adopting.candidates.invalidate();
+      return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
     }
 
     case 'account.remove': {
@@ -498,12 +574,14 @@ const runCommand = async (
         if (accountId === undefined) return invalidId();
         accounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
       }
+      const thinking = thinkingValue(command.thinking);
+      if (thinking === null) return invalidId();
       // The settings command carries no scope: it edits the machine-global baseline that every
       // repo inherits unless a more specific level overrides it.
       return commandOf(
         await saveBinding(
           { clock: deps.clock, ids: deps.ids, log: deps.log, bindings: deps.bindings },
-          { scope: { level: 'global' }, binding: { role, accounts }, actor },
+          { scope: { level: 'global' }, binding: { role, accounts, ...(thinking !== undefined ? { thinking } : {}) }, actor },
         ),
       );
     }
@@ -531,6 +609,7 @@ const runQuery = async (
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
   updates: UpdateChecker | undefined,
   marks: ProviderMarks | undefined,
+  adopting: Adopting | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -595,6 +674,14 @@ const runQuery = async (
 
     case 'providers.discovered':
       return discoveredProviders(discovery);
+
+    case 'accounts.candidates': {
+      if (adopting === undefined) return { ok: false, code: 'not_found' };
+      const found: readonly AccountCandidate[] = await adopting.candidates.get(
+        query.refresh === true ? { refresh: true } : undefined,
+      );
+      return found;
+    }
 
     case 'providers.marks': {
       // The defs' own static data, read off the composed marks source verbatim — no derivation,
@@ -906,7 +993,14 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
       const number = await deps.workOrders.number(item.workOrderId);
       if (record === undefined || number === undefined) continue;
       const { stageIndex, stageCount } = await stagePosition(record, item.stage);
-      const room = headroom(pools, meters, item.route.accountId, item.route.model ?? '', now);
+      const room = headroom(
+        pools,
+        meters,
+        item.route.accountId,
+        item.route.model ?? '',
+        now,
+        (await deps.accounts.get(item.route.accountId))?.reserve,
+      );
       const limit = room.ok === false;
       running.push({
         workOrderId: item.workOrderId,
@@ -1172,8 +1266,10 @@ const accountDetailView = async (
 };
 
 /** The account's model catalog as the surface sees it (P-29): the merged list read through the
- *  port, joined with the account's recorded consents (P-40). `refresh` rides straight through to
- *  the port — the cache it bypasses lives there, not here. */
+ *  port, joined with the account's recorded consents (P-40). A billing the catalog leaves
+ *  `unknown` is settled by the account's own quota reading (`billingFromPools`) — the same
+ *  evidence the executor's preflight gates runs with. `refresh` rides straight through to the
+ *  port — the cache it bypasses lives there, not here. */
 const accountModelsView = async (
   deps: AppDeps,
   id: AccountId,
@@ -1183,23 +1279,31 @@ const accountModelsView = async (
   if (record === undefined) return { ok: false, code: 'not_found' };
 
   const consented = record.consentedModels ?? [];
-  const models = await deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined);
+  const [models, pools] = await Promise.all([
+    deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined),
+    deps.accounts.pools(id),
+  ]);
+  // The provider names the row an unpinned run uses; its billing, settled the same way as any
+  // row's, is the unpinned run's billing. Without such a row the route's own rule answers.
+  const defaultModel = models.find((model) => model.isDefault === true);
   return {
     models: models.map((model) => ({
       id: model.id,
       displayName: model.displayName,
       tier: model.tier,
       thinking: model.thinking === 'unknown' ? { kind: 'unknown' } : model.thinking,
-      billing: model.billing,
+      billing: billingFromPools(model.billing, model.id, pools),
       source: model.source,
       stale: model.stale === true,
       autoClassified: model.autoClassified === true,
       consented: consented.includes(model.id),
     })),
-    // The marker names the route's own default model, never a catalog row; the unpinned run's
-    // billing is the same rule the executor gates runs with.
+    // The marker names the route's own default model, never a catalog row.
     defaultConsented: consented.includes(DEFAULT_MODEL_CONSENT),
-    defaultBilling: defaultBillingOf(deps.capabilities, record),
+    defaultBilling:
+      defaultModel === undefined
+        ? defaultBillingOf(deps.capabilities, record)
+        : billingFromPools(defaultModel.billing, defaultModel.id, pools),
   };
 };
 

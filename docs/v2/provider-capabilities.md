@@ -67,6 +67,7 @@ Four layers, merged per route:
    higher subscription plan offers) never leaks to another account. A failed refresh keeps the last good
    list and marks it stale. When the route kind sets `liveIsAuthoritative`, bundled models missing from
    the live list are dropped instead of kept.
+   Alias rows (a provider listing `default` or a family name instead of a full id) match the registry through the canonical id the provider reports for them (P-42 in providers.md).
 4. **Unknown model:** never rejected. A live id missing from the registry is selectable with unknown
    capabilities: thinking control hidden, price unknown. If its family is recognised by id pattern it gets
    a tier automatically and is labelled auto-classified. `retired` models stay in the registry so old
@@ -98,6 +99,7 @@ the operator decides it (open decision O-4).
 - The provider-specific parameter is produced by the definition's `buildLaunch`/transport from the chosen
   level; an unsupported level is clamped down, never sent.
 - Thinking tokens are counted as output and shown as a separate usage line.
+- Decided (2026-10-02): the choice lives on the role binding, one setting per role, mapped per model at run time (`RoleBinding.thinking`, `effortForChoice` R-50 in domain.md; provider parameters P-41 in providers.md).
 
 ## 5. Accounts and route kinds (P-31)
 New account fields (all non-secret): `routeKind`, `endpoint?` (URL), `identityDir?` (path),
@@ -162,9 +164,7 @@ through the gates. Candidate classes, by how they fit today's transports:
 | Plain text, experimental only | grok-build, qwen, deepseek, aider, atomcode | S each |
 | New transport | pi, deepseek-harness | L, later |
 
-Gemini CLI is retired because Antigravity replaces it. It is marked `retired` in the registry, hidden from
-discovery and from new accounts; existing Gemini accounts stay and show a notice to move to Antigravity; the
-definition and its code are removed one release later.
+Gemini CLI is removed because Antigravity replaces it. v2 has not shipped, so there is no deprecation period. A stored account whose provider id has no definition is listed as unsupported and never breaks loading or quota polling.
 
 S ≈ one issue (definition, argument builder, scripted-agent test); M ≈ two; L = a transport. This list is a
 backlog, not a promise. Priority is the operator's own providers: Claude Code, Codex, then the GLM route.

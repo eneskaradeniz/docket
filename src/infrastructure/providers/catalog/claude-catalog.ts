@@ -5,15 +5,12 @@
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelInfo, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
-import type { AccountRecord, CapabilityCatalog, SecretVault, TransportError } from '../../../application/index';
+import type { AccountRecord, CapabilityCatalog, SecretVault } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
 import { buildRouteEnvironment } from '../transports/sdk/route-env';
 import type { QueryFn } from '../transports/sdk/transport';
-
-/** The route-environment errors plus the call's own timeout; nothing here ever carries an
- * environment value or a vendor crash text. */
-export type CatalogError = { readonly code: TransportError['code'] | 'timeout'; readonly message: string };
+import type { CatalogError } from './model-catalog';
 
 export interface ClaudeCatalogConfig {
   readonly secrets: Pick<SecretVault, 'get'>;
@@ -27,7 +24,12 @@ export interface ClaudeCatalogConfig {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
+/** The SDK's value for the row a run uses when no model is pinned. */
+const DEFAULT_ROW_VALUE = 'default';
+
+/** The effort vocabulary a live row may advertise; anything else a server lists is not a level
+ * Docket knows and is dropped rather than passed through. */
+export const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
   'none',
   'minimal',
   'low',
@@ -52,11 +54,15 @@ const knownEfforts = (levels: readonly string[] | undefined): readonly EffortLev
 };
 
 /** One row of the SDK answer to one live model: `value` is the id a run would send, kept verbatim
- * (a `[1m]` suffix is part of it), and efforts exist only when the row supports effort at all. */
+ * (a `[1m]` suffix is part of it, an alias stays an alias), `resolvedModel` is the canonical id an
+ * alias stands for, and efforts exist only when the row supports effort at all. */
 const toLiveModel = (row: ModelInfo): LiveModel => {
   const efforts = row.supportsEffort === false ? undefined : knownEfforts(row.supportedEffortLevels);
+  const resolved = row.resolvedModel;
   return {
     id: row.value,
+    ...(typeof resolved === 'string' && resolved !== '' ? { resolvedId: resolved } : {}),
+    ...(row.value === DEFAULT_ROW_VALUE ? { isDefault: true as const } : {}),
     ...(row.displayName === undefined ? {} : { displayName: row.displayName }),
     ...(efforts === undefined ? {} : { efforts }),
   };

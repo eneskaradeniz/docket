@@ -12,11 +12,10 @@ import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { ACP_INITIALIZE_PARAMS, ACP_PROTOCOL_VERSION } from './connection';
 import { mapSessionUpdate, transcriptEntryOf, type TranscriptEntry } from './map-update';
 import { buildResumePrompt } from './resume-summary';
 
-const PROTOCOL_VERSION = 1;
-const CLIENT_INFO = { name: 'Docket', version: '2' };
 const METHOD_NOT_FOUND = -32601;
 const CRASH_MESSAGE = 'The agent session ended unexpectedly.';
 
@@ -75,6 +74,34 @@ const asRecord = (value: unknown): UnknownRecord | null =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as UnknownRecord) : null;
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+/** The values of a select config option: plain entries, or the entries a group wraps. */
+const optionValues = (options: unknown): readonly string[] => {
+  if (!Array.isArray(options)) return [];
+  const values: string[] = [];
+  for (const raw of options) {
+    const entry = asRecord(raw);
+    if (entry === null) continue;
+    const value = asString(entry.value);
+    if (value !== undefined) values.push(value);
+    else values.push(...optionValues(entry.options));
+  }
+  return values;
+};
+
+/** The id of the session's config option of `category`, when it offers `level` as a value. A level
+ *  the session does not offer is not sent: the agent would refuse it and the run keeps its default. */
+const effortOptionId = (session: UnknownRecord | null, category: string, level: string): string | undefined => {
+  const options = session === null ? undefined : session.configOptions;
+  if (!Array.isArray(options)) return undefined;
+  for (const raw of options) {
+    const option = asRecord(raw);
+    if (option === null || option.category !== category) continue;
+    const id = asString(option.id);
+    if (id !== undefined && optionValues(option.options).includes(level)) return id;
+  }
+  return undefined;
+};
 
 type RpcSettled =
   | { readonly kind: 'result'; readonly result: unknown }
@@ -164,6 +191,7 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
         prompt: request.prompt,
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -412,20 +440,14 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
       };
 
       const handshake = async (): Promise<void> => {
-        const initialised = await requestRpc('initialize', {
-          protocolVersion: PROTOCOL_VERSION,
-          // Docket implements none of the optional client methods (filesystem, terminals,
-          // elicitation); omitted capabilities are the protocol's way of saying unsupported.
-          clientCapabilities: {},
-          clientInfo: CLIENT_INFO,
-        });
+        const initialised = await requestRpc('initialize', ACP_INITIALIZE_PARAMS);
         if (initialised.kind === 'error') {
           protocolFail('The agent did not complete the Agent Client Protocol handshake.');
           return;
         }
         const agentResult = asRecord(initialised.result);
         const version = agentResult === null ? undefined : agentResult.protocolVersion;
-        if (version !== PROTOCOL_VERSION) {
+        if (version !== ACP_PROTOCOL_VERSION) {
           protocolFail('The agent speaks a different Agent Client Protocol version.');
           return;
         }
@@ -471,6 +493,13 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
             return;
           }
           sessionId = createdId;
+          if (def.effortArg?.kind === 'session-option' && request.effort !== undefined) {
+            const configId = effortOptionId(createdSession, def.effortArg.category, request.effort);
+            // A refused effort leaves the session on its own default; it never fails the run.
+            if (configId !== undefined) {
+              await requestRpc('session/set_config_option', { sessionId, configId, value: request.effort });
+            }
+          }
         }
         establishedSessionId = sessionId;
         events.push({ type: 'session_started', at: clock.now(), sessionRef: sessionId });

@@ -69,6 +69,7 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'permission.answer': 'success.permission.answer',
   'deploy.approve': 'success.deploy.approve',
   'account.save': 'success.account.save',
+  'account.adopt': 'success.account.adopt',
   'account.remove': 'success.account.remove',
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',

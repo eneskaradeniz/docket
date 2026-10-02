@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { CapabilityDef, Result, RoleDef, RunId } from '../../../../domain/index';
+import type { CapabilityDef, EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
-import type { ProviderDef } from '../../defs/index';
+import type { EffortArg, ProviderDef } from '../../defs/index';
 import { createAcpTransport } from './acp';
 
 const FAKE_AGENT_BIN = fileURLToPath(new URL('./fake-agent.cjs', import.meta.url));
@@ -69,12 +69,13 @@ const CONTEXT_CAPABILITY: CapabilityDef = {
   path: 'docs/design.md',
 };
 
-const acpDef = (scenario: string, logPath: string): ProviderDef => ({
+const acpDef = (scenario: string, logPath: string, effortArg?: EffortArg): ProviderDef => ({
   id: 'fake-acp',
   displayName: 'Fake ACP Agent',
   bins: [FAKE_AGENT_BIN],
   versionArgs: ['--version'],
   transport: 'acp',
+  ...(effortArg === undefined ? {} : { effortArg }),
   config: { mechanism: 'env-var', name: 'FAKE_ACP_HOME' },
   // The scenario and the log path are how a test scripts its fake agent.
   buildLaunch: () => ({ args: [scenario, logPath], env: {}, stdin: 'none' }),
@@ -97,6 +98,7 @@ const acpDef = (scenario: string, logPath: string): ProviderDef => ({
 interface RequestOptions {
   readonly capabilities?: readonly CapabilityDef[];
   readonly resume?: { readonly sessionRef: string };
+  readonly effort?: EffortLevel;
 }
 
 const requestOf = (cwd: string, options: RequestOptions = {}): RunRequest => ({
@@ -107,6 +109,7 @@ const requestOf = (cwd: string, options: RequestOptions = {}): RunRequest => ({
   prompt: 'do the work',
   capabilities: options.capabilities ?? [],
   ...(options.resume === undefined ? {} : { resume: options.resume }),
+  ...(options.effort === undefined ? {} : { effort: options.effort }),
 });
 
 const unwrap = (started: Result<RunHandle, TransportError>): RunHandle => {
@@ -122,9 +125,10 @@ const runCwd = (): string => {
 const startRun = async (
   scenario: string,
   request: RunRequest,
+  effortArg?: EffortArg,
 ): Promise<{ readonly handle: RunHandle; readonly logPath: string }> => {
   const logPath = join(request.cwd, 'agent-log.jsonl');
-  const transport = createAcpTransport(acpDef(scenario, logPath));
+  const transport = createAcpTransport(acpDef(scenario, logPath, effortArg));
   return { handle: unwrap(await transport.start(request)), logPath };
 };
 
@@ -406,5 +410,43 @@ describe('acp transport', () => {
     expect(text).not.toContain('[user]');
     expect(text).not.toContain('[agent]');
     expect(text.endsWith('do the work')).toBe(true);
+  });
+
+  describe('effort (P-41)', () => {
+    const SESSION_OPTION: EffortArg = { kind: 'session-option', category: 'thought_level' };
+
+    it('P-41: a session-option effort sets the thought_level option after session/new and before the prompt', async () => {
+      const run = await startRun('models-opencode', requestOf(runCwd(), { effort: 'high' }), SESSION_OPTION);
+      await collect(run.handle.events);
+
+      const messages = clientMessages(run.logPath);
+      expect(clientMethodSequence(messages)).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(paramsOf(messageOf(messages, 'session/set_config_option'))).toEqual({
+        sessionId: 'sess_fake_1',
+        configId: 'effort',
+        value: 'high',
+      });
+    });
+
+    it('P-41: an absent effort adds nothing, and a level the session does not offer is not sent', async () => {
+      const none = await startRun('models-opencode', requestOf(runCwd()), SESSION_OPTION);
+      await collect(none.handle.events);
+      expect(clientMethodSequence(clientMessages(none.logPath))).not.toContain('session/set_config_option');
+
+      const unoffered = await startRun('models-opencode', requestOf(runCwd(), { effort: 'xhigh' }), SESSION_OPTION);
+      await collect(unoffered.handle.events);
+      expect(clientMethodSequence(clientMessages(unoffered.logPath))).not.toContain('session/set_config_option');
+    });
+
+    it('P-41: a definition without an effort parameter ignores the effort', async () => {
+      const run = await startRun('models-opencode', requestOf(runCwd(), { effort: 'high' }));
+      await collect(run.handle.events);
+      expect(clientMethodSequence(clientMessages(run.logPath))).not.toContain('session/set_config_option');
+    });
   });
 });

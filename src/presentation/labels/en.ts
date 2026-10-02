@@ -381,6 +381,7 @@ export const EN: LabelBundle = {
   'errorBoundary.title': 'The app hit an unexpected error.',
   'errorBoundary.reload': 'Reload',
   'success.account.save': 'Account saved.',
+  'success.account.adopt': 'Account added.',
   'success.account.remove': 'Account removed.',
   'success.account.consent.grant': 'Spend consent recorded.',
   'success.account.consent.revoke': 'Spend consent withdrawn.',

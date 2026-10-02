@@ -45,6 +45,19 @@ function isBuildLaunch(value: unknown): value is (input: LaunchInput) => Provide
   return typeof value === 'function';
 }
 
+function isEffortArg(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  if (value['kind'] === 'flag') return isNonEmptyString(value['flag']);
+  if (value['kind'] === 'request-field') return isNonEmptyString(value['name']);
+  if (value['kind'] === 'session-option') return isNonEmptyString(value['category']);
+  return false;
+}
+
+function isTimeoutMs(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
+}
+
 export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isRecord(value)) return false;
   if (!isNonEmptyString(value['id'])) return false;
@@ -70,10 +83,12 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!CONFIG_MECHANISMS.includes(config['mechanism'] as ProviderDef['config']['mechanism'])) return false;
   if (!isNonEmptyString(config['name'])) return false;
   if (!isBuildLaunch(value['buildLaunch'])) return false;
+  if (!isEffortArg(value['effortArg'])) return false;
   if (!RESUME_MODES.includes(value['resume'] as ProviderDef['resume'])) return false;
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];
   if (!(isRecord(installHint) && isNonEmptyString(installHint['url']))) return false;
+  if (!isTimeoutMs(value['firstOutputTimeoutMs']) || !isTimeoutMs(value['inactivityTimeoutMs'])) return false;
   const mark = value['mark'];
   if (
     mark !== null &&

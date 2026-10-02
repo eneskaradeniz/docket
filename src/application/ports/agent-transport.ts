@@ -7,6 +7,7 @@ import type {
   Result,
   RoleDef,
   RunId,
+  EffortLevel,
 } from '../../domain/index';
 
 export interface RunRequest {
@@ -17,6 +18,7 @@ export interface RunRequest {
   readonly prompt: string;
   readonly resume?: { readonly sessionRef: string };
   readonly capabilities: readonly CapabilityDef[];
+  readonly effort?: EffortLevel; // resolved by executeRun; absent → the CLI's own default
 }
 
 export interface RunHandle {
