@@ -32,6 +32,8 @@ export interface CatalogModel {
   readonly autoClassified?: true;
   /** Set on every entry when a refresh failed and the last good list is being kept. */
   readonly stale?: true;
+  /** The canonical id an alias row stands for, copied from the live row; absent on bundled-only entries. */
+  readonly resolvedId?: string;
   /** The row the provider uses when no model is pinned. */
   readonly isDefault?: true;
 }
@@ -71,7 +73,10 @@ interface LiveContext {
 
 const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: LiveContext): CatalogModel => {
   const reported = model.resolvedId ?? model.id;
-  const marker = model.isDefault === true ? { isDefault: true as const } : {};
+  const marker = {
+    ...(model.resolvedId !== undefined ? { resolvedId: model.resolvedId } : {}),
+    ...(model.isDefault === true ? { isDefault: true as const } : {}),
+  };
   if (record !== undefined) {
     return {
       id: model.id,

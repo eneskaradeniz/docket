@@ -4,6 +4,7 @@
 // the snapshot through ports and writes the outcomes back.
 import type {
   AccountId,
+  CatalogModel,
   AccountRoute,
   DispatchDecision,
   DispatchLimits,
@@ -25,6 +26,7 @@ import type {
 } from '../../domain/index';
 import { combinedSpendStatus, decideDispatch, deriveWorkOrderState, err, headroom, nextAction, ok, orderForReview, stageRouting } from '../../domain/index';
 
+import { catalogOrEmpty, matchIdFor } from './match-id';
 import type { AccountRecord, AppDeps, RunRecord } from '../ports/index';
 import { resolveRoute, type RouteError } from '../use-cases/index';
 
@@ -97,7 +99,7 @@ const spendWindow = (
 };
 
 export async function dispatcherTick(
-  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects'>,
+  deps: Pick<AppDeps, 'clock' | 'queue' | 'runs' | 'accounts' | 'workOrders' | 'definitions' | 'projects' | 'modelCatalog'>,
   config: DispatcherConfig,
   start: (item: QueueItem) => void,
 ): Promise<TickResult> {
@@ -126,6 +128,15 @@ export async function dispatcherTick(
   const reserveOf = async (accountId: AccountId): Promise<QuotaReserve | undefined> =>
     (await deps.accounts.get(accountId))?.reserve;
 
+  const catalogs = new Map<AccountId, readonly CatalogModel[]>();
+  const catalogOf = async (accountId: AccountId): Promise<readonly CatalogModel[]> => {
+    const known = catalogs.get(accountId);
+    if (known !== undefined) return known;
+    const listed = await catalogOrEmpty(() => deps.modelCatalog.list(accountId));
+    catalogs.set(accountId, listed);
+    return listed;
+  };
+
   const headroomByItem: Record<string, Headroom> = {};
   const spendByItem: Record<string, SpendStatus> = {};
   for (const item of queue) {
@@ -133,7 +144,7 @@ export async function dispatcherTick(
       pools,
       meters,
       item.route.accountId,
-      item.route.model ?? '',
+      matchIdFor(await catalogOf(item.route.accountId), item.route.model),
       now,
       await reserveOf(item.route.accountId),
     );

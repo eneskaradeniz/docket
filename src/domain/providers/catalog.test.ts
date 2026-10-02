@@ -435,6 +435,17 @@ describe('mergeCatalog alias resolution (P-42)', () => {
     expect(merged[0]?.autoClassified).toBeUndefined();
   });
 
+  it('P-42: the merged entry carries resolvedId from the live row, and none without one', () => {
+    const merged = mergeCatalog(
+      [{ id: 'sonnet', resolvedId: 'claude-sonnet-5-5' }, { id: 'claude-opus-5-5' }, { id: 'mystery', resolvedId: 'x-1' }],
+      [SONNET_5_5, OPUS_5_5],
+      FAMILY_PATTERNS,
+    );
+    expect(merged.find((model) => model.id === 'sonnet')?.resolvedId).toBe('claude-sonnet-5-5');
+    expect(merged.find((model) => model.id === 'mystery')?.resolvedId).toBe('x-1');
+    expect(merged.find((model) => model.id === 'claude-opus-5-5')).not.toHaveProperty('resolvedId');
+  });
+
   it('P-42: a bracketed variant resolves to its record', () => {
     const merged = mergeCatalog(
       [{ id: 'opus[1m]', resolvedId: 'claude-opus-5-5[1m]' }],
