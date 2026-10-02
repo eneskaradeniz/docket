@@ -1136,6 +1136,34 @@ describe('settings surface (A-48 … A-50)', () => {
       expect(list.map((r) => r.id)).toEqual([...list.map((r) => r.id)].sort());
     });
 
+    it('A-50: a stage is deduplicated by (flow, stage) alone — a repo override with another role does not list again', async () => {
+      const h = createHarness();
+      const standard = { id: 'standard', name: 'Repo standard', stages: [{ id: 'review', name: 'Repo review', role: 'worker', exit: [] }] };
+      h.definitions.seed({ kind: 'repo', repo: REPO }, 'defs.json', JSON.stringify({
+        roles: [ROLE_JSON], flows: [standard], capabilities: [], repo: { ...JSON.parse(DEFINITIONS_JSON).repo, flows: ['standard'], defaultFlow: 'standard' },
+      }));
+
+      const list = await roles(h, [{ slug: REPO, path: '/repos/acme' }]);
+
+      expect(list.find((r) => r.id === 'worker')?.stages.some((s) => s.flow === 'standard')).toBe(false);
+      expect(reviewStage(list)).toMatchObject({ flowName: 'Standart', stageName: 'Gözden geçirme' });
+    });
+
+    it('A-50: repos are read sorted by repo id, whatever order the registry lists them in', async () => {
+      const h = createHarness();
+      const aaa = slugOf<'repo'>('aaa');
+      const seed = (repo: RepoSlug, name: string) =>
+        h.definitions.seed({ kind: 'repo', repo }, 'defs.json', JSON.stringify({
+          roles: [{ ...ROLE_JSON, name }], flows: FLOWS_JSON, capabilities: [], repo: { ...JSON.parse(DEFINITIONS_JSON).repo, id: repo },
+        }));
+      seed(REPO, 'From acme');
+      seed(aaa, 'From aaa');
+
+      const list = await roles(h, [{ slug: REPO, path: '/repos/acme' }, { slug: aaa, path: '/repos/aaa' }]);
+
+      expect(list.find((r) => r.id === 'worker')?.name).toBe('From aaa');
+    });
+
     it('A-50: without a registry the library alone answers', async () => {
       const h = createHarness();
 

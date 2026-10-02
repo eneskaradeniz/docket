@@ -919,7 +919,8 @@ const rolesListView = async (
     { roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS },
   ];
   const seenRepos = new Set<string>();
-  for (const row of registry === undefined ? [] : await registry.list()) {
+  const rows = registry === undefined ? [] : [...(await registry.list())].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  for (const row of rows) {
     if (seenRepos.has(row.slug)) continue;
     seenRepos.add(row.slug);
     const loaded = await deps.definitions.load(row.slug);
@@ -952,7 +953,7 @@ const rolesListView = async (
     for (const flow of source.flows) {
       for (const stage of flow.stages) {
         if (stage.role === null) continue;
-        const key = `${stage.role}\n${flow.id}\n${stage.id}`;
+        const key = `${flow.id}\n${stage.id}`;
         if (seenStages.has(key)) continue;
         seenStages.add(key);
         const reviewed = stage.reviewOf === undefined ? undefined : flow.stages.find((candidate) => candidate.id === stage.reviewOf);
