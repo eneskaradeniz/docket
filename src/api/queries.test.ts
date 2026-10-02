@@ -23,14 +23,29 @@ import type {
 } from '../domain/index';
 import { parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps, DiscoveredProvider, ProviderDiscovery, RunRecord } from '../application';
+import type { AppDeps, DiscoveredProvider, ModelCatalog, ProviderDiscovery, RunRecord } from '../application';
 import { createPermissionBoard } from '../application';
 import type { FakeDefinitionStore } from '../application/ports/fakes';
-import { createFakeDefinitionStore, createFakeDeps, FAKE_ROADMAP_TARGET } from '../application/ports/fakes';
+import {
+  createFakeCapabilityCatalog,
+  createFakeDefinitionStore,
+  createFakeDeps,
+  createFakeModelCatalog,
+  FAKE_ROADMAP_TARGET,
+} from '../application/ports/fakes';
 
 import { createApi } from './api';
 import type { RepoRegistryPort } from './api';
-import type { BoardView, CockpitView, OpenAskView, ProjectTree, RoadmapPageView, SettingsAccountsView, RepoListItem } from './queries';
+import type {
+  AccountModelsView,
+  BoardView,
+  CockpitView,
+  OpenAskView,
+  ProjectTree,
+  RoadmapPageView,
+  SettingsAccountsView,
+  RepoListItem,
+} from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
 function slugOf<B extends string>(input: string): Slug<B> {
@@ -936,6 +951,128 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view).toEqual({ accounts: [], bindings: [] });
+  });
+});
+
+// --- account.models: the merged catalog read back with the account's consents (P-29, P-40) ------
+
+describe('account.models', () => {
+  const saveAccount = async (h: Harness, consentedModels?: readonly string[]): Promise<void> => {
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'acme-prov',
+      label: 'Main',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+      ...(consentedModels !== undefined ? { consentedModels } : {}),
+    });
+  };
+
+  it('P-29: included, metered and unknown each map through, with the thinking shape, source and flags', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', displayName: 'Atlas Max', source: 'live', tier: 'strong', thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] }, billing: 'included' },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+          // A kept-after-failure row whose tier came from a family-id pattern, not the registry.
+          { id: 'atlas-fog', source: 'bundled', thinking: 'unknown', billing: 'unknown', autoClassified: true, stale: true },
+        ],
+      }),
+    };
+
+    const view = (await createApi(deps).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+
+    expect(view).toEqual({
+      models: [
+        { id: 'atlas-max', displayName: 'Atlas Max', tier: 'strong', thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] }, billing: 'included', source: 'live', stale: false, autoClassified: false, consented: false },
+        { id: 'atlas-mini', thinking: { kind: 'none' }, billing: 'metered', source: 'live', stale: false, autoClassified: false, consented: false },
+        { id: 'atlas-fog', thinking: { kind: 'unknown' }, billing: 'unknown', source: 'bundled', stale: true, autoClassified: true, consented: false },
+      ],
+      // A subscription the registry says nothing about rides its plan.
+      defaultConsented: false,
+      defaultBilling: 'included',
+    });
+  });
+
+  it('P-40: consented is membership in consentedModels; the * marker rides the envelope as defaultConsented, never a model row', async () => {
+    const h = createHarness();
+    await saveAccount(h, ['atlas-mini', '*']);
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included' },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+        ],
+      }),
+    };
+
+    const view = (await createApi(deps).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+
+    expect(view.models.map((model) => [model.id, model.consented])).toEqual([
+      ['atlas-max', false],
+      ['atlas-mini', true],
+    ]);
+    // '*' names the route's own default model, not a model: it is consent for the unpinned run.
+    expect(view.defaultConsented).toBe(true);
+    expect(view.models.some((model) => model.id === '*')).toBe(false);
+  });
+
+  it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+    await h.deps.accounts.save({ id: ACCOUNT_SPARE, provider: 'acme-prov', label: 'Key', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [] });
+
+    // The route kind fixes the unpinned-run billing; it wins over the auth-mode default.
+    const fixed: AppDeps = {
+      ...h.deps,
+      capabilities: createFakeCapabilityCatalog([{ id: 'acme-sub', provider: 'acme-prov', authMode: 'subscription', defaultBilling: 'metered' }]),
+    };
+    const answer = (deps: AppDeps, accountId: string): Promise<unknown> =>
+      createApi(deps).query({ type: 'account.models', accountId });
+    expect(((await answer(fixed, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('metered');
+
+    // Without a fixed kind, only a subscription rides a plan; every other auth mode pays per use.
+    expect(((await answer(h.deps, ACCOUNT)) as AccountModelsView).defaultBilling).toBe('included');
+    expect(((await answer(h.deps, ACCOUNT_SPARE)) as AccountModelsView).defaultBilling).toBe('metered');
+  });
+
+  it('P-29: refresh reaches the catalog port, so it bypasses the cache', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const seen: (boolean | undefined)[] = [];
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: {
+        list: async (accountId, options) => {
+          seen.push(options?.refresh);
+          return accountId === ACCOUNT ? [] : [];
+        },
+      } satisfies ModelCatalog,
+    };
+    const api = createApi(deps);
+
+    await api.query({ type: 'account.models', accountId: ACCOUNT });
+    await api.query({ type: 'account.models', accountId: ACCOUNT, refresh: true });
+
+    // The cached read passes no refresh; the explicit one tells the port to bypass.
+    expect(seen).toEqual([undefined, true]);
+  });
+
+  it('returns not_found for an unknown account', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'account.models', accountId: ACCOUNT })).toEqual({ ok: false, code: 'not_found' });
+  });
+
+  it('returns invalid_id for an unparseable accountId', async () => {
+    const h = createHarness();
+
+    expect(await createApi(h.deps).query({ type: 'account.models', accountId: 'not-a-ulid' })).toEqual({ ok: false, code: 'invalid_id' });
   });
 });
 
