@@ -182,14 +182,15 @@ describe('provider definitions (P-1)', () => {
     expect(kilo.capabilities.permissionAsk).toBe('unknown');
   });
 
-  it('P-44: the grok-build launch keeps agent options before stdio, runs without the shared leader, never auto-approves, and claims no isolation', () => {
+  it('P-44: the grok-build launch has no GROK_HOME and no run dir, keeps agent options before stdio, runs without the shared leader, never auto-approves, and claims no isolation', () => {
     const grok = defById('grok-build');
     const launch = grok.buildLaunch({ ...LAUNCH_INPUT, effort: 'xhigh' });
     expect(launch.args).toEqual(['agent', '--no-leader', '--reasoning-effort', 'xhigh', 'stdio']);
     expect(grok.buildLaunch(LAUNCH_INPUT).args).toEqual(['agent', '--no-leader', 'stdio']);
     expect(launch.env['GROK_TELEMETRY_ENABLED']).toBe('0');
-    // The run never gets a run-scoped home: it would lose the machine's login.
-    expect(launch.env['GROK_HOME']).not.toBe('/run/dir');
+    expect(grok.config).toEqual({ mechanism: 'none' });
+    expect(launch.env).toEqual({ GROK_TELEMETRY_ENABLED: '0' });
+    expect(JSON.stringify(launch)).not.toContain('/run/dir');
     expect(JSON.stringify(launch)).not.toMatch(/always-approve|yolo|bypass/i);
     expect(grok.isolation).toBeUndefined();
     expect(grok.telemetryOff).toBeUndefined();

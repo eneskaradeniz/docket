@@ -4,20 +4,12 @@
 // unmodified from the file its `d` came from (the provider's official file, or the
 // operator-placed stand-in when none exists); it identifies the provider only and is never
 // redrawn — `mark: null` stays the state of a def with no file.
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-
 import { effortFlagArgs, type EffortArg, type ProviderDef } from './provider-def';
 
 // Each effort parameter below is taken from the provider's own help output, SDK typings or
 // protocol schema; a provider whose parameter is not verified carries none.
 const AGY_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
 const COPILOT_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
-/** The home the CLI uses when nobody redirects it: the same rule the login probe applies. */
-const grokHome = (): string => {
-  const override = process.env['GROK_HOME'];
-  return override !== undefined && override !== '' ? override : join(homedir(), '.grok');
-};
 const GROK_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
 
 export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
@@ -280,15 +272,15 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     authProbe: { args: [], presenceFile: { homeEnv: 'GROK_HOME', homeDir: '.grok', file: 'auth.json' } },
     transport: 'acp',
     effortArg: GROK_EFFORT,
-    // The CLI's own home variable. The launch pins it to the machine's own home below: a
-    // run-scoped home would lose the machine's login, so no isolation is claimed.
-    config: { mechanism: 'env-var', name: 'GROK_HOME' },
+    // The login lives in the CLI's own home, so no run-scoped directory is handed over and the
+    // home variable stays whatever the machine set; no isolation is claimed.
+    config: { mechanism: 'none' },
     // Agent options precede `stdio`. `--no-leader` keeps the run off the shared leader socket under
     // the user's home. Never an auto-approve switch: permission mode stays `default`, so every
     // approval the CLI asks for reaches the user.
     buildLaunch: (input) => ({
       args: ['agent', '--no-leader', ...effortFlagArgs(GROK_EFFORT, input.effort), 'stdio'],
-      env: { GROK_HOME: grokHome(), GROK_TELEMETRY_ENABLED: '0' },
+      env: { GROK_TELEMETRY_ENABLED: '0' },
       stdin: 'prompt',
     }),
     resume: 'protocol',
