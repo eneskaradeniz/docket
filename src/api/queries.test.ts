@@ -1065,6 +1065,24 @@ describe('account.models', () => {
     ]);
   });
 
+  it('A-20: an alias row reads included through the allowance bucket of the id it resolves to', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [{ id: 'fable', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', resolvedId: 'claude-fable-5-1' }],
+      }),
+    };
+    await deps.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'seven_day_fable', kind: 'allowance', appliesTo: [{ prefix: 'claude-fable' }] },
+    ]);
+
+    const view = (await createApi(deps).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+
+    expect(view.models.map((model) => [model.id, model.billing])).toEqual([['fable', 'included']]);
+  });
+
   it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
     const h = createHarness();
     await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });

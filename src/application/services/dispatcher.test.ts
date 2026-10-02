@@ -35,6 +35,7 @@ import {
   type FakeDefinitionStore,
 } from '../ports/fakes';
 
+import { createFakeModelCatalog } from '../ports/fakes/fake-model-catalog';
 import { applyLimitDecision, dispatcherTick, enqueueStage } from './dispatcher';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -183,6 +184,12 @@ const pool = (id: PoolId, accountId: AccountId): Pool => ({
   label: 'allowance',
   kind: 'allowance',
   appliesTo: 'all',
+});
+
+const opusPool = (id: PoolId, accountId: AccountId): Pool => ({
+  ...pool(id, accountId),
+  label: 'seven_day_opus',
+  appliesTo: [{ prefix: 'claude-opus' }],
 });
 
 const meter = (id: MeterId, poolId: PoolId, at: EpochMs): Meter => ({
@@ -897,6 +904,67 @@ describe('dispatcherTick', () => {
     expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
     expect(result.started).toStrictEqual([]);
     expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+  });
+
+  it('A-20: an alias model is blocked by the exhausted pool of the id it resolves to', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({ [A1]: [{ id: 'opus', source: 'live', thinking: 'unknown', billing: 'included', resolvedId: 'claude-opus-5-5' }] }),
+    };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
+  });
+
+  it('A-20: without catalog knowledge an alias model keeps matching as itself and is not blocked', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('A-20: a catalog failure never blocks dispatch; the model stands in as the match id', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: { list: async () => Promise.reject(new Error('catalog down')) },
+    };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
+  it('A-20: an exhausted pool the model matches by its own id still blocks when the catalog fails', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save(account(A1));
+    await h.deps.accounts.savePools(A1, [opusPool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter(meter(METER1, POOL1, 1_000));
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'claude-opus-5-5')));
+    const deps: AppDeps = { ...h.deps, modelCatalog: { list: async () => Promise.reject(new Error('down')) } };
+
+    const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
   });
 
   it('A-20: an item whose account reserve blocks the window is not started and waits for quota', async () => {
