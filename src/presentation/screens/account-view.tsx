@@ -8,6 +8,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
+import { InfoBubble } from '../components/info-bubble';
 import { ProviderMark } from '../components/provider-mark';
 import { StateBadge } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
@@ -46,7 +47,7 @@ const formatRemaining = (locale: Locale, ms: number): string => {
   return new Intl.NumberFormat(LOCALE_TAG[locale]).format(Math.floor(minutes / (60 * 24)));
 };
 
-/** The band's info dot: the band speaks the account's standing, never a control (U-20). */
+/** The window block's info dot (the limit band uses the shared info bubble, U-27). */
 const InfoGlyph = ({ title, label }: { readonly title: string; readonly label: string }) => (
   <button
     type="button"
@@ -169,7 +170,7 @@ export function AccountViewScreen({
             <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
             <span>{t(locale, 'account.policy.when')}</span>
             <b className="font-semibold text-ink">{t(locale, policyKey(view.account.limitPolicy))}</b>
-            <InfoGlyph title={t(locale, 'account.policy.info')} label={t(locale, 'account.policy.info')} />
+            <InfoBubble locale={locale} subject={t(locale, 'account.policy.subject')} body={t(locale, 'account.policy.info')} />
             <span className="flex-1" />
             <ActionButton variant="ghost" onClick={onOpenSettings}>
               {t(locale, 'account.edit')}

@@ -47,7 +47,6 @@ const PENDING = new Map([
   ['application:A-50', '#647'],
   ['application:A-51', '#647'],
   ['application:A-52', '#647'],
-  ['ui:U-27', '#648'],
   ['ui:U-28', '#649'],
   ['ui:U-29', '#650'],
   ['ui:U-30', '#650'],

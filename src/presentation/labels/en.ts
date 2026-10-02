@@ -155,6 +155,8 @@ export const EN: LabelBundle = {
   'account.work.empty': 'No active work is running on this account.',
   'account.policy.when': 'When the limit is full:',
   'account.policy.info': 'What this account’s work orders do when the limit is reached',
+  'account.policy.subject': 'limit behaviour',
+  'info.trigger.prefix': 'Info: ',
   'account.policy.wait_resume': 'Resume on reset',
   'account.policy.switch_pool': 'Switch to another pool',
   'account.policy.fallback_account': 'Fall back to another account',
