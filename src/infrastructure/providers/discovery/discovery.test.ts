@@ -485,3 +485,52 @@ describe('credential-count login probe (kilo)', () => {
     }
   });
 });
+
+describe('credential-file presence login probe (grok-build)', () => {
+  const grokDef = (): ProviderDef => {
+    const grok = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'grok-build');
+    return defOf({
+      id: 'grok-like',
+      bins: ['grok-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: grok?.authProbe,
+    });
+  };
+  const discoverGrok = async (env: Readonly<Record<string, string>>): Promise<{ readonly loggedIn: boolean | null | undefined; readonly calls: SpawnCall[] }> => {
+    writeBin('home/.local/bin/grok-like', 'case "$1" in\n  --version) echo "1.0.46"; exit 0;;\nesac\nexit 3');
+    const { discovery, calls } = makeDiscovery([grokDef()], { PATH: EMPTY_PATH(), ...env }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    return { loggedIn: results[0]?.loggedIn, calls };
+  };
+
+  it('G1: auth.json under the default home is a login, its absence is not, and the CLI is spawned only for its version', async () => {
+    rmSync(join(HOME(), '.grok'), { recursive: true, force: true });
+    const absent = await discoverGrok({});
+    expect(absent.loggedIn).toBe(false);
+
+    mkdirSync(join(HOME(), '.grok'), { recursive: true });
+    // Content is never read: the file holds nothing parseable and the answer is the same.
+    writeFileSync(join(HOME(), '.grok', 'auth.json'), 'not json');
+    const present = await discoverGrok({});
+    expect(present.loggedIn).toBe(true);
+    expect(present.calls.map((call) => call.args)).toEqual([['--version']]);
+    rmSync(join(HOME(), '.grok'), { recursive: true, force: true });
+  });
+
+  it('G1: GROK_HOME redirects the probe, and an ambient API key is not a login', async () => {
+    const elsewhere = join(root, 'grok-elsewhere');
+    mkdirSync(elsewhere, { recursive: true });
+    rmSync(join(HOME(), '.grok'), { recursive: true, force: true });
+    mkdirSync(join(HOME(), '.grok'), { recursive: true });
+    writeFileSync(join(HOME(), '.grok', 'auth.json'), '{}');
+
+    // The override names a home without the file: the default home's file no longer counts.
+    expect((await discoverGrok({ GROK_HOME: elsewhere })).loggedIn).toBe(false);
+    writeFileSync(join(elsewhere, 'auth.json'), '{}');
+    expect((await discoverGrok({ GROK_HOME: elsewhere })).loggedIn).toBe(true);
+
+    rmSync(join(HOME(), '.grok'), { recursive: true, force: true });
+    expect((await discoverGrok({ XAI_API_KEY: 'xai-ambient' })).loggedIn).toBe(false);
+  });
+});

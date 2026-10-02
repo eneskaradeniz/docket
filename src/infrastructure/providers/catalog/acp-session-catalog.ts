@@ -52,6 +52,9 @@ const ACP_SESSION_LAUNCHES: Readonly<
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
   // The CLI reads its own home; no run-scoped redirection exists for it.
   hermes: { command: 'hermes', args: ['acp'] },
+  // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
+  // initialize answer, so no session is ever opened for it.
+  'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
   // Telemetry is on by default and the flag is documented for this subcommand.
   atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
   // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
@@ -179,6 +182,42 @@ const parseSessionAnswer = (
   return { models: rows, ...(efforts === undefined ? {} : { efforts }) };
 };
 
+/** A provider that lists its models in the initialize answer itself (`_meta.modelState`), before
+ * any session and so without a login: each row carries the levels of its own model, and the row
+ * named by `currentModelId` is the default. Undefined when the answer has no such list. */
+const parseInitializeModels = (initialized: unknown, levelNames: LevelNames | undefined): readonly LiveModel[] | undefined => {
+  if (!isRecord(initialized)) return undefined;
+  const meta = initialized['_meta'];
+  const state = isRecord(meta) ? meta['modelState'] : undefined;
+  const available = isRecord(state) ? state['availableModels'] : undefined;
+  if (!Array.isArray(available)) return undefined;
+  const current = isRecord(state) ? state['currentModelId'] : undefined;
+  const rows: LiveModel[] = [];
+  const seen = new Set<string>();
+  for (const raw of available) {
+    if (!isRecord(raw)) continue;
+    const id = raw['modelId'];
+    if (typeof id !== 'string' || id === '' || seen.has(id)) continue;
+    seen.add(id);
+    const name = raw['name'];
+    const rowMeta = isRecord(raw['_meta']) ? raw['_meta'] : undefined;
+    const advertised = rowMeta !== undefined && Array.isArray(rowMeta['reasoningEfforts']) ? rowMeta['reasoningEfforts'] : [];
+    const efforts: EffortLevel[] = [];
+    for (const entry of advertised) {
+      const value = isRecord(entry) ? entry['value'] : undefined;
+      const level = typeof value === 'string' ? effortOfProviderLevel(levelNames, value) : undefined;
+      if (level !== undefined && !efforts.includes(level)) efforts.push(level);
+    }
+    rows.push({
+      id,
+      ...(typeof name === 'string' && name !== '' ? { displayName: name } : {}),
+      ...(efforts.length === 0 ? {} : { efforts }),
+      ...(id === current ? { isDefault: true as const } : {}),
+    });
+  }
+  return rows;
+};
+
 export async function listAcpSessionModels(
   account: AccountRecord,
   config: AcpSessionCatalogConfig,
@@ -211,6 +250,11 @@ export async function listAcpSessionModels(
     if (agent?.['protocolVersion'] !== ACP_PROTOCOL_VERSION) {
       return err({ code: 'unsupported', message: 'the agent speaks a different Agent Client Protocol version' });
     }
+
+    // A list given at initialize is complete without a login; asking for a session would only
+    // end in the login refusal.
+    const initializeModels = parseInitializeModels(initialized.value, config.levelNames);
+    if (initializeModels !== undefined) return ok(initializeModels);
 
     const created = await connection.request('session/new', { cwd: scratch, mcpServers: [] });
     if (!created.ok) {

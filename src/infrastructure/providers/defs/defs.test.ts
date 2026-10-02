@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -130,6 +130,7 @@ describe('provider definitions (P-1)', () => {
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: '',
       kilo: 'KILO_CONFIG_DIR',
+      'grok-build': '',
       atomcode: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
@@ -182,6 +183,24 @@ describe('provider definitions (P-1)', () => {
     expect(kilo.capabilities.permissionAsk).toBe('unknown');
   });
 
+  it('P-44: the grok-build launch has no GROK_HOME and no run dir, keeps agent options before stdio, runs without the shared leader, never auto-approves, and claims no isolation', () => {
+    const grok = defById('grok-build');
+    const launch = grok.buildLaunch({ ...LAUNCH_INPUT, effort: 'xhigh' });
+    expect(launch.args).toEqual(['agent', '--no-leader', '--reasoning-effort', 'xhigh', 'stdio']);
+    expect(grok.buildLaunch(LAUNCH_INPUT).args).toEqual(['agent', '--no-leader', 'stdio']);
+    expect(launch.env['GROK_TELEMETRY_ENABLED']).toBe('0');
+    expect(grok.config).toEqual({ mechanism: 'none' });
+    expect(launch.env).toEqual({ GROK_TELEMETRY_ENABLED: '0' });
+    expect(JSON.stringify(launch)).not.toContain('/run/dir');
+    expect(JSON.stringify(launch)).not.toMatch(/always-approve|yolo|bypass/i);
+    expect(grok.isolation).toBeUndefined();
+    expect(grok.telemetryOff).toBeUndefined();
+    expect(grok.levelNames).toBeUndefined();
+    expect(grok.resume).toBe('protocol');
+    expect(grok.capabilities).toMatchObject({ permissionAsk: 'unknown', mcp: true, images: false, quotaReport: 'none' });
+    expect(grok.authProbe).toEqual({ args: [], presenceFile: { homeEnv: 'GROK_HOME', homeDir: '.grok', file: 'auth.json' } });
+  });
+
   it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
@@ -216,6 +235,7 @@ describe('provider definitions (P-1)', () => {
       copilot: { kind: 'flag', flag: '--reasoning-effort' },
       opencode: { kind: 'session-option', category: 'thought_level' },
       kilo: { kind: 'session-option', configId: 'effort' },
+      'grok-build': { kind: 'flag', flag: '--reasoning-effort' },
       atomcode: { kind: 'session-option', configId: 'reasoning_effort' },
     };
 
@@ -228,7 +248,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a flag definition puts the flag and the level in argv, and nothing when the effort is absent', () => {
-      for (const id of ['agy', 'copilot']) {
+      for (const id of ['agy', 'copilot', 'grok-build']) {
         const def = defById(id);
         const flag = def.effortArg?.kind === 'flag' ? def.effortArg.flag : undefined;
         expect(flag, id).toBeDefined();

@@ -48,6 +48,8 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   opencode: [],
   hermes: [],
   kilo: [],
+  // The CLI's own home variable: the login probe and a run must read the same one.
+  'grok-build': ['GROK_HOME'],
   atomcode: [],
 };
 

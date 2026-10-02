@@ -189,14 +189,31 @@ export const loggedInFromCredentialCount = (output: string): boolean | null => {
   return Number(match[1]) > 0;
 };
 
+/** Presence only: the file is never opened, so no credential content is read, logged or stored. */
+const loggedInFromPresenceFile = (
+  rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const override = env[rule.homeEnv];
+  const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
+  try {
+    return statSync(join(home, rule.file)).isFile();
+  } catch {
+    return false;
+  }
+};
+
 const probeAuth = async (
   spawn: ProbeSpawn,
   def: ProviderDef,
   binPath: string,
   timeoutMs: number,
   env: Readonly<Record<string, string>>,
+  homedir: string,
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
+  if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, homedir);
   if (def.authProbe.acpSession !== undefined) {
     // The ACP session is the login signal: the child gets the same allowlisted environment a run
     // builds, so an ambient credential of another account never counts as this machine's login.
@@ -247,11 +264,11 @@ export function createPathDiscovery(
     let loggedIn: boolean | null;
     let optionalFlags: readonly string[];
     if (def.helpNeedsLogin === true) {
-      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv, homedir);
       optionalFlags = loggedIn === true ? await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv) : [];
     } else {
       optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
-      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv, homedir);
     }
     return { defId: def.id, binPath, version, loggedIn, optionalFlags };
   };

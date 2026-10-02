@@ -102,6 +102,19 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
+      // No isolation evidence on purpose (P-44): the CLI reads the user's `~/.claude` and
+      // `~/.cursor` files by default and no documented switch turns that off, so the level stays
+      // capped at experimental. G3 is absent: `session/request_permission` is unproven until an
+      // operator run. G4 is absent: no usage mapping is proven for this CLI.
+      providerId: 'grok-build',
+      gates: {
+        G1: { kind: 'test', name: 'P-45: a login probe that reads only the presence of the CLI\'s credential file answers true or false and never spawns the CLI or reads the file' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; limit errors (rate_limited, usage_limit_reached, usage_pool_exhausted) map to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
+    {
       // No isolation evidence on purpose: the variables that would keep the CLI from reading the
       // user's other tool files appear only as strings in its binary, so the P-44 cap holds.
       providerId: 'kilo',
@@ -331,6 +344,22 @@ export const CAPABILITY_REGISTRY = {
       authMode: 'subscription',
       identity: 'machine_login',
       costKind: 'equivalent',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The model list is the `initialize` answer's `_meta.modelState.availableModels`, which the
+      // CLI gives even when nobody is logged in, so the list is not gated by the login. Whether
+      // a login is a plan or a metered key is not visible to a machine, so every row reads
+      // unknown (P-40) and stays a hand pick with spend consent; no machine-readable quota exists.
+      id: 'grok-build-login',
+      providerId: 'grok-build',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
       quotaProbe: 'none',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
