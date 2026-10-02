@@ -293,12 +293,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but kilo and hermes carries isolation evidence, and both stay capped at experimental', () => {
-    // kilo's switches are unverified and hermes reads its own home with auto-injected instruction
-    // files; neither can evidence isolation, so their records carry none and the cap applies.
+  it('P-44: every built-in record but codex, kilo and hermes carries isolation evidence, and all three stay capped at experimental', () => {
+    // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
+    // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (provider.providerId === 'kilo' || provider.providerId === 'hermes') {
+      if (provider.providerId === 'codex' || provider.providerId === 'kilo' || provider.providerId === 'hermes') {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();

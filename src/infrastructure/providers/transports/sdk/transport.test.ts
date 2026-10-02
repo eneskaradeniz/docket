@@ -864,6 +864,28 @@ describe('createSdkTransport', () => {
         expect(calls[0]?.options.env).toMatchObject({ CLAUDE_CONFIG_DIR: CONFIG_DIR });
       });
 
+      it('P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription', undefined, { identityDir: CONFIG_DIR }));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh', CLAUDE_CONFIG_DIR: '/tmp/docket-sdk-transport/config' },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        const env = calls[0]?.options.env;
+        expect(env?.CLAUDE_CONFIG_DIR).toBe(CONFIG_DIR);
+        expect(JSON.stringify(env)).not.toContain('/tmp/docket-sdk-transport');
+      });
+
       it('I-34: a subscription account without an identityDir keeps the I-28 environment with no config directory', async () => {
         const accounts = createFakeAccountRepo();
         await accounts.save(account('subscription'));

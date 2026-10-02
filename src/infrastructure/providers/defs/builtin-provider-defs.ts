@@ -46,8 +46,10 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     authProbe: { args: ['login', 'status'] },
     transport: 'app-server',
     effortArg: { kind: 'request-field', name: 'effort' },
-    config: { mechanism: 'env-var', name: 'CODEX_HOME' },
-    buildLaunch: (input) => ({ args: ['app-server'], env: { CODEX_HOME: input.configDir }, stdin: 'prompt' }),
+    // The CLI keeps its login (auth.json by default) under its home, so no home variable is set;
+    // the run's MCP servers reach it through its `-c key=value` override instead.
+    config: { mechanism: 'none' },
+    buildLaunch: () => ({ args: ['app-server'], env: {}, stdin: 'prompt' }),
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
