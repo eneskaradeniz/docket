@@ -132,4 +132,15 @@ describe('child environment allowlist (P-8)', () => {
     expect('CODEX_HOME' in buildChildEnv('copilot', ambient, {})).toBe(false);
     expect('CODEX_HOME' in buildChildEnv('codex', BASE_ENV, {})).toBe(false);
   });
+
+  it("P-44: the vibe CLI's own home variable passes through and is never named when absent; another provider's child never sees it", () => {
+    // The CLI reads its login (the API key among it) from the home VIBE_HOME names, and the
+    // definition leaves the variable unset (mechanism 'none'), so an ambient value is the
+    // machine's own relocation: it must reach the child verbatim, and with no ambient value the
+    // child gets none — Docket never sets the variable itself.
+    const ambient = { ...BASE_ENV, VIBE_HOME: '/Users/someone/.vibe-home' };
+    expect(buildChildEnv('vibe', ambient, {}).VIBE_HOME).toBe('/Users/someone/.vibe-home');
+    expect('VIBE_HOME' in buildChildEnv('mimo', ambient, {})).toBe(false);
+    expect('VIBE_HOME' in buildChildEnv('vibe', BASE_ENV, {})).toBe(false);
+  });
 });
