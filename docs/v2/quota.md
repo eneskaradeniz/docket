@@ -56,6 +56,26 @@ pool, fall back, or ask). A running run is never stopped by a reserve. Reserves 
 subscription windows have no currency, and a spend cap (below) is a separate setting that applies only
 to metered use. `short` covers windows shorter than a day, `long` a day or longer. Default: no reserve.
 
+## Bucket applicability (P-39)
+
+Which models draw from a reported bucket is data per provider, matched against the run's model by
+`Pool.appliesTo`. A bucket the table does not list is informational (`appliesTo: 'unknown'`): shown,
+never blocking, and exhaustion still surfaces through `limit_hit`. The run's model is matched by the
+canonical id the catalog resolved for it (an alias row such as `opus` matches as the id it stands for).
+
+| Provider | Bucket (as reported) | Applies to |
+| --- | --- | --- |
+| Claude Code | account 5-hour and weekly windows | all models of the account |
+| Claude Code | `seven_day_opus`, `seven_day_sonnet` | ids starting `claude-opus`, `claude-sonnet` |
+| Claude Code | model-scoped row `Fable` | ids starting `claude-fable` |
+| Claude Code | extra-usage credits | balance pool, informational for headroom |
+| Codex | primary and secondary windows | all models of the account |
+| Antigravity | group `Gemini Models` | ids starting `gemini-` |
+| Antigravity | group `Claude and GPT models` | ids starting `claude-`, `gpt-oss-` |
+| Copilot CLI | every quota snapshot entry | unknown (informational; the snapshot names entitlements, not models) |
+| z.ai GLM | `GLM Coding` windows | ids starting `glm-` |
+| Cursor, OpenCode | none machine-readable | — |
+
 ## Budgets (API accounts)
 
 Caps at six scopes — account (day, week, month), project (month — the **ceiling**, the sum over all
