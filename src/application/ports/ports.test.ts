@@ -19,12 +19,14 @@ import type {
 } from './agent-transport';
 import type { BindingRepo, BindingScope } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CheckpointCommitter, CheckpointDiff, CheckpointError, CheckpointRef } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionFile, DefinitionScope, DefinitionStore } from './definition-store';
 import type { AppDeps } from './deps';
 import type { AuditAction, AuditEntry, AuditSubject, EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
+import type { InstructionFiles } from './instruction-files';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
@@ -66,6 +68,8 @@ describe('AppDeps', () => {
     expectTypeOf<AppDeps['evidence']>().toEqualTypeOf<EvidenceChecker>();
     expectTypeOf<AppDeps['git']>().toEqualTypeOf<GitProbe>();
     expectTypeOf<AppDeps['notifier']>().toEqualTypeOf<Notifier>();
+    expectTypeOf<AppDeps['instructionFiles']>().toEqualTypeOf<InstructionFiles>();
+    expectTypeOf<AppDeps['checkpoints']>().toEqualTypeOf<CheckpointCommitter>();
   });
 
   it('exposes exactly the contract keys', () => {
@@ -92,6 +96,8 @@ describe('AppDeps', () => {
       | 'evidence'
       | 'git'
       | 'notifier'
+      | 'instructionFiles'
+      | 'checkpoints'
     >();
   });
 
@@ -114,6 +120,11 @@ describe('AppDeps', () => {
     expectTypeOf<Application.ProjectRepo>().toEqualTypeOf<ProjectRepo>();
     expectTypeOf<Application.RepoRegistry>().toEqualTypeOf<RepoRegistry>();
     expectTypeOf<Application.GitProbe>().toEqualTypeOf<GitProbe>();
+    expectTypeOf<Application.InstructionFiles>().toEqualTypeOf<InstructionFiles>();
+    expectTypeOf<Application.CheckpointCommitter>().toEqualTypeOf<CheckpointCommitter>();
+    expectTypeOf<Application.CheckpointRef>().toEqualTypeOf<CheckpointRef>();
+    expectTypeOf<Application.CheckpointDiff>().toEqualTypeOf<CheckpointDiff>();
+    expectTypeOf<Application.CheckpointError>().toEqualTypeOf<CheckpointError>();
     expectTypeOf<Application.BindingScope>().toEqualTypeOf<BindingScope>();
     expectTypeOf<Application.BindingRepo>().toEqualTypeOf<BindingRepo>();
     expectTypeOf<Application.QueueRepo>().toEqualTypeOf<QueueRepo>();

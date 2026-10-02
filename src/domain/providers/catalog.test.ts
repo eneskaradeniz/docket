@@ -52,11 +52,12 @@ describe('mergeCatalog (P-29)', () => {
         id: 'claude-sonnet-5-1',
         displayName: 'Sonnet 5.1',
         source: 'live',
+        contextWindow: null,
         tier: 'balanced',
         thinking: { kind: 'levels', levels: ['none', 'low', 'medium', 'high'] },
         billing: 'unknown',
       },
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
     ]);
   });
 
@@ -66,12 +67,13 @@ describe('mergeCatalog (P-29)', () => {
       {
         id: 'claude-opus-4-6',
         source: 'live',
+        contextWindow: null,
         tier: 'strong',
         thinking: { kind: 'levels', levels: ['low', 'high'] },
         autoClassified: true,
         billing: 'unknown',
       },
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 
@@ -82,8 +84,8 @@ describe('mergeCatalog (P-29)', () => {
       FAMILY_PATTERNS,
     );
     expect(merged).toEqual([
-      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown' },
-      { id: 'grok-4-deep', source: 'live', thinking: { kind: 'levels', levels: ['low', 'high'] }, billing: 'unknown' },
+      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown', contextWindow: null },
+      { id: 'grok-4-deep', source: 'live', thinking: { kind: 'levels', levels: ['low', 'high'] }, billing: 'unknown', contextWindow: null },
     ]);
     expect(merged[0].tier).toBeUndefined();
     expect(merged[0].autoClassified).toBeUndefined();
@@ -94,14 +96,14 @@ describe('mergeCatalog (P-29)', () => {
   it('P-29: bundled models missing from a successful live list stay listed with source bundled', () => {
     const merged = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [OPUS_4_9, SONNET_5_1, HAIKU_4_5], FAMILY_PATTERNS);
     expect(merged).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: HAIKU_4_5.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: HAIKU_4_5.thinking, billing: 'unknown', contextWindow: null },
     ]);
     // An empty live array is a successful refresh, not a failed one — the registry stays listed.
     const emptyLive: readonly LiveModel[] = [];
     expect(mergeCatalog(emptyLive, [SONNET_5_1], FAMILY_PATTERNS)).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 
@@ -114,7 +116,7 @@ describe('mergeCatalog (P-29)', () => {
       { authoritative: true },
     );
     expect(merged).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 
@@ -127,14 +129,14 @@ describe('mergeCatalog (P-29)', () => {
       { authoritative: true },
     );
     expect(merged).toEqual([
-      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 
   it('P-29: a failed refresh ignores the authoritative flag — the previous list is kept, never dropped', () => {
     const previous: readonly CatalogModel[] = [
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown', contextWindow: null },
     ];
     expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous, { authoritative: true })).toEqual([
       { ...previous[0], stale: true },
@@ -145,7 +147,7 @@ describe('mergeCatalog (P-29)', () => {
   it('P-29: retired bundled models are listed only when live also lists them', () => {
     const withoutLive = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_5_1, OPUS_4_1_RETIRED], FAMILY_PATTERNS);
     expect(withoutLive).toEqual([
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
     const withLive = mergeCatalog(
       [{ id: 'claude-opus-4-1' }, { id: 'claude-sonnet-5-1' }],
@@ -153,15 +155,15 @@ describe('mergeCatalog (P-29)', () => {
       FAMILY_PATTERNS,
     );
     expect(withLive).toEqual([
-      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown' },
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-1', source: 'live', tier: 'strong', thinking: OPUS_4_1_RETIRED.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 
   it('P-29: a failed refresh keeps the previous list and marks every entry stale', () => {
     const previous: readonly CatalogModel[] = [
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown', contextWindow: null },
     ];
     expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous)).toEqual([
       { ...previous[0], stale: true },
@@ -171,8 +173,8 @@ describe('mergeCatalog (P-29)', () => {
 
   it('P-29: a failed refresh without a previous list falls back to the non-retired bundled models', () => {
     expect(mergeCatalog(undefined, [OPUS_4_9, SONNET_5_1, OPUS_4_1_RETIRED], FAMILY_PATTERNS)).toEqual([
-      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown' },
-      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown' },
+      { id: 'claude-opus-4-9', source: 'bundled', tier: 'strong', thinking: OPUS_4_9.thinking, billing: 'unknown', contextWindow: null },
+      { id: 'claude-sonnet-5-1', source: 'bundled', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'unknown', contextWindow: null },
     ]);
   });
 });
@@ -251,8 +253,8 @@ describe('mergeCatalog billing (P-40)', () => {
 
   it('P-40: billing survives a failed refresh — the stale previous entries keep theirs', () => {
     const previous: readonly CatalogModel[] = [
-      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'included' },
-      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'included', contextWindow: null },
+      { id: 'grok-4-fast', source: 'live', thinking: 'unknown', billing: 'unknown', contextWindow: null },
     ];
     expect(mergeCatalog(undefined, [SONNET_5_1], FAMILY_PATTERNS, previous)).toEqual([
       { ...previous[0], stale: true },
@@ -266,6 +268,7 @@ describe('autoSelectable (P-40)', () => {
     const entry = (billing: Billing): CatalogModel => ({
       id: 'claude-opus-5-1',
       source: 'live',
+      contextWindow: null,
       thinking: 'unknown',
       billing,
     });
@@ -281,6 +284,7 @@ describe('resolveTier (P-29)', () => {
   const model = (id: string): CatalogModel => ({
     id,
     source: 'live',
+    contextWindow: null,
     tier: 'strong',
     thinking: 'unknown',
     autoClassified: true,
@@ -305,7 +309,7 @@ describe('resolveTier (P-29)', () => {
 
   it('P-29: a tier with no catalog model resolves to undefined', () => {
     const catalog: readonly CatalogModel[] = [
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
     ];
     expect(resolveTier('strong', catalog)).toBeUndefined();
   });
@@ -315,6 +319,7 @@ describe('resolveTier billing (P-40)', () => {
   const entry = (id: string, billing: Billing): CatalogModel => ({
     id,
     source: 'live',
+    contextWindow: null,
     tier: 'strong',
     thinking: 'unknown',
     autoClassified: true,
@@ -431,7 +436,7 @@ describe('mergeCatalog alias resolution (P-42)', () => {
       FAMILY_PATTERNS,
     );
     expect(merged).toHaveLength(1);
-    expect(merged[0]).toMatchObject({ id: 'sonnet', source: 'live', tier: 'balanced', billing: 'included' });
+    expect(merged[0]).toMatchObject({ id: 'sonnet', source: 'live', tier: 'balanced', billing: 'included', contextWindow: null });
     expect(merged[0]?.autoClassified).toBeUndefined();
   });
 

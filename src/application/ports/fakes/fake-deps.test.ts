@@ -30,6 +30,8 @@ const PORT_KEYS: readonly (keyof AppDeps)[] = [
   'evidence',
   'git',
   'notifier',
+  'instructionFiles',
+  'checkpoints',
 ];
 
 describe('createFakeDeps', () => {
@@ -87,6 +89,8 @@ describe('fakes barrel', () => {
       'createFakeWorktrees',
       'createFakeEvidenceChecker',
       'createFakeNotifier',
+      'createFakeInstructionFiles',
+      'createFakeCheckpointCommitter',
       'createFakeDeps',
     ];
     for (const name of creators) {

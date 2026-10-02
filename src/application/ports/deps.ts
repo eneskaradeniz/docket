@@ -3,11 +3,13 @@ import type { AccountRepo } from './account-repo';
 import type { TransportResolver } from './agent-transport';
 import type { BindingRepo } from './binding-repo';
 import type { CapabilityCatalog } from './capability-catalog';
+import type { CheckpointCommitter } from './checkpoints';
 import type { Clock } from './clock';
 import type { DefinitionStore } from './definition-store';
 import type { EventLog } from './event-log';
 import type { GitProbe } from './git-probe';
 import type { IdGen } from './id-gen';
+import type { InstructionFiles } from './instruction-files';
 import type { ModelCatalog } from './model-catalog';
 import type { Notifier } from './notifier';
 import type { ProjectRepo } from './project-repo';
@@ -42,4 +44,6 @@ export interface AppDeps {
   readonly evidence: EvidenceChecker;
   readonly git: GitProbe;
   readonly notifier: Notifier;
+  readonly instructionFiles: InstructionFiles;
+  readonly checkpoints: CheckpointCommitter;
 }

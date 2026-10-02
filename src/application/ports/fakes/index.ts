@@ -3,6 +3,7 @@
 export * from './fake-account-repo';
 export * from './fake-binding-repo';
 export * from './fake-capability-catalog';
+export * from './fake-checkpoints';
 export * from './fake-clock';
 export * from './fake-definition-store';
 export * from './fake-deps';
@@ -10,6 +11,7 @@ export * from './fake-event-log';
 export * from './fake-forge';
 export * from './fake-git-probe';
 export * from './fake-id-gen';
+export * from './fake-instruction-files';
 export * from './fake-issue-tracker';
 export * from './fake-model-catalog';
 export * from './fake-notifier';

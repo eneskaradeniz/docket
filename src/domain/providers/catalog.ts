@@ -28,6 +28,9 @@ export interface CatalogModel {
   readonly thinking: Thinking | 'unknown';
   /** Always explicit on a merged entry — `unknown` when neither the live row nor the registry knows. */
   readonly billing: Billing;
+  /** The context window in tokens when a channel reported one; `null` — no window is known for the
+   *  model (A-63: the common case — pack sizing works with the data absent). */
+  readonly contextWindow: number | null;
   /** Set when the tier came from a family-id pattern, not from the registry. */
   readonly autoClassified?: true;
   /** Set on every entry when a refresh failed and the last good list is being kept. */
@@ -50,6 +53,8 @@ const bundledEntry = (record: ModelRecord): CatalogModel => ({
   tier: record.tier,
   thinking: record.thinking,
   billing: record.billing ?? 'unknown',
+  // No registry row carries a window today (A-63); the value arrives per adapter, later.
+  contextWindow: null,
 });
 
 /** The id a registry record is compared by: one trailing bracketed variant (`[1m]`) and one
@@ -85,6 +90,7 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
       tier: record.tier,
       thinking: record.thinking,
       billing: model.billing ?? record.billing ?? 'unknown',
+      contextWindow: null,
       ...marker,
     };
   }
@@ -96,7 +102,7 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
   const billing: Billing = model.billing ?? family?.billing ?? context.defaultBilling ?? 'unknown';
   const pattern = context.familyPatterns.find((candidate) => reported.includes(candidate.contains));
   return pattern === undefined
-    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing, ...marker }
+    ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing, contextWindow: null, ...marker }
     : {
         id: model.id,
         displayName: model.displayName,
@@ -105,6 +111,7 @@ const liveEntry = (model: LiveModel, record: ModelRecord | undefined, context: L
         thinking,
         autoClassified: true,
         billing,
+        contextWindow: null,
         ...marker,
       };
 };
