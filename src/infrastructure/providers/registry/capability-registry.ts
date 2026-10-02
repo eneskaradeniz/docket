@@ -111,9 +111,14 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       // No isolation evidence on purpose (P-44): the CLI reads the user's `~/.claude` and
-      // `~/.cursor` files by default and no documented switch turns that off, so the level stays
-      // capped at experimental. G3 is absent: `session/request_permission` is unproven until an
-      // operator run. G4 is absent: no usage mapping is proven for this CLI.
+      // `~/.cursor` state by default, and the switch its own documentation names — the
+      // `compat.claude.*` / `compat.cursor.*` keys of the CLI's config file under its home — is
+      // not a file the launch writes, so the level stays capped at experimental. Instruction
+      // files read natively: AGENTS.md/Agents.md/AGENT.md, CLAUDE.md/Claude.md/CLAUDE.local.md,
+      // plus the .grok/rules, .claude/rules and .cursor/rules directories and their home
+      // equivalents; the compat cells show all of it default-on (doc + live `inspect --json`;
+      // the key names are documentation-only). G3 is absent: `session/request_permission` is
+      // unproven until an operator run. G4 is absent: no usage mapping is proven for this CLI.
       providerId: 'grok-build',
       gates: {
         G1: { kind: 'test', name: 'P-45: a login probe that reads only the presence of the CLI\'s credential file answers true or false and never spawns the CLI or reads the file' },

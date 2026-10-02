@@ -57,7 +57,10 @@ Level derivation (pure, replaces the tier computed from capabilities alone):
 ## 3. Models and the catalog (P-29)
 Four layers, merged per route:
 1. **Bundled registry** (the data file): capabilities for known models. The only place that knows
-   thinking levels, context window and price kind.
+   thinking levels, context window and price kind. The window is optional data: ten of nineteen
+   surveyed providers expose none through any channel (six report nothing, four are unverified),
+   and an absent value surfaces as `CatalogModel.contextWindow: null` — the merge keeps the
+   unknown visible instead of guessing.
 2. **Live list** per route: for Claude routes the SDK's own supported-models call (id, resolved id,
    display name, supported effort levels); for API-key routes the provider's documented model-list
    endpoint; for compatible endpoints the standard model list where it exists; for presets a fixed list.
@@ -179,6 +182,14 @@ restriction applies to code and comments under `src/` only.
 ## 11. Instruction files (P-37)
 Providers read different project instruction files: one reads `CLAUDE.md`, others read `AGENTS.md` or their
 own rule files. The registry records, per provider, which file names it reads natively (data).
+The record is the provider's **best-known set**, not a fixed law of the CLI: Codex makes its fallback
+list configurable (`project_doc_fallback_filenames` can add `CLAUDE.md`) and Qoder's `context.fileName`
+can rename `AGENTS.md`, so the set is data that may later grow route- or account-level fields where a
+CLI makes it configurable. A file the CLI reads natively but the row misses is inlined all the same —
+rules delivered twice beat rules lost. Claude Code loads its automatic project memory
+(`~/.claude/projects/<repo>/memory/`) even with `settingSources: []`; its row names that memory in the
+native set. The memory lives outside the repo, so it is never an inline candidate and never travels in
+a pack.
 - Docket computes the **effective instructions** of a run: the instruction files the chosen provider reads
   natively, plus the Docket layers (flow, stage, role), which are always delivered in the prompt. The same
   Docket layers go to every provider, so behaviour does not depend on the provider.
@@ -189,7 +200,10 @@ own rule files. The registry records, per provider, which file names it reads na
   generated from it) as a normal diff in a work order; it is never applied silently. Which file is
   canonical is open decision O-6.
 - An instruction file is written by the repo's authors. It reaches the agent as project context below the
-  Docket layers and never becomes a Docket instruction.
+  Docket layers and never becomes a Docket instruction. The boundary is marked, not implied: everything
+  the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload
+  content that later rides the same path — travels as data under a heading that says so, never as
+  Docket's system instruction. Content read from the repo or the web is untrusted input to Docket.
 - Edits to instruction files follow the code path: proposed diff, work order, review.
 
 ## 12. Handoff between providers (P-38)
@@ -201,17 +215,26 @@ turn twice. Docket assembles the pack, not the failing agent:
 2. The effective instructions (P-37), so both providers follow the same rules.
 3. Task state derived deterministically from run events: plan, done and remaining list, the last command
    and its result, files touched.
-4. Code state: the same worktree. Docket makes checkpoint commits (on a schedule and at each tool-result
-   boundary that changed files) so the work survives; the diff since the stage started is part of the pack.
+4. Code state: the same worktree. Docket makes checkpoint commits (at each tool-result boundary and at
+   the run's terminal events — no background timer; the event stream is the only clock) so the work
+   survives; the diff since the stage started is part of the pack.
 5. A bounded conversation summary maintained continuously during the run (a rolling note), so it exists
    even when the account is already blocked. Deterministic extraction comes first; an optional
    model-written summary uses the fast tier on a route that still has headroom (open decision O-8).
 6. Raw transcripts do not travel.
-The pack is sized to the smallest context window among the candidate routes (from the registry). The new
+The pack is sized from the fixed ceilings first (the instruction budget, the rolling-note cap); a known
+context window only tightens it (`min` over the candidates' known windows), and most providers report no
+window today — the pack is specified to work with the data absent. The new
 agent first runs the stage's checks, then continues. A stage written on a fallback model is reviewed at
 the strong tier. Autonomy and approvals travel as policy, not as session state. Acceptance: a scripted
 three-leg scenario in the style of P-24: the first provider hits a limit mid-stage, the second continues
 from the pack, the stage checks pass.
+
+Privacy: one provider (amp) keeps its threads on the vendor's server with a workspace-default
+visibility, so a pack written into a continuation session leaves the machine. Docket never widens the
+audience: the visibility choice stays with the operator, and the pack carries only items 1–6 (already
+secret-redacted). How server-side sessions are handled is decided in that provider's own issue (#590);
+noted here so the pack design does not assume every session is local.
 
 ## 13. Dynamic quota meters (P-39)
 Parsers turn whatever a provider reports into meters: the provider's own label (verbatim), window length, remaining fraction, reset time and unit. No window name or count is fixed in code; a new bucket shows up without a release.
@@ -228,6 +251,7 @@ Docket never starts a run that may spend real money without the user's explicit 
 - Tier resolution and fallbacks never pick a `metered` or `unknown` model on their own. Choosing one by hand asks for explicit consent per account and model and requires a spend cap (account day, week or month) before the run starts; without a cap the run is refused (`needs_spend_consent`).
 - An automatic switch caused by a limit (switch pool, fallback account) never crosses from `included` to `metered` or `unknown`; the policy falls back to waiting or asking. Full autonomy needs the cap as well.
 - If the provider reports an account-side overage or extra-usage setting, Docket shows it and warns that reaching a limit may be billed; it never changes that setting.
+- A handoff continuation (P-38) is a run like any other at this boundary: it never starts on an `unknown`-billing route without consent and a spend cap, and an automatic fallback skips an `unknown` candidate exactly like a `metered` one (providers.md P-46).
 - Observed (Claude): a model outside a plan's limits (documented for one plan: billed at standard API rates through usage credits, and only when extra usage is enabled) is `metered`; with extra usage disabled it cannot be used. The CLI's non-interactive mode may spend credits without asking, so Docket enforces the cap and does not leave it to the CLI.
 - Ambient API keys never reach a run (P-8, I-34): a key is used only when the account is an API-key account.
 
@@ -242,3 +266,4 @@ Docket never starts a run that may spend real money without the user's explicit 
 - O-7 Resolved: `CostKind` gains `credits`; the internal representation is the provider's smallest unit.
 - O-8 Who writes the optional conversation summary in the handoff pack, and on which tier.
 - O-9 Tier of the Fable model: it spends limits fast, has its own weekly meter on one plan and outside the limits on another (`metered`); decided: no automatic tier, selectable by hand only.
+- O-10 Whether a run-internal window observation may size a pack when the catalog carries no window for the provider: Codex's turn notification (`ThreadTokenUsageUpdated`) reports `modelContextWindow` mid-run. Using an in-run observation as sizing data is undecided — note only, decision later.

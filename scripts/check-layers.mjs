@@ -40,7 +40,7 @@ const DOMAIN_MODULES = {
   proposal: ['shared'],
   resolver: ['shared', 'definitions', 'quota'],
   gates: ['shared', 'definitions'],
-  providers: ['shared', 'quota'],
+  providers: ['shared', 'quota', 'definitions'],
   library: ['shared', 'definitions'],
   flow: ['shared', 'definitions', 'gates'],
   dispatch: ['shared', 'quota', 'budget'],
