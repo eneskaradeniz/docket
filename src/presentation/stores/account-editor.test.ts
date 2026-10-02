@@ -18,8 +18,11 @@ import {
   labelSaveCommand,
   meterBar,
   resetCommands,
+  roleChipTarget,
+  rolesOfAccount,
   usageView,
 } from './account-editor';
+import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
 
 const ACCOUNT: SettingsAccountView = {
   id: 'a-1',
@@ -238,5 +241,28 @@ describe('account editor', () => {
     expect(diffValueLabel('en', 'reserve', '0/0')).toBe('0% · 0%');
     expect(diffValueLabel('tr', 'cap', 'account_month:50')).toBe('$50 · Aylık');
     expect(diffValueLabel('tr', 'warnPercent', 80)).toBe('%80');
+  });
+});
+
+describe('U-37: role chips on Genel', () => {
+  const row = (id: string, name: string, accountIds: readonly string[]) => ({
+    id,
+    name,
+    chain: accountIds.map((accountId) => ({ accountId, model: null })),
+  });
+
+  it('U-37: the chips are the roles whose chain routes the account, in the roles list order', () => {
+    const rows = [row('planner', 'Planlayıcı', ['a-1', 'a-2']), row('dev', 'Geliştirici', ['a-2']), row('test', 'Test yazarı', ['a-1'])];
+    expect(rolesOfAccount(rows, 'a-1')).toStrictEqual([
+      { id: 'planner', name: 'Planlayıcı' },
+      { id: 'test', name: 'Test yazarı' },
+    ]);
+    expect(rolesOfAccount(rows, 'a-9')).toStrictEqual([]);
+    expect(rolesOfAccount(null, 'a-1')).toStrictEqual([]);
+  });
+
+  it("U-37: a role chip opens Settings → Roller with that role's İnce ayar open", () => {
+    const state = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', ...roleChipTarget('planner') });
+    expect(state).toMatchObject({ open: true, section: 'roles', subPage: null, fineTune: 'planner' });
   });
 });

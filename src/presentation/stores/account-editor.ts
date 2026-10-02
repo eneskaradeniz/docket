@@ -10,6 +10,7 @@ import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { CAP_SCOPES, parseAmountUsd, type CapScope } from './account-models';
 import { RECOMMENDED, mayHaveCap, settingDiffs, type SettingDiff, type SettingKey } from './recommended';
+import type { SettingsOpenTarget } from './settings-panel';
 
 export { CAP_SCOPES, mayHaveCap };
 
@@ -440,3 +441,16 @@ export const createAccountEditorStore = (deps: AccountEditorDeps): AccountEditor
     },
   };
 };
+
+/** The roles whose chain routes the account, in the roles list's order — the chips on Genel (U-37).
+ *  Pure; `null` rows (roles not loaded yet) read as none. */
+export const rolesOfAccount = (
+  rows: readonly { readonly id: string; readonly name: string; readonly chain: readonly { readonly accountId: string }[] }[] | null,
+  accountId: string,
+): readonly { readonly id: string; readonly name: string }[] =>
+  (rows ?? [])
+    .filter((row) => row.chain.some((entry) => entry.accountId === accountId))
+    .map((row) => ({ id: row.id, name: row.name }));
+
+/** A role chip's intent (U-37): Settings → Roller with that role's "İnce ayar" open. */
+export const roleChipTarget = (roleId: string): SettingsOpenTarget => ({ section: 'roles', fineTune: roleId });

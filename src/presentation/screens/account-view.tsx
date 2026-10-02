@@ -13,7 +13,7 @@ import { ProviderMark } from '../components/provider-mark';
 import { StateBadge } from '../components/state-badge';
 import { formatWorkOrderCode } from '../stores/work-order-code';
 import type { AccountViewStore } from '../stores/account-view';
-import { policyKey, windowBars } from '../stores/account-view';
+import { limitBand, windowBars } from '../stores/account-view';
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 
@@ -25,6 +25,9 @@ export interface AccountViewScreenProps {
   readonly locale: Locale;
   readonly timeZone: string;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
+  /** The account's reserve shares for the limit band (U-37); null until the frame's query lands. */
+  readonly reserve: { readonly short: number | null; readonly long: number | null } | null;
+  /** "Ayarlar'da düzenle": Settings on this account's sub-page, Limitler tab. */
   readonly onOpenSettings: () => void;
   readonly onBack: () => void;
 }
@@ -66,6 +69,7 @@ export function AccountViewScreen({
   locale,
   timeZone,
   onOpenWorkOrder,
+  reserve,
   onOpenSettings,
   onBack,
 }: AccountViewScreenProps) {
@@ -168,8 +172,7 @@ export function AccountViewScreen({
 
           <div className="mt-1.5 flex max-w-[640px] items-center gap-3 rounded-card border border-hairline bg-band px-3.5 py-3 text-[12.5px] text-inkdim">
             <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-info" />
-            <span>{t(locale, 'account.policy.when')}</span>
-            <b className="font-semibold text-ink">{t(locale, policyKey(view.account.limitPolicy))}</b>
+            <span data-limit-band="" className="min-w-0 text-ink">{limitBand(locale, view.account.limitPolicy, reserve)}</span>
             <InfoBubble locale={locale} subject={t(locale, 'account.policy.subject')} body={t(locale, 'account.policy.info')} />
             <span className="flex-1" />
             <ActionButton variant="ghost" onClick={onOpenSettings}>

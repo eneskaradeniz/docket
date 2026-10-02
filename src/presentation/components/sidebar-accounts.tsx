@@ -16,7 +16,7 @@ import { SIDEBAR_HEADER_BUTTON } from './sidebar-header-button';
 import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
 import { t, type Locale } from '../labels/t';
 import type { LabelKey } from '../labels/keys';
-import type { AccountCard, AccountsFrameStore } from '../stores/accounts-frame';
+import { unaddedRow, type AccountCard, type AccountsFrameStore } from '../stores/accounts-frame';
 import type { ProviderMark as ProviderMarkValue, ProviderMarksStore } from '../stores/provider-marks';
 
 const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' };
@@ -119,6 +119,14 @@ const AccountCardView = ({
       <span title={card.label} className="min-w-0 truncate text-xs font-semibold leading-[17px]">
         {card.label}
       </span>
+      {card.reserved ? (
+        <span
+          data-reserved=""
+          className="ml-auto flex-none rounded-full border border-signal/40 px-1.5 font-mono text-[9.5px] leading-[14px] text-signal"
+        >
+          {t(locale, 'accounts.reserved')}
+        </span>
+      ) : null}
     </span>
     <span className="mt-1.5 grid gap-[3px]">
       {card.windows.map((window, index) => (
@@ -162,12 +170,18 @@ export function SidebarAccounts({
   locale,
   activeAccountId,
   onOpenAccount,
+  unaddedCount,
+  onOpenUnadded,
 }: {
   readonly store: AccountsFrameStore;
   readonly marks: ProviderMarksStore;
   readonly locale: Locale;
   readonly activeAccountId: string | null;
   readonly onOpenAccount: (id: string) => void;
+  /** The candidates store's count of accounts discovery holds that are not yet added (U-37). */
+  readonly unaddedCount: number;
+  /** The trailing row: Settings → Hesaplar. */
+  readonly onOpenUnadded: () => void;
 }) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
@@ -182,6 +196,7 @@ export function SidebarAccounts({
   }, [spinning]);
   // Only a frame with no cards yet can carry a skeleton (U-26); a refresh keeps the cards up.
   const { skeleton, reveal } = useSkeleton(state.loading && state.cards === null, () => Date.now());
+  const unadded = unaddedRow(locale, unaddedCount);
 
   return (
     <div
@@ -257,6 +272,17 @@ export function SidebarAccounts({
               </SkeletonReveal>
             )}
           </div>
+          {unadded === null ? null : (
+            <button
+              type="button"
+              data-unadded-row=""
+              onClick={onOpenUnadded}
+              className="mt-1 flex w-full items-center gap-1.5 rounded-control px-2 py-1 text-left text-[11px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+            >
+              <span className="min-w-0 flex-1 truncate">{unadded.text}</span>
+              <span className="flex-none text-signal">· {unadded.action}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

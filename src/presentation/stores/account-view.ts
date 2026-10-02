@@ -7,7 +7,9 @@
 import type { Api } from '../../api/api';
 import type { AccountDetailView, Query } from '../../api/queries';
 import type { LabelKey } from '../labels/keys';
+import { t, type Locale } from '../labels/t';
 import { isQueryFailure } from './results';
+import type { SettingsOpenTarget } from './settings-panel';
 
 /** A bar at or above this share of its window renders warn — the frame's default (U-16), the
  *  account view's blocks speak the same grammar. */
@@ -86,6 +88,37 @@ export const policyKey = (policy: string): LabelKey => {
       return 'account.policy.wait_resume';
   }
 };
+
+const fill = (template: string, values: Readonly<Record<string, string>>): string =>
+  template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+
+const sharePercent = (share: number | null): number => Math.round((share ?? 0) * 100);
+
+/** The limit band as one sentence (U-37): the policy and the reserve — Yok, one share when both
+ *  windows keep the same, kısa · uzun otherwise — composed from label templates. A reserve the
+ *  account view does not know yet reads as none. Pure. */
+export const limitBand = (
+  locale: Locale,
+  policy: string,
+  reserve: { readonly short: number | null; readonly long: number | null } | null,
+): string => {
+  const short = sharePercent(reserve?.short ?? null);
+  const long = sharePercent(reserve?.long ?? null);
+  const reserveText =
+    short === 0 && long === 0
+      ? t(locale, 'account.band.reserve.none')
+      : short === long
+        ? fill(t(locale, 'account.band.reserve.one'), { value: String(short) })
+        : fill(t(locale, 'account.band.reserve.two'), { short: String(short), long: String(long) });
+  return fill(t(locale, 'account.band.sentence'), { policy: t(locale, policyKey(policy)), reserve: reserveText });
+};
+
+/** "Ayarlar'da düzenle" (U-37): Settings on that account's sub-page, Limitler tab. */
+export const editInSettingsTarget = (accountId: string): SettingsOpenTarget => ({
+  section: 'accounts',
+  subPage: accountId,
+  tab: 'limits',
+});
 
 export const createAccountViewStore = (deps: AccountViewStoreDeps): AccountViewStore => {
   const { api, changes, now } = deps;

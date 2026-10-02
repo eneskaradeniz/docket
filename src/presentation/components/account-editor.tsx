@@ -74,6 +74,10 @@ export interface AccountEditorProps {
   readonly formatTime: (epochMs: number | null) => string | null;
   /** Re-reads the account's meters ("Yenile"). */
   readonly onRefresh: () => void;
+  /** The roles that route this account — the chips on Genel (U-37). */
+  readonly roleChips?: readonly { readonly id: string; readonly name: string }[];
+  /** A chip's intent: Settings → Roller with that role's İnce ayar open. */
+  readonly onOpenRole?: (roleId: string) => void;
 }
 
 // "Kaydedildi" beside a row for 1.5 s, and the row's failure copy.
@@ -119,10 +123,30 @@ function LabelRow({ account, locale, store }: Pick<AccountEditorProps, 'account'
   );
 }
 
-function General({ account, locale, store }: Pick<AccountEditorProps, 'account' | 'locale' | 'store'>) {
+function General({ account, locale, store, roleChips, onOpenRole }: Pick<AccountEditorProps, 'account' | 'locale' | 'store' | 'roleChips' | 'onOpenRole'>) {
   return (
     <div>
       <LabelRow account={account} locale={locale} store={store} />
+      {roleChips !== undefined && roleChips.length > 0 ? (
+        <div className="flex items-start justify-between gap-4 border-b border-hairline py-3" data-role-chips="">
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-semibold text-ink">{t(locale, 'editor.general.roles')}</p>
+            <p className="text-[12.5px] text-inkdim">{t(locale, 'editor.general.rolesHint')}</p>
+          </div>
+          <span className="flex flex-wrap justify-end gap-1.5">
+            {roleChips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => onOpenRole?.(chip.id)}
+                className="rounded-full border border-hairline px-2.5 py-0.5 text-[12px] text-ink hover:border-bord hover:bg-raised"
+              >
+                {chip.name}
+              </button>
+            ))}
+          </span>
+        </div>
+      ) : null}
       <dl className="grid gap-2 py-3">
         {generalFacts(account).map((fact) => {
           const connectionKey = fact.key === 'connection' && typeof fact.value === 'string' ? CONNECTION_KEY[fact.value] : undefined;
@@ -553,7 +577,7 @@ export function AccountEditor(props: AccountEditorProps) {
         ))}
       </div>
       <div role="tabpanel">
-        {state.tab === 'general' ? <General account={account} locale={locale} store={store} /> : null}
+        {state.tab === 'general' ? <General account={account} locale={locale} store={store} roleChips={props.roleChips} onOpenRole={props.onOpenRole} /> : null}
         {state.tab === 'usage' ? (
           <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} />
         ) : null}

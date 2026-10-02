@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
 import type { Query, SettingsAccountView, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
-import { WARN_PERCENT, accountCards, createAccountsFrameStore, windowKind } from './accounts-frame';
+import { WARN_PERCENT, accountCards, createAccountsFrameStore, unaddedRow, unaddedRowTarget, windowKind } from './accounts-frame';
+import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
 import type { ShellChange, ShellChangeSignal } from './shell';
 
 const ACCOUNT_SETTINGS = {
@@ -250,5 +251,40 @@ describe('window kinds', () => {
     expect(windowKind('rolling_continuous')).toBeNull();
     expect(windowKind('calendar')).toBeNull();
     expect(windowKind('none')).toBeNull();
+  });
+});
+
+describe('U-37: the frame links into Settings', () => {
+  const reserved = (meters: readonly SettingsMeterView[]) =>
+    accountCards(view([account('acc-r', 'R', meters)]))[0]?.reserved;
+
+  it('U-37: a card reads rezervde when a share meter has remaining at or below its reserveShare (> 0)', () => {
+    expect(reserved([meter('m', 'p', { remaining: 15, reserveShare: 0.2 })])).toBe(true);
+    expect(reserved([meter('m', 'p', { remaining: 20, reserveShare: 0.2 })])).toBe(true);
+    expect(reserved([meter('m', 'p', { remaining: 21, reserveShare: 0.2 })])).toBe(false);
+    expect(
+      reserved([meter('a', 'p', { remaining: 90, reserveShare: 0.2 }), meter('b', 'p', { remaining: 5, reserveShare: 0.1 })]),
+    ).toBe(true);
+  });
+
+  it('U-37: no reserve (share 0) and a unit that is not a share never read rezervde', () => {
+    expect(reserved([meter('m', 'p', { remaining: 0, reserveShare: 0 })])).toBe(false);
+    expect(reserved([meter('m', 'p', { unit: 'usd', used: 49, limit: 50, remaining: 1, reserveShare: 0.2 })])).toBe(false);
+  });
+
+  it('U-37: a card carries the account reserve the account view band reads', () => {
+    const [card] = accountCards(view([{ ...account('acc-x', 'X', []), reserve: { short: 0.1, long: 0.2 } }]));
+    expect(card?.reserve).toStrictEqual({ short: 0.1, long: 0.2 });
+  });
+
+  it('U-37: the trailing row is absent at zero and names the count otherwise, with its Gör action', () => {
+    expect(unaddedRow('tr', 0)).toBeNull();
+    expect(unaddedRow('tr', 2)).toStrictEqual({ text: '2 hesap eklenmedi', action: 'Gör ›' });
+    expect(unaddedRow('en', 1)?.text).toBe('1 account not added');
+  });
+
+  it('U-37: the row opens Settings on Hesaplar, on the list', () => {
+    const state = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', ...unaddedRowTarget() });
+    expect(state).toMatchObject({ open: true, section: 'accounts', subPage: null });
   });
 });

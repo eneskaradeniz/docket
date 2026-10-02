@@ -6,7 +6,10 @@
 // by keeping the prior cards while `refreshing` runs).
 import type { Api } from '../../api/api';
 import type { Query, SettingsAccountsView, SettingsMeterView } from '../../api/queries';
+import { accountStatus } from './account-editor';
 import { isQueryFailure } from './results';
+import type { SettingsOpenTarget } from './settings-panel';
+import { t, type Locale } from '../labels/t';
 import type { ShellChangeSignal } from './shell';
 
 /** A bar at or above this share of its window renders warn (U-16's default). */
@@ -31,6 +34,10 @@ export interface AccountCard {
   }[];
   /** The recorded spend against the cap, when a window carries money; null otherwise. */
   readonly spend: { readonly used: number; readonly cap: number } | null;
+  /** A share meter's remaining reached its reserve (U-31's reading): the card reads "rezervde". */
+  readonly reserved: boolean;
+  /** The account's reserve shares, for the account view's limit band (U-37). */
+  readonly reserve: { readonly short: number | null; readonly long: number | null };
 }
 
 export interface AccountsFrameState {
@@ -91,6 +98,8 @@ export const accountCards = (view: SettingsAccountsView): readonly AccountCard[]
         money !== undefined && money.used !== null && money.limit !== null
           ? { used: money.used, cap: money.limit }
           : null,
+      reserved: accountStatus(account) === 'reserve',
+      reserve: account.reserve,
     };
   });
 
@@ -153,3 +162,19 @@ export const createAccountsFrameStore = (deps: {
     },
   };
 };
+
+/** The frame's trailing row (U-37): "n hesap eklenmedi · Gör ›" while discovery holds `count`
+ *  accounts not yet added (the candidates store's own count); absent at zero. Pure. */
+export const unaddedRow = (
+  locale: Locale,
+  count: number,
+): { readonly text: string; readonly action: string } | null =>
+  count <= 0
+    ? null
+    : {
+        text: t(locale, count === 1 ? 'accounts.unadded.one' : 'accounts.unadded').replace('{n}', String(count)),
+        action: t(locale, 'accounts.unadded.see'),
+      };
+
+/** The row's intent: Settings on Hesaplar's list. */
+export const unaddedRowTarget = (): SettingsOpenTarget => ({ section: 'accounts' });
