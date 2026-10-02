@@ -244,6 +244,17 @@ describe('pollQuota', () => {
     expect(probe.calls).toEqual([]);
   });
 
+  it('P-18: an account naming a provider id with no definition (a stale record) answers unknown_provider, never a throw', async () => {
+    const deps = createFakeDeps();
+    await deps.accounts.save(accountRecord({ provider: 'gemini' })); // an id no def carries anymore
+    const probe = scriptedProbe(ok([]));
+
+    const result = await pollQuota(deps, resolverFor('agy', probe), { accountId: ACCOUNT });
+
+    expect(result).toEqual(err('unknown_provider'));
+    expect(probe.calls).toEqual([]);
+  });
+
   it('P-18: a probe error passes through and persists nothing', async () => {
     const deps = createFakeDeps();
     await deps.accounts.save(accountRecord());
