@@ -202,6 +202,22 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI's login lives in its own ~/.qoder home
+      // and no documented switch redirects its state, so the home is left alone and the level
+      // stays capped at experimental. The CLI reads its own instruction files (AGENTS.md,
+      // .qoder/rules, ~/.qoder/AGENTS.md; CLAUDE.md is not read by default), but that is its own
+      // behaviour, not an isolation Docket enforces. G3 and G4 are absent: the requestPermission
+      // round trip is unproven until an operator run, and no cost field is verified on the ACP
+      // stream — credits ride the provider SDK's control channel, which no Docket leg calls.
+      providerId: 'qoder',
+      gates: {
+        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -514,6 +530,36 @@ export const CAPABILITY_REGISTRY = {
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       models: [],
+    },
+    {
+      // The model list is the login-gated session answer (initialize then session/new in a
+      // scratch directory, never a prompt), so it is authoritative and drops bundled rows the
+      // live list does not contain. The registry bundles the four tier aliases the documentation
+      // names as the logged-out fallback — a machine without a login refuses the session with
+      // -32000, which the catalog maps to the not-logged-in answer — and other ids come from the
+      // live list as unknown models (P-42). Which levels an alias takes is model-dependent, so
+      // the records carry the documented vocabulary and the live session's own option refines it.
+      // No plan source inside the CLI says which model a plan covers, so every row reads unknown
+      // (P-40) and stays a hand pick with spend consent. Credits are reported only through the
+      // provider SDK's control channel (getUsageInfo), which no Docket leg calls, so no cost kind
+      // is claimed and no quota channel exists; the tiers follow the aliases' documented price
+      // factors (ultimate the dearest, efficient the cheapest, auto between).
+      id: 'qoder-login',
+      providerId: 'qoder',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      tierModels: { strong: 'ultimate', balanced: 'performance', fast: 'efficient' },
+      models: [
+        { id: 'auto', family: 'tier', tier: 'balanced', thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'ultimate', family: 'tier', tier: 'strong', thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'performance', family: 'tier', tier: 'balanced', thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'efficient', family: 'tier', tier: 'fast', thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+      ],
     },
   ],
 } as const satisfies CapabilityRegistry;

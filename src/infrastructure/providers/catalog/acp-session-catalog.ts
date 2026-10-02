@@ -87,6 +87,15 @@ const ACP_SESSION_LAUNCHES: Readonly<
     notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
     modelOptionOptional: true,
   },
+  // The docs name `qoder` and the npm package installs both bins, so the documented name is the
+  // command here. A logged-out machine refuses the session with the live refusal below; the
+  // refusal maps to the not-logged-in answer in this catalog path alone, because discovery reads
+  // the login from the CLI's own status command, never from a session.
+  qoder: {
+    command: 'qoder',
+    args: ['--acp'],
+    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
+  },
 };
 
 /** The refusal a logged-out session answers, as the provider's own definition declares it — the

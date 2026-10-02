@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -136,6 +136,7 @@ describe('provider definitions (P-1)', () => {
       vibe: '',
       mimo: '',
       qwen: '',
+      qoder: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -266,6 +267,7 @@ describe('provider definitions (P-1)', () => {
       reasonix: { kind: 'session-option', configId: 'effort' },
       vibe: { kind: 'session-option', category: 'thinking' },
       mimo: { kind: 'model-suffix', separator: '/' },
+      qoder: { kind: 'session-option', category: 'thought_level' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -289,7 +291,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -590,7 +592,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, qoder) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -762,6 +764,62 @@ describe('qwen definition (P-35)', () => {
 
   it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
     expect(qwen().capabilities).toMatchObject({
+      permissionAsk: 'unknown',
+      quotaReport: 'none',
+      costReport: 'none',
+      images: true,
+      mcp: true,
+    });
+  });
+});
+
+describe('qoder definition (P-35)', () => {
+  const qoder = (): ProviderDef => defById('qoder');
+
+  it('P-35: qoder searches both documented bins, launches its ACP flag, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    // The npm package installs a `qoder` dispatcher and a `qodercli` binary and the docs name
+    // `qoder`; which one the native installer places is unverified, so discovery searches both.
+    expect(qoder().bins).toEqual(['qoder', 'qodercli']);
+    expect(qoder().versionArgs).toEqual(['--version']);
+    expect(qoder().helpArgs).toEqual(['--help']);
+    expect(qoder().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['--acp'], env: {}, stdin: 'prompt' });
+    expect(qoder().resume).toBe('protocol');
+    expect(isProviderDef(qoder())).toBe(true);
+  });
+
+  it('P-44: the login lives in the CLI\'s own home, so the launch sets no config variable, passes no token and never leaves the default approval mode', () => {
+    expect(qoder().config).toEqual({ mechanism: 'none' });
+    expect(qoder().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'ultimate' }]) {
+      const launch = qoder().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      expect(launch.args).toEqual(['--acp']);
+      // The bypass far end of the CLI\'s mode list, its skip-permissions alias and a config-dir or
+      // personal-token switch may never reach a launch: the run reads only the machine\'s own login.
+      expect(JSON.stringify(launch)).not.toMatch(/yolo|bypass|dangerously|--config-dir|QODER_PERSONAL_ACCESS_TOKEN/);
+    }
+  });
+
+  it('P-43: the effort rides the session\'s thought_level option — the CLI\'s level names are the level names Docket knows, so no map exists and an unnamed value is never offered', () => {
+    expect(qoder().effortArg).toEqual({ kind: 'session-option', category: 'thought_level' });
+    expect(qoder().levelNames).toBeUndefined();
+    expect(providerLevelOf(qoder().levelNames, 'xhigh')).toBe('xhigh');
+    expect(effortOfProviderLevel(qoder().levelNames, 'xhigh')).toBe('xhigh');
+    // `off` and `auto` appear in the CLI\'s own effort surface and name no level: never offered.
+    expect(effortOfProviderLevel(qoder().levelNames, 'off')).toBeUndefined();
+    expect(effortOfProviderLevel(qoder().levelNames, 'auto')).toBeUndefined();
+  });
+
+  it('P-45: the login probe reads the status JSON\'s boolean under CI=1 and never runs a login, model or usage command', () => {
+    expect(qoder().authProbe).toEqual({ args: ['status', '-o', 'json'], parse: 'logged-in-json', env: { CI: '1' } });
+    expect(qoder().helpNeedsLogin).toBeUndefined();
+    for (const probe of [qoder().authProbe?.args, qoder().versionArgs, qoder().helpArgs]) {
+      expect(JSON.stringify(probe)).not.toMatch(/login|logout|list-models|usage|upgrade|uninstall/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
+    expect(qoder().capabilities).toMatchObject({
       permissionAsk: 'unknown',
       quotaReport: 'none',
       costReport: 'none',
