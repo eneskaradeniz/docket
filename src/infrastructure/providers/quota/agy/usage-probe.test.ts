@@ -110,7 +110,8 @@ describe('createAgyUsageProbe', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error('unreachable');
       expect(result.value).toHaveLength(1);
-      expect(result.value[0]?.pool.appliesTo).toEqual([{ exact: 'Gemini Flash' }, { exact: 'Gemini Pro' }]);
+      // Applicability follows the group table (P-39): the Gemini group draws from gemini-* models.
+      expect(result.value[0]?.pool.appliesTo).toEqual([{ prefix: 'gemini-' }]);
       expect(calls).toEqual([{ command: 'agy', args: ['-p', '/usage', '--output-format', 'json'] }]);
     } finally {
       process.env.PATH = previousPath;

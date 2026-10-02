@@ -12,6 +12,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   'claude-code': { subscription: 'anthropic-subscription', api_key: 'anthropic-api' },
   codex: { subscription: 'codex-subscription' },
   copilot: { subscription: 'copilot-subscription' },
+  agy: { subscription: 'agy-subscription' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

@@ -16,7 +16,7 @@ import type {
   RunOutcome,
   WorkOrderId,
 } from '../../domain/index';
-import { decideOnLimit, foldRun } from '../../domain/index';
+import { billingFromPools, decideOnLimit, foldRun } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
@@ -229,8 +229,9 @@ export const defaultBillingOf = (
 /** P-40: a run whose model may spend real money starts only with the user's recorded consent and
  *  a spend cap on the account. The refusal happens before any write, so every store reads back
  *  exactly as it was. A pinned model the catalog does not list counts as `unknown`, which is never
- *  assumed to be free; an unpinned route is gated by its default billing, consented through the
- *  account-level marker. */
+ *  assumed to be free — though the account's own quota reading can settle it: an allowance bucket
+ *  scoped to the model proves the plan covers it (`billingFromPools`). An unpinned route is gated
+ *  by its default billing, consented through the account-level marker. */
 const spendConsentSatisfied = async (
   deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
   accountId: AccountId,
@@ -239,7 +240,11 @@ const spendConsentSatisfied = async (
   const account = await deps.accounts.get(accountId);
   const billing: Billing =
     model !== undefined
-      ? (await deps.modelCatalog.list(accountId)).find((candidate) => candidate.id === model)?.billing ?? 'unknown'
+      ? billingFromPools(
+          (await deps.modelCatalog.list(accountId)).find((candidate) => candidate.id === model)?.billing ?? 'unknown',
+          model,
+          await deps.accounts.pools(accountId),
+        )
       : defaultBillingOf(deps.capabilities, account);
   if (billing === 'included') return true;
   const consented = account?.consentedModels?.includes(model ?? DEFAULT_MODEL_CONSENT) ?? false;

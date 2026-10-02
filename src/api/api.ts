@@ -22,7 +22,7 @@ import type {
   WorkOrderStatus,
   RepoSlug,
 } from '../domain/index';
-import { deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
+import { billingFromPools, deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
 
 import type {
   AccountRecord,
@@ -1172,8 +1172,10 @@ const accountDetailView = async (
 };
 
 /** The account's model catalog as the surface sees it (P-29): the merged list read through the
- *  port, joined with the account's recorded consents (P-40). `refresh` rides straight through to
- *  the port — the cache it bypasses lives there, not here. */
+ *  port, joined with the account's recorded consents (P-40). A billing the catalog leaves
+ *  `unknown` is settled by the account's own quota reading (`billingFromPools`) — the same
+ *  evidence the executor's preflight gates runs with. `refresh` rides straight through to the
+ *  port — the cache it bypasses lives there, not here. */
 const accountModelsView = async (
   deps: AppDeps,
   id: AccountId,
@@ -1183,14 +1185,17 @@ const accountModelsView = async (
   if (record === undefined) return { ok: false, code: 'not_found' };
 
   const consented = record.consentedModels ?? [];
-  const models = await deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined);
+  const [models, pools] = await Promise.all([
+    deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined),
+    deps.accounts.pools(id),
+  ]);
   return {
     models: models.map((model) => ({
       id: model.id,
       displayName: model.displayName,
       tier: model.tier,
       thinking: model.thinking === 'unknown' ? { kind: 'unknown' } : model.thinking,
-      billing: model.billing,
+      billing: billingFromPools(model.billing, model.id, pools),
       source: model.source,
       stale: model.stale === true,
       autoClassified: model.autoClassified === true,

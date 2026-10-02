@@ -69,7 +69,24 @@ describe('model catalog data (P-29)', () => {
       .filter((kind) => kind.liveIsAuthoritative === true)
       .map((kind) => kind.id)
       .sort();
-    expect(authoritative).toEqual(['anthropic-api', 'anthropic-subscription', 'codex-subscription', 'copilot-subscription', 'zai-glm']);
+    expect(authoritative).toEqual(['agy-subscription', 'anthropic-api', 'anthropic-subscription', 'codex-subscription', 'copilot-subscription', 'zai-glm']);
+  });
+
+  it('P-29: the agy subscription kind lists its models from the CLI models command and leaves their billing unknown', () => {
+    // The subscription login's models come from the CLI's own listing command, and the quota is
+    // polled through the provider's own query (`/usage` in print mode). The plan documentation
+    // covers the Gemini models on every plan but documents third-party model access as the top
+    // plan's, so no single billing answer covers the listed set: every live row reads unknown —
+    // hand-pick with consent — instead of a claim the documentation does not make.
+    expect(findRouteKind('agy-subscription')).toMatchObject({
+      providerId: 'agy',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      modelSource: 'cli-command',
+      quotaProbe: 'provider_query',
+      liveIsAuthoritative: true,
+    });
+    expect(findRouteKind('agy-subscription')?.defaultBilling).toBeUndefined();
   });
 
   it('P-29: the Copilot subscription kind lists its models from the session answer and meters its cost in credits', () => {

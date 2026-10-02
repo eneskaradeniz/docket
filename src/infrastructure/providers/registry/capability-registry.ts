@@ -196,6 +196,27 @@ export const CAPABILITY_REGISTRY = {
       defaultBilling: 'included',
       models: [],
     },
+    {
+      // The subscription login's models come from the CLI's own listing subcommand (`agy models`
+      // — a plain command run, no login, no agent turn); the plan scopes what the account may
+      // use, so the list is authoritative, and the quota poll rides the provider's own query
+      // (`/usage` in print mode). The plan documentation covers the Gemini models on every plan
+      // but documents third-party model access as the top plan's ("rate limits and model
+      // availability differ based on your Google AI plan"), so no single billing answer covers
+      // the listed set: every live row reads unknown — hand-pick with consent — instead of a
+      // claim the documentation does not make. Beyond the baseline quota the plan offers an
+      // account-side overage setting (AI credits, opt-in); the provider's own setting, shown
+      // never changed.
+      id: 'agy-subscription',
+      providerId: 'agy',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'equivalent',
+      quotaProbe: 'provider_query',
+      modelSource: 'cli-command',
+      liveIsAuthoritative: true,
+      models: [],
+    },
   ],
 } as const satisfies CapabilityRegistry;
 
