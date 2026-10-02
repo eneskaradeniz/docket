@@ -496,4 +496,50 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://github.com/QwenLM/qwen-code' },
     mark: null,
   },
+  {
+    id: 'qoder',
+    displayName: 'Qoder',
+    // The npm package installs a `qoder` dispatcher and a `qodercli` binary and the docs name
+    // `qoder`; which one the native installer places is unverified, so discovery searches both.
+    bins: ['qoder', 'qodercli'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `status -o json` prints a `logged_in` boolean on either exit code; only that boolean is
+    // read, never the version or the BYOK flag beside it. CI=1 keeps the CLI from opening a
+    // browser, and its own `login` and `--list-models` are never run from the probe.
+    authProbe: { args: ['status', '-o', 'json'], parse: 'logged-in-json', env: { CI: '1' } },
+    transport: 'acp',
+    // The five level names the documentation gives are the level names Docket knows, so no map
+    // exists and a value that names no level (`off`, `auto`) is never offered. The argv fallback
+    // `--reasoning-effort` (listed in --help) is not used: the session option is the CLI's
+    // ACP-native place, set only when the live session carries it — after the model selection and
+    // only for a level the option itself lists.
+    effortArg: { kind: 'session-option', category: 'thought_level' },
+    // The login and the settings live in the CLI's own ~/.qoder home, so no run-scoped
+    // redirection exists: neither `--config-dir` nor a personal access token is ever set (an
+    // ambient key of another account never reaches a run) and Docket never writes that home.
+    config: { mechanism: 'none' },
+    // `--acp` is documented and live-proven but absent from --help, so the help scan cannot gate
+    // it — it stays plain data here. Never `--yolo` or `--dangerously-skip-permissions`: the
+    // default mode asks and every ask reaches the user.
+    buildLaunch: () => ({ args: ['--acp'], env: {}, stdin: 'prompt' }),
+    // The live `initialize` advertises loadSession.
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      // The ACP requestPermission round trip is unproven until an operator run.
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      // The live `initialize` advertises image prompts.
+      images: true,
+      quotaReport: 'none',
+      // No cost field is verified on the ACP stream; credits ride the SDK control channel only.
+      costReport: 'none',
+    },
+    installHint: { url: 'https://docs.qoder.com/cli' },
+    mark: null,
+  },
 ];

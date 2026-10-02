@@ -105,6 +105,7 @@ describe('model catalog data (P-29)', () => {
       'kilo-login',
       'mimo-login',
       'opencode-subscription',
+      'qoder-login',
       'qwen-login',
       'reasonix-login',
       'vibe-login',
@@ -313,12 +314,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen and devin carries isolation evidence, and all ten stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder and devin carries isolation evidence, and all eleven stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -340,6 +341,7 @@ describe('isolation evidence (P-44)', () => {
       vibe: 'experimental',
       mimo: 'experimental',
       qwen: 'experimental',
+      qoder: 'experimental',
       devin: 'planned',
     });
   });
@@ -434,6 +436,33 @@ describe('isolation evidence (P-44)', () => {
       defaultBilling: 'unknown',
       quotaProbe: 'none',
     });
+  });
+
+  it('P-28: the qoder record waives G5 with the limit_hit reason, claims no permission gate, and its route kind bundles the four documented tier aliases with unknown billing', () => {
+    const gates = findProvider('qoder')?.gates;
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
+    });
+    expect(gates?.G3).toBeUndefined();
+    expect(findRouteKind('qoder-login')).toMatchObject({
+      providerId: 'qoder',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      costKind: 'none',
+      quotaProbe: 'none',
+    });
+    // The bundled fallback is exactly the four tier aliases the documentation names, each with
+    // billing unknown: which models a plan covers is not visible to a machine (P-40).
+    expect(findRouteKind('qoder-login')?.models.map((model) => [model.id, model.billing ?? 'unknown'])).toEqual([
+      ['auto', 'unknown'],
+      ['ultimate', 'unknown'],
+      ['performance', 'unknown'],
+      ['efficient', 'unknown'],
+    ]);
   });
 
   it('P-44: a provider whose record has no isolation evidence is capped at experimental', () => {
