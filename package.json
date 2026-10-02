@@ -32,6 +32,7 @@
     "test:e2e-sizes": "node --test e2e/layout-rules.test.mjs",
     "seed:design": "tsx e2e/seed-design.ts",
     "design": "node e2e/design-run.mjs",
+    "operator-run": "tsx e2e/operator-run.mjs",
     "test:seed-design": "node --test e2e/seed-design.test.mjs"
   },
   "dependencies": {
