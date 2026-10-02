@@ -12,6 +12,7 @@ import type { Command, CommandResult } from '../../api/commands';
 import type { AccountModelsView, ModelView, Query } from '../../api/queries';
 import type { Actor } from '../../domain/index';
 import type { LabelKey } from '../labels/keys';
+import { RECOMMENDED } from './recommended';
 import { commandResultKey, isQueryFailure } from './results';
 
 /** The coarse change events the api emits (docs/v2/ui.md, U-12); the api's `subscribe` satisfies
@@ -80,6 +81,23 @@ export const modelRows = (view: AccountModelsView): readonly ModelRowDisplay[] =
     consented: model.consented,
   }));
 
+/** One billing group of the Modeller tab (U-32): `included` carries no mark, `metered` the
+ *  currency mark, `unknown` the dashed question mark. Billing is the account's own reading of its
+ *  plan — the rows arrive already resolved per account, never per model alone. */
+export interface ModelGroup {
+  readonly billing: ModelBilling;
+  readonly rows: readonly ModelRowDisplay[];
+}
+
+const GROUP_ORDER: readonly ModelBilling[] = ['included', 'metered', 'unknown'];
+
+/** The rows grouped by billing in the fixed order Plana dahil · Kullanım başına ücretli ·
+ *  Doğrulanamadı; an empty group is omitted and the catalog's order holds inside a group. Pure. */
+export const groupModels = (rows: readonly ModelRowDisplay[]): readonly ModelGroup[] =>
+  GROUP_ORDER.map((billing) => ({ billing, rows: rows.filter((row) => row.billing === billing) })).filter(
+    (group) => group.rows.length > 0,
+  );
+
 /** A cap amount as the form parses it: a finite number above zero, with the Turkish bundle's
  *  decimal comma accepted. Null when the text does not parse — the allow action needs a cap, and a
  *  cap that cannot cap must never reach the command (the use case would reject it anyway). Pure. */
@@ -107,6 +125,10 @@ export interface ConsentDraft {
   /** The row's display name; null on the default line, which carries its own copy. */
   readonly name: string | null;
   readonly billing: 'metered' | 'unknown';
+  /** True when the account has no cap: the card then asks for one (prefilled with the
+   *  recommendation) and the grant carries it. An account that already has a cap grants without
+   *  a new one. */
+  readonly capRequired: boolean;
   readonly cap: CapInput;
   readonly allowEnabled: boolean;
 }
@@ -142,7 +164,13 @@ export interface AccountModelsStore {
   /** Open the inline consent draft for a non-included model of the loaded account — or for the
    *  unpinned default through the `*` marker. Anything else (an included model, an id the loaded
    *  list does not carry, no loaded account) opens nothing. */
-  beginConsent(model: { readonly model: string; readonly name: string | null; readonly billing: ModelBilling }): void;
+  beginConsent(model: {
+    readonly model: string;
+    readonly name: string | null;
+    readonly billing: ModelBilling;
+    /** Whether the account already has a spend cap (any scope). */
+    readonly hasCap: boolean;
+  }): void;
   editCap(input: { readonly scope?: CapScope; readonly amountUsd?: string }): void;
   /** Issue `account.consent.grant` with the entered cap; without a parsable cap it issues
    *  nothing. A refusal keeps the draft open so the cap can be fixed and retried. */
@@ -154,13 +182,21 @@ export interface AccountModelsStore {
   subscribe(listener: () => void): () => void;
 }
 
-const freshDraft = (accountId: string, model: string, name: string | null, billing: 'metered' | 'unknown'): ConsentDraft => ({
+const freshDraft = (
+  accountId: string,
+  model: string,
+  name: string | null,
+  billing: 'metered' | 'unknown',
+  capRequired: boolean,
+): ConsentDraft => ({
   accountId,
   model,
   name,
   billing,
-  cap: { scope: 'account_day', amountUsd: '' },
-  allowEnabled: false,
+  capRequired,
+  cap: { scope: RECOMMENDED.cap.scope, amountUsd: String(RECOMMENDED.cap.amountUsd) },
+  // The prefilled recommendation parses; a card with no cap to ask for needs nothing more.
+  allowEnabled: true,
 });
 
 export const createAccountModelsStore = (deps: AccountModelsStoreDeps): AccountModelsStore => {
@@ -262,7 +298,7 @@ export const createAccountModelsStore = (deps: AccountModelsStoreDeps): AccountM
       const billing =
         model.model === '*' ? state.defaultModel?.billing : state.rows?.find((row) => row.id === model.model)?.billing;
       if (billing === undefined || billing === 'included') return;
-      set({ ...state, draft: freshDraft(state.accountId, model.model, model.name, billing) });
+      set({ ...state, draft: freshDraft(state.accountId, model.model, model.name, billing, !model.hasCap) });
     },
     editCap: (input) => {
       if (state.draft === null) return;
@@ -270,20 +306,20 @@ export const createAccountModelsStore = (deps: AccountModelsStoreDeps): AccountM
         scope: input.scope ?? state.draft.cap.scope,
         amountUsd: input.amountUsd ?? state.draft.cap.amountUsd,
       };
-      set({ ...state, draft: { ...state.draft, cap, allowEnabled: parseAmountUsd(cap.amountUsd) !== null } });
+      set({
+        ...state,
+        draft: { ...state.draft, cap, allowEnabled: !state.draft.capRequired || parseAmountUsd(cap.amountUsd) !== null },
+      });
     },
     allow: async () => {
       const draft = state.draft;
       if (draft === null || !draft.allowEnabled) return null;
+      const base = { type: 'account.consent.grant', id: draft.accountId, model: draft.model } as const;
+      if (!draft.capRequired) return runConsentCommand(base, true);
       const amountUsd = parseAmountUsd(draft.cap.amountUsd);
       if (amountUsd === null) return null;
       return runConsentCommand(
-        {
-          type: 'account.consent.grant',
-          id: draft.accountId,
-          model: draft.model,
-          cap: { scope: draft.cap.scope, amountUsd, warnPercent: CAP_WARN_PERCENT },
-        },
+        { ...base, cap: { scope: draft.cap.scope, amountUsd, warnPercent: CAP_WARN_PERCENT } },
         true,
       );
     },
