@@ -1,6 +1,6 @@
 // definitions/types.ts — exact contract from docs/v2/domain.md section 2.
 import type { SpendCap } from '../budget';
-import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug } from '../shared';
+import type { CapabilitySlug, EnvSlug, FlowSlug, GateSlug, ProjectSlug, RepoSlug, RoleSlug, StageSlug, ThinkingChoice, Tier } from '../shared';
 
 export type WriteScope =
   | { readonly kind: 'none' } // read-only role
@@ -33,6 +33,11 @@ export interface StageDef {
   readonly role: RoleSlug | null; // null = a human-only stage (e.g. staging test)
   readonly exit: readonly GateDef[]; // all must pass to advance
   readonly onFail?: { readonly goto: StageSlug; readonly maxAttempts: number };
+  readonly tier?: Tier; // overrides the binding's tier for this stage
+  readonly thinking?: ThinkingChoice; // overrides the binding's thinking for this stage
+  /** The earlier stage of the same flow whose output this stage reviews; its runs prefer another
+   *  provider than the one that wrote it. */
+  readonly reviewOf?: StageSlug;
 }
 
 export interface FlowDef {

@@ -1,7 +1,7 @@
 // In-memory CapabilityCatalog — the route kinds a test scripts. `provider` drives the default
 // resolution (`routeKindOf` with no explicit kind), `endpointHost` the A-43 host check,
 // `defaultBilling` the route's unpinned-run billing.
-import type { AuthMode, Billing } from '../../../domain/index';
+import type { AuthMode, Billing, Tier } from '../../../domain/index';
 
 import type { CapabilityCatalog } from '../capability-catalog';
 
@@ -12,6 +12,7 @@ export interface FakeRouteKind {
   readonly provider?: string;
   readonly endpointHost?: string;
   readonly defaultBilling?: Billing;
+  readonly tierModels?: Readonly<Record<Tier, string>>;
 }
 
 export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[] = []): CapabilityCatalog => ({
@@ -22,14 +23,13 @@ export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[]
     const kind = routeKinds.find((entry) => entry.id === id);
     return kind === undefined
       ? undefined
-      : kind.endpointHost === undefined && kind.defaultBilling === undefined
-        ? { id: kind.id, providerId: kind.provider ?? '', authMode: kind.authMode }
-        : {
-            id: kind.id,
-            providerId: kind.provider ?? '',
-            authMode: kind.authMode,
-            ...(kind.endpointHost !== undefined ? { endpointHost: kind.endpointHost } : {}),
-            ...(kind.defaultBilling !== undefined ? { defaultBilling: kind.defaultBilling } : {}),
-          };
+      : {
+          id: kind.id,
+          providerId: kind.provider ?? '',
+          authMode: kind.authMode,
+          ...(kind.endpointHost !== undefined ? { endpointHost: kind.endpointHost } : {}),
+          ...(kind.defaultBilling !== undefined ? { defaultBilling: kind.defaultBilling } : {}),
+          ...(kind.tierModels !== undefined ? { tierModels: kind.tierModels } : {}),
+        };
   },
 });

@@ -420,6 +420,49 @@ describe('executeRun', () => {
     });
   });
 
+  describe('tier model (A-47)', () => {
+    const LEVELS = { kind: 'levels', levels: ['low', 'medium', 'high'] } as const;
+    const entry = (id: string, tier: 'strong' | 'balanced' | 'fast', billing: CatalogModel['billing'] = 'included'): CatalogModel => ({
+      id,
+      source: 'live',
+      thinking: LEVELS,
+      billing,
+      tier,
+    });
+    const run = async (item: QueueItem, models: readonly CatalogModel[]) => {
+      const h = await harness({ models });
+      await executeRun(h.deps, permissionGate().permissions, { ...INPUT, item });
+      return h;
+    };
+    const strong: QueueItem = { ...ITEM, tier: 'strong' };
+
+    it('A-47: an unpinned route with a tier runs the highest included model of that tier and records it', async () => {
+      const h = await run(strong, [entry('m-2', 'strong'), entry('m-10', 'strong'), entry('m-99', 'fast')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-10' });
+      expect((await h.runs.listForWorkOrder(WORK_ORDER))[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-10' });
+      expect(auditShape(h.log.entries())[0]?.detail).toMatchObject({ model: 'm-10', tier: 'strong' });
+    });
+
+    it('A-47: the resolved model is the one the effort resolves on', async () => {
+      const models = [{ ...entry('m-1', 'strong'), thinking: { kind: 'levels', levels: ['low'] } } as CatalogModel];
+      const h = await run({ ...strong, thinking: { level: 'deep' } }, models);
+      expect(h.transport.requests()[0]?.effort).toBe('low');
+    });
+
+    it('A-47: no included model of the tier leaves the route unpinned and records no model', async () => {
+      const h = await run(strong, [entry('m-1', 'strong', 'metered'), entry('m-2', 'strong', 'unknown'), entry('m-3', 'fast')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT });
+      expect(auditShape(h.log.entries())[0]?.detail).toBeUndefined();
+    });
+
+    it('A-47: a pinned model is never replaced by the tier', async () => {
+      const pinned: QueueItem = { ...strong, route: { accountId: ACCOUNT, model: 'm-1' } };
+      const h = await run(pinned, [entry('m-1', 'fast'), entry('m-2', 'strong')]);
+      expect(h.transport.requests()[0]?.route).toEqual({ accountId: ACCOUNT, model: 'm-1' });
+      expect(auditShape(h.log.entries())[0]?.detail).not.toHaveProperty('tier');
+    });
+  });
+
   it('A-15: the run record, run_started event and run.started audit are written before the transport starts', async () => {
     const h = await harness({ script: [finished('completed')] });
     const seen: {

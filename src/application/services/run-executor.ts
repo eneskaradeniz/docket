@@ -2,6 +2,7 @@
 // plus the executor-side resume fallback P-22 of docs/v2/providers.md).
 import type {
   AccountId,
+  AccountRoute,
   Actor,
   AgentEvent,
   Billing,
@@ -15,9 +16,10 @@ import type {
   RoleDef,
   RunId,
   RunOutcome,
+  Tier,
   WorkOrderId,
 } from '../../domain/index';
-import { billingFromPools, decideOnLimit, effortForChoice, foldRun } from '../../domain/index';
+import { billingFromPools, decideOnLimit, effortForChoice, foldRun, resolveTier } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
@@ -233,9 +235,10 @@ export const defaultBillingOf = (
 const resolveEffort = async (
   deps: Pick<AppDeps, 'modelCatalog'>,
   item: QueueItem,
+  route: AccountRoute,
 ): Promise<EffortLevel | undefined> => {
-  const catalog = await deps.modelCatalog.list(item.route.accountId);
-  const { model } = item.route;
+  const catalog = await deps.modelCatalog.list(route.accountId);
+  const { model } = route;
   const entry =
     model !== undefined
       ? catalog.find((candidate) => candidate.id === model)
@@ -268,6 +271,25 @@ const spendConsentSatisfied = async (
   return consented && (account?.caps.length ?? 0) > 0;
 };
 
+/** An unpinned route with a tier runs the best model of that tier: the account's own tier table,
+ *  else the route kind's, else the highest auto-selectable catalog entry. No such model leaves the
+ *  route unpinned, so the CLI's own default runs. */
+const routeForTier = async (
+  deps: Pick<AppDeps, 'accounts' | 'modelCatalog' | 'capabilities'>,
+  item: QueueItem,
+): Promise<{ readonly route: AccountRoute; readonly resolved: { readonly model: string; readonly tier: Tier } | undefined }> => {
+  if (item.route.model !== undefined || item.tier === undefined) return { route: item.route, resolved: undefined };
+  const account = await deps.accounts.get(item.route.accountId);
+  const routeId =
+    account === undefined
+      ? undefined
+      : deps.capabilities.routeKindOf({ provider: account.provider, authMode: account.authMode, routeKind: account.routeKind });
+  const tierModels = account?.tierModels ?? (routeId === undefined ? undefined : deps.capabilities.routeKind(routeId)?.tierModels);
+  const model = resolveTier(item.tier, await deps.modelCatalog.list(item.route.accountId), tierModels);
+  if (model === undefined) return { route: item.route, resolved: undefined };
+  return { route: { ...item.route, model }, resolved: { model, tier: item.tier } };
+};
+
 export async function executeRun(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
   permissions: PermissionGate,
@@ -277,14 +299,15 @@ export async function executeRun(
   workOrdersChanged?: WorkOrdersChangedNotify,
 ): Promise<ExecuteOutcome> {
   const { item } = input;
-  if (!(await spendConsentSatisfied(deps, item.route.accountId, item.route.model))) {
+  const { route, resolved } = await routeForTier(deps, item);
+  if (!(await spendConsentSatisfied(deps, route.accountId, route.model))) {
     return { kind: 'refused', error: 'needs_spend_consent' };
   }
   const plan = planAttempt(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
 
-  const effort = await resolveEffort(deps, item);
+  const effort = await resolveEffort(deps, item, route);
   const runId = deps.ids.next<'run'>();
   const startedAt = deps.clock.now();
   await deps.runs.create({
@@ -293,7 +316,7 @@ export async function executeRun(
     stage: item.stage,
     attempt: plan.attempt,
     role: input.role.id,
-    route: item.route,
+    route,
     startedAt,
     autoResumesUsed: plan.autoResumesUsed,
   });
@@ -308,7 +331,9 @@ export async function executeRun(
     at: startedAt,
     action: 'run.started',
     runId,
-    ...(effort !== undefined ? { detail: { effort } } : {}),
+    ...(effort !== undefined || resolved !== undefined
+      ? { detail: { ...(resolved ?? {}), ...(effort !== undefined ? { effort } : {}) } }
+      : {}),
   });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
@@ -332,7 +357,7 @@ export async function executeRun(
       runId,
       cwd: input.cwd,
       role: input.role,
-      route: item.route,
+      route,
       prompt,
       capabilities: input.capabilities,
       ...(effort !== undefined ? { effort } : {}),
