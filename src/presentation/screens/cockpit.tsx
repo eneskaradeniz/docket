@@ -200,6 +200,7 @@ export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenPro
                       run={run}
                       locale={locale}
                       accountLabel={accountLabel(run.accountId)}
+                      accountProvider={run.provider ?? ''}
                       mark={marks.markFor(run.provider ?? '')}
                       sinceMs={store.sinceMs(run.startedAt)}
                       onOpen={() => onOpenWorkOrder(run.workOrderId)}

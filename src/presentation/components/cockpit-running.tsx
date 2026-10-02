@@ -13,6 +13,9 @@ export interface CockpitRunningRowProps {
   readonly run: CockpitView['running'][number];
   readonly locale: Locale;
   readonly accountLabel: string;
+  /** The account's provider id, carried on the badge for the layout audit; empty when the run
+   *  rides no account. */
+  readonly accountProvider: string;
   /** The account's provider mark (U-21's account badge); null renders the neutral glyph. */
   readonly mark: ProviderMarkProps['mark'];
   readonly sinceMs: number;
@@ -40,7 +43,7 @@ const queuedNote = (run: CockpitView['running'][number], locale: Locale): string
     : `${t(locale, 'cockpit.queued.limitAt')} ${formatInstant(locale, at)}`;
 };
 
-export function CockpitRunningRow({ run, locale, accountLabel, mark, sinceMs, onOpen }: CockpitRunningRowProps) {
+export function CockpitRunningRow({ run, locale, accountLabel, accountProvider, mark, sinceMs, onOpen }: CockpitRunningRowProps) {
   const queued = isQueued(run);
   const strip = queued ? null : stageStrip(run);
   const title = run.title !== undefined && run.title !== '' ? run.title : null;
@@ -52,7 +55,7 @@ export function CockpitRunningRow({ run, locale, accountLabel, mark, sinceMs, on
         title !== null ? 'min-h-12' : 'min-h-9'
       } ${queued ? 'border-dashed border-hairline bg-transparent opacity-60' : 'border-hairline bg-surface'}`}
     >
-      <ProviderMark mark={mark} />
+      <ProviderMark provider={accountProvider} mark={mark} />
       <span className="font-mono text-[11.5px] text-inkdim">{formatWorkOrderCode(run.number, locale)}</span>
       <span className="grid min-w-0">
         {title !== null ? (

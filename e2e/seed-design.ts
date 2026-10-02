@@ -114,7 +114,7 @@ const STAGES = [
 ] as const;
 const FLOW_ID = 'standart-akis';
 
-type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'gemini' | 'kimi';
+type AccountKey = 'claude-max' | 'zai-glm' | 'codex-pro' | 'antigravity' | 'copilot' | 'kimi';
 
 /** running: an unfinished run in `stage`; awaiting: the stage's run finished and its human gate
  *  is open; ready: the stage is entered, nothing started; done: the whole flow finished. */
@@ -168,9 +168,9 @@ const ORDERS: readonly OrderPlan[] = [
   { code: 'İE-0037', repo: 'docket-mobile', title: 'Bildirim kanalı', stage: 1, state: 'ready', minutes: 55, account: 'zai-glm' },
   { code: 'İE-0002', repo: 'docket', title: 'Kurulum betiği', stage: 5, state: 'done', minutes: 10_000, account: 'claude-max', usd: 0.3 },
   // date-app, telerelay, Kadife Odoo
-  { code: 'İE-0039', repo: 'dateapp-api', title: 'Eşleşme puanı', stage: 2, state: 'ready', minutes: 35, account: 'gemini' },
-  { code: 'İE-0040', repo: 'telerelay', title: 'Webhook yeniden deneme', stage: 3, state: 'ready', minutes: 45, account: 'gemini' },
-  { code: 'İE-0012', repo: 'kadife-odoo', title: 'Teslim tarihi', stage: 4, state: 'awaiting', minutes: 12, account: 'gemini', usd: 0.25 },
+  { code: 'İE-0039', repo: 'dateapp-api', title: 'Eşleşme puanı', stage: 2, state: 'ready', minutes: 35, account: 'copilot' },
+  { code: 'İE-0040', repo: 'telerelay', title: 'Webhook yeniden deneme', stage: 3, state: 'ready', minutes: 45, account: 'copilot' },
+  { code: 'İE-0012', repo: 'kadife-odoo', title: 'Teslim tarihi', stage: 4, state: 'awaiting', minutes: 12, account: 'copilot', usd: 0.25 },
   { code: 'İE-0003', repo: 'kadife-odoo', title: 'Stok senkronu', stage: 5, state: 'done', minutes: 9000, account: 'claude-max', usd: 0.45 },
 ];
 
@@ -291,7 +291,7 @@ const ACCOUNTS: readonly AccountPlan[] = [
     ],
   },
   {
-    key: 'gemini', label: 'Gemini', provider: 'gemini', authMode: 'subscription',
+    key: 'copilot', label: 'Copilot', provider: 'copilot', authMode: 'subscription',
     windows: [{ label: 'Haftalık pencere', kind: 'week', percent: 91, resetsAt: WEEK_RESET }],
   },
   {
