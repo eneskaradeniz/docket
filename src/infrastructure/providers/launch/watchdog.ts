@@ -36,6 +36,8 @@ export function wrapWithWatchdog(inner: RunHandle, config: WatchdogConfig): RunH
   let failure: unknown;
   let hasFailure = false;
   let started = false;
+  // A user stop must stay a cancel: once requested, no timer may arm or fire.
+  let userStopped = false;
   let cancelTimer: (() => void) | undefined;
   let stopPromise: Promise<void> | undefined;
   const openAsks = new Set<string>();
@@ -60,14 +62,14 @@ export function wrapWithWatchdog(inner: RunHandle, config: WatchdogConfig): RunH
   const arm = (): void => {
     cancelTimer?.();
     cancelTimer = undefined;
-    if (closed || openAsks.size > 0 || openTools.size > 0) return;
+    if (closed || userStopped || openAsks.size > 0 || openTools.size > 0) return;
     const ms = started ? config.inactivityTimeoutMs : config.firstOutputTimeoutMs;
     if (ms <= 0) return;
     cancelTimer = config.timers.set(() => fire(started ? 'inactivity_timeout' : 'first_output_timeout'), ms);
   };
 
   const fire = (reason: 'first_output_timeout' | 'inactivity_timeout'): void => {
-    if (closed) return;
+    if (closed || userStopped) return;
     const at = config.clock.now();
     queue.push(
       {
@@ -139,6 +141,11 @@ export function wrapWithWatchdog(inner: RunHandle, config: WatchdogConfig): RunH
       if (openAsks.delete(askId)) arm();
     },
     steer: (note) => inner.steer(note),
-    stop: () => stopOnce(),
+    stop: () => {
+      userStopped = true;
+      cancelTimer?.();
+      cancelTimer = undefined;
+      return stopOnce();
+    },
   };
 }

@@ -190,6 +190,18 @@ describe('watchdog', () => {
     expect(inner.stop.calls).toBe(1);
   });
 
+  it('a user stop disarms both timers: a cancel never becomes a watchdog timeout', async () => {
+    const world = createWorld();
+    const inner = createInner();
+    const handle = wrapWithWatchdog(inner.handle, { ...world, firstOutputTimeoutMs: 1000, inactivityTimeoutMs: 5000 });
+    const seen = drain(handle);
+    await inner.push(text(0));
+    await handle.stop();
+    await world.advance(100_000);
+    expect(types(seen)).toEqual(['text']);
+    expect(inner.stop.calls).toBe(1);
+  });
+
   it('0 disables a timer', async () => {
     const world = createWorld();
     const inner = createInner();
