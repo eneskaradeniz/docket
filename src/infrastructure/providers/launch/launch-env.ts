@@ -60,7 +60,10 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   'grok-build': ['GROK_HOME'],
   atomcode: [],
   reasonix: [],
-  vibe: [],
+  // The CLI's own home variable, where its login lives (the definition leaves the variable unset,
+  // mechanism 'none'): the login state a run reads is the machine's own, so an ambient relocation
+  // survives — Docket never sets it.
+  vibe: ['VIBE_HOME'],
   mimo: [],
   // The CLI reads its credential from the environment variable the user's own settings name, so
   // none is passed through here: an ambient key of another account never reaches a run.
