@@ -155,6 +155,8 @@ export const TR: LabelBundle = {
   'account.work.empty': 'Bu hesapla koşan aktif iş yok.',
   'account.policy.when': 'Limit dolunca:',
   'account.policy.info': "Limit dolduğunda bu hesabın işleri ne yapar",
+  'account.policy.subject': 'limit davranışı',
+  'info.trigger.prefix': 'Bilgi: ',
   'account.policy.wait_resume': 'Sıfırlanınca sürdür',
   'account.policy.switch_pool': 'Başka havuza geç',
   'account.policy.fallback_account': 'Yedek hesaba geç',
