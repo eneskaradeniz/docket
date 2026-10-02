@@ -50,6 +50,7 @@ interface LaunchInput {
   readonly configDir: string;                     // the run-scoped config dir (launch module)
   readonly resume?: { readonly sessionRef: string };
   readonly effort?: EffortLevel;                  // already clamped to the model (R-50, A-46)
+  readonly model?: string;                        // the route's model, so a `model-suffix` effort can build the id (P-43)
 }
 ```
 
@@ -341,7 +342,7 @@ Design and evidence: [provider-capabilities.md](provider-capabilities.md), one s
 
 Design: [provider-capabilities.md](provider-capabilities.md) §9.
 
-- **P-43** `EffortArg` covers how candidates take an effort: `flag` (argv), `request-field` (turn or thread request), `session-option` (an ACP config option, named by its `category` or its `configId`), and `model-suffix` (the level joins the model id with the definition's `separator`, e.g. `<model>/<level>`; the effort then never travels separately). A definition may carry `levelNames`, a map from `EffortLevel` to the provider's own value names (e.g. `none` ↔ `off`); a provider value with no entry and no identical `EffortLevel` is never offered, and catalogs read a provider's advertised levels through the reverse map. Unmapped effort → nothing is sent (never a guessed name).
+- **P-43** `EffortArg` covers how candidates take an effort: `flag` (argv), `request-field` (turn or thread request), `session-option` (an ACP config option, named by its `category` or its `configId`), and `model-suffix` (the level joins the model id with the definition's `separator`, e.g. `<model>/<level>`; the effort then never travels separately). A definition may carry `levelNames`, a map from `EffortLevel` to the provider's own value names (e.g. `none` ↔ `off`); when a definition has `levelNames`, only the mapped levels are sent or offered (catalogs read advertised levels through the reverse map); without it, provider values that equal an `EffortLevel` are used as is and others are never offered. Unmapped effort → nothing is sent (never a guessed name).
 - **P-44** A definition declares how the CLI is kept from reading the user's configuration of other tools (instruction files, skills, hooks, MCP servers of another agent): an environment variable, a flag or a run-scoped home directory, plus the CLI's own telemetry-off flag where one exists. A definition that cannot declare such isolation is capped at `experimental` and its runs show that the CLI may read the user's other tool configuration.
-- **P-45** Discovery runs only probes that are safe without a login: a definition marks commands that may open a browser, start a login flow or need an account (`needsLogin`); discovery runs them only when the login probe returned `loggedIn === true`, never when it is `false` or `null`. A model-list command marked `needsLogin` is skipped while logged out and the catalog falls back to bundled data.
+- **P-45** Discovery runs only probes that are safe without a login: a definition marks commands that may open a browser, start a login flow or need an account (`needsLogin`); discovery runs them only when the login probe returned `loggedIn === true`, never when it is `false` or `null`. A model-list command marked `needsLogin` is skipped while logged out and the catalog falls back to bundled data; the catalog takes `loggedIn` from the account's latest discovery result, and a definition with any `needsLogin` command is not added to the built-ins until that value reaches the catalog.
 
