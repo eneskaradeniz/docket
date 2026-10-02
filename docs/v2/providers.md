@@ -300,17 +300,19 @@ export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
 
 - **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
   `d` data copied unmodified from the file it came from, rendered with `currentColor`,
-  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. All seven built-ins
-  have a mark: the five with an official file plus `codex` and `agy`, whose files were placed by
-  the operator from an MIT-licensed icon set (the marks remain their owners' trademarks, used
-  unmodified only to identify the provider; they are not the owners' official brand kits — if
-  official files arrive, only the def's path changes). The marks identify the provider only.
+  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. Twelve built-ins carry a
+  mark: four from the provider's official file (`claude-code`, `copilot`, `cursor`, `opencode`) and
+  eight operator-placed files from an MIT-licensed icon set (`codex`, `agy`, `kilo`, `grok-build`,
+  `vibe`, `mimo`, `qwen`, `kiro`; the marks remain their owners' trademarks, used unmodified only to
+  identify the provider; they are not the owners' official brand kits — if official files arrive,
+  only the def's path changes). The source record (URL, license, date, sha256) is kept outside the
+  repo with the operator's design files. The marks identify the provider only.
   `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
   non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
   id to its own mark, so adding a provider touches no code beyond its def.
 - **P-25a** A built-in definition whose provider has no mark file carries `mark: null`; the marks test lists those ids explicitly, so a missing mark is a recorded fact, never an omission.
-- **P-26** A mark carries the fill rule its file declares: `nonzero` for the five official
-  marks, `evenodd` for the two placed files (both set `fill-rule="evenodd"`; the codex path also
+- **P-26** A mark carries the fill rule its file declares: `nonzero` for the four official
+  marks, `evenodd` for the eight placed files (each sets `fill-rule="evenodd"`; the codex path also
   `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
   query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
   under the two rules.
