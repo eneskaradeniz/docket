@@ -302,6 +302,55 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(listed.value.find((model) => model.id === 'mimo/mimo-auto')?.efforts).toEqual(['high']);
   });
 
+  it('P-29: a configured qwen session lists the available-models rows once each, launches the ACP flag, offers no thought level and never prompts', async () => {
+    const harness = makeSpawn('models-qwen');
+    const listed = await listAcpSessionModels(accountOf('qwen'), {
+      baseEnv: {},
+      spawn: harness.spawn,
+      // The definition carries an empty map: the CLI names levels, but sending one may persist
+      // into the user's settings, so none is offered until an operator run settles it.
+      levelNames: {},
+    });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'qwen', args: ['--acp'] }]);
+    // The answer carries both shapes at once — models.availableModels and the model select — and
+    // the same model through both lists exactly once, under its available-models name.
+    expect(listed.value).toEqual([
+      { id: 'qwen3.5-plus', displayName: 'Qwen3.5 Plus' },
+      { id: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus' },
+    ]);
+    expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).toEqual(['initialize', 'session/new']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+    expect(methods).not.toContain('session/close');
+  });
+
+  it('P-45: a logged-out qwen session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
+    const harness = makeSpawn('models-qwen-loggedout');
+
+    const listed = await listAcpSessionModels(accountOf('qwen'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed).toEqual({
+      ok: false,
+      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
+    });
+    expect(JSON.stringify(listed)).not.toContain('authenticate');
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
+
+  it('P-29: a qwen session that opens with no model select and no models object is an empty list, not a malformed answer', async () => {
+    const harness = makeSpawn('models-qwen-empty');
+
+    const listed = await listAcpSessionModels(accountOf('qwen'), { baseEnv: {}, spawn: harness.spawn, levelNames: {} });
+
+    expect(listed).toEqual({ ok: true, value: [] });
+  });
+
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
     const harness = makeSpawn('models-atomcode');
     const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });

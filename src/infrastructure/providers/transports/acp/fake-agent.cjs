@@ -184,6 +184,34 @@ const mimoConfigOptions = () => [
   { id: 'mode', category: 'mode', type: 'select', currentValue: 'build', options: [{ value: 'build', name: 'build' }, { value: 'plan', name: 'plan' }] },
 ];
 
+// The qwen shape: initialize offers one terminal auth method (the CLI's own API-key login), and a
+// configured machine answers session/new with BOTH a models object and config options — the model
+// select, a reasoning_effort thought_level select whose values include `default` (which names no
+// level), and the mode list whose `yolo` far end a launch never picks. The live initialize
+// advertises session list/resume but not close, so this one does not either.
+const QWEN_SCENARIOS = ['models-qwen', 'models-qwen-loggedout', 'models-qwen-empty'];
+const QWEN_MODELS = [
+  { modelId: 'qwen3.5-plus', name: 'Qwen3.5 Plus' },
+  { modelId: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus' },
+];
+let qwenModel = 'qwen3.5-plus';
+const qwenConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: qwenModel, options: QWEN_MODELS.map((model) => ({ value: model.modelId, name: model.name })) },
+  {
+    id: 'reasoning_effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: 'default',
+    options: ['none', 'default', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['plan', 'default', 'auto-edit', 'auto', 'yolo'].map((value) => ({ value, name: value })) },
+];
+const qwenModelsSession = () => ({
+  sessionId: freshSessionId,
+  models: { currentModelId: qwenModel, availableModels: QWEN_MODELS },
+  configOptions: qwenConfigOptions(),
+});
+
 const opencodeModelsSession = () => ({
   sessionId: freshSessionId,
   configOptions: [
@@ -267,7 +295,12 @@ const initializeResult = () => ({
     ...(advertiseSessionClose ? { sessionCapabilities: { close: {} } } : {}),
   },
   agentInfo: { name: 'fake-agent', version: '1.0.0' },
-  authMethods: scenario === 'models-grok' ? [{ id: 'grok.com' }] : [],
+  authMethods:
+    scenario === 'models-grok'
+      ? [{ id: 'grok.com' }]
+      : QWEN_SCENARIOS.includes(scenario)
+        ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
+        : [],
   ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
@@ -436,6 +469,25 @@ const onLine = (line) => {
       respond(message.id, { sessionId: freshSessionId, configOptions: mimoConfigOptions() });
       return;
     }
+    if (scenario === 'models-qwen') {
+      respond(message.id, qwenModelsSession());
+      return;
+    }
+    // The refusal a machine with no configured provider answers with (observed live).
+    if (scenario === 'models-qwen-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required: Use Qwen Code CLI to authenticate first.' },
+      });
+      return;
+    }
+    // A session that opens without a model select and without a models object: the user
+    // configured no provider, so the list is empty rather than malformed.
+    if (scenario === 'models-qwen-empty') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: qwenConfigOptions().slice(1) });
+      return;
+    }
     if (scenario === 'models-vibe-nokey') {
       send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Missing API key for mistral provider.' } });
       return;
@@ -477,6 +529,12 @@ const onLine = (line) => {
       const { configId, value } = message.params;
       if (configId === 'model' && MIMO_MODELS.includes(value)) mimoModel = value;
       respond(message.id, { configOptions: mimoConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-qwen') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && QWEN_MODELS.some((model) => model.modelId === value)) qwenModel = value;
+      respond(message.id, qwenModelsSession());
       return;
     }
     if (scenario === 'models-kilo') {

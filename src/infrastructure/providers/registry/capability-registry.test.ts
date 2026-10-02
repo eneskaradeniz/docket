@@ -105,6 +105,7 @@ describe('model catalog data (P-29)', () => {
       'kilo-login',
       'mimo-login',
       'opencode-subscription',
+      'qwen-login',
       'reasonix-login',
       'vibe-login',
       'zai-glm',
@@ -312,12 +313,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo and devin carries isolation evidence, and all nine stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen and devin carries isolation evidence, and all ten stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -338,6 +339,7 @@ describe('isolation evidence (P-44)', () => {
       reasonix: 'experimental',
       vibe: 'experimental',
       mimo: 'experimental',
+      qwen: 'experimental',
       devin: 'planned',
     });
   });
@@ -411,6 +413,22 @@ describe('isolation evidence (P-44)', () => {
     expect(gates?.G3).toBeUndefined();
     expect(findRouteKind('mimo-login')).toMatchObject({
       providerId: 'mimo',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
+  it('P-28: the qwen record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists the user\'s own configured models with unknown billing', () => {
+    const gates = findProvider('qwen')?.gates;
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'provider reports no quota; a limit error maps to limit_hit (failed fast, not retried)',
+    });
+    expect(gates?.G3).toBeUndefined();
+    expect(findRouteKind('qwen-login')).toMatchObject({
+      providerId: 'qwen',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',

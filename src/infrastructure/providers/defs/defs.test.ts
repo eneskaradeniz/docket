@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -135,6 +135,7 @@ describe('provider definitions (P-1)', () => {
       reasonix: '',
       vibe: '',
       mimo: '',
+      qwen: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -280,7 +281,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -581,7 +582,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -703,5 +704,61 @@ describe('mimo definition (P-35)', () => {
 
   it('P-1: permissionAsk stays unknown until a live request proves it, and no quota or cost is reported', () => {
     expect(mimo().capabilities).toMatchObject({ permissionAsk: 'unknown', quotaReport: 'none', costReport: 'none' });
+  });
+});
+
+describe('qwen definition (P-35)', () => {
+  const qwen = (): ProviderDef => defById('qwen');
+
+  it('P-35: qwen launches its ACP entry flag, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    expect(qwen().bins).toEqual(['qwen']);
+    expect(qwen().versionArgs).toEqual(['--version']);
+    expect(qwen().helpArgs).toEqual(['--help']);
+    expect(qwen().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['--acp'], env: {}, stdin: 'prompt' });
+    expect(qwen().resume).toBe('protocol');
+    expect(isProviderDef(qwen())).toBe(true);
+  });
+
+  it('P-44: the login and the model catalog live in the CLI\'s own home, so the launch sets no config variable, never leaves the default approval mode and claims no isolation', () => {
+    expect(qwen().config).toEqual({ mechanism: 'none' });
+    expect(qwen().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'qwen3-coder-plus' }]) {
+      const launch = qwen().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      expect(launch.args).toEqual(['--acp']);
+      // `yolo` is the far end of the CLI's mode list and `--approval-mode` overrides the asking
+      // default; neither may reach a launch, and the deprecated telemetry flags stay out too.
+      expect(JSON.stringify(launch)).not.toMatch(/yolo|approval-mode|--telemetry|--auto/);
+    }
+  });
+
+  it('P-43: the session option exists but is never sent — no level is offered while the selection\'s persistence into the user\'s settings is unverified', () => {
+    // The CLI names the very level names Docket knows, so nothing differs and no map would be
+    // needed — but the package can write the reasoning-effort choice into the user's settings
+    // file and no operator run has cleared it, so the definition maps no level: nothing is
+    // offered and nothing is sent until that question is settled.
+    expect(qwen().effortArg).toBeUndefined();
+    expect(qwen().levelNames).toEqual({});
+    expect(providerLevelOf(qwen().levelNames, 'high')).toBeUndefined();
+    expect(effortOfProviderLevel(qwen().levelNames, 'high')).toBeUndefined();
+    expect(effortOfProviderLevel(qwen().levelNames, 'default')).toBeUndefined();
+  });
+
+  it('P-45: the removed auth command means no login probe at all — loggedIn stays null in discovery — and no probe could start a login', () => {
+    expect(qwen().authProbe).toBeUndefined();
+    expect(qwen().helpNeedsLogin).toBeUndefined();
+    for (const probe of [qwen().versionArgs, qwen().helpArgs]) {
+      expect(JSON.stringify(probe)).not.toMatch(/login|upgrade|uninstall|auth/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
+    expect(qwen().capabilities).toMatchObject({
+      permissionAsk: 'unknown',
+      quotaReport: 'none',
+      costReport: 'none',
+      images: true,
+      mcp: true,
+    });
   });
 });

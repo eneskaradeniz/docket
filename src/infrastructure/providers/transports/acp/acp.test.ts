@@ -738,4 +738,37 @@ describe('acp transport', () => {
       expect(setsOf(unlisted.logPath)).toEqual([]);
     });
   });
+
+  describe('model only (qwen shape)', () => {
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-43: a pinned model is selected through the model select and the reasoning-effort option is never set, whatever the request carries', async () => {
+      // The definition sends no effort: setting the CLI's reasoning_effort may persist into the
+      // user's settings file, so the run selects the model and stops there.
+      const run = await startRun('models-qwen', requestOf(runCwd(), { model: 'qwen3-coder-plus', effort: 'high' }));
+      await collect(run.handle.events);
+
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'qwen3-coder-plus' }]);
+      expect(setsOf(run.logPath).some((params) => params['configId'] === 'reasoning_effort')).toBe(false);
+    });
+
+    it('P-43: without a pinned model nothing is set, and a model the session does not list sets nothing', async () => {
+      const bare = await startRun('models-qwen', requestOf(runCwd(), { effort: 'max' }));
+      await collect(bare.handle.events);
+      expect(setsOf(bare.logPath)).toEqual([]);
+
+      const unlisted = await startRun('models-qwen', requestOf(runCwd(), { model: 'qwen-not-listed' }));
+      await collect(unlisted.handle.events);
+      expect(setsOf(unlisted.logPath)).toEqual([]);
+    });
+  });
 });

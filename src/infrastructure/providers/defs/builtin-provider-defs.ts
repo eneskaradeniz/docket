@@ -450,4 +450,43 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://github.com/XiaomiMiMo/MiMo-Code' },
     mark: null,
   },
+  {
+    id: 'qwen',
+    displayName: 'Qwen Code',
+    bins: ['qwen'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // No authProbe: the CLI's own `auth` command is removed (its --help says so), so discovery
+    // never guesses a login and `loggedIn` stays null. The one refusal a session gives —
+    // -32000 "Authentication required" — is mapped by the catalog path alone, never by discovery.
+    transport: 'acp',
+    // The CLI names the very level names Docket knows (plus `default`, which names none), but
+    // whether setting the session option persists into the user's settings file is unverified and
+    // the package can write that file, so no level is offered or sent: the empty map names no
+    // level and `effortArg` stays out. An operator run settles it; only then does the session
+    // option join, found by its category `thought_level`.
+    levelNames: {},
+    // The model catalog is the user's own settings file (their configured providers) and the
+    // login lives in that home, so no run-scoped redirection exists and Docket never writes the
+    // file; the credential stays whatever the machine's own configuration carries.
+    config: { mechanism: 'none' },
+    // Never `--yolo` or `--approval-mode yolo|auto`: the default mode asks for approval of file
+    // edits and shell commands, and every ask reaches the user. The deprecated --telemetry flags
+    // are not passed — telemetry is a settings key Docket never writes.
+    buildLaunch: () => ({ args: ['--acp'], env: {}, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://github.com/QwenLM/qwen-code' },
+    mark: null,
+  },
 ];
