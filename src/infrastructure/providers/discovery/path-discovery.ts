@@ -4,7 +4,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import type { LoginStates } from './login-states';
 import type { ProviderDef } from '../defs/index';
@@ -231,6 +231,23 @@ export const loggedInFromAuthStatus = (output: string): boolean | null => {
   return typeof flag === 'boolean' ? flag : null;
 };
 
+/** The login answer of a command that prints JSON with an `account` value: null is the logged-out
+ * answer and a populated object a login (both with exit 0); an unparseable answer, a missing key
+ * or a value that is neither null nor an object is unknown. Only that one key's null-ness is
+ * read, never a field of the account, so no account value can reach a log. */
+export const loggedInFromWhoami = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const account = (parsed as Record<string, unknown>)['account'];
+  if (account === null) return false;
+  return typeof account === 'object' && !Array.isArray(account) ? true : null;
+};
+
 /** Presence only: the file is never opened, so no credential content is read, logged or stored. */
 const loggedInFromPresenceFile = (
   rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
@@ -243,6 +260,26 @@ const loggedInFromPresenceFile = (
     return statSync(join(home, rule.file)).isFile();
   } catch {
     return false;
+  }
+};
+
+/** Whether a resolved wrapper is missing the second binary its agent entry delegates to (its own
+ * error names that path): presence only, the file is never opened. A resolved binary that already
+ * is the named file is self-sufficient, whatever directory it was found in. */
+const agentDelegateMissing = (
+  def: ProviderDef,
+  binPath: string,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const rule = def.agentDelegate;
+  if (rule === undefined) return false;
+  if (basename(binPath) === basename(rule.relativePath)) return false;
+  const home = env[rule.homeEnv] ?? homedir;
+  try {
+    return !statSync(join(home, rule.relativePath)).isFile();
+  } catch {
+    return true;
   }
 };
 
@@ -284,6 +321,9 @@ const probeAuth = async (
     // The boolean is the answer on both exit codes; no exit gate, unlike the count parsers above.
     return loggedInFromAuthStatus(outcome.stdout);
   }
+  if (def.authProbe.parse === 'account-null-json') {
+    return outcome.exitCode === 0 ? loggedInFromWhoami(outcome.stdout) : null;
+  }
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
 };
 
@@ -303,7 +343,9 @@ export function createPathDiscovery(
     def: ProviderDef,
   ): Promise<DiscoveredProvider> => {
     const binPath = resolveBinPath(def, env, dirs);
-    if (binPath === null) {
+    // A wrapper whose agent delegate is missing cannot launch anything Docket would run, so it
+    // reports exactly like a binary that was never found: the install hint is the remedy.
+    if (binPath === null || agentDelegateMissing(def, binPath, env, homedir)) {
       return { defId: def.id, binPath: null, version: null, loggedIn: null, optionalFlags: [] };
     }
     // Probes run in sequence on exactly the path that will be spawned; each carries its own timeout.

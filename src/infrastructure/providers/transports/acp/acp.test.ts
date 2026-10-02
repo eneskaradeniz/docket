@@ -819,4 +819,33 @@ describe('acp transport', () => {
       expect(setsOf(bare.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'thought_level', value: 'max' }]);
     });
   });
+
+  describe('modes only (kiro shape)', () => {
+    it('P-15: the kiro session shape — modes without configOptions, custom _kiro.dev notifications — opens a session and maps its turn without an error', async () => {
+      // The live agent answers session/new with modes and nothing else, then floods its own
+      // `_kiro.dev/*` notifications; the client must read the session id, ignore what it does not
+      // know and run the turn. No configOptions exist, so nothing is ever selected in-session.
+      const run = await startRun('models-kiro', requestOf(runCwd(), { model: 'auto', effort: 'high' }));
+      const events = await collect(run.handle.events);
+
+      expect(clientMethodSequence(clientMessages(run.logPath))).toEqual(['initialize', 'session/new', 'session/prompt']);
+      expect(events.map((event) => event.type)).toEqual([
+        'session_started',
+        'thinking',
+        'tool_call',
+        'tool_result',
+        'text',
+        'usage',
+        'raw',
+        'finished',
+      ]);
+      expect(events[events.length - 1]).toMatchObject({ type: 'finished', reason: 'completed' });
+      // The custom notifications are not session/update bodies: none becomes a raw event, and
+      // the one raw event above is the turn's own unknown update kind, as in every happy run.
+      const rawOfKiroNotification = events.some(
+        (event) => event.type === 'raw' && event.line.includes('_kiro.dev/'),
+      );
+      expect(rawOfKiroNotification).toBe(false);
+    });
+  });
 });

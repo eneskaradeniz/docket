@@ -57,6 +57,9 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   // The CLI reads its credential from the environment variable the user's own settings name, so
   // none is passed through here: an ambient key of another account never reaches a run.
   qwen: [],
+  // The CLI's documented headless key is a credential-shaped variable, so it reaches a child only
+  // through the chosen account, never through the ambient environment.
+  kiro: [],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

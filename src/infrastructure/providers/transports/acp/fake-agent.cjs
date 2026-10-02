@@ -236,6 +236,21 @@ const qoderConfigOptions = () => [
   { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'accept_edits', 'bypass_permissions', 'dont_ask', 'auto'].map((value) => ({ value, name: value })) },
 ];
 
+// The kiro shape: initialize names the CLI's terminal login as its one auth method, and
+// session/new answers modes only — no configOptions, no models, the model list rides the CLI's
+// own listing command instead — followed by the CLI's own custom `_kiro.dev/*` notifications
+// (slash commands, usage metadata, subagent list), which a client must ignore, never answer.
+const KIRO_MODES = ['kiro_default', 'kiro_planner', 'kiro_guide'];
+const kiroModesSession = () => ({
+  sessionId: freshSessionId,
+  modes: { currentModeId: 'kiro_default', availableModes: KIRO_MODES.map((id) => ({ id })) },
+});
+const sendKiroNotifications = () => {
+  send({ jsonrpc: '2.0', method: '_kiro.dev/commands/available', params: { sessionId, commands: ['/model', '/effort', '/usage'] } });
+  send({ jsonrpc: '2.0', method: '_kiro.dev/metadata', params: { sessionId, contextUsagePercentage: 0 } });
+  send({ jsonrpc: '2.0', method: '_kiro.dev/subagent/list_update', params: { sessionId, subagents: [] } });
+};
+
 const opencodeModelsSession = () => ({
   sessionId: freshSessionId,
   configOptions: [
@@ -318,15 +333,17 @@ const initializeResult = () => ({
     ...(advertiseLoadSession ? { loadSession: true } : {}),
     ...(advertiseSessionClose ? { sessionCapabilities: { close: {} } } : {}),
   },
-  agentInfo: { name: 'fake-agent', version: '1.0.0' },
+  agentInfo: { name: scenario === 'models-kiro' ? 'Kiro CLI Agent' : 'fake-agent', version: '1.0.0' },
   authMethods:
     scenario === 'models-grok'
       ? [{ id: 'grok.com' }]
-      : QWEN_SCENARIOS.includes(scenario)
-        ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
-        : QODER_SCENARIOS.includes(scenario)
-          ? [{ id: 'qodercli-login', name: 'Use your existing qodercli login' }]
-          : [],
+      : scenario === 'models-kiro'
+        ? [{ id: 'kiro-login', name: "Run 'kiro-cli login' in terminal" }]
+        : QWEN_SCENARIOS.includes(scenario)
+          ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
+          : QODER_SCENARIOS.includes(scenario)
+            ? [{ id: 'qodercli-login', name: 'Use your existing qodercli login' }]
+            : [],
   ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
@@ -497,6 +514,11 @@ const onLine = (line) => {
     }
     if (scenario === 'models-qwen') {
       respond(message.id, qwenModelsSession());
+      return;
+    }
+    if (scenario === 'models-kiro') {
+      respond(message.id, kiroModesSession());
+      sendKiroNotifications();
       return;
     }
     // The refusal a machine with no configured provider answers with (observed live).
