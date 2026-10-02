@@ -39,6 +39,9 @@ const FIXTURES = {
 const STREAM_JSON_FIXTURES: Readonly<Record<string, string>> = {
   agy: fileURLToPath(new URL('../transports/stream-json/fixtures/fake-agy-cli.cjs', import.meta.url)),
   amp: fileURLToPath(new URL('../transports/stream-json/dialects/amp/fixtures/fake-amp-cli.cjs', import.meta.url)),
+  codebuddy: fileURLToPath(
+    new URL('../transports/stream-json/dialects/codebuddy/fixtures/fake-codebuddy-cli.cjs', import.meta.url),
+  ),
 };
 
 /** What each spawned transport's fake calls each scripted behaviour. */

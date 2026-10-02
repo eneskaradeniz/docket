@@ -58,6 +58,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Kiro (`kiro`) | `kiro-login` | — | — | — | none | experimental |
 | Amp (`amp`) | `amp-login` | `low` (fast), `medium` (balanced), `high` (strong), `ultra` (strong) | — | — | none | experimental |
 | Kimi Code (`kimi`) | `kimi-login` | — | — | — | none | experimental |
+| CodeBuddy Code (`codebuddy`) | `codebuddy-login` | `default-model` (balanced), `fast-model` (fast), `balanced-model` (balanced), `primary-model` (strong), `deep-model` (strong), `hy4-preview` (strong), `hy3` (balanced), `deepseek-v4.1-flash` (fast), `gpt-6-astra` (strong), `gpt-5.6-sol` (strong), `gpt-5.6-terra` (balanced), `gpt-5.6-luna` (fast), `gpt-5.5` (balanced), `gpt-5.4` (balanced), `gemini-3.5-flash` (fast), `glm-5.3-flash` (fast), `glm-5.3` (strong), `glm-5.2` (balanced), `kimi-k3` (strong), `kimi-k2.6` (balanced), `kimi-k2.8-preview` (strong) | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | — | reported | experimental |
 <!-- provider-matrix:end -->
 
 ## License

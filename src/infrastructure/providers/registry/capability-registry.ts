@@ -267,6 +267,22 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): config is none — the login lives in the CLI's
+      // own ~/.codebuddy home and the launch redirects no home — so a run reads the CLI's own
+      // instruction files (CODEBUDDY.md first, otherwise AGENTS.md; CLAUDE.md is not documented
+      // as read) and the level stays capped at experimental. G3 is absent: the headless
+      // permission ask (the canUseTool control request) is unverified until an operator run, so
+      // a run relies on dontAsk plus a sandbox. G6 is absent: the end-to-end scenario test
+      // covers the sdk, app-server and acp transports, not stream-json.
+      providerId: 'codebuddy',
+      gates: {
+        G1: { kind: 'test', name: 'P-45: an ACP login probe reads an opened session as logged in, the documented refusal as logged out and any other answer as unknown' },
+        G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage with the reported cost and one completed finished' },
+        G4: { kind: 'test', name: 'P-11: a quota result ends usage, limit_hit and one finished limit, so exhausted runs still fold into one finished' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -675,6 +691,51 @@ export const CAPABILITY_REGISTRY = {
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       models: [],
+    },
+    {
+      // The model list is the CLI's own --help text, compiled into the shipped build, so it is
+      // static registry data: a logged-out machine has no readable account list, and the
+      // login-gated ACP session answer is a separate issue for the operator run. The five role
+      // aliases and the sixteen concrete ids follow the help text; the aliases' tiers follow
+      // their own names (fast and balanced self-describe, primary and deep read strong, default
+      // balanced) and the concrete ids' tiers are provisional judgements from each vendor
+      // family's flagship ordering, to be corrected by the operator run. The effort flag's
+      // levels are the CLI-wide vocabulary the rows carry; per-model support is unverified, so
+      // the operator run refines them. Whether a login's plan covers any row is not visible to
+      // a machine, so every row and the live default read unknown (P-40) and stay hand picks
+      // with spend consent. The result line reports total_cost_usd, so the cost kind is
+      // reported; whether a plan fills the field is an operator-run item.
+      id: 'codebuddy-login',
+      providerId: 'codebuddy',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'reported',
+      quotaProbe: 'none',
+      modelSource: 'static',
+      defaultBilling: 'unknown',
+      models: [
+        { id: 'default-model', family: 'tier', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'fast-model', family: 'tier', tier: 'fast', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'balanced-model', family: 'tier', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'primary-model', family: 'tier', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'deep-model', family: 'tier', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'hy4-preview', family: 'hy', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'hy3', family: 'hy', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'deepseek-v4.1-flash', family: 'deepseek', tier: 'fast', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-6-astra', family: 'gpt', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-5.6-sol', family: 'gpt', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-5.6-terra', family: 'gpt', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-5.6-luna', family: 'gpt', tier: 'fast', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-5.5', family: 'gpt', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gpt-5.4', family: 'gpt', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'gemini-3.5-flash', family: 'gemini', tier: 'fast', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'glm-5.3-flash', family: 'glm', tier: 'fast', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'glm-5.3', family: 'glm', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'glm-5.2', family: 'glm', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'kimi-k3', family: 'kimi', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'kimi-k2.6', family: 'kimi', tier: 'balanced', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'kimi-k2.8-preview', family: 'kimi', tier: 'strong', thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } },
+      ],
     },
   ],
 } as const satisfies CapabilityRegistry;

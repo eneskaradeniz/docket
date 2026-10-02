@@ -9,12 +9,24 @@ import { effortFlagArgs, type EffortArg, type LevelNames, type ProviderDef } fro
 // Each effort parameter below is taken from the provider's own help output, SDK typings or
 // protocol schema; a provider whose parameter is not verified carries none.
 const AGY_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
+const CODEBUDDY_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
 const COPILOT_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
 const GROK_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
 const KIRO_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
 // The flag exists, but no model's level set is verified, so no level is named: none is offered
 // and none is sent until an operator run records them (P-43's empty-map rule).
 const KIRO_LEVEL_NAMES: LevelNames = {};
+// The CLI's own --help lists minimal, low, medium, high, xhigh and max — six of the level names
+// Docket knows. Naming exactly those six keeps `none` and `ultra`, which the CLI does not list,
+// from ever being offered or sent (P-43's unmapped-name rule).
+const CODEBUDDY_LEVEL_NAMES: LevelNames = {
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
+};
 
 export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
   {
@@ -692,6 +704,72 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
       costReport: 'none',
     },
     installHint: { url: 'https://ampcode.com/docs/cli' },
+    mark: null,
+  },
+  {
+    id: 'codebuddy',
+    displayName: 'CodeBuddy Code',
+    // The npm package installs both names; the cask of the same name is an IDE and the unscoped
+    // `codebuddy-code` package is unrelated, so only these two candidates are searched.
+    bins: ['codebuddy', 'cbc'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // No documented status command exists, so the login state is read from the ACP session the
+    // CLI also speaks: initialize plus session/new, never a prompt, and the probe closes what it
+    // opened. Logged out, the session is refused with -32000 "Authentication required" — an
+    // error, not a browser — so the probe is safe without a login; the logged-in answer is
+    // settled by the operator run. The CLI's own `/login` and `doctor` (which hung on an empty
+    // home during discovery) are never run.
+    authProbe: {
+      args: ['--acp'],
+      acpSession: { notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' } },
+    },
+    transport: 'stream-json',
+    streamDialect: 'codebuddy',
+    effortArg: CODEBUDDY_EFFORT,
+    levelNames: CODEBUDDY_LEVEL_NAMES,
+    // The login lives in the CLI's own ~/.codebuddy home and no documented variable redirects
+    // its state, so the launch sets no variable and no flag: the machine's login stays reachable
+    // and no isolation is claimed (P-44).
+    config: { mechanism: 'none' },
+    // Print mode with the structured output; `--verbose` is the documented companion of the
+    // stream formats. `--permission-mode default` is passed explicitly so the asking default is
+    // the launch's own choice, never the CLI's drift; `-y`/`--dangerously-skip-permissions` and
+    // every other mode (acceptEdits, plan, dontAsk, auto, bypassPermissions) never reach a run.
+    // No documented resume flag exists, so nothing is resumed — a session ref is captured but
+    // never passed back.
+    buildLaunch: (input) => ({
+      args: [
+        '-p',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--permission-mode',
+        'default',
+        ...(input.model === undefined ? [] : ['--model', input.model]),
+        ...effortFlagArgs(CODEBUDDY_EFFORT, input.effort, CODEBUDDY_LEVEL_NAMES),
+      ],
+      env: {},
+      stdin: 'prompt',
+    }),
+    resume: 'none',
+    capabilities: {
+      structuredStream: true,
+      // The headless ask channel (the canUseTool control request of the stream-json input mode
+      // the launch does not use) is unverified until an operator run, so no ask is claimed to
+      // wait; a run relies on dontAsk plus a sandbox until then.
+      permissionAsk: 'unknown',
+      resume: false,
+      // No run-scoped config mechanism exists, so the run's MCP servers cannot reach the CLI.
+      mcp: 'unknown',
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: 'unknown',
+      quotaReport: 'none',
+      // The result line carries the CLI's own total_cost_usd, mapped as a reported USD cost.
+      costReport: 'reported',
+    },
+    installHint: { url: 'https://www.codebuddy.ai/docs/cli/installation' },
     mark: null,
   },
 ];
