@@ -105,7 +105,7 @@ const binBody = (script: BinScript): string => {
 
 const makeLister = (
   script: BinScript | undefined,
-  options: { readonly timeoutMs?: number } = {},
+  options: { readonly timeoutMs?: number; readonly needsLogin?: true; readonly loggedIn?: boolean | null } = {},
 ): {
   readonly calls: SpawnCall[];
   readonly binPath: string | null;
@@ -133,6 +133,8 @@ const makeLister = (
         ...(binPath === null ? {} : { command: binPath }),
         spawn,
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.needsLogin === undefined ? {} : { needsLogin: options.needsLogin }),
+        ...(options.loggedIn === undefined ? {} : { loggedIn: options.loggedIn }),
       }),
   };
 };
@@ -255,5 +257,36 @@ describe('level names (P-43)', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) throw new Error('unreachable');
     expect(parsed.value.map((row) => row.efforts)).toEqual([['none'], undefined, undefined]);
+  });
+});
+
+describe('login-gated listing (P-45)', () => {
+  it('P-45: a needsLogin command is not run while the login probe answered false or null, so the catalog falls back to bundled data', async () => {
+    for (const loggedIn of [false, null, undefined] as const) {
+      const lister = makeLister({}, { needsLogin: true, ...(loggedIn === undefined ? {} : { loggedIn }) });
+
+      const result = await lister.list();
+
+      expect(result.ok, String(loggedIn)).toBe(false);
+      expect(lister.calls, String(loggedIn)).toEqual([]);
+    }
+  });
+
+  it('P-45: a needsLogin command runs once the login probe answered true', async () => {
+    const lister = makeLister({}, { needsLogin: true, loggedIn: true });
+
+    const result = await lister.list();
+
+    expect(result).toEqual({ ok: true, value: EXPECTED_ROWS });
+    expect(lister.calls).toHaveLength(1);
+  });
+
+  it('P-45: an unmarked command runs whatever the login probe said — no built-in model-list command is marked', async () => {
+    const lister = makeLister({}, { loggedIn: false });
+
+    const result = await lister.list();
+
+    expect(result.ok).toBe(true);
+    expect(lister.calls).toHaveLength(1);
   });
 });

@@ -39,6 +39,9 @@ export interface CliCommandCatalogConfig {
   readonly spawn?: CliModelSpawn;
   /** The provider's own names for levels (its definition's `levelNames`). */
   readonly levelNames?: LevelNames;
+  /** Marks the command as needing a login even where the table does not (a definition the table
+   * does not cover yet, a fixture). */
+  readonly needsLogin?: true;
   /** The login probe's answer for this account's provider; a command marked `needsLogin` runs only
    * on `true`, so a logged-out CLI never opens a browser or starts a login flow from a listing. */
   readonly loggedIn?: boolean | null;
@@ -144,7 +147,7 @@ export async function listCliCommandRouteModels(
     return err({ code: 'unsupported', message: 'the provider has no model-listing command' });
   }
   // The catalog treats this error like any failed listing and answers from bundled data.
-  if (launch.needsLogin === true && config.loggedIn !== true) {
+  if ((launch.needsLogin === true || config.needsLogin === true) && config.loggedIn !== true) {
     return err({ code: 'unsupported', message: 'the models command needs a login and none is confirmed' });
   }
   const outcome = await runModelsCommand(

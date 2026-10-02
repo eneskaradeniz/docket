@@ -142,6 +142,9 @@ export interface ProviderDef {
   readonly authProbe?: ProviderAuthProbe;
   /** Scanned (stdout + stderr) for optional flags. */
   readonly helpArgs?: readonly string[];
+  /** The help command may open a browser, start a login flow or need an account: discovery runs
+   * it only after the login probe answered `true`. */
+  readonly helpNeedsLogin?: true;
   /** Flag → capability name; enabled only if the help output lists the flag. */
   readonly optionalFlags?: Readonly<Record<string, string>>;
   readonly transport: ProviderTransport;

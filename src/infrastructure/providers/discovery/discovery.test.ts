@@ -277,6 +277,34 @@ describe('path discovery', () => {
     expect(unlistedResults[0]?.optionalFlags).toEqual([]);
   });
 
+  it('P-45: a help command marked needsLogin is not run when the login probe answers false or null, and runs for true', async () => {
+    const bin = writeBin('home/.local/bin/gated-cli', binBody({ version: '1.0.0', authExit: 1 }));
+    const flags = ['--flag-stdout', '--flag-stderr'];
+    const gated = (overrides?: Partial<ProviderDef>): ProviderDef =>
+      defOf({ id: 'gated-cli', bins: ['gated-cli'], helpNeedsLogin: true, ...overrides });
+    const helpRuns = (calls: readonly SpawnCall[]): number => calls.filter((call) => call.args[0] === '--help').length;
+
+    const loggedOut = makeDiscovery([gated()], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+    const outResults = await collect(loggedOut.discovery);
+    expect(outResults[0]).toMatchObject({ loggedIn: false, optionalFlags: [] });
+    expect(helpRuns(loggedOut.calls)).toBe(0);
+
+    const unknown = makeDiscovery([gated({ authProbe: undefined })], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+    const unknownResults = await collect(unknown.discovery);
+    expect(unknownResults[0]).toMatchObject({ loggedIn: null, optionalFlags: [] });
+    expect(helpRuns(unknown.calls)).toBe(0);
+
+    writeBin('home/.local/bin/gated-cli', binBody({ version: '1.0.0', authExit: 0 }));
+    const loggedIn = makeDiscovery([gated()], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+    const inResults = await collect(loggedIn.discovery);
+    expect(inResults[0]).toMatchObject({ loggedIn: true, optionalFlags: flags });
+    expect(loggedIn.calls.map((call) => [call.command, call.args[0]])).toEqual([
+      [bin, '--version'],
+      [bin, 'login'],
+      [bin, '--help'],
+    ]);
+  });
+
   it('P-6: results stream per provider; a hanging binary delays only its own entry', async () => {
     writeBin('path-dir/fast-cli', binBody({ version: '1.0.0-fast' }));
     const slowBin = writeBin('home/.local/bin/slow-cli', binBody({ hangAll: true }));
