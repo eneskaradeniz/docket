@@ -42,11 +42,6 @@ const SECTIONS = [
 const PENDING = new Map([
   ['providers:P-37', '#581'],
   ['providers:P-38', '#581'],
-  ['application:A-48', '#647'],
-  ['application:A-49', '#647'],
-  ['application:A-50', '#647'],
-  ['application:A-51', '#647'],
-  ['application:A-52', '#647'],
   ['ui:U-27', '#648'],
   ['ui:U-29', '#650'],
   ['ui:U-30', '#650'],

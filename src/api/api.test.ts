@@ -1004,6 +1004,118 @@ describe('createApi', () => {
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
 
+    it('A-51: account.save writes a given limitPolicy, keeps the stored one when absent, rejects an unknown value without writing', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'ask', caps: [] });
+      const api = createApi(h.deps);
+      const base = { type: 'account.save', id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription' } as const;
+
+      expect(await api.command(ACTOR, base)).toEqual({ ok: true, id: ACCOUNT });
+      expect((await h.deps.accounts.get(ACCOUNT))?.limitPolicy).toBe('ask');
+
+      expect(await api.command(ACTOR, { ...base, limitPolicy: 'switch_pool' })).toEqual({ ok: true, id: ACCOUNT });
+      expect((await h.deps.accounts.get(ACCOUNT))?.limitPolicy).toBe('switch_pool');
+
+      const before = h.log.entries().length;
+      expect(await api.command(ACTOR, { ...base, label: 'Changed', limitPolicy: 'sometimes' })).toEqual({ ok: false, code: 'invalid_id' });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({ label: 'Main', limitPolicy: 'switch_pool' });
+      expect(h.log.entries().length).toBe(before);
+    });
+
+    describe('account.cap', () => {
+      const seedCapped = async (h: Harness, consentedModels?: readonly string[]): Promise<void> => {
+        await h.deps.accounts.save({
+          id: ACCOUNT,
+          provider: 'acme-prov',
+          label: 'Main',
+          authMode: 'api_key',
+          limitPolicy: 'wait_resume',
+          caps: [{ scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } }],
+          ...(consentedModels !== undefined ? { consentedModels } : {}),
+        });
+      };
+
+      it('A-52: account.cap.save adds a cap, replaces the one of the same scope, and audits account.saved', async () => {
+        const h = await createHarness();
+        await seedCapped(h);
+        const api = createApi(h.deps);
+
+        expect(await api.command(ACTOR, { type: 'account.cap.save', id: ACCOUNT, scope: 'account_day', amountUsd: 5, warnPercent: 80 })).toEqual({ ok: true });
+        expect(await api.command(ACTOR, { type: 'account.cap.save', id: ACCOUNT, scope: 'account_week', amountUsd: 40, warnPercent: 90 })).toEqual({ ok: true });
+
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toEqual([
+          { scope: 'account_week', cap: { amountUsd: 40, warnPercent: 90 } },
+          { scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } },
+        ]);
+        const audit = h.log.entries();
+        expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: ACCOUNT } });
+      });
+
+      it('A-52: an unknown scope is rejected at the edge; a bad amount or warn percent is invalid_cap; nothing is written', async () => {
+        const h = await createHarness();
+        await seedCapped(h);
+        const api = createApi(h.deps);
+        const before = h.log.entries().length;
+
+        expect(await api.command(ACTOR, { type: 'account.cap.save', id: ACCOUNT, scope: 'project', amountUsd: 5, warnPercent: 80 })).toEqual({ ok: false, code: 'invalid_id' });
+        for (const [amountUsd, warnPercent] of [[0, 80], [-1, 80], [Number.NaN, 80], [Number.POSITIVE_INFINITY, 80], [5, 0], [5, 101], [5, Number.NaN]] as const) {
+          expect(await api.command(ACTOR, { type: 'account.cap.save', id: ACCOUNT, scope: 'account_day', amountUsd, warnPercent })).toEqual({ ok: false, code: 'invalid_cap' });
+        }
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toEqual([{ scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } }]);
+        expect(h.log.entries().length).toBe(before);
+      });
+
+      it('A-52: an unknown account is not_found for save and remove, a malformed id is invalid_id', async () => {
+        const h = await createHarness();
+        const api = createApi(h.deps);
+
+        expect(await api.command(ACTOR, { type: 'account.cap.save', id: ACCOUNT, scope: 'account_day', amountUsd: 5, warnPercent: 80 })).toEqual({ ok: false, code: 'not_found' });
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'account_day' })).toEqual({ ok: false, code: 'not_found' });
+        expect(await api.command(ACTOR, { type: 'account.cap.save', id: 'nope', scope: 'account_day', amountUsd: 5, warnPercent: 80 })).toEqual({ ok: false, code: 'invalid_id' });
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: 'nope', scope: 'account_day' })).toEqual({ ok: false, code: 'invalid_id' });
+      });
+
+      it('A-52: account.cap.remove deletes the scope cap and audits account.saved; removing an absent scope changes nothing', async () => {
+        const h = await createHarness();
+        await h.deps.accounts.save({
+          id: ACCOUNT,
+          provider: 'acme-prov',
+          label: 'Main',
+          authMode: 'api_key',
+          limitPolicy: 'wait_resume',
+          caps: [
+            { scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } },
+            { scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } },
+          ],
+        });
+        const api = createApi(h.deps);
+
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'account_day' })).toEqual({ ok: true });
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toEqual([{ scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } }]);
+        const audit = h.log.entries();
+        expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: ACCOUNT } });
+
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'account_month' })).toEqual({ ok: true });
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toHaveLength(1);
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'bogus' })).toEqual({ ok: false, code: 'invalid_id' });
+      });
+
+      it('A-52: removing the last cap while consentedModels is non-empty is cap_required and writes nothing; with no consent it succeeds', async () => {
+        const h = await createHarness();
+        await seedCapped(h, ['model-x']);
+        const api = createApi(h.deps);
+        const before = h.log.entries().length;
+
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'account_week' })).toEqual({ ok: false, code: 'cap_required' });
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toHaveLength(1);
+        expect(h.log.entries().length).toBe(before);
+
+        await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'api_key', limitPolicy: 'wait_resume', caps: [{ scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } }], consentedModels: [] });
+        expect(await api.command(ACTOR, { type: 'account.cap.remove', id: ACCOUNT, scope: 'account_week' })).toEqual({ ok: true });
+        expect((await h.deps.accounts.get(ACCOUNT))?.caps).toEqual([]);
+      });
+    });
+
     it('P-40: account.consent.grant records the model and the cap, audited as account.consent.granted', async () => {
       const h = await createHarness();
       await h.deps.accounts.save({

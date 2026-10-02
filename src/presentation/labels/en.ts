@@ -26,6 +26,7 @@ export const EN: LabelBundle = {
   'error.binding_exists': 'The account is still referenced by a role binding; update the binding first.',
   'error.invalid_model': 'Invalid model.',
   'error.invalid_cap': 'The spend cap is invalid.',
+  'error.cap_required': 'The last spend cap cannot be removed while a model is consented; withdraw the consent first.',
   'error.not_a_deploy_gate': 'This gate is not a deploy gate.',
   'error.no_approval': 'Only a user can approve a deployment.',
   'error.confirmation_mismatch': 'The typed environment confirmation does not match; type the environment name exactly.',

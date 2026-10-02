@@ -14,14 +14,24 @@ export const RESERVE_MAX = 0.95;
 
 const DAY_MS = 86_400_000;
 
-// Which reserve value governs a meter: by window length when the provider gave one, otherwise by
-// cadence, and when even that says nothing the stricter of the two values applies.
-function reserveFor(meter: Meter, reserve: QuotaReserve): number {
+/** The class R-49 puts a meter in; `larger` = no window length and no calendar cadence, so the
+ *  larger of the two values governs it. */
+export type ReserveClass = 'short' | 'long' | 'larger';
+
+// By window length when the provider gave one, otherwise by cadence, and when even that says
+// nothing the stricter of the two values applies.
+export function reserveClassOf(meter: Meter): ReserveClass {
+  if (meter.durationMs !== undefined) return meter.durationMs < DAY_MS ? 'short' : 'long';
+  if (meter.cadence === 'calendar' || meter.cadence === 'billing_cycle') return 'long';
+  return 'larger';
+}
+
+/** The reserve share that governs this meter under R-49 (0 when none). */
+export function reserveFor(meter: Meter, reserve: QuotaReserve): number {
   const short = reserve.short ?? 0;
   const long = reserve.long ?? 0;
-  if (meter.durationMs !== undefined) return meter.durationMs < DAY_MS ? short : long;
-  if (meter.cadence === 'calendar' || meter.cadence === 'billing_cycle') return long;
-  return Math.max(short, long);
+  const reserveClass = reserveClassOf(meter);
+  return reserveClass === 'short' ? short : reserveClass === 'long' ? long : Math.max(short, long);
 }
 
 export type Headroom =

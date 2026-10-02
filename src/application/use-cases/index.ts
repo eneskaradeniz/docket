@@ -7,6 +7,7 @@ export * from './proposals';
 export * from './accounts';
 export * from './account-adoption';
 export * from './spend-consent';
+export * from './account-caps';
 export * from './app-update';
 export * from './deploy-gate';
 export * from './quota-poll';
