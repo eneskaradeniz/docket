@@ -141,7 +141,9 @@ export const CAPABILITY_REGISTRY = {
       // A compatible endpoint reached through the vendor CLI's Anthropic-style variables: the
       // registry fixes the endpoint host and the three tier aliases (ids and host follow the
       // provider's own coding-plan documentation), the account fixes the exact URL and its token.
-      // The Anthropic price table never applies to such an endpoint, so costs read as equivalents.
+      // The endpoint answers the standard supported-models call through the shared route
+      // environment, so the live list rides the SDK leg. The Anthropic price table never applies
+      // to such an endpoint, so costs read as equivalents.
       id: 'zai-glm',
       providerId: 'claude-code',
       authMode: 'api_key',
@@ -149,10 +151,28 @@ export const CAPABILITY_REGISTRY = {
       identity: 'secret',
       costKind: 'equivalent',
       quotaProbe: 'http_monitor',
-      modelSource: 'static',
+      modelSource: 'sdk',
       liveIsAuthoritative: true,
       models: [],
       tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
+    },
+    {
+      // The subscription login's models come from the CLI's own app-server control surface
+      // (initialize then model/list, no thread and no turn); the plan scopes the list, so it is
+      // authoritative. The same surface answers the rate-limit poll — a provider query — and the
+      // plan's allowance reads as equivalents. The provider documents that its agent is included
+      // across its plans with plan-varying usage limits, so a listed model the row itself says
+      // nothing about reads as covered by the plan.
+      id: 'codex-subscription',
+      providerId: 'codex',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'equivalent',
+      quotaProbe: 'provider_query',
+      modelSource: 'app-server',
+      liveIsAuthoritative: true,
+      defaultBilling: 'included',
+      models: [],
     },
   ],
 } as const satisfies CapabilityRegistry;
