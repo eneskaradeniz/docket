@@ -13,6 +13,8 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   codex: { subscription: 'codex-subscription' },
   copilot: { subscription: 'copilot-subscription' },
   agy: { subscription: 'agy-subscription' },
+  cursor: { subscription: 'cursor-subscription' },
+  opencode: { subscription: 'opencode-subscription' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

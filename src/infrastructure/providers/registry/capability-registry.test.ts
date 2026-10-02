@@ -61,15 +61,25 @@ describe('capability registry validity (P-28)', () => {
 });
 
 describe('model catalog data (P-29)', () => {
-  it('P-29: the two Claude route kinds and the compatible-endpoint kind mark their live list authoritative', () => {
+  it('P-29: the Claude, compatible-endpoint, command-listed and session-listed kinds mark their live list authoritative', () => {
     // A plan-scoped list hides models the account cannot use: subscription directories answer per
-    // plan, and a compatible endpoint answers per env-overridden tiers, so both must be able to
+    // plan, a compatible endpoint answers per env-overridden tiers, a CLI listing command answers
+    // per login, and an ACP session answers per logged-in plan — so all of them must be able to
     // drop bundled entries the live list does not contain.
     const authoritative = CAPABILITY_REGISTRY.routeKinds
       .filter((kind) => kind.liveIsAuthoritative === true)
       .map((kind) => kind.id)
       .sort();
-    expect(authoritative).toEqual(['agy-subscription', 'anthropic-api', 'anthropic-subscription', 'codex-subscription', 'copilot-subscription', 'zai-glm']);
+    expect(authoritative).toEqual([
+      'agy-subscription',
+      'anthropic-api',
+      'anthropic-subscription',
+      'codex-subscription',
+      'copilot-subscription',
+      'cursor-subscription',
+      'opencode-subscription',
+      'zai-glm',
+    ]);
   });
 
   it('P-29: the agy subscription kind lists its models from the CLI models command and leaves their billing unknown', () => {

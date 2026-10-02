@@ -217,6 +217,40 @@ export const CAPABILITY_REGISTRY = {
       liveIsAuthoritative: true,
       models: [],
     },
+    {
+      // The machine login's models come from a protocol session the provider opens on demand —
+      // initialize then session/new in a scratch directory, never a prompt — so the list reflects
+      // the logged-in plan and is authoritative. The provider reports no quota a machine can read
+      // (its spending state lives on a human-readable web dashboard), and its documentation does
+      // not say the CLI's model usage is covered by the plan's monthly pools, so a listed model
+      // reads unknown and stays a hand pick with spend consent (P-40).
+      id: 'cursor-subscription',
+      providerId: 'cursor',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'equivalent',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      models: [],
+    },
+    {
+      // Same session-listed surface, with the model select arriving as a config option of
+      // reserved category `model` and its effort sibling of category `thought_level`. Coverage
+      // depends on the login (a subscription's per-model dollar limits, a prepaid balance, or the
+      // free tier when nobody is logged in) and the documentation ties no listed model to a
+      // covered plan, so live rows read unknown; the per-model dollar windows the plan defines
+      // are not exposed to machines, so no probe exists.
+      id: 'opencode-subscription',
+      providerId: 'opencode',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'equivalent',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      models: [],
+    },
   ],
 } as const satisfies CapabilityRegistry;
 

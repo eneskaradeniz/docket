@@ -12,11 +12,10 @@ import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
 import type { ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { ACP_INITIALIZE_PARAMS, ACP_PROTOCOL_VERSION } from './connection';
 import { mapSessionUpdate, transcriptEntryOf, type TranscriptEntry } from './map-update';
 import { buildResumePrompt } from './resume-summary';
 
-const PROTOCOL_VERSION = 1;
-const CLIENT_INFO = { name: 'Docket', version: '2' };
 const METHOD_NOT_FOUND = -32601;
 const CRASH_MESSAGE = 'The agent session ended unexpectedly.';
 
@@ -412,20 +411,14 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
       };
 
       const handshake = async (): Promise<void> => {
-        const initialised = await requestRpc('initialize', {
-          protocolVersion: PROTOCOL_VERSION,
-          // Docket implements none of the optional client methods (filesystem, terminals,
-          // elicitation); omitted capabilities are the protocol's way of saying unsupported.
-          clientCapabilities: {},
-          clientInfo: CLIENT_INFO,
-        });
+        const initialised = await requestRpc('initialize', ACP_INITIALIZE_PARAMS);
         if (initialised.kind === 'error') {
           protocolFail('The agent did not complete the Agent Client Protocol handshake.');
           return;
         }
         const agentResult = asRecord(initialised.result);
         const version = agentResult === null ? undefined : agentResult.protocolVersion;
-        if (version !== PROTOCOL_VERSION) {
+        if (version !== ACP_PROTOCOL_VERSION) {
           protocolFail('The agent speaks a different Agent Client Protocol version.');
           return;
         }

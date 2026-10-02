@@ -117,6 +117,7 @@ const baseConfig = (query: QueryFn) => ({
     { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
     { id: 'copilot-subscription', authMode: 'subscription', provider: 'copilot' },
     { id: 'agy-subscription', authMode: 'subscription', provider: 'agy' },
+    { id: 'opencode-subscription', authMode: 'subscription', provider: 'opencode' },
   ]),
   query,
   ttlMs: 6 * 60 * 60 * 1000,
@@ -376,6 +377,44 @@ describe('createModelCatalog (P-29)', () => {
         billing: 'included',
       },
       { id: 'gpt-5.3', displayName: 'GPT-5.3', source: 'live', thinking: 'unknown', billing: 'included' },
+    ]);
+  });
+
+  it('P-29: an acp-session route kind dispatches to the ACP adapter — a plan-authoritative list whose rows bill unknown without a verified default', async () => {
+    // The fake ACP agent rides on the node binary; its session/new answer is scripted.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly env?: Readonly<Record<string, string>>; readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'models-opencode', join(dir, 'agent-log.jsonl')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'opencode' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, acp: { spawn } });
+
+    // No bundled records and no verified default billing: the live rows are the whole list and
+    // each reads unknown — never assumed free (P-40), because the provider's documentation ties
+    // no listed model to a covered plan.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'opencode/big-pickle',
+        displayName: 'opencode/Big Pickle',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/fledge-alpha-free',
+        displayName: 'opencode/Fledge Alpha Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/space-bunny-free',
+        displayName: 'opencode/Space Bunny Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
     ]);
   });
 
