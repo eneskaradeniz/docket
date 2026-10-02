@@ -84,9 +84,9 @@ Subscription identity on the SDK leg (no per-run config directory today) is spec
 
 ## Support tiers
 
-`supportTier()` (domain) derives the tier from capabilities:
+The support level (P-28, `supportLevel` over the capability record) decides the behaviour:
 
-| Tier | Condition | Behaviour |
+| Level | Condition | Behaviour |
 | --- | --- | --- |
 | `full` | structured stream + permission asks that really wait | Live approvals, write-scope enforcement by denial |
 | `isolated` | structured stream, no reliable permission asks | Runs freely inside its own worktree; changes reach the main line only through the diff gate with human approval |
@@ -336,4 +336,12 @@ Design and evidence: [provider-capabilities.md](provider-capabilities.md), one s
 - **P-38** A run that continues on another provider starts from a handoff pack Docket assembles (stage prompt, effective instructions, derived task state, the same worktree with checkpoint commits, a bounded rolling summary); native resume is never mixed with the pack; raw transcripts do not travel.
 - **P-39** Quota parsers turn any reported bucket into meters with the provider's own label, window, remaining share, reset and unit; bucket applicability is data (quota.md "Bucket applicability"); an unknown bucket never blocks; an unreadable payload reports `probe_failed` naming field names, never values.
 - **P-40** Every route and model has billing `included | metered | unknown`; `unknown` is never assumed free and shows `?`; tier resolution and limit-driven switches never pick a non-included model; a non-included model runs only with the user's consent and a spend cap (`needs_spend_consent` otherwise).
+
+## Candidate providers: effort, isolation, discovery safety (P-43 … P-45)
+
+Design: [provider-capabilities.md](provider-capabilities.md) §9.
+
+- **P-43** `EffortArg` covers how candidates take an effort: `flag` (argv), `request-field` (turn or thread request), `session-option` (an ACP config option, named by its `category` or its `configId`), and `model-suffix` (the level joins the model id with the definition's `separator`, e.g. `<model>/<level>`; the effort then never travels separately). A definition may carry `levelNames`, a map from `EffortLevel` to the provider's own value names (e.g. `none` ↔ `off`); a provider value with no entry and no identical `EffortLevel` is never offered, and catalogs read a provider's advertised levels through the reverse map. Unmapped effort → nothing is sent (never a guessed name).
+- **P-44** A definition declares how the CLI is kept from reading the user's configuration of other tools (instruction files, skills, hooks, MCP servers of another agent): an environment variable, a flag or a run-scoped home directory, plus the CLI's own telemetry-off flag where one exists. A definition that cannot declare such isolation is capped at `experimental` and its runs show that the CLI may read the user's other tool configuration.
+- **P-45** Discovery runs only probes that are safe without a login: a definition marks commands that may open a browser, start a login flow or need an account (`needsLogin`); discovery runs them only when the login probe returned `loggedIn === true`, never when it is `false` or `null`. A model-list command marked `needsLogin` is skipped while logged out and the catalog falls back to bundled data.
 
