@@ -398,6 +398,8 @@ export const LABEL_KEYS = [
   'candidates.keymove.title',
   'candidates.keymove.body',
   'candidates.keymove.switch',
+  'candidates.hint.login',
+  'candidates.install.copy',
   'candidates.providers.title',
   'settings.theme.label',
   'settings.theme.system',

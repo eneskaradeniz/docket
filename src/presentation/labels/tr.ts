@@ -365,6 +365,8 @@ export const TR: LabelBundle = {
   'candidates.keymove.title': "Erişim anahtarını Anahtar Zinciri'ne taşı",
   'candidates.keymove.body': "Açıkken anahtar yalnızca işletim sisteminin Anahtar Zinciri'nde saklanır. Değeri hiçbir yerde gösterilmez.",
   'candidates.keymove.switch': "Anahtarı taşı",
+  'candidates.hint.login': "Terminalde {name} ile giriş yap, sonra yeniden tara.",
+  'candidates.install.copy': "Kopyala",
   'candidates.providers.title': "Bulunan sağlayıcılar",
   'settings.theme.label': 'Tema',
   'settings.theme.system': 'Sistem',

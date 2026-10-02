@@ -364,7 +364,7 @@ export function createPathDiscovery(
     // A wrapper whose agent delegate is missing cannot launch anything Docket would run, so it
     // reports exactly like a binary that was never found: the install hint is the remedy.
     if (binPath === null || agentDelegateMissing(def, binPath, env, homedir)) {
-      return { defId: def.id, binPath: null, version: null, loggedIn: null, optionalFlags: [] };
+      return { defId: def.id, name: def.displayName, installUrl: def.installHint.url, binPath: null, version: null, loggedIn: null, optionalFlags: [] };
     }
     // Probes run in sequence on exactly the path that will be spawned; each carries its own timeout.
     const version = await probeVersion(spawnFn, def, binPath, timeoutMs, probeEnv);
@@ -379,7 +379,7 @@ export function createPathDiscovery(
       optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
       loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv, homedir);
     }
-    return { defId: def.id, binPath, version, loggedIn, optionalFlags };
+    return { defId: def.id, name: def.displayName, installUrl: def.installHint.url, binPath, version, loggedIn, optionalFlags };
   };
 
   return {

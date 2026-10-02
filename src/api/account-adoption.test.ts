@@ -48,11 +48,25 @@ describe('accounts.candidates', () => {
   it('returns the scan result, cached for the session, and rescans on refresh', async () => {
     const h = setup();
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, h);
-    expect(await api.query({ type: 'accounts.candidates' })).toEqual([ENDPOINT]);
+    expect(await api.query({ type: 'accounts.candidates' })).toEqual([{ ...ENDPOINT, provider: 'prov-a' }]);
     await api.query({ type: 'accounts.candidates' });
     expect(h.scans.count).toBe(1);
     await api.query({ type: 'accounts.candidates', refresh: true });
     expect(h.scans.count).toBe(2);
+  });
+
+  it('A-53: a candidate names its provider through the route kind, null when the route kind is unknown', async () => {
+    const h = setup();
+    const stranger: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.other', routeKind: 'no-such-route' };
+    const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, {
+      ...h,
+      discovery: { scan: async () => [ENDPOINT, stranger] },
+    });
+    const rows = await api.query({ type: 'accounts.candidates' });
+    expect(rows).toEqual([
+      { ...ENDPOINT, provider: 'prov-a' },
+      { ...stranger, provider: null },
+    ]);
   });
 
   it('answers not_found when no discovery is composed', async () => {

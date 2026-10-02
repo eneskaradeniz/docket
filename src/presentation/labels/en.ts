@@ -367,6 +367,8 @@ export const EN: LabelBundle = {
   'candidates.keymove.title': "Move the access key to the Keychain",
   'candidates.keymove.body': "When on, the key is kept only in the operating system keychain. Its value is never shown anywhere.",
   'candidates.keymove.switch': "Move the key",
+  'candidates.hint.login': "Log in with {name} in a terminal, then scan again.",
+  'candidates.install.copy': "Copy",
   'candidates.providers.title': "Providers found",
   'settings.theme.label': 'Theme',
   'settings.theme.system': 'System',

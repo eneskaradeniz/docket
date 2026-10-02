@@ -45,7 +45,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
                   onClick={() => store.select(row.id)}
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <ProviderMark mark={marks.markFor(row.markKey)} />
+                  <ProviderMark mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-mono text-[12.5px] text-ink">{row.label}</span>
                     {row.endpointHost !== null ? (
@@ -111,10 +111,23 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
           </span>
           <ul className="grid gap-1.5">
             {state.providers.map((provider) => (
-              <li key={provider.id} className="flex items-center gap-2.5 rounded-card border border-hairline px-3 py-1.5">
-                <ProviderMark mark={marks.markFor(provider.id)} />
-                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{provider.id}</span>
-                <span className="flex-none font-mono text-[11px] text-inkdim">{t(locale, provider.statusKey)}</span>
+              <li key={provider.id} className="grid gap-1.5 rounded-card border border-hairline px-3 py-1.5">
+                <div className="flex items-center gap-2.5">
+                  <ProviderMark mark={marks.markFor(provider.id)} />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{provider.name}</span>
+                  <span className="flex-none font-mono text-[11px] text-inkdim">{t(locale, provider.statusKey)}</span>
+                </div>
+                {provider.hintKey !== null ? (
+                  <p className="text-[12px] text-inkdim">{t(locale, provider.hintKey).replace('{name}', provider.name)}</p>
+                ) : null}
+                {provider.installUrl !== null ? (
+                  <div className="flex items-center gap-2 rounded-control bg-band px-2 py-1">
+                    <code className="min-w-0 flex-1 select-all truncate font-mono text-[11.5px] text-ink">{provider.installUrl}</code>
+                    <ActionButton onClick={() => void navigator.clipboard?.writeText(provider.installUrl ?? '')}>
+                      {t(locale, 'candidates.install.copy')}
+                    </ActionButton>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

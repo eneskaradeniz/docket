@@ -11,6 +11,7 @@ const base: CandidateFact = {
   displayPath: '~/.alpha',
   kind: 'subscription',
   routeKind: 'route-a',
+  provider: 'prov-a',
   hasOauthLogin: true,
   envOverrides: [],
   warnings: [],
@@ -22,6 +23,7 @@ const keyed: CandidateFact = {
   displayPath: '~/.beta',
   kind: 'compatible_endpoint',
   routeKind: 'route-b',
+  provider: null,
   endpointHost: 'api.example.test',
   hasOauthLogin: false,
   envOverrides: ['endpoint', 'token'],
@@ -65,12 +67,17 @@ describe('candidateRows', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: '/home/u/.alpha',
-      markKey: 'route-a',
+      markKey: 'prov-a',
       label: '~/.alpha',
       statusKey: 'candidates.status.ready',
       selectable: true,
       selected: false,
     });
+  });
+
+  it('U-34: the mark comes from the candidate provider; an unknown provider has none', () => {
+    const rows = candidateRows([base, keyed], null, false);
+    expect(rows.map((row) => row.markKey)).toEqual(['prov-a', null]);
   });
 
   it('U-34: unreadable is disabled and carries its reason', () => {
@@ -106,10 +113,10 @@ describe('candidateRows', () => {
 describe('providerRows', () => {
   it('U-34: a discovered provider reads ready, needs login or not installed; unknown login proves nothing', () => {
     const rows = providerRows([
-      { defId: 'p1', binPath: '/bin/p1', version: '1', loggedIn: true, optionalFlags: [] },
-      { defId: 'p2', binPath: '/bin/p2', version: '1', loggedIn: false, optionalFlags: [] },
-      { defId: 'p3', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
-      { defId: 'p4', binPath: '/bin/p4', version: null, loggedIn: null, optionalFlags: [] },
+      { defId: 'p1', name: 'One', installUrl: null, binPath: '/bin/p1', version: '1', loggedIn: true, optionalFlags: [] },
+      { defId: 'p2', name: 'Two', installUrl: null, binPath: '/bin/p2', version: '1', loggedIn: false, optionalFlags: [] },
+      { defId: 'p3', name: 'Three', installUrl: 'https://example.invalid/three', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+      { defId: 'p4', name: 'Four', installUrl: null, binPath: '/bin/p4', version: null, loggedIn: null, optionalFlags: [] },
     ]);
     expect(rows.map((r) => [r.id, r.statusKey])).toEqual([
       ['p1', 'candidates.status.ready'],
@@ -120,9 +127,26 @@ describe('providerRows', () => {
   });
 });
 
+describe('provider hints', () => {
+  const rows = providerRows([
+    { defId: 'p2', name: 'Two', installUrl: 'https://example.invalid/two', binPath: '/bin/p2', version: null, loggedIn: false, optionalFlags: [] },
+    { defId: 'p3', name: 'Three', installUrl: 'https://example.invalid/three', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+    { defId: 'p5', name: 'Five', installUrl: null, binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+  ]);
+
+  it('U-34: a provider that needs a login names itself in the login hint and shows no install link', () => {
+    expect(rows[0]).toMatchObject({ name: 'Two', hintKey: 'candidates.hint.login', installUrl: null });
+  });
+
+  it('U-34: a provider not found shows its install url as copyable text, never a command', () => {
+    expect(rows[1]).toMatchObject({ name: 'Three', hintKey: null, installUrl: 'https://example.invalid/three' });
+    expect(rows[2]).toMatchObject({ installUrl: null });
+  });
+});
+
 describe('createCandidatesStore', () => {
   it('U-34: load reads both queries and lists the rows; a failed reply lists nothing', async () => {
-    const f = fake([base, keyed], [{ defId: 'p1', binPath: '/b', version: null, loggedIn: true, optionalFlags: [] }]);
+    const f = fake([base, keyed], [{ defId: 'p1', name: 'One', installUrl: null, binPath: '/b', version: null, loggedIn: true, optionalFlags: [] }]);
     const store = make(f);
     await store.load();
     expect(store.state().rows).toHaveLength(2);

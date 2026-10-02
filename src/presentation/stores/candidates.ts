@@ -18,6 +18,8 @@ export interface CandidateFact {
   readonly displayPath: string;
   readonly kind: 'subscription' | 'compatible_endpoint';
   readonly routeKind: string;
+  /** The def id the route kind belongs to; null when unknown (A-53). */
+  readonly provider: string | null;
   readonly endpointHost?: string;
   readonly hasOauthLogin: boolean;
   readonly envOverrides: readonly ('endpoint' | 'token' | 'model')[];
@@ -28,6 +30,8 @@ export interface CandidateFact {
 /** The `providers.discovered` fields this list reads. */
 export interface ProviderFact {
   readonly defId: string;
+  readonly name: string;
+  readonly installUrl: string | null;
   readonly binPath: string | null;
   readonly version: string | null;
   readonly loggedIn: boolean | null;
@@ -40,8 +44,8 @@ export type CandidateWarnKey = Extract<LabelKey, `candidates.warn.${string}`>;
 export interface CandidateRow {
   /** The candidate's source path. */
   readonly id: string;
-  /** Looks up the provider mark; a route kind the marks do not know reads as the neutral glyph. */
-  readonly markKey: string;
+  /** The provider whose mark the row shows; null reads as the neutral glyph. */
+  readonly markKey: string | null;
   readonly label: string;
   readonly endpointHost: string | null;
   readonly statusKey: CandidateStatusKey;
@@ -56,7 +60,12 @@ export interface CandidateRow {
 
 export interface ProviderRow {
   readonly id: string;
+  readonly name: string;
   readonly statusKey: CandidateStatusKey;
+  /** The "log in in a terminal, then scan again" sentence (with `{name}`); only while a login is needed. */
+  readonly hintKey: LabelKey | null;
+  /** Where to install it, shown as copyable text; only while the provider is not found. */
+  readonly installUrl: string | null;
 }
 
 const WARN_KEY: Readonly<Record<'env_overrides_login', CandidateWarnKey>> = {
@@ -82,7 +91,7 @@ export const candidateRows = (
           : 'candidates.status.ready';
       return {
         id: fact.sourcePath,
-        markKey: fact.routeKind,
+        markKey: fact.provider,
         label: fact.displayPath,
         endpointHost: fact.endpointHost ?? null,
         statusKey,
@@ -97,8 +106,11 @@ export const candidateRows = (
 /** A provider row: found + logged in is ready, found + logged out needs a login, not found is not
  *  installed; a missing login probe proves nothing and reads as unknown. Pure. */
 export const providerRows = (facts: readonly ProviderFact[]): readonly ProviderRow[] =>
-  facts.map((fact) => ({
+  facts.map((fact): ProviderRow => ({
     id: fact.defId,
+    name: fact.name,
+    hintKey: fact.binPath !== null && fact.loggedIn === false ? 'candidates.hint.login' : null,
+    installUrl: fact.binPath === null ? fact.installUrl : null,
     statusKey:
       fact.binPath === null
         ? 'candidates.status.not_installed'
@@ -156,7 +168,7 @@ const isFact = (value: unknown): value is CandidateFact =>
   typeof value.alreadyAdded === 'boolean';
 
 const isProviderFact = (value: unknown): value is ProviderFact =>
-  typeof value === 'object' && value !== null && 'defId' in value && typeof value.defId === 'string' && 'binPath' in value;
+  typeof value === 'object' && value !== null && 'defId' in value && typeof value.defId === 'string' && 'name' in value && typeof value.name === 'string' && 'binPath' in value;
 
 /** The account's default label: the last segment of the candidate's display path. */
 const labelOf = (displayPath: string): string => displayPath.split('/').filter((part) => part !== '').pop() ?? displayPath;
