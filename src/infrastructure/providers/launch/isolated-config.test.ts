@@ -160,8 +160,8 @@ describe('run-scoped config writer (P-7)', () => {
   it('P-7: the config dir reaches the CLI through the provider config mechanism', async () => {
     const { runDir } = await createRoot();
 
-    const viaEnv = await writeRunConfig(runDir, defById('claude-code'), RUN_CAPABILITIES);
-    expect(viaEnv.env).toEqual({ CLAUDE_CONFIG_DIR: join(runDir, 'config') });
+    const viaEnv = await writeRunConfig(runDir, defById('opencode'), RUN_CAPABILITIES);
+    expect(viaEnv.env).toEqual({ OPENCODE_CONFIG_DIR: join(runDir, 'config') });
     expect(viaEnv.args).toEqual([]);
 
     const viaFlag = await writeRunConfig(runDir, flagDef(), RUN_CAPABILITIES);
@@ -252,6 +252,7 @@ describe('isolation and telemetry (P-44)', () => {
     const config = await writeRunConfig(runDir, defById('claude-code'), []);
 
     expect(config.args).toEqual([]);
-    expect(config.env).toEqual({ CLAUDE_CONFIG_DIR: config.configDir });
+    // The login lives in the CLI's own config directory, so no variable carries the run's.
+    expect(config.env).toEqual({});
   });
 });

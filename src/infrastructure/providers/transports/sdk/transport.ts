@@ -192,6 +192,11 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
       };
 
       const pump = async (): Promise<void> => {
+        // The outcome maps from the last `finished` (R-44), so a run the stream already spoiled —
+        // an auth error, or any error before a first assistant output — must not finish
+        // `completed`, even when the CLI closes its turn with a success result.
+        let sawAssistantOutput = false;
+        let spoiled = false;
         try {
           const session = runQuery({ prompt: prompt.stream, options });
           for await (const message of session) {
@@ -200,9 +205,14 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
               if (finished) break;
               if (event.type === 'finished') {
                 finished = true;
-                events.push(event);
+                events.push(event.reason === 'completed' && spoiled ? { ...event, reason: 'failed' } : event);
                 closeRun();
                 continue;
+              }
+              if (event.type === 'text' || event.type === 'thinking' || event.type === 'tool_call') {
+                sawAssistantOutput = true;
+              } else if (event.type === 'error' && (event.class === 'auth' || !sawAssistantOutput)) {
+                spoiled = true;
               }
               events.push(event);
             }

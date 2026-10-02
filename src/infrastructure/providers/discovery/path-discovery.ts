@@ -213,6 +213,21 @@ export const loggedInFromProviderKeys = (output: string): boolean | null => {
   return flags.every((flag) => flag === false) ? false : null;
 };
 
+/** The login answer of a command that prints JSON with a `loggedIn` boolean: the CLI reports the
+ * same field on its logged-in exit 0 and its logged-out exit 1, so the boolean is read on either
+ * exit code; nothing else in the object is looked at, so no account value can reach a log. */
+export const loggedInFromAuthStatus = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const flag = (parsed as Record<string, unknown>)['loggedIn'];
+  return typeof flag === 'boolean' ? flag : null;
+};
+
 /** Presence only: the file is never opened, so no credential content is read, logged or stored. */
 const loggedInFromPresenceFile = (
   rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
@@ -261,6 +276,10 @@ const probeAuth = async (
   }
   if (def.authProbe.parse === 'provider-key-present') {
     return outcome.exitCode === 0 ? loggedInFromProviderKeys(outcome.stdout) : null;
+  }
+  if (def.authProbe.parse === 'logged-in-json') {
+    // The boolean is the answer on both exit codes; no exit gate, unlike the count parsers above.
+    return loggedInFromAuthStatus(outcome.stdout);
   }
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
 };

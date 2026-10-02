@@ -109,8 +109,11 @@ export interface ProviderAuthProbe {
   /** Without `parse`, exit 0 = logged in. */
   readonly args: string[];
   /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
-   * output that names no count = unknown. */
-  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present';
+   * output that names no count = unknown.
+   * `logged-in-json`: the command prints JSON whose `loggedIn` boolean is the answer on either
+   * exit code; an output without that boolean = unknown. Only the boolean is read, never another
+   * field of the object, so no account value can reach a log. */
+  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json';
   /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
    * unknown, never logged in (a user may run with an own key and never log in).
    * `provider-key-present`: the command prints JSON whose `providers[]` carry a boolean
