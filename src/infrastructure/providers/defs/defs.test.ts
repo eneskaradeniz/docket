@@ -17,7 +17,7 @@ import {
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
 const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'];
+const MARKLESS_IDS: readonly string[] = ['hermes', 'atomcode', 'reasonix', 'qoder', 'kimi', 'amp', 'codebuddy'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -688,7 +688,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, qoder, kiro, kimi) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (hermes, atomcode, reasonix, qoder, kimi, amp, codebuddy) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -700,6 +700,14 @@ describe('provider marks (P-25)', () => {
       // One path's own data: path commands only, never svg markup or a second shape.
       expect(mark?.path.length, def.id).toBeGreaterThan(0);
       expect(mark?.path, def.id).not.toMatch(/[<>]/);
+    }
+  });
+
+  it('P-25: every placed mark is one well-formed path-data string with a declared fill rule', () => {
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      if (def.mark === null) continue;
+      expect(def.mark.path, def.id).toMatch(/^[Mm][-0-9.,\sMmLlHhVvCcSsQqTtAaZz]+$/);
+      expect(['evenodd', 'nonzero'], def.id).toContain(def.mark.fillRule);
     }
   });
 
