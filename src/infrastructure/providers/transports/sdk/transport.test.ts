@@ -977,7 +977,7 @@ describe('createSdkTransport', () => {
         expect(calls[0]?.options.mcpServers).toEqual({});
       });
 
-      it('P-44: a subscription account on the machine login leaves the config directory unset, whatever the ambient environment carries', async () => {
+      it('P-44: a subscription account on the machine login passes an ambient config directory through verbatim', async () => {
         const accounts = createFakeAccountRepo();
         await accounts.save(account('subscription'));
         const { query, calls } = scriptedQuery(async function* () {
@@ -994,9 +994,29 @@ describe('createSdkTransport', () => {
 
         await collect(unwrap(await transport.start(request())).events);
 
-        const env = calls[0]?.options.env;
-        expect(env?.CLAUDE_CONFIG_DIR).toBeUndefined();
-        expect(JSON.stringify(env)).not.toContain('/tmp/docket-sdk-transport');
+        // The machine login reads the CLI's own config directory as the CLI itself resolves it —
+        // its documented override variable included — so an ambient value rides through untouched.
+        expect(calls[0]?.options.env).toMatchObject({ CLAUDE_CONFIG_DIR: '/tmp/docket-sdk-transport/config' });
+      });
+
+      it('P-44: a subscription account on the machine login sets no config directory when the environment carries none', async () => {
+        const accounts = createFakeAccountRepo();
+        await accounts.save(account('subscription'));
+        const { query, calls } = scriptedQuery(async function* () {
+          yield successResult(0);
+        });
+        const transport = createSdkTransport({
+          clock: createFakeClock(START_AT),
+          accounts,
+          secrets: createFakeSecretVault(),
+          capabilities: routeCatalog,
+          baseEnv: { SHELL: '/bin/zsh' },
+          query,
+        });
+
+        await collect(unwrap(await transport.start(request())).events);
+
+        expect(calls[0]?.options.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
       });
 
       it('I-34: a compatible-endpoint run reports usage with the route kind costKind equivalent', async () => {

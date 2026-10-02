@@ -174,13 +174,13 @@ export function redact(text) {
   return masked.length > MESSAGE_LIMIT ? `${masked.slice(0, MESSAGE_LIMIT - 1)}…` : masked;
 }
 
-/** Pure: what discovery plus the run's events say about the login. An `auth` error event is the
- *  strongest evidence; otherwise the probe's answer stands; otherwise a session that started
- *  proves a login the probe could not read. */
+/** Pure: what discovery plus the run's events say about the login. The probe's answer is the
+ *  login answer (it read the CLI's own state before anything ran); when the probe had none, an
+ *  `auth` error event says no and a session that started says yes. */
 export function loginState(discoveredLoggedIn, events) {
-  if (events.some((event) => event.type === 'error' && event.class === 'auth')) return 'no';
   if (discoveredLoggedIn === true) return 'yes';
   if (discoveredLoggedIn === false) return 'no';
+  if (events.some((event) => event.type === 'error' && event.class === 'auth')) return 'no';
   return events.some((event) => event.type === 'session_started') ? 'yes' : 'unknown';
 }
 
@@ -257,8 +257,21 @@ export function summaryLines(summary) {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OPERATOR = { kind: 'user', id: 'operator-run', label: 'operator-run' };
 
-/** The allowlist the app gives agent CLIs: an allowlist cannot leak a variable it never named. */
-const CHILD_ENV_ALLOWLIST = ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'SHELL', 'USER'];
+/** The allowlist the app gives agent CLIs: an allowlist cannot leak a variable it never named.
+ *  CLAUDE_CONFIG_DIR is named on purpose — the claude CLI's machine login lives where its own
+ *  documented override variable points, so the run and the probe must read the same directory. */
+const CHILD_ENV_ALLOWLIST = [
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TERM',
+  'SHELL',
+  'USER',
+  'CLAUDE_CONFIG_DIR',
+];
 const pick = (names) => Object.fromEntries(names.filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
 const parentEnv = () => Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined));
 
