@@ -17,10 +17,12 @@ const DIR_NAME = /^\.claude(-[A-Za-z0-9_-]+)?$/;
 const DEFAULT_DIR_NAME = '.claude';
 const PROVIDER_ID = 'claude-code';
 const IDENTITY_FILE = '.claude.json';
-const SETTINGS_FILE = 'settings.json';
+export const SETTINGS_FILE = 'settings.json';
 
 const ENDPOINT_KEYS: ReadonlySet<string> = new Set(['ANTHROPIC_BASE_URL']);
-const TOKEN_KEYS: ReadonlySet<string> = new Set(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+/** Token env keys in the order the CLI prefers them; the importer reads the first one set. */
+export const TOKEN_KEY_ORDER: readonly string[] = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+const TOKEN_KEYS: ReadonlySet<string> = new Set(TOKEN_KEY_ORDER);
 const MODEL_KEYS: ReadonlySet<string> = new Set([
   'ANTHROPIC_MODEL',
   'ANTHROPIC_SMALL_FAST_MODEL',

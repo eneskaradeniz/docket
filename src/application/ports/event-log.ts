@@ -15,7 +15,7 @@ import type {
 export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
-  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved'
+  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.adopted' | 'account.removed' | 'binding.saved'
   | 'account.consent.granted' | 'account.consent.revoked'
   | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 
