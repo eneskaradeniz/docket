@@ -116,6 +116,32 @@ describe('createCodexRateLimitProbe', () => {
     });
   });
 
+  it('P-20: the recorded free-plan answer — one codex pool, a single 30-day window — maps from windowDurationMins, never from an assumed cadence', async () => {
+    const { probe } = makeProbe('free-plan');
+
+    const result = await probe.poll('codex', '/fake/codex-bin');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    // The recorded shape has no secondary window and no credits: exactly one reading, its whole
+    // duration stated by the server itself (43200 minutes — a month, not five hours or a week).
+    expect(result.value).toHaveLength(1);
+    const [reading] = result.value;
+    expect(reading?.pool).toEqual({ label: 'codex', kind: 'allowance', appliesTo: 'all' });
+    expect(reading?.meter).toEqual({
+      label: 'primary',
+      cadence: 'rolling_from_first_use',
+      durationMs: 2_592_000_000, // windowDurationMins 43200, the server's own statement
+      unit: 'fraction',
+      used: 0.01,
+      limit: 1,
+      remaining: 0.99,
+      resetPrecision: 'unknown',
+      observedAt: 1_790_000_000_000,
+      source: 'polled',
+    });
+  });
+
   it('P-20: absent window values stay absent — no duration without windowDurationMins, no reset without resetsAt, no pool label without limitName', async () => {
     const { probe } = makeProbe('sparse');
 

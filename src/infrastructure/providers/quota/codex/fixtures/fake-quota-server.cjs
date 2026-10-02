@@ -37,6 +37,16 @@ const RATE_LIMITS = {
 // without inventing a duration, a reset time or a pool label.
 const SPARSE_RATE_LIMITS = { primary: { usedPercent: 80 } };
 
+// Recorded shape of the live answer of account/rateLimits/read on a free plan (2026-10-02): one
+// `codex` limit id whose single window is a 30-day allowance (43200 minutes), no secondary
+// window, no credits. Field values as observed; nothing invented and nothing dropped.
+const FREE_PLAN_RATE_LIMITS = {
+  limitId: 'codex',
+  primary: { usedPercent: 1, windowDurationMins: 43200 },
+  secondary: null,
+  credits: { hasCredits: false },
+};
+
 const handleRequest = (msg) => {
   if (scenario === 'exit-early') {
     // Only initialize is answered; the process dies before anything else can complete.
@@ -49,6 +59,7 @@ const handleRequest = (msg) => {
   if (msg.method === 'account/rateLimits/read') {
     if (scenario === 'rpc-error') replyError(msg.id, -32000, 'not signed in');
     else if (scenario === 'sparse') reply(msg.id, { rateLimits: SPARSE_RATE_LIMITS });
+    else if (scenario === 'free-plan') reply(msg.id, { rateLimits: FREE_PLAN_RATE_LIMITS });
     else reply(msg.id, { ordinaryUsageAllowed: true, rateLimits: RATE_LIMITS, rateLimitsByLimitId: null, accountId: 'acc_1' });
     return;
   }

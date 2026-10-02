@@ -5,15 +5,12 @@
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { ModelInfo, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
-import type { AccountRecord, CapabilityCatalog, SecretVault, TransportError } from '../../../application/index';
+import type { AccountRecord, CapabilityCatalog, SecretVault } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
 import { buildRouteEnvironment } from '../transports/sdk/route-env';
 import type { QueryFn } from '../transports/sdk/transport';
-
-/** The route-environment errors plus the call's own timeout; nothing here ever carries an
- * environment value or a vendor crash text. */
-export type CatalogError = { readonly code: TransportError['code'] | 'timeout'; readonly message: string };
+import type { CatalogError } from './model-catalog';
 
 export interface ClaudeCatalogConfig {
   readonly secrets: Pick<SecretVault, 'get'>;
@@ -27,7 +24,9 @@ export interface ClaudeCatalogConfig {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
+/** The effort vocabulary a live row may advertise; anything else a server lists is not a level
+ * Docket knows and is dropped rather than passed through. */
+export const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
   'none',
   'minimal',
   'low',
