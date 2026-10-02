@@ -54,10 +54,24 @@ describe('capability registry validity (P-28)', () => {
     expect(violationsOf({ ...CAPABILITY_REGISTRY, providers })).not.toEqual([]);
   });
 
-  it('P-28: every built-in def id has a ProviderRecord', () => {
+  it('P-28: every built-in def id has a ProviderRecord, and a record without a def is planned', () => {
     const defIds = BUILTIN_PROVIDER_DEFS.map((def) => def.id).sort();
-    const recordIds = CAPABILITY_REGISTRY.providers.map((provider) => provider.providerId).sort();
+    const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
+    const recordIds = records
+      .filter((provider) => provider.planned !== true)
+      .map((provider) => provider.providerId)
+      .sort();
     expect(recordIds).toEqual(defIds);
+    for (const provider of records) {
+      if (!defIds.includes(provider.providerId)) expect(provider.planned, provider.providerId).toBe(true);
+    }
+  });
+
+  it('P-28: the devin record is planned with no definition, because no documented switch the launch can pass stops its import of the user\'s Claude Code configuration', () => {
+    expect(findProvider('devin')).toMatchObject({ planned: true });
+    expect(BUILTIN_PROVIDER_DEFS.some((def) => def.id === 'devin')).toBe(false);
+    const record = findProvider('devin');
+    expect(record === undefined ? undefined : supportLevel(record)).toBe('planned');
   });
 
   it('P-28: findProvider and findRouteKind resolve entries and stay undefined for the unknown', () => {
@@ -298,12 +312,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe and mimo carries isolation evidence, and all eight stay capped at experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo and devin carries isolation evidence, and all nine stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -324,6 +338,7 @@ describe('isolation evidence (P-44)', () => {
       reasonix: 'experimental',
       vibe: 'experimental',
       mimo: 'experimental',
+      devin: 'planned',
     });
   });
 
@@ -405,7 +420,7 @@ describe('isolation evidence (P-44)', () => {
 
   it('P-44: a provider whose record has no isolation evidence is capped at experimental', () => {
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
-    for (const provider of records) {
+    for (const provider of records.filter((record) => record.planned !== true)) {
       const { isolation: _evidence, ...bare } = provider;
       expect(supportLevel(bare), provider.providerId).toBe('experimental');
     }

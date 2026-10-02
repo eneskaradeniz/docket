@@ -50,6 +50,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
 | AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
 | Mistral Vibe (`vibe`) | `vibe-login` | — | — | — | none | experimental |
+| devin | — | — | — | — | — | planned |
 | Reasonix (`reasonix`) | `reasonix-login` | — | — | — | none | experimental |
 | MiMo Code (`mimo`) | `mimo-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->

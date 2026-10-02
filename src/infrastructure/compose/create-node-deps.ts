@@ -25,7 +25,7 @@ import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes }
 import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
-import { createNodeAccountScan, createNodeCredentialImporter } from '../providers/discovery/index';
+import { createNodeAccountScan, createNodeCredentialImporter, type LoginStates } from '../providers/discovery/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -35,6 +35,9 @@ export interface NodeDepsConfig {
   readonly commandEnv: Readonly<Record<string, string>>;
   readonly clock?: Clock; // default createSystemClock()
   readonly random?: RandomBytes;
+  /** The latest login answers of the discovery passes the root runs; the model catalog reads them
+   * at every listing, so a needsLogin command never runs on a guess. Absent = nothing is known. */
+  readonly loginStates?: Pick<LoginStates, 'get'>;
 }
 
 export interface NodeDeps {
@@ -69,7 +72,13 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     capabilities: createCapabilityCatalog(),
     // The catalog call builds its environment from the same allowlist the transports do, so a
     // listing never sees a different child than a run of the same account would.
-    modelCatalog: createModelCatalog({ accounts, secrets, baseEnv: config.commandEnv, clock }),
+    modelCatalog: createModelCatalog({
+      accounts,
+      secrets,
+      baseEnv: config.commandEnv,
+      clock,
+      ...(config.loginStates === undefined ? {} : { loginStates: config.loginStates }),
+    }),
     projects,
     repos,
     bindings: createSqliteBindingRepo(db),
