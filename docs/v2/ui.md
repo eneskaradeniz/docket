@@ -112,7 +112,7 @@ Deploy approval passes the gate's `environment`; a protected environment without
 
 ## Phase 3.5 — the rev-7 shell (U-15 … U-21)
 
-Visual source of truth: the operator-approved OpenDesign prototype "Docket v2" → `index.html`
+Visual source of truth: the operator-approved prototype "Docket v2" → `index.html`
 (rev 7) — the same standing as the design book for tokens. From 2026-09-30 the running app itself
 is the visual source; the rev-8 prototype is historical and is not updated. The information architecture is fixed
 by the main-screen decisions (K-1…K-8, 2026-09-28/29): the Pano navigation item is gone — a board

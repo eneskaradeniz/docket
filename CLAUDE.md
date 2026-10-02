@@ -69,6 +69,3 @@ ask; do not pick one yourself.
 ## CI
 - `npm run typecheck`, `npm test`, `npm run build`, `npm run check:boundaries` run on every PR and on
   pushes to `main`. `check:boundaries` runs the v1 checks and the v2 layer checks.
-
-## Do not read
-- `~/source/docket-arsiv/` — archived v1 memories. Stale by definition.
