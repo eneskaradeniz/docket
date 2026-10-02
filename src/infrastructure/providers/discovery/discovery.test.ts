@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
-import { createPathDiscovery, loggedInFromCredentialCount, type ProbeSpawn } from './path-discovery';
+import { createPathDiscovery, loggedInFromCredentialCount, loggedInFromProviderKeys, type ProbeSpawn } from './path-discovery';
 
 let root: string;
 
@@ -482,6 +482,45 @@ describe('credential-count login probe (kilo)', () => {
       const { discovery } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
       const results = await collect(discovery);
       expect(results[0]?.loggedIn, `${answer} / exit ${exit}`).toBe(expected);
+    }
+  });
+});
+
+describe('provider-key login probe (reasonix)', () => {
+  const doctor = (...flags: readonly unknown[]): string =>
+    JSON.stringify({ version: 'v1', providers: flags.map((key_present) => ({ name: 'p', key_present, api_key_env: 'SOME_ENV' })) });
+
+  it('G1: one configured key is a login, all absent is none, and an unreadable answer is unknown', () => {
+    expect(loggedInFromProviderKeys(doctor(true, false))).toBe(true);
+    expect(loggedInFromProviderKeys(doctor(false, true))).toBe(true);
+    expect(loggedInFromProviderKeys(doctor(false, false))).toBe(false);
+    expect(loggedInFromProviderKeys(doctor(true))).toBe(true);
+    expect(loggedInFromProviderKeys(doctor(false, 'yes'))).toBeNull();
+    expect(loggedInFromProviderKeys(doctor())).toBeNull();
+    expect(loggedInFromProviderKeys('garbage')).toBeNull();
+    expect(loggedInFromProviderKeys('')).toBeNull();
+    expect(loggedInFromProviderKeys('[]')).toBeNull();
+    expect(loggedInFromProviderKeys('{"providers":"x"}')).toBeNull();
+    expect(loggedInFromProviderKeys('{}')).toBeNull();
+  });
+
+  it('G1: the reasonix definition probes `doctor --json` once, never runs setup, and reads only the booleans', async () => {
+    const reasonix = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'reasonix');
+    const def = defOf({ id: 'reasonix-like', bins: ['reasonix-like'], helpArgs: undefined, optionalFlags: undefined, authProbe: reasonix?.authProbe });
+    const body = (answer: string, exit = 0): string =>
+      `case "$1" in\n  --version) echo "reasonix v1.39.7"; exit 0;;\n  doctor) echo '${answer}'; exit ${exit};;\nesac\nexit 0`;
+    for (const [answer, exit, expected] of [
+      [doctor(false, false), 0, false],
+      [doctor(false, true), 0, true],
+      ['not json', 0, null],
+      [doctor(true), 1, null],
+    ] as const) {
+      writeBin('home/.local/bin/reasonix-like', body(answer, exit));
+      const { discovery, calls } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      expect(results[0]?.loggedIn, `${answer} / exit ${exit}`).toBe(expected);
+      expect(results[0]?.version).toBe('reasonix v1.39.7');
+      expect(calls.map((call) => call.args)).toEqual([['--version'], ['doctor', '--json']]);
     }
   });
 });

@@ -138,6 +138,19 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the one documented variable that moves state
+      // leaves the global provider credentials and config in the CLI's own home, so no run-scoped
+      // home exists and the level stays capped at experimental. G3 is absent: the permission request is documented but
+      // unproven until an operator run. G4 is absent: the CLI's cost quote is not mapped.
+      providerId: 'reasonix',
+      gates: {
+        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -380,6 +393,25 @@ export const CAPABILITY_REGISTRY = {
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The CLI is a multi-vendor harness whose built-in provider presets all report the
+      // pay-as-you-go billing mode (its billing document names `payg` for a provider and its
+      // `doctor billing --json` reports it for each built-in), so live rows default to metered
+      // and need spend consent and a cap (P-40). A preset in the `subscription_equivalent` mode or
+      // a custom endpoint is not told apart from the session answer and stays a hand pick the
+      // user confirms. The model select exists only after a key is configured; no quota channel
+      // exists, and the CLI's own cost quote is not mapped, so no cost kind is claimed.
+      id: 'reasonix-login',
+      providerId: 'reasonix',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'metered',
       models: [],
     },
   ],

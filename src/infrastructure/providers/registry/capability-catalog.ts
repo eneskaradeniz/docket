@@ -19,6 +19,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   kilo: { subscription: 'kilo-login' },
   'grok-build': { subscription: 'grok-build-login' },
   atomcode: { subscription: 'atomcode-login' },
+  reasonix: { subscription: 'reasonix-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

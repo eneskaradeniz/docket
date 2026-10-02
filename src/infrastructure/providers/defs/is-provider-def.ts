@@ -109,7 +109,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']) && isPresenceFileProbe(authProbe['presenceFile']))) {
     return false;
   }
-  if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count' && authProbe['parse'] !== 'logged-out-text') {
+  if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count' && authProbe['parse'] !== 'logged-out-text' && authProbe['parse'] !== 'provider-key-present') {
     return false;
   }
   if (isRecord(authProbe) && authProbe['parse'] === 'logged-out-text' && !isNonEmptyString(authProbe['loggedOutText'])) return false;
