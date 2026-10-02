@@ -99,8 +99,17 @@ export type ProviderTransport = 'sdk' | 'app-server' | 'acp' | 'stream-json';
 
 export type ProviderResumeMode = 'specify' | 'capture' | 'protocol' | 'none';
 
+/**
+ * How the login answer is read. Without `acpSession`, `args` is a command whose exit 0 means
+ * logged in. With it, `args` launch the CLI's ACP mode and the probe opens one session (never a
+ * prompt): a session that opens means logged in, an error matching `notLoggedIn` means logged
+ * out, and anything else — including an unparseable answer — is unknown.
+ */
 export interface ProviderAuthProbe {
-  readonly args: string[]; // exit 0 = logged in
+  readonly args: string[];
+  readonly acpSession?: {
+    readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
+  };
 }
 
 export interface ProviderConfig {

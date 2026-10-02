@@ -185,4 +185,38 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://opencode.ai/docs' },
     mark: { viewBox: '0 0 24 24', path: 'M22 24H2V0h20zM17 4.8H7v14.4h10z', fillRule: 'nonzero' },
   },
+  {
+    id: 'hermes',
+    displayName: 'Hermes Agent',
+    bins: ['hermes'],
+    // The first line of the answer is the version; later lines describe the installation.
+    versionArgs: ['--version'],
+    // The CLI exposes no login command with a reliable exit code, so the login state is read from
+    // the ACP session itself: a machine with no inference provider refuses `session/new` with
+    // this one error. The CLI's own `--setup` login is never run by discovery.
+    authProbe: {
+      args: ['acp'],
+      acpSession: { notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any AI provider' } },
+    },
+    transport: 'acp',
+    // The CLI's own home variable. The launch deliberately does not set it: a run-scoped home
+    // would lose the machine's login, so the CLI reads its own home (no isolation is claimed).
+    config: { mechanism: 'env-var', name: 'HERMES_HOME' },
+    // No `--yolo` and no yolo variable, ever: every approval the CLI asks for reaches the user.
+    buildLaunch: () => ({ args: ['acp'], env: {}, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: true,
+      resume: true,
+      mcp: 'unknown',
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://hermes-agent.nousresearch.com/docs/getting-started/installation' },
+    mark: null,
+  },
 ];

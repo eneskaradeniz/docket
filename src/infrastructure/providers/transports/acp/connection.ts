@@ -26,7 +26,11 @@ export const ACP_INITIALIZE_PARAMS = {
 
 export type AcpConnectionError = {
   readonly code: 'not_installed' | 'timeout' | 'protocol' | 'closed';
+  /** Never carries the agent's own text. */
   readonly message: string;
+  /** A protocol error's JSON-RPC code and text, for a caller that must recognise one known
+   * answer (a login refusal). It is matched, never displayed or logged. */
+  readonly rpc?: { readonly code: number; readonly text: string };
 };
 
 /** The narrow spawn surface a connection needs; the real node spawn satisfies it directly. The
@@ -60,6 +64,19 @@ const METHOD_NOT_FOUND = -32601;
 
 export const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The strings an RPC error carries: its message plus the string values of a `data` object, where
+ * some agents put the human-readable detail. */
+const rpcErrorText = (error: Readonly<Record<string, unknown>>): string => {
+  const parts: string[] = [];
+  if (typeof error['message'] === 'string') parts.push(error['message']);
+  const data = error['data'];
+  if (typeof data === 'string') parts.push(data);
+  else if (isRecord(data)) {
+    for (const value of Object.values(data)) if (typeof value === 'string') parts.push(value);
+  }
+  return parts.join('\n');
+};
 
 interface Pending {
   settle(result: Result<unknown, AcpConnectionError>): void;
@@ -148,9 +165,17 @@ export function openAcpConnection(config: AcpConnectionConfig): Result<AcpConnec
     if (entry === undefined) return; // unknown or already settled: ignored
     pending.delete(id);
     clearTimeout(entry.timer);
-    if (isRecord(parsed['error'])) {
+    const rpcError = parsed['error'];
+    if (isRecord(rpcError)) {
       // The agent's own error text is not relayed: it may quote environment values.
-      entry.settle(err({ code: 'protocol', message: 'the agent answered with an RPC error' }));
+      const code = rpcError['code'];
+      entry.settle(
+        err({
+          code: 'protocol',
+          message: 'the agent answered with an RPC error',
+          ...(typeof code === 'number' ? { rpc: { code, text: rpcErrorText(rpcError) } } : {}),
+        }),
+      );
       return;
     }
     entry.settle(ok(parsed['result']));

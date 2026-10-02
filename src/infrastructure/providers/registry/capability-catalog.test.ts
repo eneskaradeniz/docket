@@ -15,6 +15,7 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKindOf({ provider: 'copilot', authMode: 'subscription' })).toBe('copilot-subscription');
     expect(catalog.routeKindOf({ provider: 'cursor', authMode: 'subscription' })).toBe('cursor-subscription');
     expect(catalog.routeKindOf({ provider: 'opencode', authMode: 'subscription' })).toBe('opencode-subscription');
+    expect(catalog.routeKindOf({ provider: 'hermes', authMode: 'subscription' })).toBe('hermes-subscription');
   });
 
   it('A-44: an explicit routeKind wins over the default; an unknown provider resolves no kind', () => {

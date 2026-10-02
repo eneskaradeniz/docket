@@ -244,4 +244,68 @@ describe('listAcpSessionModels (P-29)', () => {
     });
     expect(harness.calls).toEqual([]);
   });
+
+  it('P-29: the available-models list of a hermes session keeps provider:model ids whole and offers no thought levels', async () => {
+    const harness = makeSpawn('models-hermes');
+
+    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'hermes', args: ['acp'] }]);
+    // Colons and slashes inside an id are the provider's own syntax; nothing is split or rewritten.
+    expect(listed.value).toEqual([
+      { id: 'nous:hermes-4-405b', displayName: 'Hermes 4 405B' },
+      { id: 'openrouter:vendor/some-model:free', displayName: 'some-model (free)' },
+      { id: 'custom:local:llama-3', displayName: 'llama-3' },
+    ]);
+    expect(listed.value.every((row) => row.efforts === undefined)).toBe(true);
+    // No prompt is ever sent, and the session is closed only where the agent advertises it.
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
+
+  it('P-29: a hermes session closes when the agent advertises close', async () => {
+    const harness = makeSpawn('models-hermes-close');
+
+    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed.ok).toBe(true);
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new', 'session/close']);
+  });
+
+  it('P-45: the login refusal of session/new is a not_logged_in error that relays no agent text, and the child is gone', async () => {
+    const harness = makeSpawn('session-login-refused');
+
+    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed).toEqual({
+      ok: false,
+      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
+    });
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
+
+  it('P-45: another error at session/new stays an ordinary refusal, not a login state', async () => {
+    const harness = makeSpawn('session-internal-error');
+
+    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed).toEqual({
+      ok: false,
+      error: { code: 'unsupported', message: 'the agent refused the session request' },
+    });
+  });
+
+  it('P-29: a hermes agent that never answers fails at the timeout and does not outlive the listing', async () => {
+    const harness = makeSpawn('models-silent');
+
+    const listed = await listAcpSessionModels(accountOf('hermes'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
+
+    expect(listed.ok).toBe(false);
+    if (listed.ok) throw new Error('unreachable');
+    expect(listed.error.code).toBe('timeout');
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
 });

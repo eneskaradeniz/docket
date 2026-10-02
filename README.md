@@ -45,6 +45,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |
 | Cursor Agent (`cursor`) | `cursor-subscription` | — | — | — | equivalent | experimental |
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
+| Hermes Agent (`hermes`) | `hermes-subscription` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License

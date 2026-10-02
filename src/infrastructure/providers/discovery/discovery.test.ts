@@ -6,10 +6,11 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
-import type { ProviderDef } from '../defs/index';
+import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
 import { createPathDiscovery, type ProbeSpawn } from './path-discovery';
 
 let root: string;
@@ -369,4 +370,57 @@ describe('path discovery', () => {
     expect(results).toEqual([{ defId: 'absent-cli', binPath: null, version: null, loggedIn: null, optionalFlags: [] }]);
     expect(calls).toHaveLength(0);
   });
+});
+
+describe('ACP login probe in discovery (P-45)', () => {
+  const FAKE_AGENT = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+  const hermesDef = (): ProviderDef => {
+    const def = BUILTIN_PROVIDER_DEFS.find((candidate) => candidate.id === 'hermes');
+    if (def === undefined) throw new Error('missing hermes definition');
+    return def;
+  };
+  /** A `hermes` stand-in: the multi-line --version answer and the fake ACP agent behind `acp`. */
+  const writeHermes = (dir: string, scenario: string): string =>
+    writeBin(
+      `${dir}/hermes`,
+      `case "$1" in
+  --version)
+    echo "Hermes Agent v0.21.4 (2026.9.21)"
+    echo "Install directory: /somewhere"
+    exit 0
+    ;;
+  acp)
+    exec "${process.execPath}" "${FAKE_AGENT}" ${scenario} "${join(root, dir, 'agent-log.jsonl')}"
+    ;;
+esac
+exit 0`,
+    );
+
+  it('P-45: discovery reads the hermes version from the first line and the login from an ACP session, with no ambient credential in the child', async () => {
+    for (const [scenario, expected] of [
+      ['models-hermes', true],
+      ['session-login-refused', false],
+      ['session-internal-error', null],
+    ] as const) {
+      const bin = writeHermes(`hermes-${scenario}`, scenario);
+      const { discovery, calls } = makeDiscovery(
+        [hermesDef()],
+        { PATH: EMPTY_PATH(), DOCKET_HERMES_BIN: bin, OPENAI_API_KEY: 'sk-ambient', HOME: HOME() },
+        { probeTimeoutMs: 5000 },
+      );
+      const found = await collect(discovery);
+      expect(found[0], scenario).toMatchObject({
+        defId: 'hermes',
+        binPath: bin,
+        version: 'Hermes Agent v0.21.4 (2026.9.21)',
+        loggedIn: expected,
+        optionalFlags: [],
+      });
+      // The login probe launches the CLI's ACP mode and nothing else beyond the version probe, and
+      // the probe child gets the allowlisted environment: the ambient key stays out.
+      expect(calls.map((call) => call.args), scenario).toEqual([['--version'], ['acp']]);
+      expect(calls[1]?.options.env['OPENAI_API_KEY'], scenario).toBeUndefined();
+      expect(calls[1]?.options.env['HOME'], scenario).toBe(HOME());
+    }
+  }, 30_000);
 });

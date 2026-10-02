@@ -15,7 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes'] as const;
+// Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
+const MARKLESS_IDS: readonly string[] = ['hermes'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -101,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -126,6 +128,7 @@ describe('provider definitions (P-1)', () => {
       copilot: 'HOME',
       cursor: 'HOME',
       opencode: 'OPENCODE_CONFIG_DIR',
+      hermes: 'HERMES_HOME',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       expect(def.config.mechanism, def.id).toBe('env-var');
@@ -161,12 +164,12 @@ describe('provider definitions (P-1)', () => {
     expect(env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1');
   });
 
-  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the six built-in ids', () => {
+  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
 
-  it('P-1: copilot, cursor and opencode declare permissionAsk true', () => {
-    for (const id of ['copilot', 'cursor', 'opencode'] as const) {
+  it('P-1: copilot, cursor, opencode and hermes declare permissionAsk true', () => {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes'] as const) {
       expect(defById(id).capabilities.permissionAsk, id).toBe(true);
     }
   });
@@ -196,11 +199,12 @@ describe('provider definitions (P-1)', () => {
       opencode: { kind: 'session-option', category: 'thought_level' },
     };
 
-    it('P-41: each built-in declares exactly its documented effort parameter, and cursor declares none', () => {
+    it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
       for (const def of BUILTIN_PROVIDER_DEFS) {
         expect(def.effortArg, def.id).toEqual(EFFORT_ARG_BY_ID[def.id]);
       }
       expect(defById('cursor').effortArg).toBeUndefined();
+      expect(defById('hermes').effortArg).toBeUndefined();
     });
 
     it('P-41: a flag definition puts the flag and the level in argv, and nothing when the effort is absent', () => {
@@ -216,7 +220,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -411,10 +415,52 @@ describe('provider definitions (P-1)', () => {
   });
 });
 
+describe('hermes definition (P-35)', () => {
+  const hermes = (): ProviderDef => defById('hermes');
+
+  it('P-35: hermes launches the CLI in its ACP mode, reads the version from --version and resumes through the protocol', () => {
+    expect(hermes().bins).toEqual(['hermes']);
+    expect(hermes().versionArgs).toEqual(['--version']);
+    expect(hermes().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['acp'], env: {}, stdin: 'prompt' });
+    expect(hermes().resume).toBe('protocol');
+  });
+
+  it('P-35: no hermes launch ever carries an approval bypass or a redirected home', () => {
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const }, { prompt: 'x', configDir: '/run/dir' }]) {
+      const launch = hermes().buildLaunch(input);
+      expect(launch.args.join(' ')).not.toMatch(/yolo|accept-hooks|ignore|safe-mode/i);
+      expect(Object.keys(launch.env).join(' ')).not.toMatch(/YOLO|HERMES_HOME|ACCEPT_HOOKS/i);
+    }
+    expect(hermes().effortArg).toBeUndefined();
+  });
+
+  it('P-44: hermes declares no isolation, so the cap applies and the CLI reads its own configuration', () => {
+    expect(hermes().isolation).toBeUndefined();
+    expect(hermes().telemetryOff).toBeUndefined();
+  });
+
+  it('P-45: the hermes login probe is the ACP session with the documented refusal as its logout, and the def stays valid', () => {
+    expect(hermes().authProbe).toEqual({
+      args: ['acp'],
+      acpSession: { notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any AI provider' } },
+    });
+    expect(hermes().helpNeedsLogin).toBeUndefined();
+    expect(isProviderDef(hermes())).toBe(true);
+    const base = createValidDef();
+    for (const acpSession of [{}, { notLoggedIn: { rpcCode: 1.5, textContains: 'x' } }, { notLoggedIn: { rpcCode: -1, textContains: '' } }, 'x']) {
+      rejectsWith({ ...base, authProbe: { args: ['acp'], acpSession } }, JSON.stringify(acpSession));
+    }
+  });
+});
+
 describe('provider marks (P-25)', () => {
-  it('P-25: all six providers carry one mark each — a single path in a 24×24 viewBox', () => {
+  it('P-25: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless ones carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
+      if (MARKLESS_IDS.includes(def.id)) {
+        expect(mark, def.id).toBeNull();
+        continue;
+      }
       expect(mark, def.id).not.toBeNull();
       expect(mark?.viewBox, def.id).toBe('0 0 24 24');
       // One path's own data: path commands only, never svg markup or a second shape.

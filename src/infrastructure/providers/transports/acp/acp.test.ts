@@ -320,6 +320,45 @@ describe('acp transport', () => {
     expect(outcome).toEqual({ outcome: 'selected', optionId: 'allow-once' });
   });
 
+  it('P-16: a single allow selects the one-time option and a deny the rejection, never a session-wide or permanent grant', async () => {
+    for (const decision of ['allow', 'deny'] as const) {
+      const cwd = runCwd();
+      const run = await startRun('permission-hermes', requestOf(cwd));
+      const iterator = run.handle.events[Symbol.asyncIterator]();
+      await iterator.next(); // session_started
+      await iterator.next(); // tool_call
+      const ask = await iterator.next();
+      if (ask.value.type !== 'permission_ask') throw new Error('expected a permission ask');
+      // The options reach the user in the agent's own order, standing grants first.
+      expect(ask.value.options).toEqual(['allow_session', 'allow_always', 'allow_once', 'deny']);
+
+      run.handle.answerPermission(ask.value.id, decision);
+      const outcomes = await collect(run.handle.events).then(() => outcomeResponses(clientMessages(run.logPath)));
+      expect(outcomes).toHaveLength(1);
+      const outcome = (outcomes[0] as { readonly result: { readonly outcome: unknown } }).result.outcome;
+      expect(outcome, decision).toEqual({ outcome: 'selected', optionId: decision === 'allow' ? 'allow_once' : 'deny' });
+    }
+  });
+
+  it('P-16: an allow with only session-wide or permanent grants on offer is answered cancelled, a deny still rejects', async () => {
+    for (const decision of ['allow', 'deny'] as const) {
+      const cwd = runCwd();
+      const run = await startRun('permission-hermes-standing', requestOf(cwd));
+      const iterator = run.handle.events[Symbol.asyncIterator]();
+      await iterator.next(); // session_started
+      await iterator.next(); // tool_call
+      const ask = await iterator.next();
+      if (ask.value.type !== 'permission_ask') throw new Error('expected a permission ask');
+
+      run.handle.answerPermission(ask.value.id, decision);
+      await collect(run.handle.events);
+      const outcomes = outcomeResponses(clientMessages(run.logPath));
+      expect(outcomes).toHaveLength(1);
+      const outcome = (outcomes[0] as { readonly result: { readonly outcome: unknown } }).result.outcome;
+      expect(outcome, decision).toEqual(decision === 'allow' ? { outcome: 'cancelled' } : { outcome: 'selected', optionId: 'deny' });
+    }
+  });
+
   it('P-16: stop() is the only automated answer — it denies the open ask and cancels the turn', async () => {
     const cwd = runCwd();
     const run = await startRun('permission', requestOf(cwd));

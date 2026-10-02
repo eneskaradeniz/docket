@@ -84,6 +84,22 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): without a run-scoped home the CLI reads its own
+      // home and auto-injects instruction files (AGENTS.md, SOUL.md, .cursorrules), memory and
+      // preloaded skills per its own `--help`, so the level stays capped at experimental and runs
+      // show that the CLI may read the user's own configuration. Its own writes (memory, skill
+      // learning) stay under its home; Docket never writes or reads there. G4 is absent: no
+      // usage mapping is proven for this CLI.
+      providerId: 'hermes',
+      gates: {
+        G1: { kind: 'test', name: 'P-45: an ACP login probe reads an opened session as logged in, the documented refusal as logged out and any other answer as unknown' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
+        G5: { kind: 'waived', reason: 'no machine-readable quota in the ACP session; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -260,6 +276,24 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'none',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
+      models: [],
+    },
+    {
+      // The CLI is a gateway to whichever inference provider the machine configured, so the
+      // plan behind a listed model is the user's own and no source says how it is billed: live
+      // rows read unknown and stay a hand pick with spend consent (P-40). The model list is the
+      // session answer's `models.availableModels` (ids as `provider:model`, kept whole); a
+      // logged-out machine's session is refused, which leaves the list empty. No quota channel
+      // is read yet.
+      id: 'hermes-subscription',
+      providerId: 'hermes',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
       models: [],
     },
   ],

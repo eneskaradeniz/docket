@@ -139,11 +139,20 @@ const finishReasonOf = (stopReason: unknown): Extract<AgentEvent, { readonly typ
   }
 };
 
-/** The option the user's binary decision maps onto, if the agent offered one. */
+/** The option the user's binary decision maps onto, if the agent offered one. A single "allow"
+ * is a one-time grant: an option that outlives the call (`allow_always`, or a provider's
+ * session-wide variant) is never picked for it, even when it is the only allow offered — the
+ * answer is then the cancelled outcome, never a standing approval the user did not make. A deny
+ * prefers the one-time rejection and falls back to any rejection, then to an option the agent
+ * itself names `deny`; an allow falls back to an option the agent itself names `allow_once`. */
 const pickOptionId = (options: readonly PermissionOption[], decision: 'allow' | 'deny'): string | undefined => {
-  const prefix = decision === 'allow' ? 'allow' : 'reject';
-  const match = options.find((option) => option.kind.startsWith(prefix));
-  return match === undefined ? undefined : match.optionId;
+  const byKind = (kind: string): string | undefined => options.find((option) => option.kind === kind)?.optionId;
+  if (decision === 'allow') return byKind('allow_once') ?? options.find((option) => option.optionId === 'allow_once')?.optionId;
+  return (
+    byKind('reject_once') ??
+    options.find((option) => option.kind.startsWith('reject'))?.optionId ??
+    options.find((option) => option.optionId === 'deny')?.optionId
+  );
 };
 
 export function createAcpTransport(def: ProviderDef): AgentTransport {

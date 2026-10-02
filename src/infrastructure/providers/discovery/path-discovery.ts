@@ -7,6 +7,8 @@ import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import type { ProviderDef } from '../defs/index';
+import { buildChildEnv } from '../launch/index';
+import { probeAcpLogin } from '../transports/acp/index';
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 
@@ -182,6 +184,18 @@ const probeAuth = async (
   env: Readonly<Record<string, string>>,
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
+  if (def.authProbe.acpSession !== undefined) {
+    // The ACP session is the login signal: the child gets the same allowlisted environment a run
+    // builds, so an ambient credential of another account never counts as this machine's login.
+    return probeAcpLogin({
+      command: binPath,
+      args: def.authProbe.args,
+      env: buildChildEnv(def.id, env, {}),
+      rule: def.authProbe.acpSession.notLoggedIn,
+      timeoutMs,
+      spawn: (command, args, options) => spawn(command, args, { timeout: timeoutMs, env: options.env ?? env }),
+    });
+  }
   const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, env);
   if (outcome.timedOut || outcome.exitCode === null) return null;
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
