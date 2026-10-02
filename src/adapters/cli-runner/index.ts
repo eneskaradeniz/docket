@@ -2,7 +2,7 @@
 // addendum). Implements the `SessionRunner` port over any vendor's machine-readable NDJSON
 // stream, parametrized by a `CliRunnerDef` — the second vendor path ADR-0014 names ("the CLI's
 // stream-json mode"), written once: every subsequent vendor is a definition file, not a new
-// adapter (the open-design lesson — one spawn call site, N definitions).
+// adapter (one spawn call site, N definitions).
 //
 // Engine-owned, vendor-blind: spawn + stdin prompt + line-split stdout + signal/exit handling.
 // Honesty rules carried over from the SDK adapter:

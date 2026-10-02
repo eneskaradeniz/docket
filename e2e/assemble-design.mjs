@@ -1,4 +1,4 @@
-// e2e/assemble-design.mjs — assembles the OpenDesign package from a capture run: rewrites each
+// e2e/assemble-design.mjs — assembles the design package from a capture run: rewrites each
 // dumped page (fonts → self-hosted @fontsource files, inject app-nav.js + data-back), emits the
 // nav script, the font package and the manifest-driven gallery.
 // Usage: node e2e/assemble-design.mjs <captureDir> <outDir>

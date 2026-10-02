@@ -1,4 +1,4 @@
-// e2e/capture-design.mjs — the OpenDesign full-surface capture (design atelier, 2026-09-20).
+// e2e/capture-design.mjs — the full-surface design capture (design atelier, 2026-09-20).
 // Same harness as ui.mjs (seeded temp db, DOCKET_E2E, pinned theme) but instead of specs it DUMPS
 // the live DOM + live CSS of every designed face: screens, detail states, live/stopped drives, the
 // plan editor, every modal, roadmap (rich/bos/draft dialogs), usage (rich/bos), the budget gate,
