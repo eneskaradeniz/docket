@@ -185,4 +185,37 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://opencode.ai/docs' },
     mark: { viewBox: '0 0 24 24', path: 'M22 24H2V0h20zM17 4.8H7v14.4h10z', fillRule: 'nonzero' },
   },
+  {
+    id: 'kilo',
+    displayName: 'Kilo Code',
+    bins: ['kilo'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `kilo auth list` prints "N credentials". N > 0 means only that some credential is
+    // configured (a bring-your-own-key entry counts the same as a gateway login).
+    authProbe: { args: ['auth', 'list'], parse: 'credential-count' },
+    transport: 'acp',
+    effortArg: { kind: 'session-option', configId: 'effort' },
+    config: { mechanism: 'env-var', name: 'KILO_CONFIG_DIR' },
+    // These names were seen only as strings in the CLI binary; neither its help nor its
+    // documentation lists them, so their effect is unverified. They are passed anyway because a
+    // variable the CLI does not know is ignored, and one it does know keeps the run from reading
+    // the operator's own ~/.claude files. No isolation evidence is registered for this reason.
+    isolation: { env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' } },
+    buildLaunch: (input) => ({ args: ['acp'], env: { KILO_CONFIG_DIR: input.configDir }, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://kilo.ai/docs/code-with-ai/platforms/cli' },
+    mark: null,
+  },
 ];

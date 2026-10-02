@@ -29,12 +29,28 @@ import type { CatalogError } from './model-catalog';
  * provider's own definition runs, stated here because the catalog receives an account, not a
  * definition. */
 const ACP_SESSION_LAUNCHES: Readonly<
-  Record<string, { readonly command: string; readonly args: readonly string[]; readonly env?: Readonly<Record<string, string>> }>
+  Record<
+    string,
+    {
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly env?: Readonly<Record<string, string>>;
+      /** A cold start of this CLI can take several seconds, so no caller's ceiling may sit below it. */
+      readonly minTimeoutMs?: number;
+    }
+  >
 > = {
   cursor: { command: 'cursor-agent', args: ['acp'] },
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
+  // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
+  kilo: {
+    command: 'kilo',
+    args: ['acp'],
+    env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' },
+    minTimeoutMs: 30_000,
+  },
 };
 
 export interface AcpSessionCatalogConfig {
@@ -160,7 +176,9 @@ export async function listAcpSessionModels(
     args: config.args ?? launch.args,
     env: buildChildEnv(account.provider, config.baseEnv, launch.env ?? {}),
     ...(config.spawn === undefined ? {} : { spawn: config.spawn }),
-    ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
+    ...(config.timeoutMs === undefined && launch.minTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: Math.max(config.timeoutMs ?? 0, launch.minTimeoutMs ?? 0) }),
   });
   if (!opened.ok) {
     rmSync(scratch, { recursive: true, force: true });

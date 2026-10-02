@@ -145,6 +145,43 @@ describe('listAcpSessionModels (P-29)', () => {
     ]);
   });
 
+  it('P-29: the kilo listing reads the model select whole, offers no level for a model with only thinking, never prompts, and launches with the switches', async () => {
+    const harness = makeSpawn('models-kilo');
+    const envs: Array<Readonly<Record<string, string>> | undefined> = [];
+    const spawn: AcpSpawn = (command, args, options) => {
+      envs.push(options.env);
+      return harness.spawn(command, args, options);
+    };
+
+    const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: { PATH: '/bin' }, spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'kilo', args: ['acp'] }]);
+    expect(envs[0]).toMatchObject({ KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' });
+    expect(listed.value.map((model) => model.id)).toEqual([
+      'kilo/google/gemini-3-pro-image',
+      'kilo/anthropic/claude-opus-5',
+      'kilo/z-ai/glm-5.1',
+      'kilo/kilo-auto/free',
+    ]);
+    // The session's own levels belong to its default model, and `thinking` names no level.
+    expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+  });
+
+  it('P-29: a slow cold start is not cut short by a caller ceiling below the kilo floor', async () => {
+    const harness = makeSpawn('models-silent');
+    // A 300 ms ceiling would end the wait almost at once; the floor keeps it open well past that.
+    const pending = listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn, timeoutMs: 300 });
+    const early = await Promise.race([pending, new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 1_000))]);
+    expect(early).toBe('open');
+    harness.children[0]?.kill();
+    await pending;
+  }, 15_000);
+
   it('P-43: advertised thought levels are read back through the level names, dropping values that name no level', async () => {
     const harness = makeSpawn('models-opencode');
 

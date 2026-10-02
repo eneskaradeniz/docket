@@ -15,6 +15,7 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
   agy: { subscription: 'agy-subscription' },
   cursor: { subscription: 'cursor-subscription' },
   opencode: { subscription: 'opencode-subscription' },
+  kilo: { subscription: 'kilo-login' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({

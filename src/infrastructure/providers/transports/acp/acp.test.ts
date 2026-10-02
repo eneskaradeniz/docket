@@ -105,13 +105,14 @@ interface RequestOptions {
   readonly capabilities?: readonly CapabilityDef[];
   readonly resume?: { readonly sessionRef: string };
   readonly effort?: EffortLevel;
+  readonly model?: string;
 }
 
 const requestOf = (cwd: string, options: RequestOptions = {}): RunRequest => ({
   runId: RUN_ID,
   cwd,
   role: ROLE,
-  route: { accountId: ACCOUNT },
+  route: { accountId: ACCOUNT, ...(options.model === undefined ? {} : { model: options.model }) },
   prompt: 'do the work',
   capabilities: options.capabilities ?? [],
   ...(options.resume === undefined ? {} : { resume: options.resume }),
@@ -488,6 +489,57 @@ describe('acp transport', () => {
       const run = await startRun('models-opencode', requestOf(runCwd(), { effort: 'high' }));
       await collect(run.handle.events);
       expect(clientMethodSequence(clientMessages(run.logPath))).not.toContain('session/set_config_option');
+    });
+  });
+
+  describe('model then effort (kilo shape)', () => {
+    const EFFORT_ID: EffortArg = { kind: 'session-option', configId: 'effort' };
+    const OPUS = 'kilo/anthropic/claude-opus-5';
+
+    it('P-41: the pinned model is set first, then the effort the model offers, then the prompt', async () => {
+      const run = await startRun('models-kilo', requestOf(runCwd(), { model: OPUS, effort: 'xhigh' }), EFFORT_ID);
+      await collect(run.handle.events);
+
+      const messages = clientMessages(run.logPath);
+      expect(clientMethodSequence(messages)).toEqual([
+        'initialize',
+        'session/new',
+        'session/set_config_option',
+        'session/set_config_option',
+        'session/prompt',
+      ]);
+      const sets = messages.filter((message) => message['method'] === 'session/set_config_option').map(paramsOf);
+      expect(sets).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: OPUS },
+        { sessionId: 'sess_fake_1', configId: 'effort', value: 'xhigh' },
+      ]);
+    });
+
+    it('P-41: a level only the new model offers is sent, which the session-new answer alone would have refused', async () => {
+      // `max` is absent from the default model's levels, so reading them before the model change
+      // would send nothing.
+      const run = await startRun('models-kilo', requestOf(runCwd(), { model: OPUS, effort: 'max' }), EFFORT_ID);
+      await collect(run.handle.events);
+      expect(clientMessages(run.logPath).map(paramsOf).filter((params) => params['configId'] === 'effort')).toHaveLength(1);
+    });
+
+    it('P-43: a level the selected model does not advertise (thinking, instant) is never sent', async () => {
+      const unnamed = await startRun('models-kilo', requestOf(runCwd(), { model: 'kilo/z-ai/glm-5.1', effort: 'low' }), EFFORT_ID);
+      await collect(unnamed.handle.events);
+      const sets = clientMessages(unnamed.logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+      expect(sets).toEqual([{ sessionId: 'sess_fake_1', configId: 'model', value: 'kilo/z-ai/glm-5.1' }]);
+    });
+
+    it('P-41: a model the session does not list is not sent, and without a model nothing is set', async () => {
+      const unknown = await startRun('models-kilo', requestOf(runCwd(), { model: 'kilo/not-listed' }), EFFORT_ID);
+      await collect(unknown.handle.events);
+      expect(clientMethodSequence(clientMessages(unknown.logPath))).not.toContain('session/set_config_option');
+
+      const bare = await startRun('models-kilo', requestOf(runCwd()), EFFORT_ID);
+      await collect(bare.handle.events);
+      expect(clientMethodSequence(clientMessages(bare.logPath))).not.toContain('session/set_config_option');
     });
   });
 });
