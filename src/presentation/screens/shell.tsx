@@ -477,6 +477,7 @@ export function ShellScreen({
         subPage={settingsPanel.subPage}
         onSection={(next) => dispatchSettingsPanel({ type: 'select', section: next })}
         onBack={() => dispatchSettingsPanel({ type: 'leaveSubPage' })}
+        onEnterSubPage={(id) => dispatchSettingsPanel({ type: 'enterSubPage', id })}
         onEscape={() => dispatchSettingsPanel({ type: 'escape' })}
         candidateDot={candidateDot}
         themeStore={themeStore}
@@ -487,6 +488,10 @@ export function ShellScreen({
         update={update}
         locale={locale}
         localeStore={localeStore}
+        onOpenAccount={(id) => {
+          dispatchSettingsPanel({ type: 'close' });
+          openAccount(id);
+        }}
       />
 
       <WizardScreen store={wizard} locale={locale} />

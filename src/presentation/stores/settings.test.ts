@@ -270,6 +270,7 @@ describe('settings store', () => {
         label: 'Main',
         authMode: 'subscription',
         plan: 'pro',
+        detail: expect.objectContaining({ id: 'acc-1' }),
         pools: [{ id: 'pool-1', label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
         meters: [
           {
@@ -295,8 +296,8 @@ describe('settings store', () => {
           },
         ],
       },
-      { id: 'acc-2', provider: 'beta-prov', label: 'Spare', authMode: 'api_key', plan: null, pools: [], meters: [] },
-      { id: 'acc-3', provider: 'gamma-prov', label: 'Unbound', authMode: 'cloud', plan: null, pools: [], meters: [] },
+      { id: 'acc-2', provider: 'beta-prov', label: 'Spare', authMode: 'api_key', plan: null, detail: expect.objectContaining({ id: 'acc-2' }), pools: [], meters: [] },
+      { id: 'acc-3', provider: 'gamma-prov', label: 'Unbound', authMode: 'cloud', plan: null, detail: expect.objectContaining({ id: 'acc-3' }), pools: [], meters: [] },
     ]);
   });
 
