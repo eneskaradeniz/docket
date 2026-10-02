@@ -770,6 +770,26 @@ describe('createApi', () => {
       expect(audit[audit.length - 1]).toMatchObject({ action: 'account.saved', subject: { kind: 'account', id: result.id } });
     });
 
+    it('U-13: account.save stores a reserve, keeps it when absent on update, and answers invalid_reserve for an out-of-range share', async () => {
+      const h = await createHarness();
+      const api = createApi(h.deps);
+      const base = { type: 'account.save', provider: 'acme-prov', label: 'Main', authMode: 'api_key' } as const;
+
+      const created = await api.command(ACTOR, { ...base, reserve: { short: 0.1, long: 0.3 } });
+      if (!created.ok || created.id === undefined) throw new Error('account.save must return an id');
+      const id = ulidOf<'account'>(created.id);
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+
+      expect((await api.command(ACTOR, { ...base, id: created.id, label: 'Renamed' })).ok).toBe(true);
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+
+      expect(await api.command(ACTOR, { ...base, id: created.id, reserve: { long: 0.96 } })).toEqual({
+        ok: false,
+        code: 'invalid_reserve',
+      });
+      expect((await h.deps.accounts.get(id))?.reserve).toEqual({ short: 0.1, long: 0.3 });
+    });
+
     it('U-13: account.save with an id updates the editable fields and keeps the stored policy, caps and secret ref', async () => {
       const h = await createHarness();
       const secretRef = `account/${ACCOUNT}/api-key`;

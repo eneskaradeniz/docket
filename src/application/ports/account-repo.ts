@@ -6,6 +6,7 @@ import type {
   LimitPolicy,
   Meter,
   Pool,
+  QuotaReserve,
   ProjectSlug,
   SpendCap,
   WorkOrderId,
@@ -27,6 +28,7 @@ export interface AccountRecord {
   // Non-secret model ids the user allowed for metered or unverified use (P-40). Records saved
   // before the field existed carry none; the JSON store reads them back unchanged.
   readonly consentedModels?: readonly string[];
+  readonly reserve?: QuotaReserve; // share of each window kept back for the user's own use; no money involved
   readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 

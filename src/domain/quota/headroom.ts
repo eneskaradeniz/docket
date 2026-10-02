@@ -2,9 +2,31 @@
 import type { AccountId, EpochMs, MeterId, PoolId } from '../shared/index';
 import type { Meter, Pool, PoolKind } from './types';
 
+/** The share of a window the user keeps back for their own use (0..RESERVE_MAX). `short` applies to
+ *  windows shorter than one day, `long` to windows of a day or longer. Absent or 0 means no reserve. */
+export interface QuotaReserve {
+  readonly short?: number;
+  readonly long?: number;
+}
+
+// A reserve of 1 would block the account forever; the cap keeps some window usable by definition.
+export const RESERVE_MAX = 0.95;
+
+const DAY_MS = 86_400_000;
+
+// Which reserve value governs a meter: by window length when the provider gave one, otherwise by
+// cadence, and when even that says nothing the stricter of the two values applies.
+function reserveFor(meter: Meter, reserve: QuotaReserve): number {
+  const short = reserve.short ?? 0;
+  const long = reserve.long ?? 0;
+  if (meter.durationMs !== undefined) return meter.durationMs < DAY_MS ? short : long;
+  if (meter.cadence === 'calendar' || meter.cadence === 'billing_cycle') return long;
+  return Math.max(short, long);
+}
+
 export type Headroom =
   | { readonly ok: true; readonly lowest?: number } // lowest normalized remaining seen
-  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs }
+  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs; readonly byReserve?: true }
   | { readonly ok: 'unknown'; readonly reason: 'no_data' | 'stale' };
 
 export function matchesModel(pool: Pool, model: string): boolean {
@@ -53,6 +75,7 @@ export function headroom(
   accountId: AccountId,
   model: string,
   now: EpochMs,
+  reserve?: QuotaReserve,
 ): Headroom {
   const kindByPoolId = new Map<PoolId, PoolKind>(
     poolsForModel(pools, accountId, model).map((pool) => [pool.id, pool.kind] as const),
@@ -67,6 +90,7 @@ export function headroom(
   const blockedBy: MeterId[] = [];
   let earliestRelief: EpochMs | undefined;
   let lowest: number | undefined;
+  let allByReserve = true;
 
   for (const meter of relevant) {
     // A reset that has already passed says nothing about the present: unknown, not blocking.
@@ -79,7 +103,11 @@ export function headroom(
     if (kindByPoolId.get(meter.poolId) === 'throughput') continue;
 
     const exhausted = normalized === 0 || (meter.remaining !== undefined && meter.remaining <= 0);
-    if (exhausted) {
+    // Unknown remaining never blocks by reserve: no number, no claim on the user's share.
+    const reserved =
+      !exhausted && reserve !== undefined && normalized !== undefined && normalized <= reserveFor(meter, reserve);
+    if (exhausted || reserved) {
+      if (exhausted) allByReserve = false;
       blockedBy.push(meter.id);
       if (meter.resetsAt !== undefined && (earliestRelief === undefined || meter.resetsAt < earliestRelief)) {
         earliestRelief = meter.resetsAt;
@@ -88,7 +116,12 @@ export function headroom(
   }
 
   if (blockedBy.length > 0) {
-    return earliestRelief === undefined ? { ok: false, blockedBy } : { ok: false, blockedBy, earliestRelief };
+    return {
+      ok: false,
+      blockedBy,
+      ...(earliestRelief === undefined ? {} : { earliestRelief }),
+      ...(allByReserve ? { byReserve: true as const } : {}),
+    };
   }
   return lowest === undefined ? { ok: true } : { ok: true, lowest };
 }

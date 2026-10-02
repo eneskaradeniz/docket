@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MINUTE, type AccountId, type EpochMs, type MeterId, type PoolId } from '../shared/index';
-import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel } from './headroom';
-import type { Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
+import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel, RESERVE_MAX } from './headroom';
+import type { Cadence, Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
 
@@ -41,6 +41,8 @@ interface MeterInit {
   readonly id: MeterId;
   readonly poolId: PoolId;
   readonly unit?: MeterUnit;
+  readonly cadence?: Cadence;
+  readonly durationMs?: number;
   readonly used?: number;
   readonly limit?: number;
   readonly remaining?: number;
@@ -52,7 +54,8 @@ interface MeterInit {
 const meterOf = (init: MeterInit): Meter => ({
   id: init.id,
   poolId: init.poolId,
-  cadence: 'fixed',
+  cadence: init.cadence ?? 'fixed',
+  durationMs: init.durationMs,
   unit: init.unit ?? 'requests',
   used: init.used,
   limit: init.limit,
@@ -489,5 +492,110 @@ describe('headroom', () => {
 
     expect(pools).toStrictEqual(poolsBefore);
     expect(meters).toStrictEqual(metersBefore);
+  });
+});
+
+describe('headroom reserve', () => {
+  const pools: readonly Pool[] = [poolOf({ id: POOL_ATLAS, appliesTo: [{ prefix: 'atlas-' }] })];
+  const DAY_MS = 24 * HOUR;
+  const five = (remaining: number, extra: Partial<MeterInit> = {}): Meter =>
+    meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining, limit: 100, durationMs: 5 * HOUR, resetsAt: NOW + HOUR, ...extra });
+  const weekly = (remaining: number, extra: Partial<MeterInit> = {}): Meter =>
+    meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining, limit: 100, durationMs: 7 * DAY_MS, resetsAt: NOW + 30 * HOUR, ...extra });
+  const run = (meters: readonly Meter[], reserve?: { readonly short?: number; readonly long?: number }) =>
+    headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, reserve);
+
+  it('R-49: RESERVE_MAX is 0.95', () => {
+    expect(RESERVE_MAX).toBe(0.95);
+  });
+
+  it('R-49: durationMs under a day uses the short reserve, a day or longer the long reserve', () => {
+    expect(run([five(20)], { short: 0.2, long: 0 })).toEqual({ ok: false, blockedBy: [M_ATLAS_5H], earliestRelief: NOW + HOUR, byReserve: true });
+    expect(run([five(20)], { short: 0, long: 0.9 })).toEqual({ ok: true, lowest: 0.2 });
+    expect(run([weekly(20)], { short: 0.9, long: 0.2 })).toEqual({ ok: false, blockedBy: [M_ATLAS_WEEKLY], earliestRelief: NOW + 30 * HOUR, byReserve: true });
+    expect(run([weekly(20)], { short: 0.2, long: 0 })).toEqual({ ok: true, lowest: 0.2 });
+    // exactly one day is long, one millisecond less is short
+    const oneDay = weekly(20, { durationMs: DAY_MS });
+    expect(run([oneDay], { short: 0.9, long: 0.1 })).toEqual({ ok: true, lowest: 0.2 });
+    const justUnder = weekly(20, { durationMs: DAY_MS - 1 });
+    expect(run([justUnder], { short: 0.2, long: 0 }).ok).toBe(false);
+  });
+
+  it('R-49: without durationMs, calendar and billing_cycle are long, any other cadence uses the larger value', () => {
+    const noDuration = (cadence: Cadence): Meter =>
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 30, limit: 100, cadence });
+    expect(run([noDuration('calendar')], { short: 0.9, long: 0.1 }).ok).toBe(true);
+    expect(run([noDuration('calendar')], { short: 0, long: 0.3 }).ok).toBe(false);
+    expect(run([noDuration('billing_cycle')], { short: 0.9, long: 0.1 }).ok).toBe(true);
+    expect(run([noDuration('billing_cycle')], { short: 0, long: 0.3 }).ok).toBe(false);
+    for (const cadence of ['fixed', 'rolling_continuous', 'rolling_from_first_use', 'none'] as const) {
+      expect(run([noDuration(cadence)], { short: 0.3, long: 0.1 }).ok).toBe(false);
+      expect(run([noDuration(cadence)], { short: 0.1, long: 0.3 }).ok).toBe(false);
+      expect(run([noDuration(cadence)], { short: 0.1, long: 0.1 }).ok).toBe(true);
+      expect(run([noDuration(cadence)], { short: 0.1 }).ok).toBe(true);
+    }
+  });
+
+  it('R-49: remaining exactly at the reserve blocks, just above does not', () => {
+    expect(run([five(20)], { short: 0.2 }).ok).toBe(false);
+    expect(run([five(21)], { short: 0.2 })).toEqual({ ok: true, lowest: 0.21 });
+    expect(run([five(19)], { short: 0.2 }).ok).toBe(false);
+  });
+
+  it('R-49: a meter whose remaining is unknown never blocks by reserve', () => {
+    const unknown = meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, durationMs: 5 * HOUR });
+    expect(run([unknown], { short: 0.9, long: 0.9 })).toEqual({ ok: true });
+  });
+
+  it('R-49: a throughput pool never blocks by reserve', () => {
+    const tputPools: readonly Pool[] = [poolOf({ id: POOL_TPUT, kind: 'throughput' })];
+    const meters: readonly Meter[] = [meterOf({ id: M_TPUT, poolId: POOL_TPUT, remaining: 5, limit: 100, durationMs: HOUR })];
+    expect(headroom(tputPools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, { short: 0.9, long: 0.9 })).toEqual({ ok: true, lowest: 0.05 });
+  });
+
+  it('R-49: byReserve is set only when every blocker blocks by reserve alone', () => {
+    const both = run([five(10), weekly(10)], { short: 0.2, long: 0.2 });
+    expect(both).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + HOUR, byReserve: true });
+
+    const mixed = run([five(0), weekly(10)], { short: 0.2, long: 0.2 });
+    expect(mixed).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + HOUR });
+    expect('byReserve' in mixed).toBe(false);
+
+    // an exhausted meter without reserve keeps the old shape
+    const plain = run([five(0)], { short: 0.2 });
+    expect('byReserve' in plain).toBe(false);
+  });
+
+  it('R-49: earliestRelief comes from the reserve blockers', () => {
+    const verdict = run([five(10, { resetsAt: NOW + 4 * HOUR }), weekly(10, { resetsAt: NOW + 2 * HOUR })], { short: 0.2, long: 0.2 });
+    expect(verdict).toEqual({ ok: false, blockedBy: [M_ATLAS_5H, M_ATLAS_WEEKLY], earliestRelief: NOW + 2 * HOUR, byReserve: true });
+    const noReset = run([five(10, { resetsAt: undefined })], { short: 0.2 });
+    expect(noReset).toEqual({ ok: false, blockedBy: [M_ATLAS_5H], byReserve: true });
+  });
+
+  it('R-49: a reserve of 0, an empty reserve or none leaves the R-28 verdicts unchanged', () => {
+    const scenarios: readonly (readonly Meter[])[] = [
+      [weekly(0), five(40)],
+      [weekly(80), five(40)],
+      [weekly(1), five(1)],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, used: 100, limit: 100, resetsAt: NOW + HOUR })],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0 }), meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: -3, limit: 10 })],
+      [meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining: 0, limit: 100, resetsAt: NOW })],
+      [],
+    ];
+    for (const meters of scenarios) {
+      const baseline = run(meters);
+      expect(run(meters, {})).toEqual(baseline);
+      expect(run(meters, { short: 0, long: 0 })).toEqual(baseline);
+      expect(headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, undefined)).toEqual(baseline);
+    }
+  });
+
+  it('R-49: does not mutate its inputs', () => {
+    const meters = [five(10)];
+    const reserve = { short: 0.2 };
+    const before = structuredClone({ meters, reserve });
+    run(meters, reserve);
+    expect({ meters, reserve }).toStrictEqual(before);
   });
 });
