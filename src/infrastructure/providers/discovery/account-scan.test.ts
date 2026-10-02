@@ -207,7 +207,7 @@ describe('account scan', () => {
     expect(await scan({ dirs: [], contents: {}, unlistable: true })).toEqual([]);
   });
 
-  it('never carries a secret value into the serialised candidates', async () => {
+  it('P-33: never carries a secret value into the serialised candidates', async () => {
     const found = await scan({
       dirs: ['.claude', '.claude-glm', '.claude-w'],
       contents: {

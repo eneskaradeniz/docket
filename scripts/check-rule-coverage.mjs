@@ -43,12 +43,7 @@ const PENDING = new Map([
   ['domain:R-51', '#580'],
   ['domain:R-52', '#580'],
   ['application:A-47', '#580'],
-  ['providers:P-27', '#583'],
-  ['providers:P-31', '#583'],
-  ['providers:P-32', '#583'],
-  ['providers:P-33', '#583'],
   ['providers:P-35', '#583'],
-  ['providers:P-30', '#583'],
   ['providers:P-37', '#581'],
   ['providers:P-38', '#581'],
 ]);

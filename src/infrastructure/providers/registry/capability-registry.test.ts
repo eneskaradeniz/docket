@@ -32,6 +32,14 @@ const violationsOf = (registry: CapabilityRegistry): readonly string[] => {
   return found;
 };
 
+describe('capability registry as data (P-27)', () => {
+  it('P-27: the registry is plain data — it survives a JSON round trip unchanged and names providers and route kinds', () => {
+    expect(JSON.parse(JSON.stringify(CAPABILITY_REGISTRY))).toEqual(CAPABILITY_REGISTRY);
+    expect(CAPABILITY_REGISTRY.providers.length).toBeGreaterThan(0);
+    expect(CAPABILITY_REGISTRY.routeKinds.length).toBeGreaterThan(0);
+  });
+});
+
 describe('capability registry validity (P-28)', () => {
   it('P-28: the registry is valid — waivers only on G5, provider ids unique, route kinds name known providers', () => {
     expect(violationsOf(CAPABILITY_REGISTRY)).toEqual([]);

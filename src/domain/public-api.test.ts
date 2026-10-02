@@ -41,7 +41,6 @@ const CONTRACT_FUNCTIONS = [
   'validateRoadmap',
   'deriveRoadmap',
   // providers (section 11)
-  'supportTier',
   'foldRun',
 ] as const;
 
