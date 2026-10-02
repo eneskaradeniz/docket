@@ -130,7 +130,7 @@ describe('provider definitions (P-1)', () => {
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: '',
       kilo: 'KILO_CONFIG_DIR',
-      'grok-build': 'GROK_HOME',
+      'grok-build': '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
