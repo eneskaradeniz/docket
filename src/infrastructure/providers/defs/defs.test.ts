@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,6 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
+    expect(defById('amp').transport).toBe('stream-json');
     for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi']) {
       expect(defById(id).transport, id).toBe('acp');
     }
@@ -118,6 +119,7 @@ describe('provider definitions (P-1)', () => {
       }
     }
     expect(defById('agy').streamDialect).toBe('agy');
+    expect(defById('amp').streamDialect).toBe('amp');
   });
 
   it('P-1: config carries the documented config-dir mechanism of its CLI', () => {
@@ -139,6 +141,7 @@ describe('provider definitions (P-1)', () => {
       qoder: '',
       kiro: '',
       kimi: '',
+      amp: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -272,6 +275,8 @@ describe('provider definitions (P-1)', () => {
       qoder: { kind: 'session-option', category: 'thought_level' },
       kiro: { kind: 'flag', flag: '--effort' },
       kimi: { kind: 'session-option', category: 'thought_level' },
+      // The CLI documents no effort flag: the mode bundles the effort with the model (P-41: ignored).
+      amp: undefined,
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -295,7 +300,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kimi', 'amp']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -324,6 +329,42 @@ describe('provider definitions (P-1)', () => {
       const fresh = def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/run/dir' }).args;
       expect(fresh).not.toContain('--conversation');
       expect(fresh).not.toContain('session-1');
+    });
+  });
+
+  describe('amp launch', () => {
+    it('P-9: amp launches execute mode with the stream-json output and the run-scoped settings file, and never an approval bypass', () => {
+      const def = defById('amp');
+      const launch = def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/run/dir' });
+      expect(launch.args).toEqual(['--execute', '--stream-json']);
+      expect(launch.stdin).toBe('prompt');
+      // The run's own settings file replaces the user's, so no permission preset of theirs can
+      // reach a run and Docket writes none of its own. Only the update check is switched off.
+      expect(launch.env).toEqual({ AMP_SKIP_UPDATE_CHECK: '1', AMP_SETTINGS_FILE: '/run/dir/mcp.json' });
+      expect(JSON.stringify(launch)).not.toContain('dangerously');
+      expect(JSON.stringify(launch)).not.toContain('--mode');
+    });
+
+    it('P-22: amp resumes through threads continue with the thread id, and nothing otherwise', () => {
+      const def = defById('amp');
+      const resumed = def.buildLaunch(LAUNCH_INPUT).args;
+      expect(resumed.slice(0, 3)).toEqual(['threads', 'continue', 'session-1']);
+      expect(resumed).toContain('--execute');
+      expect(resumed).toContain('--stream-json');
+      const fresh = def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/run/dir' }).args;
+      expect(fresh).not.toContain('threads');
+      expect(fresh).not.toContain('session-1');
+    });
+
+    it('P-41: amp takes the mode from the run model and nothing else — the CLI has no effort flag', () => {
+      const def = defById('amp');
+      expect(def.effortArg).toBeUndefined();
+      const withModel = def.buildLaunch({ ...LAUNCH_INPUT, model: 'high' }).args;
+      const at = withModel.indexOf('--mode');
+      expect(withModel.slice(at, at + 2)).toEqual(['--mode', 'high']);
+      expect(def.buildLaunch(LAUNCH_INPUT).args).not.toContain('--mode');
+      // An effort the CLI cannot take changes nothing (P-41: absent parameter ignores it).
+      expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' })).toEqual(def.buildLaunch(LAUNCH_INPUT));
     });
   });
 

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
-import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, Tier } from '../../../domain/index';
+import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, RouteKindRecord, Tier } from '../../../domain/index';
 import { mergeCatalog, resolveTier, supportLevel } from '../../../domain/index';
 import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind } from './capability-registry';
 
@@ -88,7 +88,8 @@ describe('model catalog data (P-29)', () => {
     // plan, a compatible endpoint answers per env-overridden tiers, a CLI listing command answers
     // per login, and an ACP session answers per logged-in plan — so all of them must be able to
     // drop bundled entries the live list does not contain.
-    const authoritative = CAPABILITY_REGISTRY.routeKinds
+    const routeKinds: readonly RouteKindRecord[] = CAPABILITY_REGISTRY.routeKinds;
+    const authoritative = routeKinds
       .filter((kind) => kind.liveIsAuthoritative === true)
       .map((kind) => kind.id)
       .sort();
@@ -316,12 +317,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi and devin carries isolation evidence, and all thirteen stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi, amp and devin carries isolation evidence, and all fourteen stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -346,8 +347,49 @@ describe('isolation evidence (P-44)', () => {
       qoder: 'experimental',
       kiro: 'experimental',
       kimi: 'experimental',
+      amp: 'experimental',
       devin: 'planned',
     });
+  });
+
+  it('P-28: the amp record waives G5 for the unverified usage output, claims no login, permission or scenario gate, and stays experimental', () => {
+    const gates = findProvider('amp')?.gates;
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'provider reports no machine-readable quota; the usage command\'s output is unverified and its adapter is a separate issue; a limit error maps to limit_hit',
+    });
+    // The account-list probe's logged-in output is unverified, so G1 stays missing; the CLI asks
+    // no tool approval, so G3 cannot be met at the source; the end-to-end scenario test covers
+    // sdk, app-server and acp, not stream-json.
+    expect(gates?.G1).toBeUndefined();
+    expect(gates?.G3).toBeUndefined();
+    expect(gates?.G6).toBeUndefined();
+    expect(findProvider('amp')?.isolation).toBeUndefined();
+    expect(supportLevel(findProvider('amp') ?? { providerId: 'amp', gates: {} })).toBe('experimental');
+  });
+
+  it('P-29: the amp route kind lists the four modes as its whole static catalog, every one billing-unknown, with no live list and no quota probe', () => {
+    // Widened to the record type: the literal registry union drops the optional keys a kind
+    // simply does not carry, and the assertions below are exactly about their absence.
+    const kind: RouteKindRecord | undefined = findRouteKind('amp-login');
+    expect(kind).toMatchObject({
+      providerId: 'amp',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'static',
+    });
+    // The modes are the models (architect decision): a mode is a fixed model-plus-effort bundle,
+    // so no separate thinking level exists on a row and no live list can be authoritative.
+    expect(kind?.liveIsAuthoritative).toBeUndefined();
+    expect(kind?.models.map((model) => model.id)).toEqual(['low', 'medium', 'high', 'ultra']);
+    for (const model of kind?.models ?? []) {
+      expect(model.thinking).toEqual({ kind: 'none' });
+      expect(model.billing, model.id).toBeUndefined();
+      expect(model.family).toBe('tier');
+    }
+    expect(kind?.tierModels).toBeUndefined();
   });
 
   it('P-28: the hermes record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {

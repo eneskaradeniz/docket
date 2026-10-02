@@ -524,6 +524,29 @@ describe('createModelCatalog (P-29)', () => {
     expect(calls).toBe(0);
   });
 
+  it('P-29: the static amp route kind answers with exactly its four modes, every row billing-unknown and level-free', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'amp' }));
+    const { query } = scriptedQuery([[PRO_ROW]]);
+    // The static source has no adapter (the modes are registry data, not a live list), so no
+    // query leg ever runs and the four modes are the whole answer — a mode is a fixed
+    // model-plus-effort bundle, so a row offers no thinking level and bills unknown (P-40).
+    const catalog = createModelCatalog({
+      ...baseConfig(query),
+      accounts,
+      capabilities: createFakeCapabilityCatalog([{ id: 'amp-login', authMode: 'subscription', provider: 'amp' }]),
+    });
+
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      { id: 'low', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'medium', source: 'bundled', tier: 'balanced', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'high', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'ultra', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown' },
+    ]);
+    // A refresh of source-less data changes nothing: the registry is still the whole answer.
+    expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(await catalog.list(ACCOUNT_A));
+  });
+
   it('P-29: a cli-command route kind dispatches to the CLI adapter — a live list with no billing claim', async () => {
     // The fake binary prints the recorded shape of the CLI's own models table; the spawn rides
     // the real node machinery, so the dispatch itself is what is under test here.

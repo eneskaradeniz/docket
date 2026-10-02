@@ -235,6 +235,22 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
+      // No isolation evidence on purpose (P-44): config is none — the login lives in the CLI's
+      // own home and the launch redirects no home — so the run may read the CLI's own settings
+      // and the level stays capped at experimental (the run's own settings file replaces the
+      // user's, but that file is Docket's, not a switch of the CLI's). G1 is absent: the
+      // account-list probe's logged-in output is unverified, so it answers logged-out or unknown,
+      // never logged in. G3 is absent: the CLI asks no tool approval by default, so a run needs a
+      // sandbox or worktree — the definition targets the isolated level first. G6 is absent: the
+      // end-to-end scenario test covers the sdk, app-server and acp transports, not stream-json.
+      providerId: 'amp',
+      gates: {
+        G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, text, usage and one completed finished' },
+        G4: { kind: 'test', name: 'P-11: an error result ends usage, error and one failed finished, so failed runs still fold into one finished' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; the usage command\'s output is unverified and its adapter is a separate issue; a limit error maps to limit_hit' },
+      },
+    },
+    {
       // No isolation evidence on purpose (P-44): the CLI's login, config and sessions all live in
       // its own ~/.kimi-code home (relocated only by the machine's own KIMI_CODE_HOME), no
       // documented switch redirects them for a run, and Docket never writes that home, so the
@@ -613,6 +629,31 @@ export const CAPABILITY_REGISTRY = {
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       models: [],
+    },
+    {
+      // The modes are the models (architect decision, 2026-10-02): the user picks a mode — a
+      // fixed model-plus-effort bundle locked for the thread — and no model catalog exists to
+      // list, so the four documented modes are the whole catalog as static registry rows and the
+      // launch passes the chosen mode through its own --mode flag. No live list exists that
+      // could be authoritative. The plan is a monthly credit/USD allowance and no plan source
+      // says which mode it covers (the ultra mode runs the strongest models), so every row reads
+      // unknown (P-40) and stays a hand pick with spend consent. A row takes no thinking level:
+      // the mode already is the effort, and the CLI has no effort flag. The quota rides the
+      // provider's own usage command, whose output format is unverified; its adapter is a
+      // separate issue, so no probe exists yet.
+      id: 'amp-login',
+      providerId: 'amp',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'static',
+      models: [
+        { id: 'low', family: 'tier', tier: 'fast', thinking: { kind: 'none' } },
+        { id: 'medium', family: 'tier', tier: 'balanced', thinking: { kind: 'none' } },
+        { id: 'high', family: 'tier', tier: 'strong', thinking: { kind: 'none' } },
+        { id: 'ultra', family: 'tier', tier: 'strong', thinking: { kind: 'none' } },
+      ],
     },
     {
       // The model list is the login-gated session answer (initialize then session/new in a scratch
