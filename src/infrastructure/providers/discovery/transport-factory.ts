@@ -107,6 +107,7 @@ export function createProviderTransportFactory(config: ProviderTransportFactoryC
       baseEnv: config.baseEnv,
       executablePath: config.binPaths[def.id] ?? undefined,
       query: config.query,
+      sendsEffort: def.effortArg?.kind === 'request-field',
     });
   };
 

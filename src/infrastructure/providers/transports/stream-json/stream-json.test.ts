@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { RunHandle, RunRequest, TransportError } from '../../../../application/index';
-import type { Result, RoleDef, RunId } from '../../../../domain/index';
+import type { EffortLevel, Result, RoleDef, RunId } from '../../../../domain/index';
 import { parseSlug, parseUlid, type AccountId, type AgentEvent } from '../../../../domain/index';
-import type { ProviderDef } from '../../defs/index';
+import { effortFlagArgs, type EffortArg, type ProviderDef } from '../../defs/index';
 import { createStreamJsonTransport, type StreamDialect } from './stream-json';
 
 let root: string;
@@ -411,6 +411,38 @@ describe('createStreamJsonTransport', () => {
       expect(existsSync(join(cwd, 'config', 'mcp.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'skills.json'))).toBe(true);
       expect(existsSync(join(cwd, 'config', 'hooks.json'))).toBe(true);
+    });
+  });
+
+  describe('effort (P-41)', () => {
+    const FLAG: EffortArg = { kind: 'flag', flag: '--effort' };
+    const argvOf = async (effort?: EffortLevel): Promise<string> => {
+      const bin = writeBin(
+        `echo-argv-${effort ?? 'none'}`,
+        'process.stdout.write(JSON.stringify({ say: process.argv.slice(2).join(" ") }) + \'\\n{"end":"completed"}\\n\');',
+      );
+      const def: ProviderDef = {
+        ...defOf(bin),
+        effortArg: FLAG,
+        buildLaunch: (input) => ({
+          args: ['--json', ...effortFlagArgs(FLAG, input.effort)],
+          env: { FAKE_CLI_HOME: input.configDir },
+          stdin: 'prompt',
+        }),
+      };
+      const handle = unwrap(
+        await createStreamJsonTransport(def, fakeDialect).start({ ...request(runDir()), ...(effort === undefined ? {} : { effort }) }),
+      );
+      const text = (await collect(handle.events)).find((event) => event.type === 'text');
+      return text?.type === 'text' ? text.delta : '';
+    };
+
+    it('P-41: the run request effort reaches the launch argv as the declared flag and level', async () => {
+      expect(await argvOf('high')).toBe('--json --effort high');
+    });
+
+    it('P-41: an absent effort adds nothing to argv', async () => {
+      expect(await argvOf()).toBe('--json');
     });
   });
 });

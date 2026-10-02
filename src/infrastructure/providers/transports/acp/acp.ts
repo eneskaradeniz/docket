@@ -75,6 +75,34 @@ const asRecord = (value: unknown): UnknownRecord | null =>
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
+/** The values of a select config option: plain entries, or the entries a group wraps. */
+const optionValues = (options: unknown): readonly string[] => {
+  if (!Array.isArray(options)) return [];
+  const values: string[] = [];
+  for (const raw of options) {
+    const entry = asRecord(raw);
+    if (entry === null) continue;
+    const value = asString(entry.value);
+    if (value !== undefined) values.push(value);
+    else values.push(...optionValues(entry.options));
+  }
+  return values;
+};
+
+/** The id of the session's config option of `category`, when it offers `level` as a value. A level
+ *  the session does not offer is not sent: the agent would refuse it and the run keeps its default. */
+const effortOptionId = (session: UnknownRecord | null, category: string, level: string): string | undefined => {
+  const options = session === null ? undefined : session.configOptions;
+  if (!Array.isArray(options)) return undefined;
+  for (const raw of options) {
+    const option = asRecord(raw);
+    if (option === null || option.category !== category) continue;
+    const id = asString(option.id);
+    if (id !== undefined && optionValues(option.options).includes(level)) return id;
+  }
+  return undefined;
+};
+
 type RpcSettled =
   | { readonly kind: 'result'; readonly result: unknown }
   | { readonly kind: 'error'; readonly message: string };
@@ -163,6 +191,7 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
         prompt: request.prompt,
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
+        ...(request.effort === undefined ? {} : { effort: request.effort }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -464,6 +493,13 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
             return;
           }
           sessionId = createdId;
+          if (def.effortArg?.kind === 'session-option' && request.effort !== undefined) {
+            const configId = effortOptionId(createdSession, def.effortArg.category, request.effort);
+            // A refused effort leaves the session on its own default; it never fails the run.
+            if (configId !== undefined) {
+              await requestRpc('session/set_config_option', { sessionId, configId, value: request.effort });
+            }
+          }
         }
         establishedSessionId = sessionId;
         events.push({ type: 'session_started', at: clock.now(), sessionRef: sessionId });

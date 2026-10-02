@@ -51,6 +51,7 @@ export function mapSdkMessage(message: SDKMessage, at: EpochMs, context: MapCont
     return events;
   }
   if (message.type === 'result') {
+    const thinking = message.usage.output_tokens_details?.thinking_tokens;
     return [
       {
         type: 'usage',
@@ -58,6 +59,7 @@ export function mapSdkMessage(message: SDKMessage, at: EpochMs, context: MapCont
         inputTokens: message.usage.input_tokens,
         outputTokens: message.usage.output_tokens,
         cachedInputTokens: message.usage.cache_read_input_tokens,
+        ...(typeof thinking === 'number' ? { reasoningTokens: thinking } : {}),
         costUsd: message.total_cost_usd,
         costKind: context.costKind,
       },
