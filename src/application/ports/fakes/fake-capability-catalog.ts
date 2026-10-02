@@ -23,9 +23,10 @@ export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[]
     return kind === undefined
       ? undefined
       : kind.endpointHost === undefined && kind.defaultBilling === undefined
-        ? { id: kind.id, authMode: kind.authMode }
+        ? { id: kind.id, providerId: kind.provider ?? '', authMode: kind.authMode }
         : {
             id: kind.id,
+            providerId: kind.provider ?? '',
             authMode: kind.authMode,
             ...(kind.endpointHost !== undefined ? { endpointHost: kind.endpointHost } : {}),
             ...(kind.defaultBilling !== undefined ? { defaultBilling: kind.defaultBilling } : {}),
