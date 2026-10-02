@@ -182,6 +182,38 @@ describe('listAcpSessionModels (P-29)', () => {
     await pending;
   }, 15_000);
 
+  it('P-29: an atomcode session with a configured provider lists the model select, reads the levels through its names, launches with telemetry off and never prompts', async () => {
+    const harness = makeSpawn('models-atomcode-configured');
+    const listed = await listAcpSessionModels(accountOf('atomcode'), {
+      baseEnv: {},
+      spawn: harness.spawn,
+      levelNames: { none: 'off', high: 'high', max: 'max' },
+    });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'atomcode', args: ['acp', '--no-telemetry'] }]);
+    expect(listed.value.map((model) => model.id)).toEqual(['deepseek-chat', 'glm-5.2']);
+    expect(listed.value.every((model) => model.efforts?.join() === 'none,high,max')).toBe(true);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+    expect(methods).toContain('session/close');
+  });
+
+  it('P-29: an atomcode session without a model option (no provider configured) is an empty list, not a failure', async () => {
+    const harness = makeSpawn('models-atomcode');
+    const listed = await listAcpSessionModels(accountOf('atomcode'), { baseEnv: {}, spawn: harness.spawn });
+    expect(listed).toEqual({ ok: true, value: [] });
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).not.toContain('session/prompt');
+  });
+
+  it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
+    const harness = makeSpawn('models-atomcode');
+    const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });
+    expect(listed.ok).toBe(false);
+  });
+
   it('P-43: advertised thought levels are read back through the level names, dropping values that name no level', async () => {
     const harness = makeSpawn('models-opencode');
 

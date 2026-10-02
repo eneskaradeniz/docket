@@ -425,6 +425,27 @@ exit 0`,
   }, 30_000);
 });
 
+describe('logged-out text login probe (atomcode)', () => {
+  it('G1: only the documented text with exit 0 reads as logged out; every other answer is unknown, never logged in', async () => {
+    const atomcode = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'atomcode');
+    if (atomcode === undefined) throw new Error('missing atomcode definition');
+    const body = (answer: string, exit = 0): string =>
+      `case "$1" in\n  --version) echo "atomcode 5.2.1 (bb491ce)"; exit 0;;\n  status) echo "${answer}"; exit ${exit};;\nesac\nexit 0`;
+    const def = defOf({ id: 'atomcode-like', bins: ['atomcode-like'], helpArgs: undefined, optionalFlags: undefined, authProbe: atomcode.authProbe });
+    for (const [answer, exit, expected] of [
+      ['Not logged in.', 0, false],
+      ['Logged in as someone', 0, null],
+      ['Not logged in.', 1, null],
+    ] as const) {
+      writeBin('home/.local/bin/atomcode-like', body(answer, exit));
+      const { discovery, calls } = makeDiscovery([def], { PATH: EMPTY_PATH() }, { probeTimeoutMs: 2000 });
+      const results = await collect(discovery);
+      expect(results[0]?.loggedIn, `${answer} / exit ${exit}`).toBe(expected);
+      expect(calls.map((call) => call.args[0]).filter((arg) => arg === 'login' || arg === 'logout')).toEqual([]);
+    }
+  });
+});
+
 describe('credential-count login probe (kilo)', () => {
   it('G1: "<N> credentials" gives logged in for N > 0, not logged in for 0, and unknown for anything else', () => {
     const ESC = String.fromCharCode(27);
