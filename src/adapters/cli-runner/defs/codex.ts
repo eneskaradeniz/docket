@@ -112,7 +112,7 @@ export const codexDef: CliRunnerDef = {
   displayName: 'Codex',
   bin: 'codex',
   // Resume carries --json and -m but NOT -C/-s (measured against the flag surface; the thread's
-  // own cwd and sandbox stand — open-design's independent measurement agrees).
+  // own cwd and sandbox stand).
   buildArgs: (input) => {
     if (input.resume !== undefined) {
       return ['exec', 'resume', '--json', ...(input.model !== undefined ? ['--model', input.model] : []), input.resume, '-'];

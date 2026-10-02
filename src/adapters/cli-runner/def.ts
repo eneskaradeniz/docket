@@ -2,7 +2,7 @@
 //
 // One adapter, N vendors: the engine (index.ts) owns the PROCESS (spawn, stdin, line-split,
 // signals, exit); this type carries every vendor vocabulary item — the binary, the flag
-// builder, the stream parser, the error classifier. Modeled on open-design's RuntimeAgentDef
+// builder, the stream parser, the error classifier. Modeled on a per-vendor runtime definition
 // (docs/research/2026-09-25-multi-cli-provider-architecture.md), narrowed to what Docket's
 // SessionRunner port consumes. A vendor name appears ONLY in a def file under this directory
 // (ADR-0006's carve-out); the engine and core stay vendor-blind.
@@ -81,7 +81,7 @@ export interface CliRunnerDef {
 }
 
 /** The per-vendor binary-override env key (`codex` → `CODEX_BIN`) — the escape hatch when
- *  detection misses (the open-design lesson): a full path to the binary, honored by BOTH the
+ *  detection misses (a lesson from multi-CLI tooling): a full path to the binary, honored by BOTH the
  *  spawn path and discovery. */
 export function binEnvKey(id: string): string {
   return `${id.toUpperCase().replace(/-/g, '_')}_BIN`;
