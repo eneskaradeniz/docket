@@ -334,7 +334,10 @@ async function settingsPanelCheck(target) {
     for (const el of panel.querySelectorAll('button, input, select, textarea')) {
       if (!visible(el)) continue;
       const b = el.getBoundingClientRect();
-      if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5) {
+      // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
+        // only sideways escape counts there.
+        const scrolls = el.closest('[data-settings-content]') !== null;
+        if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
         outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
       }
     }
@@ -371,7 +374,10 @@ async function settingsPanelCheck(target) {
       for (const el of panel.querySelectorAll('button, input, select, textarea')) {
         if (!visible(el)) continue;
         const b = el.getBoundingClientRect();
-        if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5) {
+        // A control inside the scrolling content pane may lie below the fold (Hesaplar is long);
+        // only sideways escape counts there.
+        const scrolls = el.closest('[data-settings-content]') !== null;
+        if (b.left < r.left - 0.5 || b.right > r.right + 0.5 || (!scrolls && (b.top < r.top - 0.5 || b.bottom > r.bottom + 0.5))) {
           outside.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 24));
         }
       }
@@ -380,6 +386,10 @@ async function settingsPanelCheck(target) {
   const inPanel = (text) => page.locator(selectors.settingsPanel).getByText(text).first();
   const menuButton = (name) =>
     page.locator(selectors.settingsPanel).getByRole('button', { name, exact: true }).first();
+  await menuButton('Görünüm').click({ timeout: 4000 });
+  await inPanel('Tema').waitFor({ state: 'visible', timeout: 4000 });
+  await menuButton('Açık').waitFor({ state: 'visible', timeout: 4000 });
+  const appearanceOutside = await sectionOutside();
   await menuButton('Telefon').click({ timeout: 4000 });
   await inPanel('Telefon bağlı değil').waitFor({ state: 'visible', timeout: 4000 });
   const pairDisabled = await page
@@ -396,7 +406,7 @@ async function settingsPanelCheck(target) {
   await page.keyboard.press('Escape');
   await page.locator(selectors.settingsPanel).waitFor({ state: 'detached', timeout: 4000 });
   if (m === null) return { ok: false, detail: 'settings panel elements not found' };
-  if (phoneOutside === null || updateOutside === null) {
+  if (phoneOutside === null || updateOutside === null || appearanceOutside === null) {
     return { ok: false, detail: 'a section walk lost the panel' };
   }
   const dx = Math.abs(m.cx - m.iw / 2);
@@ -415,6 +425,7 @@ async function settingsPanelCheck(target) {
     m.outside.length === 0 &&
     pairDisabled &&
     phoneOutside.length === 0 &&
+    appearanceOutside.length === 0 &&
     updateOutside.length === 0;
   return {
     ok,
@@ -422,7 +433,7 @@ async function settingsPanelCheck(target) {
       inside ? 'inside' : 'overflows the window'
     } controls ${m.outside.length === 0 ? 'contained' : `${m.outside.length} outside: ${m.outside.slice(0, 3).join('; ')}`} pair ${
       pairDisabled ? 'disabled' : 'ENABLED'
-    } sections ${phoneOutside.length + updateOutside.length === 0 ? 'contained' : `${phoneOutside.length + updateOutside.length} outside`} scrim ${
+    } sections ${phoneOutside.length + updateOutside.length + appearanceOutside.length === 0 ? 'contained' : `${phoneOutside.length + updateOutside.length + appearanceOutside.length} outside`} scrim ${
       m.covers ? 'covers' : 'gaps'
     } blur ${m.blurs ? 'yes' : 'no'}`,
   };
