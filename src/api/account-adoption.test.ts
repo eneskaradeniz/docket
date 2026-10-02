@@ -55,7 +55,7 @@ describe('accounts.candidates', () => {
     expect(h.scans.count).toBe(2);
   });
 
-  it('A-53: a candidate names its provider through the route kind, null when the route kind is unknown', async () => {
+  it('A-67: a candidate names its provider through the route kind, null when the route kind is unknown', async () => {
     const h = setup();
     const stranger: AccountCandidate = { ...ENDPOINT, sourcePath: '/home/u/.other', routeKind: 'no-such-route' };
     const api = createApi(h.deps, undefined, undefined, undefined, undefined, undefined, {

@@ -18,7 +18,7 @@ export interface CandidateFact {
   readonly displayPath: string;
   readonly kind: 'subscription' | 'compatible_endpoint';
   readonly routeKind: string;
-  /** The def id the route kind belongs to; null when unknown (A-53). */
+  /** The def id the route kind belongs to; null when unknown (A-67). */
   readonly provider: string | null;
   readonly endpointHost?: string;
   readonly hasOauthLogin: boolean;

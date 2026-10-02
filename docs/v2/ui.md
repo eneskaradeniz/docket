@@ -356,8 +356,8 @@ being reset.
   reads "Anahtar gerekli" and `account.adopt` is sent without `importToken`; the value is never
   shown, masked or otherwise. A provider that needs a login says so with its name ("Terminalde <ad> ile giriş
   yap, sonra yeniden tara") and offers "Yeniden tara"; a provider not found on the machine shows
-  its `installUrl` (A-53) as copyable text — Docket runs no install itself and never invents a
-  command. A candidate's mark comes from its `provider` (A-53).
+  its `installUrl` (A-67) as copyable text — Docket runs no install itself and never invents a
+  command. A candidate's mark comes from its `provider` (A-67).
 - **U-35** (setup wizard; replaces U-7) The rev 28.1 flow: Hoş geldin (Dil, Tema) → Hesaplar
   (U-34, ✎ opens the U-30 window; gate: at least one ready account selected) → Yetenekler →
   Asistan sırası → Bütçe → the "Kurulum tamam" moment (rail all ✓, one summary line, "Proje

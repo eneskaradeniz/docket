@@ -103,6 +103,7 @@ export interface RunRecord {
   readonly attempt: number;
   readonly role: RoleSlug;
   readonly route: AccountRoute;
+  readonly definitionsRev?: string;       // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;
@@ -376,6 +377,66 @@ Fake: `createFakeUpdateChecker(initial?)` — `queueCheck(state)` scripts the ne
 (adopted once), `apply` honours the port guard and moves to `downloading` at percent 0, and
 `applyCalls()` counts apply calls (refused included).
 
+### Instructions, checkpoints, handoff (#581)
+
+Ports for [providers.md](providers.md) **P-37**/**P-38**: the effective instructions of a run
+(P-37), checkpoint commits in the work order's worktree, and the handoff pack a continuation run
+starts from (P-38). The pure functions live in [domain.md](domain.md) §11 (`R-53 … R-57`) and
+`QueueItem` gains `handoffOf` ([domain.md](domain.md) §8); the use cases are in §2, the executor
+rules in §3, the acceptance scenario in §7. Fakes follow A-1 … A-3.
+
+```ts
+// ports/instruction-files.ts
+export interface InstructionFiles {
+  /** Reads the named files at the worktree root. Absent names are skipped; files over 1 MiB or
+   *  with a NUL byte in the first 8 KiB are skipped (the scanner's limits). Never writes. */
+  read(cwd: string, names: readonly string[]): Promise<readonly RepoInstructionFile[]>;
+}
+
+// ports/checkpoints.ts — kept narrow (the GitProbe precedent: no worktree powers leak)
+export interface CheckpointRef { readonly sha: string; readonly changed: boolean }
+export interface CheckpointDiff { readonly files: readonly string[]; readonly patch: string }
+export type CheckpointError = 'git_failed';
+export interface CheckpointCommitter {
+  /** `git add -A` + commit in the worktree. A clean tree → { changed: false }, no commit. Commits
+   *  are local-only (push stays with the forge flow); author/committer is the Docket checkpoint
+   *  identity, never a user. */
+  commit(input: { readonly cwd: string; readonly runId: RunId; readonly seq: number }): Promise<Result<CheckpointRef, CheckpointError>>;
+  /** The diff since `since`. The patch is redacted through the secret patterns (the scanner's
+   *  `redactSecrets`) at this boundary — application and domain never see unredacted patch text. */
+  diffSince(input: { readonly cwd: string; readonly since: string }): Promise<Result<CheckpointDiff, CheckpointError>>;
+  /** The commit the work order's worktree started from (refs/docket/bases/<id>). */
+  base(input: { readonly cwd: string; readonly workOrderId: WorkOrderId }): Promise<Result<string, CheckpointError>>;
+}
+
+// capability-catalog.ts — CapabilityCatalog gains
+/** The instruction-file names one provider reads natively, registry order (P-37). */
+nativeInstructionFiles(providerId: string): readonly string[];
+/** The union of known instruction-file names across providers — the candidate list to look for. */
+instructionFileNames(): readonly string[];
+
+// run-repo.ts — RunRepo gains
+saveHandoffNote(id: RunId, note: RollingNote): Promise<void>;
+handoffNote(id: RunId): Promise<RollingNote | undefined>;
+/** The first checkpoint sha of the run's stage attempt; set by the executor (A-59). */
+saveStageBase(id: RunId, sha: string): Promise<void>;
+stageBase(id: RunId): Promise<string | undefined>;
+
+// event-log.ts — AuditAction gains
+| 'run.handoff'
+
+// deps.ts — AppDeps gains two members (fakes follow A-1 … A-3)
+readonly instructionFiles: InstructionFiles;
+readonly checkpoints: CheckpointCommitter;
+```
+
+Two more type changes ride the same contract: `CatalogModel` (the `ModelCatalog` port's entry)
+gains `readonly contextWindow: number | null` (`null` — no window is known for the model), so pack
+sizing reads what the P-29 merge already carries per model instead of a second registry lookup.
+`null` is the common case, not an exception: most providers report no window through any channel
+today and no registry row carries a value, so the handoff is specified to work with the data
+absent (A-63).
+
 ---
 
 ## 2. Use cases — `src/application/use-cases/`
@@ -497,6 +558,51 @@ Rules:
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
 
+### Instructions, checkpoints, handoff — use cases (#581)
+
+```ts
+// use-cases/instructions.ts — the effective-instructions service (P-37)
+export interface RunPrompt { readonly prompt: string; readonly plan: InstructionPlan }
+export type PromptError = 'unknown_account' | 'definitions_invalid';
+export function composeRunPrompt(
+  deps: Pick<AppDeps, 'definitions' | 'accounts' | 'capabilities' | 'instructionFiles'>,
+  input: { readonly repo: RepoSlug; readonly workOrderId: WorkOrderId; readonly cwd: string;
+           readonly stage: StageSlug; readonly role: RoleSlug; readonly route: AccountRoute },
+): Promise<Result<RunPrompt, PromptError>>;
+
+// use-cases/checkpoints.ts — the checkpoint commit service (P-38 item 4)
+export function commitCheckpoint(
+  deps: Pick<AppDeps, 'checkpoints'>,
+  input: { readonly cwd: string; readonly runId: RunId; readonly seq: number },
+): Promise<Result<CheckpointRef, CheckpointError>>;
+
+// use-cases/handoff.ts — the handoff pack builder (P-38)
+export interface HandoffPlan { readonly pack: HandoffPack; readonly prompt: string }
+export type HandoffError = 'not_found' | 'no_repo' | 'git_failed' | 'definitions_invalid' | 'unknown_account';
+export function buildHandoff(
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'definitions' | 'workOrders' | 'runs' | 'accounts'
+                   | 'capabilities' | 'instructionFiles' | 'checkpoints' | 'modelCatalog'>,
+  input: { readonly runId: RunId; readonly candidates: readonly AccountRoute[] },
+): Promise<Result<HandoffPlan, HandoffError>>;
+```
+
+`composeRunPrompt` is the single prompt entry point: the composition root's start callback stops
+building `prompt: role.instructions` itself and calls this instead. `buildHandoff` loads the failed
+run and its events, the work order and definitions, the rolling note, the stage base (falling back
+to the worktree base ref), the diff, and the candidates' context windows (`null` where none is
+known); assembles the pack **for the target provider** (its native files), sizes it (fixed
+ceilings first; a known window only tightens them — A-63), renders it, and appends audit
+`run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
+
+Rules:
+- **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies.
+- **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt. The registry row is the provider's best-known set, not a fixed law of the CLI — some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it) — so a file the CLI reads natively but the row misses is inlined as well: the content reaching the agent twice is the safe failure, missing it is not.
+- **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
+- **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
+- **A-61** `deriveTaskState` is deterministic from stored events plus the checkpoint diff's file list; raw transcripts and session refs never enter the pack.
+- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run; the run record carries `definitionsRev`, the revision marker of the definitions its stage prompt was computed from, and when the continuation sees a different revision the pack sets `definitionsChanged` and the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
+- **A-63** The pack's budget starts from the fixed ceilings (`DEFAULT_INSTRUCTION_BUDGET_CHARS` for the instruction block, `ROLLING_NOTE_MAX_CHARS` for the summary); a known window only tightens it — `min` over the candidate routes' known windows × `PACK_CHARS_PER_TOKEN` (`ModelCatalog` entries; `contextWindow` rides the P-29 merge on `CatalogModel`, `null` = no window known). A `null` window contributes no bound: the ceilings alone size the pack, with `DEFAULT_CONTEXT_WINDOW_TOKENS` as the stand-in for the unknown window — it sits above the ceilings, so the no-data path is the rule rather than the exception (ten of nineteen surveyed providers report no window through any channel and no registry row carries a value; the handoff works without the data, and filling windows per adapter is follow-up issues). Truncation priority is fixed (R-56): stage prompt and Docket layers never truncate.
+
 ---
 
 ## 3. Services — `src/application/services/`
@@ -549,6 +655,17 @@ Rules:
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
 - **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced). The queue item carries `stageRouting(stage, binding)`'s `tier` and `thinking` (each absent when neither sets it). For a stage with `reviewOf`, the chain is ordered with `orderForReview`, where `reviewedProvider` is the provider of the account of the last `succeeded` run of the `reviewOf` stage in this work order (undefined when there is none); the route is the first entry of the ordered chain, and `sameProviderReview` is set when the result says so.
 - **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, matchId, now, account.reserve)`, where `matchId` is the account catalog entry's `resolvedId` for the item's model when the catalog knows one (an alias such as `opus` checks as the id it stands for), else the model, else `''`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
+
+### Checkpoints, rolling note, handoff wiring (#581)
+
+`ExecuteOutcome`'s `refused` error union gains `'handoff_failed'` (A-64). Rules:
+
+- **A-57** The executor commits a checkpoint at each `tool_result` boundary when `CHECKPOINT_MIN_INTERVAL_MS` has elapsed since the last commit, and always at `limit_hit`, `finished` and stream end. A clean tree is a no-op (`changed: false`), never an error. Commits are local-only and authored by the Docket checkpoint identity, never a user; they never travel to the forge. The cadence is event-boundary + terminal only — no background timer exists; the executor's stream is the only clock application may read. (`AgentEvent.tool_result` carries only `{ id, ok }`, so "each tool-result boundary that changed files" is implemented as commit-at-each-boundary with git as the arbiter.)
+- **A-58** Checkpoint commits touch only the work order's worktree (I-20's guarantee unchanged); the user's checkout, its branch and its index are never modified.
+- **A-59** The first commit of a stage attempt records its sha via `RunRepo.saveStageBase`. The pack's code state is `diffSince(stageBase)`; with no checkpoint (a clean stage) it is `diffSince(worktree base ref)`.
+- **A-60** The rolling note is extended with every persisted event batch (`extendRollingNote`) and saved through `RunRepo.saveHandoffNote` on the same cadence — so it exists the moment the account blocks. It is the tail of the text/thinking stream, capped at `ROLLING_NOTE_MAX_CHARS` with `capped: true`; no other content is derived into it (the model-written summary stays optional and unanswered, open decision O-8).
+- **A-64** A run started for a queue item with `handoffOf` builds the pack before the transport starts, sends `renderHandoffPrompt`'s prompt (checks-first preamble per R-57), and never passes a `resume` reference — native resume and the pack are never mixed (P-38). A pack failure refuses the run (`refused: 'handoff_failed'`) with only the audit entry written. The `run.started` audit detail carries `handoff: true` and `handoffOf`.
+- **A-65** `applyLimitDecision` with a `fallback` route sets `handoffOf = runId` on the queue item whenever the target **account** differs from the failed run's account — including a second account of the same provider, because whether one CLI login sees another's sessions is not knowable, so the pack is the one continuation mechanism. The evidence sides with the default: the one provider whose documentation covers the question pairs its session history with the login's own identity directory — a different account is a different directory, so native resume cannot see the earlier history (a documented negative) — while the other eighteen providers carry no evidence either way, so the pack rule stands and remains open to a revisit with evidence from an operator run. The billing boundary is unchanged: candidate eligibility still comes from `decideOnLimit`'s `FallbackCandidate` (P-40 — an automatic switch never crosses to `metered`/`unknown`), and the continuation itself passes the same spend preflight as any run (P-46). Autonomy and approvals travel as policy: the continuation run wires the same `PermissionGate` as any run.
 
 ---
 
@@ -827,7 +944,7 @@ export interface RoleListItem {
 | { type: 'account.cap.save'; id: string; scope: string; amountUsd: number; warnPercent: number }
 | { type: 'account.cap.remove'; id: string; scope: string }
 // providers.discovered rows gain `name: string; installUrl: string | null`;
-// accounts.candidates rows gain `provider: string | null` (A-53)
+// accounts.candidates rows gain `provider: string | null` (A-67)
 ```
 
 Rules:
@@ -859,7 +976,7 @@ Rules:
   percent outside `1..100` → `invalid_cap`); `account.cap.remove` deletes it. Removing the last cap
   while `consentedModels` is non-empty → `cap_required` (P-40: consent without a cap refuses
   every run). Unknown account → `not_found`. Both audit as `account.saved`.
-- **A-53** Discovery rows name their provider from the def's own data: each `providers.discovered`
+- **A-67** Discovery rows name their provider from the def's own data: each `providers.discovered`
   row gains `name` (the def's display name) and `installUrl` (the def's `installHint.url`, `null`
   when the def has none), and each `accounts.candidates` row gains `provider` — the def id its
   route kind belongs to (`CapabilityCatalog.routeKind(id).providerId`, the same lookup adoption
@@ -918,3 +1035,63 @@ export function pollQuota(
 
 The resume-fallback behaviour (**P-22**, providers.md) changes no signature: it lives inside the run
 executor's existing start path.
+
+---
+
+## 7. Limit handoff — acceptance (#581)
+
+`src/api/scenarios/handoff-three-legs.test.ts` (test-only folder in the API layer, the §5/P-24
+style): it must pass with fakes before any provider wiring is believed (**A-66**).
+
+Fixtures: repo with `CLAUDE.md`; provider X (account A) reads `CLAUDE.md` natively; provider Y
+(account B) reads `AGENTS.md` natively **and does not read `CLAUDE.md`** — Y is drawn from the
+AGENTS.md-only providers (several CLIs read both files, and a both-files B would make leg 2's
+inline assertion vacuous); the test asserts Y's registry native set lists no `CLAUDE.md`, so the
+choice is checked, not assumed. Role chain for `developer`: [A, B]. Policy: `fallback_account`.
+Flow: `standard`.
+
+1. **Leg 1 — A hits the limit mid-stage.** Work order reaches `implement`; enqueue + tick starts
+   the run on A. Fake transport script: `session_started`, `text`, `tool_call` (Edit) +
+   `tool_result`, `usage`, `limit_hit` (`window_exhausted`, `resetsAt` far future), `finished`
+   (reason `limit`). Assert: run outcome `limit`; ≥ 1 checkpoint commit exists and `stageBase` is
+   recorded; the rolling note is saved; `applyLimitDecision` produced a queue item with
+   `route = B` and `handoffOf = run₁`; work order state `limit_waiting`.
+2. **Leg 2 — B continues from the pack.** Tick starts the item; `executeRun` builds the pack.
+   Assert on the captured `RunRequest.prompt`: the checks-first preamble leads; the stage brief and
+   acceptance criteria are present; `CLAUDE.md`'s content is inlined (B does not read it natively)
+   while `AGENTS.md` is not (absent anyway); the inlined block sits under its quoted-data heading
+   (A-56); `taskState.lastCommand` names leg 1's tool pair; the
+   patch names the edited file and contains no unredacted secret (fixture plants a token-shaped
+   string in the diff); **no `resume` field is set**. Script B: `text`, `tool_call` +
+   `tool_result`, `usage`, `finished` (completed). Machine gates: tests exit 0, scan 0 findings →
+   `review/ready`.
+3. **Leg 3 — back to A at review.** `orderForReview` (R-52) puts A first for the review stage (B
+   wrote the stage). Assert the review run's prompt inlines **nothing** (A reads `CLAUDE.md`
+   natively) and carries the same Docket layers byte-for-byte as leg 2's prompt prefix. Script A:
+   completed. `submitAgentVerdict` approve → `close/awaiting_human`; audit trail ends with the
+   expected actions in order, including one `run.handoff`.
+
+Companion infrastructure test: the real `CheckpointCommitter` over `runGit` on a temp repo — commit
+creates a sha, second commit with no changes returns `changed: false`, `diffSince` redacts, `base`
+resolves the worktree base ref.
+
+### Implementation issues
+
+The contract splits into six implementation issues (each issue's Interfaces section is copied from
+this document, CLAUDE.md rule 3; `docs/v2/**` edits stay with the architect):
+
+| Issue | Content | Touches | Depends on | Test rules |
+| --- | --- | --- | --- | --- |
+| 1. domain core | `providers/instructions.ts` + `providers/handoff.ts` + domain barrel | `src/domain/providers/**`, `src/domain/index.ts` | — | R-53 … R-57 red → green, one test per rule |
+| 2. ports & types | `InstructionFiles`, `CheckpointCommitter` ports + fakes; `CapabilityCatalog` extension; `RunRepo` note/stage-base + sqlite adapter; `QueueItem.handoffOf`; `CatalogModel.contextWindow`; `RunRecord.definitionsRev`; `AuditAction` | `src/application/ports/**`, `src/domain` (types only), `src/infrastructure/storage/sqlite/**` | 1 | A-1 … A-4 extended to the new ports; `ports.test.ts` |
+| 3. effective instructions | `composeRunPrompt` + registry data (`instructionFiles` per provider) + composition-root wiring (start callback stops building the prompt itself) | `src/application/use-cases/**`, `src/infrastructure/providers/registry/**`, `electron/main.ts` | 1, 2 | A-53 … A-56 |
+| 4. checkpoints | `commitCheckpoint` + infra `CheckpointCommitter` (runGit) + executor triggers + stage base | `src/application/use-cases/**`, `src/application/services/run-executor.ts`, `src/infrastructure/vcs/**` | 2 | A-57 … A-59 + the git-boundary infra test |
+| 5. handoff wiring | `buildHandoff` + `executeRun`/`applyLimitDecision` changes + rolling note in the executor | `src/application/use-cases/**`, `src/application/services/**` | 1–4 | A-60 … A-65 + P-46 |
+| 6. acceptance | the three-leg scenario + audit assertions | `src/api/scenarios/**` | 1–5 | A-66 |
+
+Issues 3 and 4 both touch `run-executor.ts` — sequence them (3, then 4, then 5) so stacked merges
+never conflict.
+
+Provider context-window data (per adapter, optional) is deliberately outside the six issues: which
+providers can actually fill `CatalogModel.contextWindow`, and from which channel, is follow-up
+issue work per adapter; the contract is specified to work with `null` everywhere (A-63).

@@ -161,7 +161,7 @@ describe('path discovery', () => {
     expect(calls.every((call) => call.command === override)).toBe(true);
   });
 
-  it('A-53: every row carries the def display name and its install url, found or not', async () => {
+  it('A-67: every row carries the def display name and its install url, found or not', async () => {
     writeBin('path-dir/fake-cli', binBody({ version: '1.0.0' }));
     const { discovery } = makeDiscovery([defOf()], { PATH: join(root, 'path-dir') }, { probeTimeoutMs: 2000 });
     const [found] = await collect(discovery);

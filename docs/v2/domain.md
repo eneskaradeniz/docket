@@ -28,7 +28,7 @@ This keeps Phase 1 issues independent and conflict-free.
 | `proposal` | `shared` |
 | `resolver` | `shared`, `definitions`, `quota` |
 | `gates` | `shared`, `definitions` |
-| `providers` | `shared`, `quota` |
+| `providers` | `shared`, `quota`, `definitions` |
 | `library` | `shared`, `definitions` |
 | `flow` | `shared`, `definitions`, `gates` |
 | `dispatch` | `shared`, `quota`, `budget` |
@@ -597,6 +597,7 @@ export interface QueueItem {
   readonly thinking?: ThinkingChoice;   // from stageRouting (A-19); absent → balanced
   readonly tier?: Tier;                 // from stageRouting (A-19)
   readonly sameProviderReview?: true;   // a review stage found no other provider in the chain (R-52)
+  readonly handoffOf?: RunId;           // the failed run this item continues from through the handoff pack (A-65)
 }
 export interface RunningRun { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug; readonly accountId: AccountId }
 export interface DispatchLimits {
@@ -757,12 +758,91 @@ export function foldRun(events: readonly AgentEvent[]): RunSummary;
 // providers/catalog.ts — Thinking and EffortLevel as in provider-capabilities.md §1
 /** The effort a run sends for a role's choice on one model; undefined → send nothing. */
 export function effortForChoice(choice: ThinkingChoice | undefined, thinking: Thinking | 'unknown'): EffortLevel | undefined;
+
+// providers/instructions.ts — the effective-instructions core (P-37); pure and provider-agnostic
+/** The Docket layers: flow + stage + role. Deterministic; identical for every provider given the
+ *  same definitions (P-37: behaviour does not depend on the provider). */
+export function stageBrief(
+  flow: FlowDef, stage: StageDef, role: RoleDef | null,
+  workOrder: { readonly id: WorkOrderId; readonly title: string },
+): string;
+
+/** A stage's acceptance criteria rendered as checkable statements from its exit gates (command
+ *  sets by name, secret_scan, agent_verdict role, human gates). StageDef carries no authored
+ *  brief, so the gate rendering IS the criteria — an authored `brief` field is deliberately not
+ *  added; it arrives only if the rendered criteria prove too thin. */
+export function acceptanceCriteria(stage: StageDef, repo: RepoDef): readonly string[];
+
+export interface RepoInstructionFile { readonly name: string; readonly content: string }
+export interface InstructionBudget { readonly maxChars: number }
+export const DEFAULT_INSTRUCTION_BUDGET_CHARS: number;   // 24_000
+export interface InstructionPlan {
+  readonly native: readonly string[];                 // names the provider reads itself; never inlined
+  readonly inlined: readonly RepoInstructionFile[];   // truncated to the budget, candidate order
+  readonly truncated: readonly string[];             // names that did not fit whole
+}
+/** `present` — the candidate files found in the worktree; `native` — the chosen provider's set.
+ *  A file both native and present is never inlined. A non-native file is inlined whole while the
+ *  budget allows, then truncated to the remainder with an end marker; later candidates are dropped. */
+export function planInstructions(
+  native: readonly string[],
+  present: readonly RepoInstructionFile[],
+  budget: InstructionBudget,
+): InstructionPlan;
+/** The prompt block: the inlined files under one "project context" heading that marks them as
+ *  quoted repo data — never Docket instructions; files in plan order. */
+export function renderInstructionBlock(plan: InstructionPlan): string;
+
+// providers/handoff.ts — the handoff pack core (P-38)
+export interface TaskState {
+  readonly lastCommand?: { readonly name: string; readonly target?: string; readonly ok: boolean };
+  readonly toolCalls: number;
+  readonly failedToolCalls: number;
+  readonly openPermissionAsks: readonly string[];
+  readonly filesTouched: readonly string[];   // from the checkpoint diff — ground truth, not event targets
+}
+/** Deterministic extraction from run events (P-38 item 3). Raw transcripts never enter it. */
+export function deriveTaskState(events: readonly AgentEvent[], filesTouched: readonly string[]): TaskState;
+
+export interface RollingNote { readonly text: string; readonly capped: boolean }
+export const ROLLING_NOTE_MAX_CHARS: number;            // 8_000
+/** Pure fold: appends new text/thinking deltas and keeps the tail; `capped: true` once truncated. */
+export function extendRollingNote(note: RollingNote | undefined, events: readonly AgentEvent[]): RollingNote;
+
+export interface HandoffPack {
+  readonly stagePrompt: string;                       // item 1 — stageBrief, recomputed (A-62)
+  readonly acceptance: readonly string[];             // item 1
+  readonly instructionPlan: InstructionPlan;          // item 2 — for the TARGET provider (P-37)
+  readonly taskState: TaskState;                      // item 3
+  readonly codeState: { readonly files: readonly string[]; readonly patch: string };   // item 4
+  readonly summary: RollingNote;                      // item 5
+  readonly definitionsChanged: boolean;               // the definitions changed since the first leg (A-62)
+}
+export interface PackBudget { readonly maxChars: number }
+export const PACK_CHARS_PER_TOKEN: number;            // 4 — chars ↔ tokens estimate for sizing only
+export const DEFAULT_CONTEXT_WINDOW_TOKENS: number;   // 32_768 — the stand-in for an unknown window; the fixed ceilings sit below it, so an unknown window sizes the pack to the ceilings alone (A-63)
+/** Throttles checkpoint commits; no timer exists — the cadence is event-boundary + terminal (A-57). */
+export const CHECKPOINT_MIN_INTERVAL_MS: number;      // 30_000
+/** Deterministic truncation to the budget. Priority: stagePrompt and the Docket layers never
+ *  truncate; then inlined files (reverse candidate order), then the patch body (file list kept,
+ *  marker left in place of the cut), then the summary. */
+export function sizeHandoffPack(pack: HandoffPack, budget: PackBudget): HandoffPack;
+/** The continuation prompt: checks-first preamble, stage prompt, acceptance, effective
+ *  instructions block, task state, code state, summary — fixed order, English. With
+ *  `definitionsChanged` set, the note "definition changed since the first leg" follows the
+ *  preamble; quoted repo material stays under its data heading (never Docket instructions). */
+export function renderHandoffPrompt(pack: HandoffPack): string;
 ```
 
 Rules:
 - R-43 (retired): `supportTier` is replaced by `supportLevel` from the capability record (P-28); the function and its type are removed.
 - **R-44** `foldRun` sums token counts across all `usage` events (`reasoningTokens` absent counts as 0); `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
 - **R-50** `effortForChoice`: absent choice → `{ level: 'balanced' }`; a `level` maps through `thinkingFor`; an `effort` is sent as is when the model lists it, otherwise clamped down to the highest listed level below it, and undefined when none is below; `thinking` `unknown` or `{ kind: 'none' }` → undefined for every choice. A level the model does not list is never returned.
+- **R-53** `stageBrief`/`acceptanceCriteria` are pure functions of the definitions — the same inputs render the same bytes; no timestamps, no account data, no provider ids. The acceptance criteria are rendered from the stage's exit gates because `StageDef` carries no authored brief; a `brief` field is added only if the rendered criteria prove too thin.
+- **R-54** `planInstructions`: native files never inline; a file both native and absent is not an error; truncation markers name the file and the kept char count; the plan is a pure function of (`native`, `present`, budget).
+- **R-55** `deriveTaskState` reads only `tool_call`/`tool_result`/`permission_ask` events; `extendRollingNote` reads only `text`/`thinking` deltas; neither sees the raw transcript. P-38 item 3's plan/done/remaining lists are not derivable from today's events: the deterministic core ships first, a plan-like structure arrives later as registry data (plan-tool names per provider), and the model-written summary stays open decision O-8.
+- **R-56** `sizeHandoffPack` never drops `stagePrompt`, `acceptance` or the Docket layers, and never empties the pack: a budget below the untouchable core is a caller bug, not a smaller pack.
+- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed.
 
 ---
 
