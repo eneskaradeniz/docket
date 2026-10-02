@@ -5,6 +5,8 @@ import { strict as assert } from 'node:assert';
 
 import {
   comboPlan,
+  L12_MARK_SETS,
+  l12BadgeFailures,
   L13_KNOWN_STANDINGS,
   matchProblemText,
   problemLabelEntries,
@@ -164,4 +166,78 @@ test('the skeleton verdict holds the holder still within the tolerance', () => {
   const moved = skeletonVerdict(before, [480 + SKELETON_HEIGHT_TOLERANCE_PX + 0.5]);
   assert.equal(moved.ok, false);
   assert.match(moved.detail, /moved 8\.5px/);
+});
+
+// --- L-12's badge verdict -----------------------------------------------------------------------------
+
+test("L-12: a marked provider's badge drawing its path passes", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'codex', path: 'M8.086.457', neutral: false, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, []);
+});
+
+test("L-12: a marked provider's badge drawing the neutral glyph fails", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'codex', path: '', neutral: true, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, ['marked provider codex drew the neutral glyph']);
+});
+
+test("L-12: a marked provider's badge drawing no path at all fails", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'claude-code', path: '   ', neutral: false, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, ['marked provider claude-code drew no mark path']);
+});
+
+test("L-12: a markless provider's badge drawing the neutral glyph passes", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'kimi', path: '', neutral: true, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, []);
+});
+
+test("L-12: a markless provider's badge drawing a path fails", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'amp', path: 'M0 0', neutral: true, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, ['markless provider amp drew a path it does not own']);
+});
+
+test('L-12: a badge outside its row fails', () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'codex', path: 'M8.086.457', neutral: false, outsideRow: true },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, ['badge outside its row']);
+});
+
+test("L-12: a badge whose id is in neither mark set fails as an unknown provider id in the audit seed", () => {
+  const verdict = l12BadgeFailures(
+    { provider: 'gemini', path: 'M0 0', neutral: false, outsideRow: false },
+    L12_MARK_SETS,
+  );
+  assert.deepEqual(verdict, ['unknown provider id in the audit seed: gemini']);
+  // A badge carrying no id at all is the same defect, named for what it carries.
+  const bare = l12BadgeFailures({ provider: '', path: '', neutral: true, outsideRow: false }, L12_MARK_SETS);
+  assert.deepEqual(bare, ['unknown provider id in the audit seed: (no id)']);
+});
+
+test("L-12: the rule's sets are the shared module's — marked and markless, disjoint", async () => {
+  const { MARKED_PROVIDER_IDS, MARKLESS_PROVIDER_IDS } = await import(
+    '../src/infrastructure/providers/defs/provider-mark-sets.ts'
+  );
+  assert.equal(L12_MARK_SETS.marked.size, MARKED_PROVIDER_IDS.length);
+  assert.equal(L12_MARK_SETS.nullMark.size, MARKLESS_PROVIDER_IDS.length);
+  for (const id of MARKED_PROVIDER_IDS) assert.equal(L12_MARK_SETS.marked.has(id), true);
+  for (const id of MARKLESS_PROVIDER_IDS) {
+    assert.equal(L12_MARK_SETS.nullMark.has(id), true);
+    assert.equal(L12_MARK_SETS.marked.has(id), false);
+  }
 });

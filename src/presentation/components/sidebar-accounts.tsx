@@ -93,12 +93,14 @@ const AccountCardSkeleton = () => (
 
 const AccountCardView = ({
   card,
+  provider,
   mark,
   active,
   locale,
   onOpen,
 }: {
   readonly card: AccountCard;
+  readonly provider: string;
   readonly mark: ProviderMarkValue | null;
   readonly active: boolean;
   readonly locale: Locale;
@@ -113,7 +115,7 @@ const AccountCardView = ({
     }`}
   >
     <span className="flex items-center gap-1.5">
-      <ProviderMark mark={mark} size={MARK_SIZE.dense} />
+      <ProviderMark provider={provider} mark={mark} size={MARK_SIZE.dense} />
       <span title={card.label} className="min-w-0 truncate text-xs font-semibold leading-[17px]">
         {card.label}
       </span>
@@ -245,6 +247,7 @@ export function SidebarAccounts({
                   <AccountCardView
                     key={card.id}
                     card={card}
+                    provider={card.provider}
                     mark={marks.markFor(card.provider)}
                     active={activeAccountId === card.id}
                     locale={locale}

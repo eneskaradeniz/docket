@@ -217,7 +217,7 @@ function AccountListRow({
         onClick={onOpen}
         className="flex w-full items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-3 text-left hover:bg-raised"
       >
-        <ProviderMark mark={mark} />
+        <ProviderMark provider={account.provider} mark={mark} />
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
           {account.label}
           {account.plan !== null ? <span className="font-normal text-inkdim"> · {account.plan}</span> : null}
