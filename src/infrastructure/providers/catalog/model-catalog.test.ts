@@ -386,10 +386,28 @@ describe('createModelCatalog (P-29)', () => {
       calls += 1;
       return query(params);
     };
-    // No adapter registered: the route kind's source has no live leg, so the SDK query never runs.
+    // No adapter registered: the route kind's source has no live leg, so the SDK query never runs
+    // and the bundled records are the whole answer — the subscription kind's bundled flagships.
     const catalog = createModelCatalog({ ...baseConfig(counting), accounts, adapters: {} });
 
-    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    const listed = await catalog.list(ACCOUNT_A);
+    expect(listed).toEqual([
+      {
+        id: 'claude-opus-5-5',
+        source: 'bundled',
+        tier: 'strong',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-sonnet-5-5',
+        source: 'bundled',
+        tier: 'balanced',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'included' },
+    ]);
     expect(calls).toBe(0);
   });
 
