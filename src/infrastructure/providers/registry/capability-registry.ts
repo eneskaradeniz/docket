@@ -91,7 +91,36 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'sdk_usage',
       modelSource: 'sdk',
       liveIsAuthoritative: true,
-      models: [],
+      // The plan table covers the opus, sonnet and haiku families on every subscription tier, so
+      // their current flagships are bundled as included — a pinned model on a plan no longer asks
+      // for spend consent. The fable family splits per plan (inside the weekly limits on some,
+      // usage-credits-only on others) and the record shape carries one billing per model, so it
+      // stays unbundled: live-only rows read unknown and remain hand-pick-with-consent. The ids,
+      // effort sets and plan rows follow the provider's current model-configuration and plan
+      // documentation.
+      models: [
+        {
+          id: 'claude-opus-5-5',
+          family: 'opus',
+          tier: 'strong',
+          thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          billing: 'included',
+        },
+        {
+          id: 'claude-sonnet-5-5',
+          family: 'sonnet',
+          tier: 'balanced',
+          thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          billing: 'included',
+        },
+        {
+          id: 'claude-haiku-4-5',
+          family: 'haiku',
+          tier: 'fast',
+          thinking: { kind: 'none' },
+          billing: 'included',
+        },
+      ],
     },
     {
       // API-key runs take the key from the keychain and report costs straight from the stream;
