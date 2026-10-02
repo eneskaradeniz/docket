@@ -25,6 +25,7 @@ export const TR: LabelBundle = {
   'error.binding_exists': 'Hesap bir rol bağlantısında kullanılıyor; önce bağlantıyı güncelleyin.',
   'error.invalid_model': 'Model geçersiz.',
   'error.invalid_cap': 'Harcama üst sınırı geçersiz.',
+  'error.cap_required': 'Bir model onaylıyken son harcama üst sınırı kaldırılamaz; önce onayı geri çekin.',
   'error.not_a_deploy_gate': 'Bu kapı bir dağıtım kapısı değil.',
   'error.no_approval': 'Dağıtımı yalnızca kullanıcı onaylayabilir.',
   'error.confirmation_mismatch': 'Ortam adı doğrulaması eşleşmiyor; ortam adını aynen yazın.',

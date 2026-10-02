@@ -313,15 +313,16 @@ being reset.
   their one-line purpose, `wait_resume` recommended, `switch_pool` disabled with a reason when the
   account has a single pool; `account.save` with `limitPolicy`); "Kendi kullanımın için ayır" (Yok
   · %10 · %20 · %30 · "Pencereye göre ayrı…", whose fine-tune holds separate 0–95 short and long
-  fields naming the account's meters of each class; `account.save` with `reserve`, A-45's
+  fields naming the account's meters of each `reserveClass` (a `larger` meter is named under
+  both, with "büyük olan geçerli"); `account.save` with `reserve`, A-45's
   `invalid_reserve` mapped); "Harcama tavanı" only on an account that may spend money — a
   pay-per-use account or one with any `consentedModels` — amount and period, fine-tune warn
   percent (`account.cap.save`; A-52's `cap_required` mapped). Under Limitler a fixed note: an
   automatic switch never moves from an included model to a paid or unverified one (P-40). A
   subscription account without consents shows no money anywhere.
-- **U-31** (reserve on a bar) A meter bar shows remaining from the left. With a reserve for the
-  meter's `reserveClass` (A-48) the bar carries a hatched zone from 0 to the reserve with a 2px
-  edge, the footnote "%r senin için ayrılmış", and — when remaining is at or below the reserve —
+- **U-31** (reserve on a bar) A meter bar shows remaining from the left. With a non-zero
+  `reserveShare` (A-48) the bar carries a hatched zone from 0 to that share with a 2px
+  edge, the footnote "%r senin için ayrılmış", and — when remaining is at or below that share —
   the amber tag "Rezerve ulaştı — yeni koşu başlamaz". The same reading drives the accounts frame
   (U-37). A meter whose unit is not a share never draws a zone.
 - **U-32** (models and spend consent) Modeller groups `account.models` by billing: Plana dahil

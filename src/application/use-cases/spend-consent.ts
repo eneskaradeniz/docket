@@ -11,12 +11,12 @@ type AccountCap = AccountRecord['caps'][number];
 
 // A cap that cannot cap must never satisfy the consent gate: spendStatus reads amountUsd <= 0 as
 // `ok`, so a non-positive amount would pass the gate while stopping nothing.
-const isCapShape = (cap: AccountCap): boolean =>
+export const isCapShape = (cap: AccountCap): boolean =>
   cap.cap.amountUsd > 0 && Number.isFinite(cap.cap.amountUsd) &&
   cap.cap.warnPercent >= 1 && cap.cap.warnPercent <= 100 && Number.isFinite(cap.cap.warnPercent);
 
 /** One cap per scope: a grant replaces the entry its scope already holds, keeping the others. */
-const withCap = (caps: readonly AccountCap[], cap: AccountCap): readonly AccountCap[] => {
+export const withCap = (caps: readonly AccountCap[], cap: AccountCap): readonly AccountCap[] => {
   const replaced = caps.some((existing) => existing.scope === cap.scope);
   return replaced ? caps.map((existing) => (existing.scope === cap.scope ? cap : existing)) : [...caps, cap];
 };
