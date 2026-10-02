@@ -75,6 +75,7 @@ describe('model catalog data (P-29)', () => {
       'anthropic-api',
       'anthropic-subscription',
       'codex-subscription',
+      'copilot-subscription',
       'cursor-subscription',
       'opencode-subscription',
       'zai-glm',
@@ -96,6 +97,47 @@ describe('model catalog data (P-29)', () => {
       liveIsAuthoritative: true,
     });
     expect(findRouteKind('agy-subscription')?.defaultBilling).toBeUndefined();
+  });
+
+  it('P-29: the Copilot subscription kind lists its models from the session answer and meters its cost in credits', () => {
+    // The login's model list is the plan-scoped ACP session answer, so it is authoritative; the
+    // tiers name quality settings of the automatic choice, not model ids. The quota channel is
+    // the provider SDK's quota call, which this repository does not depend on, so no probe
+    // exists yet and the kind says so.
+    expect(findRouteKind('copilot-subscription')).toMatchObject({
+      providerId: 'copilot',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'credits',
+      modelSource: 'acp-session',
+      quotaProbe: 'none',
+      liveIsAuthoritative: true,
+      tierModels: { strong: 'intelligence', balanced: 'balance', fast: 'efficiency' },
+    });
+    expect(findRouteKind('copilot-subscription')?.models).toEqual([]);
+    // No billing state is documented per model, so live rows stay unknown — never assumed free.
+    expect(findRouteKind('copilot-subscription')?.defaultBilling).toBeUndefined();
+  });
+
+  it('P-29: the Copilot tiers resolve to the settings the session list exposes, and each names a listed entry', () => {
+    // What the session adapter lists on a plan limited to the automatic choice: the route's
+    // three settings, nothing else. Every tier must resolve into that list — a fixed tier
+    // target the catalog does not carry would be a name a run cannot send.
+    const kind = findRouteKind('copilot-subscription');
+    expect(kind).toBeDefined();
+    const merged = mergeCatalog(
+      [{ id: 'intelligence' }, { id: 'balance' }, { id: 'efficiency' }],
+      kind?.models ?? [],
+      FAMILY_PATTERNS,
+      undefined,
+      { authoritative: true },
+    );
+    expect(merged.map((model) => model.id)).toEqual(['intelligence', 'balance', 'efficiency']);
+    const tierModels = kind?.tierModels;
+    expect(tierModels).toBeDefined();
+    expect(resolveTier('strong', merged, tierModels)).toBe('intelligence');
+    expect(resolveTier('balanced', merged, tierModels)).toBe('balance');
+    expect(resolveTier('fast', merged, tierModels)).toBe('efficiency');
   });
 
   it('P-29: the Codex subscription kind lists its models from the app-server and reads its quota through a provider query', () => {

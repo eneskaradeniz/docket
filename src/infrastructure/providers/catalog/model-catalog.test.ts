@@ -115,6 +115,7 @@ const baseConfig = (query: QueryFn) => ({
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
     { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
+    { id: 'copilot-subscription', authMode: 'subscription', provider: 'copilot' },
     { id: 'agy-subscription', authMode: 'subscription', provider: 'agy' },
     { id: 'opencode-subscription', authMode: 'subscription', provider: 'opencode' },
   ]),
@@ -379,6 +380,7 @@ describe('createModelCatalog (P-29)', () => {
     ]);
   });
 
+<<<<<<< HEAD
   it('P-29: an acp-session route kind dispatches to the ACP adapter — a plan-authoritative list whose rows bill unknown without a verified default', async () => {
     // The fake ACP agent rides on the node binary; its session/new answer is scripted.
     const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
@@ -414,6 +416,25 @@ describe('createModelCatalog (P-29)', () => {
         thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
         billing: 'unknown',
       },
+=======
+  it('P-29: an acp-session route kind dispatches to the session adapter — the plan-limited answer lists the settings, billing unknown', async () => {
+    // The fake agent rides on the node binary; the scenario answers the recorded shape of a
+    // plan limited to the automatic choice, which the adapter expands to the route's settings.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-session.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'auto-only', join(dir, 'rpc.log')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'copilot' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, appServer: { spawn } });
+
+    // The kind fixes no billing default, so every setting reads unknown — hand-pick with
+    // consent, never assumed free; the tiers resolve to these ids through the kind's data.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown' },
+>>>>>>> origin/v2
     ]);
   });
 
