@@ -53,6 +53,7 @@ import {
   type CandidateDotStore,
   type SettingsPanelOrigin,
 } from '../stores/settings-panel';
+import type { CandidatesStore } from '../stores/candidates';
 import type { ShellStore } from '../stores/shell';
 import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
@@ -90,6 +91,8 @@ export interface ShellScreenProps {
   readonly themeStore: ThemeStore;
   /** Whether discovery holds an account not yet added — Hesaplar's amber dot (U-28). */
   readonly candidates: CandidateDotStore;
+  /** The discovered accounts list Settings → Hesaplar renders (U-34). */
+  readonly candidateList: CandidatesStore;
   readonly locale: Locale;
   /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
   readonly timeZone: string;
@@ -152,6 +155,7 @@ export function ShellScreen({
   localeStore,
   themeStore,
   candidates,
+  candidateList,
   locale,
   timeZone,
 }: ShellScreenProps) {
@@ -480,6 +484,7 @@ export function ShellScreen({
         onEnterSubPage={(id) => dispatchSettingsPanel({ type: 'enterSubPage', id })}
         onEscape={() => dispatchSettingsPanel({ type: 'escape' })}
         candidateDot={candidateDot}
+        candidates={candidateList}
         themeStore={themeStore}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}

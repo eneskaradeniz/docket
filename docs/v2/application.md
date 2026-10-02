@@ -943,6 +943,8 @@ export interface RoleListItem {
 // commands.ts — account.save gains `limitPolicy?: string`
 | { type: 'account.cap.save'; id: string; scope: string; amountUsd: number; warnPercent: number }
 | { type: 'account.cap.remove'; id: string; scope: string }
+// providers.discovered rows gain `name: string; installUrl: string | null`;
+// accounts.candidates rows gain `provider: string | null` (A-67)
 ```
 
 Rules:
@@ -974,6 +976,12 @@ Rules:
   percent outside `1..100` → `invalid_cap`); `account.cap.remove` deletes it. Removing the last cap
   while `consentedModels` is non-empty → `cap_required` (P-40: consent without a cap refuses
   every run). Unknown account → `not_found`. Both audit as `account.saved`.
+- **A-67** Discovery rows name their provider from the def's own data: each `providers.discovered`
+  row gains `name` (the def's display name) and `installUrl` (the def's `installHint.url`, `null`
+  when the def has none), and each `accounts.candidates` row gains `provider` — the def id its
+  route kind belongs to (`CapabilityCatalog.routeKind(id).providerId`, the same lookup adoption
+  makes; `null` when the route kind is unknown). No login or install command is invented: the defs
+  carry none.
 
 ---
 

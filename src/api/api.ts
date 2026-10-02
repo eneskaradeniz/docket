@@ -745,7 +745,11 @@ const runQuery = async (
       const found: readonly AccountCandidate[] = await adopting.candidates.get(
         query.refresh === true ? { refresh: true } : undefined,
       );
-      return found;
+      // The provider is the def id the route kind belongs to, the lookup adoption makes too.
+      return found.map((candidate) => ({
+        ...candidate,
+        provider: deps.capabilities.routeKind(candidate.routeKind)?.providerId ?? null,
+      }));
     }
 
     case 'providers.marks': {

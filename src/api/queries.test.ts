@@ -1420,7 +1420,7 @@ describe('providers.discovered', () => {
   it('U-13: kicks one pass per query and resolves only when the pass ends', async () => {
     const h = createHarness();
     const script = createScriptedDiscovery([
-      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
+      { defId: 'alpha', name: 'Alpha', installUrl: null, binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
     ]);
     const api = createApi(h.deps, undefined, script.discovery);
 
@@ -1437,7 +1437,7 @@ describe('providers.discovered', () => {
 
     script.endPass();
     expect(await pending).toEqual([
-      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
+      { defId: 'alpha', name: 'Alpha', installUrl: null, binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: ['--fast'] },
     ]);
     // One query, one pass: answering does not kick another.
     expect(script.passes()).toBe(1);
@@ -1446,16 +1446,16 @@ describe('providers.discovered', () => {
   it('U-13: per-provider failures are null fields in the rows, not query failures', async () => {
     const h = createHarness();
     const script = createScriptedDiscovery([
-      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
-      { defId: 'beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+      { defId: 'alpha', name: 'Alpha', installUrl: null, binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
+      { defId: 'beta', name: 'Beta', installUrl: 'https://example.invalid/beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
     ]);
     const api = createApi(h.deps, undefined, script.discovery);
 
     const first = api.query({ type: 'providers.discovered' });
     script.endPass();
     expect(await first).toEqual([
-      { defId: 'alpha', binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
-      { defId: 'beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
+      { defId: 'alpha', name: 'Alpha', installUrl: null, binPath: '/usr/local/bin/alpha', version: '1.2.3', loggedIn: true, optionalFlags: [] },
+      { defId: 'beta', name: 'Beta', installUrl: 'https://example.invalid/beta', binPath: null, version: null, loggedIn: null, optionalFlags: [] },
     ]);
 
     // Every query kicks a fresh pass.

@@ -652,7 +652,7 @@ describe('createModelCatalog (P-29)', () => {
       return { spawned, loginStates, list: (refresh) => catalog.list(ACCOUNT_A, refresh === true ? { refresh: true } : undefined) };
     };
     const record = (loginStates: ReturnType<typeof createLoginStates>, loggedIn: boolean | null): void =>
-      loginStates.record({ defId: 'agy', binPath: '/bin/agy', version: '1', loggedIn, optionalFlags: [] });
+      loginStates.record({ defId: 'agy', name: 'Agy', installUrl: null, binPath: '/bin/agy', version: '1', loggedIn, optionalFlags: [] });
 
     it('P-45: a needsLogin command is not spawned for false, null or a provider discovery never saw, and the bundled rows answer', async () => {
       const unseen = await setup();

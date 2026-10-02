@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
+import { CandidateList } from '../components/candidate-list';
 import { ACTIVE_CLASS } from '../components/active-state';
 import { AccountEditor } from '../components/account-editor';
 import { DiscoveryBadges } from '../components/discovery-badges';
@@ -25,6 +26,7 @@ import { ProviderMark, type ProviderMarkProps } from '../components/provider-mar
 import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
+import type { CandidatesStore } from '../stores/candidates';
 import type { LocaleStore } from '../stores/locale';
 import { accountStatus, createAccountEditorStore, policyLabelKey, type AccountStatus } from '../stores/account-editor';
 import { settingDiffs } from '../stores/recommended';
@@ -70,6 +72,8 @@ export interface SettingsPanelProps {
   readonly onClose: () => void;
   /** Whether Hesaplar carries the amber dot — discovery holds an account not yet added. */
   readonly candidateDot: boolean;
+  /** The discovered accounts under Hesaplar → "Eklenmemiş" (U-34). */
+  readonly candidates: CandidatesStore;
   /** Tema (U-36) binds straight to the theme store. */
   readonly themeStore: ThemeStore;
   readonly store: SettingsStore;
@@ -326,7 +330,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -336,6 +340,10 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
   useEffect(() => {
     void store.load();
   }, [store]);
+  // The Eklenmemiş list reads (cached) whenever Hesaplar is on screen.
+  useEffect(() => {
+    if (open && section === 'accounts') void candidates.load();
+  }, [open, section, candidates]);
 
   const view = state.view;
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
@@ -683,6 +691,13 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                     ))}
                   </ul>
                 )}
+              </SectionCard>
+            ) : null}
+
+            {/* Eklenmemiş (U-34): the discovered accounts, a block of its own beside the account list. */}
+            {listSection === 'accounts' ? (
+              <SectionCard title={t(locale, 'candidates.title')}>
+                <CandidateList store={candidates} marks={marks} locale={locale} />
               </SectionCard>
             ) : null}
 

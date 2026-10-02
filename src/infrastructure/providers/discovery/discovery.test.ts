@@ -161,6 +161,16 @@ describe('path discovery', () => {
     expect(calls.every((call) => call.command === override)).toBe(true);
   });
 
+  it('A-67: every row carries the def display name and its install url, found or not', async () => {
+    writeBin('path-dir/fake-cli', binBody({ version: '1.0.0' }));
+    const { discovery } = makeDiscovery([defOf()], { PATH: join(root, 'path-dir') }, { probeTimeoutMs: 2000 });
+    const [found] = await collect(discovery);
+    expect(found).toMatchObject({ name: 'Fake CLI', installUrl: 'https://example.invalid/fake-cli' });
+    const { discovery: absent } = makeDiscovery([defOf()], { PATH: join(root, 'empty'), DOCKET_FAKE_CLI_BIN: join(root, 'no-such-bin') }, { probeTimeoutMs: 2000 });
+    const [missing] = await collect(absent);
+    expect(missing).toMatchObject({ binPath: null, name: 'Fake CLI', installUrl: 'https://example.invalid/fake-cli' });
+  });
+
   it('P-2: an override naming a missing file reports binPath null and never falls back to search', async () => {
     writeBin('path-dir/fake-cli', binBody({ version: '1.0.0-from-path' }));
     const { discovery, calls } = makeDiscovery(
@@ -169,7 +179,7 @@ describe('path discovery', () => {
       { probeTimeoutMs: 2000 },
     );
     const results = await collect(discovery);
-    expect(results).toEqual([{ defId: 'fake-cli', binPath: null, version: null, loggedIn: null, optionalFlags: [] }]);
+    expect(results).toEqual([{ defId: 'fake-cli', name: 'Fake CLI', installUrl: 'https://example.invalid/fake-cli', binPath: null, version: null, loggedIn: null, optionalFlags: [] }]);
     expect(calls).toEqual([]); // without a binary there is nothing to probe
   });
 
@@ -227,6 +237,8 @@ describe('path discovery', () => {
     expect(results).toEqual([
       {
         defId: 'fake-cli',
+        name: expect.any(String),
+        installUrl: expect.any(String),
         binPath: bin,
         version: '1.2.3-probed',
         loggedIn: true,
@@ -245,6 +257,8 @@ describe('path discovery', () => {
     expect(results).toEqual([
       {
         defId: 'fake-cli',
+        name: expect.any(String),
+        installUrl: expect.any(String),
         binPath: bin,
         version: null,
         loggedIn: true,
@@ -261,6 +275,8 @@ describe('path discovery', () => {
     expect(results).toEqual([
       {
         defId: 'fake-cli',
+        name: expect.any(String),
+        installUrl: expect.any(String),
         binPath: bin,
         version: null,
         loggedIn: true,
@@ -363,6 +379,8 @@ describe('path discovery', () => {
     const slow = results.find((result) => result.defId === 'slow-cli');
     expect(slow).toEqual({
       defId: 'slow-cli',
+      name: expect.any(String),
+      installUrl: expect.any(String),
       binPath: slowBin, // found and reported even though every probe of it timed out
       version: null,
       loggedIn: null,
@@ -379,7 +397,7 @@ describe('path discovery', () => {
     );
     const results = await collect(discovery);
     expect(results).toEqual([
-      { defId: 'fake-cli', binPath: bin, version: '1.0.0-bare', loggedIn: null, optionalFlags: [] },
+      { defId: 'fake-cli', name: 'Fake CLI', installUrl: 'https://example.invalid/fake-cli', binPath: bin, version: '1.0.0-bare', loggedIn: null, optionalFlags: [] },
     ]);
     expect(calls).toHaveLength(1);
   });
@@ -398,7 +416,7 @@ describe('path discovery', () => {
       { probeTimeoutMs: 2000 },
     );
     const results = await collect(discovery);
-    expect(results).toEqual([{ defId: 'absent-cli', binPath: null, version: null, loggedIn: null, optionalFlags: [] }]);
+    expect(results).toEqual([{ defId: 'absent-cli', name: 'Fake CLI', installUrl: 'https://example.invalid/fake-cli', binPath: null, version: null, loggedIn: null, optionalFlags: [] }]);
     expect(calls).toHaveLength(0);
   });
 });
@@ -832,7 +850,7 @@ describe('whoami login probe (kiro)', () => {
 
     const results = await collect(discovery);
 
-    expect(results[0]).toEqual({ defId: 'kiro', binPath: join(root, 'kiro-whoami-path', 'kiro-cli'), version: 'kiro-cli 2.27.0', loggedIn: false, optionalFlags: [] });
+    expect(results[0]).toEqual({ defId: 'kiro', name: expect.any(String), installUrl: expect.any(String), binPath: join(root, 'kiro-whoami-path', 'kiro-cli'), version: 'kiro-cli 2.27.0', loggedIn: false, optionalFlags: [] });
     expect(calls.map((call) => call.args)).toEqual([['--version'], ['whoami', '-f', 'json']]);
   });
 });
@@ -854,7 +872,7 @@ describe('agent delegate resolution (kiro)', () => {
 
     // Exactly the not-found shape: the install hint is the user's remedy, and Docket never runs
     // the CLI's own setup or doctor to repair it.
-    expect(results[0]).toEqual({ defId: 'kiro', binPath: null, version: null, loggedIn: null, optionalFlags: [] });
+    expect(results[0]).toEqual({ defId: 'kiro', name: expect.any(String), installUrl: expect.any(String), binPath: null, version: null, loggedIn: null, optionalFlags: [] });
     expect(calls).toEqual([]);
   });
 
