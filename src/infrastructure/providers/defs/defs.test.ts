@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_PROVIDER_DEFS } from './builtin-provider-defs';
 import { builtinProviderMarks } from './builtin-provider-marks';
 import { isProviderDef } from './is-provider-def';
-import type { LaunchInput, ProviderDef } from './provider-def';
+import {
+  effortFlagArgs,
+  effortModelId,
+  effortOfProviderLevel,
+  providerLevelOf,
+  type LaunchInput,
+  type ProviderDef,
+} from './provider-def';
 
 // The guard clauses come from the provider-definition contract: plain data, unique ids,
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
@@ -225,6 +232,81 @@ describe('provider definitions (P-1)', () => {
       }
       for (const effortArg of [{ kind: 'flag' }, { kind: 'flag', flag: '' }, { kind: 'other' }, 'high', null]) {
         rejectsWith({ ...createValidDef(), effortArg }, JSON.stringify(effortArg));
+      }
+    });
+  });
+
+  describe('effort suffix and level names (P-43)', () => {
+    it('P-43: a model-suffix effort joins the model, the separator and the provider level name', () => {
+      const arg = { kind: 'model-suffix', separator: '/' } as const;
+      expect(effortModelId(arg, 'big-model', 'high')).toBe('big-model/high');
+      expect(effortModelId(arg, 'big-model', 'none', { none: 'off' })).toBe('big-model/off');
+      expect(effortModelId(arg, 'big-model', undefined)).toBe('big-model');
+      expect(effortModelId(arg, undefined, 'high')).toBeUndefined();
+      // Another kind never rewrites the model id, and a suffix never travels as a flag.
+      expect(effortModelId({ kind: 'flag', flag: '--effort' }, 'big-model', 'high')).toBe('big-model');
+      expect(effortFlagArgs(arg, 'high')).toEqual([]);
+    });
+
+    it('P-43: a level name map translates both ways and the flag builder applies it', () => {
+      const names = { none: 'off', xhigh: 'extra' } as const;
+      expect(providerLevelOf(names, 'none')).toBe('off');
+      expect(effortOfProviderLevel(names, 'off')).toBe('none');
+      expect(effortOfProviderLevel(names, 'extra')).toBe('xhigh');
+      expect(effortFlagArgs({ kind: 'flag', flag: '--think' }, 'xhigh', names)).toEqual(['--think', 'extra']);
+      // Without a map the level's own name is the provider's, in both directions.
+      expect(providerLevelOf(undefined, 'high')).toBe('high');
+      expect(effortOfProviderLevel(undefined, 'high')).toBe('high');
+    });
+
+    it('P-43: an effort with no provider name is not sent, and a provider value naming no level is never offered', () => {
+      const names = { none: 'off' } as const;
+      expect(providerLevelOf(names, 'high')).toBeUndefined();
+      expect(effortFlagArgs({ kind: 'flag', flag: '--think' }, 'high', names)).toEqual([]);
+      expect(effortModelId({ kind: 'model-suffix', separator: ':' }, 'm', 'high', names)).toBe('m');
+      expect(effortOfProviderLevel(names, 'default')).toBeUndefined();
+      expect(effortOfProviderLevel(undefined, 'default')).toBeUndefined();
+    });
+
+    it('P-43: isProviderDef accepts configId, category and model-suffix efforts and checks levelNames', () => {
+      for (const effortArg of [
+        { kind: 'session-option', configId: 'thinking' },
+        { kind: 'session-option', category: 'thought_level' },
+        { kind: 'model-suffix', separator: '/' },
+      ]) {
+        expect(isProviderDef({ ...createValidDef(), effortArg }), JSON.stringify(effortArg)).toBe(true);
+      }
+      for (const effortArg of [
+        { kind: 'session-option', category: 'a', configId: 'b' },
+        { kind: 'session-option' },
+        { kind: 'session-option', configId: '' },
+        { kind: 'model-suffix' },
+        { kind: 'model-suffix', separator: '' },
+      ]) {
+        rejectsWith({ ...createValidDef(), effortArg }, JSON.stringify(effortArg));
+      }
+      expect(isProviderDef({ ...createValidDef(), levelNames: { none: 'off', max: 'ultra-think' } })).toBe(true);
+      for (const levelNames of [{ bogus: 'x' }, { none: '' }, { none: 'same', low: 'same' }, 'off', ['off']]) {
+        rejectsWith({ ...createValidDef(), levelNames }, JSON.stringify(levelNames));
+      }
+    });
+  });
+
+  describe('isolation fields (P-44)', () => {
+    it('P-44: isProviderDef accepts well-formed isolation and telemetryOff and rejects malformed ones', () => {
+      expect(
+        isProviderDef({
+          ...createValidDef(),
+          isolation: { env: { X: '1' }, args: ['--no-x'], runScopedHome: 'HOME' },
+          telemetryOff: ['--no-telemetry'],
+        }),
+      ).toBe(true);
+      expect(isProviderDef({ ...createValidDef(), isolation: {} })).toBe(true);
+      for (const isolation of [{ env: { X: 1 } }, { args: [''] }, { args: 'x' }, { runScopedHome: '' }, 'on', null]) {
+        rejectsWith({ ...createValidDef(), isolation }, JSON.stringify(isolation));
+      }
+      for (const telemetryOff of ['--x', [''], [1]]) {
+        rejectsWith({ ...createValidDef(), telemetryOff }, JSON.stringify(telemetryOff));
       }
     });
   });

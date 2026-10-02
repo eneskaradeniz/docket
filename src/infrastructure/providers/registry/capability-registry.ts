@@ -20,6 +20,7 @@ export const CAPABILITY_REGISTRY = {
     {
       // The sdk transport exists for this CLI alone, so the SDK message suites are its evidence.
       providerId: 'claude-code',
+      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'I-27: assistant content blocks map in order' },
@@ -32,6 +33,7 @@ export const CAPABILITY_REGISTRY = {
     {
       // No G4: the app-server transport maps no usage event, so cost visibility is unproven.
       providerId: 'codex',
+      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents' },
@@ -44,6 +46,7 @@ export const CAPABILITY_REGISTRY = {
       // No G3 — the dialect surfaces no permission asks — and no G6, the end-to-end scenario has
       // no stream-json leg.
       providerId: 'agy',
+      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-11: the text turn fixture maps to session_started, one text, usage and a completed finished' },
@@ -53,6 +56,7 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       providerId: 'copilot',
+      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
@@ -62,6 +66,7 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       providerId: 'cursor',
+      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
@@ -71,6 +76,7 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       providerId: 'opencode',
+      isolation: { kind: 'test', name: 'P-8: the opencode launch environment is exactly the config dir plus the documented Claude-compatibility switch' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
