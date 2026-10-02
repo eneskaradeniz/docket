@@ -56,6 +56,8 @@ const ACP_SESSION_LAUNCHES: Readonly<
   // `--no-leader` keeps the listing off the shared leader socket; the model list comes from the
   // initialize answer, so no session is ever opened for it.
   'grok-build': { command: 'grok', args: ['agent', '--no-leader', 'stdio'], env: { GROK_TELEMETRY_ENABLED: '0' } },
+  // The model select exists only once a provider key is configured, so a session without one lists no models.
+  reasonix: { command: 'reasonix', args: ['acp'], modelOptionOptional: true },
   // Telemetry is on by default and the flag is documented for this subcommand.
   atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
   // The ACP entry is a separate binary from the interactive CLI and takes no arguments; the CLI
@@ -197,7 +199,9 @@ const parseSessionAnswer = (
   if (Array.isArray(configOptions)) {
     for (const raw of configOptions) {
       if (!isRecord(raw)) continue;
-      const category = raw['category'];
+      // A provider that names no category for its selects is found by the ids its documentation
+      // gives them.
+      const category = raw['category'] ?? (raw['id'] === 'model' ? 'model' : raw['id'] === 'effort' ? 'thought_level' : undefined);
       if (category !== 'model' && category !== 'thought_level' && category !== 'thinking') continue;
       const options = raw['options'];
       if (!Array.isArray(options)) continue;

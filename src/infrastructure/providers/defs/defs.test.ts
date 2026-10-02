@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'vibe', 'mimo'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'vibe', 'mimo'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'vibe', 'mimo']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -132,6 +132,7 @@ describe('provider definitions (P-1)', () => {
       kilo: 'KILO_CONFIG_DIR',
       'grok-build': '',
       atomcode: '',
+      reasonix: '',
       vibe: '',
       mimo: '',
     };
@@ -203,6 +204,20 @@ describe('provider definitions (P-1)', () => {
     expect(grok.authProbe).toEqual({ args: [], presenceFile: { homeEnv: 'GROK_HOME', homeDir: '.grok', file: 'auth.json' } });
   });
 
+  it('P-44: the reasonix launch is the bare acp subcommand with no environment, no permission preset and no run-scoped home, and claims no isolation', () => {
+    const reasonix = defById('reasonix');
+    const launch = reasonix.buildLaunch({ ...LAUNCH_INPUT, effort: 'high', model: 'deepseek-pro/deepseek-v4-pro' });
+    expect(launch.args).toEqual(['acp']);
+    expect(launch.env).toEqual({});
+    expect(reasonix.config).toEqual({ mechanism: 'none' });
+    expect(reasonix.isolation).toBeUndefined();
+    expect(JSON.stringify(launch)).not.toContain('danger-full-access');
+    expect(reasonix.resume).toBe('protocol');
+    expect(reasonix.bins).toEqual(['reasonix']);
+    expect(reasonix.authProbe).toEqual({ args: ['doctor', '--json'], parse: 'provider-key-present' });
+    expect(reasonix.capabilities).toMatchObject({ images: false, quotaReport: 'none', costReport: 'none', permissionAsk: 'unknown' });
+  });
+
   it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
@@ -239,6 +254,7 @@ describe('provider definitions (P-1)', () => {
       kilo: { kind: 'session-option', configId: 'effort' },
       'grok-build': { kind: 'flag', flag: '--reasoning-effort' },
       atomcode: { kind: 'session-option', configId: 'reasoning_effort' },
+      reasonix: { kind: 'session-option', configId: 'effort' },
       vibe: { kind: 'session-option', category: 'thinking' },
       mimo: { kind: 'model-suffix', separator: '/' },
     };
@@ -264,7 +280,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'vibe', 'mimo']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'reasonix', 'vibe', 'mimo']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }

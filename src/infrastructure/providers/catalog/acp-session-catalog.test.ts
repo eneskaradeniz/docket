@@ -308,6 +308,21 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(listed.ok).toBe(false);
   });
 
+  it('P-29: the reasonix listing finds the model select by its id, keeps provider/model entries whole, offers no level the default model lacks and never prompts', async () => {
+    const harness = makeSpawn('models-reasonix');
+    const listed = await listAcpSessionModels(accountOf('reasonix'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'reasonix', args: ['acp'] }]);
+    expect(listed.value.map((model) => model.id)).toEqual(['deepseek-flash/deepseek-flash', 'deepseek-pro/deepseek-v4-pro']);
+    // The default model offers only `auto`, which names no level.
+    expect(listed.value.every((model) => model.efforts === undefined)).toBe(true);
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+  });
+
   it('P-43: advertised thought levels are read back through the level names, dropping values that name no level', async () => {
     const harness = makeSpawn('models-opencode');
 

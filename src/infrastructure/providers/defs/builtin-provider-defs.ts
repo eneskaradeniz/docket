@@ -300,6 +300,40 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     mark: null,
   },
   {
+    id: 'reasonix',
+    displayName: 'Reasonix',
+    bins: ['reasonix'],
+    // Prints `reasonix v<semver>` on one line.
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `doctor --json` lists the configured providers with a boolean `key_present` each. A true
+    // means some key is configured, not that it is valid. The CLI's own `setup` login is never run.
+    authProbe: { args: ['doctor', '--json'], parse: 'provider-key-present' },
+    transport: 'acp',
+    // The option is found by its id and the model is set before it, because a model change
+    // rebuilds the session and recomputes the levels. `auto` names no level, so it is never offered.
+    effortArg: { kind: 'session-option', configId: 'effort' },
+    // The CLI's global provider credentials live in its home, and the one documented variable that
+    // moves state leaves them there, so no run-scoped home is claimed and no isolation is declared.
+    config: { mechanism: 'none' },
+    // No permission preset is passed: the CLI's own default stays, and never `danger-full-access`.
+    buildLaunch: () => ({ args: ['acp'], env: {}, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: false,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://www.npmjs.com/package/reasonix' },
+    mark: null,
+  },
+  {
     id: 'grok-build',
     displayName: 'Grok Build',
     bins: ['grok'],
