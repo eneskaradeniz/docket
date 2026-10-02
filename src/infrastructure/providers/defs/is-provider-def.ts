@@ -45,6 +45,10 @@ function isBuildLaunch(value: unknown): value is (input: LaunchInput) => Provide
   return typeof value === 'function';
 }
 
+function isTimeoutMs(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
+}
+
 export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isRecord(value)) return false;
   if (!isNonEmptyString(value['id'])) return false;
@@ -74,6 +78,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];
   if (!(isRecord(installHint) && isNonEmptyString(installHint['url']))) return false;
+  if (!isTimeoutMs(value['firstOutputTimeoutMs']) || !isTimeoutMs(value['inactivityTimeoutMs'])) return false;
   const mark = value['mark'];
   if (
     mark !== null &&

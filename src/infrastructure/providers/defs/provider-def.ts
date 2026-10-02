@@ -34,6 +34,12 @@ export interface ProviderLaunch {
   readonly stdin: 'prompt' | 'none';
 }
 
+// A cold CLI start (login refresh, model load) can legitimately take a minute, so the wait for
+// the first event is generous; a run that has started talking but stays silent through a long
+// tool-free stretch is far more likely hung, yet reasoning pauses can last minutes.
+export const DEFAULT_FIRST_OUTPUT_TIMEOUT_MS = 120_000;
+export const DEFAULT_INACTIVITY_TIMEOUT_MS = 600_000;
+
 export interface ProviderDef {
   readonly id: string;
   readonly displayName: string;
@@ -59,4 +65,8 @@ export interface ProviderDef {
    *  unmodified from the file it was taken from; `null` when no such file exists — a mark is
    *  never redrawn. */
   readonly mark: ProviderMark | null;
+  /** Milliseconds allowed before a run's first event; 0 disables. Default: DEFAULT_FIRST_OUTPUT_TIMEOUT_MS. */
+  readonly firstOutputTimeoutMs?: number;
+  /** Milliseconds of silence allowed after output started; 0 disables. Default: DEFAULT_INACTIVITY_TIMEOUT_MS. */
+  readonly inactivityTimeoutMs?: number;
 }
