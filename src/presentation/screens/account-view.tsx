@@ -94,7 +94,7 @@ export function AccountViewScreen({
           ) : null
         ) : (
           <>
-            <ProviderMark mark={marks.markFor(view.account.provider)} />
+            <ProviderMark provider={view.account.provider} mark={marks.markFor(view.account.provider)} />
             <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{view.account.label}</h1>
             {view.account.authMode === 'subscription' ? (
               <StateBadge tone="proceed">{t(locale, 'account.plan.subscription')}</StateBadge>

@@ -203,7 +203,7 @@ function AccountListRow({
         onClick={onOpen}
         className="flex w-full items-center gap-3 rounded-card border border-hairline bg-surface px-4 py-3 text-left hover:bg-raised"
       >
-        <ProviderMark mark={mark} />
+        <ProviderMark provider={account.provider} mark={mark} />
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">
           {account.label}
           {account.plan !== null ? <span className="font-normal text-inkdim"> · {account.plan}</span> : null}
@@ -267,7 +267,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -546,6 +546,7 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                       account={openAccount.detail}
                       locale={locale}
                       store={editor}
+                      models={models}
                       formatTime={store.resetsAtLabel}
                       onRefresh={() => void store.load()}
                     />

@@ -313,13 +313,46 @@ const l11 = async (page, ctx, sel) => {
   );
 };
 
-// L-12: every visible account badge (U-21's "account badge", the provider mark) carries a real
-// mark — one svg whose path is non-empty — and stays inside its row: the badge's box lies within
-// the nearest row container (button, li, a, header, label) that carries it, L-3's containment
-// notion measured on the badge itself. The sidebar's cards sit in the accounts frame's collapsed
-// body, so the rule opens the frame for the measurement when it is closed and puts it back the
-// way it found it (L-6's dance). A badge with no svg path means the marks did not resolve — the
-// neutral glyph — which the seed's real provider ids never warrant.
+// L-12: every visible account badge (U-21's "account badge", the provider mark) draws what its
+// provider's def records and stays inside its row. The badge names its provider
+// (`data-provider`) and the neutral glyph marks itself (`data-mark="neutral"`), so the rule reads
+// the id against the builtin mark sets: a provider with a mark must draw that mark — one svg with
+// a non-empty path, and the neutral glyph means the marks did not resolve; a markless provider
+// (P-25a) must draw the neutral glyph and never a path it does not own; an id in neither set is
+// an unknown provider id in the audit seed — seed data the world must not carry, not a
+// without-standing the badge may render. The badge's box lies within the nearest row container
+// (button, li, a, header, label) that carries it, L-3's containment notion measured on the badge
+// itself. The sidebar's cards sit in the accounts frame's collapsed body, so the rule opens the
+// frame for the measurement when it is closed and puts it back the way it found it (L-6's dance).
+
+// The mark sets come from the shared module the marks test pins against the defs — never a copy
+// typed here. The module is dependency-free so this plain-node audit can import it.
+const { MARKED_PROVIDER_IDS, MARKLESS_PROVIDER_IDS } = await import(
+  '../src/infrastructure/providers/defs/provider-mark-sets.ts'
+);
+export const L12_MARK_SETS = Object.freeze({
+  marked: new Set(MARKED_PROVIDER_IDS),
+  nullMark: new Set(MARKLESS_PROVIDER_IDS),
+});
+
+/** One badge's L-12 verdict: the values measured in the page in, the rule's failure strings out.
+ *  Pure, so the fixture tests prove every standing without a page. */
+export const l12BadgeFailures = (badge, sets) => {
+  const out = [];
+  const path = badge.path.trim();
+  if (sets.marked.has(badge.provider)) {
+    if (badge.neutral) out.push(`marked provider ${badge.provider} drew the neutral glyph`);
+    else if (path === '') out.push(`marked provider ${badge.provider} drew no mark path`);
+  } else if (sets.nullMark.has(badge.provider)) {
+    if (path !== '') out.push(`markless provider ${badge.provider} drew a path it does not own`);
+    else if (!badge.neutral) out.push(`markless provider ${badge.provider} drew neither the neutral glyph nor a path`);
+  } else {
+    out.push(`unknown provider id in the audit seed: ${badge.provider === '' ? '(no id)' : badge.provider}`);
+  }
+  if (badge.outsideRow) out.push('badge outside its row');
+  return out;
+};
+
 const l12 = async (page, ctx, sel) => {
   if (!sel.accountMark) return skipped('L-12', 'accountMark');
   let opened = false;
@@ -353,20 +386,23 @@ const l12 = async (page, ctx, sel) => {
     for (const el of badges) {
       if (!visible(el)) continue;
       counted += 1;
-      const d = el.querySelector('svg path')?.getAttribute('d') ?? '';
-      if (d.trim() === '') out.push('badge without a mark path');
-      const row = el.closest('button, li, a, header, label');
-      if (row !== null) {
-        const r = el.getBoundingClientRect();
-        const b = row.getBoundingClientRect();
-        if (r.left < b.left - 0.5 || r.right > b.right + 0.5 || r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5) {
-          out.push('badge outside its row');
-        }
-      }
+      out.push({
+        provider: el.getAttribute('data-provider') ?? '',
+        path: el.querySelector('svg path')?.getAttribute('d') ?? '',
+        neutral: el.getAttribute('data-mark') === 'neutral',
+        outsideRow: (() => {
+          const row = el.closest('button, li, a, header, label');
+          if (row === null) return false;
+          const r = el.getBoundingClientRect();
+          const b = row.getBoundingClientRect();
+          return r.left < b.left - 0.5 || r.right > b.right + 0.5 || r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5;
+        })(),
+      });
     }
-    return { counted, out: out.slice(0, 3) };`,
+    return { counted, out };`,
     sel.accountMark,
   );
+  const failures = m.out.flatMap((badge) => l12BadgeFailures(badge, L12_MARK_SETS)).slice(0, 3);
   if (opened) {
     const toggle = page.locator(sel.accountsFrame).locator('button[aria-expanded]').first();
     await toggle.click();
@@ -381,7 +417,11 @@ const l12 = async (page, ctx, sel) => {
     );
   }
   if (m.counted === 0) return result('L-12', true, 'no visible account badges');
-  return result('L-12', m.out.length === 0, m.out.length === 0 ? `${m.counted} badges carry their mark inside the row` : `${m.out.join('; ')}`);
+  return result(
+    'L-12',
+    failures.length === 0,
+    failures.length === 0 ? `${m.counted} badges carry their provider's recorded mark inside the row` : failures.join('; '),
+  );
 };
 
 

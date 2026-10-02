@@ -159,7 +159,7 @@ export function ChainSection({ store, locale, markFor }: ChainSectionProps) {
               data-chain-account={account.id}
             >
               <span className="w-4 flex-none font-mono text-[11px] text-inkdim">{index + 1}</span>
-              <ProviderMark mark={markFor(account.provider)} />
+              <ProviderMark provider={account.provider} mark={markFor(account.provider)} />
               <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{account.label}</span>
               <MoveButtons locale={locale} name={account.label} index={index} count={chain.length} onMove={(delta) => void store.moveGlobal(index, delta)} />
             </li>
@@ -228,7 +228,7 @@ function FineTune({ row, store, locale, markFor }: { readonly row: RoleRow; read
             const usable = catalog === undefined ? [] : selectableModels(catalog);
             return (
               <div key={entry.accountId} className="flex flex-wrap items-center gap-2 rounded-card border border-hairline bg-surface px-3 py-2" data-own-account={entry.accountId}>
-                <ProviderMark mark={markFor(provider(entry.accountId))} />
+                <ProviderMark provider={provider(entry.accountId)} mark={markFor(provider(entry.accountId))} />
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{label(entry.accountId)}</span>
                 <select
                   className={SELECT_CLASS}

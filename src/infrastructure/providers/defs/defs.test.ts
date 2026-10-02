@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_PROVIDER_DEFS } from './builtin-provider-defs';
 import { builtinProviderMarks } from './builtin-provider-marks';
 import { isProviderDef } from './is-provider-def';
+import { MARKED_PROVIDER_IDS, MARKLESS_PROVIDER_IDS } from './provider-mark-sets';
 import {
   effortFlagArgs,
   effortModelId,
@@ -15,9 +16,8 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'] as const;
-// Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'amp', 'codebuddy'];
+// The ids the shared mark sets carry; the P-25a tests below pin them against the defs.
+const BUILTIN_IDS: readonly string[] = [...MARKED_PROVIDER_IDS, ...MARKLESS_PROVIDER_IDS];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -688,10 +688,18 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, qoder, kiro, kimi) carry null', () => {
+  it('P-25: every placed mark is one well-formed path-data string with a declared fill rule', () => {
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      if (def.mark === null) continue;
+      expect(def.mark.path, def.id).toMatch(/^[Mm][-0-9.,\sMmLlHhVvCcSsQqTtAaZz]+$/);
+      expect(['evenodd', 'nonzero'], def.id).toContain(def.mark.fillRule);
+    }
+  });
+
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
-      if (MARKLESS_IDS.includes(def.id)) {
+      if (MARKLESS_PROVIDER_IDS.includes(def.id)) {
         expect(mark, def.id).toBeNull();
         continue;
       }
@@ -700,6 +708,19 @@ describe('provider marks (P-25)', () => {
       // One path's own data: path commands only, never svg markup or a second shape.
       expect(mark?.path.length, def.id).toBeGreaterThan(0);
       expect(mark?.path, def.id).not.toMatch(/[<>]/);
+    }
+  });
+
+  it('P-25a: the shared mark sets name every built-in exactly once — the marked ids carry a mark, the markless ids none', () => {
+    const seen = new Set<string>();
+    for (const id of [...MARKED_PROVIDER_IDS, ...MARKLESS_PROVIDER_IDS]) {
+      expect(seen.has(id), id).toBe(false);
+      seen.add(id);
+    }
+    expect(seen.size).toBe(BUILTIN_PROVIDER_DEFS.length);
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      expect(seen.has(def.id), def.id).toBe(true);
+      expect(MARKLESS_PROVIDER_IDS.includes(def.id), def.id).toBe(def.mark === null);
     }
   });
 

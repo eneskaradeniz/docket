@@ -45,7 +45,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
                   onClick={() => store.select(row.id)}
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <ProviderMark mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
+                  <ProviderMark provider={row.markKey ?? ''} mark={row.markKey === null ? null : marks.markFor(row.markKey)} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-mono text-[12.5px] text-ink">{row.label}</span>
                     {row.endpointHost !== null ? (
@@ -113,7 +113,7 @@ export function CandidateList({ store, marks, locale }: CandidateListProps) {
             {state.providers.map((provider) => (
               <li key={provider.id} className="grid gap-1.5 rounded-card border border-hairline px-3 py-1.5">
                 <div className="flex items-center gap-2.5">
-                  <ProviderMark mark={marks.markFor(provider.id)} />
+                  <ProviderMark provider={provider.id} mark={marks.markFor(provider.id)} />
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{provider.name}</span>
                   <span className="flex-none font-mono text-[11px] text-inkdim">{t(locale, provider.statusKey)}</span>
                 </div>

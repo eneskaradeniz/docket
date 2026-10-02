@@ -7,11 +7,14 @@ import { describe, expect, it } from 'vitest';
 import type { Api } from '../../api/api';
 import type { Command } from '../../api/commands';
 import type { AccountModelsView, Query } from '../../api/queries';
+import { t } from '../labels/t';
+import { RECOMMENDED } from './recommended';
 import {
   billingMark,
   CAP_SCOPES,
   CAP_WARN_PERCENT,
   createAccountModelsStore,
+  groupModels,
   modelRows,
   parseAmountUsd,
   type AccountModelsChange,
@@ -222,10 +225,11 @@ describe('consent flow (P-40)', () => {
     const store = storeFor(api);
     await store.load('acc-1');
 
-    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered' });
+    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered', hasCap: false });
     let draft = store.state().draft;
     expect(draft?.model).toBe('atlas-mini');
-    expect(draft?.allowEnabled).toBe(false);
+    // The recommendation is prefilled, so allow starts enabled; a cap that cannot cap disables it.
+    expect(draft?.allowEnabled).toBe(true);
 
     store.editCap({ amountUsd: '0' });
     expect(store.state().draft?.allowEnabled).toBe(false);
@@ -241,9 +245,9 @@ describe('consent flow (P-40)', () => {
     const store = storeFor(api);
     await store.load('acc-1');
 
-    store.beginConsent({ model: '*', name: null, billing: 'unknown' });
+    store.beginConsent({ model: '*', name: null, billing: 'unknown', hasCap: false });
     expect(store.state().draft?.model).toBe('*');
-    store.editCap({ amountUsd: '10' });
+    store.editCap({ amountUsd: '10', scope: 'account_day' });
     await store.allow();
 
     expect(api.commands).toEqual([
@@ -264,7 +268,7 @@ describe('consent flow (P-40)', () => {
     const store = storeFor(api);
     await store.load('acc-1');
 
-    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered' });
+    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered', hasCap: false });
     store.editCap({ amountUsd: 'nope' });
     expect(await store.allow()).toBeNull();
     expect(api.commands).toEqual([]);
@@ -272,10 +276,10 @@ describe('consent flow (P-40)', () => {
 
     // The default line of an included route has nothing to consent; neither does a known-included row.
     store.cancel();
-    store.beginConsent({ model: 'atlas-max', name: 'Atlas Max', billing: 'included' });
+    store.beginConsent({ model: 'atlas-max', name: 'Atlas Max', billing: 'included', hasCap: false });
     expect(store.state().draft).toBeNull();
     // A model the loaded list does not carry cannot be consented from this surface.
-    store.beginConsent({ model: 'ghost', name: 'ghost', billing: 'metered' });
+    store.beginConsent({ model: 'ghost', name: 'ghost', billing: 'metered', hasCap: false });
     expect(store.state().draft).toBeNull();
   });
 
@@ -290,7 +294,7 @@ describe('consent flow (P-40)', () => {
     expect(store.state().lastOutcome?.labelKey).toBe('success.account.consent.revoke');
     expect(api.queries.length).toBe(2);
 
-    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered' });
+    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered', hasCap: false });
     store.editCap({ amountUsd: '15' });
     const outcome = await store.allow();
     expect(outcome?.labelKey).toBe('success.account.consent.grant');
@@ -300,7 +304,7 @@ describe('consent flow (P-40)', () => {
     const api = fakeApi(modelsView);
     const store = storeFor(api);
     await store.load('acc-1');
-    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered' });
+    store.beginConsent({ model: 'atlas-mini', name: 'atlas-mini', billing: 'metered', hasCap: false });
     store.editCap({ amountUsd: '15' });
 
     api.setCommandResult({ code: 'invalid_cap' });
@@ -330,14 +334,14 @@ describe('consent only for non-included models (P-40, P-42)', () => {
     await store.load('acc-1');
     const opus = store.state().rows?.find((row) => row.id === 'sub-opus');
     expect(opus?.mark).toBe('none');
-    store.beginConsent({ model: 'sub-opus', name: 'Opus', billing: 'metered' });
+    store.beginConsent({ model: 'sub-opus', name: 'Opus', billing: 'metered', hasCap: false });
     expect(store.state().draft).toBeNull();
   });
 
   it('P-40: only an unknown row opens the draft, and the draft carries the view billing', async () => {
     const store = storeFor(fakeApi(subscriptionView));
     await store.load('acc-1');
-    store.beginConsent({ model: 'sub-fable', name: 'Fable', billing: 'metered' });
+    store.beginConsent({ model: 'sub-fable', name: 'Fable', billing: 'metered', hasCap: false });
     expect(store.state().draft?.billing).toBe('unknown');
   });
 
@@ -345,7 +349,140 @@ describe('consent only for non-included models (P-40, P-42)', () => {
     const store = storeFor(fakeApi(subscriptionView));
     await store.load('acc-1');
     expect(store.state().defaultModel?.mark).toBe('none');
-    store.beginConsent({ model: '*', name: null, billing: 'unknown' });
+    store.beginConsent({ model: '*', name: null, billing: 'unknown', hasCap: false });
     expect(store.state().draft).toBeNull();
+  });
+});
+
+describe('models and spend consent (U-32)', () => {
+  const storeFor = (api: FakeApi) =>
+    createAccountModelsStore({ api, changes: fakeSignal().signal, actor: { kind: 'user', id: 'u', label: 'U' } });
+  const model = (id: string, billing: 'included' | 'metered' | 'unknown', consented = false, stale = false) => ({
+    id,
+    thinking: { kind: 'none' as const },
+    billing,
+    source: 'live' as const,
+    stale,
+    autoClassified: false,
+    consented,
+  });
+
+  it('U-32: account.models groups by billing — included (no mark), metered ($), unknown (?) — in a fixed order, empty groups omitted', () => {
+    const rows = modelRows({
+      models: [model('a', 'unknown'), model('b', 'included'), model('c', 'metered'), model('d', 'included')],
+      defaultConsented: false,
+      defaultBilling: 'included',
+    });
+    const groups = groupModels(rows);
+    expect(groups.map((g) => [g.billing, g.rows.map((r) => r.id)])).toEqual([
+      ['included', ['b', 'd']],
+      ['metered', ['c']],
+      ['unknown', ['a']],
+    ]);
+    expect(groups.map((g) => g.rows[0]?.mark)).toEqual(['none', 'currency', 'question']);
+    expect(groupModels(rows.filter((r) => r.billing === 'included')).map((g) => g.billing)).toEqual(['included']);
+  });
+
+  it('U-32: billing is per account and plan — the same model id groups differently on a Max and a Pro account', async () => {
+    const api = fakeApi({ models: [model('fable-5-1', 'included')], defaultConsented: false, defaultBilling: 'included' });
+    const store = storeFor(api);
+    await store.load('max');
+    expect(groupModels(store.state().rows ?? []).map((g) => g.billing)).toEqual(['included']);
+    api.setReply({ models: [model('fable-5-1', 'metered')], defaultConsented: false, defaultBilling: 'included' });
+    await store.load('pro');
+    expect(groupModels(store.state().rows ?? []).map((g) => g.billing)).toEqual(['metered']);
+    expect(api.queries.map((q) => q.type === 'account.models' && q.accountId)).toEqual(['max', 'pro']);
+  });
+
+  it('U-32: the card opens requiring a cap, prefilled from RECOMMENDED.cap; the grant carries it; Vazgeç closes without a command', async () => {
+    const api = fakeApi({ models: [model('fable', 'metered')], defaultConsented: false, defaultBilling: 'included' });
+    const store = storeFor(api);
+    await store.load('pro');
+    store.beginConsent({ model: 'fable', name: 'Fable', billing: 'metered', hasCap: false });
+    const draft = store.state().draft;
+    expect(draft?.capRequired).toBe(true);
+    expect(draft?.cap).toEqual({ scope: RECOMMENDED.cap.scope, amountUsd: String(RECOMMENDED.cap.amountUsd) });
+    expect(draft?.allowEnabled).toBe(true);
+    store.editCap({ amountUsd: '' });
+    expect(store.state().draft?.allowEnabled).toBe(false);
+    expect(await store.allow()).toBeNull();
+    store.cancel();
+    expect(store.state().draft).toBeNull();
+    expect(api.commands).toEqual([]);
+
+    store.beginConsent({ model: 'fable', name: 'Fable', billing: 'metered', hasCap: false });
+    await store.allow();
+    expect(api.commands).toEqual([
+      {
+        type: 'account.consent.grant',
+        id: 'pro',
+        model: 'fable',
+        cap: { scope: 'account_month', amountUsd: 50, warnPercent: 80 },
+      },
+    ]);
+  });
+
+  it('U-32: an account that already has a cap grants without asking for another', async () => {
+    const api = fakeApi({ models: [model('fable', 'unknown')], defaultConsented: false, defaultBilling: 'included' });
+    const store = storeFor(api);
+    await store.load('pro');
+    store.beginConsent({ model: 'fable', name: 'Fable', billing: 'unknown', hasCap: true });
+    expect(store.state().draft?.capRequired).toBe(false);
+    expect(store.state().draft?.allowEnabled).toBe(true);
+    await store.allow();
+    expect(api.commands).toEqual([{ type: 'account.consent.grant', id: 'pro', model: 'fable' }]);
+  });
+
+  it('U-32: the ? text is fixed and makes no price or amount claim, in both locales', () => {
+    for (const locale of ['tr', 'en'] as const) {
+      const text = t(locale, 'settings.models.unknown');
+      expect(text).not.toMatch(/[0-9$€₺]|USD|dolar|dollar|price|fiyat|tutar|amount/i);
+    }
+  });
+
+  it('U-32: a consented row reads İzinli with Geri al (account.consent.revoke, no confirmation); the default row uses model *', async () => {
+    const api = fakeApi({ models: [model('fable', 'metered', true)], defaultConsented: true, defaultBilling: 'unknown' });
+    const store = storeFor(api);
+    await store.load('pro');
+    expect(store.state().rows?.[0]?.consented).toBe(true);
+    expect(store.state().defaultModel).toEqual({ billing: 'unknown', mark: 'question', consented: true });
+    expect(t('tr', 'settings.models.allowed')).toBe('İzinli');
+    expect(t('tr', 'settings.models.revoke')).toBe('Geri al');
+    await store.revoke('fable');
+    await store.revoke('*');
+    expect(api.commands).toEqual([
+      { type: 'account.consent.revoke', id: 'pro', model: 'fable' },
+      { type: 'account.consent.revoke', id: 'pro', model: '*' },
+    ]);
+  });
+
+  it('U-32: the default row opens the card with model * and its billing', async () => {
+    const api = fakeApi({ models: [], defaultConsented: false, defaultBilling: 'metered' });
+    const store = storeFor(api);
+    await store.load('pro');
+    store.beginConsent({ model: '*', name: null, billing: 'metered', hasCap: false });
+    expect(store.state().draft).toMatchObject({ model: '*', billing: 'metered', capRequired: true });
+  });
+
+  it('U-32: a stale list says so beside Yenile, which re-queries with refresh: true', async () => {
+    const api = fakeApi({ models: [model('fable', 'metered', false, true)], defaultConsented: false, defaultBilling: 'included' });
+    const store = storeFor(api);
+    await store.load('pro');
+    expect(store.state().stale).toBe(true);
+    await store.refresh();
+    expect(api.queries[1]).toEqual({ type: 'account.models', accountId: 'pro', refresh: true });
+  });
+
+  it('U-32: a failed grant or revoke maps through U-8 and the card stays open on a refusal', async () => {
+    const api = fakeApi({ models: [model('fable', 'metered', true)], defaultConsented: false, defaultBilling: 'included' });
+    const store = storeFor(api);
+    await store.load('pro');
+    api.setCommandResult({ code: 'cap_required' });
+    store.beginConsent({ model: 'fable', name: 'Fable', billing: 'metered', hasCap: false });
+    await store.allow();
+    expect(store.state().lastOutcome?.labelKey).toBe('error.cap_required');
+    expect(store.state().draft).not.toBeNull();
+    const revoked = await store.revoke('fable');
+    expect(revoked?.result.ok).toBe(false);
   });
 });
