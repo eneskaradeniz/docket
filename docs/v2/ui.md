@@ -284,8 +284,9 @@ being reset.
   200–320px wide, `rounded-card`; 120 ms fade, none under `prefers-reduced-motion`.
 - **U-28** (settings sections) The Settings window (U-6's frame) carries two menu groups: Çalışma —
   Hesaplar, Roller, Yetenekler, Sağlayıcılar; Uygulama — Görünüm, Telefon, Güncelleme. The nav's
-  Ayarlar row opens the panel on **Hesaplar** (U-24's Telefon row is unchanged). Hesaplar and Roller
-  open a sub-page in place (an account, a role) with a `‹ Hesaplar` / `‹ Roller` back row; Esc first
+  Ayarlar row opens the panel on **Hesaplar** (U-24's Telefon row is unchanged). Hesaplar opens an
+  account's sub-page in place with a `‹ Hesaplar` back row (a role's settings open in its own row's
+  "İnce ayar", U-33, not a sub-page); Esc first
   leaves the sub-page, then closes the panel; a sub-page is not a U-25 history entry. Hesaplar's
   menu row carries an amber dot while discovery holds an account not yet added (U-34).
   Görünüm holds Dil and Tema (U-36). There is no simple/advanced switch anywhere.

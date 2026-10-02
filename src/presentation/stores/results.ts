@@ -49,6 +49,8 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'promote_prerequisite_missing',
   'unknown_environment',
   'no_repo',
+  // saveBinding: a role's account chain cannot be empty (A-14).
+  'empty_chain',
 ];
 
 const FAILURE_KEYS: Readonly<Record<string, LabelKey>> = Object.fromEntries(
