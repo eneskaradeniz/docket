@@ -764,6 +764,27 @@ describe('dispatcherTick', () => {
     expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
   });
 
+  it('A-20: an item whose account reserve blocks the window is not started and waits for quota', async () => {
+    const h = makeHarness();
+    await createWorkOrder(h, WO1);
+    await h.deps.accounts.save({ ...account(A1), reserve: { long: 0.3 } });
+    await h.deps.accounts.savePools(A1, [pool(POOL1, A1)]);
+    await h.deps.accounts.saveMeter({ ...meter(METER1, POOL1, 1_000), remaining: 0.25 }); // 25% left, 30% kept back
+    await h.deps.queue.put(queueItem(Q1, WO1, route(A1)));
+
+    const started = startRecorder();
+    const result = await dispatcherTick(h.deps, { limits: LIMITS() }, started.callback);
+
+    expect(result.decisions).toStrictEqual([{ item: Q1, kind: 'wait', reason: 'quota', until: 9_000 }]);
+    expect(result.started).toStrictEqual([]);
+    expect((await queueAfter(h)).map((item) => item.id)).toStrictEqual([Q1]);
+
+    // the same meter without a reserve starts
+    await h.deps.accounts.save(account(A1));
+    const free = await dispatcherTick(h.deps, { limits: LIMITS() }, startRecorder().callback);
+    expect(free.decisions).toStrictEqual([{ item: Q1, kind: 'start' }]);
+  });
+
   it('A-20: unknown headroom does not block — the transport learns the truth on start', async () => {
     const h = makeHarness();
     await createWorkOrder(h, WO1);

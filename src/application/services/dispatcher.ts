@@ -13,6 +13,7 @@ import type {
   LimitDecision,
   QueueItem,
   QueueItemId,
+  QuotaReserve,
   Result,
   RunId,
   RunningRun,
@@ -120,11 +121,20 @@ export async function dispatcherTick(
     const record = await deps.accounts.get(accountId);
     return record === undefined ? [] : record.caps;
   };
+  const reserveOf = async (accountId: AccountId): Promise<QuotaReserve | undefined> =>
+    (await deps.accounts.get(accountId))?.reserve;
 
   const headroomByItem: Record<string, Headroom> = {};
   const spendByItem: Record<string, SpendStatus> = {};
   for (const item of queue) {
-    headroomByItem[item.id] = headroom(pools, meters, item.route.accountId, item.route.model ?? '', now);
+    headroomByItem[item.id] = headroom(
+      pools,
+      meters,
+      item.route.accountId,
+      item.route.model ?? '',
+      now,
+      await reserveOf(item.route.accountId),
+    );
 
     const scoped: ScopedSpend[] = [];
     for (const cap of await capsOf(item.route.accountId)) {
