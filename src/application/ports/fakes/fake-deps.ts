@@ -4,12 +4,14 @@ import type { AppDeps } from '../deps';
 import { createFakeAccountRepo } from './fake-account-repo';
 import { createFakeBindingRepo } from './fake-binding-repo';
 import { createFakeCapabilityCatalog } from './fake-capability-catalog';
+import { createFakeCheckpointCommitter } from './fake-checkpoints';
 import { createFakeClock } from './fake-clock';
 import { createFakeCommandRunner, createFakeEvidenceChecker, createFakeSecretScanner, createFakeWorktrees } from './fake-repo-tools';
 import { createFakeDefinitionStore } from './fake-definition-store';
 import { createFakeEventLog } from './fake-event-log';
 import { createFakeGitProbe } from './fake-git-probe';
 import { createFakeIdGen } from './fake-id-gen';
+import { createFakeInstructionFiles } from './fake-instruction-files';
 import { createFakeModelCatalog } from './fake-model-catalog';
 import { createFakeNotifier } from './fake-notifier';
 import { createFakeProjectRepo } from './fake-project-repo';
@@ -48,5 +50,7 @@ export const createFakeDeps = (overrides: Partial<AppDeps> = {}): AppDeps => ({
   evidence: createFakeEvidenceChecker(),
   git: createFakeGitProbe(),
   notifier: createFakeNotifier(),
+  instructionFiles: createFakeInstructionFiles(),
+  checkpoints: createFakeCheckpointCommitter(),
   ...overrides,
 });

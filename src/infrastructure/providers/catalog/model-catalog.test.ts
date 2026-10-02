@@ -201,6 +201,7 @@ describe('createModelCatalog (P-29)', () => {
         resolvedId: 'claude-fable-5-1',
         displayName: 'Fable [1m]',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
         billing: 'unknown',
       },
@@ -279,6 +280,7 @@ describe('createModelCatalog (P-29)', () => {
       {
         id: 'claude-opus-5-5',
         source: 'bundled',
+        contextWindow: null,
         tier: 'strong',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
         billing: 'included',
@@ -286,6 +288,7 @@ describe('createModelCatalog (P-29)', () => {
       {
         id: 'claude-sonnet-5-5',
         source: 'bundled',
+        contextWindow: null,
         tier: 'balanced',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
         billing: 'included',
@@ -293,6 +296,7 @@ describe('createModelCatalog (P-29)', () => {
       {
         id: 'claude-haiku-4-5',
         source: 'bundled',
+        contextWindow: null,
         tier: 'fast',
         thinking: { kind: 'none' },
         billing: 'included',
@@ -320,6 +324,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'claude-fable-5-1[1m]',
         displayName: 'claude-fable-5-1[1m] display',
         source: 'live',
+        contextWindow: null,
         thinking: 'unknown',
         billing: 'metered',
       },
@@ -327,6 +332,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'claude-opus-5-5',
         displayName: 'claude-opus-5-5 display',
         source: 'live',
+        contextWindow: null,
         tier: 'strong',
         thinking: 'unknown',
         autoClassified: true,
@@ -390,6 +396,7 @@ describe('createModelCatalog (P-29)', () => {
         resolvedId: 'glm-5.3',
         displayName: 'GLM 5.3',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] },
         billing: 'unknown',
       },
@@ -411,6 +418,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'gpt-5.3-codex',
         displayName: 'GPT-5.3 Codex',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
         billing: 'included',
       },
@@ -418,6 +426,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'gpt-5.3-mini',
         displayName: 'GPT-5.3 mini',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh'] },
         billing: 'included',
       },
@@ -425,10 +434,11 @@ describe('createModelCatalog (P-29)', () => {
         id: 'gpt-5.3-nano',
         displayName: 'GPT-5.3 nano',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'high'] },
         billing: 'included',
       },
-      { id: 'gpt-5.3', displayName: 'GPT-5.3', source: 'live', thinking: 'unknown', billing: 'included' },
+      { id: 'gpt-5.3', displayName: 'GPT-5.3', source: 'live', thinking: 'unknown', billing: 'included', contextWindow: null },
     ]);
   });
 
@@ -450,6 +460,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'opencode/big-pickle',
         displayName: 'opencode/Big Pickle',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
         billing: 'unknown',
       },
@@ -457,6 +468,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'opencode/fledge-alpha-free',
         displayName: 'opencode/Fledge Alpha Free',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
         billing: 'unknown',
       },
@@ -464,6 +476,7 @@ describe('createModelCatalog (P-29)', () => {
         id: 'opencode/space-bunny-free',
         displayName: 'opencode/Space Bunny Free',
         source: 'live',
+        contextWindow: null,
         thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
         billing: 'unknown',
       },
@@ -484,9 +497,9 @@ describe('createModelCatalog (P-29)', () => {
     // The kind fixes no billing default, so every setting reads unknown — hand-pick with
     // consent, never assumed free; the tiers resolve to these ids through the kind's data.
     expect(await catalog.list(ACCOUNT_A)).toEqual([
-      { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown' },
-      { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown' },
-      { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown', contextWindow: null },
+      { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown', contextWindow: null },
+      { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown', contextWindow: null },
     ]);
   });
 
@@ -508,6 +521,7 @@ describe('createModelCatalog (P-29)', () => {
       {
         id: 'claude-opus-5-5',
         source: 'bundled',
+        contextWindow: null,
         tier: 'strong',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
         billing: 'included',
@@ -515,11 +529,12 @@ describe('createModelCatalog (P-29)', () => {
       {
         id: 'claude-sonnet-5-5',
         source: 'bundled',
+        contextWindow: null,
         tier: 'balanced',
         thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
         billing: 'included',
       },
-      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'included' },
+      { id: 'claude-haiku-4-5', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'included', contextWindow: null },
     ]);
     expect(calls).toBe(0);
   });
@@ -538,10 +553,10 @@ describe('createModelCatalog (P-29)', () => {
     });
 
     expect(await catalog.list(ACCOUNT_A)).toEqual([
-      { id: 'low', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown' },
-      { id: 'medium', source: 'bundled', tier: 'balanced', thinking: { kind: 'none' }, billing: 'unknown' },
-      { id: 'high', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown' },
-      { id: 'ultra', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown' },
+      { id: 'low', source: 'bundled', tier: 'fast', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
+      { id: 'medium', source: 'bundled', tier: 'balanced', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
+      { id: 'high', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
+      { id: 'ultra', source: 'bundled', tier: 'strong', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
     ]);
     // A refresh of source-less data changes nothing: the registry is still the whole answer.
     expect(await catalog.list(ACCOUNT_A, { refresh: true })).toEqual(await catalog.list(ACCOUNT_A));
@@ -565,6 +580,7 @@ describe('createModelCatalog (P-29)', () => {
     expect(rows[0]).toEqual({
       id: 'default-model',
       source: 'bundled',
+      contextWindow: null,
       tier: 'balanced',
       thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
       billing: 'unknown',
@@ -604,6 +620,7 @@ describe('createModelCatalog (P-29)', () => {
       id: 'gemini-3.8-flash-high',
       displayName: 'Gemini 3.8 Flash (High)',
       source: 'live',
+      contextWindow: null,
       thinking: { kind: 'levels', levels: ['high'] },
       billing: 'unknown',
     });
@@ -674,7 +691,7 @@ describe('createModelCatalog (P-29)', () => {
       record(loginStates, true);
       const rows = await list();
       expect(spawned).toHaveLength(1);
-      expect(rows.find((model) => model.id === 'gemini-3.8-flash-high')).toMatchObject({ source: 'live' });
+      expect(rows.find((model) => model.id === 'gemini-3.8-flash-high')).toMatchObject({ source: 'live', contextWindow: null });
     });
 
     it('P-45: a login state that changes after a bundled answer is read on the next list without waiting for the cache to expire, and logging out stops the command again', async () => {

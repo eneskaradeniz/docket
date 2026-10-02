@@ -1,6 +1,6 @@
 // In-memory CapabilityCatalog — the route kinds a test scripts. `provider` drives the default
 // resolution (`routeKindOf` with no explicit kind), `endpointHost` the A-43 host check,
-// `defaultBilling` the route's unpinned-run billing.
+// `defaultBilling` the route's unpinned-run billing, `instructionFiles` the native set (P-37).
 import type { AuthMode, Billing, Tier } from '../../../domain/index';
 
 import type { CapabilityCatalog } from '../capability-catalog';
@@ -13,6 +13,8 @@ export interface FakeRouteKind {
   readonly endpointHost?: string;
   readonly defaultBilling?: Billing;
   readonly tierModels?: Readonly<Record<Tier, string>>;
+  /** The instruction-file names this provider reads natively (P-37). */
+  readonly instructionFiles?: readonly string[];
 }
 
 export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[] = []): CapabilityCatalog => ({
@@ -32,4 +34,8 @@ export const createFakeCapabilityCatalog = (routeKinds: readonly FakeRouteKind[]
           ...(kind.tierModels !== undefined ? { tierModels: kind.tierModels } : {}),
         };
   },
+  // Registry order: the scripted kind order is the registry order, first appearance wins the union.
+  nativeInstructionFiles: (providerId) =>
+    routeKinds.filter((kind) => kind.provider === providerId).flatMap((kind) => kind.instructionFiles ?? []),
+  instructionFileNames: () => [...new Set(routeKinds.flatMap((kind) => kind.instructionFiles ?? []))],
 });

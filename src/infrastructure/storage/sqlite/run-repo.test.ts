@@ -14,6 +14,7 @@ import type {
   AccountRoute,
   AgentEvent,
   RoleSlug,
+  RollingNote,
   RunId,
   StageSlug,
   WorkOrderId,
@@ -234,11 +235,57 @@ describe.each(suites)('createSqliteRunRepo (%s)', (_kind, make) => {
     const readBare = await repo.get(runId(R1));
     expect(readBare).toStrictEqual(bare);
     expect('endedAt' in (readBare ?? {})).toBe(false);
+    expect('definitionsRev' in (readBare ?? {})).toBe(false);
     expect(await repo.get(runId(R2))).toStrictEqual(full);
 
     const events = [askEvent, usageEvent, textEvent(7, 'tail')];
     await repo.appendEvents(runId(R1), events);
     expect(await repo.events(runId(R1))).toStrictEqual(events);
+  });
+
+  it('I-6: definitionsRev rides the record through create and update-free reads', async () => {
+    const { repo } = make();
+    const revised: RunRecord = { ...record(R1, WO1, 10), definitionsRev: 'rev-7f3a' };
+    await repo.create(revised);
+
+    expect(await repo.get(runId(R1))).toStrictEqual(revised);
+    expect((await repo.get(runId(R1)))?.definitionsRev).toBe('rev-7f3a');
+  });
+
+  it('I-5: the handoff note and the stage base save, overwrite and answer independently', async () => {
+    const { repo } = make();
+    await repo.create(record(R1, WO1, 10));
+    await repo.create(record(R2, WO1, 20));
+
+    const first: RollingNote = { text: 'ilk bacak ozeti', capped: false };
+    await repo.saveHandoffNote(runId(R1), first);
+    await repo.saveStageBase(runId(R1), 'sha-base-1');
+
+    expect(await repo.handoffNote(runId(R1))).toStrictEqual(first);
+    expect(await repo.stageBase(runId(R1))).toBe('sha-base-1');
+
+    // Overwrites touch only their own member.
+    const second: RollingNote = { text: 'devam', capped: true };
+    await repo.saveHandoffNote(runId(R1), second);
+    expect(await repo.handoffNote(runId(R1))).toStrictEqual(second);
+    expect(await repo.stageBase(runId(R1))).toBe('sha-base-1');
+    await repo.saveStageBase(runId(R1), 'sha-base-2');
+    expect(await repo.stageBase(runId(R1))).toBe('sha-base-2');
+    expect(await repo.handoffNote(runId(R1))).toStrictEqual(second);
+
+    // A run that saved neither answers undefined for both.
+    expect(await repo.handoffNote(runId(R2))).toBeUndefined();
+    expect(await repo.stageBase(runId(R2))).toBeUndefined();
+  });
+
+  it('I-5: saving a note or stage base for an unknown run throws and writes nothing', async () => {
+    const { repo } = make();
+    await repo.create(record(R1, WO1, 10));
+
+    await expect(repo.saveHandoffNote(runId(R2), { text: 'x', capped: false })).rejects.toThrow('does not exist');
+    await expect(repo.saveStageBase(runId(R2), 'sha')).rejects.toThrow('does not exist');
+    expect(await repo.handoffNote(runId(R2))).toBeUndefined();
+    expect(await repo.stageBase(runId(R2))).toBeUndefined();
   });
 
   it('I-6: update({ endedAt }) rewrites the index columns and drops the run from listActive', async () => {
@@ -310,23 +357,32 @@ describe('createSqliteRunRepo (sqlite rules)', () => {
     expect(after === undefined ? undefined : after.ended_at).toBe(50);
   });
 
-  it('I-8: runs, their updates and their events are visible through a second openDatabase on the same file', async () => {
+  it('I-8: runs, their updates, their events, handoff note, stage base and definitionsRev are visible through a second openDatabase on the same file', async () => {
     const path = join(tmp, 'docket.db');
     const first = openDatabase(path);
     if (!first.ok) throw new Error('openDatabase must succeed');
     seedWorkOrder(first.value, WO1);
     const repo = createSqliteRunRepo(first.value);
-    await repo.create(record(R1, WO1, 10));
+    await repo.create({ ...record(R1, WO1, 10), definitionsRev: 'rev-7f3a' });
     await repo.update(runId(R1), { endedAt: 30, outcome: 'succeeded' });
     await repo.appendEvents(runId(R1), [askEvent, usageEvent]);
+    await repo.saveHandoffNote(runId(R1), { text: 'ozet', capped: true });
+    await repo.saveStageBase(runId(R1), 'sha-base-1');
     first.value.close();
 
     const second = openDatabase(path);
     if (!second.ok) throw new Error('reopen must succeed');
     openDbs.push(second.value);
     const reopened = createSqliteRunRepo(second.value);
-    expect(await reopened.get(runId(R1))).toStrictEqual({ ...record(R1, WO1, 10), endedAt: 30, outcome: 'succeeded' });
+    expect(await reopened.get(runId(R1))).toStrictEqual({
+      ...record(R1, WO1, 10),
+      definitionsRev: 'rev-7f3a',
+      endedAt: 30,
+      outcome: 'succeeded',
+    });
     expect(await reopened.listActive()).toEqual([]);
     expect(await reopened.events(runId(R1))).toStrictEqual([askEvent, usageEvent]);
+    expect(await reopened.handoffNote(runId(R1))).toStrictEqual({ text: 'ozet', capped: true });
+    expect(await reopened.stageBase(runId(R1))).toBe('sha-base-1');
   });
 });

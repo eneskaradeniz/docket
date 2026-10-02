@@ -18,4 +18,8 @@ export interface CapabilityCatalog {
     /** The model the kind fixes for each tier; an account's own table wins over it. */
     readonly tierModels?: Readonly<Record<Tier, string>>;
   } | undefined;
+  /** The instruction-file names one provider reads natively, registry order (P-37). */
+  nativeInstructionFiles(providerId: string): readonly string[];
+  /** The union of known instruction-file names across providers — the candidate list to look for. */
+  instructionFileNames(): readonly string[];
 }

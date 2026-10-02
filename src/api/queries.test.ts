@@ -1222,10 +1222,10 @@ describe('account.models', () => {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
         [ACCOUNT]: [
-          { id: 'atlas-max', displayName: 'Atlas Max', source: 'live', tier: 'strong', thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] }, billing: 'included' },
-          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+          { id: 'atlas-max', displayName: 'Atlas Max', source: 'live', tier: 'strong', thinking: { kind: 'levels', levels: ['low', 'medium', 'high'] }, billing: 'included', contextWindow: null },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered', contextWindow: null },
           // A kept-after-failure row whose tier came from a family-id pattern, not the registry.
-          { id: 'atlas-fog', source: 'bundled', thinking: 'unknown', billing: 'unknown', autoClassified: true, stale: true },
+          { id: 'atlas-fog', source: 'bundled', thinking: 'unknown', billing: 'unknown', autoClassified: true, stale: true, contextWindow: null },
         ],
       }),
     };
@@ -1251,8 +1251,8 @@ describe('account.models', () => {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
         [ACCOUNT]: [
-          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included' },
-          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included', contextWindow: null },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered', contextWindow: null },
         ],
       }),
     };
@@ -1275,8 +1275,8 @@ describe('account.models', () => {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
         [ACCOUNT]: [
-          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown' },
-          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', contextWindow: null },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered', contextWindow: null },
         ],
       }),
     };
@@ -1299,7 +1299,7 @@ describe('account.models', () => {
     const deps: AppDeps = {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
-        [ACCOUNT]: [{ id: 'fable', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', resolvedId: 'claude-fable-5-1' }],
+        [ACCOUNT]: [{ id: 'fable', source: 'live', thinking: { kind: 'none' }, billing: 'unknown', resolvedId: 'claude-fable-5-1', contextWindow: null }],
       }),
     };
     await deps.accounts.savePools(ACCOUNT, [
@@ -1337,8 +1337,8 @@ describe('account.models', () => {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
         [ACCOUNT]: [
-          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included' },
-          { id: 'default', source: 'live', thinking: { kind: 'none' }, billing: 'metered', isDefault: true },
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'included', contextWindow: null },
+          { id: 'default', source: 'live', thinking: { kind: 'none' }, billing: 'metered', isDefault: true, contextWindow: null },
         ],
       }),
     };
@@ -1351,7 +1351,7 @@ describe('account.models', () => {
     const withoutDefault: AppDeps = {
       ...h.deps,
       modelCatalog: createFakeModelCatalog({
-        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'metered' }],
+        [ACCOUNT]: [{ id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'metered', contextWindow: null }],
       }),
     };
     const plain = (await createApi(withoutDefault).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;

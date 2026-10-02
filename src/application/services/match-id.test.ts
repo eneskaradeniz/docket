@@ -7,6 +7,7 @@ import { matchIdFor } from './match-id';
 const entry = (id: string, resolvedId?: string): CatalogModel => ({
   id,
   source: 'live',
+  contextWindow: null,
   thinking: 'unknown',
   billing: 'unknown',
   ...(resolvedId !== undefined ? { resolvedId } : {}),
