@@ -42,6 +42,8 @@ export interface NodeDeps {
   readonly repos: RepoRegistry;
   readonly projects: ReturnType<typeof createSqliteProjectRepo>;
   readonly accountDiscovery: AccountDiscovery; // scans the real home on demand; nothing runs at construction
+  /** The two ports account adoption needs, in the shape createApi takes; construction scans nothing. */
+  readonly adoption: { readonly discovery: AccountDiscovery; readonly importer: CredentialImporter };
   readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   close(): void;
 }
@@ -84,12 +86,15 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     notifier: config.notifier,
   };
 
+  const accountDiscovery = createNodeAccountScan(accounts);
+  const credentialImporter = createNodeCredentialImporter();
   return ok({
     deps,
     repos,
     projects,
-    accountDiscovery: createNodeAccountScan(accounts),
-    credentialImporter: createNodeCredentialImporter(),
+    accountDiscovery,
+    credentialImporter,
+    adoption: { discovery: accountDiscovery, importer: credentialImporter },
     close: (): void => db.close(),
   });
 }

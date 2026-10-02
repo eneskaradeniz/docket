@@ -367,7 +367,7 @@ const startApp = async (): Promise<void> => {
   // `repos.list`, the enumeration the switcher and the wizard's re-appear guard live on. The
   // defs' marks ride the same way (P-25): the api reads them for `providers.marks`, the query
   // every account badge resolves its mark through.
-  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks);
+  const api = createApi(nodeDeps, board, discovery, node.repos, updates, builtinProviderMarks, node.adoption);
 
   // The push channel: every UiEvent goes to every live window over one channel, verbatim — a
   // store re-queries on receipt, which is the whole protocol (U-12).
