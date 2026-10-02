@@ -289,7 +289,10 @@ being reset.
   "İnce ayar", U-33, not a sub-page); Esc first
   leaves the sub-page, then closes the panel; a sub-page is not a U-25 history entry. Hesaplar's
   menu row carries an amber dot while discovery holds an account not yet added (U-34).
-  Görünüm holds Dil and Tema (U-36). There is no simple/advanced switch anywhere.
+  Görünüm holds Dil and Tema (U-36), each a segment control. There is no simple/advanced switch
+  anywhere. A section opens with its title (20/700, plain text — no boxed header card, no upper-case
+  label) and its rows sit directly under it; mono type is kept for machine data alone (paths,
+  versions, commands, ids, money), never for labels, states or names.
 - **U-29** (setting row and the recommendation) Every setting is one row: title and one sentence
   of purpose on the left, one control on the right (a listbox button, a number field, a switch),
   and below it an optional "› İnce ayar" disclosure holding that setting's deeper parameters.
@@ -300,7 +303,9 @@ being reset.
   önerilen: X" and an "Önerilene dön" intent, the editor's head shows "n ayar önerilenden farklı ·
   Hepsini önerilene döndür" (or "Bu hesap önerilen ayarlarla çalışıyor."), and the same count rides
   the account rows of Settings and the wizard's Bütçe step. A disclosure whose content differs from
-  the recommendation starts open — no changed value is ever hidden. In Settings a change saves on
+  the recommendation starts open — no changed value is ever hidden. A value that was never set is not
+  a choice: it is not counted as a difference and opens no disclosure. The count reads "n ayar
+  önerilenden farklı" wherever it appears, never an abbreviation. In Settings a change saves on
   commit (choice → at once; number → on blur or Enter) and shows "Kaydedildi" for 1.5 s; a failure
   shows its U-8 label under the row and keeps the entered value.
 - **U-30** (account editor) One editor body with four tabs — Genel · Kullanım · Limitler ·
@@ -342,12 +347,23 @@ being reset.
   Dengeli · Özenli, a presentation preset a pure `workStyle` maps to and from
   `{ tier, thinking }` (fast/fast · balanced/balanced · strong/deep); any other pair reads
   "Özel". Recommended style: Planlayıcı, Gözden geçirici, Güvenlik denetçisi Özenli; Geliştirici,
-  Test yazarı Dengeli; Analist, Belgeci Hızlı; a role outside this list Dengeli. A role's
+  Test yazarı Dengeli; Analist, Belgeci Hızlı; a role outside this list Dengeli. A role whose
+  binding sets neither tier nor thinking shows no selection and no difference; while any role is in
+  that state the section starts with one line "n rol önerilen çalışma biçimini kullanmıyor ·
+  Önerilenleri uygula", whose intent saves the recommended style for exactly those roles (complete
+  bindings, A-49). "Özel" is a fourth, non-clickable standing inside the segment, never a label
+  beside it; the role row carries no repeated explanatory sentence. A role's
   fine-tune: hesap sırası (Tüm roller / Bu role özel, the latter a chain with per-account model
   pin whose `$`/`?` models are selectable only after consent), kademe, düşünme with an exact
   effort list, and the role's stages that set their own tier or thinking (read-only, with the flow
   name). A stage with `sameProviderReview` puts an amber line on its role's row: the review will
   run on the provider that wrote the code; adding an account of another provider sends it there.
+- **U-38** (providers) Sağlayıcılar lists `providers.discovered` (A-67): one row per provider —
+  mark, `name`, version (mono), status (Hazır · Giriş gerekli · Doğrulanamadı for `loggedIn: null`)
+  and the binary path (mono, dim, full in `title`); "Yeniden tara" re-runs discovery and each row
+  updates as its provider answers (U-6); providers not found on the machine fold into one closed
+  group "Kurulu değil · n" whose rows show `installUrl` as copyable text. No row invents a version,
+  a status or a command.
 - **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
   providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
   a row per candidate with mark, label, status and selection. `unreadable` disables the row with

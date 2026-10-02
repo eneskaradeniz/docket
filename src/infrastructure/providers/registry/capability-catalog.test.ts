@@ -43,4 +43,12 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKind('anthropic-api')).toMatchObject({ id: 'anthropic-api', authMode: 'api_key' });
     expect(catalog.routeKind('no-such-route-kind')).toBeUndefined();
   });
+
+  it('instruction-file answers are empty while the registry carries no per-provider data (P-37)', () => {
+    const catalog = createCapabilityCatalog();
+
+    expect(catalog.nativeInstructionFiles('claude-code')).toEqual([]);
+    expect(catalog.nativeInstructionFiles('never-heard-of')).toEqual([]);
+    expect(catalog.instructionFileNames()).toEqual([]);
+  });
 });

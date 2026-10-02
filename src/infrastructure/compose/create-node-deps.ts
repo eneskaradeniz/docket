@@ -3,7 +3,17 @@ import { join } from 'node:path';
 
 import type { Result } from '../../domain/index';
 import { err, ok } from '../../domain/index';
-import type { AccountDiscovery, AppDeps, Clock, CredentialImporter, Notifier, RepoRegistry, TransportResolver } from '../../application/index';
+import type {
+  AccountDiscovery,
+  AppDeps,
+  CheckpointCommitter,
+  Clock,
+  CredentialImporter,
+  InstructionFiles,
+  Notifier,
+  RepoRegistry,
+  TransportResolver,
+} from '../../application/index';
 import { createCommandRunner, createSecretScanner } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -51,6 +61,27 @@ export interface NodeDeps {
   close(): void;
 }
 
+// The two handoff ports belong to AppDeps but have no real adapter yet. These stopgaps keep the
+// composition root exhaustive and fail loudly on any premature call; wiring a real adapter means
+// deleting its entry here and the matching row in the compose placeholder test.
+const unwiredInstructionFiles: InstructionFiles = {
+  async read() {
+    throw new Error('instructionFiles adapter is not wired (#670)');
+  },
+};
+
+const unwiredCheckpoints: CheckpointCommitter = {
+  async commit() {
+    throw new Error('checkpoints adapter is not wired (#671)');
+  },
+  async diffSince() {
+    throw new Error('checkpoints adapter is not wired (#671)');
+  },
+  async base() {
+    throw new Error('checkpoints adapter is not wired (#671)');
+  },
+};
+
 export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbError> {
   const opened = openDatabase(join(config.dataDir, 'docket.db'));
   if (!opened.ok) return err(opened.error);
@@ -93,6 +124,8 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     evidence: createEvidenceChecker(),
     git: createGitProbe(),
     notifier: config.notifier,
+    instructionFiles: unwiredInstructionFiles,
+    checkpoints: unwiredCheckpoints,
   };
 
   const accountDiscovery = createNodeAccountScan(accounts);

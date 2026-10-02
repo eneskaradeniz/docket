@@ -1,5 +1,5 @@
 // In-memory RunRepo — runs keyed by id, streamed agent events kept per run.
-import type { AgentEvent, RunId, WorkOrderId } from '../../../domain/index';
+import type { AgentEvent, RollingNote, RunId, WorkOrderId } from '../../../domain/index';
 
 import type { RunPatch, RunRecord, RunRepo } from '../run-repo';
 
@@ -9,6 +9,8 @@ export interface FakeRunRepo extends RunRepo {}
 export const createFakeRunRepo = (): FakeRunRepo => {
   const byId = new Map<RunId, RunRecord>();
   const eventsById = new Map<RunId, AgentEvent[]>();
+  const noteById = new Map<RunId, RollingNote>();
+  const stageBaseById = new Map<RunId, string>();
 
   return {
     create: async (record: RunRecord): Promise<void> => {
@@ -39,5 +41,22 @@ export const createFakeRunRepo = (): FakeRunRepo => {
     },
 
     events: async (id: RunId): Promise<readonly AgentEvent[]> => [...(eventsById.get(id) ?? [])],
+
+    saveHandoffNote: async (id: RunId, note: RollingNote): Promise<void> => {
+      if (!byId.has(id)) throw new Error(`run ${id} does not exist`);
+      noteById.set(id, { ...note });
+    },
+
+    handoffNote: async (id: RunId): Promise<RollingNote | undefined> => {
+      const note = noteById.get(id);
+      return note === undefined ? undefined : { ...note };
+    },
+
+    saveStageBase: async (id: RunId, sha: string): Promise<void> => {
+      if (!byId.has(id)) throw new Error(`run ${id} does not exist`);
+      stageBaseById.set(id, sha);
+    },
+
+    stageBase: async (id: RunId): Promise<string | undefined> => stageBaseById.get(id),
   };
 };

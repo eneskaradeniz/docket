@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type Actor, type WorkOrderId, type RepoSlug } from '../../domain/index';
+import { parseSlug, parseUlid, type Actor, type RunId, type WorkOrderId, type RepoSlug } from '../../domain/index';
 import {
   createFakeClock,
   createFakeNotifier,
@@ -35,6 +35,7 @@ const ulidOf = <B extends string>(input: string) => {
 };
 
 const REPO: RepoSlug = slugOf('demo');
+const RUN: RunId = ulidOf<'run'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const WO: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const AUDIT = ulidOf<'audit'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
@@ -354,5 +355,25 @@ describe('createNodeDeps', () => {
 
     node.deps.notifier.notify('title', 'body');
     expect(notifier.notifications()).toEqual([{ title: 'title', body: 'body' }]);
+  });
+
+  // The exhaustive placeholder list: every entry below throws until its real adapter is wired, so
+  // wiring one must delete its row here together with the stopgap in create-node-deps.ts.
+  it('compose: the unwired stopgaps are the only placeholders', async () => {
+    const node = makeNode();
+
+    await expect(node.deps.instructionFiles.read(repoDir, ['AGENTS.md'])).rejects.toThrow(
+      'instructionFiles adapter is not wired (#670)',
+    );
+
+    await expect(
+      node.deps.checkpoints.commit({ cwd: repoDir, runId: RUN, seq: 1 }),
+    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
+    await expect(
+      node.deps.checkpoints.diffSince({ cwd: repoDir, since: '0000000000000000000000000000000000000000' }),
+    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
+    await expect(
+      node.deps.checkpoints.base({ cwd: repoDir, workOrderId: WO }),
+    ).rejects.toThrow('checkpoints adapter is not wired (#671)');
   });
 });
