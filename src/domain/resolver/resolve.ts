@@ -2,7 +2,7 @@
 // Contract: docs/v2/domain.md section 3.
 import type { RoleDef, RoleOverride } from '../definitions/index';
 import type { AccountRoute } from '../quota/index';
-import type { RoleSlug, ThinkingChoice } from '../shared/index';
+import type { RoleSlug, ThinkingChoice, Tier } from '../shared/index';
 
 export type Level = 'workOrder' | 'repo' | 'project' | 'global' | 'builtin';
 
@@ -63,6 +63,7 @@ export interface RoleBinding {
   readonly role: RoleSlug;
   readonly accounts: readonly AccountRoute[];
   readonly thinking?: ThinkingChoice; // absent → { level: 'balanced' }
+  readonly tier?: Tier; // for unpinned routes of the chain; absent → the CLI's own default model
 }
 
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined {
