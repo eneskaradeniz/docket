@@ -133,6 +133,25 @@ const runTurn = (promptBlocks) => {
     respond(promptId, { stopReason: 'end_turn' });
     return;
   }
+  if (scenario === 'hang') {
+    // One chunk, then silence with the turn open: the stop path is under test.
+    update({ sessionUpdate: 'agent_message_chunk', messageId: 'msg_hang', content: { type: 'text', text: 'working' } });
+    return;
+  }
+  if (scenario === 'steady') {
+    // A long turn that never goes silent for long: six chunks a quarter second apart, so the
+    // whole turn outlasts a one-second watchdog while no single gap comes near it.
+    let sent = 0;
+    const timer = setInterval(() => {
+      sent += 1;
+      update({ sessionUpdate: 'agent_message_chunk', messageId: `msg_${sent}`, content: { type: 'text', text: `chunk ${sent}` } });
+      if (sent < 6) return;
+      clearInterval(timer);
+      update({ sessionUpdate: 'usage_update', used: 100, size: 200000 });
+      respond(promptId, { stopReason: 'end_turn' });
+    }, 250);
+    return;
+  }
   if (scenario === 'permission') {
     update({
       sessionUpdate: 'tool_call',
