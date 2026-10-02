@@ -67,6 +67,8 @@ import {
   saveBinding,
   unblockWorkOrder,
   unregisterRepo,
+  catalogOrEmpty,
+  matchIdFor,
 } from '../application';
 
 import type { Command, CommandResult } from './commands';
@@ -1012,7 +1014,7 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
         pools,
         meters,
         item.route.accountId,
-        item.route.model ?? '',
+        matchIdFor(await catalogOrEmpty(() => deps.modelCatalog.list(item.route.accountId)), item.route.model),
         now,
         (await deps.accounts.get(item.route.accountId))?.reserve,
       );
@@ -1307,7 +1309,7 @@ const accountModelsView = async (
       displayName: model.displayName,
       tier: model.tier,
       thinking: model.thinking === 'unknown' ? { kind: 'unknown' } : model.thinking,
-      billing: billingFromPools(model.billing, model.id, pools),
+      billing: billingFromPools(model.billing, model.resolvedId ?? model.id, pools),
       source: model.source,
       stale: model.stale === true,
       autoClassified: model.autoClassified === true,
@@ -1318,7 +1320,7 @@ const accountModelsView = async (
     defaultBilling:
       defaultModel === undefined
         ? defaultBillingOf(deps.capabilities, record)
-        : billingFromPools(defaultModel.billing, defaultModel.id, pools),
+        : billingFromPools(defaultModel.billing, defaultModel.resolvedId ?? defaultModel.id, pools),
   };
 };
 
