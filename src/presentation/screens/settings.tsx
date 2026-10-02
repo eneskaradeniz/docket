@@ -16,6 +16,7 @@ import { ActionButton } from '../components/action-button';
 import { CandidateList } from '../components/candidate-list';
 import { ACTIVE_CLASS } from '../components/active-state';
 import { AccountEditor } from '../components/account-editor';
+import { ChainSection, RoleRowView } from '../components/role-row';
 import { DiscoveryBadges } from '../components/discovery-badges';
 import { countedLabel } from '../components/counted-label';
 import { formatMeterValue, meterUnitLabel } from '../components/meter-value';
@@ -31,6 +32,7 @@ import type { LocaleStore } from '../stores/locale';
 import { accountStatus, createAccountEditorStore, policyLabelKey, type AccountStatus } from '../stores/account-editor';
 import { settingDiffs } from '../stores/recommended';
 import type { AccountModelsStore } from '../stores/account-models';
+import type { RolesStore } from '../stores/roles';
 import { focusRestoredOnClose } from '../stores/search-palette';
 import {
   SETTINGS_MENU,
@@ -42,7 +44,6 @@ import {
 import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
 import type {
   AccountDisplay,
-  BindingSaveInput,
   DiscoveryRow,
   MeterDisplay,
   SettingsStore,
@@ -50,7 +51,6 @@ import type {
 import { failureKey } from '../stores/results';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import { updateButton, type UpdateStore, type UpdateStatus } from '../stores/update';
-import type { SettingsBindingScope } from '../../api/queries';
 
 export interface SettingsPanelProps {
   /** The reducer's open standing — the panel rides over whatever route is current. */
@@ -81,6 +81,8 @@ export interface SettingsPanelProps {
   readonly marks: ProviderMarksStore;
   /** The per-account model list and its spend-consent flow (P-40), fed by `account.models`. */
   readonly models: AccountModelsStore;
+  /** The Roller section's roles, shared chain and work styles (U-33). */
+  readonly roles: RolesStore;
   /** The app-update standing the Güncelleme section reads (U-24). */
   readonly update: UpdateStore;
   readonly locale: Locale;
@@ -140,13 +142,6 @@ function ThemeSwitcher({ store, locale }: { readonly store: ThemeStore; readonly
   );
 }
 
-const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
-  global: 'settings.binding.scope.global',
-  project: 'settings.binding.scope.project',
-  repo: 'settings.binding.scope.workspace',
-  workOrder: 'settings.binding.scope.workOrder',
-};
-
 /** One status line per UpdateStatus (U-24) — the Güncelleme section's quiet reading of where the
  *  app's own newer version stands; absence is never invented into a status. */
 const UPDATE_STATUS_KEY: Readonly<Record<UpdateStatus['kind'], LabelKey>> = {
@@ -162,15 +157,6 @@ const UPDATE_ERROR_KEY: Readonly<Record<'offline' | 'failed', LabelKey>> = {
   offline: 'update.error.offline',
   failed: 'update.error.failed',
 };
-
-const scopeName = (scope: SettingsBindingScope): string =>
-  scope.level === 'project'
-    ? scope.project
-    : scope.level === 'repo'
-      ? scope.repo
-      : scope.level === 'workOrder'
-        ? scope.workOrderId
-        : '';
 
 /** One meter line, in the design's pool grammar: a quiet line under the account's parting
  * hairline — label, mono reading, and the provenance chip at the edge; no box of its own, a
@@ -241,55 +227,6 @@ const STATUS_KEY: Readonly<Record<AccountStatus, LabelKey>> = {
   noData: 'editor.status.noData',
 };
 
-/** The account picker behind a binding editor: the checked accounts become the chain, in the
- * order they are saved. */
-function AccountPicker({
-  accounts,
-  selected,
-  onToggle,
-}: {
-  readonly accounts: readonly AccountDisplay[];
-  readonly selected: readonly string[];
-  readonly onToggle: (accountId: string) => void;
-}) {
-  return (
-    <ul className="grid gap-1">
-      {accounts.map((account) => (
-        <li key={account.id}>
-          <label className="flex w-full items-center gap-2.5 rounded-control border border-hairline bg-raised px-2.5 py-1.5 text-left text-[13px] text-ink">
-            <input
-              type="checkbox"
-              checked={selected.includes(account.id)}
-              onChange={() => onToggle(account.id)}
-              className="accent-signal"
-            />
-            <span className="truncate">{account.label}</span>
-            <code className="truncate font-mono text-[11px] text-inkdim">{account.provider}</code>
-          </label>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** The bindings editor's save payload: the previous chain's order and per-account model survive,
- * newly picked accounts append in list order — editing the chain never silently rewrites either. */
-const chainFor = (
-  current: readonly { readonly accountId: string; readonly model: string | null }[] | undefined,
-  selected: readonly string[],
-): BindingSaveInput['accounts'] => {
-  const previous = current ?? [];
-  const kept = previous
-    .filter((entry) => selected.includes(entry.accountId))
-    .map((entry) =>
-      entry.model !== null ? { accountId: entry.accountId, model: entry.model } : { accountId: entry.accountId },
-    );
-  const added = selected
-    .filter((id) => !previous.some((entry) => entry.accountId === id))
-    .map((accountId) => ({ accountId }));
-  return [...kept, ...added];
-};
-
 const CloseIcon = () => (
   <svg
     viewBox="0 0 24 24"
@@ -330,7 +267,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -346,13 +283,14 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
   }, [open, section, candidates]);
 
   const view = state.view;
+  const rolesState = useSyncExternalStore(roles.subscribe, roles.state);
+  // The Roller rows load whenever the section is on screen.
+  useEffect(() => {
+    if (open && section === 'roles') void roles.load();
+  }, [open, section, roles]);
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
-  const [editRole, setEditRole] = useState<string | null>(null);
-  const [editAccounts, setEditAccounts] = useState<readonly string[]>([]);
-  const [newRole, setNewRole] = useState('');
-  const [newAccounts, setNewAccounts] = useState<readonly string[]>([]);
   const editor = useMemo(
     () =>
       createAccountEditorStore({
@@ -414,29 +352,6 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
 
   const accounts = view?.accounts ?? [];
   const openAccount = subPage === null ? undefined : accounts.find((account) => account.id === subPage);
-  const toggle = (list: readonly string[], id: string): readonly string[] =>
-    list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
-
-  const startEdit = (role: string, selected: readonly string[]): void => {
-    setEditRole(role);
-    setEditAccounts(selected);
-    setNewRole('');
-    setNewAccounts([]);
-  };
-  const saveEdit = (): void => {
-    if (editRole === null) return;
-    const current = view?.bindings.find((binding) => binding.role === editRole)?.accounts;
-    void store.saveBinding({ role: editRole, accounts: chainFor(current, editAccounts) });
-    setEditRole(null);
-  };
-  const saveNew = (): void => {
-    const role = newRole.trim();
-    if (role === '') return;
-    void store.saveBinding({ role, accounts: newAccounts.map((accountId) => ({ accountId })) });
-    setNewRole('');
-    setNewAccounts([]);
-  };
-
   const removeWarning = state.removeWarning;
   const showRemoveWarning = removeWarning !== null && removeWarning.accountId !== warningDismissedFor;
 
@@ -702,97 +617,18 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
             ) : null}
 
             {listSection === 'roles' ? (
-              <SectionCard title={countedLabel(t(locale, 'settings.section.bindings'), view?.bindings.length ?? 0)}>
+              <SectionCard title={t(locale, 'settings.section.roles')}>
                 <div className="grid gap-3">
-                  {view === null || view.bindings.length === 0 ? (
-                    <p className="text-[13px] text-inkdim">{t(locale, 'settings.binding.empty')}</p>
+                  <ChainSection store={roles} locale={locale} markFor={marks.markFor} />
+                  {rolesState.rows === null || rolesState.rows.length === 0 ? (
+                    <p className="text-[13px] text-inkdim">{t(locale, 'roles.empty')}</p>
                   ) : (
-                    <ul className="grid gap-2">
-                      {view.bindings.map((binding) => {
-                        const editable = binding.scope.level === 'global';
-                        const editing = editRole === binding.role;
-                        return (
-                          <li
-                            key={`${binding.scope.level}:${binding.role}:${scopeName(binding.scope)}`}
-                            className="grid gap-1.5 rounded-card border border-hairline bg-surface px-3 py-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-                                <code className="font-mono text-[13px] text-ink">{binding.role}</code>
-                                <StateBadge tone={editable ? 'info' : 'dim'}>{t(locale, SCOPE_KEY[binding.scope.level])}</StateBadge>
-                                {binding.scope.level !== 'global' ? (
-                                  <code className="truncate font-mono text-[11px] text-inkdim">{scopeName(binding.scope)}</code>
-                                ) : null}
-                                <span className="font-mono text-[11.5px] text-inkdim">
-                                  {binding.accounts
-                                    .map((entry) => {
-                                      const label = accounts.find((account) => account.id === entry.accountId)?.label ?? entry.accountId;
-                                      return entry.model !== null ? `${label} · ${entry.model}` : label;
-                                    })
-                                    .join(' → ')}
-                                </span>
-                              </div>
-                              {editable ? (
-                                editing ? (
-                                  <span className="flex items-center gap-2">
-                                    <ActionButton variant="primary" disabled={editAccounts.length === 0} onClick={saveEdit}>
-                                      {t(locale, 'settings.binding.save')}
-                                    </ActionButton>
-                                    <ActionButton variant="neutral" onClick={() => setEditRole(null)}>
-                                      {t(locale, 'settings.binding.cancel')}
-                                    </ActionButton>
-                                  </span>
-                                ) : (
-                                  <ActionButton
-                                    variant="neutral"
-                                    onClick={() => startEdit(binding.role, binding.accounts.map((entry) => entry.accountId))}
-                                  >
-                                    {t(locale, 'settings.binding.edit')}
-                                  </ActionButton>
-                                )
-                              ) : null}
-                            </div>
-                            {editing ? (
-                              <AccountPicker
-                                accounts={accounts}
-                                selected={editAccounts}
-                                onToggle={(id) => setEditAccounts(toggle(editAccounts, id))}
-                              />
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-
-                  {editRole === null ? (
-                    <div className="grid gap-2.5 rounded-card border border-hairline bg-band p-3">
-                      <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
-                        {t(locale, 'settings.binding.add')}
-                      </span>
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                        <label className="grid gap-1">
-                          <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
-                            {t(locale, 'settings.binding.role')}
-                          </span>
-                          <input
-                            value={newRole}
-                            onChange={(event) => setNewRole(event.target.value)}
-                            placeholder={t(locale, 'settings.binding.rolePlaceholder')}
-                            className="rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
-                          />
-                        </label>
-                        <ActionButton variant="primary" size="md" disabled={newRole.trim() === '' || newAccounts.length === 0} onClick={saveNew}>
-                          {t(locale, 'settings.binding.save')}
-                        </ActionButton>
-                      </div>
-                      <AccountPicker
-                        accounts={accounts}
-                        selected={newAccounts}
-                        onToggle={(id) => setNewAccounts(toggle(newAccounts, id))}
-                      />
+                    <div>
+                      {rolesState.rows.map((row) => (
+                        <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} />
+                      ))}
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </SectionCard>
             ) : null}

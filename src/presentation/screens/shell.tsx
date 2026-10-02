@@ -46,6 +46,7 @@ import {
 } from '../stores/search-palette';
 import type { SettingsStore } from '../stores/settings';
 import type { AccountModelsStore } from '../stores/account-models';
+import type { RolesStore } from '../stores/roles';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import {
   CLOSED_SETTINGS_PANEL,
@@ -79,6 +80,8 @@ export interface ShellScreenProps {
   readonly settings: SettingsStore;
   /** The settings panel's per-account model list and its spend-consent flow (P-40). */
   readonly models: AccountModelsStore;
+  /** The Roller section's roles, chain and work styles (U-33). */
+  readonly roles: RolesStore;
   /** The provider marks every account badge resolves from (loaded once, session-cached). */
   readonly marks: ProviderMarksStore;
   /** The app-update standing the title bar's button and the panel's Güncelleme section read. */
@@ -149,6 +152,7 @@ export function ShellScreen({
   accountView,
   settings,
   models,
+  roles,
   marks,
   update,
   wizard,
@@ -489,6 +493,7 @@ export function ShellScreen({
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}
         models={models}
+        roles={roles}
         marks={marks}
         update={update}
         locale={locale}

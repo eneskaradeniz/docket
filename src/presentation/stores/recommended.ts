@@ -3,7 +3,7 @@
 // resets one reads this table; no other file spells a recommended value.
 import type { SettingsAccountView } from '../../api/queries';
 
-export type WorkStyleTier = 'fast' | 'balanced' | 'deep';
+export type WorkStyle = 'fast' | 'balanced' | 'careful';
 
 export const RECOMMENDED = {
   limitPolicy: 'wait_resume',
@@ -14,17 +14,17 @@ export const RECOMMENDED = {
 } as const;
 
 // By role id; a role outside the list is balanced (U-33).
-const ROLE_WORK_STYLE: Readonly<Record<string, WorkStyleTier>> = {
-  planner: 'deep',
-  reviewer: 'deep',
-  'security-auditor': 'deep',
+const ROLE_WORK_STYLE: Readonly<Record<string, WorkStyle>> = {
+  planner: 'careful',
+  reviewer: 'careful',
+  'security-auditor': 'careful',
   developer: 'balanced',
   'test-writer': 'balanced',
   analyst: 'fast',
   documenter: 'fast',
 };
 
-export const recommendedWorkStyle = (roleId: string): WorkStyleTier => ROLE_WORK_STYLE[roleId] ?? 'balanced';
+export const recommendedWorkStyle = (roleId: string): WorkStyle => ROLE_WORK_STYLE[roleId] ?? 'balanced';
 
 export type SettingKey = 'limitPolicy' | 'reserve' | 'cap' | 'warnPercent';
 
