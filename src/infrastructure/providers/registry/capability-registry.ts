@@ -151,6 +151,17 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // Planned, no built-in definition: the CLI imports the user's Claude Code rules, skills and
+      // MCP servers when its ACP server starts and runs those servers. Its only documented off
+      // switch is the `read_config_from` key of a config file, which the launch cannot supply:
+      // an isolation argument is static, while the file must be written per run, and the CLI
+      // documents no run-scoped config directory or environment variable. Until a documented
+      // switch the launch can pass exists, a run would execute the user's own tools.
+      providerId: 'devin',
+      planned: true,
+      gates: {},
+    },
   ],
   routeKinds: [
     {
