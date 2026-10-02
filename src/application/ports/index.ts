@@ -5,6 +5,7 @@ export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';
 export * from './clock';
+export * from './credential-importer';
 export * from './definition-store';
 export * from './deps';
 export * from './event-log';

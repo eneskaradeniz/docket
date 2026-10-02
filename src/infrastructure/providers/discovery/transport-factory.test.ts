@@ -267,6 +267,49 @@ describe('provider transport factory', () => {
     expect(calls[0]?.options.pathToClaudeCodeExecutable).toBe('/toolchain/bin/fake-sdk');
   });
 
+  it('wraps every started run in the watchdog, with the definition\'s timeouts or the defaults', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(accountOf(ACCOUNT_SDK, 'fake-sdk'));
+    // A run that never produces output: only the watchdog can end it.
+    const { query } = scriptedQuery(() =>
+      (async function* generate(): AsyncGenerator<SDKMessage, void> {
+        await new Promise<never>(() => undefined);
+      })(),
+    );
+    const scheduled: { readonly ms: number; readonly fn: () => void }[] = [];
+    const build = (extra: Partial<ProviderDef>) =>
+      createProviderTransportFactory({
+        defs: [{ ...defOf({ id: 'fake-sdk', transport: 'sdk' }), ...extra }],
+        accounts,
+        secrets: createFakeSecretVault(),
+        clock: createFakeClock(),
+        baseEnv: { PATH: '/usr/bin:/bin' },
+        binPaths: { 'fake-sdk': '/toolchain/bin/fake-sdk' },
+        query,
+        watchdogTimers: {
+          set: (fn, ms) => {
+            scheduled.push({ ms, fn });
+            return () => undefined;
+          },
+        },
+      });
+
+    const defaults = await build({}).forAccount(ACCOUNT_SDK);
+    if (defaults === undefined) throw new Error('expected a transport');
+    const handle = unwrap(await defaults.start(request(ACCOUNT_SDK)));
+    expect(scheduled.map((entry) => entry.ms)).toEqual([120_000]);
+    scheduled[0]?.fn();
+    const events = await collect(handle.events);
+    expect(events.map((event) => event.type)).toEqual(['error', 'finished']);
+    expect(events[0]).toMatchObject({ class: 'timeout', reason: 'first_output_timeout' });
+
+    scheduled.length = 0;
+    const custom = await build({ firstOutputTimeoutMs: 7_000 }).forAccount(ACCOUNT_SDK);
+    if (custom === undefined) throw new Error('expected a transport');
+    unwrap(await custom.start(request(ACCOUNT_SDK)));
+    expect(scheduled.map((entry) => entry.ms)).toEqual([7_000]);
+  });
+
   it('resolves to undefined when the account is unknown or names no known provider definition', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(accountOf(ACCOUNT_SDK, 'no-such-def'));

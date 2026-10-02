@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { Result } from '../../domain/index';
 import { err, ok } from '../../domain/index';
-import type { AccountDiscovery, AppDeps, Clock, Notifier, RepoRegistry, TransportResolver } from '../../application/index';
+import type { AccountDiscovery, AppDeps, Clock, CredentialImporter, Notifier, RepoRegistry, TransportResolver } from '../../application/index';
 import { createCommandRunner, createSecretScanner } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -25,7 +25,7 @@ import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes }
 import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
 import { createCapabilityCatalog } from '../providers/registry/index';
 import { createModelCatalog } from '../providers/catalog/index';
-import { createNodeAccountScan } from '../providers/discovery/index';
+import { createNodeAccountScan, createNodeCredentialImporter } from '../providers/discovery/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -42,6 +42,9 @@ export interface NodeDeps {
   readonly repos: RepoRegistry;
   readonly projects: ReturnType<typeof createSqliteProjectRepo>;
   readonly accountDiscovery: AccountDiscovery; // scans the real home on demand; nothing runs at construction
+  /** The two ports account adoption needs, in the shape createApi takes; construction scans nothing. */
+  readonly adoption: { readonly discovery: AccountDiscovery; readonly importer: CredentialImporter };
+  readonly credentialImporter: CredentialImporter; // reads a token only when an adoption asks for the import
   close(): void;
 }
 
@@ -83,5 +86,15 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
     notifier: config.notifier,
   };
 
-  return ok({ deps, repos, projects, accountDiscovery: createNodeAccountScan(accounts), close: (): void => db.close() });
+  const accountDiscovery = createNodeAccountScan(accounts);
+  const credentialImporter = createNodeCredentialImporter();
+  return ok({
+    deps,
+    repos,
+    projects,
+    accountDiscovery,
+    credentialImporter,
+    adoption: { discovery: accountDiscovery, importer: credentialImporter },
+    close: (): void => db.close(),
+  });
 }

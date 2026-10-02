@@ -2,3 +2,4 @@
 export * from './path-discovery';
 export * from './transport-factory';
 export * from './account-scan';
+export * from './credential-import';
