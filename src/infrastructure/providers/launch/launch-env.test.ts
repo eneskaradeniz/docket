@@ -111,4 +111,25 @@ describe('child environment allowlist (P-8)', () => {
     expect(buildChildEnv('claude-code', ambient, {}).CLAUDE_CONFIG_DIR).toBe('/Users/someone/.claude-anthropic');
     expect('CLAUDE_CONFIG_DIR' in buildChildEnv('codex', ambient, {})).toBe(false);
   });
+
+  it("P-44: the copilot CLI's own home override passes through and is never named when absent; another provider's child never sees it", () => {
+    // The CLI documents COPILOT_HOME as the override of the directory where its configuration and
+    // state files (the stored login among them) live, so an ambient value is the machine's own
+    // relocation: it must reach the child verbatim, and with no ambient value the child gets
+    // none — Docket never sets the variable itself.
+    const ambient = { ...BASE_ENV, COPILOT_HOME: '/Users/someone/.copilot-profile' };
+    expect(buildChildEnv('copilot', ambient, {}).COPILOT_HOME).toBe('/Users/someone/.copilot-profile');
+    expect('COPILOT_HOME' in buildChildEnv('cursor', ambient, {})).toBe(false);
+    expect('COPILOT_HOME' in buildChildEnv('copilot', BASE_ENV, {})).toBe(false);
+  });
+
+  it("P-44: the codex CLI's own home override passes through and is never named when absent; another provider's child never sees it", () => {
+    // The CLI keeps auth.json under the home CODEX_HOME names (its --profile help documents
+    // $CODEX_HOME), so an ambient value points the CLI at the machine login and must survive the
+    // allowlist; with no ambient value the child gets none, because Docket never sets it.
+    const ambient = { ...BASE_ENV, CODEX_HOME: '/Users/someone/.codex-alt' };
+    expect(buildChildEnv('codex', ambient, {}).CODEX_HOME).toBe('/Users/someone/.codex-alt');
+    expect('CODEX_HOME' in buildChildEnv('copilot', ambient, {})).toBe(false);
+    expect('CODEX_HOME' in buildChildEnv('codex', BASE_ENV, {})).toBe(false);
+  });
 });
