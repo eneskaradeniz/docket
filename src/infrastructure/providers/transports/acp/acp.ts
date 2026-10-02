@@ -10,7 +10,7 @@ import type { AgentTransport, RunHandle, RunRequest, TransportError } from '../.
 import type { AgentEvent, Result } from '../../../../domain/index';
 import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
-import type { ProviderDef } from '../../defs/index';
+import { providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
 import { ACP_INITIALIZE_PARAMS, ACP_PROTOCOL_VERSION } from './connection';
 import { mapSessionUpdate, transcriptEntryOf, type TranscriptEntry } from './map-update';
@@ -89,16 +89,23 @@ const optionValues = (options: unknown): readonly string[] => {
   return values;
 };
 
-/** The id of the session's config option of `category`, when it offers `level` as a value. A level
- *  the session does not offer is not sent: the agent would refuse it and the run keeps its default. */
-const effortOptionId = (session: UnknownRecord | null, category: string, level: string): string | undefined => {
+/** The id of the session's config option named by `target` (its reserved category, or its own id),
+ *  when it offers `value`. A value the session does not offer is not sent: the agent would refuse
+ *  it and the run keeps its default. */
+const effortOptionId = (
+  session: UnknownRecord | null,
+  target: { readonly category?: string; readonly configId?: string },
+  value: string,
+): string | undefined => {
   const options = session === null ? undefined : session.configOptions;
   if (!Array.isArray(options)) return undefined;
   for (const raw of options) {
     const option = asRecord(raw);
-    if (option === null || option.category !== category) continue;
+    if (option === null) continue;
     const id = asString(option.id);
-    if (id !== undefined && optionValues(option.options).includes(level)) return id;
+    const matches = target.configId !== undefined ? id === target.configId : option.category === target.category;
+    if (!matches) continue;
+    if (id !== undefined && optionValues(option.options).includes(value)) return id;
   }
   return undefined;
 };
@@ -192,6 +199,7 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
         ...(request.effort === undefined ? {} : { effort: request.effort }),
+        ...(request.route.model === undefined ? {} : { model: request.route.model }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's
@@ -493,11 +501,12 @@ export function createAcpTransport(def: ProviderDef): AgentTransport {
             return;
           }
           sessionId = createdId;
-          if (def.effortArg?.kind === 'session-option' && request.effort !== undefined) {
-            const configId = effortOptionId(createdSession, def.effortArg.category, request.effort);
+          const effortValue = providerLevelOf(def.levelNames, request.effort);
+          if (def.effortArg?.kind === 'session-option' && effortValue !== undefined) {
+            const configId = effortOptionId(createdSession, def.effortArg, effortValue);
             // A refused effort leaves the session on its own default; it never fails the run.
             if (configId !== undefined) {
-              await requestRpc('session/set_config_option', { sessionId, configId, value: request.effort });
+              await requestRpc('session/set_config_option', { sessionId, configId, value: effortValue });
             }
           }
         }

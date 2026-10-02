@@ -1,7 +1,7 @@
 // Structural guard for untrusted definition data (repo overrides, tests, fixtures).
 // It checks one definition in isolation; id uniqueness across a set is checked where the set is built.
 import type { ProviderCapabilities, Tri } from '../../../domain/index';
-import type { LaunchInput, ProviderDef, ProviderLaunch, ProviderTransport } from './provider-def';
+import { EFFORT_LEVELS, type LaunchInput, type ProviderDef, type ProviderLaunch, type ProviderTransport } from './provider-def';
 
 const TRANSPORTS: readonly ProviderTransport[] = ['sdk', 'app-server', 'acp', 'stream-json'];
 const RESUME_MODES: readonly ProviderDef['resume'][] = ['specify', 'capture', 'protocol', 'none'];
@@ -50,8 +50,36 @@ function isEffortArg(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (value['kind'] === 'flag') return isNonEmptyString(value['flag']);
   if (value['kind'] === 'request-field') return isNonEmptyString(value['name']);
-  if (value['kind'] === 'session-option') return isNonEmptyString(value['category']);
+  if (value['kind'] === 'session-option') {
+    // Exactly one way to find the option: a category and a configId together would be ambiguous.
+    const { category, configId } = value;
+    return (isNonEmptyString(category) && configId === undefined) || (isNonEmptyString(configId) && category === undefined);
+  }
+  if (value['kind'] === 'model-suffix') return isNonEmptyString(value['separator']);
   return false;
+}
+
+function isLevelNames(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  // A value shared by two levels could not be reversed.
+  const names = entries.map(([, name]) => name);
+  return (
+    entries.every(([level, name]) => (EFFORT_LEVELS as readonly string[]).includes(level) && isNonEmptyString(name)) &&
+    new Set(names).size === names.length
+  );
+}
+
+function isIsolation(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const { env, args, runScopedHome } = value;
+  if (env !== undefined && !(isRecord(env) && Object.entries(env).every(([name, v]) => name.length > 0 && typeof v === 'string'))) {
+    return false;
+  }
+  if (args !== undefined && !(isStringArray(args) && args.every((entry) => entry.length > 0))) return false;
+  return runScopedHome === undefined || isNonEmptyString(runScopedHome);
 }
 
 function isTimeoutMs(value: unknown): boolean {
@@ -68,6 +96,7 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']))) return false;
   const helpArgs = value['helpArgs'];
   if (helpArgs !== undefined && !isStringArray(helpArgs)) return false;
+  if (value['helpNeedsLogin'] !== undefined && value['helpNeedsLogin'] !== true) return false;
   const optionalFlags = value['optionalFlags'];
   if (
     optionalFlags !== undefined &&
@@ -84,6 +113,10 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isNonEmptyString(config['name'])) return false;
   if (!isBuildLaunch(value['buildLaunch'])) return false;
   if (!isEffortArg(value['effortArg'])) return false;
+  if (!isLevelNames(value['levelNames'])) return false;
+  if (!isIsolation(value['isolation'])) return false;
+  const telemetryOff = value['telemetryOff'];
+  if (telemetryOff !== undefined && !(isStringArray(telemetryOff) && telemetryOff.every((entry) => entry.length > 0))) return false;
   if (!RESUME_MODES.includes(value['resume'] as ProviderDef['resume'])) return false;
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];
