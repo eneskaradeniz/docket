@@ -71,6 +71,15 @@ describe('model catalog data (P-29)', () => {
     expect(authoritative).toEqual(['anthropic-api', 'anthropic-subscription', 'zai-glm']);
   });
 
+  it('P-40: the API-key route kind defaults its live models to metered — the other kinds fix no default', () => {
+    // Everything on an API-key route is billed per use, so a live row that reports no billing of
+    // its own must never read as unknown-free. A subscription rides a plan the SDK reports per
+    // model, and a compatible endpoint's costs read as plan equivalents — neither fixes a default.
+    expect(findRouteKind('anthropic-api')?.defaultBilling).toBe('metered');
+    expect(findRouteKind('anthropic-subscription')?.defaultBilling).toBeUndefined();
+    expect(findRouteKind('zai-glm')?.defaultBilling).toBeUndefined();
+  });
+
   it('P-29: family patterns classify exactly the three tiers and name no further family', () => {
     expect(FAMILY_PATTERNS).toEqual([
       { contains: 'opus', tier: 'strong' },

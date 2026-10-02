@@ -106,7 +106,8 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       // API-key runs take the key from the keychain and report costs straight from the stream;
-      // the live model list comes from the documented model-list endpoint, not the SDK.
+      // the live model list comes from the documented model-list endpoint, not the SDK. Every
+      // model there is billed per use, so the kind defaults its live-only rows to metered.
       id: 'anthropic-api',
       providerId: 'claude-code',
       authMode: 'api_key',
@@ -115,6 +116,7 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'rate_limit_events',
       modelSource: 'api',
       liveIsAuthoritative: true,
+      defaultBilling: 'metered',
       models: [],
     },
     {

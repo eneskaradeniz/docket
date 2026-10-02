@@ -1,12 +1,18 @@
 // The ModelCatalog port implementation (P-29 section 3, layer 3): one cached merged list per
-// account and route, refreshed through the Claude catalog adapter, keeping the last good list
-// marked stale when a refresh fails. The merge rules themselves live in the domain tests; these
-// tests pin the caching, the fetcher choice per route kind, and the failure behaviour.
-import { describe, expect, it } from 'vitest';
+// account and route, refreshed through the Claude catalog adapter or — on an API-key route — the
+// documented model-list endpoint adapter, keeping the last good list marked stale when a refresh
+// fails. The merge rules themselves live in the domain tests; these tests pin the caching, the
+// fetcher choice per route kind, and the failure behaviour.
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import { createModelCatalog } from './model-catalog';
 import type { QueryFn } from '../transports/sdk/transport';
+import {
+  createFakeModelListPool,
+  FAKE_MODEL_LIST_KEY,
+  type FakeModelListPool,
+} from './fixtures/fake-model-list-server-harness';
 import {
   createFakeAccountRepo,
   createFakeCapabilityCatalog,
@@ -108,6 +114,20 @@ const baseConfig = (query: QueryFn) => ({
   ttlMs: 6 * 60 * 60 * 1000,
 });
 
+/** One documented row of the model-list endpoint answer, the shape the adapter parses. */
+const endpointRow = (id: string): Record<string, unknown> => ({ type: 'model', id, display_name: `${id} display` });
+const endpointPage = (rows: readonly Record<string, unknown>[]): string => JSON.stringify({ data: rows, has_more: false, last_id: null });
+
+let pool: FakeModelListPool;
+
+beforeAll(() => {
+  pool = createFakeModelListPool();
+});
+
+afterAll(() => {
+  pool.dispose();
+});
+
 describe('createModelCatalog (P-29)', () => {
   it('P-29: a subscription account lists the live answer — the [1m] value verbatim, family-classified tiers from the pattern data', async () => {
     const accounts = createFakeAccountRepo();
@@ -198,7 +218,8 @@ describe('createModelCatalog (P-29)', () => {
     expect(await catalog.list(ACCOUNT_A)).toEqual([]);
   });
 
-  it('P-29: a route kind whose live list does not ride the SDK leg runs no query and answers from the registry', async () => {
+  it('P-29: an API-key account lists from the documented model-list endpoint, never the SDK query', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-fable-5-1[1m]'), endpointRow('claude-opus-5-5')]) }]);
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
     const { query } = scriptedQuery([[PRO_ROW]]);
@@ -208,12 +229,60 @@ describe('createModelCatalog (P-29)', () => {
       return query(params);
     };
     const secrets = createFakeSecretVault();
-    await secrets.put('ref-key', 'key' + '-value');
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
     // The api-key default kind declares its live list on the documented endpoint, not the SDK call.
-    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, secrets });
+    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, secrets, apiBaseUrl: server.endpoint });
 
-    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'claude-fable-5-1[1m]',
+        displayName: 'claude-fable-5-1[1m] display',
+        source: 'live',
+        thinking: 'unknown',
+        billing: 'metered',
+      },
+      {
+        id: 'claude-opus-5-5',
+        displayName: 'claude-opus-5-5 display',
+        source: 'live',
+        tier: 'strong',
+        thinking: 'unknown',
+        autoClassified: true,
+        billing: 'metered',
+      },
+    ]);
+    // The family pattern classifies opus from the id; the endpoint reports no thinking levels,
+    // and the route kind's default meters every row the endpoint left silent about.
     expect(calls).toBe(0);
+  });
+
+  it('P-40: every model an API-key route lists is metered — the route kind default, not an endpoint report', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-sonnet-5-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.length).toBe(1);
+    expect(listed.every((model) => model.billing === 'metered')).toBe(true);
+  });
+
+  it('P-29: a failed endpoint refresh keeps the previous list and marks every entry stale', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-sonnet-5-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const first = await catalog.list(ACCOUNT_A);
+    server.setPayload([{ status: 500, body: 'overloaded' }]);
+    const refreshed = await catalog.list(ACCOUNT_A, { refresh: true });
+
+    expect(refreshed).toEqual(first.map((model) => ({ ...model, stale: true })));
   });
 
   it('P-29: a compatible-endpoint account lists through the SDK call with its route environment', async () => {

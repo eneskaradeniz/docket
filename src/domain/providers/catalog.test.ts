@@ -208,6 +208,46 @@ describe('mergeCatalog billing (P-40)', () => {
     expect(merged.find((model) => model.id === 'claude-opus-4-9')?.billing).toBe('metered');
   });
 
+  it('P-40: a route default fills live-only rows that report no billing — a row or record that knows its own keeps it', () => {
+    const merged = mergeCatalog(
+      [
+        { id: 'claude-sonnet-5-1' },
+        { id: 'grok-4-fast' },
+        { id: 'grok-4-deep', billing: 'unknown' as const },
+      ],
+      [SONNET_INCLUDED],
+      FAMILY_PATTERNS,
+      undefined,
+      { defaultBilling: 'metered' },
+    );
+    // A matched record keeps its verified billing; the route default never rewrites it.
+    expect(merged.find((model) => model.id === 'claude-sonnet-5-1')?.billing).toBe('included');
+    // A live-only row with no report of its own takes the route kind's default.
+    expect(merged.find((model) => model.id === 'grok-4-fast')?.billing).toBe('metered');
+    // An explicit live report — even unknown — is the row's own answer and wins over the default.
+    expect(merged.find((model) => model.id === 'grok-4-deep')?.billing).toBe('unknown');
+  });
+
+  it('P-40: without a route default nothing changes — live-only rows stay unknown, matched records keep theirs', () => {
+    const matched = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [SONNET_5_1], FAMILY_PATTERNS, undefined, {
+      defaultBilling: 'metered',
+    });
+    expect(matched[0].billing).toBe('unknown');
+    const withoutOption = mergeCatalog([{ id: 'grok-4-fast' }], [], FAMILY_PATTERNS, undefined, {
+      authoritative: true,
+    });
+    expect(withoutOption[0].billing).toBe('unknown');
+  });
+
+  it('P-40: the route default never reaches bundled rows — the registry carries its own billing', () => {
+    const opusMetered: ModelRecord = { ...OPUS_4_9, billing: 'metered' };
+    const merged = mergeCatalog([{ id: 'claude-sonnet-5-1' }], [opusMetered, SONNET_5_1], FAMILY_PATTERNS, undefined, {
+      defaultBilling: 'included',
+    });
+    expect(merged.find((model) => model.id === 'claude-opus-4-9')?.billing).toBe('metered');
+    expect(merged.find((model) => model.id === 'claude-sonnet-5-1')?.billing).toBe('unknown');
+  });
+
   it('P-40: billing survives a failed refresh — the stale previous entries keep theirs', () => {
     const previous: readonly CatalogModel[] = [
       { id: 'claude-sonnet-5-1', source: 'live', tier: 'balanced', thinking: SONNET_5_1.thinking, billing: 'included' },
