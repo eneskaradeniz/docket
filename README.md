@@ -43,8 +43,8 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Codex (`codex`) | `codex-subscription` | — | — | — | equivalent | experimental |
 | Antigravity (`agy`) | `agy-subscription` | — | — | — | equivalent | experimental |
 | Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |
-| Cursor Agent (`cursor`) | — | — | — | — | — | experimental |
-| opencode (`opencode`) | — | — | — | — | — | experimental |
+| Cursor Agent (`cursor`) | `cursor-subscription` | — | — | — | equivalent | experimental |
+| opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
 <!-- provider-matrix:end -->
 
 ## License

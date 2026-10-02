@@ -9,6 +9,8 @@ import type { CatalogModel, EpochMs, LiveModel, MergeOptions, Result, RouteKindR
 import { catalogCacheKey, mergeCatalog } from '../../../domain/index';
 import { createCapabilityCatalog, FAMILY_PATTERNS, findRouteKind } from '../registry';
 import type { AppServerSpawn } from '../transports/app-server/index';
+import type { AcpSpawn } from '../transports/acp/index';
+import { listAcpSessionModels } from './acp-session-catalog';
 import { listApiKeyRouteModels } from './api-key-catalog';
 import { listAppServerRouteModels } from './app-server-catalog';
 import { listClaudeRouteModels } from './claude-catalog';
@@ -37,7 +39,8 @@ export interface ModelAdapterDeps {
   readonly query?: QueryFn; // the sdk-source adapter's transport; default: the SDK's query
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
-  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server and acp-session adapters' connection
+  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection, and the Copilot session's
+  readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
 }
@@ -58,7 +61,8 @@ export interface ModelCatalogConfig {
   readonly query?: QueryFn; // default: the SDK's query
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
-  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server and acp-session adapters' connection
+  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection, and the Copilot session's
+  readonly acp?: { readonly command?: string; readonly args?: readonly string[]; readonly spawn?: AcpSpawn }; // the Cursor and OpenCode session adapter's connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
   readonly ttlMs?: number; // cache lifetime; the default is six hours
@@ -108,12 +112,20 @@ const appServerAdapter: ModelSourceAdapter = (account, _route, deps) =>
   });
 
 /** The ACP session leg's adapter: initialize, then session/new — the plan-scoped answer a
- * session carries; no prompt turn, so a listing spends no quota. */
+ * session carries; no prompt turn, so a listing spends no quota. Copilot's answer needs its own
+ * reading (the automatic choice expands to quality settings); the other providers' sessions
+ * share one reader. */
 const acpSessionAdapter: ModelSourceAdapter = (account, route, deps) =>
-  listCopilotRouteModels(account, route, {
-    ...(deps.appServer === undefined ? {} : deps.appServer),
-    ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
-  });
+  account.provider === 'copilot'
+    ? listCopilotRouteModels(account, route, {
+        ...(deps.appServer === undefined ? {} : deps.appServer),
+        ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
+      })
+    : listAcpSessionModels(account, {
+        baseEnv: deps.baseEnv,
+        ...(deps.acp === undefined ? {} : deps.acp),
+        ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
+      });
 
 /** The cli-command leg's adapter: the provider's own model-listing subcommand — a plain command
  * run, no print-mode prompt, so no agent turn ever starts. */
@@ -157,6 +169,7 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
     ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
     ...(config.apiBaseUrl === undefined ? {} : { apiBaseUrl: config.apiBaseUrl }),
     ...(config.appServer === undefined ? {} : { appServer: config.appServer }),
+    ...(config.acp === undefined ? {} : { acp: config.acp }),
     ...(config.cli === undefined ? {} : { cli: config.cli }),
     ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
   };
