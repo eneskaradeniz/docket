@@ -32,8 +32,9 @@ export const CAPABILITY_REGISTRY = {
     },
     {
       // No G4: the app-server transport maps no usage event, so cost visibility is unproven.
+      // No isolation evidence on purpose (P-44): the CLI keeps its login under its own home, so
+      // the home is left alone and the CLI reads its own configuration; the cap holds.
       providerId: 'codex',
-      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'P-12: the run opens with initialize → thread/start → turn/start and maps the turn stream to AgentEvents' },

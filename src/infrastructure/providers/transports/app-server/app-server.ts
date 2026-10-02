@@ -12,6 +12,7 @@ import { err, ok } from '../../../../domain/index';
 import { createSystemClock } from '../../../system/index';
 import { providerLevelOf, type ProviderDef } from '../../defs/index';
 import { buildChildEnv, writeRunConfig, type RunCapability } from '../../launch/index';
+import { mcpConfigOverrideArgs } from './config-overrides';
 import { describeApprovalRequest, type ApprovalAsk } from './approvals';
 import { INITIALIZE_PARAMS } from './connection';
 import { isRecord, rateLimitEvents } from './rate-limits';
@@ -159,7 +160,10 @@ export function createAppServerTransport(def: ProviderDef): AgentTransport {
       }
       const env = { ...buildChildEnv(def.id, parentEnv, {}), ...runConfig.env, ...launch.env };
 
-      const child = spawn(bin, [...launch.args, ...runConfig.args], {
+      // A definition that redirects no config directory has nowhere to put the run's MCP files, so
+      // they travel as the CLI's own per-run overrides.
+      const overrideArgs = def.config.mechanism === 'none' ? mcpConfigOverrideArgs(runConfig.mcpServers) : [];
+      const child = spawn(bin, [...launch.args, ...runConfig.args, ...overrideArgs], {
         cwd: request.cwd,
         env,
         // Own process group on POSIX, so a stop can address the whole tree with one signal.
