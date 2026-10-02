@@ -41,6 +41,8 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   // The spend-consent commands' refusals (application use-cases/spend-consent.ts).
   'invalid_model',
   'invalid_cap',
+  // A-52: the last cap cannot go while a spend consent stands.
+  'cap_required',
   'not_a_deploy_gate',
   'no_approval',
   'confirmation_mismatch',
@@ -71,6 +73,9 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'account.save': 'success.account.save',
   'account.adopt': 'success.account.adopt',
   'account.remove': 'success.account.remove',
+  // A cap write is an account edit: it reads back as the account being saved.
+  'account.cap.save': 'success.account.save',
+  'account.cap.remove': 'success.account.save',
   'account.consent.grant': 'success.account.consent.grant',
   'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',

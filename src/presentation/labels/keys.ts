@@ -29,6 +29,7 @@ export const LABEL_KEYS = [
   // Spend-consent refusals (application use-cases/spend-consent.ts, P-40).
   'error.invalid_model',
   'error.invalid_cap',
+  'error.cap_required',
   // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
   // detail store's E-8 refusal, U-4).
   'error.not_a_deploy_gate',

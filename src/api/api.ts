@@ -9,9 +9,11 @@ import type {
   AuthMode,
   EpochMs,
   FlowDef,
+  LimitPolicy,
   Meter,
   Pool,
   ProjectSlug,
+  QuotaReserve,
   Result,
   Slug,
   StageSlug,
@@ -25,7 +27,20 @@ import type {
   WorkOrderStatus,
   RepoSlug,
 } from '../domain/index';
-import { billingFromPools, deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
+import {
+  BUILTIN_FLOWS,
+  BUILTIN_ROLES,
+  billingFromPools,
+  deriveRoadmap,
+  deriveWorkOrderState,
+  foldRun,
+  headroom,
+  orderForReview,
+  parseSlug,
+  parseUlid,
+  reserveClassOf,
+  reserveFor,
+} from '../domain/index';
 
 import type {
   AccountCandidate,
@@ -62,8 +77,10 @@ import {
   openWorkOrder,
   registerRepo,
   removeAccount,
+  removeAccountCap,
   revokeSpendConsent,
   saveAccount,
+  saveAccountCap,
   saveBinding,
   unblockWorkOrder,
   unregisterRepo,
@@ -85,6 +102,7 @@ import type {
   Query,
   RepoNode,
   RoadmapPageView,
+  RoleListItem,
   SettingsAccountsView,
   SettingsBindingScope,
   SettingsBindingView,
@@ -459,6 +477,9 @@ const runCommand = async (
       // rejected at the edge like a malformed id, because it must never reach a stored record.
       const authMode = AUTH_MODES.find((mode) => mode === command.authMode);
       if (authMode === undefined) return invalidId();
+      // Same stance for the limit policy: an unknown value writes nothing; absent keeps the stored one.
+      const limitPolicy = command.limitPolicy === undefined ? undefined : LIMIT_POLICIES.find((policy) => policy === command.limitPolicy);
+      if (limitPolicy === undefined && command.limitPolicy !== undefined) return invalidId();
 
       // The command owns only the editable surface; policy, caps, the secret ref and the route
       // fields belong to later surfaces and to the vault, so an update keeps whatever the store
@@ -470,7 +491,7 @@ const runCommand = async (
         label: command.label,
         authMode,
         plan: command.plan,
-        limitPolicy: existing?.limitPolicy ?? 'wait_resume',
+        limitPolicy: limitPolicy ?? existing?.limitPolicy ?? 'wait_resume',
         caps: existing?.caps ?? [],
         secretRef: existing?.secretRef,
         routeKind: existing?.routeKind,
@@ -542,6 +563,30 @@ const runCommand = async (
       return typeof removed.error === 'string'
         ? { ok: false, code: removed.error }
         : { ok: false, code: removed.error.code, roles: removed.error.roles };
+    }
+
+    case 'account.cap.save': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      const scope = CAP_SCOPES.find((candidate) => candidate === command.scope);
+      if (scope === undefined) return invalidId();
+      const saved = await saveAccountCap(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
+        { accountId: id, cap: { scope, cap: { amountUsd: command.amountUsd, warnPercent: command.warnPercent } }, actor },
+      );
+      return commandOf(saved);
+    }
+
+    case 'account.cap.remove': {
+      const id = ulidValue<'account'>(command.id);
+      if (id === undefined) return invalidId();
+      const scope = CAP_SCOPES.find((candidate) => candidate === command.scope);
+      if (scope === undefined) return invalidId();
+      const removed = await removeAccountCap(
+        { clock: deps.clock, ids: deps.ids, log: deps.log, accounts: deps.accounts },
+        { accountId: id, scope, actor },
+      );
+      return commandOf(removed);
     }
 
     case 'account.consent.grant': {
@@ -689,6 +734,9 @@ const runQuery = async (
     case 'settings.accounts':
       return settingsAccountsView(deps);
 
+    case 'roles.list':
+      return rolesListView(deps, registry);
+
     case 'providers.discovered':
       return discoveredProviders(discovery);
 
@@ -740,6 +788,9 @@ const runQuery = async (
 const AUTH_MODES: readonly AuthMode[] = ['subscription', 'api_key', 'cloud', 'byok'];
 
 /** The cap scopes an account may carry; the wire type stays a plain string. */
+/** The limit policies an account may carry; the wire type stays a plain string. */
+const LIMIT_POLICIES: readonly LimitPolicy[] = ['wait_resume', 'switch_pool', 'fallback_account', 'ask'];
+
 const CAP_SCOPES: readonly AccountRecord['caps'][number]['scope'][] = ['account_day', 'account_week', 'account_month'];
 
 /** A discovery pass kicks on every query; results arrive per provider and the promise of the pass
@@ -774,7 +825,7 @@ const poolView = (pool: Pool): SettingsPoolView => ({
   appliesTo: pool.appliesTo,
 });
 
-const meterView = (meter: Meter): SettingsMeterView => ({
+const meterView = (meter: Meter, reserve: QuotaReserve | undefined): SettingsMeterView => ({
   id: meter.id,
   poolId: meter.poolId,
   label: meter.label ?? null,
@@ -789,6 +840,8 @@ const meterView = (meter: Meter): SettingsMeterView => ({
   observedAt: meter.observedAt,
   source: meter.source,
   staleAfterMs: meter.staleAfterMs ?? null,
+  reserveClass: reserveClassOf(meter),
+  reserveShare: reserveFor(meter, reserve ?? {}),
 });
 
 const bindingScopeView = (scope: BindingScope): SettingsBindingScope =>
@@ -799,6 +852,22 @@ const bindingScopeView = (scope: BindingScope): SettingsBindingScope =>
       : scope.level === 'repo'
         ? { level: 'repo', repo: scope.repo }
         : { level: 'workOrder', workOrderId: scope.workOrderId };
+
+/** The host (with port) of a stored endpoint; never the path or query. */
+const hostOf = (endpoint: string | undefined): string | null => {
+  if (endpoint === undefined) return null;
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return null;
+  }
+};
+
+const CAP_SCOPE_RANK: Readonly<Record<AccountRecord['caps'][number]['scope'], number>> = {
+  account_day: 0,
+  account_week: 1,
+  account_month: 2,
+};
 
 const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView> => {
   const records = await deps.accounts.list();
@@ -814,18 +883,103 @@ const settingsAccountsView = async (deps: AppDeps): Promise<SettingsAccountsView
       label: record.label,
       authMode: record.authMode,
       plan: record.plan ?? null,
+      limitPolicy: record.limitPolicy,
+      reserve: { short: record.reserve?.short ?? null, long: record.reserve?.long ?? null },
+      caps: [...record.caps]
+        .sort((a, b) => CAP_SCOPE_RANK[a.scope] - CAP_SCOPE_RANK[b.scope])
+        .map(({ scope, cap }) => ({ scope, amountUsd: cap.amountUsd, warnPercent: cap.warnPercent })),
+      consentedModels: record.consentedModels ?? [],
+      routeKind: record.routeKind ?? null,
+      identityDir: record.identityDir ?? null,
+      endpointHost: hostOf(record.endpoint),
+      hasSecret: record.secretRef !== undefined,
       pools: ownPools.map(poolView),
-      meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map(meterView),
+      meters: meters.filter((meter) => ownPoolIds.has(meter.poolId)).map((meter) => meterView(meter, record.reserve)),
     };
   });
 
   const bindings: readonly SettingsBindingView[] = (await deps.bindings.listAll()).map(({ scope, binding }) => ({
     scope: bindingScopeView(scope),
     role: binding.role,
+    thinking: binding.thinking ?? null,
+    tier: binding.tier ?? null,
     accounts: binding.accounts.map((route) => ({ accountId: route.accountId, model: route.model ?? null })),
   }));
 
   return { accounts, bindings };
+};
+
+/** Every role of the built-in library and of the registered repos' definitions that load, with the
+ *  stages that use it (A-50). A repo whose definitions fail is skipped, never a query failure. */
+const rolesListView = async (
+  deps: AppDeps,
+  registry: RepoRegistryPort | undefined,
+): Promise<readonly RoleListItem[]> => {
+  const sources: { readonly roles: readonly { readonly id: string; readonly name: string }[]; readonly flows: readonly FlowDef[] }[] = [
+    { roles: BUILTIN_ROLES, flows: BUILTIN_FLOWS },
+  ];
+  const seenRepos = new Set<string>();
+  for (const row of registry === undefined ? [] : await registry.list()) {
+    if (seenRepos.has(row.slug)) continue;
+    seenRepos.add(row.slug);
+    const loaded = await deps.definitions.load(row.slug);
+    if (loaded.ok) sources.push({ roles: loaded.value.roles, flows: loaded.value.flows });
+  }
+
+  // The global chain of a role, as the review ordering sees it: each route with its account's provider.
+  const globalChain = new Map<string, { readonly route: AccountRoute; readonly provider: string }[]>();
+  const providers = new Map((await deps.accounts.list()).map((record) => [record.id, record.provider]));
+  for (const { scope, binding } of await deps.bindings.listAll()) {
+    if (scope.level !== 'global') continue;
+    const chain: { readonly route: AccountRoute; readonly provider: string }[] = [];
+    for (const route of binding.accounts) {
+      const provider = providers.get(route.accountId);
+      if (provider !== undefined) chain.push({ route, provider });
+    }
+    globalChain.set(binding.role, chain);
+  }
+
+  const names = new Map<string, string>();
+  const stages = new Map<string, RoleListItem['stages'][number][]>();
+  const seenStages = new Set<string>();
+  for (const source of sources) {
+    for (const role of source.roles) {
+      if (!names.has(role.id)) names.set(role.id, role.name);
+      if (!stages.has(role.id)) stages.set(role.id, []);
+    }
+  }
+  for (const source of sources) {
+    for (const flow of source.flows) {
+      for (const stage of flow.stages) {
+        if (stage.role === null) continue;
+        const key = `${stage.role}\n${flow.id}\n${stage.id}`;
+        if (seenStages.has(key)) continue;
+        seenStages.add(key);
+        const reviewed = stage.reviewOf === undefined ? undefined : flow.stages.find((candidate) => candidate.id === stage.reviewOf);
+        const reviewedProvider =
+          reviewed?.role == null ? undefined : globalChain.get(reviewed.role)?.[0]?.provider;
+        const reviewChain = globalChain.get(stage.role);
+        const sameProviderReview =
+          reviewedProvider !== undefined && reviewChain !== undefined && reviewChain.length > 0
+            ? orderForReview(reviewChain, reviewedProvider).sameProvider
+            : false;
+        stages.get(stage.role)?.push({
+          flow: flow.id,
+          flowName: flow.name,
+          stage: stage.id,
+          stageName: stage.name,
+          tier: stage.tier ?? null,
+          thinking: stage.thinking ?? null,
+          reviewOf: stage.reviewOf ?? null,
+          sameProviderReview,
+        });
+      }
+    }
+  }
+
+  return [...names.keys()]
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .map((id) => ({ id, name: names.get(id) ?? id, stages: stages.get(id) ?? [] }));
 };
 
 /** Attention kinds in the order the cockpit shows them (A-22): what a human can answer fastest first. */

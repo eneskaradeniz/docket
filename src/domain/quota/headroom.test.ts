@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MINUTE, type AccountId, type EpochMs, type MeterId, type PoolId } from '../shared/index';
-import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel, RESERVE_MAX } from './headroom';
+import { headroom, isStale, matchesModel, normalizedRemaining, poolsForModel, reserveClassOf, reserveFor, RESERVE_MAX } from './headroom';
 import type { Cadence, Meter, MeterUnit, ModelMatcher, Pool, PoolKind } from './types';
 
 const NOW: EpochMs = 1_750_000_000_000;
@@ -504,6 +504,23 @@ describe('headroom reserve', () => {
     meterOf({ id: M_ATLAS_WEEKLY, poolId: POOL_ATLAS, remaining, limit: 100, durationMs: 7 * DAY_MS, resetsAt: NOW + 30 * HOUR, ...extra });
   const run = (meters: readonly Meter[], reserve?: { readonly short?: number; readonly long?: number }) =>
     headroom(pools, meters, ACCOUNT_MAIN, 'atlas-pro', NOW, reserve);
+
+  it('R-49: reserveClassOf and reserveFor classify by window length, calendar cadence, else the larger value', () => {
+    expect(reserveClassOf(five(50))).toBe('short');
+    expect(reserveClassOf(weekly(50))).toBe('long');
+    expect(reserveClassOf(weekly(50, { durationMs: DAY_MS }))).toBe('long');
+    expect(reserveClassOf(weekly(50, { durationMs: DAY_MS - 1 }))).toBe('short');
+    const noDuration = (cadence: Cadence): Meter =>
+      meterOf({ id: M_ATLAS_5H, poolId: POOL_ATLAS, remaining: 30, limit: 100, cadence });
+    expect(reserveClassOf(noDuration('calendar'))).toBe('long');
+    expect(reserveClassOf(noDuration('billing_cycle'))).toBe('long');
+    expect(reserveClassOf(noDuration('fixed'))).toBe('larger');
+    expect(reserveFor(five(50), { short: 0.2, long: 0.5 })).toBe(0.2);
+    expect(reserveFor(weekly(50), { short: 0.2, long: 0.5 })).toBe(0.5);
+    expect(reserveFor(noDuration('fixed'), { short: 0.3, long: 0.1 })).toBe(0.3);
+    expect(reserveFor(noDuration('fixed'), { short: 0.1, long: 0.3 })).toBe(0.3);
+    expect(reserveFor(five(50), {})).toBe(0);
+  });
 
   it('R-49: RESERVE_MAX is 0.95', () => {
     expect(RESERVE_MAX).toBe(0.95);

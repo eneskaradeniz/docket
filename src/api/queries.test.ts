@@ -45,6 +45,7 @@ import type {
   RoadmapPageView,
   SettingsAccountsView,
   RepoListItem,
+  RoleListItem,
 } from './queries';
 import { RUN_EVENTS_TAIL_LIMIT } from './queries';
 
@@ -867,6 +868,18 @@ const seedSettingsScenario = async (h: Harness): Promise<void> => {
   );
 };
 
+/** The A-48 fields of an account stored with nothing optional. */
+const SETTINGS_DEFAULTS = {
+  limitPolicy: 'wait_resume',
+  reserve: { short: null, long: null },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: null,
+  endpointHost: null,
+  hasSecret: false,
+} as const;
+
 describe('settings.accounts', () => {
   it('U-13: returns every account with its pools and meters plus the per-role binding chains', async () => {
     const h = createHarness();
@@ -881,6 +894,7 @@ describe('settings.accounts', () => {
         label: 'Main',
         authMode: 'subscription',
         plan: 'pro',
+        ...SETTINGS_DEFAULTS,
         pools: [{ id: POOL, label: 'Weekly allowance', kind: 'allowance', appliesTo: 'all' }],
         meters: [
           {
@@ -898,6 +912,8 @@ describe('settings.accounts', () => {
             observedAt: 8_000,
             source: 'polled',
             staleAfterMs: null,
+            reserveClass: 'long',
+            reserveShare: 0,
           },
           {
             id: METER_USD,
@@ -914,6 +930,8 @@ describe('settings.accounts', () => {
             observedAt: 8_500,
             source: 'pushed',
             staleAfterMs: null,
+            reserveClass: 'larger',
+            reserveShare: 0,
           },
         ],
       },
@@ -923,15 +941,19 @@ describe('settings.accounts', () => {
         label: 'Spare',
         authMode: 'api_key',
         plan: null,
+        ...SETTINGS_DEFAULTS,
+        limitPolicy: 'ask',
         pools: [],
         meters: [],
       },
     ]);
     expect(view.bindings).toEqual([
-      { scope: { level: 'global' }, role: 'worker', accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
+      { scope: { level: 'global' }, role: 'worker', thinking: null, tier: null, accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }] },
       {
         scope: { level: 'repo', repo: REPO },
         role: 'reviewer',
+        thinking: null,
+        tier: null,
         accounts: [
           { accountId: ACCOUNT_OTHER, model: null },
           { accountId: ACCOUNT, model: null },
@@ -940,6 +962,8 @@ describe('settings.accounts', () => {
       {
         scope: { level: 'workOrder', workOrderId: WO_AWAIT_EARLY },
         role: 'worker',
+        thinking: null,
+        tier: null,
         accounts: [{ accountId: ACCOUNT_OTHER, model: null }],
       },
     ]);
@@ -959,7 +983,7 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view.accounts).toEqual([
-      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, pools: [], meters: [] },
+      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, ...SETTINGS_DEFAULTS, pools: [], meters: [] },
     ]);
   });
 
@@ -969,6 +993,182 @@ describe('settings.accounts', () => {
     const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
 
     expect(view).toEqual({ accounts: [], bindings: [] });
+  });
+});
+
+describe('settings surface (A-48 … A-50)', () => {
+  const settings = async (h: Harness): Promise<SettingsAccountsView> =>
+    (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+  it('A-48: a stored reserve reads back per class, an absent one as null', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'A', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [], reserve: { short: 0.2 } });
+    await h.deps.accounts.save({ id: ACCOUNT_OTHER, provider: 'acme-prov', label: 'B', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+
+    const view = await settings(h);
+
+    expect(view.accounts.find((a) => a.id === ACCOUNT)?.reserve).toEqual({ short: 0.2, long: null });
+    expect(view.accounts.find((a) => a.id === ACCOUNT_OTHER)?.reserve).toEqual({ short: null, long: null });
+  });
+
+  it('A-48: caps come in account_day, account_week, account_month order and consentedModels verbatim', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'acme-prov',
+      label: 'A',
+      authMode: 'api_key',
+      limitPolicy: 'ask',
+      caps: [
+        { scope: 'account_month', cap: { amountUsd: 90, warnPercent: 70 } },
+        { scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } },
+        { scope: 'account_week', cap: { amountUsd: 30, warnPercent: 75 } },
+      ],
+      consentedModels: ['*', 'model-x'],
+    });
+
+    const account = (await settings(h)).accounts[0];
+
+    expect(account?.limitPolicy).toBe('ask');
+    expect(account?.caps).toEqual([
+      { scope: 'account_day', amountUsd: 5, warnPercent: 80 },
+      { scope: 'account_week', amountUsd: 30, warnPercent: 75 },
+      { scope: 'account_month', amountUsd: 90, warnPercent: 70 },
+    ]);
+    expect(account?.consentedModels).toEqual(['*', 'model-x']);
+  });
+
+  it('A-48: hasSecret reflects secretRef without exposing it, endpointHost drops path and query, identityDir is verbatim', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'acme-prov',
+      label: 'A',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+      secretRef: `account/${ACCOUNT}/api-key`,
+      routeKind: 'compatible-endpoint',
+      endpoint: 'https://api.compatible.example:8443/v1/chat?key=zzz',
+      identityDir: '/Users/op/.config/agent-a/',
+    });
+
+    const view = await settings(h);
+    const account = view.accounts[0];
+
+    expect(account?.hasSecret).toBe(true);
+    expect(account?.routeKind).toBe('compatible-endpoint');
+    expect(account?.endpointHost).toBe('api.compatible.example:8443');
+    expect(account?.identityDir).toBe('/Users/op/.config/agent-a/');
+    expect(JSON.stringify(view)).not.toContain('api-key');
+    expect(JSON.stringify(view)).not.toContain('zzz');
+  });
+
+  it('A-48: each meter carries reserveClassOf and reserveFor with the account reserve', async () => {
+    const h = createHarness();
+    await seedSettingsScenario(h);
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', plan: 'pro', limitPolicy: 'wait_resume', caps: [], reserve: { short: 0.1, long: 0.3 } });
+    await h.deps.accounts.saveMeter({ id: METER_WINDOW, poolId: POOL, cadence: 'fixed', durationMs: 18_000_000, unit: 'prompts', resetPrecision: 'exact', observedAt: 8_000, source: 'polled' });
+
+    const meters = (await settings(h)).accounts.find((a) => a.id === ACCOUNT)?.meters ?? [];
+
+    expect(meters.find((m) => m.id === METER_WINDOW)).toMatchObject({ reserveClass: 'short', reserveShare: 0.1 });
+    // no window length, cadence none: the larger of the two values governs
+    expect(meters.find((m) => m.id === METER_USD)).toMatchObject({ reserveClass: 'larger', reserveShare: 0.3 });
+  });
+
+  it('A-49: bindings carry the stored thinking and tier, null when absent', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'A', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+    await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('worker'), accounts: [{ accountId: ACCOUNT }], thinking: { level: 'deep' }, tier: 'strong' });
+    await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }], thinking: { effort: 'high' } });
+    await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('planner'), accounts: [{ accountId: ACCOUNT }] });
+
+    const { bindings } = await settings(h);
+    const of = (role: string) => bindings.find((b) => b.role === role);
+
+    expect(of('worker')).toMatchObject({ thinking: { level: 'deep' }, tier: 'strong' });
+    expect(of('reviewer')).toMatchObject({ thinking: { effort: 'high' }, tier: null });
+    expect(of('planner')).toMatchObject({ thinking: null, tier: null });
+  });
+
+  describe('roles.list', () => {
+    const roles = async (h: Harness, rows: readonly { slug: RepoSlug; path: string }[]) =>
+      (await createApi(h.deps, undefined, undefined, createFakeRegistry(rows)).query({ type: 'roles.list' })) as RoleListItem[];
+    const reviewStage = (list: RoleListItem[]) =>
+      list.find((r) => r.id === 'reviewer')?.stages.find((s) => s.flow === 'standard' && s.stage === 'review');
+
+    it('A-50: lists the library roles ascending with their stages, tier, thinking and reviewOf', async () => {
+      const h = createHarness();
+
+      const list = await roles(h, []);
+
+      expect(list.map((r) => r.id)).toEqual([...list.map((r) => r.id)].sort());
+      expect(reviewStage(list)).toMatchObject({ flowName: 'Standart', tier: 'strong', reviewOf: 'implement' });
+      const planner = list.find((r) => r.id === 'planner');
+      expect(planner?.stages.every((s) => s.reviewOf === null && !s.sameProviderReview)).toBe(true);
+      expect(planner?.stages[0]).toMatchObject({ tier: null, thinking: null });
+    });
+
+    it('A-50: repo roles join the list, a role in several sources keeps the first name, duplicate (flow, stage) pairs collapse, a failing repo is skipped', async () => {
+      const h = createHarness();
+      h.definitions.seed(
+        { kind: 'repo', repo: REPO },
+        'defs.json',
+        JSON.stringify({
+          roles: [{ ...ROLE_JSON, id: 'planner', name: 'Repo planner' }, ROLE_JSON],
+          flows: FLOWS_JSON,
+          capabilities: [],
+          repo: JSON.parse(DEFINITIONS_JSON).repo,
+        }),
+      );
+
+      const list = await roles(h, [
+        { slug: BROKEN_REPO, path: '/repos/bozuk' },
+        { slug: REPO, path: '/repos/acme' },
+        { slug: REPO, path: '/repos/acme' },
+      ]);
+
+      expect(list.find((r) => r.id === 'planner')?.name).toBe('Planlayıcı');
+      const worker = list.find((r) => r.id === 'worker');
+      expect(worker?.name).toBe('Worker');
+      expect(worker?.stages.map((s) => `${s.flow}/${s.stage}`)).toEqual(['board-flow/plan', 'board-flow/implement', 'side-flow/implement', 'solo-flow/solo']);
+      expect(list.map((r) => r.id)).toEqual([...list.map((r) => r.id)].sort());
+    });
+
+    it('A-50: without a registry the library alone answers', async () => {
+      const h = createHarness();
+
+      const list = (await createApi(h.deps).query({ type: 'roles.list' })) as RoleListItem[];
+
+      expect(list.some((r) => r.id === 'developer')).toBe(true);
+    });
+
+    it('A-50: sameProviderReview uses orderForReview over the review role chain against the reviewed role provider', async () => {
+      const h = createHarness();
+      await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'a', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+      await h.deps.accounts.save({ id: ACCOUNT_OTHER, provider: 'beta-prov', label: 'b', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+
+      // developer on acme-prov; reviewer only on acme-prov -> same provider
+      await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('developer'), accounts: [{ accountId: ACCOUNT }] });
+      await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }] });
+      expect(reviewStage(await roles(h, []))?.sameProviderReview).toBe(true);
+
+      // a second reviewer account on another provider moves to the front -> not same
+      await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }, { accountId: ACCOUNT_OTHER }] });
+      expect(reviewStage(await roles(h, []))?.sameProviderReview).toBe(false);
+    });
+
+    it('A-50: sameProviderReview is false when either role has no global binding', async () => {
+      const h = createHarness();
+      await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'A', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
+
+      await h.deps.bindings.save({ level: 'global' }, { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }] });
+      expect(reviewStage(await roles(h, []))?.sameProviderReview).toBe(false); // developer unbound
+
+      await h.deps.bindings.save({ level: 'repo', repo: REPO }, { role: slugOf<'role'>('developer'), accounts: [{ accountId: ACCOUNT }] });
+      expect(reviewStage(await roles(h, []))?.sameProviderReview).toBe(false); // only a repo-level binding
+    });
   });
 });
 
