@@ -8,7 +8,7 @@ import type { LaunchInput, ProviderDef } from './provider-def';
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'gemini', 'copilot', 'cursor', 'opencode'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode'] as const;
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -94,7 +94,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['gemini', 'copilot', 'cursor', 'opencode']) {
+    for (const id of ['copilot', 'cursor', 'opencode']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -116,7 +116,6 @@ describe('provider definitions (P-1)', () => {
       'claude-code': 'CLAUDE_CONFIG_DIR',
       codex: 'CODEX_HOME',
       agy: 'HOME',
-      gemini: 'GEMINI_CLI_HOME',
       copilot: 'HOME',
       cursor: 'HOME',
       opencode: 'OPENCODE_CONFIG_DIR',
@@ -155,7 +154,7 @@ describe('provider definitions (P-1)', () => {
     expect(env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1');
   });
 
-  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the seven built-in ids', () => {
+  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the six built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
 
@@ -275,7 +274,7 @@ describe('provider definitions (P-1)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25: all seven providers carry one mark each — a single path in a 24×24 viewBox', () => {
+  it('P-25: all six providers carry one mark each — a single path in a 24×24 viewBox', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       expect(mark, def.id).not.toBeNull();
@@ -286,8 +285,8 @@ describe('provider marks (P-25)', () => {
     }
   });
 
-  it('P-26: the five official marks draw nonzero and the two placed stand-ins draw evenodd', () => {
-    for (const id of ['claude-code', 'gemini', 'copilot', 'cursor', 'opencode'] as const) {
+  it('P-26: the four official marks draw nonzero and the two placed stand-ins draw evenodd', () => {
+    for (const id of ['claude-code', 'copilot', 'cursor', 'opencode'] as const) {
       expect(defById(id).mark?.fillRule, id).toBe('nonzero');
     }
     // Both stand-in files set fill-rule="evenodd" (codex also clip-rule="evenodd"); the paths

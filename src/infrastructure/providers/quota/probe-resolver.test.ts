@@ -114,7 +114,7 @@ describe('createQuotaProbeResolver', () => {
   it('a provider without a probe resolves to undefined', () => {
     const resolver = makeResolver(undefined);
 
-    expect(resolver.forProvider('gemini')).toBeUndefined();
+    expect(resolver.forProvider('cursor')).toBeUndefined();
   });
 
   it('wires the http_monitor route kinds: a poll through the resolver reads the account endpoint over the real fetch', async () => {
