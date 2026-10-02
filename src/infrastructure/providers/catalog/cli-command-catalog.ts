@@ -12,7 +12,7 @@ import type { ChildProcess } from 'node:child_process';
 import type { AccountRecord } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
-import { KNOWN_EFFORT_LEVELS } from './claude-catalog';
+import { effortOfProviderLevel, type LevelNames } from '../defs/provider-def';
 import type { CatalogError } from './model-catalog';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -20,7 +20,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 /** The models command of each provider whose live list rides its CLI — the subcommand the CLI's
  * own `--help` advertises ("models  List available models"), stated here because the catalog
  * receives an account, not a definition. */
-const CLI_MODEL_COMMANDS: Readonly<Record<string, { readonly command: string; readonly args: readonly string[] }>> = {
+const CLI_MODEL_COMMANDS: Readonly<
+  Record<string, { readonly command: string; readonly args: readonly string[]; readonly needsLogin?: true }>
+> = {
   agy: { command: 'agy', args: ['models'] },
 };
 
@@ -35,21 +37,23 @@ export interface CliCommandCatalogConfig {
   /** Overrides the provider's launch command (tests point it at a fixture). */
   readonly command?: string;
   readonly spawn?: CliModelSpawn;
+  /** The provider's own names for levels (its definition's `levelNames`). */
+  readonly levelNames?: LevelNames;
+  /** The login probe's answer for this account's provider; a command marked `needsLogin` runs only
+   * on `true`, so a logged-out CLI never opens a browser or starts a login flow from a listing. */
+  readonly loggedIn?: boolean | null;
   /** Ceiling for the whole call; the default leaves a slow CLI an order of magnitude more than a
    * control round-trip needs. */
   readonly timeoutMs?: number;
 }
 
-const isEffortLevel = (word: string): word is EffortLevel =>
-  (KNOWN_EFFORT_LEVELS as readonly string[]).includes(word);
-
 /** The trailing parenthesised word of a display name, when it names a level Docket knows: the
  * rows that carry an effort variant state exactly that one level ("(High)", "(Medium)", "(Low)");
  * a word that is not a level ("(Thinking)") states none. */
-const effortOf = (displayName: string): EffortLevel | undefined => {
+const effortOf = (displayName: string, levelNames: LevelNames | undefined): EffortLevel | undefined => {
   const match = /\(([^()]*)\)[ \t]*$/.exec(displayName);
   const word = match?.[1]?.trim().toLowerCase();
-  return word !== undefined && word !== '' && isEffortLevel(word) ? word : undefined;
+  return word !== undefined && word !== '' ? effortOfProviderLevel(levelNames, word) : undefined;
 };
 
 /**
@@ -58,7 +62,7 @@ const effortOf = (displayName: string): EffortLevel | undefined => {
  * An output with no rows, or a line that is not an id and a name (prose, or an empty first
  * field), is a shape problem the diagnostic names without quoting the output.
  */
-export function parseCliModelsOutput(text: string): Result<readonly LiveModel[], CatalogError> {
+export function parseCliModelsOutput(text: string, levelNames?: LevelNames): Result<readonly LiveModel[], CatalogError> {
   const rows: LiveModel[] = [];
   for (const rawLine of text.split('\n')) {
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -72,7 +76,7 @@ export function parseCliModelsOutput(text: string): Result<readonly LiveModel[],
     }
     if (rows.some((seen) => seen.id === id)) continue;
     const displayName = fields[1] ?? '';
-    const effort = effortOf(displayName);
+    const effort = effortOf(displayName, levelNames);
     rows.push({
       id,
       ...(displayName === '' ? {} : { displayName }),
@@ -139,6 +143,10 @@ export async function listCliCommandRouteModels(
   if (launch === undefined) {
     return err({ code: 'unsupported', message: 'the provider has no model-listing command' });
   }
+  // The catalog treats this error like any failed listing and answers from bundled data.
+  if (launch.needsLogin === true && config.loggedIn !== true) {
+    return err({ code: 'unsupported', message: 'the models command needs a login and none is confirmed' });
+  }
   const outcome = await runModelsCommand(
     config.spawn ?? nodeSpawn,
     config.command ?? launch.command,
@@ -153,5 +161,5 @@ export async function listCliCommandRouteModels(
   if (outcome.exitCode !== 0) {
     return err({ code: 'spawn_failed', message: 'the models command failed before printing a model list' });
   }
-  return parseCliModelsOutput(outcome.stdout);
+  return parseCliModelsOutput(outcome.stdout, config.levelNames);
 }

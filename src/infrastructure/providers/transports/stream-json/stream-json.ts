@@ -125,6 +125,7 @@ export function createStreamJsonTransport(def: ProviderDef, dialect: StreamDiale
         configDir: runConfig.configDir,
         ...(request.resume === undefined ? {} : { resume: request.resume }),
         ...(request.effort === undefined ? {} : { effort: request.effort }),
+        ...(request.route.model === undefined ? {} : { model: request.route.model }),
       });
 
       // The ambient environment reaches the child only through the launch allowlist; the def's

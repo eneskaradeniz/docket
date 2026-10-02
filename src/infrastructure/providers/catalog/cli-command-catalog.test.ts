@@ -247,3 +247,13 @@ describe('listCliCommandRouteModels', () => {
     expect(result).toEqual({ ok: false, error: { code: 'unsupported', message: 'the provider has no model-listing command' } });
   });
 });
+
+describe('level names (P-43)', () => {
+  it('P-43: the effort word in a display name is read back through the level names', () => {
+    const parsed = parseCliModelsOutput('m-1\tModel One (Off)\nm-2\tModel Two (High)\nm-3\tModel Three (Thinking)\n', { none: 'off' });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error('unreachable');
+    expect(parsed.value.map((row) => row.efforts)).toEqual([['none'], undefined, undefined]);
+  });
+});
