@@ -25,8 +25,12 @@ import type {
 import { billingFromPools, deriveRoadmap, deriveWorkOrderState, foldRun, headroom, parseSlug, parseUlid } from '../domain/index';
 
 import type {
+  AccountCandidate,
+  AccountCandidateList,
+  AccountDiscovery,
   AccountRecord,
   AppDeps,
+  CredentialImporter,
   BindingScope,
   DiscoveredProvider,
   PermissionBoard,
@@ -35,12 +39,14 @@ import type {
   UpdateChecker,
 } from '../application';
 import {
+  adoptAccountCandidate,
   approveAndDeploy,
   applyUpdate,
   attachProject,
   blockWorkOrder,
   checkForUpdates,
   closeWorkOrder,
+  createAccountCandidateList,
   decideHumanGate,
   decideProposalUseCase,
   DEFAULT_MODEL_CONSENT,
@@ -130,6 +136,16 @@ const ulidValue = <B extends string>(input: string): Ulid<B> | undefined => {
   return parsed.ok ? parsed.value : undefined;
 };
 
+/** The ports account adoption needs, composed beside AppDeps at the root like the discovery port. */
+export interface AccountAdoption {
+  readonly discovery: AccountDiscovery;
+  readonly importer: CredentialImporter;
+}
+
+interface Adopting extends AccountAdoption {
+  readonly candidates: AccountCandidateList;
+}
+
 const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult =>
   outcome.ok ? { ok: true } : { ok: false, code: outcome.error };
 
@@ -142,7 +158,9 @@ const commandOf = <E extends string>(outcome: Result<unknown, E>): CommandResult
  *  not_found as well. The update checker completes the set: without it no update state exists,
  *  so `app.update` and its intents answer not_found instead of inventing "you are current". The
  *  marks source rides the same pattern: without it there are no provider marks to report, so
- *  `providers.marks` answers not_found instead of inventing an empty record. */
+ *  `providers.marks` answers not_found instead of inventing an empty record. The adoption ports
+ *  are the last of the set: without them `accounts.candidates` and `account.adopt` answer
+ *  not_found. */
 export function createApi(
   deps: AppDeps,
   board?: Pick<PermissionBoard, 'answer' | 'openAsks'>,
@@ -150,7 +168,11 @@ export function createApi(
   registry?: RepoRegistryPort,
   updates?: UpdateChecker,
   marks?: ProviderMarks,
+  adoption?: AccountAdoption,
 ): Api & RunEventFeed {
+  // One cache per api instance: the candidates query reads it, an adoption drops it.
+  const adopting: Adopting | undefined =
+    adoption === undefined ? undefined : { ...adoption, candidates: createAccountCandidateList(adoption.discovery) };
   // The push channel (U-12): a Set keeps delivery to each listener once and makes unsubscribe a
   // plain delete.
   const listeners = new Set<(e: UiEvent) => void>();
@@ -181,7 +203,7 @@ export function createApi(
           },
         },
       };
-      const result = await runCommand(tracked, actor, command, board, updates);
+      const result = await runCommand(tracked, actor, command, board, updates, adopting);
       if (appended) emit({ type: 'workOrders.changed' });
       // update.changed rides the same coarse pattern as workOrders.changed: the command answers
       // ok, the event tells every store to re-query — CommandResult carries no state payload. A
@@ -191,7 +213,7 @@ export function createApi(
       }
       return result;
     },
-    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks),
+    query: (query) => runQuery(deps, query, discovery, registry, board, updates, marks, adopting),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -209,6 +231,7 @@ const runCommand = async (
   command: Command,
   board: Pick<PermissionBoard, 'answer'> | undefined,
   updates: UpdateChecker | undefined,
+  adopting: Adopting | undefined,
 ): Promise<CommandResult> => {
   switch (command.type) {
     case 'workOrder.open': {
@@ -437,6 +460,34 @@ const runCommand = async (
       return saved.ok ? { ok: true, id: record.id } : { ok: false, code: saved.error };
     }
 
+    case 'account.adopt': {
+      // Without the discovery and importer ports no candidate can be found, so the command
+      // answers not_found instead of inventing an account. The command carries no kind: the
+      // adoption re-scans and classifies by source path alone.
+      if (adopting === undefined) return { ok: false, code: 'not_found' };
+      const adopted = await adoptAccountCandidate(
+        {
+          clock: deps.clock,
+          ids: deps.ids,
+          log: deps.log,
+          accounts: deps.accounts,
+          secrets: deps.secrets,
+          capabilities: deps.capabilities,
+          discovery: adopting.discovery,
+          importer: adopting.importer,
+        },
+        {
+          sourcePath: command.sourcePath,
+          label: command.label,
+          ...(command.importToken !== undefined ? { importToken: command.importToken } : {}),
+          actor,
+        },
+      );
+      // The candidates' alreadyAdded flags are stale after any attempt that reached a record.
+      adopting.candidates.invalidate();
+      return adopted.ok ? { ok: true, id: adopted.value } : { ok: false, code: adopted.error };
+    }
+
     case 'account.remove': {
       const id = ulidValue<'account'>(command.id);
       if (id === undefined) return invalidId();
@@ -531,6 +582,7 @@ const runQuery = async (
   board: Pick<PermissionBoard, 'answer' | 'openAsks'> | undefined,
   updates: UpdateChecker | undefined,
   marks: ProviderMarks | undefined,
+  adopting: Adopting | undefined,
 ): Promise<unknown> => {
   switch (query.type) {
     case 'workOrder.detail': {
@@ -595,6 +647,14 @@ const runQuery = async (
 
     case 'providers.discovered':
       return discoveredProviders(discovery);
+
+    case 'accounts.candidates': {
+      if (adopting === undefined) return { ok: false, code: 'not_found' };
+      const found: readonly AccountCandidate[] = await adopting.candidates.get(
+        query.refresh === true ? { refresh: true } : undefined,
+      );
+      return found;
+    }
 
     case 'providers.marks': {
       // The defs' own static data, read off the composed marks source verbatim — no derivation,

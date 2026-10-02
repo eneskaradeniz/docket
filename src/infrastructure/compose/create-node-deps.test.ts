@@ -158,6 +158,18 @@ async function initRepoWithCommit(cwd: string): Promise<void> {
 // --- the composition root ----------------------------------------------------------------------------
 
 describe('createNodeDeps', () => {
+  it('I-31: exposes the adoption ports createApi takes, and the app entry hands them to createApi', async () => {
+    const node = makeNode();
+
+    expect(node.adoption.discovery).toBe(node.accountDiscovery);
+    expect(node.adoption.importer).toBe(node.credentialImporter);
+    // The entry point cannot run without Electron, so its createApi call is checked as text: a
+    // call that drops the adoption ports would leave both adoption endpoints answering not_found.
+    const main = await readFile(join(process.cwd(), 'electron', 'main.ts'), 'utf8');
+    const call = /createApi\(([^;]*)\);/.exec(main)?.[1] ?? '';
+    expect(call).toContain('node.adoption');
+  });
+
   it('I-31: opens <dataDir>/docket.db, exposes the registry, and close() closes the database', async () => {
     const node = makeNode();
 

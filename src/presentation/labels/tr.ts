@@ -352,6 +352,7 @@ export const TR: LabelBundle = {
   'errorBoundary.title': 'Uygulama beklenmeyen bir hatayla karşılaşt.',
   'errorBoundary.reload': 'Yeniden yükle',
   'success.account.save': 'Hesap kaydedildi.',
+  'success.account.adopt': 'Hesap eklendi.',
   'success.account.remove': 'Hesap kaldırıldı.',
   'success.account.consent.grant': 'Harcama onayı verildi.',
   'success.account.consent.revoke': 'Harcama onayı kaldırıldı.',
