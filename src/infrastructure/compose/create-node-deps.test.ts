@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseSlug, parseUlid, type Actor, type WorkOrderId, type WorkspaceSlug } from '../../domain/index';
+import { parseSlug, parseUlid, type Actor, type WorkOrderId, type RepoSlug } from '../../domain/index';
 import {
   createFakeClock,
   createFakeNotifier,
@@ -34,7 +34,7 @@ const ulidOf = <B extends string>(input: string) => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('demo');
+const REPO: RepoSlug = slugOf('demo');
 const WO: WorkOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const AUDIT = ulidOf<'audit'>('01ARZ3NDEKTSV4RRFFQ69G5FAW');
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
@@ -83,10 +83,9 @@ const FLOW_YAML = [
   '',
 ].join('\n');
 
-const WORKSPACE_YAML = [
+const REPO_YAML = [
   'id: demo',
   'name: Demo',
-  'repos: []',
   'flows:',
   '  - standard',
   'defaultFlow: standard',
@@ -164,11 +163,11 @@ describe('createNodeDeps', () => {
 
     expect((await stat(join(dataDir, 'docket.db'))).isFile()).toBe(true);
 
-    await node.workspaces.register(WS, repoDir);
-    expect(await node.workspaces.list()).toEqual([{ slug: WS, path: repoDir }]);
+    await node.repos.register(REPO, repoDir);
+    expect(await node.repos.list()).toEqual([{ slug: REPO, path: repoDir }]);
 
     node.close();
-    await expect(node.workspaces.list()).rejects.toThrow();
+    await expect(node.repos.list()).rejects.toThrow();
   });
 
   it('I-31: a too-new database returns the openDatabase error', async () => {
@@ -187,21 +186,21 @@ describe('createNodeDeps', () => {
 
   it('I-31: uses <dataDir> as the global definitions root over the registry-backed YAML store', async () => {
     await mkdir(join(repoDir, '.docket'), { recursive: true });
-    await writeFile(join(repoDir, '.docket', 'workspace.yaml'), WORKSPACE_YAML, 'utf8');
+    await writeFile(join(repoDir, '.docket', 'repo.yaml'), REPO_YAML, 'utf8');
     await mkdir(join(dataDir, 'roles'), { recursive: true });
     await mkdir(join(dataDir, 'flows'), { recursive: true });
     await writeFile(join(dataDir, 'roles', 'planner.yaml'), ROLE_YAML, 'utf8');
     await writeFile(join(dataDir, 'flows', 'standard.yaml'), FLOW_YAML, 'utf8');
     const node = makeNode();
-    await node.workspaces.register(WS, repoDir);
+    await node.repos.register(REPO, repoDir);
 
-    const loaded = await node.deps.definitions.load(WS);
+    const loaded = await node.deps.definitions.load(REPO);
 
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.value.roles.map((role) => role.id)).toEqual([slugOf<'role'>('planner')]);
     expect(loaded.value.flows.map((flow) => flow.id)).toEqual([slugOf<'flow'>('standard')]);
-    expect(loaded.value.workspace?.commandSets).toEqual({ tests: ['node -e "process.exit(0)"'] });
+    expect(loaded.value.repo?.commandSets).toEqual({ tests: ['node -e "process.exit(0)"'] });
     const globalFile = await node.deps.definitions.readFile({ kind: 'global' }, 'roles/planner.yaml');
     expect(globalFile?.content).toBe(ROLE_YAML);
   });
@@ -211,14 +210,15 @@ describe('createNodeDeps', () => {
 
     await node.deps.workOrders.create({
       id: WO,
-      workspace: WS,
+      project: slugOf<'project'>('proj'),
+      repo: REPO,
       flow: slugOf<'flow'>('standard'),
       title: 'wire the repos',
       createdAt: 5,
       createdBy: USER,
     });
     expect((await node.deps.workOrders.get(WO))?.title).toBe('wire the repos');
-    expect(await node.deps.workOrders.list({ workspace: WS })).toHaveLength(1);
+    expect(await node.deps.workOrders.list({ repo: REPO })).toHaveLength(1);
 
     await node.deps.workOrders.appendEvent(WO, {
       type: 'created',
@@ -257,9 +257,9 @@ describe('createNodeDeps', () => {
   it('I-31: wires worktrees with <dataDir>/worktrees as the root', async () => {
     await initRepoWithCommit(repoDir);
     const node = makeNode();
-    await node.workspaces.register(WS, repoDir);
+    await node.repos.register(REPO, repoDir);
 
-    const ensured = await node.deps.worktrees.ensure(WS, WO);
+    const ensured = await node.deps.worktrees.ensure(REPO, WO);
 
     expect(ensured).toEqual({ ok: true, value: { path: join(dataDir, 'worktrees', 'demo', WO) } });
     expect((await stat(join(dataDir, 'worktrees', 'demo', WO))).isDirectory()).toBe(true);

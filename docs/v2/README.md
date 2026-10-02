@@ -16,6 +16,7 @@ until an architect change updates them.
 | [infrastructure.md](infrastructure.md) | Adapters for Phase 2b: SQLite, YAML definitions, keychain, git, gates, the SDK transport |
 | [integrations.md](integrations.md) | Design (not yet contract): code hosting, issue trackers, environments, deployment, remote CI |
 | [providers.md](providers.md) | Agent CLI integration: transports, the common event stream, support tiers, isolation |
+| [provider-capabilities.md](provider-capabilities.md) | Provider and model capability record, routes, support levels, model catalog, account discovery |
 | [quota.md](quota.md) | Accounts, pools, windows, limit policies, budgets |
 | [ui.md](ui.md) | Phase 4 presentation layer: labels, stores, API additions, the operator gate |
 | [pages.md](pages.md) | Visual pages produced by agents (artifacts), sandboxing |

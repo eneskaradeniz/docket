@@ -1,162 +1,253 @@
-// screens/cockpit.tsx — the cockpit screen (U-2's window): the whole machine's attention list in
-// the api's order and the running runs, each row a straight path into its work order. The screen
-// renders the store's view and forwards clicks; ages render from `since` through the store's
-// injected clock, and every user-visible string arrives through a label key (U-1). Rows speak the
-// design's work-row grammar: an 8px lamp naming the row's state (amber asks for you, green runs,
-// blue waits, red is blocked), the title, a mono meta line, and the age at the edge.
-import { useEffect, useSyncExternalStore } from 'react';
-import type { LabelKey } from '../labels/keys';
+// screens/cockpit.tsx — the cockpit screen (U-21's four sections). Only Senden bekleyenler is
+// loud: its rows carry the amber/red edge and the inline answer; Koşanlar, Proje kartları and Son
+// kapananlar stay quiet. Long lists fold (COCKPIT_LIMITS) so the project cards and the closed list
+// stay near the first screen; every empty, loading and failed standing speaks through a component
+// that says what it means. The screen renders the store's view and forwards clicks; ages render
+// from stamped times through the store's injected clock, and every string is a label key (U-1).
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { CommandResult } from '../../api/commands';
 import { t, type Locale } from '../labels/t';
-import { ActionButton } from '../components/action-button';
-import { countedLabel } from '../components/counted-label';
-import { SectionCard } from '../components/section-card';
-import { StateBadge, type BadgeTone } from '../components/state-badge';
-import type { AttentionItem } from '../../api/queries';
-import type { CockpitStore } from '../stores/cockpit';
-import { GENERIC_FAILURE_KEY } from '../stores/results';
+import { CockpitAttentionRow } from '../components/cockpit-attention';
+import { CockpitClosedList } from '../components/cockpit-closed';
+import { formatAge } from '../components/cockpit-format';
+import { CockpitProjectCard } from '../components/cockpit-projects';
+import { CockpitSection } from '../components/cockpit-section';
+import { CockpitRunningRow } from '../components/cockpit-running';
+import { CockpitAlert, FirstRunCard, QuietRow, SectionHead } from '../components/cockpit-states';
+import { CockpitSkeleton } from '../components/cockpit-skeleton';
+import { SkeletonReveal, useSkeleton } from '../components/skeleton';
+import type { AccountCard } from '../stores/accounts-frame';
+import {
+  COCKPIT_LIMITS,
+  cockpitPhase,
+  cockpitSummary,
+  limitRows,
+  recentClosed,
+  type CockpitAsk,
+  type CockpitStore,
+} from '../stores/cockpit';
+import { commandResultKey } from '../stores/results';
+import type { ProviderMarksStore } from '../stores/provider-marks';
 
 export interface CockpitScreenProps {
   readonly store: CockpitStore;
+  /** The provider marks the running rows' badges resolve from (loaded once, session-cached). */
+  readonly marks: ProviderMarksStore;
   readonly locale: Locale;
   readonly onOpenWorkOrder: (workOrderId: string) => void;
+  /** The project cards' targets (K-4:B): a multi-repo project opens its roadmap, a single-repo
+   *  project the main repo's board. */
+  readonly onOpenProject: (project: string) => void;
+  readonly onOpenBoard: (repo: string) => void;
+  /** The sidebar frame's account cards — the running rows' account names join onto them by id. */
+  readonly accounts: readonly AccountCard[] | null;
 }
 
-const LOCALE_TAG: Readonly<Record<Locale, string>> = { tr: 'tr-TR', en: 'en-US' };
+type LampTone = 'signal' | 'error' | 'proceed' | 'hollow';
 
-const KIND_TONE: Readonly<Record<AttentionItem['kind'], BadgeTone>> = {
-  permission_ask: 'signal',
-  awaiting_human: 'signal',
-  blocked: 'error',
-  limit_waiting: 'info',
+const LAMP_CLASS: Readonly<Record<LampTone, string>> = {
+  signal: 'bg-signal',
+  error: 'bg-error',
+  proceed: 'bg-proceed',
+  hollow: 'border-[1.5px] border-bord',
 };
 
-/** The lamp hue for a row's standing: amber = the operator is the next move, blue = a machine
- *  waits on a clock or a limit, red = stopped. */
-const KIND_LAMP: Readonly<Record<AttentionItem['kind'], string>> = {
-  permission_ask: 'bg-signal',
-  awaiting_human: 'bg-signal',
-  blocked: 'bg-error',
-  limit_waiting: 'bg-info',
-};
+function Pulse({ tone, children }: { readonly tone: LampTone; readonly children: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${LAMP_CLASS[tone]}`} />
+      {children}
+    </span>
+  );
+}
 
-/** The row's edge joins the lamp: only the rows that ask for the operator tint their border, the
- *  rest keep the plain hairline — attention is a color, not a default. */
-const KIND_EDGE: Readonly<Record<AttentionItem['kind'], string>> = {
-  permission_ask: 'border-signal/40',
-  awaiting_human: 'border-signal/40',
-  blocked: 'border-error/40',
-  limit_waiting: 'border-hairline',
-};
+function FoldButton({ label, onClick }: { readonly label: string; readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-control px-1.5 py-0.5 text-[12.5px] text-inkdim transition-colors hover:bg-raised hover:text-ink"
+    >
+      {label}
+    </button>
+  );
+}
 
-const KIND_KEY: Readonly<Record<AttentionItem['kind'], LabelKey>> = {
-  permission_ask: 'attention.permission_ask',
-  awaiting_human: 'attention.awaiting_human',
-  blocked: 'attention.blocked',
-  limit_waiting: 'attention.limit_waiting',
-};
-
-/** A wait's age in the active locale, from milliseconds (U-2): minutes under an hour, hours under
- *  a day, days beyond — Intl carries the wording, so no copy lives here. */
-const formatAge = (locale: Locale, ms: number): string => {
-  const relative = new Intl.RelativeTimeFormat(LOCALE_TAG[locale], { numeric: 'always' });
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return relative.format(0, 'second');
-  if (minutes < 60) return relative.format(-minutes, 'minute');
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return relative.format(-hours, 'hour');
-  return relative.format(-Math.floor(hours / 24), 'day');
-};
-
-export function CockpitScreen({ store, locale, onOpenWorkOrder }: CockpitScreenProps) {
+export function CockpitScreen({ store, marks, locale, onOpenWorkOrder, onOpenProject, onOpenBoard, accounts }: CockpitScreenProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
+  // The marks land once, after the first paint; the subscription turns them into a re-render.
+  useSyncExternalStore(marks.subscribe, marks.state);
   useEffect(() => {
     void store.load();
   }, [store]);
 
+  // The inline answer toasts through the same U-8 mapping every intent uses; the store owns the
+  // re-query that must drop the answered row.
+  const [answerResult, setAnswerResult] = useState<CommandResult | null>(null);
+  const answer = (ask: CockpitAsk, decision: 'allow' | 'deny'): void => {
+    void store.answerPermission({ runId: ask.runId, askId: ask.askId, decision }).then(setAnswerResult);
+  };
+  const [expanded, setExpanded] = useState({ attention: false, running: false });
+
+  const phase = cockpitPhase(state);
+  // The skeletons' anti-flicker gate (U-26): only a first load (no view yet) can show one, and
+  // only past its delay — a reload over the standing view never blanks the cockpit.
+  const { skeleton, reveal } = useSkeleton(phase === 'loading', () => Date.now());
   const view = state.view;
-  const attention = view?.attention ?? [];
-  const running = view?.running ?? [];
+  const accountLabel = (accountId: string): string =>
+    accounts?.find((card) => card.id === accountId)?.label ?? accountId;
+
+  const summary = view === null ? null : cockpitSummary(view);
+  const attention = view === null ? null : limitRows(view.attention, COCKPIT_LIMITS.attention, expanded.attention);
+  const running = view === null ? null : limitRows(view.running, COCKPIT_LIMITS.running, expanded.running);
+  const closed = view === null ? [] : recentClosed(view.recentlyClosed);
+
+  const fold = (key: 'attention' | 'running', total: number, limit: number) =>
+    total > limit ? (
+      <FoldButton
+        label={expanded[key] ? t(locale, 'cockpit.less') : `${t(locale, 'cockpit.more')} (+${total - limit})`}
+        onClick={() => setExpanded({ ...expanded, [key]: !expanded[key] })}
+      />
+    ) : undefined;
+
+  const staleDetail =
+    state.loadedAt === null
+      ? t(locale, 'cockpit.error.empty')
+      : `${t(locale, 'cockpit.error.stale')} ${formatAge(locale, store.sinceMs(state.loadedAt))}`;
 
   return (
-    <div className="grid gap-5">
-      <header className="grid gap-1.5">
-        <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
+    <div className="grid max-w-[1200px] gap-4">
+      <header className="flex flex-wrap items-baseline gap-x-[18px] gap-y-1.5">
+        <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{t(locale, 'nav.cockpit')}</h1>
+        {phase === 'ready' && summary !== null ? (
+          <p className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[13px] text-inkdim">
+            {summary.attention === 0 && summary.running === 0 && summary.queued === 0 ? <Pulse tone="hollow">{t(locale, 'cockpit.head.idle')}</Pulse> : null}
+            {summary.attention === 0 && (summary.running > 0 || summary.queued > 0) ? <Pulse tone="proceed">{t(locale, 'cockpit.head.ok')}</Pulse> : null}
+            {summary.waiting > 0 ? <Pulse tone="signal">{`${summary.waiting} ${t(locale, 'cockpit.head.waiting')}`}</Pulse> : null}
+            {summary.blocked > 0 ? <Pulse tone="error">{`${summary.blocked} ${t(locale, 'cockpit.head.blocked')}`}</Pulse> : null}
+            {summary.running > 0 ? <Pulse tone="proceed">{`${summary.running} ${t(locale, 'cockpit.head.running')}`}</Pulse> : null}
+            {summary.queued > 0 ? <Pulse tone="hollow">{`${summary.queued} ${t(locale, 'cockpit.head.queued')}`}</Pulse> : null}
+          </p>
+        ) : null}
       </header>
 
-      {state.loading && view === null ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.04em] text-inkdim">{t(locale, 'cockpit.loading')}</p>
+      {state.failed ? <CockpitAlert locale={locale} detail={staleDetail} onRetry={() => void store.retry()} /> : null}
+
+      {skeleton ? <CockpitSkeleton locale={locale} /> : null}
+
+      {!skeleton && phase === 'first-run' ? <FirstRunCard locale={locale} /> : null}
+
+      {!skeleton && phase === 'failed-empty' ? (
+        <>
+          {(['attention', 'running', 'projects', 'closed'] as const).map((section) => (
+            <section key={section} className="grid gap-2">
+              <SectionHead title={t(locale, `cockpit.section.${section}`)} count={null} />
+              <QuietRow tone="unknown" title={t(locale, 'cockpit.error.unavailable')} />
+            </section>
+          ))}
+        </>
       ) : null}
 
-      {state.failed ? (
-        <div role="alert" className="flex flex-wrap items-center gap-2.5 rounded-md border border-error/40 bg-surface px-3 py-2">
-          <p className="text-[13px] text-error">{t(locale, GENERIC_FAILURE_KEY)}</p>
-          <ActionButton variant="neutral" onClick={() => void store.retry()}>
-            {t(locale, 'action.retry')}
-          </ActionButton>
+      {!skeleton && phase === 'ready' && view !== null && attention !== null && running !== null && summary !== null ? (
+        <SkeletonReveal active={reveal}>
+        <div className={`grid gap-4 ${state.failed ? 'opacity-70' : ''}`}>
+          <section className="grid gap-2">
+            <SectionHead
+              title={t(locale, 'cockpit.section.attention')}
+              count={summary.attention}
+              hot={summary.attention > 0}
+              action={fold('attention', view.attention.length, COCKPIT_LIMITS.attention)}
+            />
+            {view.attention.length === 0 ? (
+              <QuietRow tone="good" title={t(locale, 'cockpit.attention.empty')} hint={t(locale, 'cockpit.attention.hint')} />
+            ) : (
+              <ul className="grid gap-2">
+                {attention.shown.map((item) => (
+                  <li key={item.workOrderId}>
+                    <CockpitAttentionRow
+                      item={item}
+                      ask={state.asks[item.workOrderId]}
+                      locale={locale}
+                      ageMs={store.ageMs(item)}
+                      onOpen={() => onOpenWorkOrder(item.workOrderId)}
+                      onAnswer={answer}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {answerResult !== null ? (
+              <p role="status" className={`text-[13px] ${answerResult.ok ? 'text-proceed' : 'text-error'}`}>
+                {t(locale, commandResultKey('permission.answer', answerResult))}
+              </p>
+            ) : null}
+          </section>
+
+          <CockpitSection
+            title={t(locale, 'cockpit.section.running')}
+            count={summary.running}
+            open={!state.collapsed.includes('running')}
+            onToggle={() => store.toggleSection('running')}
+            action={fold('running', view.running.length, COCKPIT_LIMITS.running)}
+          >
+            {view.running.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.running.empty')} hint={t(locale, 'cockpit.running.hint')} />
+            ) : (
+              <ul className="grid gap-1.5 min-[1500px]:grid-cols-2">
+                {running.shown.map((run) => (
+                  <li key={`${run.workOrderId}:${run.stage}`}>
+                    <CockpitRunningRow
+                      run={run}
+                      locale={locale}
+                      accountLabel={accountLabel(run.accountId)}
+                      mark={marks.markFor(run.provider ?? '')}
+                      sinceMs={store.sinceMs(run.startedAt)}
+                      onOpen={() => onOpenWorkOrder(run.workOrderId)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CockpitSection>
+
+          <CockpitSection
+            title={t(locale, 'cockpit.section.projects')}
+            count={view.projects.length}
+            open={!state.collapsed.includes('projects')}
+            onToggle={() => store.toggleSection('projects')}
+          >
+            {view.projects.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.projects.empty')} />
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
+                {view.projects.map((card) => (
+                  <CockpitProjectCard
+                    key={card.project}
+                    card={card}
+                    locale={locale}
+                    sinceMs={store.sinceMs}
+                    onOpen={() => (card.repoCount > 1 ? onOpenProject(card.project) : onOpenBoard(card.mainRepo))}
+                  />
+                ))}
+              </div>
+            )}
+          </CockpitSection>
+
+          <CockpitSection
+            title={t(locale, 'cockpit.section.closed')}
+            count={closed.length}
+            open={!state.collapsed.includes('closed')}
+            onToggle={() => store.toggleSection('closed')}
+          >
+            {closed.length === 0 ? (
+              <QuietRow tone="idle" title={t(locale, 'cockpit.closed.empty')} hint={t(locale, 'cockpit.closed.hint')} />
+            ) : (
+              <CockpitClosedList entries={closed} locale={locale} sinceMs={store.sinceMs} onOpen={onOpenWorkOrder} />
+            )}
+          </CockpitSection>
         </div>
+        </SkeletonReveal>
       ) : null}
-
-      <SectionCard title={countedLabel(t(locale, 'cockpit.section.attention'), attention.length)}>
-        {attention.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.attention.empty')}</p>
-        ) : (
-          <ul className="grid gap-2">
-            {attention.map((item) => (
-              <li key={item.workOrderId}>
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkOrder(item.workOrderId)}
-                  className={`grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border bg-surface px-3 py-2 text-left transition-colors hover:bg-raised ${KIND_EDGE[item.kind]}`}
-                >
-                  <span aria-hidden="true" className={`h-2 w-2 flex-none rounded-full ${KIND_LAMP[item.kind]}`} />
-                  <span className="grid min-w-0 gap-0.5">
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate text-[13.5px] font-semibold text-ink">{item.title}</span>
-                      <StateBadge tone={KIND_TONE[item.kind]}>{t(locale, KIND_KEY[item.kind])}</StateBadge>
-                    </span>
-                    <span className="truncate font-mono text-[11px] text-inkdim">
-                      {item.workspace}
-                      {item.stage !== null ? ` · ${item.stage}` : ''}
-                    </span>
-                  </span>
-                  <span className="font-mono text-[11px] text-inkdim">
-                    {formatAge(locale, store.ageMs(item))}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
-
-      <SectionCard title={countedLabel(t(locale, 'cockpit.section.running'), running.length)}>
-        {running.length === 0 ? (
-          <p className="text-[13px] text-inkdim">{t(locale, 'cockpit.running.empty')}</p>
-        ) : (
-          <ul className="grid gap-2">
-            {running.map((run) => (
-              <li key={`${run.workOrderId}:${run.stage}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkOrder(run.workOrderId)}
-                  className="grid w-full grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-hairline bg-surface px-3 py-2 text-left transition-colors hover:bg-raised"
-                >
-                  <span aria-hidden="true" className="h-2 w-2 flex-none rounded-full bg-proceed motion-safe:animate-pulse" />
-                  <span className="grid min-w-0 gap-0.5">
-                    <span className="truncate font-mono text-[12.5px] text-ink">{run.workOrderId}</span>
-                    <span className="truncate font-mono text-[11px] text-inkdim">
-                      {run.stage} · {run.accountId}
-                    </span>
-                  </span>
-                  <span className="font-mono text-[11px] text-inkdim">
-                    {formatAge(locale, Math.max(0, Date.now() - run.startedAt))}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
     </div>
   );
 }

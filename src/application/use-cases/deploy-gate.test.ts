@@ -14,7 +14,7 @@ import {
   type Slug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import type { AppDeps } from '../ports';
@@ -47,7 +47,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WORKSPACE: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const RUN_ID: RunId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FA1');
 const WORKTREE_PATH = `/fake/worktrees/ws/${WORK_ORDER}`;
@@ -108,9 +108,9 @@ const DEFINITIONS_BODY = {
     },
   ],
   capabilities: [],
-  workspace: {
+  repo: {
     id: 'ws',
-    name: 'Workspace',
+    name: 'Repo',
     repos: [],
     flows: ['stg-flow', 'prd-flow', 'dev-flow', 'promote-flow', 'mixed-flow'],
     defaultFlow: 'stg-flow',
@@ -181,7 +181,8 @@ const createIn = async (h: Harness, flow: string): Promise<void> => {
   const flowId = slugOf<'flow'>(flow);
   await h.deps.workOrders.create({
     id: WORK_ORDER,
-    workspace: WORKSPACE,
+    project: slugOf<'project'>('proj'),
+    repo: REPO,
     flow: flowId,
     title: 'Fixture',
     createdAt: h.clock.now(),
@@ -440,7 +441,7 @@ describe('approveAndDeploy', () => {
     ]);
   });
 
-  it('E-11: an environment missing from the workspace definition is unknown_environment', async () => {
+  it('E-11: an environment missing from the repo definition is unknown_environment', async () => {
     const h = makeHarness();
     // Validated definitions cannot name an unknown environment, so this arm is reached only with
     // definitions that were never validated: a store stub answers with hand-built ones.
@@ -457,10 +458,9 @@ describe('approveAndDeploy', () => {
         }],
       }],
       capabilities: [],
-      workspace: {
-        id: WORKSPACE,
-        name: 'Workspace',
-        repos: [],
+      repo: {
+        id: REPO,
+        name: 'Repo',
         flows: [slugOf<'flow'>('ghost-flow')],
         defaultFlow: slugOf<'flow'>('ghost-flow'),
         commandSets: {},
@@ -484,10 +484,10 @@ describe('approveAndDeploy', () => {
     expect(h.commands.calls()).toHaveLength(0);
   });
 
-  it('E-11: a workspace without a checkout on this machine is no_repo', async () => {
+  it('E-11: a repo without a checkout on this machine is no_repo', async () => {
     const h = makeHarness();
     await putStgToken(h);
-    h.worktrees.markNoRepo(WORKSPACE);
+    h.worktrees.markNoRepo(REPO);
     await createIn(h, 'stg-flow');
 
     const result = await approveAndDeploy(h.deps, {

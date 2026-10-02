@@ -29,8 +29,8 @@ export function LocaleSwitcher({ store, locale }: LocaleSwitcherProps) {
             onClick={() => store.set(option.id)}
             className={
               active
-                ? 'rounded-[5px] border border-signal px-[7px] py-px font-mono text-[11px] text-signal'
-                : 'rounded-[5px] border border-hairline px-[7px] py-px font-mono text-[11px] text-inkdim transition-colors hover:text-ink'
+                ? 'rounded-control border border-signal px-[7px] py-px font-mono text-[11px] text-signal'
+                : 'rounded-control border border-hairline px-[7px] py-px font-mono text-[11px] text-inkdim transition-colors hover:text-ink'
             }
           >
             {t(locale, option.nameKey)}

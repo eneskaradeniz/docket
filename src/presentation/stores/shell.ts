@@ -1,9 +1,9 @@
 // stores/shell.ts — the shell store (U-10): it mirrors the `cockpit` query's attention items into
 // the shell's badge, ranked by kind with permission asks first, and re-queries on the same coarse
 // change events the cockpit listens to. At zero attention the badge is absent — `shellBadge`
-// returns null, so a zero count never reaches the screen. The workspace switcher's entries come
-// from an injected listing: no api query enumerates workspaces, so the observation is injected
-// the same way the wizard store injects its workspace-existence check.
+// returns null, so a zero count never reaches the screen. The sidebar's project tree and
+// accounts frame are their own stores (project-tree.ts, accounts-frame.ts); this one carries
+// only what the whole shell shows.
 import type { Api } from '../../api/api';
 import type { AttentionItem, CockpitView, Query } from '../../api/queries';
 import { isQueryFailure } from './results';
@@ -12,16 +12,11 @@ import { isQueryFailure } from './results';
  *  U-12). Notifications carry no payloads — the store re-queries. */
 export type ShellChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type ShellChangeSignal = (listener: (change: ShellChange) => void) => () => void;
-
-/** One switcher entry; the label is display copy the composition supplies already resolved. */
-export interface ShellWorkspace {
-  readonly id: string;
-  readonly label: string;
-}
 
 /** The badge view (U-10): the cockpit's attention items, ranked by kind with permission asks
  *  first, plus their count — the number the shell renders. */
@@ -52,17 +47,12 @@ export const shellBadge = (attention: readonly AttentionItem[]): ShellBadge | nu
 export interface ShellStoreDeps {
   readonly api: Pick<Api, 'query'>;
   readonly changes: ShellChangeSignal;
-  /** The workspace switcher's entries. The workspace registry lives below the api (no query
-   *  enumerates workspaces), so the listing is injected; tests pass fakes, composition supplies
-   *  the real source. */
-  readonly workspaces: () => Promise<readonly ShellWorkspace[]>;
 }
 
 export interface ShellState {
   readonly loading: boolean;
   /** Null when nothing waits on the user: the badge is absent, never a rendered zero (U-10). */
   readonly badge: ShellBadge | null;
-  readonly workspaces: readonly ShellWorkspace[];
 }
 
 export interface ShellStore {
@@ -72,9 +62,9 @@ export interface ShellStore {
 }
 
 export const createShellStore = (deps: ShellStoreDeps): ShellStore => {
-  const { api, changes, workspaces } = deps;
+  const { api, changes } = deps;
 
-  let state: ShellState = { loading: false, badge: null, workspaces: [] };
+  let state: ShellState = { loading: false, badge: null };
   const listeners = new Set<() => void>();
   // Only the newest attempt may apply its reply: a slow earlier query must not overwrite a
   // fresher badge when change events stack up.
@@ -89,25 +79,23 @@ export const createShellStore = (deps: ShellStoreDeps): ShellStore => {
     const attempt = attempts + 1;
     attempts = attempt;
     set({ ...state, loading: true });
-    const [reply, entries] = await Promise.all([
-      api.query({ type: 'cockpit' } satisfies Query),
-      workspaces(),
-    ]);
+    const reply: unknown = await api.query({ type: 'cockpit' } satisfies Query);
     if (attempt !== attempts) return;
     if (isQueryFailure(reply)) {
-      // A failed query keeps the previous badge and entries (the cockpit screen owns the visible
+      // A failed query keeps the previous badge (the cockpit screen owns the visible
       // retry intent) — a failure must not blank the shell (U-2's stance, applied to the badge).
       set({ ...state, loading: false });
       return;
     }
     // The contract of the cockpit query: a reply that is not a failure is a CockpitView.
     const view = reply as CockpitView;
-    set({ loading: false, badge: shellBadge(view.attention), workspaces: entries });
+    set({ loading: false, badge: shellBadge(view.attention) });
   };
 
-  // Both event kinds concern the badge — work orders change and runs move — so every
-  // notification triggers the same re-query (U-10: the same events as the cockpit).
-  changes(() => {
+  // Both event kinds concern the badge — work orders change and runs move — so they trigger the
+  // same re-query (U-10: the same events as the cockpit); the update channel does not move it.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     void load();
   });
 

@@ -30,7 +30,7 @@ import {
   type Ulid,
   type WorkOrderEvent,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import { createApi } from '../index';
@@ -79,7 +79,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO_SLUG: RepoSlug = slugOf('ws');
 const T0: EpochMs = 1_700_000_000_000;
 
 const MAIN: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FCV');
@@ -88,7 +88,7 @@ const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
 /** Opens a work order through the api boundary and returns its parsed id. */
 const openViaApi = async (deps: AppDeps, title: string): Promise<WorkOrderId | undefined> => {
-  const result = await createApi(deps).command(USER, { type: 'workOrder.open', workspace: WS, title });
+  const result = await createApi(deps).command(USER, { type: 'workOrder.open', project: slugOf<'project'>('ws-proj'), repo: REPO_SLUG, title });
   if (!result.ok || result.id === undefined) return undefined;
   const parsed = parseUlid<'work-order'>(result.id);
   return parsed.ok ? parsed.value : undefined;
@@ -115,7 +115,7 @@ const DEPLOY_PRD: GateSlug = slugOf<'gate'>('deploy-prd');
 const STG: EnvSlug = slugOf<'env'>('stg');
 const PRD: EnvSlug = slugOf<'env'>('prd');
 
-const LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 
 const TEST_COMMAND = 'npm test';
 const DEPLOY_STG_COMMAND = 'docket-deploy stg';
@@ -158,8 +158,8 @@ const DEPLOY_STAGE: StageDef = {
   ],
 };
 
-/** The whole definitions body the fake store serves for the workspace: the built-in `standard`
- *  flow with the environment stage inserted before close, plus a workspace that enables it,
+/** The whole definitions body the fake store serves for the repo: the built-in `standard`
+ *  flow with the environment stage inserted before close, plus a repo that enables it,
  *  defines the command sets, and declares the two environments prd promotes over. */
 const definitionsBody = (): unknown => {
   const standard = BUILTIN_FLOWS.find((flow) => flow.id === 'standard');
@@ -176,10 +176,9 @@ const definitionsBody = (): unknown => {
     roles: BUILTIN_ROLES,
     flows: [flow],
     capabilities: [],
-    workspace: {
+    repo: {
       id: 'ws',
-      name: 'Workspace',
-      repos: [REPO],
+      name: 'Repo',
       flows: ['standard-env'],
       defaultFlow: 'standard-env',
       commandSets: {
@@ -257,7 +256,9 @@ const makeHarness = (): Harness => {
   const transports = createFakeTransportResolver();
   const forge = createFakeForge({ checks: ALL_GREEN });
   const forges: ForgeResolver = { forRepo: async () => forge };
+  definitions.setProject({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
   const deps = createFakeDeps({ clock, log, definitions, commands, evidence, transports });
+  deps.projects.save({ id: slugOf<'project'>('ws-proj'), name: 'Project', mainRepo: slugOf<'repo'>('ws'), repos: [slugOf<'repo'>('ws')] });
   return { deps, clock, log, definitions, commands, evidence, transports, forges };
 };
 
@@ -285,7 +286,7 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
   const view = await viewOf(h.deps, id);
   if (view.next.kind !== 'start_run') throw new Error(`expected start_run, got ${view.next.kind}`);
 
-  const routed = await resolveRoute(h.deps, { workspace: WS, workOrderId: id, role: view.next.role });
+  const routed = await resolveRoute(h.deps, { repo: REPO_SLUG, workOrderId: id, role: view.next.role });
   if (!routed.ok) throw new Error(`route must resolve: ${JSON.stringify(routed.error)}`);
 
   const queued = await enqueueStage(h.deps, { id });
@@ -303,7 +304,7 @@ const runCurrentStage = async (h: Harness, id: WorkOrderId): Promise<ExecuteOutc
     item,
     role: routed.value.role,
     prompt: `run stage ${item.stage}`,
-    cwd: `/fake/worktrees/${WS}/${id}`,
+    cwd: `/fake/worktrees/${REPO_SLUG}/${id}`,
     capabilities: [],
   });
 };
@@ -420,7 +421,7 @@ describe('standard flow with environments, headless end to end', () => {
 
     // Every command the machine ran, in order: the implement stage's test gate without env, then
     // each environment's deploy and verify sets with their resolved env handed to the runner.
-    const WORKTREE = `/fake/worktrees/${WS}/${id}`;
+    const WORKTREE = `/fake/worktrees/${REPO_SLUG}/${id}`;
     expect(h.commands.calls()).toEqual([
       { cwd: WORKTREE, command: TEST_COMMAND, timeoutMs: 10 * MINUTE },
       { cwd: WORKTREE, command: DEPLOY_STG_COMMAND, timeoutMs: 10 * MINUTE, env: STG_ENV },

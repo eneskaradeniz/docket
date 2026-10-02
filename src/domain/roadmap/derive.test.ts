@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkOrderStatus } from '../flow';
-import type { PhaseSlug, TaskSlug } from '../shared';
+import type { PhaseSlug, RepoSlug, TaskSlug } from '../shared';
 import { deriveRoadmap } from './derive';
 import type { LinkedWorkOrder, PhaseDef, Roadmap, TaskDef } from './types';
 
 const taskOf = (id: string): TaskSlug => id as TaskSlug;
 const phaseOf = (id: string): PhaseSlug => id as PhaseSlug;
+const repoOf = (id: string): RepoSlug => id as RepoSlug;
 
 const task = (id: string, dependsOn: readonly string[] = []): TaskDef => ({
   id: taskOf(id),
   title: `Task ${id}`,
   dependsOn: dependsOn.map(taskOf),
   acceptance: [`acceptance of ${id}`],
+  targets: [repoOf('docket')],
 });
 
 const phase = (id: string, tasks: readonly TaskDef[] = [], blockedBy: readonly string[] = []): PhaseDef => ({

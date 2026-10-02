@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_PROVIDER_DEFS } from './builtin-provider-defs';
+import { builtinProviderMarks } from './builtin-provider-marks';
 import { isProviderDef } from './is-provider-def';
 import type { LaunchInput, ProviderDef } from './provider-def';
 
@@ -7,7 +8,7 @@ import type { LaunchInput, ProviderDef } from './provider-def';
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'gemini', 'copilot', 'cursor', 'opencode'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode'] as const;
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -46,6 +47,7 @@ function createValidDef(): ProviderDef {
       costReport: 'none',
     },
     installHint: { url: 'https://example.invalid/probe' },
+    mark: null,
   };
 }
 
@@ -92,7 +94,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['gemini', 'copilot', 'cursor', 'opencode']) {
+    for (const id of ['copilot', 'cursor', 'opencode']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -114,7 +116,6 @@ describe('provider definitions (P-1)', () => {
       'claude-code': 'CLAUDE_CONFIG_DIR',
       codex: 'CODEX_HOME',
       agy: 'HOME',
-      gemini: 'GEMINI_CLI_HOME',
       copilot: 'HOME',
       cursor: 'HOME',
       opencode: 'OPENCODE_CONFIG_DIR',
@@ -138,7 +139,22 @@ describe('provider definitions (P-1)', () => {
     }
   });
 
-  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the seven built-in ids', () => {
+  it('P-8: the opencode launch environment is exactly the config dir plus the documented Claude-compatibility switch', () => {
+    expect(defById('opencode').buildLaunch(LAUNCH_INPUT).env).toEqual({
+      OPENCODE_CONFIG_DIR: '/run/dir',
+      OPENCODE_DISABLE_CLAUDE_CODE: '1',
+    });
+  });
+
+  it('P-8: a baseEnv carrying a different OPENCODE_DISABLE_CLAUDE_CODE is overridden by the opencode literal', () => {
+    // The transports spread the allowlisted machine env first and the def's launch env last;
+    // the literal must survive that order so the machine value can never re-enable the read.
+    const baseEnv: Readonly<Record<string, string>> = { OPENCODE_DISABLE_CLAUDE_CODE: '0' };
+    const env = { ...baseEnv, ...defById('opencode').buildLaunch(LAUNCH_INPUT).env };
+    expect(env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1');
+  });
+
+  it('P-1: BUILTIN_PROVIDER_DEFS contains exactly the six built-in ids', () => {
     expect([...BUILTIN_PROVIDER_DEFS.map((def) => def.id)].sort()).toEqual([...BUILTIN_IDS].sort());
   });
 
@@ -146,6 +162,15 @@ describe('provider definitions (P-1)', () => {
     for (const id of ['copilot', 'cursor', 'opencode'] as const) {
       expect(defById(id).capabilities.permissionAsk, id).toBe(true);
     }
+  });
+
+  it('P-1: isProviderDef accepts a def whose costReport is credits', () => {
+    expect(
+      isProviderDef({
+        ...createValidDef(),
+        capabilities: { ...createValidDef().capabilities, costReport: 'credits' },
+      }),
+    ).toBe(true);
   });
 
   describe('guard rejections', () => {
@@ -231,5 +256,50 @@ describe('provider definitions (P-1)', () => {
       rejectsWith({ ...createValidDef(), installHint: { url: '' } }, 'empty url');
       rejectsWith({ ...createValidDef(), installHint: {} }, 'missing url');
     });
+
+    it('P-25: isProviderDef rejects a mark that is neither null nor a non-empty { viewBox, path, fillRule }', () => {
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '', path: 'M1 1', fillRule: 'nonzero' } }, 'empty viewBox');
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24', path: '', fillRule: 'nonzero' } }, 'empty path');
+      rejectsWith(
+        { ...createValidDef(), mark: { viewBox: '0 0 24 24', path: 'M1 1', fillRule: 'winding' } },
+        'unknown fillRule',
+      );
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24', path: 'M1 1' } }, 'missing fillRule');
+      rejectsWith({ ...createValidDef(), mark: { viewBox: '0 0 24 24' } }, 'missing path');
+      rejectsWith({ ...createValidDef(), mark: 'logo.svg' }, 'mark is a string');
+      const { mark: _dropped, ...withoutMark } = createValidDef() as unknown as Record<string, unknown>;
+      rejectsWith(withoutMark, 'mark missing');
+    });
+  });
+});
+
+describe('provider marks (P-25)', () => {
+  it('P-25: all six providers carry one mark each — a single path in a 24×24 viewBox', () => {
+    for (const def of BUILTIN_PROVIDER_DEFS) {
+      const mark = defById(def.id).mark;
+      expect(mark, def.id).not.toBeNull();
+      expect(mark?.viewBox, def.id).toBe('0 0 24 24');
+      // One path's own data: path commands only, never svg markup or a second shape.
+      expect(mark?.path.length, def.id).toBeGreaterThan(0);
+      expect(mark?.path, def.id).not.toMatch(/[<>]/);
+    }
+  });
+
+  it('P-26: the four official marks draw nonzero and the two placed stand-ins draw evenodd', () => {
+    for (const id of ['claude-code', 'copilot', 'cursor', 'opencode'] as const) {
+      expect(defById(id).mark?.fillRule, id).toBe('nonzero');
+    }
+    // Both stand-in files set fill-rule="evenodd" (codex also clip-rule="evenodd"); the paths
+    // are injected unmodified and byte-checked against those files — the prefixes pin them.
+    expect(defById('codex').mark?.fillRule).toBe('evenodd');
+    expect(defById('agy').mark?.fillRule).toBe('evenodd');
+    expect(defById('codex').mark?.path.startsWith('M8.086.457')).toBe(true);
+    expect(defById('agy').mark?.path.startsWith('M21.751 22.607')).toBe(true);
+  });
+
+  it('P-25: builtinProviderMarks keys every built-in def id to its own mark', () => {
+    const marks = builtinProviderMarks.marks();
+    expect(Object.keys(marks).sort()).toEqual([...BUILTIN_IDS].sort());
+    for (const def of BUILTIN_PROVIDER_DEFS) expect(marks[def.id], def.id).toEqual(def.mark);
   });
 });

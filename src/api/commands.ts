@@ -1,7 +1,11 @@
 // api/commands.ts — the write side of the boundary. Exact contract: docs/v2/application.md § 4.
 // Plain JSON-serialisable shapes only; ids travel as strings and are parsed in api.ts (A-21).
 export type Command =
-  | { readonly type: 'workOrder.open'; readonly workspace: string; readonly title: string; readonly flow?: string; readonly task?: string }
+  | { readonly type: 'workOrder.open'; readonly project: string; readonly repo: string; readonly title: string; readonly flow?: string; readonly task?: string }
+  | { readonly type: 'task.open'; readonly project: string; readonly task: string }
+  | { readonly type: 'project.attach'; readonly path: string; readonly repos?: readonly { readonly repo: string; readonly path: string }[] }
+  | { readonly type: 'repo.register'; readonly project: string; readonly repo: string; readonly path: string }
+  | { readonly type: 'repo.unregister'; readonly project: string; readonly repo: string }
   | { readonly type: 'workOrder.block'; readonly id: string; readonly reason: string }
   | { readonly type: 'workOrder.unblock'; readonly id: string }
   | { readonly type: 'workOrder.close'; readonly id: string }
@@ -12,7 +16,11 @@ export type Command =
   | { readonly type: 'deploy.approve'; readonly workOrderId: string; readonly gate: string; readonly commit: string; readonly confirmedEnvironment?: string }
   | { readonly type: 'account.save'; readonly id?: string; readonly provider: string; readonly label: string; readonly authMode: string; readonly plan?: string }
   | { readonly type: 'account.remove'; readonly id: string }
-  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] };
+  | { readonly type: 'account.consent.grant'; readonly id: string; readonly model: string; readonly cap?: { readonly scope: string; readonly amountUsd: number; readonly warnPercent: number } }
+  | { readonly type: 'account.consent.revoke'; readonly id: string; readonly model: string }
+  | { readonly type: 'binding.save'; readonly role: string; readonly accounts: { readonly accountId: string; readonly model?: string }[] }
+  | { readonly type: 'app.update.check' }
+  | { readonly type: 'app.update.apply' };
 
 export type CommandResult =
   | { readonly ok: true; readonly id?: string }

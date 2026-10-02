@@ -9,8 +9,8 @@ describe('quota types', () => {
     expectTypeOf(route.model).toEqualTypeOf<string | undefined>();
   });
 
-  it('Pool scopes models with a matcher list or "all"', () => {
-    expectTypeOf<Pool['appliesTo']>().toEqualTypeOf<readonly ModelMatcher[] | 'all'>();
+  it('Pool scopes models with a matcher list, "all", or "unknown"', () => {
+    expectTypeOf<Pool['appliesTo']>().toEqualTypeOf<readonly ModelMatcher[] | 'all' | 'unknown'>();
     expectTypeOf<ModelMatcher>().toEqualTypeOf<{ readonly exact: string } | { readonly prefix: string }>();
     expectTypeOf<Pool['id']>().toEqualTypeOf<PoolId>();
     expectTypeOf<Pool['accountId']>().toEqualTypeOf<AccountId>();

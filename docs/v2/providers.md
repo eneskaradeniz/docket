@@ -39,6 +39,7 @@ interface ProviderDef {
   resume: 'specify' | 'capture' | 'protocol' | 'none';
   capabilities: ProviderCapabilities;           // declared; refined by probes at discovery
   installHint: { url: string };
+  mark: ProviderMark | null;                    // the provider's own mark, with its fill rule; null when no file exists — never redrawn
 }
 
 `buildLaunch` receives a `LaunchInput`:
@@ -76,6 +77,8 @@ interface LaunchInput {
    `protocol` (`session/load`, thread resume). If resume fails, start fresh with a summary of the
    previous transcript.
 
+Subscription identity on the SDK leg (no per-run config directory today) is specified in provider-capabilities.md (P-32).
+
 ## Support tiers
 
 `supportTier()` (domain) derives the tier from capabilities:
@@ -88,6 +91,8 @@ interface LaunchInput {
 
 Whether each ACP agent's `session/request_permission` really blocks until answered is verified by a
 Phase 0 probe per agent. Agents that do not block drop to `isolated`.
+
+The tier shown to users is derived from the capability record described in [provider-capabilities.md](provider-capabilities.md) (P-27, P-28); the model catalog, routes and account discovery are specified there.
 
 ---
 
@@ -268,3 +273,37 @@ dependency; the command runner is injected so tests script it):
   `AgentEvent` stream (`session_started → text → usage → finished`) and exactly one `finished`
   (reason `completed`, last event) per stage run; transport-specific kinds beyond the common set are
   expected and do not count against equality.
+
+---
+
+## Provider marks (P-25)
+
+Port (application, `ports/provider-marks.ts`); the built-in implementation sits beside the defs
+(`src/infrastructure/providers/defs/builtin-provider-marks.ts`) and the composition root hands it
+to `createApi` as its marks argument (the discovery pattern; the query side is A-41 in
+[application.md](application.md)):
+
+```ts
+export interface ProviderMark {
+  readonly viewBox: string;
+  readonly path: string;
+  readonly fillRule: 'nonzero' | 'evenodd';
+}
+export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
+```
+
+- **P-25** Every built-in definition carries `mark`: the provider's own mark as one SVG path —
+  `d` data copied unmodified from the file it came from, rendered with `currentColor`,
+  24×24 viewBox — or `null` when no file exists; a mark is never redrawn. All seven built-ins
+  have a mark: the five with an official file plus `codex` and `agy`, whose files were placed by
+  the operator from an MIT-licensed icon set (the marks remain their owners' trademarks, used
+  unmodified only to identify the provider; they are not the owners' official brand kits — if
+  official files arrive, only the def's path changes). The marks identify the provider only.
+  `isProviderDef` rejects a mark that is neither `null` nor a `{ viewBox, path, fillRule }` of
+  non-empty strings with a known fill rule, and `builtinProviderMarks` keys every built-in def
+  id to its own mark, so adding a provider touches no code beyond its def.
+- **P-26** A mark carries the fill rule its file declares: `nonzero` for the five official
+  marks, `evenodd` for the two placed files (both set `fill-rule="evenodd"`; the codex path also
+  `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
+  query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
+  under the two rules.

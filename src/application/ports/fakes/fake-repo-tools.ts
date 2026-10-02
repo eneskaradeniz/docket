@@ -1,7 +1,7 @@
 // In-memory machine-side ports — scripted commands, scans, evidence and worktrees.
-import type { Result, WorkOrderId, WorkspaceSlug } from '../../../domain/index';
+import type { Result, WorkOrderId, RepoSlug } from '../../../domain/index';
 
-import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../workspace-tools';
+import type { CommandResult, CommandRunner, EvidenceChecker, SecretScanner, Worktrees } from '../repo-tools';
 
 export interface FakeCommandRunner extends CommandRunner {
   /** Scripts the result for an exact command string; same-command scripts are consumed in order. */
@@ -31,8 +31,8 @@ export interface FakeEvidenceChecker extends EvidenceChecker {
 
 /** The port surface is complete on its own; the named type exists for tests that want it. */
 export interface FakeWorktrees extends Worktrees {
-  /** Makes ensure fail with no_repo for that workspace (a missing checkout on the machine). */
-  markNoRepo(workspace: WorkspaceSlug): void;
+  /** Makes ensure fail with no_repo for that repo (a missing checkout on the machine). */
+  markNoRepo(repo: RepoSlug): void;
 }
 
 const SUCCESS: CommandResult = { exitCode: 0, durationMs: 0, outputTail: '' };
@@ -108,14 +108,14 @@ export const createFakeEvidenceChecker = (): FakeEvidenceChecker => {
 };
 
 export const createFakeWorktrees = (): FakeWorktrees => {
-  const withoutRepo = new Set<WorkspaceSlug>();
+  const withoutRepo = new Set<RepoSlug>();
   return {
-    markNoRepo: (workspace: WorkspaceSlug): void => {
-      withoutRepo.add(workspace);
+    markNoRepo: (repo: RepoSlug): void => {
+      withoutRepo.add(repo);
     },
-    ensure: async (workspace: WorkspaceSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> =>
-      withoutRepo.has(workspace)
+    ensure: async (repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>> =>
+      withoutRepo.has(repo)
         ? { ok: false, error: 'no_repo' }
-        : { ok: true, value: { path: `/fake/worktrees/${workspace}/${workOrderId}` } },
+        : { ok: true, value: { path: `/fake/worktrees/${repo}/${workOrderId}` } },
   };
 };

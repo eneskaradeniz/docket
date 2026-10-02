@@ -8,6 +8,8 @@ import {
   RESUME_JITTER_MS,
   type AccountId,
   type AgentEvent,
+  type Billing,
+  type CatalogModel,
   type EpochMs,
   type LimitClass,
   type LimitPolicy,
@@ -23,16 +25,18 @@ import {
   type StageSlug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import type { AccountRecord, AgentTransport, AuditEntry, RunRecord, RunRequest, TransportError } from '../ports';
 import {
   createFakeAccountRepo,
+  createFakeCapabilityCatalog,
   createFakeClock,
   createFakeDeps,
   createFakeEventLog,
   createFakeIdGen,
+  createFakeModelCatalog,
   createFakeRunRepo,
   createFakeTransport,
   createFakeTransportResolver,
@@ -41,12 +45,14 @@ import {
   type FakeClock,
   type FakeEventLog,
   type FakeIdGen,
+  type FakeRouteKind,
   type FakeRunRepo,
   type FakeTransport,
   type FakeTransportResolver,
   type FakeWorkOrderRepo,
 } from '../ports/fakes';
 
+import { grantSpendConsent, revokeSpendConsent } from '../use-cases';
 import { executeRun, type PermissionGate } from './run-executor';
 
 // --- fixtures ---------------------------------------------------------------------------------------
@@ -63,7 +69,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAA');
 const POOL: PoolId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAB');
@@ -92,7 +98,7 @@ const CAPABILITY = {
 const ITEM: QueueItem = {
   id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAD'),
   workOrderId: WORK_ORDER,
-  workspace: WS,
+  repo: REPO,
   stage: STAGE,
   route: { accountId: ACCOUNT },
   priority: 0,
@@ -103,13 +109,14 @@ const INPUT = {
   item: ITEM,
   role: ROLE,
   prompt: 'implement the stage',
-  cwd: `/wt/${WS}/${WORK_ORDER}`,
+  cwd: `/wt/${REPO}/${WORK_ORDER}`,
   capabilities: [CAPABILITY],
 };
 
 const WORK_ORDER_RECORD = {
   id: WORK_ORDER,
-  workspace: WS,
+  project: slugOf<'project'>('proj'),
+  repo: REPO,
   flow: slugOf<'flow'>('standard'),
   title: 'The work order',
   createdAt: T0,
@@ -222,6 +229,8 @@ const harness = async (options: {
   readonly meters?: readonly Meter[];
   readonly priorRuns?: readonly RunRecord[];
   readonly withTransport?: boolean;
+  readonly models?: readonly CatalogModel[];
+  readonly routeKinds?: readonly FakeRouteKind[];
 } = {}): Promise<Harness> => {
   const clock = createFakeClock(T0);
   const ids = createFakeIdGen();
@@ -233,7 +242,17 @@ const harness = async (options: {
   const transport = createFakeTransport(options.script ?? [finished('completed')]);
   if (options.withTransport !== false) transports.register(ACCOUNT, transport);
 
-  const deps = createFakeDeps({ clock, ids, log, workOrders, runs, accounts, transports });
+  const deps = createFakeDeps({
+    clock,
+    ids,
+    log,
+    workOrders,
+    runs,
+    accounts,
+    transports,
+    ...(options.models !== undefined ? { modelCatalog: createFakeModelCatalog({ [ACCOUNT]: options.models }) } : {}),
+    ...(options.routeKinds !== undefined ? { capabilities: createFakeCapabilityCatalog(options.routeKinds) } : {}),
+  });
 
   await workOrders.create({ ...WORK_ORDER_RECORD });
   if (options.withAccount !== false) await accounts.save(accountRecord(options.limitPolicy ?? 'wait_resume'));
@@ -509,7 +528,7 @@ describe('executeRun', () => {
     expect(gateResult.asked.length).toBe(1);
     expect(h.transport.answers()).toEqual([{ askId: 'ask-1', decision: 'allow' }]);
     expect((await h.accounts.meters(ACCOUNT)).length).toBe(1);
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, from: 0, to: T0 + 10_000 })).toBe(0.75);
     expect(await h.workOrders.events(WORK_ORDER)).toEqual([
       { type: 'run_started', at: T0, runId: record.id, stage: STAGE, attempt: 1 },
       { type: 'run_finished', at: T0, runId: record.id, outcome: 'succeeded' },
@@ -619,14 +638,14 @@ describe('executeRun', () => {
     expect(isUlid(meter.poolId)).toBe(true);
   });
 
-  it('A-16: usage with a cost records spend for the run account, workspace and work order', async () => {
+  it('A-16: usage with a cost records spend for the run account, repo and work order', async () => {
     const h = await harness({ script: [usage(0.25), usage(1.5), usage(), finished('completed')] });
 
     await executeRun(h.deps, permissionGate().permissions, INPUT);
 
     const window = { from: 0, to: T0 + 10_000 };
-    expect(await h.accounts.spend({ accountId: ACCOUNT, workspace: WS, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
-    expect(await h.accounts.spend({ workspace: slugOf<'workspace'>('elsewhere'), ...window })).toBe(0);
+    expect(await h.accounts.spend({ accountId: ACCOUNT, repo: REPO, workOrderId: WORK_ORDER, ...window })).toBe(1.75);
+    expect(await h.accounts.spend({ repo: slugOf<'repo'>('elsewhere'), ...window })).toBe(0);
   });
 
   it('A-16: a usage event without a cost records no spend', async () => {
@@ -699,8 +718,13 @@ describe('executeRun', () => {
 
   it('A-17: a hit on an account with no record has no policy to follow and asks', async () => {
     const h = await harness({ withAccount: false, script: [limitHit({ class: 'window_exhausted', resetsAt: at(60_000) })] });
+    // The account stays absent so the `?? 'ask'` fallback really fires; the route pins an
+    // included model so the spend-consent preflight does not refuse the run beforehand.
+    const input = { ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model: 'model-free' } } };
+    const models: readonly CatalogModel[] = [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included' }];
+    const deps = { ...h.deps, modelCatalog: createFakeModelCatalog({ [ACCOUNT]: models }) };
 
-    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+    const outcome = await executeRun(deps, permissionGate().permissions, input);
 
     expect(outcome).toEqual({ kind: 'limit', decision: { kind: 'ask', reason: 'policy' } });
   });
@@ -974,5 +998,177 @@ describe('executeRun', () => {
     expect(outcome.kind).toBe('transport_error');
     expect(changed).toBe(1);
     expect((await h.workOrders.events(WORK_ORDER)).map((event) => event.type)).toEqual(['run_started', 'run_finished']);
+  });
+});
+
+// --- spend consent (P-40) ---------------------------------------------------------------------------
+
+describe('executeRun — spend consent', () => {
+  const DAY_CAP: AccountRecord['caps'][number] = {
+    scope: 'account_day',
+    cap: { amountUsd: 5, warnPercent: 80 },
+  };
+  const catalogModel = (id: string, billing: Billing): CatalogModel => ({
+    id,
+    source: 'live',
+    thinking: 'unknown',
+    billing,
+  });
+  const pinnedInput = (model: string) => ({ ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model } } });
+  const theAccount = async (h: Harness): Promise<AccountRecord> => {
+    const record = await h.accounts.get(ACCOUNT);
+    if (record === undefined) throw new Error('the account must exist');
+    return record;
+  };
+  const consentTo = async (h: Harness, model: string): Promise<void> => {
+    const granted = await grantSpendConsent(h.deps, {
+      accountId: ACCOUNT,
+      model,
+      cap: DAY_CAP,
+      actor: { kind: 'user', id: 'user-1', label: 'Operator' },
+    });
+    if (!granted.ok) throw new Error('the fixture grant must succeed');
+  };
+
+  it('P-40: an included model runs without consent and without a cap', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'included')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: a metered model the account never consented to is refused with needs_spend_consent before anything is written', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    // No run record, no work-order event, no audit entry, no transport start: a refusal leaves
+    // every store exactly as it was.
+    expect(await h.runs.listForWorkOrder(WORK_ORDER)).toEqual([]);
+    expect(await h.workOrders.events(WORK_ORDER)).toEqual([]);
+    expect(h.log.entries()).toEqual([]);
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unknown-billing model is refused the same way as a metered one', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: a consented model without any spend cap on the account is still refused', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+    await h.accounts.save({ ...(await theAccount(h)), consentedModels: ['model-x'], caps: [] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: a consented metered model with a spend cap runs', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+    await h.accounts.save({ ...(await theAccount(h)), consentedModels: ['model-x'], caps: [DAY_CAP] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: a consented unknown-billing model with a cap runs; revoking the consent refuses the run again while the cap stays', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'unknown')] });
+    await consentTo(h, 'model-x');
+
+    const first = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(first).toEqual({ kind: 'finished', outcome: 'succeeded' });
+
+    const revoked = await revokeSpendConsent(h.deps, {
+      accountId: ACCOUNT,
+      model: 'model-x',
+      actor: { kind: 'user', id: 'user-1', label: 'Operator' },
+    });
+    expect(revoked).toEqual({ ok: true, value: undefined });
+
+    const second = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(second).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(await theAccount(h)).toMatchObject({ consentedModels: [], caps: [DAY_CAP] });
+  });
+
+  it('P-40: a model the catalog does not list is unknown — refused without consent, allowed with consent and a cap', async () => {
+    const h = await harness({ models: [catalogModel('model-other', 'included')] });
+
+    const refused = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(refused).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+
+    await consentTo(h, 'model-x');
+    const allowed = await executeRun(h.deps, permissionGate().permissions, pinnedInput('model-x'));
+    expect(allowed).toEqual({ kind: 'finished', outcome: 'succeeded' });
+  });
+
+  it('P-40: an unpinned run on an api_key account without consent and a cap is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on an api_key account runs with the account-level consent marker and a cap', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'api_key', consentedModels: ['*'], caps: [DAY_CAP] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a subscription account runs without consent', async () => {
+    const h = await harness({ models: [catalogModel('model-x', 'metered')] });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'finished', outcome: 'succeeded' });
+    expect(h.transport.requests()).toHaveLength(1);
+  });
+
+  it('P-40: an unpinned run on a byok account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'byok' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on a cloud account without consent is refused', async () => {
+    const h = await harness();
+    await h.accounts.save({ ...(await theAccount(h)), authMode: 'cloud' });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
+  });
+
+  it('P-40: an unpinned run on a route kind that fixes defaultBilling metered is refused', async () => {
+    const h = await harness({
+      routeKinds: [{ id: 'route-metered-default', provider: 'provider-x', authMode: 'subscription', defaultBilling: 'metered' }],
+    });
+
+    const outcome = await executeRun(h.deps, permissionGate().permissions, INPUT);
+
+    expect(outcome).toEqual({ kind: 'refused', error: 'needs_spend_consent' });
+    expect(h.transport.requests()).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-// Structural guard for untrusted definition data (workspace overrides, tests, fixtures).
+// Structural guard for untrusted definition data (repo overrides, tests, fixtures).
 // It checks one definition in isolation; id uniqueness across a set is checked where the set is built.
 import type { ProviderCapabilities, Tri } from '../../../domain/index';
 import type { LaunchInput, ProviderDef, ProviderLaunch, ProviderTransport } from './provider-def';
@@ -7,7 +7,8 @@ const TRANSPORTS: readonly ProviderTransport[] = ['sdk', 'app-server', 'acp', 's
 const RESUME_MODES: readonly ProviderDef['resume'][] = ['specify', 'capture', 'protocol', 'none'];
 const CONFIG_MECHANISMS: readonly ProviderDef['config']['mechanism'][] = ['env-var', 'flag'];
 const QUOTA_REPORTS: readonly ProviderCapabilities['quotaReport'][] = ['stream', 'query', 'error_only', 'none'];
-const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'none'];
+const COST_REPORTS: readonly ProviderCapabilities['costReport'][] = ['reported', 'computed', 'equivalent', 'credits', 'none'];
+const FILL_RULES: readonly NonNullable<ProviderDef['mark']>['fillRule'][] = ['nonzero', 'evenodd'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,5 +74,12 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isCapabilities(value['capabilities'])) return false;
   const installHint = value['installHint'];
   if (!(isRecord(installHint) && isNonEmptyString(installHint['url']))) return false;
+  const mark = value['mark'];
+  if (
+    mark !== null &&
+    !(isRecord(mark) && isNonEmptyString(mark['viewBox']) && isNonEmptyString(mark['path']) && FILL_RULES.includes(mark['fillRule'] as NonNullable<ProviderDef['mark']>['fillRule']))
+  ) {
+    return false;
+  }
   return true;
 }

@@ -1,5 +1,5 @@
 // P-7 — launch isolation: everything a run writes stays inside the run's own directory, and the
-// user's own CLI config trees (~/.claude, ~/.codex, ~/.gemini) stay byte-identical across a launch.
+// user's own CLI config trees (~/.claude, ~/.codex) stay byte-identical across a launch.
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -27,8 +27,6 @@ async function createSentinelHome(root: string): Promise<string> {
     ['.claude', 'projects', 'session-a.jsonl'],
     ['.codex', 'config.toml'],
     ['.codex', 'auth.json'],
-    ['.gemini', 'settings.json'],
-    ['.gemini', 'oauth_creds.json'],
     ['.gitconfig'],
   ];
   for (const segments of files) {
@@ -72,7 +70,7 @@ function defById(id: string): ProviderDef {
 
 /** A def for a CLI that takes its config dir as a flag — no built-in rides this mechanism yet. */
 function flagDef(): ProviderDef {
-  const base = defById('gemini');
+  const base = defById('copilot');
   return {
     ...base,
     id: 'flag-probe',
@@ -88,7 +86,7 @@ const RUN_CAPABILITIES: readonly RunCapability[] = [
     name: 'Filesystem',
     command: 'npx',
     args: ['-y', 'fs-server'],
-    env: { ROOT: '/workspace/main' },
+    env: { ROOT: '/repo/main' },
   },
   { kind: 'mcp', id: 'github', name: 'GitHub', command: 'gh-mcp', args: [], env: {} },
   { kind: 'skill', id: 'review', name: 'Review skill', path: '/library/skills/review' },
@@ -166,7 +164,7 @@ describe('run-scoped config writer (P-7)', () => {
     expect(mcp.mcpServers.filesystem).toEqual({
       command: 'npx',
       args: ['-y', 'fs-server'],
-      env: { ROOT: '/workspace/main' },
+      env: { ROOT: '/repo/main' },
     });
 
     const skills = JSON.parse(await readFile(join(fragment.configDir, 'skills.json'), 'utf8')) as {
@@ -189,7 +187,7 @@ describe('run-scoped config writer (P-7)', () => {
 
   it('P-7: a run without capabilities still gets a complete, empty config set', async () => {
     const { runDir } = await createRoot();
-    const fragment = await writeRunConfig(runDir, defById('gemini'), []);
+    const fragment = await writeRunConfig(runDir, defById('copilot'), []);
     expect(fragment.mcpServers).toEqual({});
     expect(fragment.skills).toEqual([]);
     expect(fragment.hooks).toEqual([]);

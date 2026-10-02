@@ -95,7 +95,7 @@ describe('combinedSpendStatus', () => {
 
   it('R-32: hard_stop wins regardless of input position', () => {
     const spends = [
-      spend('workspace_month', 1),
+      spend('repo_month', 1),
       spend('account_day', 12, cap(10)),
       spend('work_order', 1),
     ];
@@ -105,7 +105,7 @@ describe('combinedSpendStatus', () => {
   it('R-32: a warn tie keeps the first scope in input order', () => {
     const spends = [
       spend('account_day', 8, cap(10, 80)),
-      spend('workspace_month', 4, cap(5, 80)),
+      spend('repo_month', 4, cap(5, 80)),
     ];
     expect(combinedSpendStatus(spends)).toEqual({ status: 'warn', scope: 'account_day' });
   });
@@ -145,5 +145,56 @@ describe('combinedSpendStatus', () => {
     const snapshot = JSON.parse(JSON.stringify(spends)) as readonly ScopedSpend[];
     combinedSpendStatus(spends);
     expect(spends).toEqual(snapshot);
+  });
+});
+
+describe('two-layer budget', () => {
+  // The caller builds the list per repo: account scopes, then repo_month, then project_month.
+  const layers = (repoUsd: number, repoCap: SpendCap | undefined, projectUsd: number, projectCap: SpendCap | undefined): ScopedSpend[] => [
+    spend('repo_month', repoUsd, repoCap),
+    spend('project_month', projectUsd, projectCap),
+  ];
+
+  it('R-48: a repo stop blocks only that repo — a sibling repo under the same project stays ok', () => {
+    const blocked = combinedSpendStatus(layers(10, cap(10), 10, cap(100)));
+    const sibling = combinedSpendStatus(layers(0, cap(10), 10, cap(100)));
+    expect(blocked).toStrictEqual({ status: 'hard_stop', scope: 'repo_month' });
+    expect(sibling).toStrictEqual({ status: 'ok' });
+  });
+
+  it('R-48: an exhausted project ceiling stops a repo that has spent nothing itself', () => {
+    // 6 + 4 across two repos exhausts a 10 ceiling; the third repo has zero own spend and no limit.
+    const result = combinedSpendStatus(layers(0, undefined, 6 + 4, cap(10)));
+    expect(result).toStrictEqual({ status: 'hard_stop', scope: 'project_month' });
+  });
+
+  it('R-48: the repo limit is checked before the project ceiling — both at hard_stop reports repo_month', () => {
+    expect(combinedSpendStatus(layers(10, cap(10), 20, cap(20)))).toStrictEqual({
+      status: 'hard_stop',
+      scope: 'repo_month',
+    });
+  });
+
+  it('R-48: a project hard_stop outranks a repo warn', () => {
+    expect(combinedSpendStatus(layers(8, cap(10), 20, cap(20)))).toStrictEqual({
+      status: 'hard_stop',
+      scope: 'project_month',
+    });
+  });
+
+  it('R-48: a warn at the project level surfaces as warn with project_month', () => {
+    expect(combinedSpendStatus(layers(1, cap(10), 8, cap(10)))).toStrictEqual({
+      status: 'warn',
+      scope: 'project_month',
+    });
+  });
+
+  it('R-48: account scopes come before the repo and project layers in the tie order', () => {
+    const list = [spend('account_week', 5, cap(5)), ...layers(10, cap(10), 10, cap(10))];
+    expect(combinedSpendStatus(list)).toStrictEqual({ status: 'hard_stop', scope: 'account_week' });
+  });
+
+  it('R-48: no repo limit and no project ceiling is ok', () => {
+    expect(combinedSpendStatus(layers(1000, undefined, 5000, undefined))).toStrictEqual({ status: 'ok' });
   });
 });

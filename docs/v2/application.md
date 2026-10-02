@@ -88,6 +88,8 @@ export interface WorkOrderRecord {
 export interface WorkOrderRepo {
   create(record: WorkOrderRecord): Promise<void>;
   get(id: WorkOrderId): Promise<WorkOrderRecord | undefined>;
+  /** Display number (A-29): 1-based rank of `id` by (createdAt asc, id asc) on this machine; undefined for an unknown id. */
+  number(id: WorkOrderId): Promise<number | undefined>;
   list(filter: { readonly project?: ProjectSlug; readonly repo?: RepoSlug }): Promise<readonly WorkOrderRecord[]>;  // createdAt asc
   appendEvent(id: WorkOrderId, event: WorkOrderEvent): Promise<void>;
   events(id: WorkOrderId): Promise<readonly WorkOrderEvent[]>;                                 // append order
@@ -127,7 +129,12 @@ export interface AccountRecord {
   readonly plan?: string;
   readonly limitPolicy: LimitPolicy;
   readonly secretRef?: string;           // key into SecretVault; never the secret itself
-  readonly caps: readonly { readonly scope: 'account_day' | 'account_month'; readonly cap: SpendCap }[];
+  readonly routeKind?: string;           // route kind id from the capability registry (data); absent → derived from provider + authMode
+  readonly endpoint?: string;            // https URL of a compatible endpoint; not a secret; its host must match the route kind's preset host
+  readonly identityDir?: string;         // absolute path of the user's own config directory; subscription route kinds only
+  readonly tierModels?: Readonly<Record<'strong' | 'balanced' | 'fast', string>>; // model ids per tier; overrides the route kind defaults
+  readonly consentedModels?: readonly string[]; // model ids the user allowed for metered or unverified use; the asterisk means the route's default model
+  readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly cap: SpendCap }[];
 }
 export interface AccountRepo {
   save(record: AccountRecord): Promise<void>;           // upsert
@@ -241,6 +248,12 @@ export interface Worktrees {
   ensure(repo: RepoSlug, workOrderId: WorkOrderId): Promise<Result<{ readonly path: string }, 'no_repo'>>;
 }
 
+// git-probe.ts — the one git question the attach flow asks (A-24); kept apart from Worktrees so a
+// use case can ask it without gaining worktree powers
+export interface GitProbe {
+  isWorkTree(path: string): Promise<boolean>;   // an existing checkout, not a bare repository
+}
+
 // repo-registry.ts — machine-local pointers only (S1): where each repo is cloned on this machine
 export interface RepoRegistry {
   path(slug: RepoSlug): Promise<string | undefined>;
@@ -256,7 +269,7 @@ export interface Notifier { notify(title: string, body: string): void }
 export interface AppDeps {
   readonly clock: Clock; readonly ids: IdGen; readonly log: EventLog;
   readonly workOrders: WorkOrderRepo; readonly runs: RunRepo; readonly accounts: AccountRepo;
-  readonly projects: ProjectRepo; readonly repos: RepoRegistry;
+  readonly projects: ProjectRepo; readonly repos: RepoRegistry; readonly git: GitProbe;
   readonly bindings: BindingRepo; readonly queue: QueueRepo; readonly definitions: DefinitionStore;
   readonly proposals: ProposalRepo; readonly secrets: SecretVault; readonly transports: TransportResolver;
   readonly commands: CommandRunner; readonly secretScanner: SecretScanner; readonly worktrees: Worktrees;
@@ -326,6 +339,40 @@ export interface IssueTracker {
 ```
 
 Fake: `createFakeTracker(): IssueTracker & { readonly items: ExternalItem[]; readonly comments: readonly { key: string; text: string }[] }`.
+
+### Update checker port (`ports/update-checker.ts`)
+
+The app's own newer version — machine-local state with no repo data and no fitting `AuditAction`
+(the permission board's answers are unlogged the same way), so the port sits **beside `AppDeps`**
+(the forge, tracker and discovery precedent) and the composition root hands it to the api. The
+real updater (release feed check, download, install, signing) is a later contract.
+
+```ts
+export type UpdateState =
+  | { readonly kind: 'none'; readonly current: string }
+  | { readonly kind: 'available'; readonly current: string; readonly next: string }
+  | { readonly kind: 'downloading'; readonly current: string; readonly next: string; readonly percent: number }
+  | { readonly kind: 'ready'; readonly current: string; readonly next: string }
+  | { readonly kind: 'error'; readonly current: string; readonly reason: 'offline' | 'failed' };
+
+export interface UpdateChecker {
+  state(): Promise<UpdateState>;
+  check(): Promise<UpdateState>;                                              // re-checks; the answer is the new state
+  apply(): Promise<Result<void, 'not_available'>>;   // starts the install; only from available or ready
+}
+```
+
+Implementations (infrastructure, `system/`):
+- **No-op checker** `createNoopUpdateChecker(current)` — the default: `state`/`check` always answer
+  `{ kind: 'none', current }`, `apply` always refuses, and no network call is ever made.
+- **Design checker** `createDesignUpdateChecker(current, next, stepMs?)` — answers `available` with
+  `next`, and `apply` walks `downloading` → `ready` over a few seconds; a re-check never undoes
+  progress. The composition root installs it only when `DOCKET_UPDATE_FAKE` holds a version string,
+  and that one line is production's only read of the variable.
+
+Fake: `createFakeUpdateChecker(initial?)` — `queueCheck(state)` scripts the next `check` answer
+(adopted once), `apply` honours the port guard and moves to `downloading` at percent 0, and
+`applyCalls()` counts apply calls (refused included).
 
 ---
 
@@ -398,14 +445,19 @@ export function decideProposalUseCase(
 ): Promise<Result<ProposalRecord, ApplyError>>;
 
 // accounts.ts
-export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref'>>;
-export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
+export function saveAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>, input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor }): Promise<Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>>;
+export function removeAccount(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'bindings'>, input: { readonly id: AccountId; readonly actor: Actor }): Promise<Result<void, 'not_found'>>;
 export function saveBinding(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'bindings'>, input: { readonly scope: BindingScope; readonly binding: RoleBinding; readonly actor: Actor }): Promise<Result<void, 'empty_chain'>>;
 
+// spend-consent.ts
+type AccountCap = AccountRecord['caps'][number];
+export function grantSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly cap?: AccountCap; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model' | 'invalid_cap'>>;
+export function revokeSpendConsent(deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>, input: { readonly accountId: AccountId; readonly model: string; readonly actor: Actor }): Promise<Result<void, 'not_found' | 'invalid_model'>>;
+
 // projects.ts — the Project & Repo layer (Phase 3.5, S1/S3/S4)
-export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid';
+export type AttachError = 'not_a_repo' | 'no_project_yaml' | 'definitions_invalid' | 'repo_not_in_project';
 export function attachProject(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'projects' | 'repos' | 'definitions' | 'git'>,
   input: { readonly path: string; readonly actor: Actor; readonly repos?: readonly { readonly repo: RepoSlug; readonly path: string }[] },
 ): Promise<Result<ProjectDef, AttachError>>;
 
@@ -439,7 +491,7 @@ Rules:
 - **A-12** `decideProposalUseCase`, in this order: (1) load the proposal (`not_found`); (2) read the target's current hash (`''` if absent); (3) on `approved` only: `DefinitionStore.validateCandidate(scope, target, after)` — issues → `invalid_after`, proposal stays `pending`; (4) domain `decideProposal(p, decision, actor, currentHash, now)` — `stale` → save the proposal with status `stale` and return `stale`; `not_pending`/`self_approval` → return as is; (5) on `approved`: `writeFile(scope, target, after, baseHash)` — `err('stale')` → save as `stale`, return `stale`; (6) save the decided proposal; audit `proposal.decided` with `detail: { decision }`. Rejection never touches files.
 - **A-13** `saveAccount`: a `secret` requires `record.secretRef` (`secret_without_ref` otherwise) and is stored only through `SecretVault.put`; the secret never appears in the record, the audit entry, or any return value. `removeAccount` removes the vault entry too.
 - **A-14** `saveBinding`: an empty account chain → `empty_chain`; audit `binding.saved` naming the role.
-- **A-24** `attachProject`: `path` must be an existing git work tree (`not_a_repo`); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
+- **A-24** `attachProject`: `path` must be an existing git work tree per `git.isWorkTree` (`not_a_repo`, nothing written); `readProjectAt` yields the project — `no_project_yaml` when `<path>/.docket/project.yaml` is absent, `definitions_invalid` with the R-46 issues otherwise. On success: save the `ProjectDef`, register `mainRepo → path`, and register every entry of `repos` whose slug the project lists (a slug not listed → `repo_not_in_project`, nothing written). Audit `project.attached`.
 - **A-25** `openTaskWorkOrders`: loads the project (`unknown_project`) and its roadmap (`unknown_task`); targets = `task.targets` or `[mainRepo]`; opens one work order per target with `title = task.title` and `task` set — all-or-nothing: every opening is validated first, and any error opens none. Each success follows A-5 (one `created` event, one audit entry).
 - **A-26** `registerRepo` upserts the registry pointer after the project exists and lists the repo (`unknown_project` / `repo_not_in_project`). `unregisterRepo` fails `repo_in_use` while non-done work orders reference the repo, else removes the pointer — the project's `repos` list in `project.yaml` is untouched (membership is versioned truth, edited in the file or through a proposal). Audit `repo.registered` / `repo.unregistered`.
 
@@ -453,10 +505,11 @@ export interface ExecuteRunInput { readonly item: QueueItem; readonly role: Role
 export type ExecuteOutcome =
   | { readonly kind: 'finished'; readonly outcome: RunOutcome }
   | { readonly kind: 'transport_error'; readonly error: TransportError }
-  | { readonly kind: 'limit'; readonly decision: LimitDecision };
+  | { readonly kind: 'limit'; readonly decision: LimitDecision }
+  | { readonly kind: 'refused'; readonly error: 'needs_spend_consent' };
 export interface PermissionGate { onAsk(runId: RunId, ask: Extract<AgentEvent, { readonly type: 'permission_ask' }>): Promise<'allow' | 'deny'> }
 export function executeRun(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'workOrders' | 'runs' | 'accounts' | 'transports' | 'modelCatalog' | 'capabilities'>,
   permissions: PermissionGate,
   input: ExecuteRunInput,
 ): Promise<ExecuteOutcome>;
@@ -480,6 +533,12 @@ export function enqueueStage(
 ): Promise<Result<QueueItemId, 'not_found' | 'not_ready' | RouteError | 'definitions_invalid'>>;
 ```
 
+A run whose model billing is not `included` is refused with `needs_spend_consent` unless the model
+is in the account's `consentedModels` and the account has at least one spend cap; an unpinned model
+takes the route kind's default billing, else `included` for a subscription account and `metered`
+for every other auth mode. Billing comes from the `ModelCatalog` port. The refusal happens before
+any write, so a refused run leaves every store unchanged.
+
 Rules:
 - **A-15** `executeRun`: creates the `RunRecord` (`autoResumesUsed` from a previous run of the same stage+attempt if resuming, else 0), appends `run_started` to the work order and audit `run.started`, then starts the transport for `route.accountId`. A missing transport or a start error → `transport_error`, the run record gets `endedAt` and outcome `failed`, and `run_finished: failed` is appended.
 - **A-16** While streaming, every event is persisted with `RunRepo.appendEvents` in arrival order (batched is fine, order is not negotiable). `session_started` sets `sessionRef`. `permission_ask` is passed to `PermissionGate.onAsk` and the answer to `answerPermission`. `quota_signal` → `AccountRepo.saveMeter` (a new `MeterId` from `IdGen` unless a meter with the same pool label and duration exists). `usage` with a cost → `recordSpend`.
@@ -487,7 +546,7 @@ Rules:
 - **A-17a** `applyLimitDecision`: `schedule_resume` → put a queue item for the run's work order and stage with the same route, `notBefore = decision.at`, and increment the run's `autoResumesUsed` on the record; `switch_pool` → a queue item routed to the same account (pool choice is re-evaluated at dispatch); `fallback` → a queue item with `route = decision.route`; `ask` → no queue item (the work order stays `limit_waiting` and shows in the cockpit).
 - **A-18** On `finished`: set `endedAt`/`outcome` (mapping as in `foldRun`), append `run_finished`, audit `run.finished` with `detail: { outcome }`.
 - **A-19** `enqueueStage`: only when `nextAction` is `start_run`; the route is the first account of `resolveRoute`'s chain; one queue item per work order (an existing item for the same work order is replaced).
-- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` / `account_month` = UTC calendar week/month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
+- **A-20** `dispatcherTick`: builds the `DispatchSnapshot` — `running` from `RunRepo.listActive` joined with `WorkOrderRepo` for the repo and project, `headroom` per item from `headroom(pools, meters, accountId, model ?? '', now)`, `spend` per item from `combinedSpendStatus` over the account's own caps (`account_day` = UTC day of `now`, `account_week` = the UTC ISO week of `now`, Monday 00:00 to the next Monday, `account_month` = UTC calendar month of `now`), the repo cap (`repo_month`) and the project ceiling (`project_month`, observed spend summed over all repos of the project — R-48; work-order caps arrive in Phase 5) — calls `decideDispatch`, removes started items from the queue, calls `start` for each started item, and returns the decisions unchanged.
 
 ---
 
@@ -525,16 +584,30 @@ export type Query =
 export interface AttentionItem { readonly workOrderId: string; readonly project: string; readonly repo: string; readonly title: string; readonly kind: 'awaiting_human' | 'permission_ask' | 'limit_waiting' | 'blocked'; readonly stage: string | null; readonly since: number }
 export interface CockpitView {
   readonly attention: readonly AttentionItem[];
-  readonly running: readonly { readonly workOrderId: string; readonly stage: string; readonly accountId: string; readonly startedAt: number }[];
+  // The optional fields below (A-35 … A-37, A-40) are optional in the type only so consumers
+  // written before they existed keep compiling; the cockpit query itself always fills them.
+  readonly running: readonly {
+    readonly workOrderId: string;
+    readonly stage: string;
+    readonly accountId: string;
+    readonly provider?: string;
+    readonly startedAt: number;
+    readonly title?: string;
+    readonly stageIndex?: number;
+    readonly stageCount?: number;
+    readonly queued?: boolean;
+    readonly queuedReason?: 'limit' | 'queue';
+    readonly limitResetsAt?: number | null;
+  }[];
   /** K-4:B — cockpit cards; one per attached project, always the full list (A-28). */
-  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number }[];
-  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number }[];   // closedAt desc, max 5
+  readonly projects: readonly { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repoCount: number; readonly active: number; readonly waiting: number; readonly lastActivityAt?: number | null }[];
+  readonly recentlyClosed: readonly { readonly workOrderId: string; readonly title: string; readonly project: string; readonly repo: string; readonly closedAt: number; readonly outcome?: 'merged' | 'cancelled' }[];   // closedAt desc, max 5
 }
 export interface RepoNode { readonly repo: string; readonly name: string; readonly main: boolean; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
 export interface ProjectTreeItem { readonly project: string; readonly name: string; readonly mainRepo: string; readonly repos: readonly RepoNode[]; readonly active: number; readonly running: number; readonly waiting: number; readonly status: 'running' | 'waiting' | 'idle' }
 export type ProjectTree = readonly ProjectTreeItem[];
 export interface RoadmapPageView {
-  readonly phases: readonly { readonly id: string; readonly name: string; readonly status: string; readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[] }[] }[];
+  readonly phases: readonly { readonly id: string; readonly name: string; readonly status: string; readonly tasks: readonly { readonly id: string; readonly title: string; readonly status: string; readonly targets: readonly string[]; readonly workOrders: readonly { readonly repo: string; readonly id: string; readonly number: number; readonly title: string; readonly status: string }[] }[] }[];
   readonly runnable: readonly string[];
 }
 export interface AccountDetailView {
@@ -543,8 +616,14 @@ export interface AccountDetailView {
   readonly activeWork: readonly { readonly workOrderId: string; readonly title: string; readonly stage: string | null; readonly status: string }[];   // non-done work orders with a run on this account, oldest active first
 }
 export interface ProjectSpendView { readonly totalUsd: number; readonly perRepo: readonly { readonly repo: string; readonly usd: number }[]; readonly cap?: { readonly amountUsd: number; readonly warnPercent: number } }
-export interface BoardColumn { readonly stage: string; readonly name: string; readonly workOrders: readonly { readonly id: string; readonly title: string; readonly status: string }[] }
-export interface BoardView { readonly project: string; readonly repo: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly title: string }[] }
+export interface BoardColumn {
+  readonly stage: string;
+  readonly name: string;
+  // account (A-30): the run's account label, null when there never was one; since (A-31): the
+  // ISO-8601 UTC instant of the last status change. The done entries below carry neither.
+  readonly workOrders: readonly { readonly id: string; readonly number: number; readonly title: string; readonly status: string; readonly account: string | null; readonly since: string }[];
+}
+export interface BoardView { readonly repo: string; readonly flow: string; readonly columns: readonly BoardColumn[]; readonly done: readonly { readonly id: string; readonly number: number; readonly title: string }[] }
 
 // api.ts
 export interface Api {
@@ -560,6 +639,15 @@ Rules:
 - **A-23** `repo.board` has one column per stage of the repo's default flow, in flow order; each work order sits in the column of its current stage; `done` work orders go to `done`.
 - **A-27** `project.tree`: one item per attached project (id asc), repos in `project.repos` order. Per repo: `active` = non-done work orders, `waiting` = attention items of kinds `permission_ask` / `awaiting_human` / `blocked`, `running` = runs without `endedAt`; status precedence `waiting > running > idle`; the project aggregates its repos' counts and takes its status the same way. One call serves the whole sidebar (K-7).
 - **A-28** `cockpit`: the `project` filter narrows `attention`, `running` and `recentlyClosed` to that project; `projects` always lists every project (K-4:B). `recentlyClosed` = the five most recent `done` work orders, `closedAt` desc. `account.detail` returns the account with its windows (from pools/meters) and `activeWork` = non-done work orders with a run on the account.
+- **A-29** Work-order display number: `WorkOrderRepo.number(id)` is the 1-based position of the work order in (`createdAt` asc, `id` asc) order over every work order on this machine. Work orders are never deleted, so a number, once shown, never changes and is never reused; a converted old database numbers its work orders the same way. The ULID stays the identity; the number is display only (machine-local; team sync revisits it). Every query view item that names a work order (`workOrderId` or `id` of a work order) also carries `number: number` — attention, running and recentlyClosed items, board cards and done strip, the detail, `account.detail.activeWork`, and the per-repo work orders of a roadmap task.
+- **A-30** Each card in `BoardColumn.workOrders[]` carries `account`: the display label of the account bound to the work order's current or most recent run — the newest run by `startedAt`, active or finished; `null` when the work order never had a run, or the run's account no longer loads. The `done` entries carry neither `account` nor `since`.
+- **A-31** Each card in `BoardColumn.workOrders[]` carries `since`: the ISO-8601 UTC instant (`YYYY-MM-DDTHH:MM:SS.sssZ`) the work order entered its current status — the `at` of the last event that changed the derived status, the work order's `createdAt` while no event has. Stored event timestamps only, never a clock read.
+- **A-35** Each `cockpit.running[]` row carries `title` (the work order's title) and the stage position for the progress strip: `stageIndex` is the 1-based position of the row's stage in the work order's flow and `stageCount` the flow's stage count. When the stage is no longer in the flow — or the flow no longer loads — both are `0` and the UI hides the strip. A queued row positions its queue item's stage the same way.
+- **A-36** Queued work stays in `running` (U-21): the queue's items ride the same list after the actually-running rows, which keep today's order; queued rows follow ordered by `enqueuedAt` asc, then id asc. A queued row carries the queue item's `stage` and route `accountId`, and its `startedAt` is the instant it was queued (`enqueuedAt`), never a run start. The A-28 project filter narrows queued rows together with the rest.
+- **A-37** A queued row carries `queued: true` and a `queuedReason`: `'limit'` when the route's headroom is currently blocked — the same domain call the dispatcher's tick makes, evaluated at query time — with `limitResetsAt` the blocking meters' earliest `resetsAt` (`null` when no relief instant is known); every other wait (concurrency limits, a scheduled `notBefore`, a busy work order) reads `'queue'` with `limitResetsAt: null`. Running rows carry `queued: false` and `limitResetsAt: null` and no `queuedReason`.
+- **A-38** Each `cockpit.projects[]` card carries `lastActivityAt`: the stamp of the latest status change among the project's work orders, on A-31's `since` basis (a work order whose flow no longer loads contributes its creation time); `null` when the project has no work orders.
+- **A-39** Each `cockpit.recentlyClosed[]` entry carries `outcome`: `'merged'` when the work order finished its flow — past the last stage's gates — and `'cancelled'` when a `closed` event ended it. The domain has no finer terminal status, and a `closed` event appended after a flow completion still reads `'cancelled'`: the closing act is the operator's terminal word even where the fold ignores it (R-23).
+- **A-40** Each `cockpit.running[]` row carries `provider`: the def id of the row's route account — the account record's `provider` field, resolved once per account (the board's A-30 label-cache stance), for running and queued rows alike. `''` when the account record no longer loads: the row resolves no mark and the UI's neutral glyph covers it. The account views that already carried `provider` keep theirs (`settings.accounts` rows, `AccountDetailView.account`). Optional in the type only so consumers written before it keep compiling (A-35's stance); the cockpit query itself always fills it.
 
 ### Phase 4 API additions (shapes here; rules U-11 … U-14 in ui.md)
 
@@ -629,6 +717,68 @@ export function pollRemoteChecks(
 - **E-18** `evaluateMachineGates` (updated A-9): after processing existing `command`/`secret_scan` gates, also process pending `remote_checks` gates by calling `pollRemoteChecks` — only when the input carries `remote: { readonly forges: ForgeResolver; readonly repo: RepoRef; readonly branchRef: string }` (a new optional field of `evaluateMachineGates`' input); without it they are left pending. Every `GateContext` built by a use case includes `environments` from the repo definition. `deploy` gates are **not** evaluated by `evaluateMachineGates` — they require explicit human approval via `approveAndDeploy`.
 - **E-19** The Phase 2c headless acceptance scenario extends the standard flow with an environment stage: `deploy-stg` → `deploy-prd` (protected, `promoteFrom: stg`), with the fake forge returning all-green checks for a `remote_checks` gate.
 
+### App update — query, intents, event
+
+The app bar's update story — the contract and plumbing only; the Update button itself is later UI
+work. One query, two intents and one event over the
+[Update checker port](#update-checker-port-portsupdate-checkerts); the checker is composed beside
+`AppDeps` and passed to `createApi` as its fifth argument (`updates?: UpdateChecker`), the
+board/discovery/registry pattern.
+
+```ts
+// use-cases/app-update.ts — the port is the whole state, so the use cases take it directly
+export function getUpdateState(updates: UpdateChecker): Promise<UpdateState>;
+export function checkForUpdates(updates: UpdateChecker): Promise<UpdateState>;
+export function applyUpdate(updates: UpdateChecker): Promise<Result<void, 'not_available'>>;
+
+// commands (commands.ts)
+| { type: 'app.update.check' }
+| { type: 'app.update.apply' }
+// queries (queries.ts)
+| { type: 'app.update' }               → UpdateState
+// UiEvent (api.ts)
+| { type: 'update.changed' }
+```
+
+Rules:
+- **A-32** `app.update` answers the composed checker's `state()` verbatim — no derivation, no
+  stored copy. With no checker composed the query answers `{ ok: false, code: 'not_found' }` (the
+  registry-less `repos.list` precedent): absence is never invented into "you are current".
+- **A-33** `app.update.check` maps onto `checkForUpdates`: the checker re-checks, the command
+  answers `{ ok: true }`, and the api emits one `update.changed` after it — `CommandResult` carries
+  no payload, so the new state travels out-of-band, through the event and the re-query it triggers
+  (the `workOrders.changed` pattern). No audit entry: the update state is machine-local and no
+  `AuditAction` names it.
+- **A-34** `app.update.apply` maps onto `applyUpdate`: the guard reads the state and allows the
+  call only from `available` or `ready` — every other state answers `not_available`, emits nothing
+  and leaves the state untouched. An allowed apply starts the download (the state's next read shows
+  it), answers `{ ok: true }` and emits one `update.changed`.
+
+### Provider marks — query
+
+The UI's provider marks are static def data, so they travel through one query instead of riding
+every view: each account view carries only the account's `provider` def id (A-40 above), and the
+mark itself is looked up once. The source is the [ProviderMarks
+port](#provider-marks-p-25) defined in [providers.md](providers.md) → "Provider marks", passed to
+`createApi` as its sixth argument (`marks?: ProviderMarks`), the board/discovery/registry/updates
+pattern.
+
+```ts
+// queries (queries.ts)
+| { type: 'providers.marks' }          → Record<string, ProviderMark | null>
+```
+
+Rules:
+- **A-41** `providers.marks` answers the composed marks source verbatim — def id →
+  `{ viewBox, path, fillRule }`, `null` when the provider has none. No derivation, no stored
+  copy. With no source composed the query answers `{ ok: false, code: 'not_found' }` (the
+  registry-less `repos.list` precedent): absence is never invented into an empty record.
+- **A-42** A mark travels with its fill rule: the query answers a source mark's `fillRule`
+  byte-identical and never assumes `nonzero` — the same `d` renders differently under the two
+  rules, so the rule is the mark's data, not the renderer's guess.
+- **A-43** `saveAccount` validates the route fields (see [provider-capabilities.md](provider-capabilities.md), P-31, P-32): an `endpoint` that is not an `https` URL → `invalid_endpoint`; an `endpoint` whose host differs from the host fixed by the account's route kind (looked up through the same port) → `endpoint_mismatch`; an `identityDir` that is not an absolute path, or is set on an account whose `authMode` is not `subscription` → `identity_dir_not_allowed`. None of these fields is a secret; the token stays behind `secretRef` (A-13).
+- **A-44** Records saved before these fields existed read back unchanged: accounts are stored as JSON, so there is no migration. An absent `routeKind` resolves to `anthropic-subscription` for a `claude-code` account with `authMode: 'subscription'` and to `anthropic-api` for `authMode: 'api_key'`. The mapping lives behind the `CapabilityCatalog` application port, implemented in `src/infrastructure/providers/registry/`.
+
 ---
 
 ## 5. Phase 2a acceptance — headless end to end
@@ -663,7 +813,7 @@ Ports and use cases for Phase 3 are specified with their rules in
 // ports/quota-probe.ts
 export type QuotaProbeError = 'not_installed' | 'not_logged_in' | 'probe_failed' | 'unknown_provider';
 export interface MeterReading {
-  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' };
+  readonly pool: { readonly label: string; readonly kind: PoolKind; readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown' };
   readonly meter: Omit<Meter, 'id' | 'poolId'>;
 }
 export interface QuotaProbe {
@@ -673,7 +823,7 @@ export interface QuotaProbeResolver { forProvider(defId: string): QuotaProbe | u
 
 // use-cases/quota-poll.ts
 export function pollQuota(
-  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts'>,
+  deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'capabilities'>,
   probes: QuotaProbeResolver,
   input: { readonly accountId: AccountId },
 ): Promise<Result<readonly Meter[], QuotaProbeError>>;

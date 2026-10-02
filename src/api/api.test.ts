@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Actor, AgentEvent, RoleDef, RunId, Slug, Ulid } from '../domain/index';
 import { ok, parseSlug, parseUlid } from '../domain/index';
 
-import type { AppDeps } from '../application';
+import type { AppDeps, UpdateChecker, UpdateState } from '../application';
 import { createPermissionBoard, executeRun } from '../application';
 import {
   createFakeCommandRunner,
@@ -15,6 +15,7 @@ import {
   createFakeEventLog,
   createFakeTransport,
   createFakeTransportResolver,
+  createFakeUpdateChecker,
   createFakeWorktrees,
   type FakeCommandRunner,
   type FakeDefinitionStore,
@@ -44,7 +45,8 @@ const AGENT: Actor = {
   role: slugOf<'role'>('worker'),
 };
 
-const WORKSPACE = 'acme';
+const REPO = 'acme';
+const PROJECT = 'atolye';
 const ACCOUNT = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FAZ');
 const ACCOUNT_OTHER = ulidOf<'account'>('01ARZ3NDEKTSV4RRFFQ69G5FB8');
 const PROPOSAL = ulidOf<'proposal'>('01ARZ3NDEKTSV4RRFFQ69G5FD1');
@@ -115,8 +117,8 @@ const DEFINITIONS_JSON = JSON.stringify({
   roles: [ROLE_JSON],
   flows: [FLOW_JSON, SHIP_FLOW_JSON, SHIP_PRD_FLOW_JSON],
   capabilities: [],
-  workspace: {
-    id: WORKSPACE,
+  repo: {
+    id: REPO,
     name: 'Acme',
     repos: [],
     flows: ['board-flow', 'ship-flow', 'ship-prd-flow'],
@@ -158,23 +160,27 @@ interface Harness {
   readonly log: FakeEventLog;
 }
 
-const createHarness = (): Harness => {
+const createHarness = async (): Promise<Harness> => {
   const commands = createFakeCommandRunner();
   const worktrees = createFakeWorktrees();
   const definitions = createFakeDefinitionStore();
   const log = createFakeEventLog();
-  definitions.seed({ kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, 'defs.json', DEFINITIONS_JSON);
+  definitions.setProject({ id: slugOf<'project'>(PROJECT), name: 'Project', mainRepo: slugOf<'repo'>(REPO), repos: [slugOf<'repo'>(REPO)] });
+  definitions.seed({ kind: 'repo', repo: slugOf<'repo'>(REPO) }, 'defs.json', DEFINITIONS_JSON);
   const deps = createFakeDeps({ commands, worktrees, definitions, log });
+  await deps.projects.save({ id: slugOf<'project'>(PROJECT), name: 'Project', mainRepo: slugOf<'repo'>(REPO), repos: [slugOf<'repo'>(REPO)] });
   return { deps, definitions, commands, worktrees, log };
 };
 
-/** Everything a routed command needs: one existing account and a global binding to it. */
+/** Everything a routed command needs: one existing account and a global binding to it. The
+ *  account is a subscription: the feed tests run the route unpinned, and an unpinned route on a
+ *  metered-by-default mode is refused before it starts (P-40). */
 const seedRouting = async (h: Harness): Promise<void> => {
   await h.deps.accounts.save({
     id: ACCOUNT,
     provider: 'acme-prov',
     label: 'Main',
-    authMode: 'api_key',
+    authMode: 'subscription',
     limitPolicy: 'wait_resume',
     caps: [],
   });
@@ -187,7 +193,8 @@ const seedRouting = async (h: Harness): Promise<void> => {
 const openViaApi = async (h: Harness, title = 'Fix the login flow', flow?: string): Promise<string> => {
   const result = await createApi(h.deps).command(ACTOR, {
     type: 'workOrder.open',
-    workspace: WORKSPACE,
+    project: PROJECT,
+    repo: REPO,
     title,
     ...(flow === undefined ? {} : { flow }),
   });
@@ -223,7 +230,7 @@ const ROLES_BEFORE = JSON.stringify({ roles: [ROLE_JSON] });
 const ROLES_AFTER = JSON.stringify({ roles: [ROLE_JSON, { ...ROLE_JSON, id: 'reviewer', name: 'Reviewer' }] });
 
 const seedPendingProposal = async (h: Harness, id: Ulid<'proposal'>, target: string, after: string): Promise<void> => {
-  const scope = { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) } as const;
+  const scope = { kind: 'repo', repo: slugOf<'repo'>(REPO) } as const;
   h.definitions.seed(scope, target, ROLES_BEFORE);
   const file = await h.definitions.readFile(scope, target);
   if (file === undefined) throw new Error('fixture file must exist');
@@ -244,7 +251,7 @@ const seedPendingProposal = async (h: Harness, id: Ulid<'proposal'>, target: str
 describe('createApi', () => {
   describe('command', () => {
     it('A-21: an invalid id in any command returns invalid_id and no port is called', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const spies = [
         vi.spyOn(h.deps.workOrders, 'get'),
@@ -275,8 +282,8 @@ describe('createApi', () => {
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
 
-    it('A-21: an invalid workspace, flow or task slug in workOrder.open is rejected before any port call', async () => {
-      const h = createHarness();
+    it('A-21: an invalid repo, flow or task slug in workOrder.open is rejected before any port call', async () => {
+      const h = await createHarness();
       const api = createApi(h.deps);
       const spies = [
         vi.spyOn(h.deps.definitions, 'load'),
@@ -285,9 +292,9 @@ describe('createApi', () => {
       ];
 
       const commands: readonly Command[] = [
-        { type: 'workOrder.open', workspace: 'Acme', title: 'Fix the login flow' },
-        { type: 'workOrder.open', workspace: WORKSPACE, title: 'Fix the login flow', flow: 'Board-Flow' },
-        { type: 'workOrder.open', workspace: WORKSPACE, title: 'Fix the login flow', task: 'no task!' },
+        { type: 'workOrder.open', project: 'Atolye', repo: 'Acme', title: 'Fix the login flow' },
+        { type: 'workOrder.open', project: PROJECT, repo: REPO, title: 'Fix the login flow', flow: 'Board-Flow' },
+        { type: 'workOrder.open', project: PROJECT, repo: REPO, title: 'Fix the login flow', task: 'no task!' },
       ];
       for (const command of commands) {
         expect(await api.command(ACTOR, command)).toEqual({ ok: false, code: 'invalid_id' });
@@ -296,7 +303,7 @@ describe('createApi', () => {
     });
 
     it('A-21: an invalid gate slug in gate.decide is rejected before any port call', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const get = vi.spyOn(h.deps.workOrders, 'get');
 
@@ -312,10 +319,10 @@ describe('createApi', () => {
     });
 
     it('maps workOrder.open onto openWorkOrder and returns the new work order id', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
-      const result = await api.command(ACTOR, { type: 'workOrder.open', workspace: WORKSPACE, title: '  Fix the login  ' });
+      const result = await api.command(ACTOR, { type: 'workOrder.open', project: PROJECT, repo: REPO, title: '  Fix the login  ' });
 
       expect(result.ok).toBe(true);
       if (!result.ok || result.id === undefined) throw new Error('open must return an id');
@@ -327,16 +334,16 @@ describe('createApi', () => {
     });
 
     it('maps a use-case failure onto { ok: false, code }', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
-      const result = await api.command(ACTOR, { type: 'workOrder.open', workspace: WORKSPACE, title: '   ' });
+      const result = await api.command(ACTOR, { type: 'workOrder.open', project: PROJECT, repo: REPO, title: '   ' });
 
       expect(result).toEqual({ ok: false, code: 'empty_title' });
     });
 
     it('maps an unknown work order onto not_found', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
       const result = await api.command(ACTOR, { type: 'workOrder.block', id: UNKNOWN_WORK_ORDER, reason: 'r' });
@@ -345,7 +352,7 @@ describe('createApi', () => {
     });
 
     it('maps workOrder.block / unblock / close onto the control use cases', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const id = await openViaApi(h);
 
@@ -360,7 +367,7 @@ describe('createApi', () => {
     });
 
     it('maps workOrder.enqueue onto enqueueStage and returns the queue item id', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       await seedRouting(h);
       const api = createApi(h.deps);
       const id = await openViaApi(h);
@@ -376,7 +383,7 @@ describe('createApi', () => {
     });
 
     it('maps gate.decide onto decideHumanGate and records the verdict', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const id = await openViaApi(h);
       await driveToAwaitingHuman(h, id);
@@ -401,11 +408,11 @@ describe('createApi', () => {
     });
 
     it('maps proposal.decide onto decideProposalUseCase', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       await seedPendingProposal(h, PROPOSAL, 'roles.json', ROLES_AFTER);
       await seedPendingProposal(h, PROPOSAL_OTHER, 'caps.json', ROLES_AFTER);
       const api = createApi(h.deps);
-      const scope = { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) } as const;
+      const scope = { kind: 'repo', repo: slugOf<'repo'>(REPO) } as const;
 
       const approved = await api.command(ACTOR, { type: 'proposal.decide', id: PROPOSAL, decision: 'approved' });
       expect(approved).toEqual({ ok: true, id: PROPOSAL });
@@ -421,7 +428,7 @@ describe('createApi', () => {
     });
 
     it('U-11: maps permission.answer onto the board and resolves the buffered ask', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const board = createPermissionBoard();
       const api = createApi(h.deps, board);
       board.register(RUN);
@@ -441,7 +448,7 @@ describe('createApi', () => {
     });
 
     it('U-11: an unknown or ended askId answers not_found and never throws', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const board = createPermissionBoard();
       const api = createApi(h.deps, board);
 
@@ -467,7 +474,7 @@ describe('createApi', () => {
     });
 
     it('U-11: an invalid runId returns invalid_id and leaves the buffered ask unanswered', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const board = createPermissionBoard();
       const api = createApi(h.deps, board);
       board.register(RUN);
@@ -481,7 +488,7 @@ describe('createApi', () => {
     });
 
     it('A-21: an invalid gate slug in deploy.approve is rejected before any port call', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const get = vi.spyOn(h.deps.workOrders, 'get');
 
@@ -497,7 +504,7 @@ describe('createApi', () => {
     });
 
     it('U-14: maps deploy.approve onto approveAndDeploy and deploys with the user actor', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const id = await openViaApi(h, 'Ship it', 'ship-flow');
       const api = createApi(h.deps);
 
@@ -510,7 +517,7 @@ describe('createApi', () => {
     });
 
     it('U-14: an agent actor mirrors no_approval and nothing is executed', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const id = await openViaApi(h, 'Ship it', 'ship-flow');
       const api = createApi(h.deps);
       const auditBefore = h.log.entries().length;
@@ -524,7 +531,7 @@ describe('createApi', () => {
     });
 
     it('U-14: confirmedEnvironment travels verbatim and unlocks a protected environment', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const id = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
       await deployOnStg(h, id);
       const api = createApi(h.deps);
@@ -542,7 +549,7 @@ describe('createApi', () => {
     });
 
     it('U-14: a protected environment without, with a wrong or an untypable confirmation is confirmation_mismatch', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
       const without = await openViaApi(h, 'Promote to production', 'ship-prd-flow');
@@ -582,7 +589,7 @@ describe('createApi', () => {
 
     it('U-14: every DeployGateError kind maps to its own CommandResult code', async () => {
       // not_found — a well-formed id that names no work order.
-      const missing = createHarness();
+      const missing = await createHarness();
       expect(
         await createApi(missing.deps).command(ACTOR, {
           type: 'deploy.approve',
@@ -593,7 +600,7 @@ describe('createApi', () => {
       ).toEqual({ ok: false, code: 'not_found' });
 
       // not_current_stage — the gate id belongs to another flow's deploy stage.
-      const otherStage = createHarness();
+      const otherStage = await createHarness();
       const otherId = await openViaApi(otherStage, 'Ship it', 'ship-flow');
       expect(
         await createApi(otherStage.deps).command(ACTOR, {
@@ -606,7 +613,7 @@ describe('createApi', () => {
       expect(otherStage.commands.calls()).toHaveLength(0);
 
       // not_pending — the gate already carries a verdict in the work order's history.
-      const decided = createHarness();
+      const decided = await createHarness();
       const decidedId = await openViaApi(decided, 'Ship it', 'ship-flow');
       await decided.deps.workOrders.appendEvent(ulidOf<'work-order'>(decidedId), {
         type: 'gate_evaluated',
@@ -625,7 +632,7 @@ describe('createApi', () => {
       ).toEqual({ ok: false, code: 'not_pending' });
 
       // not_a_deploy_gate — the current stage's pending gate is a human gate.
-      const human = createHarness();
+      const human = await createHarness();
       const humanId = await openViaApi(human);
       await driveToAwaitingHuman(human, humanId);
       expect(
@@ -642,7 +649,7 @@ describe('createApi', () => {
       // confirmation_mismatch — a protected environment needs the typed confirmation (above).
 
       // promote_prerequisite_missing — the confirmation is right, but stg never saw this commit.
-      const unpromoted = createHarness();
+      const unpromoted = await createHarness();
       const unpromotedId = await openViaApi(unpromoted, 'Promote to production', 'ship-prd-flow');
       expect(
         await createApi(unpromoted.deps).command(ACTOR, {
@@ -654,11 +661,11 @@ describe('createApi', () => {
         }),
       ).toEqual({ ok: false, code: 'promote_prerequisite_missing' });
 
-      // definitions_invalid — the workspace's definitions no longer load.
-      const broken = createHarness();
+      // definitions_invalid — the repo's definitions no longer load.
+      const broken = await createHarness();
       const brokenId = await openViaApi(broken, 'Ship it', 'ship-flow');
       broken.definitions.seed(
-        { kind: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { kind: 'repo', repo: slugOf<'repo'>(REPO) },
         'broken.json',
         '{ not json',
       );
@@ -674,7 +681,7 @@ describe('createApi', () => {
       // unknown_environment — validated definitions cannot name a missing environment, so this arm
       // is reached only with definitions that were never validated: a store stub answers with
       // hand-built ones.
-      const ghost = createHarness();
+      const ghost = await createHarness();
       const ghostId = await openViaApi(ghost, 'Ship it', 'ship-flow');
       const ghostDeps = {
         ...ghost.deps,
@@ -698,8 +705,8 @@ describe('createApi', () => {
                 },
               ],
               capabilities: [],
-              workspace: {
-                id: slugOf<'workspace'>(WORKSPACE),
+              repo: {
+                id: slugOf<'repo'>(REPO),
                 name: 'Acme',
                 repos: [],
                 flows: [slugOf<'flow'>('ship-flow')],
@@ -722,10 +729,10 @@ describe('createApi', () => {
         }),
       ).toEqual({ ok: false, code: 'unknown_environment' });
 
-      // no_repo — the machine has no checkout of this workspace.
-      const noCheckout = createHarness();
+      // no_repo — the machine has no checkout of this repo.
+      const noCheckout = await createHarness();
       const noCheckoutId = await openViaApi(noCheckout, 'Ship it', 'ship-flow');
-      noCheckout.worktrees.markNoRepo(slugOf<'workspace'>(WORKSPACE));
+      noCheckout.worktrees.markNoRepo(slugOf<'repo'>(REPO));
       expect(
         await createApi(noCheckout.deps).command(ACTOR, {
           type: 'deploy.approve',
@@ -737,7 +744,7 @@ describe('createApi', () => {
     });
 
     it('U-13: account.save creates an account with a fresh id, audited as account.saved', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
       const result = await api.command(ACTOR, {
@@ -764,7 +771,7 @@ describe('createApi', () => {
     });
 
     it('U-13: account.save with an id updates the editable fields and keeps the stored policy, caps and secret ref', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const secretRef = `account/${ACCOUNT}/api-key`;
       await h.deps.accounts.save({
         id: ACCOUNT,
@@ -802,8 +809,52 @@ describe('createApi', () => {
       expect(await h.deps.secrets.get(secretRef)).toBe('sk-keep-me');
     });
 
+    it('A-44: an update through the API keeps the stored route fields (serialisation round-trip)', async () => {
+      const h = await createHarness();
+      const tierModels = { strong: 'm-strong', balanced: 'm-balanced', fast: 'm-fast' };
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        routeKind: 'compatible-endpoint',
+        endpoint: 'https://api.compatible.example/v1',
+        identityDir: '/Users/op/.config/agent-a',
+        tierModels,
+        caps: [],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      // The command's editable surface does not name the route fields, so an update carries them
+      // over verbatim — an account saved with a route keeps riding it.
+      expect(await h.deps.accounts.get(ACCOUNT)).toEqual({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+        plan: undefined,
+        limitPolicy: 'wait_resume',
+        caps: [],
+        secretRef: undefined,
+        routeKind: 'compatible-endpoint',
+        endpoint: 'https://api.compatible.example/v1',
+        identityDir: '/Users/op/.config/agent-a',
+        tierModels,
+      });
+    });
+
     it('U-13: an unknown authMode is rejected at the boundary and nothing is written', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const save = vi.spyOn(h.deps.accounts, 'save');
 
@@ -819,7 +870,7 @@ describe('createApi', () => {
     });
 
     it('U-13: account.remove removes an unreferenced account and its vault entry', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const secretRef = `account/${ACCOUNT}/api-key`;
       await h.deps.accounts.save({
         id: ACCOUNT,
@@ -841,10 +892,10 @@ describe('createApi', () => {
     });
 
     it('U-13: account.remove of a referenced account fails with binding_exists and the referencing roles', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       await seedRouting(h); // a global worker binding to ACCOUNT
       await h.deps.bindings.save(
-        { level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) },
+        { level: 'repo', repo: slugOf<'repo'>(REPO) },
         { role: slugOf<'role'>('reviewer'), accounts: [{ accountId: ACCOUNT }, { accountId: ACCOUNT_OTHER }] },
       );
       const api = createApi(h.deps);
@@ -856,7 +907,7 @@ describe('createApi', () => {
     });
 
     it('U-13: binding.save maps onto saveBinding at the global scope; an empty chain reports empty_chain', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
 
       const result = await api.command(ACTOR, {
@@ -871,8 +922,8 @@ describe('createApi', () => {
         role,
         accounts: [{ accountId: ACCOUNT, model: 'atlas-max' }, { accountId: ACCOUNT_OTHER }],
       });
-      // The settings surface edits the machine-global baseline; no workspace binding appears.
-      expect(await h.deps.bindings.get({ level: 'workspace', workspace: slugOf<'workspace'>(WORKSPACE) }, role)).toBeUndefined();
+      // The settings surface edits the machine-global baseline; no repo binding appears.
+      expect(await h.deps.bindings.get({ level: 'repo', repo: slugOf<'repo'>(REPO) }, role)).toBeUndefined();
 
       expect(await api.command(ACTOR, { type: 'binding.save', role: 'worker', accounts: [] })).toEqual({
         ok: false,
@@ -881,7 +932,7 @@ describe('createApi', () => {
     });
 
     it('U-13: invalid ids or roles in the account and binding commands return invalid_id before any port call', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const spies = [
         vi.spyOn(h.deps.accounts, 'get'),
@@ -901,11 +952,151 @@ describe('createApi', () => {
       }
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
+
+    it('P-40: account.consent.grant records the model and the cap, audited as account.consent.granted', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT,
+        model: 'model-x',
+        cap: { scope: 'account_day', amountUsd: 5, warnPercent: 80 },
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({
+        action: 'account.consent.granted',
+        subject: { kind: 'account', id: ACCOUNT },
+      });
+    });
+
+    it('P-40: account.consent.grant without a cap touches only consentedModels; an unknown account reports not_found', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [{ scope: 'account_month', cap: { amountUsd: 50, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const granted = await api.command(ACTOR, { type: 'account.consent.grant', id: ACCOUNT, model: 'model-x' });
+      const missing = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT_OTHER,
+        model: 'model-x',
+      });
+
+      expect(granted).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_month', cap: { amountUsd: 50, warnPercent: 80 } }],
+      });
+      expect(missing).toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('P-40: account.consent.grant rejects a malformed id or an unknown cap scope at the boundary', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        caps: [],
+      });
+      const api = createApi(h.deps);
+      const save = vi.spyOn(h.deps.accounts, 'save');
+
+      const badId = await api.command(ACTOR, { type: 'account.consent.grant', id: 'not-a-ulid', model: 'model-x' });
+      const badScope = await api.command(ACTOR, {
+        type: 'account.consent.grant',
+        id: ACCOUNT,
+        model: 'model-x',
+        cap: { scope: 'account_year', amountUsd: 5, warnPercent: 80 },
+      });
+
+      expect(badId).toEqual({ ok: false, code: 'invalid_id' });
+      expect(badScope).toEqual({ ok: false, code: 'invalid_id' });
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('P-40: account.consent.revoke removes the model and audits account.consent.revoked', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        consentedModels: ['model-x', 'model-y'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, { type: 'account.consent.revoke', id: ACCOUNT, model: 'model-x' });
+
+      expect(result).toEqual({ ok: true });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        consentedModels: ['model-y'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const audit = h.log.entries();
+      expect(audit[audit.length - 1]).toMatchObject({
+        action: 'account.consent.revoked',
+        subject: { kind: 'account', id: ACCOUNT },
+      });
+    });
+
+    it('P-40: an update through account.save keeps the recorded consent — the editable surface does not own it', async () => {
+      const h = await createHarness();
+      await h.deps.accounts.save({
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Main',
+        authMode: 'subscription',
+        limitPolicy: 'wait_resume',
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+      const api = createApi(h.deps);
+
+      const result = await api.command(ACTOR, {
+        type: 'account.save',
+        id: ACCOUNT,
+        provider: 'acme-prov',
+        label: 'Renamed',
+        authMode: 'subscription',
+      });
+
+      expect(result).toEqual({ ok: true, id: ACCOUNT });
+      expect(await h.deps.accounts.get(ACCOUNT)).toMatchObject({
+        label: 'Renamed',
+        consentedModels: ['model-x'],
+        caps: [{ scope: 'account_day', cap: { amountUsd: 5, warnPercent: 80 } }],
+      });
+    });
   });
 
   describe('subscribe', () => {
     it('U-12: a command that appends to the event log emits workOrders.changed after the append', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const id = await openViaApi(h);
       // A store re-queries the moment the event arrives, so the read that starts at delivery time
@@ -927,7 +1118,7 @@ describe('createApi', () => {
     });
 
     it('U-12: a command that writes nothing emits nothing', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const seen: UiEvent[] = [];
       api.subscribe((event) => seen.push(event));
@@ -947,7 +1138,7 @@ describe('createApi', () => {
     });
 
     it('U-12: an audit-only write emits nothing — the channel tracks the work order event log', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const seen: UiEvent[] = [];
       api.subscribe((event) => seen.push(event));
@@ -961,8 +1152,9 @@ describe('createApi', () => {
     });
 
     it('U-12: run executor events arrive as run.updated with the runId through the injected notify hook', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
+      await seedRouting(h); // the executor's preflight needs an account the route can read
       const seen: UiEvent[] = [];
       api.subscribe((event) => seen.push(event));
 
@@ -978,7 +1170,8 @@ describe('createApi', () => {
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FE4');
       await h.deps.workOrders.create({
         id: workOrderId,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        project: slugOf<'project'>('proj'),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,
@@ -993,7 +1186,7 @@ describe('createApi', () => {
           item: {
             id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FE5'),
             workOrderId,
-            workspace: slugOf<'workspace'>(WORKSPACE),
+            repo: slugOf<'repo'>(REPO),
             stage: slugOf<'stage'>('plan'),
             route: { accountId: ACCOUNT },
             priority: 0,
@@ -1022,7 +1215,7 @@ describe('createApi', () => {
     });
 
     it('U-12: unsubscribe stops delivery', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const id = await openViaApi(h);
       const seenFirst: UiEvent[] = [];
@@ -1039,7 +1232,7 @@ describe('createApi', () => {
     });
 
     it('U-12: a throwing listener is skipped and does not break delivery to the others', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const id = await openViaApi(h);
       const seen: UiEvent[] = [];
@@ -1064,11 +1257,13 @@ describe('createApi', () => {
       script: readonly AgentEvent[],
       ids: { readonly workOrder: Ulid<'work-order'>; readonly queueItem: Ulid<'queue-item'> },
     ): Promise<RunId> => {
+      await seedRouting(h); // the executor's preflight needs an account the route can read
       const transports = createFakeTransportResolver();
       transports.register(ACCOUNT, createFakeTransport([...script]));
       await h.deps.workOrders.create({
         id: ids.workOrder,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        project: slugOf<'project'>(PROJECT),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,
@@ -1081,7 +1276,7 @@ describe('createApi', () => {
           item: {
             id: ids.queueItem,
             workOrderId: ids.workOrder,
-            workspace: slugOf<'workspace'>(WORKSPACE),
+            repo: slugOf<'repo'>(REPO),
             stage: slugOf<'stage'>('plan'),
             route: { accountId: ACCOUNT },
             priority: 0,
@@ -1103,7 +1298,7 @@ describe('createApi', () => {
     };
 
     it('run.events reads back the events the executor stored, newest last', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const script: readonly AgentEvent[] = [
         { type: 'session_started', at: 1_600, sessionRef: 'sess-1' },
@@ -1120,13 +1315,14 @@ describe('createApi', () => {
     });
 
     it("permissions.open maps the board's parked asks with the owning work order's title", async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const board = createPermissionBoard();
       const api = createApi(h.deps, board);
       const workOrderId = ulidOf<'work-order'>('01ARZ3NDEKTSV4RRFFQ69G5FEA');
       await h.deps.workOrders.create({
         id: workOrderId,
-        workspace: slugOf<'workspace'>(WORKSPACE),
+        project: slugOf<'project'>('proj'),
+        repo: slugOf<'repo'>(REPO),
         flow: slugOf<'flow'>('board-flow'),
         title: 'Run it',
         createdAt: 1_000,
@@ -1152,7 +1348,7 @@ describe('createApi', () => {
     });
 
     it('the run-finished path also emits workOrders.changed through the feed', async () => {
-      const h = createHarness();
+      const h = await createHarness();
       const api = createApi(h.deps);
       const seen: UiEvent[] = [];
       api.subscribe((event) => seen.push(event));
@@ -1176,6 +1372,77 @@ describe('createApi', () => {
         { type: 'run.updated', runId },
         { type: 'workOrders.changed' },
       ]);
+    });
+  });
+
+  describe('app update', () => {
+    // The checker is composed beside deps at the root, so these tests hand it straight to the api
+    // the way electron/main.ts does — no harness, no work orders, the port alone.
+    const updateApi = (updates?: UpdateChecker) =>
+      createApi(createFakeDeps(), undefined, undefined, undefined, updates);
+
+    it("A-32: app.update answers the composed checker's state verbatim; without a checker, not_found", async () => {
+      const error: UpdateState = { kind: 'error', current: '1.0.0', reason: 'offline' };
+      const api = updateApi(createFakeUpdateChecker(error));
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual(error);
+
+      // No checker composed: the query invents no state — the registry-less repos.list precedent.
+      await expect(updateApi().query({ type: 'app.update' })).resolves.toEqual({ ok: false, code: 'not_found' });
+    });
+
+    it('A-33: app.update.check re-checks, the new state answers app.update, and update.changed fires', async () => {
+      const updates = createFakeUpdateChecker({ kind: 'none', current: '1.0.0' });
+      updates.queueCheck({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+      const api = updateApi(updates);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      // CommandResult carries no payload: the new state travels out-of-band, through the event
+      // and the re-query it triggers.
+      expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'update.changed' }]);
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+    });
+
+    it('A-34: app.update.apply from available starts the download and emits update.changed', async () => {
+      const updates = createFakeUpdateChecker({ kind: 'available', current: '1.0.0', next: '1.1.0' });
+      const api = updateApi(updates);
+      const seen: UiEvent[] = [];
+      api.subscribe((event) => seen.push(event));
+
+      expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: true });
+      expect(seen).toEqual([{ type: 'update.changed' }]);
+      await expect(api.query({ type: 'app.update' })).resolves.toEqual({
+        kind: 'downloading',
+        current: '1.0.0',
+        next: '1.1.0',
+        percent: 0,
+      });
+    });
+
+    it('A-34: app.update.apply outside available/ready answers not_available and emits nothing', async () => {
+      const refusing: readonly UpdateState[] = [
+        { kind: 'none', current: '1.0.0' },
+        { kind: 'downloading', current: '1.0.0', next: '1.1.0', percent: 40 },
+        { kind: 'error', current: '1.0.0', reason: 'failed' },
+      ];
+      for (const initial of refusing) {
+        const updates = createFakeUpdateChecker(initial);
+        const api = updateApi(updates);
+        const seen: UiEvent[] = [];
+        api.subscribe((event) => seen.push(event));
+
+        expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_available' });
+        expect(seen).toEqual([]);
+        // Refused means untouched: the state the query answers is still the state it started from.
+        await expect(api.query({ type: 'app.update' })).resolves.toEqual(initial);
+      }
+    });
+
+    it('without a composed checker the update intents answer not_found', async () => {
+      const api = updateApi();
+      expect(await api.command(ACTOR, { type: 'app.update.check' })).toEqual({ ok: false, code: 'not_found' });
+      expect(await api.command(ACTOR, { type: 'app.update.apply' })).toEqual({ ok: false, code: 'not_found' });
     });
   });
 });

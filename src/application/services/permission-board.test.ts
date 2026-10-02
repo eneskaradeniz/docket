@@ -16,7 +16,7 @@ import {
   type Slug,
   type Ulid,
   type WorkOrderId,
-  type WorkspaceSlug,
+  type RepoSlug,
 } from '../../domain/index';
 
 import {
@@ -48,7 +48,7 @@ const ulidOf = <B extends string>(input: string): Ulid<B> => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf('ws');
+const REPO: RepoSlug = slugOf('ws');
 const WORK_ORDER: WorkOrderId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAV');
 const ACCOUNT: AccountId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FAA');
 const RUN_A: RunId = ulidOf('01ARZ3NDEKTSV4RRFFQ69G5FC1');
@@ -75,7 +75,7 @@ const ROLE: RoleDef = {
 const ITEM: QueueItem = {
   id: ulidOf<'queue-item'>('01ARZ3NDEKTSV4RRFFQ69G5FAD'),
   workOrderId: WORK_ORDER,
-  workspace: WS,
+  repo: REPO,
   stage: slugOf<'stage'>('implement'),
   route: { accountId: ACCOUNT },
   priority: 0,
@@ -86,7 +86,7 @@ const INPUT = {
   item: ITEM,
   role: ROLE,
   prompt: 'implement the stage',
-  cwd: `/wt/${WS}/${WORK_ORDER}`,
+  cwd: `/wt/${REPO}/${WORK_ORDER}`,
   capabilities: [],
 };
 
@@ -113,7 +113,8 @@ const executorHarness = async (options: {
   });
   await workOrders.create({
     id: WORK_ORDER,
-    workspace: WS,
+    project: slugOf<'project'>('proj'),
+    repo: REPO,
     flow: slugOf<'flow'>('standard'),
     title: 'The work order',
     createdAt: T0,

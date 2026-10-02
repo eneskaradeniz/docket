@@ -6,17 +6,22 @@ import React, { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { Api } from '../api/index';
-import type { WorkspaceListItem } from '../api/queries';
 import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
+import { createAccountsFrameStore } from './stores/accounts-frame';
+import { createAccountViewStore } from './stores/account-view';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
 import { createLivePaneStore } from './stores/live-pane';
 import { createLocaleStore, type LocaleStore } from './stores/locale';
+import { createProjectTreeStore } from './stores/project-tree';
+import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
-import { createShellStore, type ShellWorkspace } from './stores/shell';
+import { createShellStore } from './stores/shell';
+import { createProviderMarksStore } from './stores/provider-marks';
+import { createUpdateStore } from './stores/update';
 import { createWizardStore } from './stores/wizard';
 import { createWorkOrderDetailStore } from './stores/work-order-detail';
 
@@ -41,33 +46,13 @@ export const bridge = (): DocketBridge => {
 /** Every screen command travels as the machine's single local user. */
 const USER: Actor = { kind: 'user', id: 'user-1', label: 'Operator' };
 
-/** The workspace switcher's entries: every workspace the machine knows, read off `workspaces.list`.
- *  The labels are the slugs — the registry holds no display copy. A failed read empties the
- *  listing the same way the cockpit projection did; the shell's own load failure keeps whatever it
- *  showed before. */
-const workspaceEntries = (api: DocketBridge) => async (): Promise<readonly ShellWorkspace[]> => {
-  const reply: unknown = await api.query({ type: 'workspaces.list' });
-  if (isQueryFailure(reply)) return [];
-  return (reply as readonly WorkspaceListItem[]).map((row) => ({ id: row.id, label: row.id }));
-};
-
-/** The wizard's workspace-existence check: `workspaces.list` is the machine's registry, so any
- *  known workspace counts — including one whose work orders are all calm — and a dismissed wizard
- *  stays gone across relaunches. A failed read still answers false: an unverifiable existence must
- *  never suppress the first-run setup (fail-closed). */
-const workspaceExists = (api: DocketBridge) => async (): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'workspaces.list' });
-  if (isQueryFailure(reply)) return false;
-  return (reply as readonly WorkspaceListItem[]).length > 0;
-};
-
 /** The wizard's source probe rides the board read, the one read that loads definitions: a
- *  non-failure reply proves the entered workspace's definitions were found and parsed, which is
+ *  non-failure reply proves the entered repo's definitions were found and parsed, which is
  *  the whole question; every failure (a malformed slug, unreadable definitions) answers false —
  *  fail-closed. No api query probes a source path directly yet; the injection point swaps when one
  *  lands, without touching the wizard store. */
 const sourceReachable = (api: DocketBridge) => async (source: string): Promise<boolean> => {
-  const reply: unknown = await api.query({ type: 'workspace.board', workspace: source });
+  const reply: unknown = await api.query({ type: 'repo.board', repo: source });
   return !isQueryFailure(reply);
 };
 
@@ -87,8 +72,8 @@ if (mount !== null) {
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const cockpit = createCockpitStore({ api, changes, now: () => Date.now() });
-  const board = createBoardStore({ api, changes, actor: USER });
+  const cockpit = createCockpitStore({ api, changes, now: () => Date.now(), actor: USER, persistence: window.localStorage });
+  const board = createBoardStore({ api, changes, actor: USER, persistence: window.localStorage });
   // The live pane has no run at composition time — the detail store attaches it to the active
   // run of whichever work order loads.
   const pane = createLivePaneStore({ api, changes, actor: USER });
@@ -98,10 +83,23 @@ if (mount !== null) {
     api,
     actor: USER,
     sourceReachable: sourceReachable(api),
-    workspaceExists: workspaceExists(api),
   });
-  const shell = createShellStore({ api, changes, workspaces: workspaceEntries(api) });
-  // The first-run machine's entry point: it shows the wizard only when no workspace exists (U-7).
+  const shell = createShellStore({ api, changes });
+  // The app's own newer version — the title bar's button and the panel's Güncelleme section.
+  const update = createUpdateStore({ api, changes, actor: USER });
+  // The sidebar's tree (U-15) and accounts frame (U-16) mirror their queries; the sort choice
+  // persists where the locale choice does.
+  const tree = createProjectTreeStore({ api, changes, now: () => Date.now(), persistence: window.localStorage });
+  const accountsFrame = createAccountsFrameStore({ api, changes });
+  // The provider marks every account badge reads: one query, kept for the session (A-41).
+  const marks = createProviderMarksStore({ api });
+  // The account view (U-20) shares the shell's coarse events and the machine's clock.
+  const accountView = createAccountViewStore({ api, changes, now: () => Date.now() });
+  const roadmap = createRoadmapStore({ api, changes });
+  void tree.load();
+  void accountsFrame.load();
+  void marks.load();
+  // The first-run machine's entry point: it shows the wizard only when no project exists (U-7).
   void wizard.open();
 
   createRoot(mount).render(
@@ -110,11 +108,18 @@ if (mount !== null) {
         <App
           localeStore={locale}
           shell={shell}
+          tree={tree}
+          accounts={accountsFrame}
           cockpit={cockpit}
           board={board}
+          roadmap={roadmap}
           detail={detail}
+          accountView={accountView}
           settings={settings}
+          marks={marks}
+          update={update}
           wizard={wizard}
+          timeZone={timeZone}
         />
       </ErrorBoundary>
     </React.StrictMode>,

@@ -30,7 +30,8 @@ import { commandResultKey, isQueryFailure } from './results';
  *  tests inject a fake, so the type lives here until then. */
 export type DetailChange =
   | { readonly type: 'workOrders.changed' }
-  | { readonly type: 'run.updated'; readonly runId: string };
+  | { readonly type: 'run.updated'; readonly runId: string }
+  | { readonly type: 'update.changed' };
 
 /** Subscription to the change events; the api's `subscribe` (U-12) satisfies it as-is. */
 export type DetailChangeSignal = (listener: (change: DetailChange) => void) => () => void;
@@ -50,7 +51,7 @@ export interface WorkOrderDetailStoreDeps {
  *  the projection of the application's view the presentation is allowed to see). */
 export interface WorkOrderDetailRecord {
   readonly id: string;
-  readonly workspace: string;
+  readonly repo: string;
   readonly flow: string;
   readonly title: string;
 }
@@ -68,7 +69,9 @@ export interface WorkOrderDetailView {
   readonly state: WorkOrderState;
   readonly next: FlowAction;
   readonly runs: readonly WorkOrderDetailRun[];
-  /** The work order own flow and the workspace environments, carried by the detail query — the
+  /** The work order's A-29 number (U-22): the reply names its work order, so it numbers it. */
+  readonly number: number;
+  /** The work order own flow and the repo environments, carried by the detail query — the
    *  store needs no definitions loader of its own. */
   readonly flow: FlowDef;
   readonly environments: readonly EnvironmentDef[];
@@ -89,7 +92,7 @@ export interface WorkOrderAskView {
 export type GateStatus = 'pending' | 'passed' | 'upcoming';
 
 /** Deploy-gate facts (U-4): the target environment, its protection, and the promoteFrom chain —
- *  read-only, from the workspace definitions (E-5). */
+ *  read-only, from the repo definitions (E-5). */
 export interface DeployGateView {
   readonly environment: EnvSlug;
   readonly protectedEnvironment: boolean;
@@ -101,6 +104,9 @@ export interface GateView {
   readonly id: GateSlug;
   readonly kind: GateDef['kind'];
   readonly status: GateStatus;
+  /** The definition's own name, present on the kinds that carry one (U-19: the flow strip and
+   *  the ask card name the gate). */
+  readonly label?: string;
   /** Present only for `deploy` gates. */
   readonly deploy?: DeployGateView;
 }
@@ -225,9 +231,35 @@ const stageGates = (
       id: gate.id,
       kind: gate.kind,
       status: gateStatus(state, index, currentIndex, gate.id),
+      ...(gate.kind === 'human' || gate.kind === 'page_approval' ? { label: gate.label } : {}),
       ...(gate.kind === 'deploy' ? { deploy: deployGateView(environments, gate.environment) } : {}),
     })),
   }));
+};
+
+/** One chip of the detail's flow strip (U-19): a stage, or — sitting right after the current
+ *  stage — one of its still-pending gates, the strip's dashed amber chip. */
+export type FlowChip =
+  | { readonly kind: 'stage'; readonly name: string; readonly standing: 'done' | 'current' | 'upcoming' }
+  | { readonly kind: 'gate'; readonly name: string; readonly standing: 'pending' };
+
+/** The strip: the stages in flow order — done behind the work order, the current one marked,
+ *  the rest upcoming — with the current stage's pending gates named after it. Pure (U-19). */
+export const flowChips = (stages: readonly StageGates[]): readonly FlowChip[] => {
+  const currentAt = stages.findIndex((stage) => stage.current);
+  return stages.flatMap((stage, index) => {
+    const standing: 'done' | 'current' | 'upcoming' =
+      currentAt === -1 || index < currentAt ? 'done' : index === currentAt ? 'current' : 'upcoming';
+    const chips: FlowChip[] = [{ kind: 'stage', name: stage.name, standing }];
+    if (standing === 'current') {
+      for (const gate of stage.gates) {
+        if (gate.status !== 'pending') continue;
+        // A deploy gate has no definition label; its environment is the name a person reads.
+        chips.push({ kind: 'gate', name: gate.label ?? gate.deploy?.environment ?? gate.id, standing: 'pending' });
+      }
+    }
+    return chips;
+  });
 };
 
 /** The honest map from a `permissions.open` row to what the asks section shows: the owning work
@@ -327,9 +359,10 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     if (active !== undefined) void pane.attach(active);
   };
 
-  // Both event kinds concern the detail — gate decisions move the work order and runs move its
-  // state — so every notification triggers the same re-query.
-  changes(() => {
+  // Gate decisions move the work order and runs move its state, so both event kinds trigger the
+  // same re-query; the update channel does not — its state belongs to the settings surface.
+  changes((change) => {
+    if (change.type === 'update.changed') return;
     if (workOrderId === null) return;
     void load(workOrderId);
   });
@@ -341,12 +374,12 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     return { command, result, labelKey: commandResultKey(command, result) };
   };
 
-  const runIntent = async (command: Command): Promise<IntentOutcome> => {
+  const runIntent = async (command: Command, successKey?: LabelKey): Promise<IntentOutcome> => {
     const result = await api.command(actor, command);
     const outcome: IntentOutcome = {
       command: command.type,
       result,
-      labelKey: commandResultKey(command.type, result),
+      labelKey: result.ok && successKey !== undefined ? successKey : commandResultKey(command.type, result),
     };
     set({ ...state, lastOutcome: outcome });
     // The detail mirrors its own mutation: the next query shows the command's effect.
@@ -366,13 +399,18 @@ export const createWorkOrderDetailStore = (deps: WorkOrderDetailStoreDeps): Work
     },
     decideGate: (input) => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('gate.decide'));
-      return runIntent({
-        type: 'gate.decide',
-        workOrderId,
-        gate: input.gate,
-        decision: input.decision,
-        ...(input.note !== undefined ? { note: input.note } : {}),
-      });
+      return runIntent(
+        {
+          type: 'gate.decide',
+          workOrderId,
+          gate: input.gate,
+          decision: input.decision,
+          ...(input.note !== undefined ? { note: input.note } : {}),
+        },
+        // The decision's success names itself (U-19: 'Onaylandı.' / 'Reddedildi.'), where every
+        // other intent's copy stays the command's own.
+        input.decision === 'approved' ? 'success.gate.approved' : 'success.gate.rejected',
+      );
     },
     enqueue: () => {
       if (workOrderId === null) return Promise.resolve(notLoadedOutcome('workOrder.enqueue'));

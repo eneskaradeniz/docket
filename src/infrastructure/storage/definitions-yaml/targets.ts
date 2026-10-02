@@ -8,11 +8,13 @@ export type DefinitionKind = 'roles' | 'flows' | 'capabilities';
 
 export type ParsedTarget =
   | { readonly kind: DefinitionKind; readonly id: string }
-  | { readonly kind: 'workspace' }
+  | { readonly kind: 'project' }
+  | { readonly kind: 'repo' }
   | { readonly kind: 'roadmap' };
 
 const KINDS: readonly DefinitionKind[] = ['roles', 'flows', 'capabilities'];
-const WORKSPACE_ONLY_FILES = ['workspace.yaml', 'roadmap.yaml'] as const;
+const PROJECT_ONLY_FILES = ['project.yaml', 'roadmap.yaml'] as const;
+const REPO_ONLY_FILES = ['repo.yaml'] as const;
 const EXTENSION = '.yaml';
 
 const isDefinitionKind = (value: string): value is DefinitionKind =>
@@ -28,12 +30,15 @@ export function parseTarget(scope: DefinitionScope, target: string): ParsedTarge
   // Backslashes are never separators here: a target carrying one is not a store file.
   if (target.includes('\\')) return undefined;
 
-  if ((WORKSPACE_ONLY_FILES as readonly string[]).includes(target)) {
-    return scope.kind === 'workspace'
-      ? target === 'workspace.yaml'
-        ? { kind: 'workspace' }
+  if ((PROJECT_ONLY_FILES as readonly string[]).includes(target)) {
+    return scope.kind === 'project'
+      ? target === 'project.yaml'
+        ? { kind: 'project' }
         : { kind: 'roadmap' }
       : undefined;
+  }
+  if ((REPO_ONLY_FILES as readonly string[]).includes(target)) {
+    return scope.kind === 'repo' ? { kind: 'repo' } : undefined;
   }
 
   const parts = target.split('/');

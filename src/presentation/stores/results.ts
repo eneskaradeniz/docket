@@ -57,13 +57,21 @@ const SUCCESS_KEYS: Readonly<Record<Command['type'], LabelKey>> = {
   'workOrder.unblock': 'success.workOrder.unblock',
   'workOrder.close': 'success.workOrder.close',
   'workOrder.enqueue': 'success.workOrder.enqueue',
+  'task.open': 'success.task.open',
+  'project.attach': 'success.project.attach',
+  'repo.register': 'success.repo.register',
+  'repo.unregister': 'success.repo.unregister',
   'gate.decide': 'success.gate.decide',
   'proposal.decide': 'success.proposal.decide',
   'permission.answer': 'success.permission.answer',
   'deploy.approve': 'success.deploy.approve',
   'account.save': 'success.account.save',
   'account.remove': 'success.account.remove',
+  'account.consent.grant': 'success.account.consent.grant',
+  'account.consent.revoke': 'success.account.consent.revoke',
   'binding.save': 'success.binding.save',
+  'app.update.check': 'success.app.update.check',
+  'app.update.apply': 'success.app.update.apply',
 };
 
 export const failureKey = (code: string): LabelKey => FAILURE_KEYS[code] ?? GENERIC_FAILURE_KEY;

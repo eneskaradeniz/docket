@@ -10,7 +10,7 @@ const asStage = (id: string): StageSlug => id as StageSlug;
 const asRole = (id: string): RoleSlug => id as RoleSlug;
 const asGate = (id: string): GateSlug => id as GateSlug;
 
-/** Command sets the built-in flows reference; a workspace must define them to use those flows. */
+/** Command sets the built-in flows reference; a repo must define them to use those flows. */
 export const BUILTIN_COMMAND_SET_NAMES: readonly string[] = ['tests'];
 
 export const BUILTIN_FLOWS: readonly FlowDef[] = [

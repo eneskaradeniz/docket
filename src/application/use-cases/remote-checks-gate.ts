@@ -36,7 +36,7 @@ const loadWorkOrder = async (
 ): Promise<Result<LoadedWorkOrder, LoadError>> => {
   const record = await deps.workOrders.get(id);
   if (record === undefined) return err('not_found');
-  const definitions = await deps.definitions.load(record.workspace);
+  const definitions = await deps.definitions.load(record.repo);
   if (!definitions.ok) return err('definitions_invalid');
   const flow = definitions.value.flows.find((candidate) => candidate.id === record.flow);
   if (flow === undefined) return err('not_found');
@@ -59,8 +59,8 @@ const findCurrentGate = (
 };
 
 const gateContext = (definitions: Definitions): GateContext => ({
-  commandSets: definitions.workspace?.commandSets ?? {},
-  environments: definitions.workspace?.environments,
+  commandSets: definitions.repo?.commandSets ?? {},
+  environments: definitions.repo?.environments,
 });
 
 type RemoteChecksGate = Extract<GateDef, { readonly kind: 'remote_checks' }>;

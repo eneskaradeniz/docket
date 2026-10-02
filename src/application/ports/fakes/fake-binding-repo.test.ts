@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RoleBinding } from '../../../domain/index';
-import { parseSlug, parseUlid, type WorkOrderId, type WorkspaceSlug } from '../../../domain/index';
+import { parseSlug, parseUlid, type WorkOrderId, type RepoSlug } from '../../../domain/index';
 
 import type { BindingScope } from '../binding-repo';
 
@@ -23,10 +23,10 @@ const woIdOf = (s: string): WorkOrderId => {
   return parsed.value;
 };
 
-const WS: WorkspaceSlug = slugOf<'workspace'>('acme');
+const REPO_SLUG: RepoSlug = slugOf<'repo'>('acme');
 const ROLE = slugOf<'role'>('implementer');
 const GLOBAL: BindingScope = { level: 'global' };
-const WORKSPACE: BindingScope = { level: 'workspace', workspace: WS };
+const REPO_SCOPE: BindingScope = { level: 'repo', repo: REPO_SLUG };
 const WORK_ORDER: BindingScope = { level: 'workOrder', workOrderId: woIdOf(U1) };
 
 const routeFor = (s: string): RoleBinding => {
@@ -39,22 +39,22 @@ describe('createFakeBindingRepo', () => {
   it('saves and returns a binding per scope and role', async () => {
     const repo = createFakeBindingRepo();
     const saved = routeFor(U1);
-    await repo.save(WORKSPACE, saved);
+    await repo.save(REPO_SCOPE, saved);
 
-    expect(await repo.get(WORKSPACE, ROLE)).toEqual(saved);
+    expect(await repo.get(REPO_SCOPE, ROLE)).toEqual(saved);
   });
 
   it('keeps the three scope levels independent for the same role', async () => {
     const repo = createFakeBindingRepo();
     const global = routeFor(U1);
-    const workspace = routeFor(U2);
+    const repoBinding = routeFor(U2);
     const workOrder = routeFor(U3);
     await repo.save(GLOBAL, global);
-    await repo.save(WORKSPACE, workspace);
+    await repo.save(REPO_SCOPE, repoBinding);
     await repo.save(WORK_ORDER, workOrder);
 
     expect(await repo.get(GLOBAL, ROLE)).toEqual(global);
-    expect(await repo.get(WORKSPACE, ROLE)).toEqual(workspace);
+    expect(await repo.get(REPO_SCOPE, ROLE)).toEqual(repoBinding);
     expect(await repo.get(WORK_ORDER, ROLE)).toEqual(workOrder);
   });
 
@@ -81,15 +81,15 @@ describe('createFakeBindingRepo', () => {
   it('listAll enumerates every saved scope and role with its scope, in save order', async () => {
     const repo = createFakeBindingRepo();
     const global = routeFor(U1);
-    const workspace = routeFor(U2);
+    const repoBinding = routeFor(U2);
     const workOrder = routeFor(U3);
     await repo.save(GLOBAL, global);
-    await repo.save(WORKSPACE, workspace);
+    await repo.save(REPO_SCOPE, repoBinding);
     await repo.save(WORK_ORDER, workOrder);
 
     expect(await repo.listAll()).toEqual([
       { scope: GLOBAL, binding: global },
-      { scope: WORKSPACE, binding: workspace },
+      { scope: REPO_SCOPE, binding: repoBinding },
       { scope: WORK_ORDER, binding: workOrder },
     ]);
   });
@@ -97,13 +97,13 @@ describe('createFakeBindingRepo', () => {
   it('listAll keeps one entry per scope and role; a replacement updates it in place', async () => {
     const repo = createFakeBindingRepo();
     await repo.save(GLOBAL, routeFor(U1));
-    await repo.save(WORKSPACE, routeFor(U2));
+    await repo.save(REPO_SCOPE, routeFor(U2));
     const replacement = routeFor(U3);
     await repo.save(GLOBAL, replacement);
 
     const all = await repo.listAll();
     expect(all).toHaveLength(2);
     expect(all[0]).toEqual({ scope: GLOBAL, binding: replacement });
-    expect(all[1]).toEqual({ scope: WORKSPACE, binding: routeFor(U2) });
+    expect(all[1]).toEqual({ scope: REPO_SCOPE, binding: routeFor(U2) });
   });
 });

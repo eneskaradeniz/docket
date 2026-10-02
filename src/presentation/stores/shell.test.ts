@@ -1,7 +1,7 @@
 // shell.test.ts — U-10: the shell's badge mirrors the cockpit query's attention items, ranks them
 // by kind with permission asks first, updates on the same coarse events the cockpit listens to,
-// and is absent — never a rendered zero — when nothing waits. Api, change signal and the
-// workspace list are injected fakes.
+// and is absent — never a rendered zero — when nothing waits. Api and the change signal are
+// injected fakes; the sidebar's tree and accounts live in their own stores.
 import { describe, expect, it } from 'vitest';
 
 import type { Api } from '../../api/api';
@@ -10,14 +10,16 @@ import { createShellStore, shellBadge, type ShellChange, type ShellChangeSignal 
 
 const attentionItem = (id: string, kind: AttentionItem['kind'], since: number): AttentionItem => ({
   workOrderId: id,
-  workspace: 'atolye',
+  number: 1,
+  project: 'atolye',
+  repo: 'atolye',
   title: `title-${id}`,
   kind,
   stage: null,
   since,
 });
 
-const cockpitView = (attention: readonly AttentionItem[]): CockpitView => ({ attention, running: [] });
+const cockpitView = (attention: readonly AttentionItem[]): CockpitView => ({ attention, running: [], projects: [], recentlyClosed: [] });
 
 interface FakeShellApi extends Pick<Api, 'query'> {
   readonly queries: Query[];
@@ -73,7 +75,7 @@ describe('shell store', () => {
       attentionItem('wo-3', 'awaiting_human', 300),
     ];
     const api = fakeShellApi(cockpitView(attention));
-    const store = createShellStore({ api, changes: fakeSignal().signal, workspaces: async () => [] });
+    const store = createShellStore({ api, changes: fakeSignal().signal });
     await store.load();
 
     const badge = store.state().badge;
@@ -101,7 +103,7 @@ describe('shell store', () => {
     ]);
 
     const api = fakeShellApi(cockpitView(attention));
-    const store = createShellStore({ api, changes: fakeSignal().signal, workspaces: async () => [] });
+    const store = createShellStore({ api, changes: fakeSignal().signal });
     await store.load();
     expect(store.state().badge?.items.map((item) => item.workOrderId)).toEqual([
       'wo-1',
@@ -115,7 +117,7 @@ describe('shell store', () => {
   it('U-10: zero attention leaves the badge absent, never a rendered zero', async () => {
     const api = fakeShellApi(cockpitView([]));
     const emitter = fakeSignal();
-    const store = createShellStore({ api, changes: emitter.signal, workspaces: async () => [] });
+    const store = createShellStore({ api, changes: emitter.signal });
 
     await store.load();
     expect(store.state().badge).toBeNull();
@@ -140,7 +142,7 @@ describe('shell store', () => {
     ]);
     const api = fakeShellApi(first);
     const emitter = fakeSignal();
-    const store = createShellStore({ api, changes: emitter.signal, workspaces: async () => [] });
+    const store = createShellStore({ api, changes: emitter.signal });
     await store.load();
     expect(api.queries).toEqual([{ type: 'cockpit' }]);
     expect(store.state().badge?.count).toBe(1);
@@ -162,32 +164,12 @@ describe('shell store', () => {
   it('U-10: a failed cockpit query keeps the previous badge instead of blanking it', async () => {
     const good = cockpitView([attentionItem('wo-1', 'permission_ask', 100)]);
     const api = fakeShellApi(good);
-    const store = createShellStore({ api, changes: fakeSignal().signal, workspaces: async () => [] });
+    const store = createShellStore({ api, changes: fakeSignal().signal });
     await store.load();
     expect(store.state().badge?.count).toBe(1);
 
     api.setReply({ ok: false, code: 'definitions_invalid' });
     await store.load();
     expect(store.state().badge?.count).toBe(1);
-  });
-
-  it('carries the injected workspace entries for the switcher and reloads them with the events', async () => {
-    const entries = [{ id: 'atolye', label: 'Atölye' }];
-    let injected = entries;
-    const api = fakeShellApi(cockpitView([]));
-    const emitter = fakeSignal();
-    const store = createShellStore({
-      api,
-      changes: emitter.signal,
-      workspaces: async () => injected,
-    });
-
-    await store.load();
-    expect(store.state().workspaces).toEqual(entries);
-
-    injected = [{ id: 'atolye', label: 'Atölye' }, { id: 'siparis-api', label: 'Sipariş API' }];
-    emitter.emit({ type: 'workOrders.changed' });
-    await flush();
-    expect(store.state().workspaces).toEqual(injected);
   });
 });

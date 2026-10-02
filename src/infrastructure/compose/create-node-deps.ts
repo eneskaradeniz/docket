@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import type { Result } from '../../domain/index';
 import { err, ok } from '../../domain/index';
-import type { AppDeps, Clock, Notifier, TransportResolver } from '../../application/index';
+import type { AppDeps, Clock, Notifier, RepoRegistry, TransportResolver } from '../../application/index';
 import { createCommandRunner, createSecretScanner } from '../gates/index';
 import { createKeychainVault, type CipherFns } from '../storage/keychain/index';
 import { createYamlDefinitionStore } from '../storage/definitions-yaml/index';
@@ -11,17 +11,20 @@ import {
   createSqliteAccountRepo,
   createSqliteBindingRepo,
   createSqliteEventLog,
+  createSqliteProjectPaths,
+  createSqliteProjectRepo,
   createSqliteProposalRepo,
   createSqliteQueueRepo,
   createSqliteRunRepo,
   createSqliteWorkOrderRepo,
-  createSqliteWorkspaceRegistry,
+  createSqliteRepoRegistry,
   openDatabase,
   type OpenDbError,
-  type WorkspaceRegistry,
 } from '../storage/sqlite/index';
-import { createSystemClock, createUlidGen, type RandomBytes } from '../system/index';
-import { createEvidenceChecker, createWorktrees } from '../vcs/index';
+import { createSystemClock, createUlidGen, type ProjectPaths, type RandomBytes } from '../system/index';
+import { createEvidenceChecker, createGitProbe, createWorktrees } from '../vcs/index';
+import { createCapabilityCatalog } from '../providers/registry/index';
+import { createModelCatalog } from '../providers/catalog/index';
 
 export interface NodeDepsConfig {
   readonly dataDir: string; // ~/.docket in the app, a temp folder in tests
@@ -35,7 +38,8 @@ export interface NodeDepsConfig {
 
 export interface NodeDeps {
   readonly deps: AppDeps;
-  readonly workspaces: WorkspaceRegistry;
+  readonly repos: RepoRegistry;
+  readonly projects: ReturnType<typeof createSqliteProjectRepo>;
   close(): void;
 }
 
@@ -45,26 +49,37 @@ export function createNodeDeps(config: NodeDepsConfig): Result<NodeDeps, OpenDbE
   const db = opened.value;
 
   const clock = config.clock ?? createSystemClock();
-  const workspaces = createSqliteWorkspaceRegistry(db);
+  const repos = createSqliteRepoRegistry(db);
+  const projects = createSqliteProjectRepo(db);
+  const projectPaths: ProjectPaths = createSqliteProjectPaths(db);
+  const accounts = createSqliteAccountRepo(db);
+  const secrets = createKeychainVault(db, config.cipher);
   const deps: AppDeps = {
     clock,
     ids: createUlidGen(clock, config.random),
     log: createSqliteEventLog(db),
     workOrders: createSqliteWorkOrderRepo(db),
     runs: createSqliteRunRepo(db),
-    accounts: createSqliteAccountRepo(db),
+    accounts,
+    capabilities: createCapabilityCatalog(),
+    // The catalog call builds its environment from the same allowlist the transports do, so a
+    // listing never sees a different child than a run of the same account would.
+    modelCatalog: createModelCatalog({ accounts, secrets, baseEnv: config.commandEnv, clock }),
+    projects,
+    repos,
     bindings: createSqliteBindingRepo(db),
     queue: createSqliteQueueRepo(db),
-    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, workspaces }),
+    definitions: createYamlDefinitionStore({ globalRoot: config.dataDir, repos, projects: projectPaths }),
     proposals: createSqliteProposalRepo(db),
-    secrets: createKeychainVault(db, config.cipher),
+    secrets,
     transports: config.transports,
     commands: createCommandRunner({ env: config.commandEnv }),
     secretScanner: createSecretScanner(),
-    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), workspaces }),
+    worktrees: createWorktrees({ root: join(config.dataDir, 'worktrees'), repos }),
     evidence: createEvidenceChecker(),
+    git: createGitProbe(),
     notifier: config.notifier,
   };
 
-  return ok({ deps, workspaces, close: (): void => db.close() });
+  return ok({ deps, repos, projects, close: (): void => db.close() });
 }

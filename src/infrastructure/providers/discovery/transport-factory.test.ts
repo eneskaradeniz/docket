@@ -111,6 +111,7 @@ const defOf = (overrides: Pick<ProviderDef, 'id' | 'transport'> & { readonly str
     costReport: 'none',
   },
   installHint: { url: 'https://example.invalid/fake-cli' },
+  mark: null,
   id: overrides.id,
   ...(overrides.streamDialect === undefined ? {} : { streamDialect: overrides.streamDialect }),
 });

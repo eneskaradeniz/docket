@@ -1,6 +1,6 @@
 // Tests for the dispatcher's decision rule. Contract: docs/v2/domain.md section 8.
 import { describe, expect, it } from 'vitest';
-import type { AccountId, EpochMs, MeterId, QueueItemId, StageSlug, WorkOrderId, WorkspaceSlug } from '../shared/index';
+import type { AccountId, EpochMs, MeterId, QueueItemId, StageSlug, WorkOrderId, RepoSlug } from '../shared/index';
 import { HOUR, MINUTE } from '../shared/index';
 import type { AccountRoute, Headroom } from '../quota/index';
 import type { SpendStatus } from '../budget/index';
@@ -9,8 +9,8 @@ import type { DispatchDecision, DispatchLimits, DispatchSnapshot, QueueItem, Run
 
 const NOW: EpochMs = 1_750_000_000_000;
 const STAGE = 'build' as StageSlug;
-const WS_ALPHA = 'alpha' as WorkspaceSlug;
-const WS_BETA = 'beta' as WorkspaceSlug;
+const WS_ALPHA = 'alpha' as RepoSlug;
+const WS_BETA = 'beta' as RepoSlug;
 
 // Crockford-base32 suffixes keep every id a valid 26-char ULID shape; two chars make
 // lexicographic order (the id tie-break) easy to control in tests.
@@ -25,13 +25,13 @@ const ACCOUNT_B = accId('B0');
 const ROUTE_A: AccountRoute = { accountId: ACCOUNT_A };
 const ROUTE_B: AccountRoute = { accountId: ACCOUNT_B, model: 'some-model' };
 
-const LIMITS: DispatchLimits = { global: 4, perWorkspace: 3, perAccount: {} };
+const LIMITS: DispatchLimits = { global: 4, perRepo: 3, perAccount: {} };
 const OK_ROOM: Headroom = { ok: true, lowest: 0.7 };
 
 interface ItemInit {
   readonly id: QueueItemId;
   readonly workOrderId: WorkOrderId;
-  readonly workspace?: WorkspaceSlug;
+  readonly repo?: RepoSlug;
   readonly priority?: number;
   readonly enqueuedAt?: EpochMs;
   readonly route?: AccountRoute;
@@ -41,7 +41,7 @@ interface ItemInit {
 const itemOf = (init: ItemInit): QueueItem => ({
   id: init.id,
   workOrderId: init.workOrderId,
-  workspace: init.workspace ?? WS_ALPHA,
+  repo: init.repo ?? WS_ALPHA,
   stage: STAGE,
   route: init.route ?? ROUTE_A,
   priority: init.priority ?? 0,
@@ -49,9 +49,9 @@ const itemOf = (init: ItemInit): QueueItem => ({
   notBefore: init.notBefore,
 });
 
-const runOf = (workOrderId: WorkOrderId, workspace: WorkspaceSlug, accountId: AccountId): RunningRun => ({
+const runOf = (workOrderId: WorkOrderId, repo: RepoSlug, accountId: AccountId): RunningRun => ({
   workOrderId,
-  workspace,
+  repo,
   accountId,
 });
 
@@ -102,7 +102,7 @@ describe('decideDispatch', () => {
     const olderHighLaterId = itemOf({ id: qid(9), workOrderId: woid('40'), priority: 5, enqueuedAt: NOW - 50 });
     const queue = [newerHigh, olderHighLaterId, low, olderHigh];
 
-    const decisions = decideDispatch(queue, snapshotOf({ limits: { global: 10, perWorkspace: 10, perAccount: {} } }));
+    const decisions = decideDispatch(queue, snapshotOf({ limits: { global: 10, perRepo: 10, perAccount: {} } }));
 
     expect(idsOf(decisions)).toEqual([qid(0), qid(9), qid(2), qid(1)]);
     expect(decisions.every((d) => d.kind === 'start')).toBe(true);
@@ -122,7 +122,7 @@ describe('decideDispatch', () => {
   it('R-34: notBefore at or before now does not wait', () => {
     const atEdge = itemOf({ id: qid(1), workOrderId: woid('10'), notBefore: NOW });
     const past = itemOf({ id: qid(2), workOrderId: woid('20'), notBefore: NOW - MINUTE });
-    expect(decideDispatch([atEdge, past], snapshotOf({ limits: { global: 10, perWorkspace: 10, perAccount: {} } }))).toEqual([
+    expect(decideDispatch([atEdge, past], snapshotOf({ limits: { global: 10, perRepo: 10, perAccount: {} } }))).toEqual([
       startFor(atEdge),
       startFor(past),
     ]);
@@ -137,27 +137,27 @@ describe('decideDispatch', () => {
   it('R-34: global limit reached by already-running runs waits with global_limit', () => {
     const item = itemOf({ id: qid(1), workOrderId: woid('10') });
     const running = [runOf(woid('90'), WS_ALPHA, ACCOUNT_A), runOf(woid('91'), WS_BETA, ACCOUNT_B)];
-    expect(decideDispatch([item], snapshotOf({ running, limits: { global: 2, perWorkspace: 3, perAccount: {} } }))).toEqual([
+    expect(decideDispatch([item], snapshotOf({ running, limits: { global: 2, perRepo: 3, perAccount: {} } }))).toEqual([
       waitFor(item, 'global_limit'),
     ]);
   });
 
-  it('R-34: workspace limit reached by running runs waits with workspace_limit', () => {
-    const item = itemOf({ id: qid(1), workOrderId: woid('10'), workspace: WS_ALPHA });
+  it('R-34: repo limit reached by running runs waits with repo_limit', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10'), repo: WS_ALPHA });
     const running = [
       runOf(woid('90'), WS_ALPHA, ACCOUNT_A),
       runOf(woid('91'), WS_ALPHA, ACCOUNT_A),
       runOf(woid('92'), WS_ALPHA, ACCOUNT_B),
     ];
-    // The global limit (3 running < 4) still passes, so the workspace check is what fails.
-    expect(decideDispatch([item], snapshotOf({ running }))).toEqual([waitFor(item, 'workspace_limit')]);
+    // The global limit (3 running < 4) still passes, so the repo check is what fails.
+    expect(decideDispatch([item], snapshotOf({ running }))).toEqual([waitFor(item, 'repo_limit')]);
   });
 
   it('R-34: an account cap from perAccount waits with account_limit', () => {
     const item = itemOf({ id: qid(1), workOrderId: woid('10'), route: ROUTE_A });
     const running = [runOf(woid('90'), WS_BETA, ACCOUNT_A)];
     expect(
-      decideDispatch([item], snapshotOf({ running, limits: { global: 4, perWorkspace: 3, perAccount: { [ACCOUNT_A]: 1 } } })),
+      decideDispatch([item], snapshotOf({ running, limits: { global: 4, perRepo: 3, perAccount: { [ACCOUNT_A]: 1 } } })),
     ).toEqual([waitFor(item, 'account_limit')]);
   });
 
@@ -165,7 +165,7 @@ describe('decideDispatch', () => {
     const item = itemOf({ id: qid(1), workOrderId: woid('10'), route: ROUTE_A });
     const running = [runOf(woid('90'), WS_ALPHA, ACCOUNT_A)];
     expect(
-      decideDispatch([item], snapshotOf({ running, limits: { global: 4, perWorkspace: 3, perAccount: { [ACCOUNT_B]: 1 } } })),
+      decideDispatch([item], snapshotOf({ running, limits: { global: 4, perRepo: 3, perAccount: { [ACCOUNT_B]: 1 } } })),
     ).toEqual([startFor(item)]);
   });
 
@@ -222,7 +222,7 @@ describe('decideDispatch', () => {
       [item],
       snapshotOf({
         running,
-        limits: { global: 0, perWorkspace: 0, perAccount: { [ACCOUNT_A]: 0 } },
+        limits: { global: 0, perRepo: 0, perAccount: { [ACCOUNT_A]: 0 } },
         spend: { [qid(1)]: 'hard_stop' },
         headroom: { [qid(1)]: { ok: false, blockedBy: [meterId('M0')], earliestRelief: NOW + HOUR } },
       }),
@@ -234,23 +234,23 @@ describe('decideDispatch', () => {
     const item = itemOf({ id: qid(1), workOrderId: woid('10') });
     const running = [runOf(woid('10'), WS_ALPHA, ACCOUNT_A)];
     // The global limit (1 running >= 1) would also fail, but the busy check comes first.
-    expect(decideDispatch([item], snapshotOf({ running, limits: { global: 1, perWorkspace: 1, perAccount: {} } }))).toEqual([
+    expect(decideDispatch([item], snapshotOf({ running, limits: { global: 1, perRepo: 1, perAccount: {} } }))).toEqual([
       waitFor(item, 'work_order_busy'),
     ]);
   });
 
-  it('R-34: global_limit precedes workspace_limit', () => {
+  it('R-34: global_limit precedes repo_limit', () => {
     const item = itemOf({ id: qid(1), workOrderId: woid('10') });
-    expect(decideDispatch([item], snapshotOf({ limits: { global: 0, perWorkspace: 0, perAccount: {} } }))).toEqual([
+    expect(decideDispatch([item], snapshotOf({ limits: { global: 0, perRepo: 0, perAccount: {} } }))).toEqual([
       waitFor(item, 'global_limit'),
     ]);
   });
 
-  it('R-34: workspace_limit precedes account_limit', () => {
-    const item = itemOf({ id: qid(1), workOrderId: woid('10'), workspace: WS_ALPHA, route: ROUTE_A });
+  it('R-34: repo_limit precedes account_limit', () => {
+    const item = itemOf({ id: qid(1), workOrderId: woid('10'), repo: WS_ALPHA, route: ROUTE_A });
     expect(
-      decideDispatch([item], snapshotOf({ limits: { global: 4, perWorkspace: 0, perAccount: { [ACCOUNT_A]: 0 } } })),
-    ).toEqual([waitFor(item, 'workspace_limit')]);
+      decideDispatch([item], snapshotOf({ limits: { global: 4, perRepo: 0, perAccount: { [ACCOUNT_A]: 0 } } })),
+    ).toEqual([waitFor(item, 'repo_limit')]);
   });
 
   it('R-34: account_limit precedes budget', () => {
@@ -261,7 +261,7 @@ describe('decideDispatch', () => {
         [item],
         snapshotOf({
           running,
-          limits: { global: 4, perWorkspace: 3, perAccount: { [ACCOUNT_A]: 1 } },
+          limits: { global: 4, perRepo: 3, perAccount: { [ACCOUNT_A]: 1 } },
           spend: { [qid(1)]: 'hard_stop' },
         }),
       ),
@@ -286,7 +286,7 @@ describe('decideDispatch', () => {
       | 'not_before'
       | 'work_order_busy'
       | 'global_limit'
-      | 'workspace_limit'
+      | 'repo_limit'
       | 'account_limit'
       | 'quota'
       | 'budget';
@@ -299,18 +299,18 @@ describe('decideDispatch', () => {
   it('R-35: a start in this call consumes the global limit for later items', () => {
     const first = itemOf({ id: qid(1), workOrderId: woid('10'), priority: 10 });
     const second = itemOf({ id: qid(2), workOrderId: woid('20'), priority: 9 });
-    expect(decideDispatch([first, second], snapshotOf({ limits: { global: 1, perWorkspace: 3, perAccount: {} } }))).toEqual([
+    expect(decideDispatch([first, second], snapshotOf({ limits: { global: 1, perRepo: 3, perAccount: {} } }))).toEqual([
       startFor(first),
       waitFor(second, 'global_limit'),
     ]);
   });
 
-  it('R-35: a start in this call consumes the workspace limit for later items', () => {
-    const first = itemOf({ id: qid(1), workOrderId: woid('10'), priority: 10, workspace: WS_ALPHA });
-    const second = itemOf({ id: qid(2), workOrderId: woid('20'), priority: 9, workspace: WS_ALPHA });
-    expect(decideDispatch([first, second], snapshotOf({ limits: { global: 4, perWorkspace: 1, perAccount: {} } }))).toEqual([
+  it('R-35: a start in this call consumes the repo limit for later items', () => {
+    const first = itemOf({ id: qid(1), workOrderId: woid('10'), priority: 10, repo: WS_ALPHA });
+    const second = itemOf({ id: qid(2), workOrderId: woid('20'), priority: 9, repo: WS_ALPHA });
+    expect(decideDispatch([first, second], snapshotOf({ limits: { global: 4, perRepo: 1, perAccount: {} } }))).toEqual([
       startFor(first),
-      waitFor(second, 'workspace_limit'),
+      waitFor(second, 'repo_limit'),
     ]);
   });
 
@@ -318,7 +318,7 @@ describe('decideDispatch', () => {
     const first = itemOf({ id: qid(1), workOrderId: woid('10'), priority: 10, route: ROUTE_A });
     const second = itemOf({ id: qid(2), workOrderId: woid('20'), priority: 9, route: ROUTE_A });
     expect(
-      decideDispatch([first, second], snapshotOf({ limits: { global: 4, perWorkspace: 3, perAccount: { [ACCOUNT_A]: 1 } } })),
+      decideDispatch([first, second], snapshotOf({ limits: { global: 4, perRepo: 3, perAccount: { [ACCOUNT_A]: 1 } } })),
     ).toEqual([startFor(first), waitFor(second, 'account_limit')]);
   });
 
@@ -327,7 +327,7 @@ describe('decideDispatch', () => {
     const blocked = itemOf({ id: qid(2), workOrderId: woid('20'), priority: 20 });
     const last = itemOf({ id: qid(3), workOrderId: woid('30'), priority: 10 });
     const headroom: Record<string, Headroom> = { [qid(2)]: { ok: false, blockedBy: [meterId('M0')] } };
-    expect(decideDispatch([first, blocked, last], snapshotOf({ limits: { global: 2, perWorkspace: 3, perAccount: {} }, headroom }))).toEqual([
+    expect(decideDispatch([first, blocked, last], snapshotOf({ limits: { global: 2, perRepo: 3, perAccount: {} }, headroom }))).toEqual([
       startFor(first),
       waitFor(blocked, 'quota'),
       startFor(last),
@@ -343,7 +343,7 @@ describe('decideDispatch', () => {
     ];
     const snapshot = snapshotOf({
       running: [runOf(woid('90'), WS_ALPHA, ACCOUNT_A)],
-      limits: { global: 1, perWorkspace: 1, perAccount: { [ACCOUNT_A]: 1 } },
+      limits: { global: 1, perRepo: 1, perAccount: { [ACCOUNT_A]: 1 } },
       spend: { [qid(1)]: 'warn' },
     });
     deepFreeze(queue);
@@ -355,20 +355,20 @@ describe('decideDispatch', () => {
 
   // --- acceptance scenarios from the issue -------------------------------------------------------
 
-  it('acceptance: 6 items, 2 workspaces, 2 accounts decide start/start/workspace_limit/budget/quota/not_before', () => {
-    const first = itemOf({ id: qid(1), workOrderId: woid('10'), workspace: WS_ALPHA, priority: 60, enqueuedAt: NOW - 600, route: ROUTE_A });
-    const second = itemOf({ id: qid(2), workOrderId: woid('20'), workspace: WS_ALPHA, priority: 50, enqueuedAt: NOW - 500, route: ROUTE_B });
-    const third = itemOf({ id: qid(3), workOrderId: woid('30'), workspace: WS_ALPHA, priority: 40, enqueuedAt: NOW - 400, route: ROUTE_B });
-    const fourth = itemOf({ id: qid(4), workOrderId: woid('40'), workspace: WS_BETA, priority: 30, enqueuedAt: NOW - 300, route: ROUTE_A });
-    const fifth = itemOf({ id: qid(5), workOrderId: woid('50'), workspace: WS_BETA, priority: 20, enqueuedAt: NOW - 200, route: ROUTE_B });
-    const sixth = itemOf({ id: qid(6), workOrderId: woid('60'), workspace: WS_BETA, priority: 10, enqueuedAt: NOW - 100, route: ROUTE_A, notBefore: NOW + MINUTE });
+  it('acceptance: 6 items, 2 repos, 2 accounts decide start/start/repo_limit/budget/quota/not_before', () => {
+    const first = itemOf({ id: qid(1), workOrderId: woid('10'), repo: WS_ALPHA, priority: 60, enqueuedAt: NOW - 600, route: ROUTE_A });
+    const second = itemOf({ id: qid(2), workOrderId: woid('20'), repo: WS_ALPHA, priority: 50, enqueuedAt: NOW - 500, route: ROUTE_B });
+    const third = itemOf({ id: qid(3), workOrderId: woid('30'), repo: WS_ALPHA, priority: 40, enqueuedAt: NOW - 400, route: ROUTE_B });
+    const fourth = itemOf({ id: qid(4), workOrderId: woid('40'), repo: WS_BETA, priority: 30, enqueuedAt: NOW - 300, route: ROUTE_A });
+    const fifth = itemOf({ id: qid(5), workOrderId: woid('50'), repo: WS_BETA, priority: 20, enqueuedAt: NOW - 200, route: ROUTE_B });
+    const sixth = itemOf({ id: qid(6), workOrderId: woid('60'), repo: WS_BETA, priority: 10, enqueuedAt: NOW - 100, route: ROUTE_A, notBefore: NOW + MINUTE });
     const queue = [sixth, third, first, fifth, second, fourth];
 
     const decisions = decideDispatch(
       queue,
       snapshotOf({
         running: [runOf(woid('90'), WS_ALPHA, ACCOUNT_A)],
-        limits: { global: 4, perWorkspace: 3, perAccount: {} },
+        limits: { global: 4, perRepo: 3, perAccount: {} },
         headroom: {
           [qid(1)]: OK_ROOM,
           [qid(2)]: OK_ROOM,
@@ -384,7 +384,7 @@ describe('decideDispatch', () => {
     expect(decisions).toEqual([
       startFor(first),
       startFor(second),
-      waitFor(third, 'workspace_limit'),
+      waitFor(third, 'repo_limit'),
       waitFor(fourth, 'budget'),
       waitFor(fifth, 'quota', NOW + HOUR),
       waitFor(sixth, 'not_before', NOW + MINUTE),
