@@ -101,7 +101,7 @@ Deploy approval passes the gate's `environment`; a protected environment without
   as a centered window-style overlay over the current route (the wizard's frame, a 200px section
   menu beside the selected section's content) — ✕, Esc or a backdrop click closes it, and the
   route underneath stays unchanged.
-- **U-7** (wizard) First-run state machine: definitions source → account → binding → done.
+- **U-7** (wizard; superseded by U-35 — its tests retire in U-35's issue) First-run state machine: definitions source → account → binding → done.
   `next` is enabled only when the step's validation passes (source reachable / at least one
   discovered+logged-in provider for the chosen account / at least one bound role); `back`
   preserves entered state; finishing leaves the wizard and does not reappear while a project
@@ -222,8 +222,8 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   no fake data — the phone link feature does not exist yet) and Güncelleme (the current version,
   a status line per `UpdateState` with the error's reason, a "Şimdi kontrol et" button issuing
   `app.update.check`, and the same apply action as the bar). The nav's Telefon row opens the
-  panel on the phone section; the Ayarlar row opens it on the language section, as the foot's
-  gear did; the sidebar foot carries the accounts frame and nothing else. A download mutates the
+  panel on the phone section; the Ayarlar row opens it on the Hesaplar section (U-28; it used to open on the language section, as the foot's
+  gear did); the sidebar foot carries the accounts frame and nothing else. A download mutates the
   checker while the apply command is in flight and `update.changed` fires only at its end, so
   the store polls the query through the flight — the percent standings must be visible.
 - **U-25** (navigation history) The shell keeps a navigation history — a pure reducer
@@ -253,6 +253,135 @@ The commands (`workOrder.open` with `project`+`repo`, `task.open`, `project.atta
   their screen's own wrappers, paddings and row heights so nothing jumps. `npm run design --
   --slow` sets `DOCKET_API_DELAY_MS` (1200) — read once in the composition root, set only by
   `e2e/design-run.mjs` — so the standings can be seen; absent means no delay, as today.
+
+## Settings and setup (U-27 … U-37)
+
+Visual source: the operator-approved draft `~/source/docket-tasarim/ayarlar/akis.html` (draft 2,
+2026-10-03) with its decision notes `kararlar-bagli-akis.md` (N-1 … N-8) and
+`kararlar-ayarlar.md` (S-1 … S-13); the wizard keeps the approved rev 28.1 flow
+(`rev8/index.html#/kurulum`). The API it reads and writes is
+[application.md](application.md) → "Settings surface" (A-48 … A-52) plus the existing
+`account.models`, `account.consent.*`, `accounts.candidates`, `account.adopt`, `binding.save`.
+
+One principle runs through it: **two kinds of user, one screen, no mode switch.** A user who wants
+the defaults never has to touch anything; a user who tunes everything finds every parameter one
+"İnce ayar" away; whatever differs from the recommendation is always visible and one click from
+being reset.
+
+- **U-27** (info bubble) One component `components/info-bubble.tsx` serves every ⓘ, `?` and
+  dashed-underline term; its open/close logic is a pure reducer (`stores/info-bubble.ts`, time
+  injected) and its placement a pure `placeBubble(anchor, size, bounds)`
+  (`components/bubble-place.ts`). The trigger is a real `button` (16px glyph, 24px hit area)
+  with `aria-label` "Bilgi: <subject>" from the bundles, `aria-expanded` and `aria-describedby`
+  pointing at the bubble, which sits in the DOM `hidden` until open so a screen reader reads it on
+  focus. Pointer hover opens after 400 ms and leaving closes after 150 ms (moving onto the bubble
+  keeps it); keyboard focus (`:focus-visible`) opens at once; click, Enter or Space pins it open or
+  closes it; Esc closes and returns focus to the trigger; an outside click, a scroll of the
+  scrolling ancestor, or focus leaving trigger and bubble closes it; one bubble is open at a time.
+  Content is plain text — an optional bold title and at most three sentences, nothing interactive
+  (`role="tooltip"`). Placement: below with an 8px gap, flipped above when below does not fit,
+  centred on the trigger and clamped 8px inside the bounds (the nearest panel or page body),
+  200–320px wide, `rounded-card`; 120 ms fade, none under `prefers-reduced-motion`.
+- **U-28** (settings sections) The Settings window (U-6's frame) carries two menu groups: Çalışma —
+  Hesaplar, Roller, Yetenekler, Sağlayıcılar; Uygulama — Görünüm, Telefon, Güncelleme. The nav's
+  Ayarlar row opens the panel on **Hesaplar** (U-24's Telefon row is unchanged). Hesaplar and Roller
+  open a sub-page in place (an account, a role) with a `‹ Hesaplar` / `‹ Roller` back row; Esc first
+  leaves the sub-page, then closes the panel; a sub-page is not a U-25 history entry. Hesaplar's
+  menu row carries an amber dot while discovery holds an account not yet added (U-34).
+  Görünüm holds Dil and Tema (U-36). There is no simple/advanced switch anywhere.
+- **U-29** (setting row and the recommendation) Every setting is one row: title and one sentence
+  of purpose on the left, one control on the right (a listbox button, a number field, a switch),
+  and below it an optional "› İnce ayar" disclosure holding that setting's deeper parameters.
+  Every option list marks the recommended option "Önerilen". The recommendations are one constant
+  table in `stores/recommended.ts`: limit policy `wait_resume`; no reserve; warn 80 %; spend cap
+  $50 per month; a role's work style by the role (U-33). A pure `settingDiffs(account)` returns the
+  settings that differ from the table; under each such row the surface shows "Önerilenden farklı ·
+  önerilen: X" and an "Önerilene dön" intent, the editor's head shows "n ayar önerilenden farklı ·
+  Hepsini önerilene döndür" (or "Bu hesap önerilen ayarlarla çalışıyor."), and the same count rides
+  the account rows of Settings and the wizard's Bütçe step. A disclosure whose content differs from
+  the recommendation starts open — no changed value is ever hidden. In Settings a change saves on
+  commit (choice → at once; number → on blur or Enter) and shows "Kaydedildi" for 1.5 s; a failure
+  shows its U-8 label under the row and keeps the entered value.
+- **U-30** (account editor) One editor body with four tabs — Genel · Kullanım · Limitler ·
+  Modeller — has two hosts: in Settings the account sub-page (saving per U-29, with a "Hesap
+  görünümünü aç" link that closes the panel and opens the account view), in the wizard a centred
+  560×480 window with Vazgeç and Kaydet (Esc = Vazgeç) whose draft is written when the wizard
+  finishes. Genel: the label (`account.save`), and the account facts read-only — provider,
+  connection, plan, `identityDir`, `endpointHost`, whether a key is in the keychain (`hasSecret`,
+  never a value). Kullanım: one bar per meter (U-31) or, for a pay-per-use account, this period's
+  spend against its cap; "Son okuma · Yenile". Limitler: "Limit dolunca" (all four policies with
+  their one-line purpose, `wait_resume` recommended, `switch_pool` disabled with a reason when the
+  account has a single pool; `account.save` with `limitPolicy`); "Kendi kullanımın için ayır" (Yok
+  · %10 · %20 · %30 · "Pencereye göre ayrı…", whose fine-tune holds separate 0–95 short and long
+  fields naming the account's meters of each class; `account.save` with `reserve`, A-45's
+  `invalid_reserve` mapped); "Harcama tavanı" only on an account that may spend money — a
+  pay-per-use account or one with any `consentedModels` — amount and period, fine-tune warn
+  percent (`account.cap.save`; A-52's `cap_required` mapped). Under Limitler a fixed note: an
+  automatic switch never moves from an included model to a paid or unverified one (P-40). A
+  subscription account without consents shows no money anywhere.
+- **U-31** (reserve on a bar) A meter bar shows remaining from the left. With a reserve for the
+  meter's `reserveClass` (A-48) the bar carries a hatched zone from 0 to the reserve with a 2px
+  edge, the footnote "%r senin için ayrılmış", and — when remaining is at or below the reserve —
+  the amber tag "Rezerve ulaştı — yeni koşu başlamaz". The same reading drives the accounts frame
+  (U-37). A meter whose unit is not a share never draws a zone.
+- **U-32** (models and spend consent) Modeller groups `account.models` by billing: Plana dahil
+  (no mark — silence means included), Kullanım başına ücretli (`$`), Doğrulanamadı (`?`, dashed);
+  billing is per account and plan, never per model alone. A `$`/`?` row without consent offers
+  "İzin ver…", which opens an inline card under the row: what the mark means (the `?` text is
+  fixed: Docket could not verify the plan covers it and using it may be billed — no amount, no
+  price claim), that only a hand-picked role uses it and tiers and fallbacks never pick it, the
+  account's cap (required when the account has none, prefilled with the recommendation), Vazgeç
+  and İzin ver → `account.consent.grant` with the cap. A consented row shows "İzinli" and a
+  "Geri al" (`account.consent.revoke`, no confirmation). A stale list says so beside "Yenile"
+  (`refresh: true`).
+- **U-33** (roles) Roller lists `roles.list` (A-50). On top, "Asistan sırası": the global chain
+  every role uses, reordered with ↑/↓ (Alt+↑/↓) — saving it issues `binding.save` for every listed
+  role with its complete binding (A-49). Below, one row per role with its work style — Hızlı ·
+  Dengeli · Özenli, a presentation preset a pure `workStyle` maps to and from
+  `{ tier, thinking }` (fast/fast · balanced/balanced · strong/deep); any other pair reads
+  "Özel". Recommended style: Planlayıcı, Gözden geçirici, Güvenlik denetçisi Özenli; Geliştirici,
+  Test yazarı Dengeli; Analist, Belgeci Hızlı; a role outside this list Dengeli. A role's
+  fine-tune: hesap sırası (Tüm roller / Bu role özel, the latter a chain with per-account model
+  pin whose `$`/`?` models are selectable only after consent), kademe, düşünme with an exact
+  effort list, and the role's stages that set their own tier or thinking (read-only, with the flow
+  name). A stage with `sameProviderReview` puts an amber line on its role's row: the review will
+  run on the provider that wrote the code; adding an account of another provider sends it there.
+- **U-34** (discovered accounts) The candidates (`accounts.candidates`) and the discovered
+  providers appear in the wizard's Hesaplar step and under Settings → Hesaplar → "Eklenmemiş":
+  a row per candidate with mark, label, status and selection. `unreadable` disables the row with
+  its reason; `env_overrides_login` shows its warning tag with an ⓘ; `alreadyAdded` candidates are
+  not listed. A candidate whose `envOverrides` holds `token` shows, once selected, a separate card
+  "Erişim anahtarını Anahtar Zinciri'ne taşı" with a switch that starts **off**; while off the row
+  reads "Anahtar gerekli" and `account.adopt` is sent without `importToken`; the value is never
+  shown, masked or otherwise. A provider that needs a login shows the CLI's own login command in a
+  terminal block with copy and "Yeniden tara"; an installable provider shows its install command
+  the same way (Docket runs no install itself).
+- **U-35** (setup wizard; replaces U-7) The rev 28.1 flow: Hoş geldin (Dil, Tema) → Hesaplar
+  (U-34, ✎ opens the U-30 window; gate: at least one ready account selected) → Yetenekler →
+  Asistan sırası → Bütçe → the "Kurulum tamam" moment (rail all ✓, one summary line, "Proje
+  bağla" opening the project-attach flow). A step with nothing to decide is skipped and shown
+  with "–" in the rail: Asistan sırası with fewer than two accounts, Yetenekler while no
+  capability source is composed or none was found. Footer slots are fixed (Geri · Bu adımı atla
+  left; reason line · primary right). Bütçe lists the selected accounts in two groups —
+  Abonelikler (mini bars, policy and reserve summary, the U-29 diff count, ✎) and Kullandıkça öde
+  (spend against the cap, ✎); a pay-per-use account needs its explicit spend consent with a cap in
+  this step (the U-32 card) before "Kurulumu bitir" is enabled. Finishing adopts or saves every
+  selected account with its draft, writes caps and consents, and issues `binding.save` for every
+  `roles.list` role with the chain and the role's recommended work style; the wizard does not
+  reappear while a project exists. `back` keeps every entry.
+- **U-36** (theme) Tema is Sistem · Koyu · Açık, persisted per viewer in local storage
+  (`docket.theme.v1`, a corrupt value reads as Sistem); Sistem follows `prefers-color-scheme` live;
+  the choice sets `data-theme` on the root, which the tokens already read.
+- **U-37** (links between surfaces) The accounts frame (U-16) marks a card "rezervde" when any
+  of its meters reached its reserve (U-31), and, while discovery holds an account not yet added,
+  ends with one row "n hesap eklenmedi · Gör ›" opening Settings → Hesaplar. The account view's
+  "Ayarlar'da düzenle" (U-20) opens Settings on that account's sub-page, Limitler tab, and its
+  limit band reads the policy and the reserve in one sentence. A role chip on the account's Genel
+  tab opens that role's sub-page.
+
+Deferred: a "Docket AI'a sor" entry in the editor and in Roller, answering with a Proposal card
+(eski → yeni, Vazgeç / Uygula; invariant 5), lands with the chat surface (Phase 6); account test
+("Test et") and capability import land with their own contracts.
 
 ### Prototype vs rules (2026-09-29)
 

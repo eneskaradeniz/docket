@@ -784,6 +784,78 @@ Rules:
 - **A-46** `executeRun` resolves `RunRequest.effort` with `effortForChoice(item.thinking, thinking)`, where `thinking` is the catalog entry's for the route's model, or, for an unpinned route, the entry the route's default resolves to (`isDefault`, P-42); no entry → `unknown` → no effort is sent. The resolved effort is recorded as `detail: { effort }` on the run's `run.started` audit entry (omitted when no effort resolves), so the record shows what was asked.
 - **A-47** `executeRun`, before A-46: when the route has no `model` and the queue item has a `tier`, the model is `resolveTier(tier, catalog, account.tierModels ?? routeKind.tierModels)` over the account's `ModelCatalog` entries; the chosen id becomes the run's model for the spend-consent check, the effort (A-46) and the transport. `undefined` (no auto-selectable model of that tier: P-40 allows only `included`) leaves the route unpinned. The resolved model and its tier are recorded as `detail: { model, tier }` on the `run.started` audit entry, next to the effort.
 
+### Settings surface — account settings, roles, caps
+
+What the Settings window and the setup wizard ([ui.md](ui.md) → "Settings and setup", U-27 …
+U-37) read and write. Every field below already lives in `AccountRecord` or `RoleBinding`; these
+additions only expose them and give the two missing write paths (limit policy, spend caps).
+Nothing here reads or returns a secret value.
+
+```ts
+// queries.ts — SettingsMeterView gains
+readonly reserveClass: 'short' | 'long';          // the class R-49 puts the meter in
+// queries.ts — SettingsAccountView gains
+readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
+readonly reserve: { readonly short: number | null; readonly long: number | null };
+readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly amountUsd: number; readonly warnPercent: number }[];
+readonly consentedModels: readonly string[];      // '*' = the route's default model (P-40)
+readonly routeKind: string | null;
+readonly identityDir: string | null;              // the stored path verbatim
+readonly endpointHost: string | null;             // host of `endpoint`, never the URL's path or query
+readonly hasSecret: boolean;                      // `secretRef` present; never the value
+// queries.ts — SettingsBindingView gains
+readonly thinking: { readonly level: 'fast' | 'balanced' | 'deep' } | { readonly effort: string } | null;
+readonly tier: 'strong' | 'balanced' | 'fast' | null;
+
+// queries.ts
+| { type: 'roles.list' }               → RoleListItem[]
+export interface RoleListItem {
+  readonly id: string;
+  readonly name: string;
+  readonly stages: readonly {
+    readonly flow: string; readonly flowName: string;
+    readonly stage: string; readonly stageName: string;
+    readonly tier: 'strong' | 'balanced' | 'fast' | null;
+    readonly thinking: { readonly level: string } | { readonly effort: string } | null;
+    readonly reviewOf: string | null;
+    readonly sameProviderReview: boolean;
+  }[];
+}
+
+// commands.ts — account.save gains `limitPolicy?: string`
+| { type: 'account.cap.save'; id: string; scope: string; amountUsd: number; warnPercent: number }
+| { type: 'account.cap.remove'; id: string; scope: string }
+```
+
+Rules:
+- **A-48** `settings.accounts` fills the new account fields from the stored record: `reserve`
+  values are the record's or `null`; `caps` in `account_day`, `account_week`, `account_month`
+  order; `consentedModels` verbatim; `endpointHost` is the host of `endpoint` (`null` without one);
+  `hasSecret` is `secretRef !== undefined`. No field carries a secret value or an environment
+  value. Each meter's `reserveClass` is the class R-49 assigns it (the same domain call the
+  headroom check makes), so the surface never re-derives the rule.
+- **A-49** `settings.accounts` bindings carry the stored `thinking` and `tier` (`null` when the
+  binding has none). `binding.save` replaces the whole binding at its scope — a field the command
+  leaves out is cleared, never kept — so a surface that changes one field sends the binding's
+  other fields with it.
+- **A-50** `roles.list` lists every role of the built-in library and of every registered repo's
+  definitions that load (a repo whose definitions fail is skipped, never a query failure): role id
+  ascending; a role seen in several sources takes its name from the first source in the order
+  library, then repos by id. `stages` lists every stage of those flows whose `role` is the role,
+  deduplicated by `(flow, stage)` (first source wins), with the stage's own `tier`, `thinking` and
+  `reviewOf`. `sameProviderReview` is computed only for a stage with `reviewOf`: the reviewed
+  provider is the provider of the first account of the global binding of the reviewed stage's role,
+  and the flag is `orderForReview(chain, reviewedProvider).sameProvider` over the review role's
+  global chain (R-52); `false` when either role has no global binding.
+- **A-51** `account.save` accepts `limitPolicy`: absent keeps the stored policy (the `reserve`
+  stance); a value outside the `LimitPolicy` set is rejected at the edge like an unknown
+  `authMode` and writes nothing.
+- **A-52** `account.cap.save` upserts the account's cap of that scope (a scope outside the
+  `account_*` set is rejected at the edge; an amount that is not a positive finite number or a warn
+  percent outside `1..100` → `invalid_cap`); `account.cap.remove` deletes it. Removing the last cap
+  while `consentedModels` is non-empty → `cap_required` (P-40: consent without a cap refuses
+  every run). Unknown account → `not_found`. Both audit as `account.saved`.
+
 ---
 
 ## 5. Phase 2a acceptance — headless end to end
