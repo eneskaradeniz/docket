@@ -166,7 +166,7 @@ for (const [sizeName, theme] of combos) {
     await see('Ayarlar\'da düzenle');
     await shot('closed-back-on-account');
     // The sidebar's nav rows are the panel's doors (U-24): Telefon opens it on the phone
-    // section's honest "not linked yet" standing; Ayarlar opens it where the gear used to.
+    // section's honest "not linked yet" standing; Ayarlar opens it on Hesaplar (U-28), with Görünüm holding Dil and Tema.
     await page.getByRole('button', { name: 'Telefon', exact: true }).first().click({ timeout: WAIT });
     await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
     await see('Telefon bağlı değil');
@@ -176,7 +176,12 @@ for (const [sizeName, theme] of combos) {
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });
     await page.getByRole('button', { name: 'Ayarlar', exact: true }).first().click({ timeout: WAIT });
     await page.waitForSelector('[data-settings-panel]', { timeout: WAIT });
+    await see('Çalışma');
+    await see('Uygulama');
+    await see('Hesaplar');
+    await page.locator('[data-settings-panel]').getByRole('button', { name: 'Görünüm', exact: true }).click({ timeout: WAIT });
     await see('Dil');
+    await see('Tema');
     await shot('settings-language');
     await page.keyboard.press('Escape');
     await page.locator('[data-settings-panel]').waitFor({ state: 'detached', timeout: WAIT });

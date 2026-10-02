@@ -30,7 +30,14 @@ import { accountStatus, createAccountEditorStore, policyLabelKey, type AccountSt
 import { settingDiffs } from '../stores/recommended';
 import type { AccountModelsStore } from '../stores/account-models';
 import { focusRestoredOnClose } from '../stores/search-palette';
-import type { SettingsPanelOrigin } from '../stores/settings-panel';
+import {
+  SETTINGS_MENU,
+  SETTINGS_SECTIONS,
+  type SettingsMenuGroup,
+  type SettingsPanelOrigin,
+  type SettingsSection,
+} from '../stores/settings-panel';
+import { THEME_PREFERENCES, type ThemePreference, type ThemeStore } from '../stores/theme';
 import type {
   AccountDisplay,
   BindingSaveInput,
@@ -50,9 +57,21 @@ export interface SettingsPanelProps {
   readonly origin: SettingsPanelOrigin;
   /** The selected section — owned by the shell, which names it on open (U-24). */
   readonly section: SettingsSection;
+  /** The open sub-page (an account or role id) inside the section, or null (U-28). */
+  readonly subPage: string | null;
   /** Reports a section move from the menu, so the sidebar's rows follow it. */
   readonly onSection: (section: SettingsSection) => void;
+  /** The back row: leaves the sub-page. */
+  readonly onBack: () => void;
+  /** Opens a sub-page of the section (an account id in Hesaplar). */
+  readonly onEnterSubPage: (id: string) => void;
+  /** Esc: leaves the sub-page first, then closes (the reducer decides). */
+  readonly onEscape: () => void;
   readonly onClose: () => void;
+  /** Whether Hesaplar carries the amber dot — discovery holds an account not yet added. */
+  readonly candidateDot: boolean;
+  /** Tema (U-36) binds straight to the theme store. */
+  readonly themeStore: ThemeStore;
   readonly store: SettingsStore;
   /** The provider marks the accounts list's badges resolve from (loaded once, session-cached). */
   readonly marks: ProviderMarksStore;
@@ -68,28 +87,54 @@ export interface SettingsPanelProps {
   readonly onOpenAccount?: (accountId: string) => void;
 }
 
-/** The panel's sections — the same list and order the screen's cards have always carried, with
- *  the phone and update sections appended (U-24); the menu walks them, the pane carries the one
- *  that is selected, and the sidebar's rows name them on open. */
-export type SettingsSection = 'language' | 'accounts' | 'bindings' | 'discovery' | 'phone' | 'update';
-
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-  'language',
-  'accounts',
-  'bindings',
-  'discovery',
-  'phone',
-  'update',
-];
+// The sections and their menu groups are the store's (U-28); the type stays importable from here.
+export type { SettingsSection };
+export { SETTINGS_SECTIONS };
 
 const SECTION_KEY: Readonly<Record<SettingsSection, LabelKey>> = {
-  language: 'settings.language.label',
   accounts: 'settings.section.accounts',
-  bindings: 'settings.section.bindings',
-  discovery: 'settings.section.discovery',
+  roles: 'settings.section.roles',
+  capabilities: 'settings.section.capabilities',
+  providers: 'settings.section.providers',
+  appearance: 'settings.section.appearance',
   phone: 'settings.section.phone',
   update: 'settings.section.update',
 };
+
+const GROUP_KEY: Readonly<Record<SettingsMenuGroup['id'], LabelKey>> = {
+  work: 'settings.group.work',
+  app: 'settings.group.app',
+};
+
+const THEME_KEY: Readonly<Record<ThemePreference, LabelKey>> = {
+  system: 'settings.theme.system',
+  dark: 'settings.theme.dark',
+  light: 'settings.theme.light',
+};
+
+/** Tema — Sistem · Koyu · Açık in the same chip grammar as the language control (U-36). */
+function ThemeSwitcher({ store, locale }: { readonly store: ThemeStore; readonly locale: Locale }) {
+  const preference = useSyncExternalStore(store.subscribe, store.preference);
+  return (
+    <div role="group" aria-label={t(locale, 'settings.theme.label')} className="flex w-fit items-center gap-1">
+      {THEME_PREFERENCES.map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={option === preference}
+          onClick={() => store.set(option)}
+          className={
+            option === preference
+              ? 'rounded-control border border-signal px-[7px] py-px font-mono text-[11px] text-signal'
+              : 'rounded-control border border-hairline px-[7px] py-px font-mono text-[11px] text-inkdim transition-colors hover:text-ink'
+          }
+        >
+          {t(locale, THEME_KEY[option])}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const SCOPE_KEY: Readonly<Record<SettingsBindingScope['level'], LabelKey>> = {
   global: 'settings.binding.scope.global',
@@ -281,7 +326,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, onSection, onClose, store, marks, update, locale, localeStore, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -300,8 +345,6 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
   const [editAccounts, setEditAccounts] = useState<readonly string[]>([]);
   const [newRole, setNewRole] = useState('');
   const [newAccounts, setNewAccounts] = useState<readonly string[]>([]);
-  // The account whose sub-page is open (U-28/U-30); null shows the list.
-  const [openAccountId, setOpenAccountId] = useState<string | null>(null);
   const editor = useMemo(
     () =>
       createAccountEditorStore({
@@ -362,7 +405,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
   };
 
   const accounts = view?.accounts ?? [];
-  const openAccount = openAccountId === null ? undefined : accounts.find((account) => account.id === openAccountId);
+  const openAccount = subPage === null ? undefined : accounts.find((account) => account.id === subPage);
   const toggle = (list: readonly string[], id: string): readonly string[] =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
 
@@ -391,6 +434,10 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
 
   if (!mounted) return null;
 
+  // A sub-page replaces the section's list; only Hesaplar and Roller open one (U-28).
+  const listSection: SettingsSection | null =
+    subPage !== null && (section === 'accounts' || section === 'roles') ? null : section;
+
   /** Traps Tab inside the panel: the menu, the close control and the section's own controls are
    *  the only stops, wrapping both ways. */
   const trapTab = (event: React.KeyboardEvent<HTMLElement>): void => {
@@ -411,9 +458,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      // Esc first leaves the account sub-page, then closes the panel (U-28).
-      if (openAccountId !== null) setOpenAccountId(null);
-      else onClose();
+      onEscape();
     } else if (event.key === 'Tab') {
       trapTab(event);
     }
@@ -482,24 +527,39 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
 
         <div className="grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)]">
           <div className="flex flex-col gap-1 overflow-y-auto border-r border-hairline p-2.5">
-            {SETTINGS_SECTIONS.map((entry) => {
-              const current = entry === section;
-              return (
-                <button
-                  key={entry}
-                  type="button"
-                  onClick={() => onSection(entry)}
-                  aria-current={current ? 'true' : undefined}
-                  className={`flex h-8 items-center rounded-control border px-2.5 text-left text-[13px] ${
-                    current
-                      ? `font-semibold text-ink ${ACTIVE_CLASS}`
-                      : 'border-transparent text-inkdim hover:bg-raised hover:text-ink'
-                  }`}
-                >
-                  {t(locale, SECTION_KEY[entry])}
-                </button>
-              );
-            })}
+            {SETTINGS_MENU.map((group) => (
+              <div key={group.id} role="group" aria-label={t(locale, GROUP_KEY[group.id])} className="grid gap-1">
+                <p className="px-2.5 pb-0.5 pt-2 font-mono text-[10.5px] uppercase tracking-[0.06em] text-inkdim">
+                  {t(locale, GROUP_KEY[group.id])}
+                </p>
+                {group.sections.map((entry) => {
+                  const current = entry === section;
+                  return (
+                    <button
+                      key={entry}
+                      type="button"
+                      onClick={() => onSection(entry)}
+                      aria-current={current ? 'true' : undefined}
+                      className={`flex h-8 items-center justify-between gap-2 rounded-control border px-2.5 text-left text-[13px] ${
+                        current
+                          ? `font-semibold text-ink ${ACTIVE_CLASS}`
+                          : 'border-transparent text-inkdim hover:bg-raised hover:text-ink'
+                      }`}
+                    >
+                      {t(locale, SECTION_KEY[entry])}
+                      {entry === 'accounts' && candidateDot ? (
+                        <span
+                          role="img"
+                          aria-label={t(locale, 'settings.accounts.dot')}
+                          title={t(locale, 'settings.accounts.dot')}
+                          className="h-2 w-2 flex-none rounded-full bg-signal"
+                        />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           <div data-settings-content className="grid content-start gap-5 overflow-y-auto p-5">
@@ -534,13 +594,79 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
               </div>
             ) : null}
 
-            {section === 'language' ? (
-              <SectionCard title={t(locale, 'settings.language.label')}>
-                <LocaleSwitcher store={localeStore} locale={locale} />
+            {subPage !== null && listSection === null && section === 'accounts' ? (
+              openAccount === undefined ? null : (
+                <div className="grid gap-3">
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="flex h-7 w-fit items-center gap-1 rounded-control px-2 text-[13px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+                  >
+                    {t(locale, 'editor.back')}
+                  </button>
+                  <SectionCard
+                    title={openAccount.label}
+                    action={
+                      <span className="flex items-center gap-2">
+                        {onOpenAccount !== undefined ? (
+                          <ActionButton variant="neutral" onClick={() => onOpenAccount(openAccount.id)}>
+                            {t(locale, 'editor.openView')}
+                          </ActionButton>
+                        ) : null}
+                        <ActionButton variant="neutral" onClick={() => remove(openAccount.id)}>
+                          {t(locale, 'settings.account.remove')}
+                        </ActionButton>
+                      </span>
+                    }
+                  >
+                    <AccountEditor
+                      account={openAccount.detail}
+                      locale={locale}
+                      store={editor}
+                      formatTime={store.resetsAtLabel}
+                      onRefresh={() => void store.load()}
+                    />
+                  </SectionCard>
+                </div>
+              )
+            ) : null}
+
+            {subPage !== null && listSection === null && section !== 'accounts' ? (
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex h-7 w-fit items-center gap-1 rounded-control px-2 text-[13px] text-inkdim hover:bg-raised hover:text-ink focus-visible:bg-raised focus-visible:text-ink"
+                >
+                  <span aria-hidden="true">‹</span>
+                  {t(locale, SECTION_KEY[section])}
+                </button>
+                <p className="text-[13px] text-inkdim">{t(locale, 'settings.subpage.placeholder')}</p>
+              </div>
+            ) : null}
+
+            {listSection === 'appearance' ? (
+              <SectionCard title={t(locale, 'settings.section.appearance')}>
+                <div className="grid gap-4">
+                  <div className="grid gap-1.5">
+                    <p className="text-[13px] font-medium text-ink">{t(locale, 'settings.language.label')}</p>
+                    <LocaleSwitcher store={localeStore} locale={locale} />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <p className="text-[13px] font-medium text-ink">{t(locale, 'settings.theme.label')}</p>
+                    <ThemeSwitcher store={themeStore} locale={locale} />
+                  </div>
+                </div>
               </SectionCard>
             ) : null}
 
-            {section === 'accounts' && openAccount === undefined ? (
+            {listSection === 'capabilities' ? (
+              <SectionCard title={t(locale, 'settings.section.capabilities')}>
+                <p className="text-[13px] text-inkdim">{t(locale, 'settings.capabilities.placeholder')}</p>
+              </SectionCard>
+            ) : null}
+
+            {listSection === 'accounts' ? (
               <SectionCard title={countedLabel(t(locale, 'settings.section.accounts'), accounts.length)}>
                 {accounts.length === 0 ? (
                   <p className="text-[13px] text-inkdim">{t(locale, 'settings.accounts.empty')}</p>
@@ -552,7 +678,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
                         account={account}
                         mark={marks.markFor(account.provider)}
                         locale={locale}
-                        onOpen={() => setOpenAccountId(account.id)}
+                        onOpen={() => onEnterSubPage(account.id)}
                       />
                     ))}
                   </ul>
@@ -560,38 +686,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
               </SectionCard>
             ) : null}
 
-            {section === 'accounts' && openAccount !== undefined ? (
-              <SectionCard
-                title={openAccount.label}
-                action={
-                  <span className="flex items-center gap-2">
-                    {onOpenAccount !== undefined ? (
-                      <ActionButton variant="neutral" onClick={() => onOpenAccount(openAccount.id)}>
-                        {t(locale, 'editor.openView')}
-                      </ActionButton>
-                    ) : null}
-                    <ActionButton variant="neutral" onClick={() => remove(openAccount.id)}>
-                      {t(locale, 'settings.account.remove')}
-                    </ActionButton>
-                  </span>
-                }
-              >
-                <div className="mb-2">
-                  <ActionButton variant="ghost" onClick={() => setOpenAccountId(null)}>
-                    {t(locale, 'editor.back')}
-                  </ActionButton>
-                </div>
-                <AccountEditor
-                  account={openAccount.detail}
-                  locale={locale}
-                  store={editor}
-                  formatTime={store.resetsAtLabel}
-                  onRefresh={() => void store.load()}
-                />
-              </SectionCard>
-            ) : null}
-
-            {section === 'bindings' ? (
+            {listSection === 'roles' ? (
               <SectionCard title={countedLabel(t(locale, 'settings.section.bindings'), view?.bindings.length ?? 0)}>
                 <div className="grid gap-3">
                   {view === null || view.bindings.length === 0 ? (
@@ -687,7 +782,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
               </SectionCard>
             ) : null}
 
-            {section === 'discovery' ? (
+            {listSection === 'providers' ? (
               <SectionCard
                 title={t(locale, 'settings.section.discovery')}
                 action={
@@ -731,7 +826,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
               </SectionCard>
             ) : null}
 
-            {section === 'phone' ? (
+            {listSection === 'phone' ? (
               <SectionCard title={t(locale, 'settings.section.phone')}>
                 {/* The honest status, no fake data: the phone link feature does not exist yet, so
                     the section says so and offers nothing that pretends otherwise (U-24). */}
@@ -748,7 +843,7 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
               </SectionCard>
             ) : null}
 
-            {section === 'update' ? (
+            {listSection === 'update' ? (
               <SectionCard
                 title={t(locale, 'settings.section.update')}
                 action={

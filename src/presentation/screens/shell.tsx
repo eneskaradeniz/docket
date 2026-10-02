@@ -16,7 +16,7 @@
 // store's `open` decides whether it shows at all (U-7). The badge mirrors the shell store: the
 // cockpit's attention count, present only while attention exists — zero renders nothing, never
 // a zero (U-10). Every user-visible string arrives through a label key (U-1).
-import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
 
 import { SearchPalette } from '../components/search-palette';
 import { SidebarAccounts } from '../components/sidebar-accounts';
@@ -50,9 +50,11 @@ import type { ProviderMarksStore } from '../stores/provider-marks';
 import {
   CLOSED_SETTINGS_PANEL,
   settingsPanelReducer,
+  type CandidateDotStore,
   type SettingsPanelOrigin,
 } from '../stores/settings-panel';
 import type { ShellStore } from '../stores/shell';
+import type { ThemeStore } from '../stores/theme';
 import type { UpdateStore } from '../stores/update';
 import type { WizardStore } from '../stores/wizard';
 import type { WorkOrderDetailStore } from '../stores/work-order-detail';
@@ -84,6 +86,10 @@ export interface ShellScreenProps {
   /** The locale store's handle for the settings screen's language control (U-9); the active
    *  bundle itself travels as `locale`, refreshed by the root's subscription. */
   readonly localeStore: LocaleStore;
+  /** The theme preference the Görünüm section binds to (U-36); the root applies it to data-theme. */
+  readonly themeStore: ThemeStore;
+  /** Whether discovery holds an account not yet added — Hesaplar's amber dot (U-28). */
+  readonly candidates: CandidateDotStore;
   readonly locale: Locale;
   /** The machine's zone, for the account view's reset times; tests pass 'UTC'. */
   readonly timeZone: string;
@@ -144,6 +150,8 @@ export function ShellScreen({
   update,
   wizard,
   localeStore,
+  themeStore,
+  candidates,
   locale,
   timeZone,
 }: ShellScreenProps) {
@@ -160,9 +168,9 @@ export function ShellScreen({
   // open/close and the origin the close's focus rule reads, never a route.
   const [palette, dispatchPalette] = useReducer(paletteReducer, CLOSED_PALETTE);
   const [settingsPanel, dispatchSettingsPanel] = useReducer(settingsPanelReducer, CLOSED_SETTINGS_PANEL);
-  // The panel's section is the shell's, not the panel's own: the nav's Telefon and Ayarlar rows
-  // name it on open and read their current standing from it (U-24).
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('language');
+  // The panel's section lives in the same reducer: the nav's Telefon and Ayarlar rows name it on
+  // open and read their current standing from it (U-24, U-28).
+  const candidateDot = useSyncExternalStore(candidates.subscribe, candidates.dot);
   // The place a work-order detail was opened from: the detail replaces the route but not the
   // tree's selection — the board that opened it stays selected, like the design's detay.
   const placeRef = useRef<TreePlace>({ kind: 'cockpit' });
@@ -222,14 +230,15 @@ export function ShellScreen({
     };
   }, []);
   /** Opens the settings panel over the current route on a named section — the route stays where
-   *  it is; the nav's rows name their own section, the screens' shortcuts keep the language
-   *  section the gear used to open. */
+   *  it is; the nav's rows name their own section, the screens' shortcuts open
+   *  Hesaplar (U-28). */
   const openSettings = useCallback((section: SettingsSection): void => {
     const origin: SettingsPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
     pointerOpenRef.current = false;
-    setSettingsSection(section);
-    dispatchSettingsPanel({ type: 'open', origin });
-  }, []);
+    dispatchSettingsPanel({ type: 'open', origin, section });
+    // The dot reads the discovery's standing as the panel opens, so it is never stale.
+    void candidates.load();
+  }, [candidates]);
   // Every arrival — a push, a back, a forward — restores the current entry's scroll once the
   // main column has painted again (U-25): each screen returns where the operator left it, the
   // board exactly like the roadmap and the cockpit.
@@ -370,12 +379,12 @@ export function ShellScreen({
             locale={locale}
             homeCurrent={route.name === 'cockpit'}
             searchCurrent={palette.open}
-            settingsSection={settingsPanel.open ? settingsSection : null}
+            settingsSection={settingsPanel.open ? settingsPanel.section : null}
             badge={badge}
             onHome={() => navigate({ name: 'cockpit' })}
             onSearch={openPalette}
             onPhone={() => openSettings('phone')}
-            onSettings={() => openSettings('language')}
+            onSettings={() => openSettings('accounts')}
           />
 
           <SidebarTree
@@ -415,7 +424,7 @@ export function ShellScreen({
               onOpenWorkOrder={openWorkOrder}
               roadmapProject={roadmapProjectOf(route.repo)}
               onOpenRoadmap={(project) => navigate({ name: 'roadmap', project })}
-              onOpenSettings={() => openSettings('language')}
+              onOpenSettings={() => openSettings('accounts')}
             />
           ) : null}
           {route.name === 'roadmap' ? (
@@ -436,7 +445,7 @@ export function ShellScreen({
               locale={locale}
               timeZone={timeZone}
               onOpenWorkOrder={openWorkOrder}
-              onOpenSettings={() => openSettings('language')}
+              onOpenSettings={() => openSettings('accounts')}
               onBack={goBack}
             />
           ) : null}
@@ -464,8 +473,14 @@ export function ShellScreen({
       <SettingsPanel
         open={settingsPanel.open}
         origin={settingsPanel.origin}
-        section={settingsSection}
-        onSection={setSettingsSection}
+        section={settingsPanel.section}
+        subPage={settingsPanel.subPage}
+        onSection={(next) => dispatchSettingsPanel({ type: 'select', section: next })}
+        onBack={() => dispatchSettingsPanel({ type: 'leaveSubPage' })}
+        onEnterSubPage={(id) => dispatchSettingsPanel({ type: 'enterSubPage', id })}
+        onEscape={() => dispatchSettingsPanel({ type: 'escape' })}
+        candidateDot={candidateDot}
+        themeStore={themeStore}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}
         models={models}

@@ -1,14 +1,22 @@
 // stores/settings-panel.test.ts — the settings overlay's pure state: open/close and the origin
-// the close's focus rule reads. The reducer carries no route — settings is an overlay over
-// whatever route the operator is on, so "open leaves the route unchanged" holds by construction
-// here and the journeys (J-6) prove it against the real shell.
+// the close's focus rule reads, the section menu and sub-page mechanics (U-28). The reducer carries
+// no route — settings is an overlay over whatever route the operator is on, so "open leaves the
+// route unchanged" holds by construction here and the journeys (J-6) prove it against the real shell.
 import { describe, expect, it } from 'vitest';
 
-import { CLOSED_SETTINGS_PANEL, settingsPanelReducer } from './settings-panel';
+import {
+  CLOSED_SETTINGS_PANEL,
+  SETTINGS_MENU,
+  SETTINGS_SECTIONS,
+  createCandidateDotStore,
+  hasUnaddedCandidate,
+  settingsPanelReducer,
+  type CandidateDotSource,
+} from './settings-panel';
 
 describe('settingsPanelReducer', () => {
   it('open flips the panel open and carries how it was opened — the close reads the origin', () => {
-    expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' })).toStrictEqual({
+    expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' })).toMatchObject({
       open: true,
       origin: 'pointer',
     });
@@ -25,12 +33,93 @@ describe('settingsPanelReducer', () => {
   it('close flips open off and keeps the origin; a close on a closed panel changes nothing', () => {
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' });
     const closed = settingsPanelReducer(opened, { type: 'close' });
-    expect(closed).toStrictEqual({ open: false, origin: 'pointer' });
+    expect(closed).toMatchObject({ open: false, origin: 'pointer' });
     expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'close' })).toStrictEqual(CLOSED_SETTINGS_PANEL);
   });
 
-  it('the state holds only the open standing and the origin — there is no route to change', () => {
+  it('the state holds the open standing, the origin, the section and the sub-page — there is no route to change', () => {
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' });
-    expect(Object.keys(opened).sort()).toStrictEqual(['open', 'origin']);
+    expect(Object.keys(opened).sort()).toStrictEqual(['open', 'origin', 'section', 'subPage']);
+  });
+});
+
+const candidate = (alreadyAdded: boolean, warnings: readonly ('env_overrides_login' | 'unreadable')[] = []) => ({
+  alreadyAdded,
+  warnings,
+});
+
+describe('settings sections (U-28)', () => {
+  it('U-28: the menu has two groups in order — Çalışma then Uygulama — each with its sections in order', () => {
+    expect(SETTINGS_MENU).toStrictEqual([
+      { id: 'work', sections: ['accounts', 'roles', 'capabilities', 'providers'] },
+      { id: 'app', sections: ['appearance', 'phone', 'update'] },
+    ]);
+    expect(SETTINGS_SECTIONS).toStrictEqual([
+      'accounts',
+      'roles',
+      'capabilities',
+      'providers',
+      'appearance',
+      'phone',
+      'update',
+    ]);
+    expect(SETTINGS_SECTIONS).not.toContain('language');
+  });
+
+  it("U-28: opening without a named section lands on Hesaplar — the nav's Ayarlar row; Telefon names its own", () => {
+    expect(settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' }).section).toBe('accounts');
+    expect(
+      settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer', section: 'phone' }).section,
+    ).toBe('phone');
+  });
+
+  it('U-28: selecting a section moves the menu and drops any sub-page', () => {
+    const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' });
+    const sub = settingsPanelReducer(opened, { type: 'enterSubPage', id: 'acc-1' });
+    expect(sub.subPage).toBe('acc-1');
+    const moved = settingsPanelReducer(sub, { type: 'select', section: 'roles' });
+    expect(moved).toMatchObject({ section: 'roles', subPage: null });
+  });
+
+  it('U-28: Esc leaves the sub-page first and closes the panel only on the next press', () => {
+    const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' });
+    const sub = settingsPanelReducer(opened, { type: 'enterSubPage', id: 'role-1' });
+    const afterFirst = settingsPanelReducer(sub, { type: 'escape' });
+    expect(afterFirst).toMatchObject({ open: true, subPage: null, section: 'accounts' });
+    expect(settingsPanelReducer(afterFirst, { type: 'escape' }).open).toBe(false);
+  });
+
+  it('U-28: a sub-page is not a history entry — closing clears it, and the back row leaves it', () => {
+    const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' });
+    const sub = settingsPanelReducer(opened, { type: 'enterSubPage', id: 'acc-1' });
+    expect(settingsPanelReducer(sub, { type: 'leaveSubPage' }).subPage).toBeNull();
+    const closed = settingsPanelReducer(sub, { type: 'close' });
+    expect(closed.subPage).toBeNull();
+    expect(settingsPanelReducer(closed, { type: 'open', origin: 'keyboard' }).subPage).toBeNull();
+  });
+
+  it('U-28: the Hesaplar dot is amber for a candidate not yet added that is readable — added or unreadable ones do not count', () => {
+    expect(hasUnaddedCandidate([])).toBe(false);
+    expect(hasUnaddedCandidate([candidate(true)])).toBe(false);
+    expect(hasUnaddedCandidate([candidate(false, ['unreadable'])])).toBe(false);
+    expect(hasUnaddedCandidate([candidate(true), candidate(false)])).toBe(true);
+    expect(hasUnaddedCandidate([candidate(false, ['env_overrides_login'])])).toBe(true);
+  });
+
+  it('U-28: the dot store reads accounts.candidates and a failed query shows no dot', async () => {
+    const reply: { value: unknown } = { value: [candidate(false)] };
+    const source: CandidateDotSource = {
+      query: (query) => {
+        expect(query).toStrictEqual({ type: 'accounts.candidates' });
+        return Promise.resolve(reply.value);
+      },
+    };
+    const store = createCandidateDotStore(source);
+    expect(store.dot()).toBe(false);
+    await store.load();
+    expect(store.dot()).toBe(true);
+    reply.value = { ok: false, code: 'not_found' };
+    await store.load();
+    expect(store.dot()).toBe(false);
   });
 });

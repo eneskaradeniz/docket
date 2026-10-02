@@ -20,7 +20,9 @@ import { createProjectTreeStore } from './stores/project-tree';
 import { createRoadmapStore } from './stores/roadmap';
 import { isQueryFailure } from './stores/results';
 import { createSettingsStore } from './stores/settings';
+import { createCandidateDotStore } from './stores/settings-panel';
 import { createShellStore } from './stores/shell';
+import { createThemeStore, mediaSchemeSource } from './stores/theme';
 import { createProviderMarksStore } from './stores/provider-marks';
 import { createUpdateStore } from './stores/update';
 import { createWizardStore } from './stores/wizard';
@@ -70,6 +72,14 @@ if (mount !== null) {
   const api = bridge();
   const changes = api.subscribe;
   const locale = createLocaleStore(window.localStorage);
+  // The theme (U-36) lands on the root's data-theme before the first paint and follows the store.
+  const theme = createThemeStore(window.localStorage, mediaSchemeSource(window));
+  const applyTheme = (): void => {
+    document.documentElement.dataset.theme = theme.resolved();
+  };
+  applyTheme();
+  theme.subscribe(applyTheme);
+  const candidates = createCandidateDotStore(api);
   // The meters' reset times render in the machine's zone; tests pass 'UTC' instead.
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -110,6 +120,8 @@ if (mount !== null) {
       <ErrorBoundary locale={locale.current}>
         <App
           localeStore={locale}
+          themeStore={theme}
+          candidates={candidates}
           shell={shell}
           tree={tree}
           accounts={accountsFrame}
