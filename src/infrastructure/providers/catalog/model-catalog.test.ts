@@ -213,9 +213,31 @@ describe('createModelCatalog (P-29)', () => {
       accounts,
     });
 
-    // The registry's subscription kind carries no bundled models yet, so the fallback is empty —
-    // but it is a failure-shaped fallback, not an error, and nothing is marked stale.
-    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    // A failure-shaped fallback, not an error: the subscription kind's bundled models answer,
+    // and nothing is marked stale because nothing was ever successfully refreshed.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'claude-opus-5-5',
+        source: 'bundled',
+        tier: 'strong',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-sonnet-5-5',
+        source: 'bundled',
+        tier: 'balanced',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        billing: 'included',
+      },
+      {
+        id: 'claude-haiku-4-5',
+        source: 'bundled',
+        tier: 'fast',
+        thinking: { kind: 'none' },
+        billing: 'included',
+      },
+    ]);
   });
 
   it('P-29: an API-key account lists from the documented model-list endpoint, never the SDK query', async () => {
