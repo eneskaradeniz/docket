@@ -112,8 +112,12 @@ export interface ProviderAuthProbe {
    * output that names no count = unknown.
    * `logged-in-json`: the command prints JSON whose `loggedIn` boolean is the answer on either
    * exit code; an output without that boolean = unknown. Only the boolean is read, never another
-   * field of the object, so no account value can reach a log. */
-  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json';
+   * field of the object, so no account value can reach a log.
+   * `account-null-json`: the command prints JSON whose `account` is null when logged out and an
+   * object when logged in (both with exit 0); an unparseable answer, a missing key or a value
+   * that is neither null nor an object = unknown. Only that one key's null-ness is read, never a
+   * field of the account, so no account value can reach a log. */
+  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present' | 'logged-in-json' | 'account-null-json';
   /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
    * unknown, never logged in (a user may run with an own key and never log in).
    * `provider-key-present`: the command prints JSON whose `providers[]` carry a boolean
@@ -168,6 +172,20 @@ export interface ProviderDef {
   readonly displayName: string;
   /** Candidate executable names; discovery takes the first one found. */
   readonly bins: readonly string[];
+  /** A CLI installed as a thin wrapper whose agent entry delegates to a second binary at a fixed
+   * path under the user's home: the installer may ship the wrapper without that file, and only
+   * the CLI's own setup creates it, so when it is absent the resolved binary cannot start an
+   * agent (its own error names the path) and discovery reports the provider as unusable on this
+   * machine — `binPath: null`, so the install hint carries the remedy instead of a launch that
+   * cannot work. Presence only: the file is never opened, and Docket never runs the CLI's own
+   * setup or repair commands. A resolved binary that already is the named file (an override
+   * pointing straight at it) is self-sufficient and skips the check. */
+  readonly agentDelegate?: {
+    /** The variable naming the directory the relative path resolves under (the user's home). */
+    readonly homeEnv: string;
+    /** The delegate's path under that directory. */
+    readonly relativePath: string;
+  };
   readonly versionArgs: readonly string[];
   readonly authProbe?: ProviderAuthProbe;
   /** Scanned (stdout + stderr) for optional flags. */

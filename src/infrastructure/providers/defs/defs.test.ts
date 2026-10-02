@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'kiro'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'kiro'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -136,6 +136,7 @@ describe('provider definitions (P-1)', () => {
       vibe: '',
       mimo: '',
       qwen: '',
+      kiro: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -266,6 +267,7 @@ describe('provider definitions (P-1)', () => {
       reasonix: { kind: 'session-option', configId: 'effort' },
       vibe: { kind: 'session-option', category: 'thinking' },
       mimo: { kind: 'model-suffix', separator: '/' },
+      kiro: { kind: 'flag', flag: '--effort' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -590,7 +592,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe, mimo, qwen, kiro) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -762,6 +764,65 @@ describe('qwen definition (P-35)', () => {
 
   it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
     expect(qwen().capabilities).toMatchObject({
+      permissionAsk: 'unknown',
+      quotaReport: 'none',
+      costReport: 'none',
+      images: true,
+      mcp: true,
+    });
+  });
+});
+
+describe('kiro definition (P-35)', () => {
+  const kiro = (): ProviderDef => defById('kiro');
+
+  it('P-35: kiro launches its ACP subcommand, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    expect(kiro().bins).toEqual(['kiro-cli']);
+    expect(kiro().versionArgs).toEqual(['--version']);
+    expect(kiro().helpArgs).toEqual(['--help']);
+    expect(kiro().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['acp'], env: {}, stdin: 'prompt' });
+    expect(kiro().resume).toBe('protocol');
+    expect(isProviderDef(kiro())).toBe(true);
+  });
+
+  it('P-35: the wrapper names the chat binary it delegates to, so discovery can tell a broken install from a working one', () => {
+    expect(kiro().agentDelegate).toEqual({ homeEnv: 'HOME', relativePath: '.local/bin/kiro-cli-chat' });
+    // Nothing Docket could run repairs the install: the CLI's own setup is the user's remedy.
+    expect(JSON.stringify(kiro().agentDelegate)).not.toMatch(/setup|doctor/);
+  });
+
+  it('P-44: no per-run home or config variable is documented, so the launch sets no variable, never auto-approves and claims no isolation', () => {
+    expect(kiro().config).toEqual({ mechanism: 'none' });
+    expect(kiro().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'auto' }]) {
+      const launch = kiro().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      // `-a` and `--trust-all-tools` turn every ask into an allow; the ask-first default must stay.
+      expect(JSON.stringify(launch)).not.toMatch(/trust-all-tools|-a\b|--agent-engine/);
+    }
+  });
+
+  it('P-43: the effort flag is the CLI\'s own, but no level is offered or sent while the per-model level sets are unverified', () => {
+    // `acp --help` lists low, medium, high, xhigh and max — the flag exists — but the model list
+    // carries no effort field and no operator run has recorded which levels a model takes, so the
+    // empty map names no level: nothing is offered, and nothing joins the launch.
+    expect(kiro().effortArg).toEqual({ kind: 'flag', flag: '--effort' });
+    expect(kiro().levelNames).toEqual({});
+    expect(effortFlagArgs(kiro().effortArg, 'high', kiro().levelNames)).toEqual([]);
+    expect(kiro().buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }).args).toEqual(['acp']);
+  });
+
+  it('P-45: the login probe is whoami, which never opens a browser, and no probe could start a login flow', () => {
+    expect(kiro().authProbe).toEqual({ args: ['whoami', '-f', 'json'], parse: 'account-null-json' });
+    expect(kiro().helpNeedsLogin).toBeUndefined();
+    for (const probe of [kiro().versionArgs, kiro().helpArgs, kiro().authProbe?.args]) {
+      // The listing command that starts a browser login lives in the catalog's table, never here.
+      expect(JSON.stringify(probe)).not.toMatch(/login|list-models|chat|setup|doctor/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
+    expect(kiro().capabilities).toMatchObject({
       permissionAsk: 'unknown',
       quotaReport: 'none',
       costReport: 'none',

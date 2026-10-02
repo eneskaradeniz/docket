@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AccountRecord } from '../../../application/index';
 import type { LiveModel } from '../../../domain/index';
 import { parseUlid, type AccountId } from '../../../domain/index';
-import { listCliCommandRouteModels, parseCliModelsOutput, type CliModelSpawn } from './cli-command-catalog';
+import { listCliCommandRouteModels, parseCliModelsOutput, parseKiroModelsOutput, type CliModelSpawn } from './cli-command-catalog';
 
 let root: string;
 let sequence = 0;
@@ -281,12 +281,104 @@ describe('login-gated listing (P-45)', () => {
     expect(lister.calls).toHaveLength(1);
   });
 
-  it('P-45: an unmarked command runs whatever the login probe said — no built-in model-list command is marked', async () => {
+  it('P-45: an unmarked command runs whatever the login probe said', async () => {
     const lister = makeLister({}, { loggedIn: false });
 
     const result = await lister.list();
 
     expect(result.ok).toBe(true);
     expect(lister.calls).toHaveLength(1);
+  });
+});
+
+describe('kiro models command (P-29, P-45)', () => {
+  // The recorded live answer of `kiro-cli chat --list-models -f json` (CLI 2.27.0, 2026-10-02,
+  // operator-logged-in run): one JSON object, nine rows, `auto` the default alias row of a
+  // router. The ids, context windows and multipliers are the recorded values; the display-name
+  // strings reproduce the schema's field, whose verbatim values the recording does not carry.
+  const KIRO_MODELS_OUTPUT = JSON.stringify({
+    models: [
+      { model_name: 'Auto', description: 'Automatically selects the best model', model_id: 'auto', context_window_tokens: 1000000, rate_multiplier: 1.0, rate_unit: 'Credit' },
+      { model_name: 'Claude Sonnet 4.5', description: 'Anthropic Claude Sonnet 4.5', model_id: 'claude-sonnet-4.5', context_window_tokens: 200000, rate_multiplier: 1.3, rate_unit: 'Credit' },
+      { model_name: 'Claude Sonnet 4', description: '[EOL] 14 October 2026', model_id: 'claude-sonnet-4', context_window_tokens: 200000, rate_multiplier: 1.3, rate_unit: 'Credit' },
+      { model_name: 'Claude Haiku 4.5', description: 'Anthropic Claude Haiku 4.5', model_id: 'claude-haiku-4.5', context_window_tokens: 200000, rate_multiplier: 0.4, rate_unit: 'Credit' },
+      { model_name: 'DeepSeek 3.2', description: 'DeepSeek V3.2', model_id: 'deepseek-3.2', context_window_tokens: 163840, rate_multiplier: 0.25, rate_unit: 'Credit' },
+      { model_name: 'MiniMax M2.5', description: 'MiniMax M2.5', model_id: 'minimax-m2.5', context_window_tokens: 200000, rate_multiplier: 0.25, rate_unit: 'Credit' },
+      { model_name: 'MiniMax M2.1', description: 'MiniMax M2.1', model_id: 'minimax-m2.1', context_window_tokens: 200000, rate_multiplier: 0.15, rate_unit: 'Credit' },
+      { model_name: 'GLM 5', description: 'GLM 5', model_id: 'glm-5', context_window_tokens: 200000, rate_multiplier: 0.5, rate_unit: 'Credit' },
+      { model_name: 'Qwen3 Coder Next', description: 'Qwen3 Coder Next', model_id: 'qwen3-coder-next', context_window_tokens: 256000, rate_multiplier: 0.05, rate_unit: 'Credit' },
+    ],
+    default_model: 'auto',
+  });
+
+  const kiroAccount = (): AccountRecord => ({ ...agyAccount(), provider: 'kiro' });
+
+  it('P-29: the recorded nine-model answer parses to one row per model, the id verbatim, the name as display name, and only the default row marked', () => {
+    const parsed = parseKiroModelsOutput(KIRO_MODELS_OUTPUT);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error('unreachable');
+    expect(parsed.value.map((row) => row.id)).toEqual([
+      'auto',
+      'claude-sonnet-4.5',
+      'claude-sonnet-4',
+      'claude-haiku-4.5',
+      'deepseek-3.2',
+      'minimax-m2.5',
+      'minimax-m2.1',
+      'glm-5',
+      'qwen3-coder-next',
+    ]);
+    expect(parsed.value[0]).toEqual({ id: 'auto', displayName: 'Auto', isDefault: true });
+    expect(parsed.value[1]).toEqual({ id: 'claude-sonnet-4.5', displayName: 'Claude Sonnet 4.5' });
+    // The list carries no effort field, so no row states levels, and the credit multiplier is
+    // never read as a price: no row carries a billing.
+    for (const row of parsed.value) {
+      expect(row.efforts).toBeUndefined();
+      expect(row.billing).toBeUndefined();
+    }
+  });
+
+  it('P-29: a duplicate id is listed once, and a default naming no row marks none', () => {
+    const duplicate = parseKiroModelsOutput(
+      JSON.stringify({
+        models: [
+          { model_name: 'A', model_id: 'm-1', context_window_tokens: 1000, rate_multiplier: 1, rate_unit: 'Credit' },
+          { model_name: 'A again', model_id: 'm-1', context_window_tokens: 1000, rate_multiplier: 1, rate_unit: 'Credit' },
+          { model_name: 'B', model_id: 'm-2', context_window_tokens: 1000, rate_multiplier: 1, rate_unit: 'Credit' },
+        ],
+        default_model: 'm-x',
+      }),
+    );
+    expect(duplicate.ok).toBe(true);
+    if (!duplicate.ok) throw new Error('unreachable');
+    expect(duplicate.value.map((row) => [row.id, row.isDefault])).toEqual([['m-1', undefined], ['m-2', undefined]]);
+  });
+
+  it('P-29: prose, an empty list, a row without an id and a missing name field are shape problems named without quoting the output', () => {
+    for (const output of ['Opening auth portal…', '{}', '{"models":[]}', '{"models":[{"model_name":"No id"}]}']) {
+      const parsed = parseKiroModelsOutput(output);
+      expect(parsed.ok, output).toBe(false);
+      if (parsed.ok) throw new Error('unreachable');
+      expect(parsed.error.code, output).toBe('malformed');
+      expect(parsed.error.message, output).not.toMatch(/Opening auth|No id/);
+    }
+  });
+
+  it('P-45: the kiro command is marked needsLogin, so the listing never runs unless the login probe answered true', async () => {
+    for (const loggedIn of [false, null, undefined] as const) {
+      const lister = makeLister({ output: KIRO_MODELS_OUTPUT }, { ...(loggedIn === undefined ? {} : { loggedIn }) });
+
+      const result = await lister.list(kiroAccount());
+
+      expect(result.ok, String(loggedIn)).toBe(false);
+      expect(lister.calls, String(loggedIn)).toEqual([]);
+    }
+
+    const lister = makeLister({ output: KIRO_MODELS_OUTPUT }, { loggedIn: true });
+    const result = await lister.list(kiroAccount());
+
+    expect(result.ok).toBe(true);
+    expect(lister.calls).toEqual([{ command: lister.binPath ?? '', args: ['chat', '--list-models', '-f', 'json'], timeout: expect.any(Number) }]);
   });
 });

@@ -103,6 +103,7 @@ describe('model catalog data (P-29)', () => {
       'grok-build-login',
       'hermes-subscription',
       'kilo-login',
+      'kiro-login',
       'mimo-login',
       'opencode-subscription',
       'qwen-login',
@@ -313,12 +314,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen and devin carries isolation evidence, and all ten stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, kiro and devin carries isolation evidence, and all eleven stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'kiro', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -340,6 +341,7 @@ describe('isolation evidence (P-44)', () => {
       vibe: 'experimental',
       mimo: 'experimental',
       qwen: 'experimental',
+      kiro: 'experimental',
       devin: 'planned',
     });
   });
@@ -430,6 +432,27 @@ describe('isolation evidence (P-44)', () => {
     expect(findRouteKind('qwen-login')).toMatchObject({
       providerId: 'qwen',
       modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
+  it('P-28: the kiro record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists the login-gated CLI models with unknown billing', () => {
+    const gates = findProvider('kiro')?.gates;
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit',
+    });
+    // The ask-first default is documented but the permission wait is unproven until an operator
+    // run, and no usage mapping is proven either.
+    expect(gates?.G3).toBeUndefined();
+    expect(gates?.G4).toBeUndefined();
+    expect(findRouteKind('kiro-login')).toMatchObject({
+      providerId: 'kiro',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      modelSource: 'cli-command',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       quotaProbe: 'none',

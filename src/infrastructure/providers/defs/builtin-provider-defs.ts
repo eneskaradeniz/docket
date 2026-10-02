@@ -4,13 +4,17 @@
 // unmodified from the file its `d` came from (the provider's official file, or the
 // operator-placed stand-in when none exists); it identifies the provider only and is never
 // redrawn — `mark: null` stays the state of a def with no file.
-import { effortFlagArgs, type EffortArg, type ProviderDef } from './provider-def';
+import { effortFlagArgs, type EffortArg, type LevelNames, type ProviderDef } from './provider-def';
 
 // Each effort parameter below is taken from the provider's own help output, SDK typings or
 // protocol schema; a provider whose parameter is not verified carries none.
 const AGY_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
 const COPILOT_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
 const GROK_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
+const KIRO_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
+// The flag exists, but no model's level set is verified, so no level is named: none is offered
+// and none is sent until an operator run records them (P-43's empty-map rule).
+const KIRO_LEVEL_NAMES: LevelNames = {};
 
 export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
   {
@@ -494,6 +498,52 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
       costReport: 'none',
     },
     installHint: { url: 'https://github.com/QwenLM/qwen-code' },
+    mark: null,
+  },
+  {
+    id: 'kiro',
+    displayName: 'Kiro',
+    // The cask binary is a thin wrapper: its `acp` and `chat` entries delegate to a chat binary
+    // the cask does not install (`~/.local/bin/kiro-cli-chat`), and only the CLI's own setup
+    // creates it — so discovery checks the delegate and reports the provider unusable without it.
+    bins: ['kiro-cli'],
+    agentDelegate: { homeEnv: 'HOME', relativePath: '.local/bin/kiro-cli-chat' },
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `whoami -f json` prints `{"account":null}` when logged out and a populated account when
+    // logged in, both without opening a browser; only the account key's null-ness is read. The
+    // CLI's own `login` is never run, and nothing that could start a login flow is a probe.
+    authProbe: { args: ['whoami', '-f', 'json'], parse: 'account-null-json' },
+    transport: 'acp',
+    // The effort flag is the CLI's own (`acp --help` lists low, medium, high, xhigh, max), but
+    // the model list carries no effort field and per-model levels are unverified, so the empty
+    // map offers and sends no level until an operator run records them.
+    effortArg: KIRO_EFFORT,
+    levelNames: KIRO_LEVEL_NAMES,
+    // No per-run home or config-dir variable is documented and the login lives in `~/.kiro`, so
+    // no run-scoped redirection is invented and no isolation is claimed.
+    config: { mechanism: 'none' },
+    // Never `-a`/`--trust-all-tools`: the CLI's default is ask-first and a non-interactive run
+    // treats every ask as deny, so each ask reaches the user through the transport's wait.
+    buildLaunch: (input) => ({
+      args: ['acp', ...effortFlagArgs(KIRO_EFFORT, input.effort, KIRO_LEVEL_NAMES)],
+      env: {},
+      stdin: 'prompt',
+    }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      // Usage is metered in credits, but no machine-readable field is verified: no report yet.
+      costReport: 'none',
+    },
+    installHint: { url: 'https://kiro.dev/docs/cli/' },
     mark: null,
   },
 ];

@@ -17,6 +17,7 @@ import {
   loggedInFromAuthStatus,
   loggedInFromCredentialCount,
   loggedInFromProviderKeys,
+  loggedInFromWhoami,
   type ProbeSpawn,
 } from './path-discovery';
 
@@ -656,5 +657,87 @@ describe('credential-file presence login probe (grok-build)', () => {
 
     rmSync(join(HOME(), '.grok'), { recursive: true, force: true });
     expect((await discoverGrok({ XAI_API_KEY: 'xai-ambient' })).loggedIn).toBe(false);
+  });
+});
+
+describe('whoami login probe (kiro)', () => {
+  it('P-45: the whoami login probe reads only the account key — null is logged out, a populated account logged in, anything else unknown', () => {
+    // The logged-out shape is the recorded live answer; the logged-in shape is unverified, so a
+    // populated object of any fields is the login and nothing inside it is ever read.
+    expect(loggedInFromWhoami('{"account":null}')).toBe(false);
+    expect(loggedInFromWhoami('{"account":{"id":"builder-1"}}')).toBe(true);
+    expect(loggedInFromWhoami('')).toBeNull();
+    expect(loggedInFromWhoami('Not logged in')).toBeNull();
+    expect(loggedInFromWhoami('{"other":null}')).toBeNull();
+    // An account that is neither null nor an object names no state Docket can read.
+    expect(loggedInFromWhoami('{"account":"builder-1"}')).toBeNull();
+  });
+
+  it('G1: the kiro definition probes `whoami -f json` once and reads the account key, never a login flow', async () => {
+    const kiro = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'kiro');
+    const home = join(root, 'kiro-whoami-home');
+    mkdirSync(join(home, '.local', 'bin'), { recursive: true });
+    writeFileSync(join(home, '.local', 'bin', 'kiro-cli-chat'), 'unused');
+    writeBin(
+      'kiro-whoami-path/kiro-cli',
+      'case "$1" in\n  --version) echo "kiro-cli 2.27.0"; exit 0;;\n  whoami) echo \'{"account":null}\'; exit 0;;\nesac\nexit 0',
+    );
+    const { discovery, calls } = makeDiscovery([kiro ?? defOf()], {
+      PATH: join(root, 'kiro-whoami-path'),
+      HOME: home,
+    });
+
+    const results = await collect(discovery);
+
+    expect(results[0]).toEqual({ defId: 'kiro', binPath: join(root, 'kiro-whoami-path', 'kiro-cli'), version: 'kiro-cli 2.27.0', loggedIn: false, optionalFlags: [] });
+    expect(calls.map((call) => call.args)).toEqual([['--version'], ['whoami', '-f', 'json']]);
+  });
+});
+
+describe('agent delegate resolution (kiro)', () => {
+  const kiroDef = (): ProviderDef => BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'kiro') ?? defOf();
+  const stageWrapper = (): string => {
+    writeBin('kiro-wrapper-path/kiro-cli', 'case "$1" in\n  --version) echo "kiro-cli 2.27.0"; exit 0;;\n  whoami) echo \'{"account":null}\'; exit 0;;\nesac\nexit 0');
+    return join(root, 'kiro-wrapper-path');
+  };
+
+  it('P-4: a wrapper whose agent delegate is missing reports the provider unusable — binPath null and nothing spawned', async () => {
+    const path = stageWrapper();
+    const home = join(root, 'kiro-broken-home'); // no .local/bin/kiro-cli-chat
+    mkdirSync(home, { recursive: true });
+
+    const { discovery, calls } = makeDiscovery([kiroDef()], { PATH: path, HOME: home });
+    const results = await collect(discovery);
+
+    // Exactly the not-found shape: the install hint is the user's remedy, and Docket never runs
+    // the CLI's own setup or doctor to repair it.
+    expect(results[0]).toEqual({ defId: 'kiro', binPath: null, version: null, loggedIn: null, optionalFlags: [] });
+    expect(calls).toEqual([]);
+  });
+
+  it('P-4: the delegate present, the wrapper answers the shared probes normally', async () => {
+    const path = stageWrapper();
+    const home = join(root, 'kiro-working-home');
+    mkdirSync(join(home, '.local', 'bin'), { recursive: true });
+    writeFileSync(join(home, '.local', 'bin', 'kiro-cli-chat'), 'unused');
+
+    const { discovery } = makeDiscovery([kiroDef()], { PATH: path, HOME: home });
+    const results = await collect(discovery);
+
+    expect(results[0]?.binPath).toBe(join(path, 'kiro-cli'));
+    expect(results[0]?.version).toBe('kiro-cli 2.27.0');
+    expect(results[0]?.loggedIn).toBe(false);
+  });
+
+  it('P-2: an override pointing straight at the delegate binary is self-sufficient — no delegate check applies', async () => {
+    const chat = writeBin('kiro-app-bundle/kiro-cli-chat', 'case "$1" in\n  --version) echo "kiro-cli-chat 2.27.0"; exit 0;;\n  whoami) echo \'{"account":null}\'; exit 0;;\nesac\nexit 0');
+    const home = join(root, 'kiro-override-home'); // no .local/bin/kiro-cli-chat
+    mkdirSync(home, { recursive: true });
+
+    const { discovery } = makeDiscovery([kiroDef()], { PATH: EMPTY_PATH(), HOME: home, DOCKET_KIRO_BIN: chat });
+    const results = await collect(discovery);
+
+    expect(results[0]?.binPath).toBe(chat);
+    expect(results[0]?.version).toBe('kiro-cli-chat 2.27.0');
   });
 });

@@ -202,6 +202,22 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI documents no per-run home or config
+      // variable and its login lives in `~/.kiro`, so a run reads the user's own steering files
+      // and the level stays capped at experimental. G3 is absent: the ask-first default is
+      // documented (and a non-interactive run treats every ask as deny) but the permission wait
+      // is unproven until an operator run. G4 is absent: usage is metered in credits whose
+      // machine-readable fields are unverified. Instruction files: AGENTS.md and .kiro/steering/
+      // are read natively, CLAUDE.md is not.
+      providerId: 'kiro',
+      gates: {
+        G1: { kind: 'test', name: 'P-45: the whoami login probe reads only the account key — null is logged out, a populated account logged in, anything else unknown' },
+        G2: { kind: 'test', name: 'P-15: the kiro session shape — modes without configOptions, custom _kiro.dev notifications — opens a session and maps its turn without an error' },
+        G5: { kind: 'waived', reason: 'provider reports no machine-readable quota; a limit error maps to limit_hit' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -511,6 +527,26 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'none',
       quotaProbe: 'none',
       modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The login's model list is the CLI's own listing subcommand (`kiro-cli chat
+      // --list-models -f json` — a plain command run, no agent turn), and the command starts a
+      // browser login flow when nobody is logged in, so the listing is gated on the whoami
+      // probe's `loggedIn === true` (P-45) and the plan scopes the list, so it is authoritative.
+      // Usage is metered in plan credits with a per-model multiplier, but the multiplier is not
+      // a price and no machine-readable plan source says which rows a plan covers, so every row
+      // reads unknown (P-40) and stays a hand pick with spend consent. The credit quota channel
+      // is a separate issue, so no cost kind is claimed yet.
+      id: 'kiro-login',
+      providerId: 'kiro',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'cli-command',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       models: [],
