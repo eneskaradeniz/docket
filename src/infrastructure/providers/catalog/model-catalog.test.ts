@@ -380,7 +380,6 @@ describe('createModelCatalog (P-29)', () => {
     ]);
   });
 
-<<<<<<< HEAD
   it('P-29: an acp-session route kind dispatches to the ACP adapter — a plan-authoritative list whose rows bill unknown without a verified default', async () => {
     // The fake ACP agent rides on the node binary; its session/new answer is scripted.
     const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
@@ -416,7 +415,9 @@ describe('createModelCatalog (P-29)', () => {
         thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
         billing: 'unknown',
       },
-=======
+    ]);
+  });
+
   it('P-29: an acp-session route kind dispatches to the session adapter — the plan-limited answer lists the settings, billing unknown', async () => {
     // The fake agent rides on the node binary; the scenario answers the recorded shape of a
     // plan limited to the automatic choice, which the adapter expands to the route's settings.
@@ -434,7 +435,6 @@ describe('createModelCatalog (P-29)', () => {
       { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown' },
       { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown' },
       { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown' },
->>>>>>> origin/v2
     ]);
   });
 
