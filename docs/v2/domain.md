@@ -91,6 +91,10 @@ export function isUlid(input: string): boolean;
 // shared/run.ts
 export type RunOutcome = 'succeeded' | 'failed' | 'limit' | 'cancelled';
 
+// shared/billing.ts — how a model's use is paid for on a route; the spend-consent boundary
+// the providers capability records and the quota limit policy both speak.
+export type Billing = 'included' | 'metered' | 'unknown';   // included = the plan covers it (verified); metered = billed per use (verified); unknown = not verified and never assumed free
+
 // shared/actor.ts
 export type Actor =
   | { readonly kind: 'user'; readonly id: string; readonly label?: string }
@@ -410,7 +414,7 @@ export interface Pool {
   readonly accountId: AccountId;
   readonly label: string;               // server-supplied, verbatim
   readonly kind: PoolKind;
-  readonly appliesTo: readonly ModelMatcher[] | 'all';
+  readonly appliesTo: readonly ModelMatcher[] | 'all' | 'unknown';   // 'unknown' is shown for information only, takes no part in headroom and never blocks a run
 }
 export type ModelMatcher = { readonly exact: string } | { readonly prefix: string };
 export type Cadence = 'rolling_from_first_use' | 'rolling_continuous' | 'fixed' | 'calendar' | 'billing_cycle' | 'none';
@@ -460,22 +464,36 @@ export function headroom(pools: readonly Pool[], meters: readonly Meter[], accou
 
 // quota/limit-policy.ts
 export type LimitPolicy = 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
+export interface PoolCandidate {
+  readonly poolId: PoolId;
+  readonly billing: Billing;
+  readonly consented: boolean;
+}
+export interface FallbackCandidate {
+  readonly route: AccountRoute;
+  readonly billing: Billing;
+  readonly consented: boolean;
+}
 export interface LimitContext {
   readonly policy: LimitPolicy;
   readonly autoResumesUsed: number;
   readonly maxAutoResumes: number;           // default 3
-  readonly alternativePools: readonly PoolId[];   // same account, pools with headroom for another model
-  readonly fallbackAccounts: readonly AccountRoute[]; // next in the role's chain, with headroom
+  readonly alternativePools: readonly PoolCandidate[];      // same account, pools with headroom for another model
+  readonly fallbackAccounts: readonly FallbackCandidate[];  // next in the role's chain, with headroom
   readonly now: EpochMs;
 }
 export type LimitDecision =
   | { readonly kind: 'schedule_resume'; readonly at: EpochMs; readonly requeryFirst: true }
   | { readonly kind: 'switch_pool'; readonly poolId: PoolId }
   | { readonly kind: 'fallback'; readonly route: AccountRoute }
-  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' };
+  | { readonly kind: 'ask'; readonly reason: 'policy' | 'no_reset_time' | 'max_resumes' | 'not_resumable' | 'billing_boundary' };
 export const RESUME_JITTER_MS: number;      // 60_000
 export function decideOnLimit(hit: LimitHit, ctx: LimitContext): LimitDecision;
 ```
+
+Fallback and pool-switch candidates carry the billing of the target and whether the user consented
+to it; a candidate that is not included is eligible only with consent, otherwise the decision falls
+back to asking or waiting and its reason is `billing_boundary`.
 
 Rules:
 - **R-25** `matchesModel`: `'all'` matches everything; `exact` compares case-insensitively; `prefix` is a case-insensitive prefix.
@@ -649,13 +667,15 @@ export interface ProviderCapabilities {
   readonly skills: Tri;
   readonly images: Tri;
   readonly quotaReport: 'stream' | 'query' | 'error_only' | 'none';
-  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'none';
+  readonly costReport: 'reported' | 'computed' | 'equivalent' | 'credits' | 'none';
 }
 export type SupportTier = 'full' | 'isolated' | 'experimental';
 export function supportTier(c: ProviderCapabilities): SupportTier;
 
 // providers/agent-event.ts
-export type CostKind = 'reported' | 'computed' | 'equivalent';
+export type CostKind = 'reported' | 'computed' | 'equivalent' | 'credits';
+// credits: the provider meters usage in its own credit unit; the amount is a number of credits
+// in the provider's smallest unit.
 export type AgentEvent =
   | { readonly type: 'session_started'; readonly at: EpochMs; readonly sessionRef: string }
   | { readonly type: 'text'; readonly at: EpochMs; readonly delta: string }
