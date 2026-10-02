@@ -1,7 +1,9 @@
 // provider-mark.test.ts — the account badge as markup: a known provider renders one inline SVG
 // carrying its path verbatim in the row's text colour; every without-standing (null mark) renders
-// the neutral rounded-square outline of the same size — never a letter, never a name. Rendered
-// through the static renderer, so the assertions read the real element tree.
+// the neutral rounded-square outline of the same size — never a letter, never a name. Both
+// standings name their provider (`data-provider`) and the neutral glyph marks itself
+// (`data-mark="neutral"`), the two hooks the layout audit's L-12 reads. Rendered through the
+// static renderer, so the assertions read the real element tree.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -13,8 +15,11 @@ const MARK: ProviderMarkValue = { viewBox: '0 0 24 24', path: 'M12 2 22 12 12 22
 
 describe('ProviderMark', () => {
   it('renders the mark as one inline SVG in the current colour at the default size', () => {
-    const html = renderToStaticMarkup(createElement(ProviderMark, { mark: MARK }));
+    const html = renderToStaticMarkup(createElement(ProviderMark, { provider: 'codex', mark: MARK }));
     expect(html).toContain('data-provider-mark');
+    expect(html).toContain('data-provider="codex"');
+    // A drawn mark is not the neutral glyph — the marker belongs to the outline alone.
+    expect(html).not.toContain('data-mark');
     expect(html).toContain('viewBox="0 0 24 24"');
     expect(html).toContain('fill="currentColor"');
     expect(html).toContain('fill-rule="evenodd"');
@@ -28,14 +33,18 @@ describe('ProviderMark', () => {
   });
 
   it('renders the dense size where the row is dense', () => {
-    const html = renderToStaticMarkup(createElement(ProviderMark, { mark: MARK, size: MARK_SIZE.dense }));
+    const html = renderToStaticMarkup(
+      createElement(ProviderMark, { provider: 'codex', mark: MARK, size: MARK_SIZE.dense }),
+    );
     expect(html).toContain(`width:${MARK_SIZE.dense}px`);
     expect(html).toContain(`height:${MARK_SIZE.dense}px`);
   });
 
   it('renders the neutral rounded-square outline for a null mark, at the same size', () => {
-    const html = renderToStaticMarkup(createElement(ProviderMark, { mark: null }));
+    const html = renderToStaticMarkup(createElement(ProviderMark, { provider: 'kimi', mark: null }));
     expect(html).toContain('data-provider-mark');
+    expect(html).toContain('data-provider="kimi"');
+    expect(html).toContain('data-mark="neutral"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('rounded-control');
     expect(html).toContain('border-[1.5px]');
