@@ -95,6 +95,16 @@ export type RunOutcome = 'succeeded' | 'failed' | 'limit' | 'cancelled';
 // the providers capability records and the quota limit policy both speak.
 export type Billing = 'included' | 'metered' | 'unknown';   // included = the plan covers it (verified); metered = billed per use (verified); unknown = not verified and never assumed free
 
+// shared/thinking.ts — the effort scale and the user's thinking choice (P-30), shared because the
+// resolver (RoleBinding) and providers (capability records) both speak them; providers re-exports
+// EffortLevel so existing imports keep working.
+export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+/** One of the three user levels, or an exact effort from advanced settings (the only way to reach
+ *  `max` and `ultra`). */
+export type ThinkingChoice =
+  | { readonly level: 'fast' | 'balanced' | 'deep' }
+  | { readonly effort: EffortLevel };
+
 // shared/actor.ts
 export type Actor =
   | { readonly kind: 'user'; readonly id: string; readonly label?: string }
@@ -265,7 +275,11 @@ export function applyRoleOverrides(base: RoleDef, overrides: readonly RoleOverri
 
 /** Machine-local binding of a role to an ordered chain of accounts (first = preferred).
  *  AccountRoute comes from quota/types.ts. */
-export interface RoleBinding { readonly role: RoleSlug; readonly accounts: readonly AccountRoute[] }
+export interface RoleBinding {
+  readonly role: RoleSlug;
+  readonly accounts: readonly AccountRoute[];
+  readonly thinking?: ThinkingChoice;   // absent → { level: 'balanced' }
+}
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined;
 ```
 
@@ -458,9 +472,14 @@ export function normalizedRemaining(meter: Meter): number | undefined;
 export function isStale(meter: Meter, now: EpochMs): boolean;
 export type Headroom =
   | { readonly ok: true; readonly lowest?: number }                        // lowest normalized remaining seen
-  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs }
+  | { readonly ok: false; readonly blockedBy: readonly MeterId[]; readonly earliestRelief?: EpochMs; readonly byReserve?: true }
   | { readonly ok: 'unknown'; readonly reason: 'no_data' | 'stale' };
-export function headroom(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId, model: string, now: EpochMs): Headroom;
+/** The share of a window the user keeps back for their own use (0..0.95). `short` applies to
+ *  windows shorter than one day (e.g. five hours), `long` to windows of a day or longer (weekly,
+ *  monthly). Absent or 0 → no reserve. */
+export interface QuotaReserve { readonly short?: number; readonly long?: number }
+export const RESERVE_MAX: number;           // 0.95
+export function headroom(pools: readonly Pool[], meters: readonly Meter[], accountId: AccountId, model: string, now: EpochMs, reserve?: QuotaReserve): Headroom;
 
 // quota/limit-policy.ts
 export type LimitPolicy = 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
@@ -501,6 +520,7 @@ Rules:
 - **R-27** `isStale`: `staleAfterMs` given and `now - observedAt > staleAfterMs`.
 - **R-28** `headroom` ANDs every meter of every pool matching the model: any meter with normalized remaining `0` (or `remaining <= 0`) and (`resetsAt` undefined or `> now`) blocks. A meter whose `resetsAt <= now` is treated as unknown-but-not-blocking. `throughput` pools never block (they are transient). No meters at all → `{ok:'unknown', reason:'no_data'}`; all relevant meters stale → `'stale'`.
 - **R-29** `earliestRelief` = the minimum `resetsAt` among blocking meters, if any.
+- **R-49** Reserve: with a `reserve`, a non-throughput meter whose normalized remaining is known and `<=` its class's reserve (and `> 0`) blocks like an exhausted one (same `earliestRelief` rule). Class: `durationMs < 86_400_000` → `short`; `durationMs >= 86_400_000` → `long`; no `durationMs` → `long` for cadence `calendar` or `billing_cycle`, otherwise the larger of the two values. A meter whose normalized remaining is unknown never blocks by reserve. `byReserve: true` only when every blocking meter blocks by reserve alone. A reserve of `0` or absent changes nothing (R-28 unchanged).
 - **R-30** `decideOnLimit`:
   - `class` `throughput` → `schedule_resume` at `now + (retryAfterMs ?? MINUTE)` (does not consume an auto-resume).
   - `fair_use`, `entitlement`, `plan_expired`, `balance_exhausted`, `spend_cap` → `ask` with `not_resumable`, unless policy is `fallback_account` and a fallback exists.
@@ -548,6 +568,7 @@ export interface QueueItem {
   readonly priority: number;            // higher first
   readonly enqueuedAt: EpochMs;
   readonly notBefore?: EpochMs;         // e.g. a scheduled resume
+  readonly thinking?: ThinkingChoice;   // from the resolved binding (A-19); absent → balanced
 }
 export interface RunningRun { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug; readonly accountId: AccountId }
 export interface DispatchLimits {
@@ -683,7 +704,7 @@ export type AgentEvent =
   | { readonly type: 'tool_call'; readonly at: EpochMs; readonly id: string; readonly name: string; readonly target?: string }
   | { readonly type: 'tool_result'; readonly at: EpochMs; readonly id: string; readonly ok: boolean }
   | { readonly type: 'permission_ask'; readonly at: EpochMs; readonly id: string; readonly tool: string; readonly target?: string; readonly options: readonly string[] }
-  | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
+  | { readonly type: 'usage'; readonly at: EpochMs; readonly inputTokens: number; readonly outputTokens: number; readonly cachedInputTokens?: number; readonly reasoningTokens?: number; readonly costUsd?: number; readonly costKind?: CostKind }
   | { readonly type: 'quota_signal'; readonly at: EpochMs; readonly meter: Omit<Meter, 'id' | 'poolId'> & { readonly poolLabel?: string } }
   | { readonly type: 'limit_hit'; readonly at: EpochMs; readonly hit: Omit<LimitHit, 'accountId' | 'at'> }
   | { readonly type: 'error'; readonly at: EpochMs; readonly class: 'auth' | 'network' | 'crash' | 'protocol' | 'timeout' | 'unknown'; readonly reason?: 'first_output_timeout' | 'inactivity_timeout'; readonly message: string }
@@ -696,6 +717,7 @@ export interface RunSummary {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cachedInputTokens: number;
+  readonly reasoningTokens: number;      // part of outputTokens, shown as its own line (P-30)
   readonly costUsd?: number;             // sum of events that carried a cost
   readonly costKind?: CostKind;          // the kind of the first costed event
   readonly toolCalls: number;
@@ -705,11 +727,16 @@ export interface RunSummary {
   readonly outcome?: RunOutcome;          // from 'finished': completed→succeeded, failed, cancelled, limit
 }
 export function foldRun(events: readonly AgentEvent[]): RunSummary;
+
+// providers/catalog.ts — Thinking and EffortLevel as in provider-capabilities.md §1
+/** The effort a run sends for a role's choice on one model; undefined → send nothing. */
+export function effortForChoice(choice: ThinkingChoice | undefined, thinking: Thinking | 'unknown'): EffortLevel | undefined;
 ```
 
 Rules:
 - **R-43** `supportTier`: `structuredStream && permissionAsk === true` → `full`; `structuredStream` → `isolated`; else `experimental`.
-- **R-44** `foldRun` sums token counts across all `usage` events; `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
+- **R-44** `foldRun` sums token counts across all `usage` events (`reasoningTokens` absent counts as 0); `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
+- **R-50** `effortForChoice`: absent choice → `{ level: 'balanced' }`; a `level` maps through `thinkingFor`; an `effort` is sent as is when the model lists it, otherwise clamped down to the highest listed level below it, and undefined when none is below; `thinking` `unknown` or `{ kind: 'none' }` → undefined for every choice. A level the model does not list is never returned.
 
 ---
 

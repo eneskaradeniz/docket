@@ -49,8 +49,8 @@ interface LaunchInput {
   readonly prompt: string;                        // travels via stdin/envelope, never argv
   readonly configDir: string;                     // the run-scoped config dir (launch module)
   readonly resume?: { readonly sessionRef: string };
+  readonly effort?: EffortLevel;                  // already clamped to the model (R-50, A-46)
 }
-```
 ```
 
 ## Discovery
@@ -310,3 +310,11 @@ export interface ProviderMarks { marks(): Record<string, ProviderMark | null> }
   `clip-rule="evenodd"`, carried by the same `fillRule`). The rule travels through the marks
   query untouched (A-42) — a renderer never guesses it, since the same `d` renders differently
   under the two rules.
+
+## Thinking levels and model ids (P-41, P-42)
+
+Design: [provider-capabilities.md](provider-capabilities.md) §3–§4.
+
+- **P-41** `buildLaunch` turns `LaunchInput.effort` into the provider's own parameter, defined as data in the definition (`effortArg`, from the CLI's own documentation or help output): a flag with the level as its value, a config key, or a session option; the ACP and app-server transports send it through their session or turn request instead of argv. An absent effort adds nothing. A definition without an effort parameter ignores the effort and never fails the launch. A transport that reports reasoning or thinking token counts maps them to the `usage` event's `reasoningTokens`, still counted inside `outputTokens`.
+- **P-42** Live model ids resolve to registry records: `LiveModel` carries `resolvedId?` (the canonical id an alias row stands for, as the provider reports it) and `isDefault?: true` (the row the provider uses when no model is pinned). Matching uses `canonicalModelId(resolvedId ?? id)`, which drops one trailing bracketed variant (`[...]`) and one trailing `-YYYYMMDD` date, compared with the record's `canonicalModelId(id)`; family patterns test `resolvedId ?? id`. Billing of a live row, first answer wins: the row's own `billing`; the matched record's `billing`; the route kind's `familyBilling` (data: `{ contains, billing }[]`, matched like family patterns); the route kind's `defaultBilling`; `unknown`. The selectable id stays the row's own `id` (an alias row stays an alias); `isDefault` travels to the merged entry. A subscription route kind lists in `familyBilling` only the families the provider's plan documentation covers on every plan; a family that splits per plan is left out and stays `unknown` until the account's own quota report settles it (`billingFromPools`).
+

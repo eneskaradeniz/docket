@@ -46,6 +46,16 @@ is a list-price estimate (show as `equivalent` on subscriptions and custom endpo
 
 Throughput (per-minute) limits are not quota: they show as "retrying", never as remaining quota.
 
+## Reserve (per account)
+
+A plan's windows (five-hour, weekly, a model's own weekly) are shared with the user's own, direct use
+of the CLI. An account may keep a **reserve**: a share of each window Docket leaves alone. With a
+reserve, a window whose remaining share is at or below it counts as exhausted for new runs (R-49): the
+run does not start and the account's limit policy decides what happens next (wait for the reset, switch
+pool, fall back, or ask). A running run is never stopped by a reserve. Reserves are shares, never money:
+subscription windows have no currency, and a spend cap (below) is a separate setting that applies only
+to metered use. `short` covers windows shorter than a day, `long` a day or longer. Default: no reserve.
+
 ## Budgets (API accounts)
 
 Caps at six scopes — account (day, week, month), project (month — the **ceiling**, the sum over all
