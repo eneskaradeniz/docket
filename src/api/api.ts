@@ -445,6 +445,8 @@ const runCommand = async (
         identityDir: existing?.identityDir,
         tierModels: existing?.tierModels,
         consentedModels: existing?.consentedModels,
+        // An absent reserve keeps what the store holds, like the other fields this command does not own.
+        reserve: command.reserve ?? existing?.reserve,
       };
       const saved = await saveAccount(
         {
@@ -966,7 +968,14 @@ const cockpitView = async (deps: AppDeps, projectFilter?: ProjectSlug): Promise<
       const number = await deps.workOrders.number(item.workOrderId);
       if (record === undefined || number === undefined) continue;
       const { stageIndex, stageCount } = await stagePosition(record, item.stage);
-      const room = headroom(pools, meters, item.route.accountId, item.route.model ?? '', now);
+      const room = headroom(
+        pools,
+        meters,
+        item.route.accountId,
+        item.route.model ?? '',
+        now,
+        (await deps.accounts.get(item.route.accountId))?.reserve,
+      );
       const limit = room.ok === false;
       running.push({
         workOrderId: item.workOrderId,

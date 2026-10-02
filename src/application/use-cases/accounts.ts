@@ -2,7 +2,7 @@
 // A-44). Secrets cross this boundary in one direction only: into the vault. A secret is stored
 // through SecretVault.put and is never written into a record, an audit entry, or a return value.
 import type { Actor, RoleBinding, RoleSlug } from '../../domain/index';
-import { err, ok, type AccountId, type Result } from '../../domain/index';
+import { err, ok, RESERVE_MAX, type AccountId, type QuotaReserve, type Result } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, BindingScope } from '../ports';
 
@@ -30,11 +30,18 @@ const httpsUrlOf = (endpoint: string): URL | undefined => {
 const isAbsolutePath = (path: string): boolean =>
   path.startsWith('/') || /^[a-z]:[\\/]/i.test(path) || /^\\\\[^\\]/.test(path);
 
+// A-45: a reserve share is a finite number in 0..RESERVE_MAX; NaN and Infinity fail the range test.
+const isReserveShare = (value: number | undefined): boolean =>
+  value === undefined || (Number.isFinite(value) && value >= 0 && value <= RESERVE_MAX);
+
+const isValidReserve = (reserve: QuotaReserve | undefined): boolean =>
+  reserve === undefined || (isReserveShare(reserve.short) && isReserveShare(reserve.long));
+
 export async function saveAccount(
   deps: Pick<AppDeps, 'clock' | 'ids' | 'log' | 'accounts' | 'secrets' | 'capabilities'>,
   input: { readonly record: AccountRecord; readonly secret?: string; readonly actor: Actor },
 ): Promise<
-  Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed'>
+  Result<void, 'secret_without_ref' | 'invalid_endpoint' | 'endpoint_mismatch' | 'identity_dir_not_allowed' | 'invalid_reserve'>
 > {
   const secret = input.secret;
   const secretRef = input.record.secretRef;
@@ -60,6 +67,7 @@ export async function saveAccount(
   ) {
     return err('identity_dir_not_allowed');
   }
+  if (!isValidReserve(input.record.reserve)) return err('invalid_reserve');
 
   // The second conjunct is provably true after the guard above; it is what lets the compiler see it.
   if (secret !== undefined && secretRef !== undefined) {
