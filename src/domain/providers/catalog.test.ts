@@ -3,7 +3,7 @@
 // patterns and the registry-side data is validated in infrastructure.
 import { describe, expect, it } from 'vitest';
 
-import { autoSelectable, catalogCacheKey, mergeCatalog, resolveTier, thinkingFor } from './catalog';
+import { autoSelectable, canonicalModelId, catalogCacheKey, mergeCatalog, resolveTier, thinkingFor } from './catalog';
 import type { CatalogModel, FamilyPattern, LiveModel } from './catalog';
 import type { Billing, ModelRecord } from './capability';
 
@@ -393,5 +393,144 @@ describe('thinkingFor (P-30)', () => {
     const shuffled = { kind: 'levels', levels: ['xhigh', 'low', 'none', 'high'] } as const;
     expect(thinkingFor('fast', shuffled)).toBe('low');
     expect(thinkingFor('deep', shuffled)).toBe('xhigh');
+  });
+});
+
+describe('canonicalModelId (P-42)', () => {
+  it('P-42: drops one trailing bracketed variant and one trailing eight-digit date, nothing else', () => {
+    expect(canonicalModelId('claude-opus-5-5[1m]')).toBe('claude-opus-5-5');
+    expect(canonicalModelId('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5');
+    expect(canonicalModelId('claude-haiku-4-5-20251001[1m]')).toBe('claude-haiku-4-5');
+  });
+
+  it('P-42: an id with no suffix is unchanged, case included', () => {
+    expect(canonicalModelId('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+    expect(canonicalModelId('Claude-Sonnet-5-5')).toBe('Claude-Sonnet-5-5');
+    expect(canonicalModelId('sonnet')).toBe('sonnet');
+  });
+
+  it('P-42: ids that only look dated or bracketed stay as they are', () => {
+    expect(canonicalModelId('model-2025')).toBe('model-2025');
+    expect(canonicalModelId('model-202510011')).toBe('model-202510011');
+    expect(canonicalModelId('model20251001')).toBe('model20251001');
+    expect(canonicalModelId('model[1m]-x')).toBe('model[1m]-x');
+    expect(canonicalModelId('model-20251001-20251002')).toBe('model-20251001');
+  });
+});
+
+describe('mergeCatalog alias resolution (P-42)', () => {
+  const SONNET_5_5: ModelRecord = { ...SONNET_5_1, id: 'claude-sonnet-5-5', billing: 'included' };
+  const OPUS_5_5: ModelRecord = { ...OPUS_4_9, id: 'claude-opus-5-5', billing: 'included' };
+  const HAIKU: ModelRecord = { ...HAIKU_4_5, billing: 'included' };
+
+  it('P-42: an alias row resolves to the record through resolvedId and stays selectable by its own id', () => {
+    const merged = mergeCatalog(
+      [{ id: 'sonnet', displayName: 'Sonnet', resolvedId: 'claude-sonnet-5-5' }],
+      [SONNET_5_5],
+      FAMILY_PATTERNS,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ id: 'sonnet', source: 'live', tier: 'balanced', billing: 'included' });
+    expect(merged[0]?.autoClassified).toBeUndefined();
+  });
+
+  it('P-42: a bracketed variant resolves to its record', () => {
+    const merged = mergeCatalog(
+      [{ id: 'opus[1m]', resolvedId: 'claude-opus-5-5[1m]' }],
+      [OPUS_5_5],
+      FAMILY_PATTERNS,
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ id: 'opus[1m]', tier: 'strong', billing: 'included' });
+  });
+
+  it('P-42: a dated live id matches the undated record', () => {
+    const merged = mergeCatalog([{ id: 'claude-haiku-4-5-20251001' }], [HAIKU], FAMILY_PATTERNS);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ id: 'claude-haiku-4-5-20251001', tier: 'fast', billing: 'included' });
+  });
+
+  it('P-42: a matched record is not added again as an unconfirmed bundled entry', () => {
+    const merged = mergeCatalog(
+      [{ id: 'sonnet', resolvedId: 'claude-sonnet-5-5' }],
+      [SONNET_5_5, OPUS_5_5],
+      FAMILY_PATTERNS,
+    );
+    expect(merged.map((model) => model.id)).toEqual(['sonnet', 'claude-opus-5-5']);
+  });
+
+  it('P-42: family patterns test resolvedId before id', () => {
+    const merged = mergeCatalog([{ id: 'default', resolvedId: 'claude-opus-9' }], [], FAMILY_PATTERNS);
+    expect(merged[0]).toMatchObject({ id: 'default', tier: 'strong', autoClassified: true });
+  });
+
+  it('P-42: isDefault travels to the merged entry, matched or not', () => {
+    const matched = mergeCatalog(
+      [{ id: 'default', resolvedId: 'claude-opus-5-5[1m]', isDefault: true }],
+      [OPUS_5_5],
+      FAMILY_PATTERNS,
+    );
+    expect(matched[0]?.isDefault).toBe(true);
+    const liveOnly = mergeCatalog([{ id: 'default', isDefault: true }, { id: 'other' }], [], FAMILY_PATTERNS);
+    expect(liveOnly[0]?.isDefault).toBe(true);
+    expect(liveOnly[1]?.isDefault).toBeUndefined();
+  });
+});
+
+describe('mergeCatalog familyBilling (P-42)', () => {
+  const familyBilling = [
+    { contains: 'opus', billing: 'included' },
+    { contains: 'sonnet', billing: 'included' },
+  ] as const;
+
+  it('P-42: a live-only row of a listed family takes the family billing', () => {
+    const merged = mergeCatalog([{ id: 'claude-opus-5' }], [], FAMILY_PATTERNS, undefined, { familyBilling });
+    expect(merged[0]?.billing).toBe('included');
+  });
+
+  it('P-42: the family billing tests resolvedId before id', () => {
+    const merged = mergeCatalog(
+      [{ id: 'default', resolvedId: 'claude-opus-5[1m]' }],
+      [],
+      FAMILY_PATTERNS,
+      undefined,
+      { familyBilling },
+    );
+    expect(merged[0]?.billing).toBe('included');
+  });
+
+  it('P-42: without familyBilling the same row stays at the default or unknown', () => {
+    expect(mergeCatalog([{ id: 'claude-opus-5' }], [], FAMILY_PATTERNS)[0]?.billing).toBe('unknown');
+    expect(
+      mergeCatalog([{ id: 'claude-opus-5' }], [], FAMILY_PATTERNS, undefined, { defaultBilling: 'metered' })[0]?.billing,
+    ).toBe('metered');
+  });
+
+  it('P-42: the matched record billing wins over familyBilling', () => {
+    const record: ModelRecord = { ...OPUS_4_9, id: 'claude-opus-5', billing: 'metered' };
+    const merged = mergeCatalog([{ id: 'opus', resolvedId: 'claude-opus-5' }], [record], FAMILY_PATTERNS, undefined, {
+      familyBilling,
+    });
+    expect(merged[0]?.billing).toBe('metered');
+  });
+
+  it('P-42: the row billing wins over everything, and familyBilling wins over defaultBilling', () => {
+    expect(
+      mergeCatalog([{ id: 'claude-opus-5', billing: 'metered' }], [], FAMILY_PATTERNS, undefined, { familyBilling })[0]
+        ?.billing,
+    ).toBe('metered');
+    expect(
+      mergeCatalog([{ id: 'claude-opus-5' }], [], FAMILY_PATTERNS, undefined, {
+        familyBilling,
+        defaultBilling: 'metered',
+      })[0]?.billing,
+    ).toBe('included');
+  });
+
+  it('P-42: a family not listed stays unknown', () => {
+    const merged = mergeCatalog([{ id: 'claude-fable-5-1[1m]', resolvedId: 'claude-fable-5-1' }], [], FAMILY_PATTERNS, undefined, {
+      familyBilling,
+    });
+    expect(merged[0]?.billing).toBe('unknown');
   });
 });
