@@ -5,7 +5,8 @@
 // `models.availableModels` list (the provider's own extension over the session answer) and the
 // select option of reserved category `model`; a bracketed variant suffix in an id is part of the
 // id — it is the value the session expects and is never split. Thought levels come from the
-// option of reserved category `thought_level` when the provider reports one.
+// option of reserved category `thought_level` (or `thinking`, the name one provider uses for the
+// same selector) when the provider reports one.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +60,9 @@ const ACP_SESSION_LAUNCHES: Readonly<
   reasonix: { command: 'reasonix', args: ['acp'], modelOptionOptional: true },
   // Telemetry is on by default and the flag is documented for this subcommand.
   atomcode: { command: 'atomcode', args: ['acp', '--no-telemetry'], modelOptionOptional: true },
+  // The ACP entry is a separate binary from the interactive CLI and takes no arguments; the CLI
+  // reads its own home, which also holds its key, so no run-scoped redirection exists for it.
+  vibe: { command: 'vibe-acp', args: [] },
   // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
   kilo: {
     command: 'kilo',
@@ -160,10 +164,10 @@ const parseSessionAnswer = (
       // A provider that names no category for its selects is found by the ids its documentation
       // gives them.
       const category = raw['category'] ?? (raw['id'] === 'model' ? 'model' : raw['id'] === 'effort' ? 'thought_level' : undefined);
-      if (category !== 'model' && category !== 'thought_level') continue;
+      if (category !== 'model' && category !== 'thought_level' && category !== 'thinking') continue;
       const options = raw['options'];
       if (!Array.isArray(options)) continue;
-      if (category === 'thought_level') {
+      if (category === 'thought_level' || category === 'thinking') {
         // The session-level selector names the levels the provider offers in its own words; a
         // value that stands for no level Docket knows (a "default" among them) is dropped rather
         // than passed through.

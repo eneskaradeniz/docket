@@ -52,6 +52,7 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   'grok-build': ['GROK_HOME'],
   atomcode: [],
   reasonix: [],
+  vibe: [],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -151,6 +151,27 @@ const atomcodeConfigOptions = (configured) => [
       { value: 'max', name: 'Max' },
     ],
   },
+];
+
+// The vibe shape: a mode select, a `model` select whose values are aliases, and a `thinking`
+// select under the category `thinking` (not `thought_level`) with levels off to max.
+const VIBE_MODELS = ['mistral-medium-3.5', 'local'];
+const VIBE_LEVELS = ['off', 'low', 'medium', 'high', 'max'];
+let vibeModel = VIBE_MODELS[0];
+let vibeThinking = 'high';
+const vibeConfigOptions = () => [
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'plan', 'accept-edits', 'auto-approve'].map((value) => ({ value, name: value })) },
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    currentValue: vibeModel,
+    options: [
+      { value: 'mistral-medium-3.5', name: 'mistral-vibe-cli-latest', description: 'Mistral Medium 3.5' },
+      { value: 'local', name: 'devstral', description: 'Devstral (local)' },
+    ],
+  },
+  { id: 'thinking', category: 'thinking', type: 'select', currentValue: vibeThinking, options: VIBE_LEVELS.map((value) => ({ value, name: value })) },
 ];
 
 const opencodeModelsSession = () => ({
@@ -397,6 +418,14 @@ const onLine = (line) => {
       });
       return;
     }
+    if (scenario === 'models-vibe') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: vibeConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-vibe-nokey') {
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Missing API key for mistral provider.' } });
+      return;
+    }
     if (scenario === 'models-silent') return; // never answers: the client's timeout is under test
     if (scenario === 'models-die') process.exit(1);
     respond(message.id, { sessionId });
@@ -421,6 +450,13 @@ const onLine = (line) => {
         reasonixApproval = value;
       }
       respond(message.id, { configOptions: reasonixConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-vibe') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && VIBE_MODELS.includes(value)) vibeModel = value;
+      if (configId === 'thinking' && VIBE_LEVELS.includes(value)) vibeThinking = value;
+      respond(message.id, { configOptions: vibeConfigOptions() });
       return;
     }
     if (scenario === 'models-kilo') {
