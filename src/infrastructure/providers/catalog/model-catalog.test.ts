@@ -4,7 +4,7 @@
 // fails. The merge rules themselves live in the domain tests; these tests pin the caching, the
 // fetcher choice per route kind, and the failure behaviour.
 import { spawn as nodeSpawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +115,7 @@ const baseConfig = (query: QueryFn) => ({
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
     { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
+    { id: 'agy-subscription', authMode: 'subscription', provider: 'agy' },
   ]),
   query,
   ttlMs: 6 * 60 * 60 * 1000,
@@ -411,8 +412,52 @@ describe('createModelCatalog (P-29)', () => {
     expect(calls).toBe(0);
   });
 
+  it('P-29: a cli-command route kind dispatches to the CLI adapter — a live list with no billing claim', async () => {
+    // The fake binary prints the recorded shape of the CLI's own models table; the spawn rides
+    // the real node machinery, so the dispatch itself is what is under test here.
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-cli-'));
+    const binPath = join(dir, 'agy');
+    const table = [
+      'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+      'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)',
+      'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+    ].join('\n');
+    writeFileSync(binPath, `#!/bin/sh\ncat <<'DOCKET_MODELS'\n${table}\nDOCKET_MODELS\n`);
+    chmodSync(binPath, 0o755);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'agy' }));
+    const catalog = createModelCatalog({
+      ...baseConfig(scriptedQuery([[]]).query),
+      accounts,
+      cli: { command: binPath, spawn: nodeSpawn },
+    });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed).toHaveLength(3);
+    expect(listed.find((model) => model.id === 'gemini-3.8-flash-high')).toEqual({
+      id: 'gemini-3.8-flash-high',
+      displayName: 'Gemini 3.8 Flash (High)',
+      source: 'live',
+      thinking: { kind: 'levels', levels: ['high'] },
+      billing: 'unknown',
+    });
+    // The Claude rows are unknown ids the family patterns classify (P-29 section 4), and their
+    // billing stays unknown — the route kind fixes no default, so picking one asks for consent.
+    expect(listed.find((model) => model.id === 'claude-opus-4-6-thinking')).toMatchObject({
+      tier: 'strong',
+      autoClassified: true,
+      billing: 'unknown',
+    });
+    expect(listed.find((model) => model.id === 'claude-sonnet-4-6')).toMatchObject({
+      tier: 'balanced',
+      autoClassified: true,
+      billing: 'unknown',
+    });
+  });
+
   it('P-29: the built-in adapter map covers exactly the sources with a live leg today', () => {
-    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['api', 'app-server', 'sdk']);
+    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['api', 'app-server', 'cli-command', 'sdk']);
   });
 
   it('P-29: an unknown account, or one whose provider resolves no route kind, answers an empty list', async () => {

@@ -1,5 +1,6 @@
-// agy /usage parser tests — rule P-19 (docs/v2/providers.md → "Quota probes"); the payload and
-// the mapping are the observed ones from docs/v2/quota.md → "Observed: Antigravity /usage".
+// agy /usage parser tests — rule P-19 (docs/v2/providers.md → "Quota probes"); the payload is
+// the observed one from docs/v2/quota.md → "Observed: Antigravity /usage"; group applicability
+// follows the group table (P-39, docs/v2/provider-capabilities.md §13).
 import { describe, expect, it } from 'vitest';
 
 import type { MeterReading } from '../../../../application/index';
@@ -36,13 +37,13 @@ const PAYLOAD = `{
 const geminiPool: MeterReading['pool'] = {
   label: 'Gemini Models',
   kind: 'allowance',
-  appliesTo: [{ exact: 'Gemini Flash' }, { exact: 'Gemini Pro' }],
+  appliesTo: [{ prefix: 'gemini-' }],
 };
 
 const thirdPartyPool: MeterReading['pool'] = {
   label: 'Claude and GPT models',
   kind: 'allowance',
-  appliesTo: [{ exact: 'Claude Sonnet 4.5' }, { exact: 'Claude Opus 4.1' }, { exact: 'GPT 5.1' }],
+  appliesTo: [{ prefix: 'claude-' }, { prefix: 'gpt-oss-' }],
 };
 
 const EXPECTED_FROM_DOC: readonly MeterReading[] = [
@@ -114,7 +115,21 @@ describe('parseAgyUsage', () => {
     expect(parseAgyUsage('warn: telemetry enabled', `${PAYLOAD}\n`, OBSERVED_AT)).toEqual(EXPECTED_FROM_DOC);
   });
 
-  it('P-19: model matchers come only from the model list in the description, verbatim', () => {
+  it('P-39: applicability comes from the group table, never the description — a group the table does not know is informational', () => {
+    const payload = `{"command": { "name": "usage", "data": { "groups": [
+      { "name": "Veo models", "description": "Models within this group: Veo 3",
+        "buckets": [ { "id": "veo-weekly", "name": "Weekly Limit Remaining", "window": "weekly",
+          "remaining_fraction": 0.5, "reset_time": "2026-09-29T15:24:06Z" } ] } ] } } }`;
+
+    const readings = parseAgyUsage(payload, '', OBSERVED_AT);
+    expect(readings).toHaveLength(1);
+    // Neither the description's model list ("Veo 3" — a display-family name that never matches a
+    // run's model id) nor the bucket id is a matcher source: a group the table does not know
+    // applies to no model, so its meters take no part in a headroom check and never block a run.
+    expect(readings?.[0]?.pool.appliesTo).toBe('unknown');
+  });
+
+  it('P-39: a known group maps to its model-family prefixes whatever its description says', () => {
     const payload = `{"command": { "name": "usage", "data": { "groups": [
       { "name": "Gemini Models", "description": "All included models, subject to change",
         "buckets": [ { "id": "gemini-weekly", "name": "Weekly Limit Remaining", "window": "weekly",
@@ -122,9 +137,7 @@ describe('parseAgyUsage', () => {
 
     const readings = parseAgyUsage(payload, '', OBSERVED_AT);
     expect(readings).toHaveLength(1);
-    // Neither the group name ("Gemini Models") nor the bucket id ("gemini-weekly") is a matcher
-    // source: without a stated model list the pool applies to everything rather than to a guess.
-    expect(readings?.[0]?.pool.appliesTo).toBe('all');
+    expect(readings?.[0]?.pool.appliesTo).toEqual([{ prefix: 'gemini-' }]);
   });
 
   it('P-19: durationMs is never derived from the window name', () => {
