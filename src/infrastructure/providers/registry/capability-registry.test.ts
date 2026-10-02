@@ -68,7 +68,20 @@ describe('model catalog data (P-29)', () => {
       .filter((kind) => kind.liveIsAuthoritative === true)
       .map((kind) => kind.id)
       .sort();
-    expect(authoritative).toEqual(['anthropic-api', 'anthropic-subscription', 'zai-glm']);
+    expect(authoritative).toEqual(['anthropic-api', 'anthropic-subscription', 'codex-subscription', 'zai-glm']);
+  });
+
+  it('P-29: the Codex subscription kind lists its models from the app-server and reads its quota through a provider query', () => {
+    // The subscription login's models come from the CLI's own app-server control surface, and the
+    // same surface answers the rate-limit poll — a provider query, not an SDK usage call.
+    expect(findRouteKind('codex-subscription')).toMatchObject({
+      providerId: 'codex',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      modelSource: 'app-server',
+      quotaProbe: 'provider_query',
+      liveIsAuthoritative: true,
+    });
   });
 
   it('P-40: the API-key route kind defaults its live models to metered — the other kinds fix no default', () => {
@@ -78,6 +91,12 @@ describe('model catalog data (P-29)', () => {
     expect(findRouteKind('anthropic-api')?.defaultBilling).toBe('metered');
     expect(findRouteKind('anthropic-subscription')?.defaultBilling).toBeUndefined();
     expect(findRouteKind('zai-glm')?.defaultBilling).toBeUndefined();
+  });
+
+  it('P-40: the Codex subscription kind defaults its live models to included — the plan coverage is documented', () => {
+    // The provider documents that Codex is included across ChatGPT plans, usage limits varying
+    // by plan, so a listed model the row itself says nothing about reads as covered by the plan.
+    expect(findRouteKind('codex-subscription')?.defaultBilling).toBe('included');
   });
 
   it('P-29: family patterns classify exactly the three tiers and name no further family', () => {

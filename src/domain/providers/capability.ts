@@ -61,7 +61,9 @@ export interface RouteKindRecord {
   readonly identity: 'machine_login' | 'identity_dir' | 'secret';
   readonly tierModels?: Readonly<Record<Tier, string>>;
   readonly costKind: CostKind;
-  readonly quotaProbe: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'none';
+  /** `provider_query`: the quota is polled through the provider's own query call (its app-server
+   * control surface), not an SDK usage leg, pushed events or an HTTP monitor. */
+  readonly quotaProbe: 'sdk_usage' | 'rate_limit_events' | 'http_monitor' | 'provider_query' | 'none';
   readonly modelSource: 'sdk' | 'app-server' | 'acp-session' | 'cli-command' | 'api' | 'static';
   /** The live list is plan-scoped: on a successful refresh, bundled models it does not contain
    * are dropped instead of kept. */

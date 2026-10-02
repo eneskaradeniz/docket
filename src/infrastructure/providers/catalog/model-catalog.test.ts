@@ -3,10 +3,15 @@
 // documented model-list endpoint adapter, keeping the last good list marked stale when a refresh
 // fails. The merge rules themselves live in the domain tests; these tests pin the caching, the
 // fetcher choice per route kind, and the failure behaviour.
+import { spawn as nodeSpawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 
-import { createModelCatalog } from './model-catalog';
+import { createModelCatalog, MODEL_SOURCE_ADAPTERS } from './model-catalog';
 import type { QueryFn } from '../transports/sdk/transport';
 import {
   createFakeModelListPool,
@@ -109,6 +114,7 @@ const baseConfig = (query: QueryFn) => ({
   capabilities: createFakeCapabilityCatalog([
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
+    { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
   ]),
   query,
   ttlMs: 6 * 60 * 60 * 1000,
@@ -311,6 +317,62 @@ describe('createModelCatalog (P-29)', () => {
         billing: 'unknown',
       },
     ]);
+  });
+
+  it('P-29: an app-server route kind dispatches to the app-server adapter — a plan-authoritative list with the kind billing', async () => {
+    // The fake app-server rides on the node binary; the listing's model/list answer is scripted.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'app-server', 'fixtures', 'fake-app-server.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-app-server-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'model-list', join(dir, 'rpc.log')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'codex' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, appServer: { spawn } });
+
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'gpt-5.3-codex',
+        displayName: 'GPT-5.3 Codex',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+        billing: 'included',
+      },
+      {
+        id: 'gpt-5.3-mini',
+        displayName: 'GPT-5.3 mini',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh'] },
+        billing: 'included',
+      },
+      {
+        id: 'gpt-5.3-nano',
+        displayName: 'GPT-5.3 nano',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high'] },
+        billing: 'included',
+      },
+      { id: 'gpt-5.3', displayName: 'GPT-5.3', source: 'live', thinking: 'unknown', billing: 'included' },
+    ]);
+  });
+
+  it('P-29: a source no adapter covers answers from the bundled registry alone', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const { query } = scriptedQuery([[PRO_ROW]]);
+    let calls = 0;
+    const counting: QueryFn = (params) => {
+      calls += 1;
+      return query(params);
+    };
+    // No adapter registered: the route kind's source has no live leg, so the SDK query never runs.
+    const catalog = createModelCatalog({ ...baseConfig(counting), accounts, adapters: {} });
+
+    expect(await catalog.list(ACCOUNT_A)).toEqual([]);
+    expect(calls).toBe(0);
+  });
+
+  it('P-29: the built-in adapter map covers exactly the sources with a live leg today', () => {
+    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['api', 'app-server', 'sdk']);
   });
 
   it('P-29: an unknown account, or one whose provider resolves no route kind, answers an empty list', async () => {

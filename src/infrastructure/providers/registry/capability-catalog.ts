@@ -10,6 +10,7 @@ import { findRouteKind } from './capability-registry';
 // provider, the default an account resolves to must not silently change with the data.
 const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthMode, string>>>>> = {
   'claude-code': { subscription: 'anthropic-subscription', api_key: 'anthropic-api' },
+  codex: { subscription: 'codex-subscription' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
