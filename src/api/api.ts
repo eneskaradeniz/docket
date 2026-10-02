@@ -381,6 +381,7 @@ const runCommand = async (
           bindings: deps.bindings,
           accounts: deps.accounts,
           projects: deps.projects,
+          runs: deps.runs,
         },
         { id },
       );
