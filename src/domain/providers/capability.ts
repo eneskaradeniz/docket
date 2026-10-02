@@ -66,6 +66,9 @@ export interface RouteKindRecord {
   /** The live list is plan-scoped: on a successful refresh, bundled models it does not contain
    * are dropped instead of kept. */
   readonly liveIsAuthoritative?: true;
+  /** The route's verified billing for live models that report none (P-40): an API-key route
+   * meters every model, so its live-only entries default to `metered`, never to `unknown`. */
+  readonly defaultBilling?: Billing;
   readonly models: readonly ModelRecord[];
 }
 

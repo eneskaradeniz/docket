@@ -47,6 +47,7 @@ const liveEntry = (
   model: LiveModel,
   record: ModelRecord | undefined,
   familyPatterns: readonly FamilyPattern[],
+  defaultBilling: Billing | undefined,
 ): CatalogModel => {
   if (record !== undefined) {
     return {
@@ -60,7 +61,9 @@ const liveEntry = (
   }
   const thinking: Thinking | 'unknown' =
     model.efforts === undefined ? 'unknown' : { kind: 'levels', levels: model.efforts };
-  const billing: Billing = model.billing ?? 'unknown';
+  // The route kind's default answers only when the row itself is silent; the registry's own
+  // answer (the matched-record branch above) is never overridden by it.
+  const billing: Billing = model.billing ?? defaultBilling ?? 'unknown';
   const pattern = familyPatterns.find((candidate) => model.id.includes(candidate.contains));
   return pattern === undefined
     ? { id: model.id, displayName: model.displayName, source: 'live', thinking, billing }
@@ -76,9 +79,11 @@ const liveEntry = (
 };
 
 /** Merge knobs: `authoritative` marks the live list plan-scoped — bundled models it does not
- * contain are hidden, not kept. A failed refresh never drops anything, flag or not. */
+ * contain are hidden, not kept. `defaultBilling` fills live-only rows that report no billing
+ * (P-40) with the route kind's verified answer. A failed refresh never drops anything, flag or not. */
 export interface MergeOptions {
   readonly authoritative?: true;
+  readonly defaultBilling?: Billing;
 }
 
 export function mergeCatalog(
@@ -96,7 +101,9 @@ export function mergeCatalog(
   }
   const bundledById = new Map(bundled.map((record) => [record.id, record] as const));
   const liveIds = new Set(live.map((model) => model.id));
-  const liveEntries = live.map((model) => liveEntry(model, bundledById.get(model.id), familyPatterns));
+  const liveEntries = live.map((model) =>
+    liveEntry(model, bundledById.get(model.id), familyPatterns, options?.defaultBilling),
+  );
   // Registry models the live list did not confirm stay selectable; retired ones drop out unless
   // live still offers them. An authoritative list is plan-scoped: what it does not contain the
   // account cannot use, so the unconfirmed bundled models drop out too.
