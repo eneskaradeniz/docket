@@ -229,6 +229,18 @@ describe('provider definitions (P-1)', () => {
     });
   });
 
+  describe('agy resume', () => {
+    it('P-22: agy passes the session reference with --conversation when resuming, and nothing otherwise', () => {
+      const def = defById('agy');
+      const resumed = def.buildLaunch(LAUNCH_INPUT).args;
+      const at = resumed.indexOf('--conversation');
+      expect(resumed.slice(at, at + 2)).toEqual(['--conversation', 'session-1']);
+      const fresh = def.buildLaunch({ prompt: PROMPT_SENTINEL, configDir: '/run/dir' }).args;
+      expect(fresh).not.toContain('--conversation');
+      expect(fresh).not.toContain('session-1');
+    });
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');
