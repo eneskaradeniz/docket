@@ -789,7 +789,8 @@ export function planInstructions(
   present: readonly RepoInstructionFile[],
   budget: InstructionBudget,
 ): InstructionPlan;
-/** The prompt block: the inlined files under one "project context" heading, files in plan order. */
+/** The prompt block: the inlined files under one "project context" heading that marks them as
+ *  quoted repo data — never Docket instructions; files in plan order. */
 export function renderInstructionBlock(plan: InstructionPlan): string;
 
 // providers/handoff.ts — the handoff pack core (P-38)
@@ -815,10 +816,11 @@ export interface HandoffPack {
   readonly taskState: TaskState;                      // item 3
   readonly codeState: { readonly files: readonly string[]; readonly patch: string };   // item 4
   readonly summary: RollingNote;                      // item 5
+  readonly definitionsChanged: boolean;               // the definitions changed since the first leg (A-62)
 }
 export interface PackBudget { readonly maxChars: number }
 export const PACK_CHARS_PER_TOKEN: number;            // 4 — chars ↔ tokens estimate for sizing only
-export const DEFAULT_CONTEXT_WINDOW_TOKENS: number;   // 32_768 — when no candidate route knows
+export const DEFAULT_CONTEXT_WINDOW_TOKENS: number;   // 32_768 — the stand-in for an unknown window; the fixed ceilings sit below it, so an unknown window sizes the pack to the ceilings alone (A-63)
 /** Throttles checkpoint commits; no timer exists — the cadence is event-boundary + terminal (A-57). */
 export const CHECKPOINT_MIN_INTERVAL_MS: number;      // 30_000
 /** Deterministic truncation to the budget. Priority: stagePrompt and the Docket layers never
@@ -826,7 +828,9 @@ export const CHECKPOINT_MIN_INTERVAL_MS: number;      // 30_000
  *  marker left in place of the cut), then the summary. */
 export function sizeHandoffPack(pack: HandoffPack, budget: PackBudget): HandoffPack;
 /** The continuation prompt: checks-first preamble, stage prompt, acceptance, effective
- *  instructions block, task state, code state, summary — fixed order, English. */
+ *  instructions block, task state, code state, summary — fixed order, English. With
+ *  `definitionsChanged` set, the note "definition changed since the first leg" follows the
+ *  preamble; quoted repo material stays under its data heading (never Docket instructions). */
 export function renderHandoffPrompt(pack: HandoffPack): string;
 ```
 
@@ -838,7 +842,7 @@ Rules:
 - **R-54** `planInstructions`: native files never inline; a file both native and absent is not an error; truncation markers name the file and the kept char count; the plan is a pure function of (`native`, `present`, budget).
 - **R-55** `deriveTaskState` reads only `tool_call`/`tool_result`/`permission_ask` events; `extendRollingNote` reads only `text`/`thinking` deltas; neither sees the raw transcript. P-38 item 3's plan/done/remaining lists are not derivable from today's events: the deterministic core ships first, a plan-like structure arrives later as registry data (plan-tool names per provider), and the model-written summary stays open decision O-8.
 - **R-56** `sizeHandoffPack` never drops `stagePrompt`, `acceptance` or the Docket layers, and never empties the pack: a budget below the untouchable core is a caller bug, not a smaller pack.
-- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values.
+- **R-57** `renderHandoffPrompt` places "first run the stage's checks, then continue" as the first line (P-38: the new agent first runs the stage's checks) and never embeds a session ref, an account id, or environment values. With `definitionsChanged` set, the note "definition changed since the first leg" sits directly after the preamble — the change is surfaced to the continuation, never silently absorbed.
 
 ---
 

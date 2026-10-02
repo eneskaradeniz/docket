@@ -103,6 +103,7 @@ export interface RunRecord {
   readonly attempt: number;
   readonly role: RoleSlug;
   readonly route: AccountRoute;
+  readonly definitionsRev?: string;       // revision marker of the definitions the stage prompt was computed from; drives A-62's changed-note
   readonly startedAt: EpochMs;
   readonly endedAt?: EpochMs;
   readonly outcome?: RunOutcome;
@@ -430,8 +431,11 @@ readonly checkpoints: CheckpointCommitter;
 ```
 
 Two more type changes ride the same contract: `CatalogModel` (the `ModelCatalog` port's entry)
-gains `readonly contextWindow?: number`, so pack sizing reads what the P-29 merge already carries
-per model instead of a second registry lookup.
+gains `readonly contextWindow: number | null` (`null` — no window is known for the model), so pack
+sizing reads what the P-29 merge already carries per model instead of a second registry lookup.
+`null` is the common case, not an exception: most providers report no window through any channel
+today and no registry row carries a value, so the handoff is specified to work with the data
+absent (A-63).
 
 ---
 
@@ -585,19 +589,19 @@ export function buildHandoff(
 `composeRunPrompt` is the single prompt entry point: the composition root's start callback stops
 building `prompt: role.instructions` itself and calls this instead. `buildHandoff` loads the failed
 run and its events, the work order and definitions, the rolling note, the stage base (falling back
-to the worktree base ref), the diff, and the candidates' context windows; assembles the pack **for
-the target provider** (its native files), sizes it (`min(contextWindow) × PACK_CHARS_PER_TOKEN`,
-unknown → `DEFAULT_CONTEXT_WINDOW_TOKENS`), renders it, and appends audit `run.handoff` with
-`detail: { fromRun: runId, candidates: candidates.length }`.
+to the worktree base ref), the diff, and the candidates' context windows (`null` where none is
+known); assembles the pack **for the target provider** (its native files), sizes it (fixed
+ceilings first; a known window only tightens them — A-63), renders it, and appends audit
+`run.handoff` with `detail: { fromRun: runId, candidates: candidates.length }`.
 
 Rules:
 - **A-53** `composeRunPrompt` builds every run's prompt: Docket layers first (`stageBrief`, then `role.instructions`), then the instruction block as project context. The Docket layers are byte-identical for every provider given the same definitions; only the instruction block varies.
-- **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt.
+- **A-54** Native instruction files come from the registry through `CapabilityCatalog.nativeInstructionFiles` for the route account's provider; a file the provider reads natively is never inlined. An unknown provider (no registry record) has no native set: every present candidate is inlined, so the "same rules on both providers" guarantee survives where the registry has never heard of the provider — inlining all beats a smaller prompt. The registry row is the provider's best-known set, not a fixed law of the CLI — some CLIs make the set configurable (a fallback-filename list can add `CLAUDE.md`, a context-file setting can rename it) — so a file the CLI reads natively but the row misses is inlined as well: the content reaching the agent twice is the safe failure, missing it is not.
 - **A-55** Inlining stays within `DEFAULT_INSTRUCTION_BUDGET_CHARS`: candidates in registry order, whole while the budget allows, then truncated to the remainder with a marker naming the file and the kept chars; `plan.truncated` lists the dropped. Deterministic for the same inputs. Budgets are chars, not tokens — no provider's tokenizer is consulted; the constants (`DEFAULT_INSTRUCTION_BUDGET_CHARS`, `ROLLING_NOTE_MAX_CHARS`, `PACK_CHARS_PER_TOKEN`) are revisited only when a tokenizer actually matters in practice.
-- **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction.
+- **A-56** The instructions path never writes to the repo (the O-6 canonical-file proposal stays a normal diff in a work order). Instruction-file content is repo-author content below the Docket layers and never becomes a Docket instruction. The trust boundary is marked, not implied: everything the pack and the prompt quote — instruction files read from the repo, and any issue, page or upload content that later rides the same path — travels as **data** under a heading that says so, never as Docket's system instruction; content read from the repo or the web is untrusted input to Docket, and the pack says so where the agent reads it.
 - **A-61** `deriveTaskState` is deterministic from stored events plus the checkpoint diff's file list; raw transcripts and session refs never enter the pack.
-- **A-62** `buildHandoff` assembles exactly P-38 items 1–6 in the `HandoffPack` field order. The stage prompt is recomputed from the current definitions — it is never stored on the run, and a definition change mid-work-order is outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
-- **A-63** The pack is sized to the smallest context window among the candidate routes' models (`ModelCatalog` entries; `contextWindow` rides the P-29 merge on `CatalogModel`); an unknown window sizes to `DEFAULT_CONTEXT_WINDOW_TOKENS`. Truncation priority is fixed (R-56): stage prompt and Docket layers never truncate.
+- **A-62** `buildHandoff` assembles P-38 items 1–6 in the `HandoffPack` field order, plus the `definitionsChanged` marker. The stage prompt is recomputed from the current definitions — it is never stored on the run; the run record carries `definitionsRev`, the revision marker of the definitions its stage prompt was computed from, and when the continuation sees a different revision the pack sets `definitionsChanged` and the prompt carries the note "definition changed since the first leg" (R-57) — the change is surfaced to the continuation, never silently absorbed; whether old and new definitions are equivalent stays outside the pack's guarantees. The patch is redacted at the port boundary before it enters the pack; the previous provider's `sessionRef` never enters it.
+- **A-63** The pack's budget starts from the fixed ceilings (`DEFAULT_INSTRUCTION_BUDGET_CHARS` for the instruction block, `ROLLING_NOTE_MAX_CHARS` for the summary); a known window only tightens it — `min` over the candidate routes' known windows × `PACK_CHARS_PER_TOKEN` (`ModelCatalog` entries; `contextWindow` rides the P-29 merge on `CatalogModel`, `null` = no window known). A `null` window contributes no bound: the ceilings alone size the pack, with `DEFAULT_CONTEXT_WINDOW_TOKENS` as the stand-in for the unknown window — it sits above the ceilings, so the no-data path is the rule rather than the exception (ten of nineteen surveyed providers report no window through any channel and no registry row carries a value; the handoff works without the data, and filling windows per adapter is follow-up issues). Truncation priority is fixed (R-56): stage prompt and Docket layers never truncate.
 
 ---
 
@@ -661,7 +665,7 @@ Rules:
 - **A-59** The first commit of a stage attempt records its sha via `RunRepo.saveStageBase`. The pack's code state is `diffSince(stageBase)`; with no checkpoint (a clean stage) it is `diffSince(worktree base ref)`.
 - **A-60** The rolling note is extended with every persisted event batch (`extendRollingNote`) and saved through `RunRepo.saveHandoffNote` on the same cadence — so it exists the moment the account blocks. It is the tail of the text/thinking stream, capped at `ROLLING_NOTE_MAX_CHARS` with `capped: true`; no other content is derived into it (the model-written summary stays optional and unanswered, open decision O-8).
 - **A-64** A run started for a queue item with `handoffOf` builds the pack before the transport starts, sends `renderHandoffPrompt`'s prompt (checks-first preamble per R-57), and never passes a `resume` reference — native resume and the pack are never mixed (P-38). A pack failure refuses the run (`refused: 'handoff_failed'`) with only the audit entry written. The `run.started` audit detail carries `handoff: true` and `handoffOf`.
-- **A-65** `applyLimitDecision` with a `fallback` route sets `handoffOf = runId` on the queue item whenever the target **account** differs from the failed run's account — including a second account of the same provider, because whether one CLI login sees another's sessions is not knowable, so the pack is the one continuation mechanism. The billing boundary is unchanged: candidate eligibility still comes from `decideOnLimit`'s `FallbackCandidate` (P-40 — an automatic switch never crosses to `metered`/`unknown`). Autonomy and approvals travel as policy: the continuation run wires the same `PermissionGate` as any run.
+- **A-65** `applyLimitDecision` with a `fallback` route sets `handoffOf = runId` on the queue item whenever the target **account** differs from the failed run's account — including a second account of the same provider, because whether one CLI login sees another's sessions is not knowable, so the pack is the one continuation mechanism. The evidence sides with the default: the one provider whose documentation covers the question pairs its session history with the login's own identity directory — a different account is a different directory, so native resume cannot see the earlier history (a documented negative) — while the other eighteen providers carry no evidence either way, so the pack rule stands and remains open to a revisit with evidence from an operator run. The billing boundary is unchanged: candidate eligibility still comes from `decideOnLimit`'s `FallbackCandidate` (P-40 — an automatic switch never crosses to `metered`/`unknown`), and the continuation itself passes the same spend preflight as any run (P-46). Autonomy and approvals travel as policy: the continuation run wires the same `PermissionGate` as any run.
 
 ---
 
@@ -1032,8 +1036,11 @@ executor's existing start path.
 style): it must pass with fakes before any provider wiring is believed (**A-66**).
 
 Fixtures: repo with `CLAUDE.md`; provider X (account A) reads `CLAUDE.md` natively; provider Y
-(account B) reads `AGENTS.md` natively. Role chain for `developer`: [A, B]. Policy:
-`fallback_account`. Flow: `standard`.
+(account B) reads `AGENTS.md` natively **and does not read `CLAUDE.md`** — Y is drawn from the
+AGENTS.md-only providers (several CLIs read both files, and a both-files B would make leg 2's
+inline assertion vacuous); the test asserts Y's registry native set lists no `CLAUDE.md`, so the
+choice is checked, not assumed. Role chain for `developer`: [A, B]. Policy: `fallback_account`.
+Flow: `standard`.
 
 1. **Leg 1 — A hits the limit mid-stage.** Work order reaches `implement`; enqueue + tick starts
    the run on A. Fake transport script: `session_started`, `text`, `tool_call` (Edit) +
@@ -1044,7 +1051,8 @@ Fixtures: repo with `CLAUDE.md`; provider X (account A) reads `CLAUDE.md` native
 2. **Leg 2 — B continues from the pack.** Tick starts the item; `executeRun` builds the pack.
    Assert on the captured `RunRequest.prompt`: the checks-first preamble leads; the stage brief and
    acceptance criteria are present; `CLAUDE.md`'s content is inlined (B does not read it natively)
-   while `AGENTS.md` is not (absent anyway); `taskState.lastCommand` names leg 1's tool pair; the
+   while `AGENTS.md` is not (absent anyway); the inlined block sits under its quoted-data heading
+   (A-56); `taskState.lastCommand` names leg 1's tool pair; the
    patch names the edited file and contains no unredacted secret (fixture plants a token-shaped
    string in the diff); **no `resume` field is set**. Script B: `text`, `tool_call` +
    `tool_result`, `usage`, `finished` (completed). Machine gates: tests exit 0, scan 0 findings →
@@ -1067,11 +1075,15 @@ this document, CLAUDE.md rule 3; `docs/v2/**` edits stay with the architect):
 | Issue | Content | Touches | Depends on | Test rules |
 | --- | --- | --- | --- | --- |
 | 1. domain core | `providers/instructions.ts` + `providers/handoff.ts` + domain barrel | `src/domain/providers/**`, `src/domain/index.ts` | — | R-53 … R-57 red → green, one test per rule |
-| 2. ports & types | `InstructionFiles`, `CheckpointCommitter` ports + fakes; `CapabilityCatalog` extension; `RunRepo` note/stage-base + sqlite adapter; `QueueItem.handoffOf`; `CatalogModel.contextWindow`; `AuditAction` | `src/application/ports/**`, `src/domain` (types only), `src/infrastructure/storage/sqlite/**` | 1 | A-1 … A-4 extended to the new ports; `ports.test.ts` |
+| 2. ports & types | `InstructionFiles`, `CheckpointCommitter` ports + fakes; `CapabilityCatalog` extension; `RunRepo` note/stage-base + sqlite adapter; `QueueItem.handoffOf`; `CatalogModel.contextWindow`; `RunRecord.definitionsRev`; `AuditAction` | `src/application/ports/**`, `src/domain` (types only), `src/infrastructure/storage/sqlite/**` | 1 | A-1 … A-4 extended to the new ports; `ports.test.ts` |
 | 3. effective instructions | `composeRunPrompt` + registry data (`instructionFiles` per provider) + composition-root wiring (start callback stops building the prompt itself) | `src/application/use-cases/**`, `src/infrastructure/providers/registry/**`, `electron/main.ts` | 1, 2 | A-53 … A-56 |
 | 4. checkpoints | `commitCheckpoint` + infra `CheckpointCommitter` (runGit) + executor triggers + stage base | `src/application/use-cases/**`, `src/application/services/run-executor.ts`, `src/infrastructure/vcs/**` | 2 | A-57 … A-59 + the git-boundary infra test |
-| 5. handoff wiring | `buildHandoff` + `executeRun`/`applyLimitDecision` changes + rolling note in the executor | `src/application/use-cases/**`, `src/application/services/**` | 1–4 | A-60 … A-65 |
+| 5. handoff wiring | `buildHandoff` + `executeRun`/`applyLimitDecision` changes + rolling note in the executor | `src/application/use-cases/**`, `src/application/services/**` | 1–4 | A-60 … A-65 + P-46 |
 | 6. acceptance | the three-leg scenario + audit assertions | `src/api/scenarios/**` | 1–5 | A-66 |
 
 Issues 3 and 4 both touch `run-executor.ts` — sequence them (3, then 4, then 5) so stacked merges
 never conflict.
+
+Provider context-window data (per adapter, optional) is deliberately outside the six issues: which
+providers can actually fill `CatalogModel.contextWindow`, and from which channel, is follow-up
+issue work per adapter; the contract is specified to work with `null` everywhere (A-63).
