@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'vibe'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode', 'grok-build', 'vibe'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'grok-build', 'vibe']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -132,6 +132,7 @@ describe('provider definitions (P-1)', () => {
       kilo: 'KILO_CONFIG_DIR',
       'grok-build': '',
       atomcode: '',
+      vibe: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -237,6 +238,7 @@ describe('provider definitions (P-1)', () => {
       kilo: { kind: 'session-option', configId: 'effort' },
       'grok-build': { kind: 'flag', flag: '--reasoning-effort' },
       atomcode: { kind: 'session-option', configId: 'reasoning_effort' },
+      vibe: { kind: 'session-option', category: 'thinking' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -260,7 +262,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode', 'vibe']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -561,7 +563,7 @@ describe('atomcode definition (P-35)', () => {
 });
 
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode, grok-build, vibe) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {
@@ -592,5 +594,48 @@ describe('provider marks (P-25)', () => {
     const marks = builtinProviderMarks.marks();
     expect(Object.keys(marks).sort()).toEqual([...BUILTIN_IDS].sort());
     for (const def of BUILTIN_PROVIDER_DEFS) expect(marks[def.id], def.id).toEqual(def.mark);
+  });
+});
+
+describe('vibe definition (P-35)', () => {
+  const vibe = (): ProviderDef => defById('vibe');
+
+  it('P-35: vibe launches its own ACP binary with no arguments, answers the shared probes, prompts over stdin and resumes through the protocol', () => {
+    expect(vibe().bins).toEqual(['vibe-acp']);
+    expect(vibe().versionArgs).toEqual(['--version']);
+    expect(vibe().helpArgs).toEqual(['--help']);
+    expect(vibe().buildLaunch(LAUNCH_INPUT)).toEqual({ args: [], env: {}, stdin: 'prompt' });
+    expect(vibe().resume).toBe('protocol');
+    expect(isProviderDef(vibe())).toBe(true);
+  });
+
+  it('P-44: the key lives in the CLI home, so the launch never sets VIBE_HOME, never auto-approves and claims no isolation', () => {
+    expect(vibe().config).toEqual({ mechanism: 'none' });
+    expect(vibe().isolation).toBeUndefined();
+    expect(vibe().telemetryOff).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const }]) {
+      const launch = vibe().buildLaunch(input);
+      expect(Object.keys(launch.env)).not.toContain('VIBE_HOME');
+      expect(JSON.stringify(launch)).not.toMatch(/yolo|auto-approve|--agent|--trust/);
+    }
+  });
+
+  it('P-43: effort is the thinking session option, with off standing for none and every other CLI level named as is', () => {
+    expect(vibe().effortArg).toEqual({ kind: 'session-option', category: 'thinking' });
+    expect(vibe().levelNames).toEqual({ none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' });
+    expect(providerLevelOf(vibe().levelNames, 'none')).toBe('off');
+    expect(providerLevelOf(vibe().levelNames, 'xhigh')).toBeUndefined();
+  });
+
+  it('P-45: there is no login probe and no probe that could start a login', () => {
+    expect(vibe().authProbe).toBeUndefined();
+    expect(vibe().helpNeedsLogin).toBeUndefined();
+    for (const probe of [vibe().versionArgs, vibe().helpArgs]) {
+      expect(JSON.stringify(probe)).not.toMatch(/login|setup|upgrade|update/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a live request proves it, and no quota or cost is reported', () => {
+    expect(vibe().capabilities).toMatchObject({ permissionAsk: 'unknown', quotaReport: 'none', costReport: 'none' });
   });
 });

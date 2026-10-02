@@ -617,4 +617,34 @@ describe('acp transport', () => {
       expect(setsOf(run.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'reasoning_effort', value: 'high' }]);
     });
   });
+
+  describe('model then thinking (vibe shape)', () => {
+    const EFFORT_BY_CATEGORY: EffortArg = { kind: 'session-option', category: 'thinking' };
+    const NAMES = { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' } as const;
+    const setsOf = (logPath: string): readonly Record<string, unknown>[] =>
+      clientMessages(logPath)
+        .filter((message) => message['method'] === 'session/set_config_option')
+        .map(paramsOf);
+
+    it('P-41: the model alias is selected first, then the thinking option found by its category, then the prompt; no mode is ever set', async () => {
+      const run = await startRun('models-vibe', requestOf(runCwd(), { model: 'local', effort: 'max' }), EFFORT_BY_CATEGORY, NAMES);
+      await collect(run.handle.events);
+      const sequence = clientMethodSequence(clientMessages(run.logPath));
+      expect(sequence).toEqual(['initialize', 'session/new', 'session/set_config_option', 'session/set_config_option', 'session/prompt']);
+      expect(setsOf(run.logPath)).toEqual([
+        { sessionId: 'sess_fake_1', configId: 'model', value: 'local' },
+        { sessionId: 'sess_fake_1', configId: 'thinking', value: 'max' },
+      ]);
+    });
+
+    it('P-43: none is sent as the CLI name off, and a level the CLI does not name (xhigh) is never sent', async () => {
+      const off = await startRun('models-vibe', requestOf(runCwd(), { effort: 'none' }), EFFORT_BY_CATEGORY, NAMES);
+      await collect(off.handle.events);
+      expect(setsOf(off.logPath)).toEqual([{ sessionId: 'sess_fake_1', configId: 'thinking', value: 'off' }]);
+
+      const xhigh = await startRun('models-vibe', requestOf(runCwd(), { effort: 'xhigh' }), EFFORT_BY_CATEGORY, NAMES);
+      await collect(xhigh.handle.events);
+      expect(setsOf(xhigh.logPath)).toEqual([]);
+    });
+  });
 });
