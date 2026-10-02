@@ -14,6 +14,7 @@ import { listAppServerRouteModels } from './app-server-catalog';
 import { listClaudeRouteModels } from './claude-catalog';
 import { listCliCommandRouteModels } from './cli-command-catalog';
 import type { CliModelSpawn } from './cli-command-catalog';
+import { listCopilotRouteModels } from './copilot-catalog';
 import type { QueryFn } from '../transports/sdk/transport';
 
 /** A live-list adapter's failure: the transport error codes the adapters share, the HTTP leg's
@@ -36,7 +37,7 @@ export interface ModelAdapterDeps {
   readonly query?: QueryFn; // the sdk-source adapter's transport; default: the SDK's query
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
-  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection
+  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server and acp-session adapters' connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
 }
@@ -57,13 +58,13 @@ export interface ModelCatalogConfig {
   readonly query?: QueryFn; // default: the SDK's query
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
-  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection
+  readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server and acp-session adapters' connection
   readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
   readonly ttlMs?: number; // cache lifetime; the default is six hours
   /** Live-list adapters per model source; default: the built-in map below. A source the chosen
    * map leaves uncovered answers from the bundled registry — the built-in map's own answer for
-   * `static` and `acp-session` today. */
+   * `static` today. */
   readonly adapters?: Readonly<Partial<Record<ModelSource, ModelSourceAdapter>>>;
 }
 
@@ -106,6 +107,14 @@ const appServerAdapter: ModelSourceAdapter = (account, _route, deps) =>
     ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
   });
 
+/** The ACP session leg's adapter: initialize, then session/new — the plan-scoped answer a
+ * session carries; no prompt turn, so a listing spends no quota. */
+const acpSessionAdapter: ModelSourceAdapter = (account, route, deps) =>
+  listCopilotRouteModels(account, route, {
+    ...(deps.appServer === undefined ? {} : deps.appServer),
+    ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
+  });
+
 /** The cli-command leg's adapter: the provider's own model-listing subcommand — a plain command
  * run, no print-mode prompt, so no agent turn ever starts. */
 const cliCommandAdapter: ModelSourceAdapter = (account, _route, deps) =>
@@ -115,12 +124,13 @@ const cliCommandAdapter: ModelSourceAdapter = (account, _route, deps) =>
   });
 
 /** The live-list adapters the catalog ships with, keyed by the model source a route kind
- * declares. A source no entry covers (`static`, `acp-session` today) has no live fetch: the
- * registry is that route's whole answer. */
+ * declares. A source no entry covers (`static` today) has no live fetch: the registry is that
+ * route's whole answer. */
 export const MODEL_SOURCE_ADAPTERS: Readonly<Partial<Record<ModelSource, ModelSourceAdapter>>> = {
   sdk: sdkAdapter,
   api: apiAdapter,
   'app-server': appServerAdapter,
+  'acp-session': acpSessionAdapter,
   'cli-command': cliCommandAdapter,
 };
 

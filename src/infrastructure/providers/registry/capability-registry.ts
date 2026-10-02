@@ -157,6 +157,28 @@ export const CAPABILITY_REGISTRY = {
       tierModels: { strong: 'glm-5.3', balanced: 'glm-5.3-flash', fast: 'glm-5.3-flash' },
     },
     {
+      // The login's model list is the plan-scoped ACP session answer (initialize then
+      // session/new, no prompt turn): on a plan limited to the automatic choice it reports that
+      // choice alone, so the list is authoritative and the registry bundles no models. The
+      // tiers name the choice's quality settings — the automatic mode maps strong, balanced and
+      // fast to its intelligence, balance and efficiency settings — and the adapter exposes
+      // those settings as the listed entries. Usage is metered in the provider's own credit
+      // unit (1 credit = $0.01, token-based), so costs read as credits; which models the plan
+      // covers is not documented per model, so live rows stay unknown and no billing default
+      // applies. The quota snapshot itself rides the provider SDK's quota call, which this
+      // repository does not depend on — no probe exists yet, and the kind says none.
+      id: 'copilot-subscription',
+      providerId: 'copilot',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'credits',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      models: [],
+      tierModels: { strong: 'intelligence', balanced: 'balance', fast: 'efficiency' },
+    },
+    {
       // The subscription login's models come from the CLI's own app-server control surface
       // (initialize then model/list, no thread and no turn); the plan scopes the list, so it is
       // authoritative. The same surface answers the rate-limit poll — a provider query — and the

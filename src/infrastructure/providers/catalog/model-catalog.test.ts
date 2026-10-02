@@ -115,6 +115,7 @@ const baseConfig = (query: QueryFn) => ({
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
     { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
+    { id: 'copilot-subscription', authMode: 'subscription', provider: 'copilot' },
     { id: 'agy-subscription', authMode: 'subscription', provider: 'agy' },
   ]),
   query,
@@ -378,6 +379,26 @@ describe('createModelCatalog (P-29)', () => {
     ]);
   });
 
+  it('P-29: an acp-session route kind dispatches to the session adapter — the plan-limited answer lists the settings, billing unknown', async () => {
+    // The fake agent rides on the node binary; the scenario answers the recorded shape of a
+    // plan limited to the automatic choice, which the adapter expands to the route's settings.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-acp-session.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'auto-only', join(dir, 'rpc.log')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'copilot' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, appServer: { spawn } });
+
+    // The kind fixes no billing default, so every setting reads unknown — hand-pick with
+    // consent, never assumed free; the tiers resolve to these ids through the kind's data.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      { id: 'intelligence', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'balance', source: 'live', thinking: 'unknown', billing: 'unknown' },
+      { id: 'efficiency', source: 'live', thinking: 'unknown', billing: 'unknown' },
+    ]);
+  });
+
   it('P-29: a source no adapter covers answers from the bundled registry alone', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A));
@@ -457,7 +478,7 @@ describe('createModelCatalog (P-29)', () => {
   });
 
   it('P-29: the built-in adapter map covers exactly the sources with a live leg today', () => {
-    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['api', 'app-server', 'cli-command', 'sdk']);
+    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['acp-session', 'api', 'app-server', 'cli-command', 'sdk']);
   });
 
   it('P-29: an unknown account, or one whose provider resolves no route kind, answers an empty list', async () => {

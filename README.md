@@ -42,7 +42,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Claude Code (`claude-code`) | `zai-glm` | — | — | — | equivalent | isolated |
 | Codex (`codex`) | `codex-subscription` | — | — | — | equivalent | experimental |
 | Antigravity (`agy`) | `agy-subscription` | — | — | — | equivalent | experimental |
-| Copilot CLI (`copilot`) | — | — | — | — | — | experimental |
+| Copilot CLI (`copilot`) | `copilot-subscription` | — | — | — | credits | experimental |
 | Cursor Agent (`cursor`) | — | — | — | — | — | experimental |
 | opencode (`opencode`) | — | — | — | — | — | experimental |
 <!-- provider-matrix:end -->
