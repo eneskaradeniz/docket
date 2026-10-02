@@ -43,7 +43,6 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   'claude-code': [],
   codex: [],
   agy: [],
-  gemini: [],
   copilot: [],
   cursor: [],
   opencode: [],

@@ -52,17 +52,6 @@ export const CAPABILITY_REGISTRY = {
       },
     },
     {
-      // No G4 (the acp transport maps no usage event) and no G5 (no quota probe; no waiver — no
-      // limit-error mapping exists either).
-      providerId: 'gemini',
-      gates: {
-        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
-        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
-        G3: { kind: 'test', name: 'P-16: session/request_permission becomes a permission_ask that waits for the user; the answer round-trips and nothing is ever auto-approved' },
-        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
-      },
-    },
-    {
       providerId: 'copilot',
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },

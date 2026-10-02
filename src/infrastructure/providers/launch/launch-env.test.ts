@@ -71,7 +71,7 @@ describe('child environment allowlist (P-8)', () => {
     const env = buildChildEnv('codex', {
       ...BASE_ENV,
       OPENAI_API_KEY: keyOf('sk-ambient-openai'),
-      GEMINI_API_KEY: keyOf('ambient-gemini'),
+      STRAY_API_KEY: keyOf('ambient-stray'),
       GITHUB_TOKEN: keyOf('ghp-ambient'),
       DEPLOY_SECRET: keyOf('deploy'),
       KEYCHAIN_PASSPHRASE: keyOf('passphrase'),
@@ -79,7 +79,7 @@ describe('child environment allowlist (P-8)', () => {
     }, { OPENAI_API_KEY: chosen });
 
     expect(env.OPENAI_API_KEY).toBe(chosen);
-    expect('GEMINI_API_KEY' in env).toBe(false);
+    expect('STRAY_API_KEY' in env).toBe(false);
     expect('GITHUB_TOKEN' in env).toBe(false);
     expect('DEPLOY_SECRET' in env).toBe(false);
     expect('KEYCHAIN_PASSPHRASE' in env).toBe(false);

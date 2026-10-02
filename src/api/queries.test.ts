@@ -945,6 +945,24 @@ describe('settings.accounts', () => {
     ]);
   });
 
+  it('U-13: a stale account naming a provider id with no definition still lists — the settings surface never fails on it', async () => {
+    const h = createHarness();
+    await h.deps.accounts.save({
+      id: ACCOUNT,
+      provider: 'gemini', // an id no composed def carries anymore
+      label: 'Leftover',
+      authMode: 'subscription',
+      limitPolicy: 'wait_resume',
+      caps: [],
+    });
+
+    const view = (await createApi(h.deps).query({ type: 'settings.accounts' })) as SettingsAccountsView;
+
+    expect(view.accounts).toEqual([
+      { id: ACCOUNT, provider: 'gemini', label: 'Leftover', authMode: 'subscription', plan: null, pools: [], meters: [] },
+    ]);
+  });
+
   it('U-13: an empty store yields empty account and binding lists', async () => {
     const h = createHarness();
 
