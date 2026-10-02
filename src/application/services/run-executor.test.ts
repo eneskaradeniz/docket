@@ -382,6 +382,7 @@ describe('executeRun', () => {
     const entry = (id: string, extra: Partial<CatalogModel> = {}): CatalogModel => ({
       id,
       source: 'live',
+      contextWindow: null,
       thinking: LEVELS,
       billing: 'included',
       ...extra,
@@ -425,6 +426,7 @@ describe('executeRun', () => {
     const entry = (id: string, tier: 'strong' | 'balanced' | 'fast', billing: CatalogModel['billing'] = 'included'): CatalogModel => ({
       id,
       source: 'live',
+      contextWindow: null,
       thinking: LEVELS,
       billing,
       tier,
@@ -807,7 +809,7 @@ describe('executeRun', () => {
     // The account stays absent so the `?? 'ask'` fallback really fires; the route pins an
     // included model so the spend-consent preflight does not refuse the run beforehand.
     const input = { ...INPUT, item: { ...ITEM, route: { accountId: ACCOUNT, model: 'model-free' } } };
-    const models: readonly CatalogModel[] = [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included' }];
+    const models: readonly CatalogModel[] = [{ id: 'model-free', source: 'live', thinking: 'unknown', billing: 'included', contextWindow: null }];
     const deps = { ...h.deps, modelCatalog: createFakeModelCatalog({ [ACCOUNT]: models }) };
 
     const outcome = await executeRun(deps, permissionGate().permissions, input);
@@ -1097,6 +1099,7 @@ describe('executeRun — spend consent', () => {
   const catalogModel = (id: string, billing: Billing): CatalogModel => ({
     id,
     source: 'live',
+    contextWindow: null,
     thinking: 'unknown',
     billing,
   });

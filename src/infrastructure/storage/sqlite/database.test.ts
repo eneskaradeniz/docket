@@ -7,6 +7,7 @@ import type { ProjectDef, RepoSlug } from '../../../domain/index';
 import { createSqliteProjectRepo } from './project-repo';
 import { createSqliteRepoRegistry } from './repo-registry';
 import { openDatabase, type DocketDb } from './database';
+import { createSqliteRunRepo } from './run-repo';
 import { MIGRATIONS } from './schema';
 
 const SUPPORTED_VERSION = MIGRATIONS.reduce((max, migration) => Math.max(max, migration.version), 0);
@@ -53,6 +54,8 @@ const MIGRATION_2_SQL = [
   'CREATE INDEX project_repos_by_repo ON project_repos (repo);',
 ].join('\n');
 
+const MIGRATION_3_SQL = 'CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);';
+
 const MIGRATION_1_TABLES = [
   'work_orders',
   'work_order_events',
@@ -71,8 +74,14 @@ const MIGRATION_1_TABLES = [
 ];
 
 // What the schema holds once every migration has run: migration 2 renames workspaces to repos
-// and adds the project tables.
-const MIGRATED_TABLES = [...MIGRATION_1_TABLES.filter((table) => table !== 'workspaces'), 'repos', 'projects', 'project_repos'];
+// and adds the project tables; migration 3 adds the run handoff state.
+const MIGRATED_TABLES = [
+  ...MIGRATION_1_TABLES.filter((table) => table !== 'workspaces'),
+  'repos',
+  'projects',
+  'project_repos',
+  'run_handoff',
+];
 
 const MIGRATION_1_INDEXES = [
   'work_orders_by_workspace', // SQLite keeps index names across the migration-2 renames
@@ -215,6 +224,10 @@ describe('MIGRATIONS', () => {
     expect(MIGRATIONS[1]).toStrictEqual({ version: 2, sql: MIGRATION_2_SQL });
   });
 
+  it('holds migration 3 exactly as contracted', () => {
+    expect(MIGRATIONS[2]).toStrictEqual({ version: 3, sql: MIGRATION_3_SQL });
+  });
+
   it('has unique, increasing versions starting at 1', () => {
     const versions = MIGRATIONS.map((m) => m.version);
     expect(versions[0]).toBe(1);
@@ -353,7 +366,7 @@ describe('Migration 2', () => {
     makeVersion1Database(path);
 
     const migrated = openOk(path);
-    expect(pragmaValue(migrated, 'user_version')).toBe(2);
+    expect(pragmaValue(migrated, 'user_version')).toBe(SUPPORTED_VERSION);
 
     // The registry reads the renamed table.
     const registry = createSqliteRepoRegistry(migrated);
@@ -418,7 +431,7 @@ describe('Migration 2', () => {
 
     // Opening again is a no-op: migration 2 does not re-run (the project rows stay unique).
     const again = openOk(path);
-    expect(pragmaValue(again, 'user_version')).toBe(2);
+    expect(pragmaValue(again, 'user_version')).toBe(SUPPORTED_VERSION);
     expect(await createSqliteProjectRepo(again).list()).toHaveLength(2);
     closeDb(again);
   });
@@ -426,11 +439,11 @@ describe('Migration 2', () => {
   it('I-33: a database already at version 2 is a no-op, and too_new is unchanged', async () => {
     const path = join(tmp, 'fresh.db');
     const first = openOk(path);
-    expect(pragmaValue(first, 'user_version')).toBe(2);
+    expect(pragmaValue(first, 'user_version')).toBe(SUPPORTED_VERSION);
     closeDb(first);
 
     const second = openOk(path);
-    expect(pragmaValue(second, 'user_version')).toBe(2);
+    expect(pragmaValue(second, 'user_version')).toBe(SUPPORTED_VERSION);
     closeDb(second);
 
     const newer = join(tmp, 'newer.db');
@@ -441,5 +454,54 @@ describe('Migration 2', () => {
       ok: false,
       error: { code: 'too_new', found: SUPPORTED_VERSION + 1, supported: SUPPORTED_VERSION },
     });
+  });
+});
+
+// --- Migration 3: the run handoff state over a version-2 database -------------------------------------
+
+/** A database left at version 2: migrations 1 and 2 applied by hand, user_version pinned, one work
+ *  order and one run in place so the run_handoff foreign key has something to point at. */
+const makeVersion2Database = (path: string): void => {
+  const setup = new DatabaseSync(path);
+  setup.exec(MIGRATIONS[0]?.sql ?? '');
+  setup.exec(MIGRATIONS[1]?.sql ?? '');
+  setup.exec('PRAGMA user_version = 2');
+  setup
+    .prepare("INSERT INTO work_orders (id, project, repo, created_at, data) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB4', 'acme', 'acme', 1, '{}')")
+    .run();
+  setup
+    .prepare("INSERT INTO runs (id, work_order_id, started_at, data) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB5', '01ARZ3NDEKTSV4RRFFQ69G5FB4', 2, '{}')")
+    .run();
+  setup.close();
+};
+
+describe('Migration 3', () => {
+  it('a version-2 database gains run_handoff at version 3, exactly once, and the run repo uses it', async () => {
+    const path = join(tmp, 'v2.db');
+    makeVersion2Database(path);
+
+    const migrated = openOk(path);
+    expect(pragmaValue(migrated, 'user_version')).toBe(3);
+    const table = migrated.raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_handoff'")
+      .get();
+    expect(table === undefined ? undefined : table.name).toBe('run_handoff');
+
+    // The repository reads and writes through the new table on the migrated database.
+    const runs = createSqliteRunRepo(migrated);
+    const runId = '01ARZ3NDEKTSV4RRFFQ69G5FB5' as never;
+    expect(await runs.handoffNote(runId)).toBeUndefined();
+    expect(await runs.stageBase(runId)).toBeUndefined();
+    await runs.saveStageBase(runId, 'sha-base-1');
+    await runs.saveHandoffNote(runId, { text: 'ozet', capped: false });
+    expect(await runs.stageBase(runId)).toBe('sha-base-1');
+    expect(await runs.handoffNote(runId)).toStrictEqual({ text: 'ozet', capped: false });
+    closeDb(migrated);
+
+    // Opening again is a no-op: migration 3 does not re-run.
+    const again = openOk(path);
+    expect(pragmaValue(again, 'user_version')).toBe(3);
+    expect(await createSqliteRunRepo(again).stageBase(runId)).toBe('sha-base-1');
+    closeDb(again);
   });
 });

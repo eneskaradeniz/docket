@@ -915,7 +915,7 @@ describe('dispatcherTick', () => {
     await h.deps.queue.put(queueItem(Q1, WO1, route(A1, 'opus')));
     const deps: AppDeps = {
       ...h.deps,
-      modelCatalog: createFakeModelCatalog({ [A1]: [{ id: 'opus', source: 'live', thinking: 'unknown', billing: 'included', resolvedId: 'claude-opus-5-5' }] }),
+      modelCatalog: createFakeModelCatalog({ [A1]: [{ id: 'opus', source: 'live', thinking: 'unknown', billing: 'included', resolvedId: 'claude-opus-5-5', contextWindow: null }] }),
     };
 
     const result = await dispatcherTick(deps, { limits: LIMITS() }, startRecorder().callback);

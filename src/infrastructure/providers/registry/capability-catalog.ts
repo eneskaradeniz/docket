@@ -31,4 +31,9 @@ const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthM
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
   routeKindOf: (account) => account.routeKind ?? DEFAULT_ROUTE_KINDS[account.provider]?.[account.authMode],
   routeKind: (id) => findRouteKind(id),
+  // The registry carries no per-provider instruction-file rows yet; the data lands with the
+  // effective-instructions issue, so both answers are honestly empty until then (A-54's unknown
+  // provider is exactly this shape: every candidate inlines).
+  nativeInstructionFiles: () => [],
+  instructionFileNames: () => [],
 });

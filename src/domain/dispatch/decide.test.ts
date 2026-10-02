@@ -1,6 +1,6 @@
 // Tests for the dispatcher's decision rule. Contract: docs/v2/domain.md section 8.
 import { describe, expect, it } from 'vitest';
-import type { AccountId, EpochMs, MeterId, QueueItemId, StageSlug, WorkOrderId, RepoSlug } from '../shared/index';
+import type { AccountId, EpochMs, MeterId, QueueItemId, RunId, StageSlug, WorkOrderId, RepoSlug } from '../shared/index';
 import { HOUR, MINUTE } from '../shared/index';
 import type { AccountRoute, Headroom } from '../quota/index';
 import type { SpendStatus } from '../budget/index';
@@ -396,5 +396,14 @@ describe('decideDispatch', () => {
     const second = itemOf({ id: qid(2), workOrderId: woid('10'), priority: 9 });
     // Limits would allow both, so the wait reason must be the shared work order.
     expect(decideDispatch([first, second], snapshotOf())).toEqual([startFor(first), waitFor(second, 'work_order_busy')]);
+  });
+
+  it('handoffOf rides the item but changes no decision — a continuation starts like any run', () => {
+    const continuation: QueueItem = {
+      ...itemOf({ id: qid(1), workOrderId: woid('10') }),
+      handoffOf: ulidOf('99') as RunId,
+    };
+
+    expect(decideDispatch([continuation], snapshotOf())).toEqual([startFor(continuation)]);
   });
 });

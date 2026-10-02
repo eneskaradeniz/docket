@@ -48,4 +48,10 @@ UPDATE bindings SET level = 'repo' WHERE level = 'workspace';
 CREATE INDEX work_orders_by_project ON work_orders (project, created_at, id);
 CREATE INDEX project_repos_by_repo ON project_repos (repo);`,
   },
+  {
+    // The run-scoped handoff state (P-38): the rolling note as JSON and the stage-base sha, one
+    // nullable column each so saving one never clobbers the other. definitionsRev rides runs.data.
+    version: 3,
+    sql: `CREATE TABLE run_handoff (run_id TEXT PRIMARY KEY REFERENCES runs (id), note TEXT, stage_base TEXT);`,
+  },
 ];
