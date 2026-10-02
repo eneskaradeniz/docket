@@ -32,11 +32,19 @@ export const WATCHDOG_MS = 1000;
 const FIXTURES = {
   acp: fileURLToPath(new URL('../transports/acp/fake-agent.cjs', import.meta.url)),
   'app-server': fileURLToPath(new URL('../transports/app-server/fixtures/fake-app-server.cjs', import.meta.url)),
-  'stream-json': fileURLToPath(new URL('../transports/stream-json/fixtures/fake-agy-cli.cjs', import.meta.url)),
 } as const;
 
+// A stream-json fake speaks exactly one dialect, so the fixture is keyed by the dialect id, not
+// the transport; each dialect lands with its own scripted CLI.
+const STREAM_JSON_FIXTURES: Readonly<Record<string, string>> = {
+  agy: fileURLToPath(new URL('../transports/stream-json/fixtures/fake-agy-cli.cjs', import.meta.url)),
+  amp: fileURLToPath(new URL('../transports/stream-json/dialects/amp/fixtures/fake-amp-cli.cjs', import.meta.url)),
+};
+
 /** What each spawned transport's fake calls each scripted behaviour. */
-const FAKE_SCENARIOS: Readonly<Record<keyof typeof FIXTURES, Readonly<Record<FakeScenario, string>>>> = {
+const FAKE_SCENARIOS: Readonly<
+  Record<'acp' | 'app-server' | 'stream-json', Readonly<Record<FakeScenario, string>>>
+> = {
   acp: { happy: 'happy', permission: 'permission', resume: 'load-ok', hang: 'hang', steady: 'steady' },
   'app-server': { happy: 'tools', permission: 'approval', resume: 'happy', hang: 'steer', steady: 'steady' },
   'stream-json': { happy: 'happy', permission: 'happy', resume: 'happy', hang: 'hang', steady: 'steady' },
@@ -128,15 +136,22 @@ const writeWrapper = (dir: string, fixture: string, scenario: string, logPath: s
   return wrapper;
 };
 
-const spawnedTransport = (transport: ProviderTransport): transport is keyof typeof FIXTURES =>
+const spawnedTransport = (transport: ProviderTransport): transport is 'acp' | 'app-server' | 'stream-json' =>
   transport === 'acp' || transport === 'app-server' || transport === 'stream-json';
+
+/** The scripted fake a spawned definition runs against: per transport, per dialect for stream-json. */
+const fixtureOf = (def: ProviderDef): string => {
+  if (def.transport === 'stream-json') return STREAM_JSON_FIXTURES[def.streamDialect ?? ''];
+  if (def.transport === 'acp' || def.transport === 'app-server') return FIXTURES[def.transport];
+  throw new Error(`no scripted fake exists for transport "${def.transport}" of ${def.id}`);
+};
 
 /** True when a scripted fake exists for the definition's transport (and, for stream-json, its dialect). */
 export const hasFake = (def: ProviderDef): boolean =>
   def.transport === 'sdk' ||
   def.transport === 'acp' ||
   def.transport === 'app-server' ||
-  (def.transport === 'stream-json' && def.streamDialect === 'agy');
+  (def.transport === 'stream-json' && (def.streamDialect ?? '') in STREAM_JSON_FIXTURES);
 
 export function createLegs(root: string, defs: readonly ProviderDef[]): readonly Leg[] {
   let runCount = 0;
@@ -223,7 +238,7 @@ export function createLegs(root: string, defs: readonly ProviderDef[]): readonly
         }
         const dir = nextDir();
         const logPath = join(dir, 'fake.log');
-        const wrapper = writeWrapper(dir, FIXTURES[def.transport], FAKE_SCENARIOS[def.transport][scenario], logPath);
+        const wrapper = writeWrapper(dir, fixtureOf(def), FAKE_SCENARIOS[def.transport][scenario], logPath);
         const effective = options?.def ?? def;
         const handle = await start(resolverFor(effective, wrapper), requestOf(dir, options?.resume), def.id);
         return {

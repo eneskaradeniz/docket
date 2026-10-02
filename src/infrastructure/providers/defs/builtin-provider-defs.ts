@@ -592,4 +592,56 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://kiro.dev/docs/cli/' },
     mark: null,
   },
+  {
+    id: 'amp',
+    displayName: 'Amp',
+    bins: ['amp'],
+    // `--version` and the `version` subcommand both print the version; the flag is the shorter ask.
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `account list` prints "No saved accounts." with exit 0 when nobody is logged in (verified on
+    // the installed CLI); the logged-in output is unverified, so the probe may answer logged-out
+    // or unknown and never logged in. `login` and `account login-url` are never run — they open a
+    // browser.
+    authProbe: { args: ['account', 'list'], parse: 'logged-out-text', loggedOutText: 'No saved accounts.' },
+    transport: 'stream-json',
+    streamDialect: 'amp',
+    // No `--effort` flag exists (verified against --help): the mode is the model-plus-effort
+    // bundle, so the effort parameter stays absent and an effort is ignored, never sent.
+    // The login lives in the CLI's own home, so no config-dir redirection exists: the machine's
+    // login stays reachable and no isolation is claimed. The per-run settings file is the run's
+    // own mcp.json, pointed at through the documented AMP_SETTINGS_FILE: it carries only what
+    // Docket needs (the run's MCP servers) and replaces the user's settings file for the run, so
+    // neither their permission presets nor anything Docket must not write can reach it.
+    config: { mechanism: 'none' },
+    // Never `amp.dangerouslyAllowAll` in any settings file, never a `--dangerously-*` switch: the
+    // CLI asks no tool approval by default and a Docket run must not widen that.
+    buildLaunch: (input) => ({
+      args: [
+        ...(input.resume === undefined ? [] : ['threads', 'continue', input.resume.sessionRef]),
+        '--execute',
+        '--stream-json',
+        ...(input.model === undefined ? [] : ['--mode', input.model]),
+      ],
+      env: { AMP_SKIP_UPDATE_CHECK: '1', AMP_SETTINGS_FILE: `${input.configDir}/mcp.json` },
+      stdin: 'prompt',
+    }),
+    // A thread continues by its T-id on the command line; the dialect captures the id from init.
+    resume: 'specify',
+    capabilities: {
+      structuredStream: true,
+      // The CLI asks no tool approval by default, so no ask ever waits: a run needs a sandbox or
+      // worktree, which is why the provider targets the isolated support level first.
+      permissionAsk: false,
+      resume: true,
+      mcp: 'unknown',
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: 'unknown',
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://ampcode.com/docs/cli' },
+    mark: null,
+  },
 ];
