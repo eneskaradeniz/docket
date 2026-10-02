@@ -23,6 +23,7 @@ import { billingFromPools, decideOnLimit, effortForChoice, foldRun, resolveTier 
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
+import { catalogOrEmpty, matchIdFor } from './match-id';
 import type { BoardHooks } from './permission-board';
 
 export interface ExecuteRunInput {
@@ -258,11 +259,12 @@ const spendConsentSatisfied = async (
   model: string | undefined,
 ): Promise<boolean> => {
   const account = await deps.accounts.get(accountId);
+  const catalog = model !== undefined ? await catalogOrEmpty(() => deps.modelCatalog.list(accountId)) : [];
   const billing: Billing =
     model !== undefined
       ? billingFromPools(
-          (await deps.modelCatalog.list(accountId)).find((candidate) => candidate.id === model)?.billing ?? 'unknown',
-          model,
+          catalog.find((candidate) => candidate.id === model)?.billing ?? 'unknown',
+          matchIdFor(catalog, model),
           await deps.accounts.pools(accountId),
         )
       : defaultBillingOf(deps.capabilities, account);

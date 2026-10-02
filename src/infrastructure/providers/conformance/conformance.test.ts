@@ -30,12 +30,7 @@ const SCENARIOS: Readonly<Record<ScenarioId, string>> = {
 };
 
 /** Per-definition exemptions. A reason is mandatory; "bug: …" marks a defect the scenario reproduces. */
-const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {
-  agy: {
-    resume:
-      'bug: buildLaunch ignores LaunchInput.resume although the definition declares resume "specify", so a resumed run silently starts a fresh conversation',
-  },
-};
+const NOT_APPLICABLE: Readonly<Record<string, Partial<Record<ScenarioId, string>>>> = {};
 
 /** Exemptions the definition's own data implies. */
 const derivedReason = (def: ProviderDef, scenario: ScenarioId): string | undefined => {
