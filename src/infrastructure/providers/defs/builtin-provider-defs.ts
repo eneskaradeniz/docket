@@ -275,9 +275,9 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     // that match: a level the CLI does not list (low, medium) is never offered or sent.
     effortArg: { kind: 'session-option', configId: 'reasoning_effort' },
     levelNames: { none: 'off', high: 'high', max: 'max' },
-    // The CLI documents no config-directory variable and its login lives in its own home, so the
-    // launch never sets this name and no run-scoped home is claimed (no isolation is declared).
-    config: { mechanism: 'env-var', name: 'ATOMCODE_HOME' },
+    // The CLI documents no config-directory variable and its login lives in its own home, so no
+    // run-scoped home is claimed (no isolation is declared).
+    config: { mechanism: 'none' },
     telemetryOff: ['--no-telemetry'],
     // Never `-y` / `--dangerously-skip-permissions`; the session stays in its default `build` mode.
     buildLaunch: () => ({ args: ['acp', '--no-telemetry'], env: {}, stdin: 'prompt' }),

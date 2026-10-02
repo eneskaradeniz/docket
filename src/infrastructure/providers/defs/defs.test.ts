@@ -130,7 +130,7 @@ describe('provider definitions (P-1)', () => {
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: '',
       kilo: 'KILO_CONFIG_DIR',
-      atomcode: 'ATOMCODE_HOME',
+      atomcode: '',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       if (def.config.mechanism === 'none') {
@@ -498,6 +498,15 @@ describe('atomcode definition (P-35)', () => {
     expect(atomcode().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['acp', '--no-telemetry'], env: {}, stdin: 'prompt' });
     expect(atomcode().resume).toBe('protocol');
     expect(isProviderDef(atomcode())).toBe(true);
+  });
+
+  it('P-44: the atomcode launch has no home variable and always carries --no-telemetry', () => {
+    expect(atomcode().config).toEqual({ mechanism: 'none' });
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'high' as const, model: 'glm-5.2' }, { prompt: 'x', configDir: '/run/dir' }]) {
+      const launch = atomcode().buildLaunch(input);
+      expect(launch.env).toEqual({});
+      expect(launch.args).toContain('--no-telemetry');
+    }
   });
 
   it('P-44: the telemetry-off flag is declared and no launch ever carries an approval bypass, a bypass mode or a redirected home', () => {
