@@ -104,6 +104,8 @@ export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhig
 export type ThinkingChoice =
   | { readonly level: 'fast' | 'balanced' | 'deep' }
   | { readonly effort: EffortLevel };
+/** A model class a route resolves to a concrete model (P-29); shared for the same reason. */
+export type Tier = 'strong' | 'balanced' | 'fast';
 
 // shared/actor.ts
 export type Actor =
@@ -155,6 +157,11 @@ export interface StageDef {
   readonly role: RoleSlug | null;          // null = a human-only stage (e.g. staging test)
   readonly exit: readonly GateDef[];       // all must pass to advance
   readonly onFail?: { readonly goto: StageSlug; readonly maxAttempts: number };
+  readonly tier?: Tier;                    // overrides the binding's tier for this stage
+  readonly thinking?: ThinkingChoice;      // overrides the binding's thinking for this stage
+  /** The earlier stage of the same flow whose output this stage reviews; its runs prefer another
+   *  provider than the one that wrote it (R-52). */
+  readonly reviewOf?: StageSlug;
 }
 
 export interface FlowDef {
@@ -234,7 +241,7 @@ export type DefinitionIssueCode =
   | 'default_flow_not_enabled' | 'unknown_command_set' | 'secret_literal' | 'missing_field' | 'wrong_type'
   | 'unknown_environment' | 'missing_promote_from' | 'promote_cycle'
   | 'env_command_set_missing' | 'duplicate_env_order'
-  | 'empty_repos' | 'main_repo_not_listed';
+  | 'empty_repos' | 'main_repo_not_listed' | 'bad_review_of';
 
 /** Validates untyped input (parsed YAML/JSON). All-or-nothing: any issue → err with ALL issues. */
 export function validateDefinitions(input: unknown): Result<Definitions, readonly DefinitionIssue[]>;
@@ -248,6 +255,7 @@ Rules:
 - **R-7** `command` gates must name a `commandSet` present in `repo.commandSets` when a repo definition is given.
 - **R-8** A `CapabilityDef` env value that is a bare string (not `{literal}` / `{secretRef}`) is `wrong_type`; a `{literal}` whose key matches `/(KEY|TOKEN|SECRET|PASSWORD)/i` is `secret_literal`.
 - **R-9** `repo.defaultFlow` must be listed in `repo.flows`, and every listed flow must exist.
+- **R-51** `stage.reviewOf` must name a stage of the same flow with a lower index and a non-null role (`bad_review_of` otherwise; a stage cannot review itself or a human-only stage). `stage.tier` must be a `Tier` and `stage.thinking` a `ThinkingChoice` (`wrong_type` otherwise).
 - **R-46** `ProjectDef`: `repos` is non-empty (`empty_repos`), has no duplicates (`duplicate_id`), and
   contains `mainRepo` (`main_repo_not_listed`); a `budget`, when present, must be a valid `SpendCap`
   (`wrong_type` otherwise). Validated whenever a project is validated (project scope load, attach).
@@ -279,13 +287,25 @@ export interface RoleBinding {
   readonly role: RoleSlug;
   readonly accounts: readonly AccountRoute[];
   readonly thinking?: ThinkingChoice;   // absent → { level: 'balanced' }
+  readonly tier?: Tier;                 // for unpinned routes of the chain; absent → the CLI's own default model
 }
+/** What a stage run asks for: the stage's own setting wins over the binding's. */
+export interface StageRouting { readonly tier?: Tier; readonly thinking?: ThinkingChoice }
+export function stageRouting(stage: StageDef, binding: RoleBinding): StageRouting;
+/** One chain entry with the provider definition id of its account (data, never a vendor name in code). */
+export interface ChainEntry { readonly route: AccountRoute; readonly provider: string }
+/** Review ordering (R-52): accounts on another provider than `reviewedProvider` move to the front. */
+export function orderForReview(
+  chain: readonly ChainEntry[],
+  reviewedProvider: string | undefined,
+): { readonly chain: readonly ChainEntry[]; readonly sameProvider: boolean };
 export function resolveBinding(layers: readonly Layer<RoleBinding>[]): Resolved<RoleBinding> | undefined;
 ```
 
 Rules:
 - **R-10** `resolve` ignores `undefined` layers and picks by `LEVEL_ORDER`, not array position.
 - **R-11** `applyRoleOverrides` never changes `id`; an override with a different id is ignored.
+- **R-52** `stageRouting`: each field is the stage's when set, else the binding's, else absent. `orderForReview`: with `reviewedProvider` undefined the chain is returned unchanged and `sameProvider` is false; otherwise entries whose `provider` differs keep their relative order and come first, followed by the same-provider entries in their order; `sameProvider` is true when the first entry of the result has the reviewed provider (no other provider is available). Inputs are never mutated.
 
 Project defaults sit between global and repo (S3): a repo's `.docket/` overrides the project, the
 project overrides `~/.docket`; the work-order level resolves above all three.
@@ -568,7 +588,9 @@ export interface QueueItem {
   readonly priority: number;            // higher first
   readonly enqueuedAt: EpochMs;
   readonly notBefore?: EpochMs;         // e.g. a scheduled resume
-  readonly thinking?: ThinkingChoice;   // from the resolved binding (A-19); absent → balanced
+  readonly thinking?: ThinkingChoice;   // from stageRouting (A-19); absent → balanced
+  readonly tier?: Tier;                 // from stageRouting (A-19)
+  readonly sameProviderReview?: true;   // a review stage found no other provider in the chain (R-52)
 }
 export interface RunningRun { readonly workOrderId: WorkOrderId; readonly repo: RepoSlug; readonly accountId: AccountId }
 export interface DispatchLimits {
@@ -734,7 +756,7 @@ export function effortForChoice(choice: ThinkingChoice | undefined, thinking: Th
 ```
 
 Rules:
-- **R-43** `supportTier`: `structuredStream && permissionAsk === true` → `full`; `structuredStream` → `isolated`; else `experimental`.
+- R-43 (retired): `supportTier` is replaced by `supportLevel` from the capability record (P-28); the function and its type are removed.
 - **R-44** `foldRun` sums token counts across all `usage` events (`reasoningTokens` absent counts as 0); `sessionRef` is the last `session_started`; `outcome` maps from the last `finished` event.
 - **R-50** `effortForChoice`: absent choice → `{ level: 'balanced' }`; a `level` maps through `thinkingFor`; an `effort` is sent as is when the model lists it, otherwise clamped down to the highest listed level below it, and undefined when none is below; `thinking` `unknown` or `{ kind: 'none' }` → undefined for every choice. A level the model does not list is never returned.
 
@@ -750,6 +772,8 @@ Roles (`RoleSlug` → name, write scope):
 `test-writer` Test yazarı (tests) · `reviewer` Gözden geçirici (none) ·
 `security-auditor` Güvenlik denetçisi (none) · `documenter` Belgeci (docs). All `active: true`,
 `capabilities: []`.
+
+Every built-in stage whose role is `reviewer` or `security-auditor` sets `tier: 'strong'` and `reviewOf` the flow's `implement` stage; no other built-in stage sets a tier or thinking.
 
 Flows:
 - `standard` Standart: `plan` (planner; human gate `plan-approval`) → `implement` (developer; command
