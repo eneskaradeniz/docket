@@ -66,7 +66,10 @@ describe('AgentEvent', () => {
 
   it('error and finished keep their closed unions', () => {
     expectTypeOf<Extract<AgentEvent, { type: 'error' }>['class']>().toEqualTypeOf<
-      'auth' | 'network' | 'crash' | 'protocol' | 'unknown'
+      'auth' | 'network' | 'crash' | 'protocol' | 'timeout' | 'unknown'
+    >();
+    expectTypeOf<Extract<AgentEvent, { type: 'error' }>['reason']>().toEqualTypeOf<
+      'first_output_timeout' | 'inactivity_timeout' | undefined
     >();
     expectTypeOf<Extract<AgentEvent, { type: 'error' }>['message']>().toEqualTypeOf<string>();
     expectTypeOf<Extract<AgentEvent, { type: 'finished' }>['reason']>().toEqualTypeOf<
