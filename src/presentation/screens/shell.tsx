@@ -24,8 +24,8 @@ import { SidebarNav } from '../components/sidebar-nav';
 import { SidebarTree } from '../components/sidebar-tree';
 import { TitleBar } from '../components/title-bar';
 import { t, type Locale } from '../labels/t';
-import type { AccountsFrameStore } from '../stores/accounts-frame';
-import type { AccountViewStore } from '../stores/account-view';
+import { unaddedRowTarget, type AccountsFrameStore } from '../stores/accounts-frame';
+import { editInSettingsTarget, type AccountViewStore } from '../stores/account-view';
 import type { BoardStore } from '../stores/board';
 import type { CockpitStore } from '../stores/cockpit';
 import type { LocaleStore } from '../stores/locale';
@@ -52,6 +52,7 @@ import {
   CLOSED_SETTINGS_PANEL,
   settingsPanelReducer,
   type CandidateDotStore,
+  type SettingsOpenTarget,
   type SettingsPanelOrigin,
 } from '../stores/settings-panel';
 import type { CandidatesStore } from '../stores/candidates';
@@ -190,7 +191,10 @@ export function ShellScreen({
     void shell.load();
     // The bar's Update button reads the standing from startup, not from the panel's first open.
     void update.load();
-  }, [shell, update]);
+    // The accounts frame's "n hesap eklenmedi" row reads the discovered list from startup.
+    void candidateList.load();
+  }, [shell, update, candidateList]);
+  const unaddedCount = useSyncExternalStore(candidateList.subscribe, () => candidateList.state().rows.length);
   useEffect(() => {
     if (route.name !== 'workOrder' && route.name !== 'account') placeRef.current = placeOf(route);
   }, [route]);
@@ -240,13 +244,14 @@ export function ShellScreen({
   /** Opens the settings panel over the current route on a named section — the route stays where
    *  it is; the nav's rows name their own section, the screens' shortcuts open
    *  Hesaplar (U-28). */
-  const openSettings = useCallback((section: SettingsSection): void => {
+  const openSettingsAt = useCallback((target: SettingsOpenTarget): void => {
     const origin: SettingsPanelOrigin = pointerOpenRef.current ? 'pointer' : 'keyboard';
     pointerOpenRef.current = false;
-    dispatchSettingsPanel({ type: 'open', origin, section });
+    dispatchSettingsPanel({ type: 'open', origin, ...target });
     // The dot reads the discovery's standing as the panel opens, so it is never stale.
     void candidates.load();
   }, [candidates]);
+  const openSettings = useCallback((section: SettingsSection): void => openSettingsAt({ section }), [openSettingsAt]);
   // Every arrival — a push, a back, a forward — restores the current entry's scroll once the
   // main column has painted again (U-25): each screen returns where the operator left it, the
   // board exactly like the roadmap and the cockpit.
@@ -409,6 +414,8 @@ export function ShellScreen({
             locale={locale}
             activeAccountId={route.name === 'account' ? route.id : null}
             onOpenAccount={openAccount}
+            unaddedCount={unaddedCount}
+            onOpenUnadded={() => openSettingsAt(unaddedRowTarget())}
           />
         </nav>
   
@@ -453,7 +460,8 @@ export function ShellScreen({
               locale={locale}
               timeZone={timeZone}
               onOpenWorkOrder={openWorkOrder}
-              onOpenSettings={() => openSettings('accounts')}
+              reserve={accountsState.cards?.find((card) => card.id === route.id)?.reserve ?? null}
+              onOpenSettings={() => openSettingsAt(editInSettingsTarget(route.id))}
               onBack={goBack}
             />
           ) : null}
@@ -483,6 +491,9 @@ export function ShellScreen({
         origin={settingsPanel.origin}
         section={settingsPanel.section}
         subPage={settingsPanel.subPage}
+        tab={settingsPanel.tab}
+        fineTune={settingsPanel.fineTune}
+        onOpenTarget={openSettingsAt}
         onSection={(next) => dispatchSettingsPanel({ type: 'select', section: next })}
         onBack={() => dispatchSettingsPanel({ type: 'leaveSubPage' })}
         onEnterSubPage={(id) => dispatchSettingsPanel({ type: 'enterSubPage', id })}

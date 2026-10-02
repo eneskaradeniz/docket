@@ -3,6 +3,7 @@
 // how the panel was opened — the same origin the palette's one focus rule reads (a pointer-opened
 // panel blurs its opener on close, a keyboard-opened one returns focus) — and the section menu
 // with its sub-page (U-28), so Esc order and the Hesaplar dot are unit-tested here.
+import type { EditorTab } from './account-editor';
 import { isQueryFailure } from './results';
 import type { PaletteOrigin } from './search-palette';
 
@@ -44,10 +45,23 @@ export interface SettingsPanelState {
   /** The id of the account or role page open inside the section, or null on the section's list.
    *  Not a navigation-history entry. */
   readonly subPage: string | null;
+  /** The account editor's tab an open asked for (U-37); null leaves the editor's own choice. */
+  readonly tab: EditorTab | null;
+  /** The role whose "İnce ayar" an open asked to show open on Roller (U-37), or null. */
+  readonly fineTune: string | null;
+}
+
+/** Where an open lands beyond the origin: the section, a sub-page of it, the editor tab and a
+ *  role's fine-tune (U-37). Every field is optional; an empty target is the plain open. */
+export interface SettingsOpenTarget {
+  readonly section?: SettingsSection;
+  readonly subPage?: string;
+  readonly tab?: EditorTab;
+  readonly fineTune?: string;
 }
 
 export type SettingsPanelAction =
-  | { readonly type: 'open'; readonly origin: SettingsPanelOrigin; readonly section?: SettingsSection }
+  | ({ readonly type: 'open'; readonly origin: SettingsPanelOrigin } & SettingsOpenTarget)
   | { readonly type: 'select'; readonly section: SettingsSection }
   | { readonly type: 'enterSubPage'; readonly id: string }
   | { readonly type: 'leaveSubPage' }
@@ -62,32 +76,41 @@ export const CLOSED_SETTINGS_PANEL: SettingsPanelState = {
   origin: 'keyboard',
   section: DEFAULT_SETTINGS_SECTION,
   subPage: null,
+  tab: null,
+  fineTune: null,
 };
 
 const closed = (state: SettingsPanelState): SettingsPanelState =>
-  state.open ? { ...state, open: false, subPage: null } : state;
+  state.open ? { ...state, open: false, subPage: null, tab: null, fineTune: null } : state;
 
 export const settingsPanelReducer = (state: SettingsPanelState, action: SettingsPanelAction): SettingsPanelState => {
   switch (action.type) {
     // An open panel keeps its standing — a second open (the gear clicked while the panel is
     // already up behind another door's close) re-stamps nothing, but a named section moves it.
-    case 'open':
+    case 'open': {
+      const next = {
+        section: action.section ?? DEFAULT_SETTINGS_SECTION,
+        subPage: action.subPage ?? null,
+        tab: action.tab ?? null,
+        fineTune: action.fineTune ?? null,
+      };
       if (state.open) {
-        return action.section === undefined || action.section === state.section
-          ? state
-          : { ...state, section: action.section, subPage: null };
+        // An open that names nothing new changes nothing; a named target moves the panel.
+        const named = action.subPage !== undefined || action.tab !== undefined || action.fineTune !== undefined;
+        return !named && (action.section === undefined || action.section === state.section) ? state : { ...state, ...next };
       }
-      return { open: true, origin: action.origin, section: action.section ?? DEFAULT_SETTINGS_SECTION, subPage: null };
+      return { open: true, origin: action.origin, ...next };
+    }
     case 'select':
       return state.section === action.section && state.subPage === null
         ? state
-        : { ...state, section: action.section, subPage: null };
+        : { ...state, section: action.section, subPage: null, tab: null, fineTune: null };
     case 'enterSubPage':
-      return { ...state, subPage: action.id };
+      return { ...state, subPage: action.id, tab: null };
     case 'leaveSubPage':
-      return state.subPage === null ? state : { ...state, subPage: null };
+      return state.subPage === null ? state : { ...state, subPage: null, tab: null };
     case 'escape':
-      return state.subPage !== null ? { ...state, subPage: null } : closed(state);
+      return state.subPage !== null ? { ...state, subPage: null, tab: null } : closed(state);
     case 'close':
       return closed(state);
   }
