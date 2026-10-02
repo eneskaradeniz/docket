@@ -6,6 +6,7 @@ import { accessSync, constants } from 'node:fs';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
+import type { LoginStates } from './login-states';
 import type { ProviderDef } from '../defs/index';
 import { buildChildEnv } from '../launch/index';
 import { probeAcpLogin } from '../transports/acp/index';
@@ -22,6 +23,8 @@ export type ProbeSpawn = (
 export interface PathDiscoveryOptions {
   /** How long a single probe may run before it is killed and its field is left null. */
   readonly probeTimeoutMs?: number;
+  /** Receives every result as it is reported, so a later reader sees the latest login answer. */
+  readonly loginStates?: Pick<LoginStates, 'record'>;
 }
 
 interface ProbeOutcome {
@@ -305,7 +308,9 @@ export function createPathDiscovery(
       // so a slow or hanging binary delays only its own result.
       await Promise.all(
         defs.map(async (def) => {
-          onResult(await discoverDef(spawn, dirs, probeEnv, def));
+          const result = await discoverDef(spawn, dirs, probeEnv, def);
+          options?.loginStates?.record(result);
+          onResult(result);
         }),
       );
     },

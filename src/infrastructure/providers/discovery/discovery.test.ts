@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DiscoveredProvider, ProviderDiscovery } from '../../../application/index';
 import { BUILTIN_PROVIDER_DEFS, type ProviderDef } from '../defs/index';
+import { createLoginStates } from './login-states';
 import { createPathDiscovery, loggedInFromCredentialCount, loggedInFromProviderKeys, type ProbeSpawn } from './path-discovery';
 
 let root: string;
@@ -304,6 +305,29 @@ describe('path discovery', () => {
       [bin, 'login'],
       [bin, '--help'],
     ]);
+  });
+
+  it('P-45: discovery keeps the latest login answer per provider, replacing an older one and reporting a provider it never saw as undefined', async () => {
+    writeBin('home/.local/bin/state-cli', binBody({ version: '1.0.0', authExit: 0 }));
+    const loginStates = createLoginStates();
+    const calls: SpawnCall[] = [];
+    const discovery = createPathDiscovery(
+      [defOf({ id: 'state-cli', bins: ['state-cli'] }), defOf({ id: 'absent-cli', bins: ['absent-cli'] })],
+      recordingSpawn(calls),
+      { PATH: EMPTY_PATH() },
+      join(root, 'home'),
+      { probeTimeoutMs: 2000, loginStates },
+    );
+    expect(loginStates.get('state-cli')).toBeUndefined();
+
+    await collect(discovery);
+    expect(loginStates.get('state-cli')).toBe(true);
+    expect(loginStates.get('absent-cli')).toBeNull(); // not installed: no answer, which counts as not logged in
+    expect(loginStates.get('never-seen')).toBeUndefined();
+
+    writeBin('home/.local/bin/state-cli', binBody({ version: '1.0.0', authExit: 1 }));
+    await collect(discovery);
+    expect(loginStates.get('state-cli')).toBe(false);
   });
 
   it('P-6: results stream per provider; a hanging binary delays only its own entry', async () => {

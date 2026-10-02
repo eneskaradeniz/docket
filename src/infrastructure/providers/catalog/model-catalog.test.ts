@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import { createModelCatalog, MODEL_SOURCE_ADAPTERS } from './model-catalog';
+import { createLoginStates } from '../discovery/login-states';
 import type { QueryFn } from '../transports/sdk/transport';
 import {
   createFakeModelListPool,
@@ -564,6 +565,80 @@ describe('createModelCatalog (P-29)', () => {
       tier: 'balanced',
       autoClassified: true,
       billing: 'unknown',
+    });
+  });
+
+  describe('P-45: the account\'s latest discovery login state reaches a needsLogin listing', () => {
+    const TABLE = 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n';
+    const setup = async (): Promise<{
+      readonly spawned: string[];
+      readonly loginStates: ReturnType<typeof createLoginStates>;
+      readonly list: (refresh?: boolean) => ReturnType<ReturnType<typeof createModelCatalog>['list']>;
+    }> => {
+      const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-login-'));
+      const binPath = join(dir, 'agy');
+      writeFileSync(binPath, `#!/bin/sh\ncat <<'DOCKET_MODELS'\n${TABLE}DOCKET_MODELS\n`);
+      chmodSync(binPath, 0o755);
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account(ACCOUNT_A, { provider: 'agy' }));
+      const spawned: string[] = [];
+      const loginStates = createLoginStates();
+      const catalog = createModelCatalog({
+        ...baseConfig(scriptedQuery([[]]).query),
+        accounts,
+        loginStates,
+        cli: {
+          command: binPath,
+          needsLogin: true,
+          spawn: (command, args, options) => {
+            spawned.push(command);
+            return nodeSpawn(command, [...args], { timeout: options.timeout });
+          },
+        },
+      });
+      return { spawned, loginStates, list: (refresh) => catalog.list(ACCOUNT_A, refresh === true ? { refresh: true } : undefined) };
+    };
+    const record = (loginStates: ReturnType<typeof createLoginStates>, loggedIn: boolean | null): void =>
+      loginStates.record({ defId: 'agy', binPath: '/bin/agy', version: '1', loggedIn, optionalFlags: [] });
+
+    it('P-45: a needsLogin command is not spawned for false, null or a provider discovery never saw, and the bundled rows answer', async () => {
+      const unseen = await setup();
+      const unseenRows = await unseen.list();
+      expect(unseen.spawned).toEqual([]);
+      expect(unseenRows.some((model) => model.source === 'live')).toBe(false);
+
+      for (const answer of [false, null]) {
+        const { spawned, loginStates, list } = await setup();
+        record(loginStates, answer);
+        const rows = await list();
+        expect(spawned).toEqual([]);
+        expect(rows.some((model) => model.source === 'live')).toBe(false);
+      }
+    });
+
+    it('P-45: a needsLogin command is spawned once discovery says true', async () => {
+      const { spawned, loginStates, list } = await setup();
+      record(loginStates, true);
+      const rows = await list();
+      expect(spawned).toHaveLength(1);
+      expect(rows.find((model) => model.id === 'gemini-3.8-flash-high')).toMatchObject({ source: 'live' });
+    });
+
+    it('P-45: a login state that changes after a bundled answer is read on the next list without waiting for the cache to expire, and logging out stops the command again', async () => {
+      const { spawned, loginStates, list } = await setup();
+      record(loginStates, false);
+      await list();
+      expect(spawned).toEqual([]);
+
+      record(loginStates, true);
+      const live = await list();
+      expect(spawned).toHaveLength(1);
+      expect(live.some((model) => model.source === 'live')).toBe(true);
+
+      record(loginStates, false);
+      const kept = await list(true);
+      expect(spawned).toHaveLength(1); // the refresh after a logout spawns nothing
+      expect(kept.find((model) => model.id === 'gemini-3.8-flash-high')).toMatchObject({ stale: true });
     });
   });
 
