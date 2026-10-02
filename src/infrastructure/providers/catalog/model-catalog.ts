@@ -12,6 +12,8 @@ import type { AppServerSpawn } from '../transports/app-server/index';
 import { listApiKeyRouteModels } from './api-key-catalog';
 import { listAppServerRouteModels } from './app-server-catalog';
 import { listClaudeRouteModels } from './claude-catalog';
+import { listCliCommandRouteModels } from './cli-command-catalog';
+import type { CliModelSpawn } from './cli-command-catalog';
 import type { QueryFn } from '../transports/sdk/transport';
 
 /** A live-list adapter's failure: the transport error codes the adapters share, the HTTP leg's
@@ -35,6 +37,7 @@ export interface ModelAdapterDeps {
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
   readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection
+  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
 }
 
@@ -55,11 +58,12 @@ export interface ModelCatalogConfig {
   readonly fetch?: typeof globalThis.fetch; // the api-source adapter's transport; default: the global fetch
   readonly apiBaseUrl?: string; // base of the documented model-list endpoint; default: the provider's documented host
   readonly appServer?: { readonly command?: string; readonly spawn?: AppServerSpawn }; // the app-server adapter's connection
+  readonly cli?: { readonly command?: string; readonly spawn?: CliModelSpawn }; // the cli-command adapter's process runner
   readonly timeoutMs?: number; // the adapters' per-call ceiling
   readonly ttlMs?: number; // cache lifetime; the default is six hours
   /** Live-list adapters per model source; default: the built-in map below. A source the chosen
    * map leaves uncovered answers from the bundled registry — the built-in map's own answer for
-   * `static`, `cli-command` and `acp-session` today. */
+   * `static` and `acp-session` today. */
   readonly adapters?: Readonly<Partial<Record<ModelSource, ModelSourceAdapter>>>;
 }
 
@@ -102,13 +106,22 @@ const appServerAdapter: ModelSourceAdapter = (account, _route, deps) =>
     ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
   });
 
+/** The cli-command leg's adapter: the provider's own model-listing subcommand — a plain command
+ * run, no print-mode prompt, so no agent turn ever starts. */
+const cliCommandAdapter: ModelSourceAdapter = (account, _route, deps) =>
+  listCliCommandRouteModels(account, {
+    ...(deps.cli === undefined ? {} : deps.cli),
+    ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
+  });
+
 /** The live-list adapters the catalog ships with, keyed by the model source a route kind
- * declares. A source no entry covers (`static`, `cli-command`, `acp-session` today) has no live
- * fetch: the registry is that route's whole answer. */
+ * declares. A source no entry covers (`static`, `acp-session` today) has no live fetch: the
+ * registry is that route's whole answer. */
 export const MODEL_SOURCE_ADAPTERS: Readonly<Partial<Record<ModelSource, ModelSourceAdapter>>> = {
   sdk: sdkAdapter,
   api: apiAdapter,
   'app-server': appServerAdapter,
+  'cli-command': cliCommandAdapter,
 };
 
 /** The merge knobs a route kind fixes: an authoritative live list, and the billing its live-only
@@ -134,6 +147,7 @@ export function createModelCatalog(config: ModelCatalogConfig): ModelCatalog {
     ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
     ...(config.apiBaseUrl === undefined ? {} : { apiBaseUrl: config.apiBaseUrl }),
     ...(config.appServer === undefined ? {} : { appServer: config.appServer }),
+    ...(config.cli === undefined ? {} : { cli: config.cli }),
     ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }),
   };
 
