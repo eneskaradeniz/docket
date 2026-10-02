@@ -173,6 +173,13 @@ describe('provider definitions (P-1)', () => {
     ).toBe(true);
   });
 
+  it('P-1: isProviderDef accepts optional watchdog timeouts, 0 included, and rejects bad ones', () => {
+    expect(isProviderDef({ ...createValidDef(), firstOutputTimeoutMs: 0, inactivityTimeoutMs: 5000 })).toBe(true);
+    rejectsWith({ ...createValidDef(), firstOutputTimeoutMs: -1 }, 'negative first output');
+    rejectsWith({ ...createValidDef(), inactivityTimeoutMs: 1.5 }, 'fractional inactivity');
+    rejectsWith({ ...createValidDef(), inactivityTimeoutMs: '600' }, 'string inactivity');
+  });
+
   describe('guard rejections', () => {
     it('P-1: isProviderDef rejects a non-object value', () => {
       rejectsWith(null, 'null');
