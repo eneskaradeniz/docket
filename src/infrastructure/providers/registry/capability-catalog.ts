@@ -11,6 +11,7 @@ import { findRouteKind } from './capability-registry';
 const DEFAULT_ROUTE_KINDS: Readonly<Record<string, Readonly<Partial<Record<AuthMode, string>>>>> = {
   'claude-code': { subscription: 'anthropic-subscription', api_key: 'anthropic-api' },
   codex: { subscription: 'codex-subscription' },
+  copilot: { subscription: 'copilot-subscription' },
 };
 
 export const createCapabilityCatalog = (): CapabilityCatalog => ({
