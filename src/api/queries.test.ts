@@ -1040,6 +1040,31 @@ describe('account.models', () => {
     expect(view.models.some((model) => model.id === '*')).toBe(false);
   });
 
+  it('P-40: a model the catalog leaves unknown reads included once the account reports an allowance bucket for it', async () => {
+    const h = createHarness();
+    await saveAccount(h);
+    const deps: AppDeps = {
+      ...h.deps,
+      modelCatalog: createFakeModelCatalog({
+        [ACCOUNT]: [
+          { id: 'atlas-max', source: 'live', thinking: { kind: 'none' }, billing: 'unknown' },
+          { id: 'atlas-mini', source: 'live', thinking: { kind: 'none' }, billing: 'metered' },
+        ],
+      }),
+    };
+    await deps.accounts.savePools(ACCOUNT, [
+      { id: POOL, accountId: ACCOUNT, label: 'atlas-max weekly', kind: 'allowance', appliesTo: [{ exact: 'atlas-max' }] },
+    ]);
+
+    const view = (await createApi(deps).query({ type: 'account.models', accountId: ACCOUNT })) as AccountModelsView;
+
+    // The bucket names only atlas-max, so it resolves only that model; metered passes through.
+    expect(view.models.map((model) => [model.id, model.billing])).toEqual([
+      ['atlas-max', 'included'],
+      ['atlas-mini', 'metered'],
+    ]);
+  });
+
   it('P-40: defaultBilling is what an unpinned run would take — the route kind’s fixed value, else subscription included and the rest metered', async () => {
     const h = createHarness();
     await h.deps.accounts.save({ id: ACCOUNT, provider: 'acme-prov', label: 'Main', authMode: 'subscription', limitPolicy: 'wait_resume', caps: [] });
