@@ -45,7 +45,6 @@ const PENDING = new Map([
   ['application:A-45', '#570'],
   ['application:A-46', '#571'],
   ['providers:P-41', '#571'],
-  ['providers:P-42', '#569'],
 ]);
 
 function walk(dir, acc = []) {
