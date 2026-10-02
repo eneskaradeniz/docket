@@ -50,7 +50,7 @@ export interface IdGen { next<B extends string>(): Ulid<B> }
 export type AuditAction =
   | 'work_order.opened' | 'work_order.blocked' | 'work_order.unblocked' | 'work_order.closed'
   | 'run.started' | 'run.finished' | 'gate.decided' | 'permission.answered'
-  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'binding.saved'
+  | 'proposal.created' | 'proposal.decided' | 'account.saved' | 'account.removed' | 'account.adopted' | 'binding.saved'
   | 'project.attached' | 'repo.registered' | 'repo.unregistered';
 export type AuditSubject =
   | { readonly kind: 'work_order'; readonly id: WorkOrderId }
