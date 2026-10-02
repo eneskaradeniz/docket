@@ -60,6 +60,11 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   // The CLI's documented headless key is a credential-shaped variable, so it reaches a child only
   // through the chosen account, never through the ambient environment.
   kiro: [],
+  // The CLI's own home variable, where its login lives: the credentials-directory probe and a run
+  // must read the same one, so the machine's own relocation survives — Docket never sets it. The
+  // CLI's model variables (KIMI_MODEL_*) are not listed: an ambient model configuration of another
+  // account never reaches a run.
+  kimi: ['KIMI_CODE_HOME'],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

@@ -96,6 +96,16 @@ const ACP_SESSION_LAUNCHES: Readonly<
     args: ['--acp'],
     notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
   },
+  // The ACP entry is the subcommand `acp`. A machine without a login refuses the session with the
+  // live refusal below; the refusal maps to the not-logged-in answer in this catalog path alone,
+  // because discovery reads the login from the credentials directory, never from a session. The
+  // same telemetry and auto-update variables a run pins keep the listing from phoning home.
+  kimi: {
+    command: 'kimi',
+    args: ['acp'],
+    env: { KIMI_DISABLE_TELEMETRY: '1', KIMI_CODE_NO_AUTO_UPDATE: '1' },
+    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
+  },
 };
 
 /** The refusal a logged-out session answers, as the provider's own definition declares it — the

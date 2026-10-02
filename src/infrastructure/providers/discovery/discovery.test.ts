@@ -718,6 +718,62 @@ describe('credential-file presence login probe (grok-build)', () => {
   });
 });
 
+describe('credentials-directory presence login probe (kimi)', () => {
+  const kimiDef = (): ProviderDef => {
+    const kimi = BUILTIN_PROVIDER_DEFS.find((def) => def.id === 'kimi');
+    return defOf({
+      id: 'kimi-like',
+      bins: ['kimi-like'],
+      helpArgs: undefined,
+      optionalFlags: undefined,
+      authProbe: kimi?.authProbe,
+    });
+  };
+  const discoverKimi = async (env: Readonly<Record<string, string>>): Promise<{ readonly loggedIn: boolean | null | undefined; readonly calls: SpawnCall[] }> => {
+    writeBin('home/.local/bin/kimi-like', 'case "$1" in\n  --version) echo "2.1.1"; exit 0;;\nesac\nexit 3');
+    const { discovery, calls } = makeDiscovery([kimiDef()], { PATH: EMPTY_PATH(), ...env }, { probeTimeoutMs: 2000 });
+    const results = await collect(discovery);
+    return { loggedIn: results[0]?.loggedIn, calls };
+  };
+  const kimiHome = (): string => join(HOME(), '.kimi-code');
+  const clearKimiHome = (): void => rmSync(kimiHome(), { recursive: true, force: true });
+
+  it('G1: a file under the default home\'s credentials directory is a login, its absence and an empty directory are not, and the CLI is spawned only for its version', async () => {
+    clearKimiHome();
+    const absent = await discoverKimi({});
+    expect(absent.loggedIn).toBe(false);
+
+    // The file name after login is not documented, so the probe reads presence only: a file of
+    // any name and any unparseable content answers the same, because content is never read.
+    mkdirSync(join(kimiHome(), 'credentials'), { recursive: true });
+    const empty = await discoverKimi({});
+    expect(empty.loggedIn).toBe(false);
+
+    writeFileSync(join(kimiHome(), 'credentials', 'oauth.json'), 'not json');
+    const present = await discoverKimi({});
+    expect(present.loggedIn).toBe(true);
+    expect(present.calls.map((call) => call.args)).toEqual([['--version']]);
+    clearKimiHome();
+  });
+
+  it('G1: KIMI_CODE_HOME redirects the probe, and the default home\'s credentials no longer count', async () => {
+    const elsewhere = join(root, 'kimi-elsewhere');
+    mkdirSync(join(elsewhere, 'credentials'), { recursive: true });
+    clearKimiHome();
+    mkdirSync(join(kimiHome(), 'credentials'), { recursive: true });
+    writeFileSync(join(kimiHome(), 'credentials', 'oauth.json'), '{}');
+
+    // The override names a home whose credentials directory holds no file: the default home's
+    // login no longer counts, and once a file lands there it does.
+    expect((await discoverKimi({ KIMI_CODE_HOME: elsewhere })).loggedIn).toBe(false);
+    writeFileSync(join(elsewhere, 'credentials', 'oauth.json'), '{}');
+    expect((await discoverKimi({ KIMI_CODE_HOME: elsewhere })).loggedIn).toBe(true);
+
+    rmSync(elsewhere, { recursive: true, force: true });
+    clearKimiHome();
+  });
+});
+
 describe('whoami login probe (kiro)', () => {
   it('P-45: the whoami login probe reads only the account key — null is logged out, a populated account logged in, anything else unknown', () => {
     // The logged-out shape is the recorded live answer; the logged-in shape is unverified, so a

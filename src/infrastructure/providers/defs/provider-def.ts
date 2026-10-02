@@ -101,7 +101,7 @@ export type ProviderResumeMode = 'specify' | 'capture' | 'protocol' | 'none';
 
 /**
  * How the login answer is read. Without `acpSession`, `args` is a command whose exit 0 means
- * logged in. With `presenceFile`, nothing is spawned. With `acpSession`, `args` launch the CLI's ACP mode and the probe opens one session (never a
+ * logged in. With `presenceFile` or `presenceDir`, nothing is spawned. With `acpSession`, `args` launch the CLI's ACP mode and the probe opens one session (never a
  * prompt): a session that opens means logged in, an error matching `notLoggedIn` means logged
  * out, and anything else — including an unparseable answer — is unknown.
  */
@@ -137,6 +137,15 @@ export interface ProviderAuthProbe {
     readonly homeEnv: string;
     readonly homeDir: string;
     readonly file: string;
+  };
+  /** For a CLI with no status command and no single documented credential file: logged in
+   * exactly when at least one file exists under `<homeEnv's value, else <user home>/<homeDir>>/<dir>`.
+   * Only the entries' presence is read, never a name's or a file's content, and presence does not
+   * prove the credential is still valid. `args` is unused (empty). */
+  readonly presenceDir?: {
+    readonly homeEnv: string;
+    readonly homeDir: string;
+    readonly dir: string;
   };
 }
 

@@ -263,6 +263,23 @@ const loggedInFromPresenceFile = (
   }
 };
 
+/** Presence only, over a directory of credential files whose names are not documented: a
+ * listing is read for whether any file exists, never for a name or a content — so no credential
+ * value can reach a log, and presence still does not prove the credential is valid. */
+const loggedInFromPresenceDir = (
+  rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceDir']>,
+  env: Readonly<Record<string, string>>,
+  homedir: string,
+): boolean => {
+  const override = env[rule.homeEnv];
+  const home = override !== undefined && override !== '' ? override : join(homedir, rule.homeDir);
+  try {
+    return readdirSync(join(home, rule.dir), { withFileTypes: true }).some((entry) => entry.isFile());
+  } catch {
+    return false;
+  }
+};
+
 /** Whether a resolved wrapper is missing the second binary its agent entry delegates to (its own
  * error names that path): presence only, the file is never opened. A resolved binary that already
  * is the named file is self-sufficient, whatever directory it was found in. */
@@ -293,6 +310,7 @@ const probeAuth = async (
 ): Promise<boolean | null> => {
   if (def.authProbe === undefined) return null;
   if (def.authProbe.presenceFile !== undefined) return loggedInFromPresenceFile(def.authProbe.presenceFile, env, homedir);
+  if (def.authProbe.presenceDir !== undefined) return loggedInFromPresenceDir(def.authProbe.presenceDir, env, homedir);
   if (def.authProbe.acpSession !== undefined) {
     // The ACP session is the login signal: the child gets the same allowlisted environment a run
     // builds, so an ambient credential of another account never counts as this machine's login.
