@@ -1249,6 +1249,9 @@ const accountModelsView = async (
     deps.modelCatalog.list(id, refresh ? { refresh: true } : undefined),
     deps.accounts.pools(id),
   ]);
+  // The provider names the row an unpinned run uses; its billing, settled the same way as any
+  // row's, is the unpinned run's billing. Without such a row the route's own rule answers.
+  const defaultModel = models.find((model) => model.isDefault === true);
   return {
     models: models.map((model) => ({
       id: model.id,
@@ -1261,10 +1264,12 @@ const accountModelsView = async (
       autoClassified: model.autoClassified === true,
       consented: consented.includes(model.id),
     })),
-    // The marker names the route's own default model, never a catalog row; the unpinned run's
-    // billing is the same rule the executor gates runs with.
+    // The marker names the route's own default model, never a catalog row.
     defaultConsented: consented.includes(DEFAULT_MODEL_CONSENT),
-    defaultBilling: defaultBillingOf(deps.capabilities, record),
+    defaultBilling:
+      defaultModel === undefined
+        ? defaultBillingOf(deps.capabilities, record)
+        : billingFromPools(defaultModel.billing, defaultModel.id, pools),
   };
 };
 
