@@ -1,15 +1,18 @@
-// components/model-list.tsx — the per-account model list of the settings panel's accounts section
-// (P-40): one row per catalog model — the display name, the tier chip when known, and the billing
+// components/model-list.tsx — the account editor's Modeller list (U-32, P-40): the catalog grouped
+// by billing (Plana dahil without a mark, Kullanım başına ücretli with `$`, Doğrulanamadı with a
+// dashed `?`), one row per catalog model — the display name, the tier chip when known, and the billing
 // mark (`included` shows none, `metered` a currency mark, `unknown` a question mark with its
 // explanation — never an amount or a price claim) — the unpinned default's one line above them,
 // the stale note a kept-after-failed-refresh list carries with its refresh action, and the inline
 // consent draft: one sentence of what may happen, the cap controls, allow (disabled until the cap
 // parses — the store decides) and cancel. Purely presentational; the copy arrives resolved and the
 // standing through props (U-1).
+import type { ReactNode } from 'react';
+
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import type { AccountModelsState, CapScope, ConsentDraft, ModelRowDisplay } from '../stores/account-models';
-import { CAP_SCOPES } from '../stores/account-models';
+import { CAP_SCOPES, groupModels } from '../stores/account-models';
 import { failureKey } from '../stores/results';
 import { ActionButton } from './action-button';
 import { Skeleton, SkeletonReveal, SkeletonStyle, useSkeleton } from './skeleton';
@@ -19,6 +22,12 @@ const TIER_KEY: Readonly<Record<'strong' | 'balanced' | 'fast', LabelKey>> = {
   strong: 'tier.strong',
   balanced: 'tier.balanced',
   fast: 'tier.fast',
+};
+
+const GROUP_KEY: Readonly<Record<'included' | 'metered' | 'unknown', LabelKey>> = {
+  included: 'settings.models.group.included',
+  metered: 'settings.models.group.metered',
+  unknown: 'settings.models.group.unknown',
 };
 
 const CAP_SCOPE_KEY: Readonly<Record<CapScope, LabelKey>> = {
@@ -35,7 +44,7 @@ const BillingMarkGlyph = ({ locale, billing }: { readonly locale: Locale; readon
       $
     </span>
   ) : (
-    <span className="font-mono text-[12px] font-semibold text-signal" title={t(locale, 'settings.models.unknown')}>
+    <span className="rounded-control border border-dashed border-signal px-1 font-mono text-[12px] font-semibold text-signal" title={t(locale, 'settings.models.unknown')}>
       ?
     </span>
   );
@@ -48,13 +57,17 @@ const ModelRow = ({
   locale,
   onSelect,
   onRevoke,
+  card,
 }: {
   readonly row: ModelRowDisplay;
   readonly locale: Locale;
   readonly onSelect: (row: ModelRowDisplay) => void;
   readonly onRevoke: (model: string) => void;
+  /** The inline consent card, rendered under the row it belongs to. */
+  readonly card: ReactNode;
 }) => (
-  <li className="flex min-w-0 items-center gap-2.5">
+  <li className="grid gap-2">
+   <div className="flex min-w-0 items-center gap-2.5">
     <span className="min-w-0 truncate text-[13px] text-ink" title={row.name}>
       {row.name}
     </span>
@@ -74,6 +87,8 @@ const ModelRow = ({
         </ActionButton>
       ) : null}
     </span>
+   </div>
+   {card}
   </li>
 );
 
@@ -102,8 +117,16 @@ const ConsentPanel = ({
       {t(locale, 'settings.models.consent.title')}
       {draft.name === null ? '' : ` · ${draft.name}`}
     </p>
+    <p className="max-w-[52ch] text-[12.5px] text-inkdim">
+      {t(locale, draft.billing === 'metered' ? 'settings.models.metered' : 'settings.models.unknown')}
+    </p>
     <p className="max-w-[52ch] text-[12.5px] text-inkdim">{t(locale, 'settings.models.consent.body')}</p>
+    <p className="max-w-[52ch] text-[12.5px] text-inkdim">
+      {t(locale, draft.capRequired ? 'settings.models.consent.capNeeded' : 'settings.models.consent.capHas')}
+    </p>
     <div className="flex flex-wrap items-end gap-3">
+      {draft.capRequired ? (
+      <>
       <label className="grid gap-1">
         <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">
           {t(locale, 'settings.models.consent.scope')}
@@ -132,6 +155,8 @@ const ConsentPanel = ({
           className="w-28 rounded-control border border-bord bg-raised px-2 py-[5px] font-mono text-[13px] text-ink outline-none placeholder:text-inkdim focus:border-signal"
         />
       </label>
+      </>
+      ) : null}
       <span className="flex items-center gap-2">
         <ActionButton variant="primary" disabled={!draft.allowEnabled} onClick={onAllow}>
           {t(locale, 'settings.models.consent.allow')}
@@ -141,7 +166,7 @@ const ConsentPanel = ({
         </ActionButton>
       </span>
     </div>
-    {draft.cap.amountUsd.trim() !== '' && !draft.allowEnabled ? (
+    {draft.capRequired && !draft.allowEnabled ? (
       <p className="text-[12px] text-inkdim">{t(locale, 'settings.models.consent.amountHint')}</p>
     ) : null}
   </div>
@@ -163,6 +188,10 @@ export interface ModelListProps {
 export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh, onEditCap, onAllow, onCancel, onRevoke }: ModelListProps) {
   const rows = state.rows;
   const defaultModel = state.defaultModel;
+  const draftCard = (model: string): ReactNode =>
+    state.draft !== null && state.draft.model === model ? (
+      <ConsentPanel draft={state.draft} locale={locale} onEditCap={onEditCap} onAllow={onAllow} onCancel={onCancel} />
+    ) : null;
   const { skeleton, reveal } = useSkeleton(state.loading && rows === null, () => Date.now());
 
   return (
@@ -207,6 +236,7 @@ export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh,
                   its own consent standing through the * marker. An included default shows the line
                   with no mark and no action — nothing to consent. */}
               {defaultModel !== null ? (
+                <div className="grid gap-2">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className="min-w-0 truncate text-[13px] font-semibold text-ink" title={t(locale, 'settings.models.default')}>
                     {t(locale, 'settings.models.default')}
@@ -231,20 +261,24 @@ export function ModelList({ locale, state, onSelect, onSelectDefault, onRefresh,
                     </>
                   ) : null}
                 </div>
+                {draftCard('*')}
+                </div>
               ) : null}
-              <ul className="grid gap-1.5">
-                {rows.map((row) => (
-                  <ModelRow key={row.id} row={row} locale={locale} onSelect={onSelect} onRevoke={onRevoke} />
-                ))}
-              </ul>
+              {groupModels(rows).map((group) => (
+                <section key={group.billing} className="grid gap-1.5" data-billing-group={group.billing}>
+                  <h4 className="font-mono text-[11px] uppercase tracking-[0.06em] text-inkdim">{t(locale, GROUP_KEY[group.billing])}</h4>
+                  <ul className="grid gap-1.5">
+                    {group.rows.map((row) => (
+                      <ModelRow key={row.id} row={row} locale={locale} onSelect={onSelect} onRevoke={onRevoke} card={draftCard(row.id)} />
+                    ))}
+                  </ul>
+                </section>
+              ))}
             </>
           )}
         </SkeletonReveal>
       )}
 
-      {state.draft !== null ? (
-        <ConsentPanel draft={state.draft} locale={locale} onEditCap={onEditCap} onAllow={onAllow} onCancel={onCancel} />
-      ) : null}
     </div>
   );
 }

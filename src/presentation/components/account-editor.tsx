@@ -1,7 +1,7 @@
 // components/account-editor.tsx — the account editor body (U-30): a head with the recommendation
 // count and "Hepsini önerilene döndür" (U-29), four tabs, and the tab's content. Genel holds the
 // label (saved on commit) and the read-only facts; Kullanım the meter bars or the spend against
-// the cap; Limitler and Modeller are placeholders until their own screens land. The rules live in
+// the cap; Limitler is a placeholder until its screen lands; Modeller lists the catalog by billing with the spend-consent card (U-32). The rules live in
 // stores/account-editor.ts; this file renders them. The host (Settings sub-page, later the
 // wizard window) frames the body.
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -18,9 +18,11 @@ import {
   type EditorTab,
   type FactKey,
 } from '../stores/account-editor';
+import type { AccountModelsStore } from '../stores/account-models';
 import { settingDiffs } from '../stores/recommended';
 import { ActionButton } from './action-button';
 import { MeterBar } from './meter-bar';
+import { ModelList } from './model-list';
 import { formatMeterValue } from './meter-value';
 import { SettingRow } from './setting-row';
 
@@ -57,6 +59,8 @@ export interface AccountEditorProps {
   readonly account: SettingsAccountView;
   readonly locale: Locale;
   readonly store: AccountEditorStore;
+  /** The models list and the spend-consent flow of the Modeller tab (U-32). */
+  readonly models: AccountModelsStore;
   /** A moment in the active locale (meter resets, the last read). */
   readonly formatTime: (epochMs: number | null) => string | null;
   /** Re-reads the account's meters ("Yenile"). */
@@ -125,7 +129,7 @@ function General({ account, locale, store }: Pick<AccountEditorProps, 'account' 
   );
 }
 
-function Usage({ account, locale, formatTime, onRefresh }: Omit<AccountEditorProps, 'store'>) {
+function Usage({ account, locale, formatTime, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'formatTime' | 'onRefresh'>) {
   const view = usageView(account);
   const lastRead = account.meters.length === 0 ? null : formatTime(Math.max(...account.meters.map((meter) => meter.observedAt)));
   return (
@@ -171,6 +175,37 @@ function Usage({ account, locale, formatTime, onRefresh }: Omit<AccountEditorPro
           {t(locale, 'editor.usage.refresh')}
         </ActionButton>
       </p>
+    </div>
+  );
+}
+
+function Models({ account, locale, models, onRefresh }: Pick<AccountEditorProps, 'account' | 'locale' | 'models' | 'onRefresh'>) {
+  const state = useSyncExternalStore(models.subscribe, models.state);
+  // The catalog loads when the tab opens and again for another account.
+  useEffect(() => {
+    void models.load(account.id);
+  }, [models, account.id]);
+  const hasCap = account.caps.length > 0;
+  return (
+    <div className="py-3">
+      <ModelList
+        locale={locale}
+        state={state}
+        onSelect={(row) => models.beginConsent({ model: row.id, name: row.name, billing: row.billing, hasCap })}
+        onSelectDefault={() =>
+          models.beginConsent({ model: '*', name: null, billing: state.defaultModel?.billing ?? 'included', hasCap })
+        }
+        onRefresh={() => void models.refresh()}
+        onEditCap={(input) => models.editCap(input)}
+        onAllow={() =>
+          void models.allow().then((outcome) => {
+            // A grant may have created the account's cap; the host re-reads the account.
+            if (outcome?.result.ok === true) onRefresh();
+          })
+        }
+        onCancel={() => models.cancel()}
+        onRevoke={(model) => void models.revoke(model)}
+      />
     </div>
   );
 }
@@ -221,7 +256,9 @@ export function AccountEditor(props: AccountEditorProps) {
           <Usage account={account} locale={locale} formatTime={props.formatTime} onRefresh={props.onRefresh} />
         ) : null}
         {state.tab === 'limits' ? <p className="py-3 text-[13px] text-inkdim">{t(locale, 'editor.limits.placeholder')}</p> : null}
-        {state.tab === 'models' ? <p className="py-3 text-[13px] text-inkdim">{t(locale, 'editor.models.placeholder')}</p> : null}
+        {state.tab === 'models' ? (
+          <Models account={account} locale={locale} models={props.models} onRefresh={props.onRefresh} />
+        ) : null}
       </div>
     </div>
   );

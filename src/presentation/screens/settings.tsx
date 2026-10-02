@@ -330,7 +330,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, models, themeStore, store, marks, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -631,6 +631,7 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                       account={openAccount.detail}
                       locale={locale}
                       store={editor}
+                      models={models}
                       formatTime={store.resetsAtLabel}
                       onRefresh={() => void store.load()}
                     />
