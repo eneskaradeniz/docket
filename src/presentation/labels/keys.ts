@@ -183,6 +183,8 @@ export const LABEL_KEYS = [
   'account.work.empty',
   'account.policy.when',
   'account.policy.info',
+  'account.policy.subject',
+  'info.trigger.prefix',
   'account.policy.wait_resume',
   'account.policy.switch_pool',
   'account.policy.fallback_account',

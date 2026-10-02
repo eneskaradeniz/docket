@@ -44,6 +44,10 @@ export const MOTION = {
     columnMs: 200,
     pulseMs: 1800,
   },
+  // The info bubble's fade (U-27); under reduced motion it has none.
+  bubble: {
+    fadeMs: 120,
+  },
   reducedMs: 80,
   // The loading skeletons' anti-flicker numbers (U-26): a load faster than the delay never
   // flashes one, and a shown skeleton holds for its minimum show even if the reply races in.
