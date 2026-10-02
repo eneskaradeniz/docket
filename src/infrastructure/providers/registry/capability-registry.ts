@@ -19,8 +19,10 @@ export const CAPABILITY_REGISTRY = {
   providers: [
     {
       // The sdk transport exists for this CLI alone, so the SDK message suites are its evidence.
+      // The CLI keeps its machine login in its own config directory, so the isolation proof is the
+      // launch that never points the config directory at the run directory.
       providerId: 'claude-code',
-      isolation: { kind: 'test', name: 'P-7: the config dir reaches the CLI through the provider config mechanism' },
+      isolation: { kind: 'test', name: 'P-44: a subscription launch never points the config directory at the run directory, whatever the ambient environment carries' },
       gates: {
         G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
         G2: { kind: 'test', name: 'I-27: assistant content blocks map in order' },
