@@ -3,7 +3,8 @@
 // Contract: docs/v2/provider-capabilities.md sections 3–4 and 14. The registry data and the
 // family-id patterns are infrastructure — provider and family names may not appear in the domain —
 // so every function here takes them as a parameter.
-import type { Billing, EffortLevel, ModelRecord, Thinking, Tier } from './capability';
+import type { EffortLevel, ThinkingChoice } from '../shared/index';
+import type { Billing, ModelRecord, Thinking, Tier } from './capability';
 
 /** A model as a live route reported it; `efforts` is the list the route itself advertises. */
 export interface LiveModel {
@@ -210,6 +211,22 @@ export function thinkingFor(
   if (medium !== -1) return 'medium';
   const belowMedium = reachable.filter((candidate) => rank(candidate) < rank('medium'));
   return belowMedium.length > 0 ? belowMedium[belowMedium.length - 1] : reachable[0];
+}
+
+/** The effort a run sends for a role's choice on one model; undefined → send nothing. */
+export function effortForChoice(
+  choice: ThinkingChoice | undefined,
+  thinking: Thinking | 'unknown',
+): EffortLevel | undefined {
+  if (thinking === 'unknown' || thinking.kind === 'none') return undefined;
+  const resolved = choice ?? { level: 'balanced' as const };
+  if ('level' in resolved) return thinkingFor(resolved.level, thinking);
+  const wanted = rank(resolved.effort);
+  // Clamp down, never up: a deeper level than asked would spend more than the user chose.
+  const atOrBelow = thinking.levels
+    .filter((candidate) => rank(candidate) <= wanted)
+    .sort((a, b) => rank(a) - rank(b));
+  return atOrBelow[atOrBelow.length - 1];
 }
 
 export function catalogCacheKey(accountId: string, routeKind: string): string {

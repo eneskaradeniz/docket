@@ -207,6 +207,10 @@ const onLine = (line) => {
     respond(message.id, { sessionId });
     return;
   }
+  if (message.method === 'session/set_config_option') {
+    respond(message.id, { configOptions: [] });
+    return;
+  }
   if (message.method === 'session/close') {
     respond(message.id, {});
     return;

@@ -39,11 +39,7 @@ const SECTIONS = [
 // its test removes the id in the same commit (a covered-but-still-pending id fails the check),
 // and an id still pending after its issue closes is a review blocker. This list must be empty
 // when the phase closes.
-const PENDING = new Map([
-  ['domain:R-50', '#571'],
-  ['application:A-46', '#571'],
-  ['providers:P-41', '#571'],
-]);
+const PENDING = new Map([]);
 
 function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {

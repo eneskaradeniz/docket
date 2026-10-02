@@ -16,6 +16,8 @@ import type {
   Slug,
   StageSlug,
   TaskSlug,
+  ThinkingChoice,
+  EffortLevel,
   Ulid,
   WorkOrderId,
   WorkOrderEvent,
@@ -122,6 +124,27 @@ export interface RepoRegistryPort {
 }
 
 /** A fresh literal every time: results are the caller's data, never shared module state. */
+const isUserLevel = (value: string): value is 'fast' | 'balanced' | 'deep' =>
+  value === 'fast' || value === 'balanced' || value === 'deep';
+const isEffortLevel = (value: string): value is EffortLevel =>
+  ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
+
+/** A thinking choice is exactly one of `level` or `effort`, each from its closed set; anything
+ *  else is a malformed command. `null` = invalid, undefined = absent. */
+const thinkingValue = (
+  input: { readonly level?: string; readonly effort?: string } | undefined,
+): ThinkingChoice | undefined | null => {
+  if (input === undefined) return undefined;
+  const { level, effort } = input;
+  if (level !== undefined && effort === undefined && isUserLevel(level)) {
+    return { level };
+  }
+  if (effort !== undefined && level === undefined && isEffortLevel(effort)) {
+    return { effort };
+  }
+  return null;
+};
+
 const invalidId = (): CommandResult => ({ ok: false, code: 'invalid_id' });
 
 /** undefined = the input is not a valid slug; the caller answers with invalid_id and runs nothing. */
@@ -551,12 +574,14 @@ const runCommand = async (
         if (accountId === undefined) return invalidId();
         accounts.push(entry.model === undefined ? { accountId } : { accountId, model: entry.model });
       }
+      const thinking = thinkingValue(command.thinking);
+      if (thinking === null) return invalidId();
       // The settings command carries no scope: it edits the machine-global baseline that every
       // repo inherits unless a more specific level overrides it.
       return commandOf(
         await saveBinding(
           { clock: deps.clock, ids: deps.ids, log: deps.log, bindings: deps.bindings },
-          { scope: { level: 'global' }, binding: { role, accounts }, actor },
+          { scope: { level: 'global' }, binding: { role, accounts, ...(thinking !== undefined ? { thinking } : {}) }, actor },
         ),
       );
     }

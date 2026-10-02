@@ -27,7 +27,13 @@ export interface SdkTransportConfig {
   readonly executablePath?: string; // from discovery (Phase 3); SDK default when absent
   /** Route-kind resolution; default: the capability registry's own catalog. */
   readonly capabilities?: Pick<CapabilityCatalog, 'routeKindOf'>;
+  /** True when the definition declares the SDK `effort` option; without it the effort is ignored. */
+  readonly sendsEffort?: boolean;
 }
+
+/** The levels the SDK's `effort` option takes; a wider level never reaches it. */
+const sdkEffort = (level: string | undefined): Options['effort'] =>
+  level === 'low' || level === 'medium' || level === 'high' || level === 'xhigh' || level === 'max' ? level : undefined;
 
 const DENIED_BY_OPERATOR = 'Denied by the operator';
 // The vendor's crash text is not relayed into events: it may quote environment values or secrets.
@@ -182,6 +188,7 @@ export function createSdkTransport(config: SdkTransportConfig): AgentTransport {
         abortController,
         canUseTool,
         pathToClaudeCodeExecutable: config.executablePath,
+        ...(config.sendsEffort === true && sdkEffort(request.effort) !== undefined ? { effort: sdkEffort(request.effort) } : {}),
       };
 
       const pump = async (): Promise<void> => {

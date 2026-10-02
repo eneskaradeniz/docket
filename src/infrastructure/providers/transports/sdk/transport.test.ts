@@ -342,6 +342,39 @@ async function collectAsks(
 }
 
 describe('createSdkTransport', () => {
+  describe('effort (P-41)', () => {
+    const effortCall = async (config: { readonly sendsEffort?: boolean }, run: RunRequest): Promise<Options> => {
+      const accounts = createFakeAccountRepo();
+      await accounts.save(account('subscription'));
+      const { query, calls } = scriptedQuery(async function* () {
+        yield systemInit();
+        yield successResult(0.01);
+      });
+      const transport = createSdkTransport({
+        clock: createFakeClock(START_AT),
+        accounts,
+        secrets: createFakeSecretVault(),
+        baseEnv: {},
+        query,
+        ...config,
+      });
+      await collect(unwrap(await transport.start(run)).events);
+      const call = calls[0];
+      if (call === undefined) throw new Error('the query was never called');
+      return call.options;
+    };
+
+    it('P-41: the effort rides the SDK query option when the definition declares it', async () => {
+      expect((await effortCall({ sendsEffort: true }, request({ effort: 'high' }))).effort).toBe('high');
+    });
+
+    it('P-41: an absent effort, an undeclared option, or a level the option does not take adds nothing', async () => {
+      expect(await effortCall({ sendsEffort: true }, request())).not.toHaveProperty('effort');
+      expect(await effortCall({}, request({ effort: 'high' }))).not.toHaveProperty('effort');
+      expect(await effortCall({ sendsEffort: true }, request({ effort: 'ultra' }))).not.toHaveProperty('effort');
+    });
+  });
+
   describe('start', () => {
     it('I-28: an unknown account fails with unsupported before any query runs', async () => {
       const { query, calls } = scriptedQuery(async function* () {

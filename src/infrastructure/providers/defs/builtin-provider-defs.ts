@@ -4,7 +4,12 @@
 // unmodified from the file its `d` came from (the provider's official file, or the
 // operator-placed stand-in when none exists); it identifies the provider only and is never
 // redrawn — `mark: null` stays the state of a def with no file.
-import type { ProviderDef } from './provider-def';
+import { effortFlagArgs, type EffortArg, type ProviderDef } from './provider-def';
+
+// Each effort parameter below is taken from the provider's own help output, SDK typings or
+// protocol schema; a provider whose parameter is not verified carries none.
+const AGY_EFFORT: EffortArg = { kind: 'flag', flag: '--effort' };
+const COPILOT_EFFORT: EffortArg = { kind: 'flag', flag: '--reasoning-effort' };
 
 export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
   {
@@ -14,6 +19,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     versionArgs: ['--version'],
     helpArgs: ['--help'],
     transport: 'sdk',
+    effortArg: { kind: 'request-field', name: 'effort' },
     config: { mechanism: 'env-var', name: 'CLAUDE_CONFIG_DIR' },
     buildLaunch: (input) => ({ args: [], env: { CLAUDE_CONFIG_DIR: input.configDir }, stdin: 'prompt' }),
     resume: 'specify',
@@ -39,6 +45,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     helpArgs: ['--help'],
     authProbe: { args: ['login', 'status'] },
     transport: 'app-server',
+    effortArg: { kind: 'request-field', name: 'effort' },
     config: { mechanism: 'env-var', name: 'CODEX_HOME' },
     buildLaunch: (input) => ({ args: ['app-server'], env: { CODEX_HOME: input.configDir }, stdin: 'prompt' }),
     resume: 'protocol',
@@ -64,11 +71,12 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     helpArgs: ['--help'],
     transport: 'stream-json',
     streamDialect: 'agy',
+    effortArg: AGY_EFFORT,
     // This CLI documents no config-dir override of its own; the run-scoped HOME carries the
     // run directory until a dedicated variable exists.
     config: { mechanism: 'env-var', name: 'HOME' },
     buildLaunch: (input) => ({
-      args: ['--input-format', 'stream-json', '--output-format', 'stream-json'],
+      args: ['--input-format', 'stream-json', '--output-format', 'stream-json', ...effortFlagArgs(AGY_EFFORT, input.effort)],
       env: { HOME: input.configDir },
       stdin: 'prompt',
     }),
@@ -96,7 +104,12 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     transport: 'acp',
     // No dedicated config-dir variable is documented; the run-scoped HOME isolates the config tree.
     config: { mechanism: 'env-var', name: 'HOME' },
-    buildLaunch: (input) => ({ args: ['--acp', '--stdio'], env: { HOME: input.configDir }, stdin: 'prompt' }),
+    effortArg: COPILOT_EFFORT,
+    buildLaunch: (input) => ({
+      args: ['--acp', '--stdio', ...effortFlagArgs(COPILOT_EFFORT, input.effort)],
+      env: { HOME: input.configDir },
+      stdin: 'prompt',
+    }),
     resume: 'protocol',
     capabilities: {
       structuredStream: true,
@@ -146,6 +159,7 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     versionArgs: ['--version'],
     helpArgs: ['--help'],
     transport: 'acp',
+    effortArg: { kind: 'session-option', category: 'thought_level' },
     config: { mechanism: 'env-var', name: 'OPENCODE_CONFIG_DIR' },
     // Without its documented switch the CLI also reads the user's own ~/.claude files
     // (CLAUDE.md, skills), so a run would carry the operator's personal instructions; the

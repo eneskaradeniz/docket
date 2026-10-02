@@ -6,6 +6,7 @@ import type {
   AgentEvent,
   Billing,
   CapabilityDef,
+  EffortLevel,
   EpochMs,
   LimitDecision,
   Meter,
@@ -16,7 +17,7 @@ import type {
   RunOutcome,
   WorkOrderId,
 } from '../../domain/index';
-import { billingFromPools, decideOnLimit, foldRun } from '../../domain/index';
+import { billingFromPools, decideOnLimit, effortForChoice, foldRun } from '../../domain/index';
 
 import type { AccountRecord, AppDeps, AuditAction, RunHandle, RunRecord, RunRepo, TransportError } from '../ports';
 
@@ -226,6 +227,22 @@ export const defaultBillingOf = (
   return account?.authMode === 'subscription' ? 'included' : 'metered';
 };
 
+/** The effort the role's thinking choice means on the route's model. A pinned model is looked up by
+ *  id; an unpinned route runs on the provider's default row. No entry means the capability is
+ *  unknown, so nothing is sent rather than a guess. */
+const resolveEffort = async (
+  deps: Pick<AppDeps, 'modelCatalog'>,
+  item: QueueItem,
+): Promise<EffortLevel | undefined> => {
+  const catalog = await deps.modelCatalog.list(item.route.accountId);
+  const { model } = item.route;
+  const entry =
+    model !== undefined
+      ? catalog.find((candidate) => candidate.id === model)
+      : catalog.find((candidate) => candidate.isDefault === true);
+  return effortForChoice(item.thinking, entry?.thinking ?? 'unknown');
+};
+
 /** P-40: a run whose model may spend real money starts only with the user's recorded consent and
  *  a spend cap on the account. The refusal happens before any write, so every store reads back
  *  exactly as it was. A pinned model the catalog does not list counts as `unknown`, which is never
@@ -267,6 +284,7 @@ export async function executeRun(
     (await deps.runs.listForWorkOrder(item.workOrderId)).filter((run) => run.stage === item.stage),
   );
 
+  const effort = await resolveEffort(deps, item);
   const runId = deps.ids.next<'run'>();
   const startedAt = deps.clock.now();
   await deps.runs.create({
@@ -286,7 +304,12 @@ export async function executeRun(
     stage: item.stage,
     attempt: plan.attempt,
   });
-  await audit(deps, { at: startedAt, action: 'run.started', runId });
+  await audit(deps, {
+    at: startedAt,
+    action: 'run.started',
+    runId,
+    ...(effort !== undefined ? { detail: { effort } } : {}),
+  });
   // From here the run is answerable through the board, until its record closes.
   board?.register(runId);
 
@@ -312,6 +335,7 @@ export async function executeRun(
       route: item.route,
       prompt,
       capabilities: input.capabilities,
+      ...(effort !== undefined ? { effort } : {}),
       ...(resume !== undefined ? { resume } : {}),
     });
 

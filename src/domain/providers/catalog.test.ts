@@ -3,9 +3,10 @@
 // patterns and the registry-side data is validated in infrastructure.
 import { describe, expect, it } from 'vitest';
 
-import { autoSelectable, canonicalModelId, catalogCacheKey, mergeCatalog, resolveTier, thinkingFor } from './catalog';
+import { autoSelectable, canonicalModelId, catalogCacheKey, effortForChoice, mergeCatalog, resolveTier, thinkingFor } from './catalog';
 import type { CatalogModel, FamilyPattern, LiveModel } from './catalog';
-import type { Billing, ModelRecord } from './capability';
+import type { Billing, ModelRecord, Thinking } from './capability';
+import type { EffortLevel, ThinkingChoice } from '../shared/index';
 
 const FAMILY_PATTERNS: readonly FamilyPattern[] = [
   { contains: 'opus', tier: 'strong' },
@@ -532,5 +533,67 @@ describe('mergeCatalog familyBilling (P-42)', () => {
       familyBilling,
     });
     expect(merged[0]?.billing).toBe('unknown');
+  });
+});
+
+describe('effortForChoice (R-50)', () => {
+  const LISTED: Thinking = { kind: 'levels', levels: ['low', 'medium', 'high'] };
+
+  it('R-50: an absent choice behaves as balanced', () => {
+    expect(effortForChoice(undefined, LISTED)).toBe('medium');
+    expect(effortForChoice(undefined, LISTED)).toBe(effortForChoice({ level: 'balanced' }, LISTED));
+  });
+
+  it('R-50: each user level maps through thinkingFor', () => {
+    expect(effortForChoice({ level: 'fast' }, LISTED)).toBe('low');
+    expect(effortForChoice({ level: 'balanced' }, LISTED)).toBe('medium');
+    expect(effortForChoice({ level: 'deep' }, LISTED)).toBe('high');
+  });
+
+  it('R-50: an exact effort the model lists is sent as is', () => {
+    expect(effortForChoice({ effort: 'low' }, LISTED)).toBe('low');
+    const withMax: Thinking = { kind: 'levels', levels: ['low', 'high', 'max'] };
+    expect(effortForChoice({ effort: 'max' }, withMax)).toBe('max');
+  });
+
+  it('R-50: an exact effort the model does not list is clamped down to the highest listed level below it', () => {
+    expect(effortForChoice({ effort: 'ultra' }, LISTED)).toBe('high');
+    expect(effortForChoice({ effort: 'xhigh' }, LISTED)).toBe('high');
+    expect(effortForChoice({ effort: 'minimal' }, { kind: 'levels', levels: ['none', 'low'] })).toBe('none');
+  });
+
+  it('R-50: undefined when no listed level is below the requested effort', () => {
+    expect(effortForChoice({ effort: 'minimal' }, LISTED)).toBeUndefined();
+    expect(effortForChoice({ effort: 'none' }, LISTED)).toBeUndefined();
+  });
+
+  it('R-50: unknown and none thinking give undefined for every choice', () => {
+    for (const choice of [undefined, { level: 'fast' }, { level: 'deep' }, { effort: 'high' }] as const) {
+      expect(effortForChoice(choice, 'unknown')).toBeUndefined();
+      expect(effortForChoice(choice, { kind: 'none' })).toBeUndefined();
+    }
+  });
+
+  it('R-50: never returns a level outside the list', () => {
+    const levels: readonly EffortLevel[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+    const lists: readonly Thinking[] = [
+      { kind: 'levels', levels: ['low', 'high'] },
+      { kind: 'levels', levels: ['none', 'medium'] },
+      { kind: 'levels', levels: ['max'] },
+      { kind: 'levels', levels: [] },
+    ];
+    for (const thinking of lists) {
+      if (thinking.kind !== 'levels') continue;
+      const choices: ThinkingChoice[] = [
+        { level: 'fast' },
+        { level: 'balanced' },
+        { level: 'deep' },
+        ...levels.map((effort): ThinkingChoice => ({ effort })),
+      ];
+      for (const choice of choices) {
+        const out = effortForChoice(choice, thinking);
+        if (out !== undefined) expect(thinking.levels).toContain(out);
+      }
+    }
   });
 });
