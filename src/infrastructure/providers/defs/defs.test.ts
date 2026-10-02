@@ -128,10 +128,15 @@ describe('provider definitions (P-1)', () => {
       copilot: 'HOME',
       cursor: 'HOME',
       opencode: 'OPENCODE_CONFIG_DIR',
-      hermes: 'HERMES_HOME',
+      hermes: '',
       kilo: 'KILO_CONFIG_DIR',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
+      if (def.config.mechanism === 'none') {
+        // The CLI's login lives in its own home, so no variable is set for it.
+        expect(DOCUMENTED_CONFIG_NAME_BY_ID[def.id], def.id).toBe('');
+        continue;
+      }
       expect(def.config.mechanism, def.id).toBe('env-var');
       expect(def.config.name, def.id).toBe(DOCUMENTED_CONFIG_NAME_BY_ID[def.id]);
     }
@@ -387,6 +392,10 @@ describe('provider definitions (P-1)', () => {
     it('P-1: isProviderDef rejects a def with an invalid config mechanism', () => {
       rejectsWith({ ...createValidDef(), config: { mechanism: 'registry', name: 'X' } }, 'unknown mechanism');
       rejectsWith({ ...createValidDef(), config: { mechanism: '', name: 'X' } }, 'empty mechanism');
+    });
+
+    it('P-44: isProviderDef accepts config none without a name and still rejects a blank name elsewhere', () => {
+      expect(isProviderDef({ ...createValidDef(), config: { mechanism: 'none' } })).toBe(true);
     });
 
     it('P-1: isProviderDef rejects a def with a blank config name', () => {

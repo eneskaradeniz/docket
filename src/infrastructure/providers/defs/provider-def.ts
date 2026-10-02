@@ -116,11 +116,11 @@ export interface ProviderAuthProbe {
   };
 }
 
-export interface ProviderConfig {
-  /** How the run-scoped config dir is passed to this CLI. */
-  readonly mechanism: 'env-var' | 'flag';
-  readonly name: string;
-}
+/** How the run-scoped config dir is passed to this CLI. `none` is for a CLI whose login lives in
+ * its own home: the launch sets no variable and no flag, so the machine's login stays reachable. */
+export type ProviderConfig =
+  | { readonly mechanism: 'env-var' | 'flag'; readonly name: string }
+  | { readonly mechanism: 'none' };
 
 /**
  * How a CLI is kept from reading the user's configuration of other tools (another agent's

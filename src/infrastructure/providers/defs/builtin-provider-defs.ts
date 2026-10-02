@@ -206,9 +206,9 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
       acpSession: { notLoggedIn: { rpcCode: -32603, textContains: 'not connected to any AI provider' } },
     },
     transport: 'acp',
-    // The CLI's own home variable. The launch deliberately does not set it: a run-scoped home
-    // would lose the machine's login, so the CLI reads its own home (no isolation is claimed).
-    config: { mechanism: 'env-var', name: 'HERMES_HOME' },
+    // The CLI's login lives in its own home, so the launch sets no home variable and the CLI reads
+    // that home as it is (no isolation is claimed).
+    config: { mechanism: 'none' },
     // No `--yolo` and no yolo variable, ever: every approval the CLI asks for reaches the user.
     buildLaunch: () => ({ args: ['acp'], env: {}, stdin: 'prompt' }),
     resume: 'protocol',
