@@ -189,6 +189,27 @@ export const loggedInFromCredentialCount = (output: string): boolean | null => {
   return Number(match[1]) > 0;
 };
 
+/** The login answer of a command that prints JSON with `providers[].key_present` booleans: any
+ * `true` is a login (some key is configured, not proven valid), every provider `false` is none, and
+ * a missing list, an empty one or a non-boolean entry that no `true` outweighs is unknown. Nothing
+ * but those booleans is read, so no key value can reach a log. */
+export const loggedInFromProviderKeys = (output: string): boolean | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  const providers: unknown = (parsed as Record<string, unknown>)['providers'];
+  if (!Array.isArray(providers) || providers.length === 0) return null;
+  const flags = providers.map((entry: unknown) =>
+    typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>)['key_present'] : undefined,
+  );
+  if (flags.some((flag) => flag === true)) return true;
+  return flags.every((flag) => flag === false) ? false : null;
+};
+
 /** Presence only: the file is never opened, so no credential content is read, logged or stored. */
 const loggedInFromPresenceFile = (
   rule: NonNullable<NonNullable<ProviderDef['authProbe']>['presenceFile']>,
@@ -234,6 +255,9 @@ const probeAuth = async (
   }
   if (def.authProbe.parse === 'credential-count') {
     return outcome.exitCode === 0 ? loggedInFromCredentialCount(outcome.stdout) : null;
+  }
+  if (def.authProbe.parse === 'provider-key-present') {
+    return outcome.exitCode === 0 ? loggedInFromProviderKeys(outcome.stdout) : null;
   }
   return outcome.exitCode === 0; // exit 0 = logged in; any completed non-zero exit is a real answer
 };

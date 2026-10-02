@@ -51,6 +51,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
 | Mistral Vibe (`vibe`) | `vibe-login` | — | — | — | none | experimental |
 | devin | — | — | — | — | — | planned |
+| Reasonix (`reasonix`) | `reasonix-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License

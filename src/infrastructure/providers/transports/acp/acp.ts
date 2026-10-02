@@ -103,7 +103,8 @@ const effortOptionId = (
     const option = asRecord(raw);
     if (option === null) continue;
     const id = asString(option.id);
-    const matches = target.configId !== undefined ? id === target.configId : option.category === target.category;
+    const category = option.category ?? (target.category === 'model' && id === 'model' ? 'model' : undefined);
+    const matches = target.configId !== undefined ? id === target.configId : category === target.category;
     if (!matches) continue;
     if (id !== undefined && optionValues(option.options).includes(value)) return id;
   }

@@ -110,9 +110,12 @@ export interface ProviderAuthProbe {
   readonly args: string[];
   /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
    * output that names no count = unknown. */
-  readonly parse?: 'credential-count' | 'logged-out-text';
+  readonly parse?: 'credential-count' | 'logged-out-text' | 'provider-key-present';
   /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
-   * unknown, never logged in (a user may run with an own key and never log in). */
+   * unknown, never logged in (a user may run with an own key and never log in).
+   * `provider-key-present`: the command prints JSON whose `providers[]` carry a boolean
+   * `key_present`; any `true` = logged in, every entry `false` = not, anything else = unknown. Only
+   * those booleans are read: the output is never stored and no key value is ever looked at. */
   readonly loggedOutText?: string;
   readonly acpSession?: {
     readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };

@@ -104,6 +104,7 @@ describe('model catalog data (P-29)', () => {
       'hermes-subscription',
       'kilo-login',
       'opencode-subscription',
+      'reasonix-login',
       'vibe-login',
       'zai-glm',
     ]);
@@ -310,12 +311,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build and vibe carries isolation evidence, and all six stay capped at experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix and vibe carries isolation evidence, and all seven stay capped at experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'vibe', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -333,6 +334,7 @@ describe('isolation evidence (P-44)', () => {
       kilo: 'experimental',
       'grok-build': 'experimental',
       atomcode: 'experimental',
+      reasonix: 'experimental',
       vibe: 'experimental',
       devin: 'planned',
     });
@@ -385,6 +387,19 @@ describe('isolation evidence (P-44)', () => {
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       quotaProbe: 'none',
+    });
+  });
+
+  it('P-40: the reasonix route kind defaults its live models to metered, so each run needs spend consent, and its record waives G5 with a written reason', () => {
+    expect(findProvider('reasonix')?.gates.G5).toMatchObject({ kind: 'waived' });
+    expect((findProvider('reasonix')?.gates.G5 as { reason: string }).reason).toContain('limit_hit');
+    expect(findRouteKind('reasonix-login')).toMatchObject({
+      providerId: 'reasonix',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'metered',
+      quotaProbe: 'none',
+      costKind: 'none',
     });
   });
 
