@@ -326,10 +326,12 @@ export interface RoleRowProps {
   readonly store: RolesStore;
   readonly locale: Locale;
   readonly markFor: MarkFor;
+  /** İnce ayar starts open and the row scrolls into view — a role chip's landing (U-37). */
+  readonly fineTuneOpen?: boolean;
 }
 
 /** One role: work style, the recommendation line, the amber review line and İnce ayar. */
-export function RoleRowView({ row, store, locale, markFor }: RoleRowProps) {
+export function RoleRowView({ row, store, locale, markFor, fineTuneOpen = false }: RoleRowProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   const saved = useSavedFlag(store, row.id);
   const failure = state.failure?.row === row.id ? state.failure.labelKey : undefined;
@@ -338,6 +340,10 @@ export function RoleRowView({ row, store, locale, markFor }: RoleRowProps) {
   useEffect(() => {
     for (const entry of row.chain) if (state.catalogs[entry.accountId] === undefined) void store.loadModels(entry.accountId);
   }, [chainIds, store]);
+  // The row a role chip pointed at comes into view once, with its İnce ayar already open.
+  useEffect(() => {
+    if (fineTuneOpen) document.querySelector(`[data-role-finetune="${CSS.escape(row.id)}"]`)?.scrollIntoView({ block: 'center' });
+  }, [fineTuneOpen, row.id]);
   return (
     <SettingRow
       locale={locale}
@@ -364,7 +370,7 @@ export function RoleRowView({ row, store, locale, markFor }: RoleRowProps) {
       }
       disclosure={{
         label: t(locale, 'roles.fine'),
-        startsOpen: row.style === 'custom' || row.chainMode === 'own',
+        startsOpen: fineTuneOpen || row.style === 'custom' || row.chainMode === 'own',
         children: <FineTune row={row} store={store} locale={locale} markFor={markFor} />,
       }}
     />

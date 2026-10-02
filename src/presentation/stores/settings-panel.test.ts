@@ -39,7 +39,7 @@ describe('settingsPanelReducer', () => {
 
   it('the state holds the open standing, the origin, the section and the sub-page — there is no route to change', () => {
     const opened = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard' });
-    expect(Object.keys(opened).sort()).toStrictEqual(['open', 'origin', 'section', 'subPage']);
+    expect(Object.keys(opened).sort()).toStrictEqual(['fineTune', 'open', 'origin', 'section', 'subPage', 'tab']);
   });
 });
 
@@ -121,5 +121,31 @@ describe('settings sections (U-28)', () => {
     reply.value = { ok: false, code: 'not_found' };
     await store.load();
     expect(store.dot()).toBe(false);
+  });
+});
+
+describe('settings open targets (U-37)', () => {
+  it('U-37: an open can name the sub-page, the editor tab and the role whose fine-tune opens', () => {
+    expect(
+      settingsPanelReducer(CLOSED_SETTINGS_PANEL, {
+        type: 'open',
+        origin: 'pointer',
+        section: 'accounts',
+        subPage: 'a-1',
+        tab: 'limits',
+      }),
+    ).toMatchObject({ open: true, section: 'accounts', subPage: 'a-1', tab: 'limits', fineTune: null });
+    expect(
+      settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'keyboard', section: 'roles', fineTune: 'planner' }),
+    ).toMatchObject({ section: 'roles', subPage: null, tab: null, fineTune: 'planner' });
+  });
+
+  it('U-37: an open panel follows a named target; leaving, selecting or closing clears the tab and the fine-tune', () => {
+    const open = settingsPanelReducer(CLOSED_SETTINGS_PANEL, { type: 'open', origin: 'pointer' });
+    const moved = settingsPanelReducer(open, { type: 'open', origin: 'keyboard', section: 'accounts', subPage: 'a-2', tab: 'limits' });
+    expect(moved).toMatchObject({ origin: 'pointer', subPage: 'a-2', tab: 'limits' });
+    expect(settingsPanelReducer(moved, { type: 'leaveSubPage' })).toMatchObject({ subPage: null, tab: null });
+    expect(settingsPanelReducer(moved, { type: 'select', section: 'roles' })).toMatchObject({ tab: null, fineTune: null });
+    expect(settingsPanelReducer(moved, { type: 'close' })).toMatchObject({ open: false, tab: null, fineTune: null });
   });
 });

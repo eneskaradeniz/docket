@@ -29,7 +29,7 @@ import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
 import type { CandidatesStore } from '../stores/candidates';
 import type { LocaleStore } from '../stores/locale';
-import { accountStatus, createAccountEditorStore, policyLabelKey, type AccountStatus } from '../stores/account-editor';
+import { accountStatus, createAccountEditorStore, policyLabelKey, roleChipTarget, rolesOfAccount, type AccountStatus, type EditorTab } from '../stores/account-editor';
 import { settingDiffs } from '../stores/recommended';
 import type { AccountModelsStore } from '../stores/account-models';
 import type { RolesStore } from '../stores/roles';
@@ -38,6 +38,7 @@ import {
   SETTINGS_MENU,
   SETTINGS_SECTIONS,
   type SettingsMenuGroup,
+  type SettingsOpenTarget,
   type SettingsPanelOrigin,
   type SettingsSection,
 } from '../stores/settings-panel';
@@ -61,6 +62,12 @@ export interface SettingsPanelProps {
   readonly section: SettingsSection;
   /** The open sub-page (an account or role id) inside the section, or null (U-28). */
   readonly subPage: string | null;
+  /** The editor tab an open asked for (U-37), or null. */
+  readonly tab: EditorTab | null;
+  /** The role whose "İnce ayar" opens on Roller (U-37), or null. */
+  readonly fineTune: string | null;
+  /** Opens the panel on a target — the role chips on Genel move it to Roller. */
+  readonly onOpenTarget: (target: SettingsOpenTarget) => void;
   /** Reports a section move from the menu, so the sidebar's rows follow it. */
   readonly onSection: (section: SettingsSection) => void;
   /** The back row: leaves the sub-page. */
@@ -267,7 +274,7 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, subPage, onSection, onBack, onEscape, onClose, candidateDot, candidates, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, subPage, tab, fineTune, onOpenTarget, onSection, onBack, onEscape, onClose, candidateDot, candidates, models, themeStore, store, marks, roles, update, locale, localeStore, onEnterSubPage, onOpenAccount }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
@@ -284,10 +291,11 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
 
   const view = state.view;
   const rolesState = useSyncExternalStore(roles.subscribe, roles.state);
-  // The Roller rows load whenever the section is on screen.
+  // The Roller rows load whenever the section is on screen, and for the role chips on an
+  // account's Genel tab.
   useEffect(() => {
-    if (open && section === 'roles') void roles.load();
-  }, [open, section, roles]);
+    if (open && (section === 'roles' || (section === 'accounts' && subPage !== null))) void roles.load();
+  }, [open, section, subPage, roles]);
   // The dismissal of a remove warning is panel-transient (the store exposes no dismiss intent):
   // keyed by the account it was about, so a fresh warning for the same account re-shows the card.
   const [warningDismissedFor, setWarningDismissedFor] = useState<string | null>(null);
@@ -302,6 +310,11 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
       }),
     [store],
   );
+  // An open that named a tab (U-37: "Ayarlar'da düzenle" lands on Limitler) moves the editor
+  // there once its sub-page is up.
+  useEffect(() => {
+    if (open && section === 'accounts' && subPage !== null && tab !== null) editor.setTab(tab);
+  }, [open, section, subPage, tab, editor]);
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -549,6 +562,8 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                       models={models}
                       formatTime={store.resetsAtLabel}
                       onRefresh={() => void store.load()}
+                      roleChips={rolesOfAccount(rolesState.rows, openAccount.id)}
+                      onOpenRole={(roleId) => onOpenTarget(roleChipTarget(roleId))}
                     />
                   </SectionCard>
                 </div>
@@ -626,7 +641,7 @@ export function SettingsPanel({ open, origin, section, subPage, onSection, onBac
                   ) : (
                     <div>
                       {rolesState.rows.map((row) => (
-                        <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} />
+                        <RoleRowView key={row.id} row={row} store={roles} locale={locale} markFor={marks.markFor} fineTuneOpen={fineTune === row.id} />
                       ))}
                     </div>
                   )}
