@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BUILTIN_PROVIDER_DEFS } from '../defs/index';
 import type { CapabilityRegistry, Evidence, GateId, ProviderRecord, Tier } from '../../../domain/index';
-import { mergeCatalog, resolveTier } from '../../../domain/index';
+import { mergeCatalog, resolveTier, supportLevel } from '../../../domain/index';
 import { CAPABILITY_REGISTRY, FAMILY_PATTERNS, findProvider, findRouteKind } from './capability-registry';
 
 const ALL_GATES: readonly GateId[] = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6'];
@@ -287,5 +287,29 @@ describe('bundled model records (P-29, P-40)', () => {
     expect(resolveTier('strong', merged)).toBe('claude-opus-5-5');
     expect(resolveTier('balanced', merged)).toBe('claude-sonnet-5-5');
     expect(resolveTier('fast', merged)).toBe('claude-haiku-4-5');
+  });
+});
+
+describe('isolation evidence (P-44)', () => {
+  it('P-44: every built-in record carries isolation evidence, so the cap leaves their levels unchanged', () => {
+    for (const provider of CAPABILITY_REGISTRY.providers) {
+      expect(provider.isolation, provider.providerId).toBeDefined();
+    }
+    const levels = Object.fromEntries(CAPABILITY_REGISTRY.providers.map((p) => [p.providerId, supportLevel(p)]));
+    expect(levels).toEqual({
+      'claude-code': 'isolated',
+      codex: 'experimental',
+      agy: 'experimental',
+      copilot: 'experimental',
+      cursor: 'experimental',
+      opencode: 'experimental',
+    });
+  });
+
+  it('P-44: a provider whose record has no isolation evidence is capped at experimental', () => {
+    for (const provider of CAPABILITY_REGISTRY.providers) {
+      const { isolation: _evidence, ...bare } = provider;
+      expect(supportLevel(bare), provider.providerId).toBe('experimental');
+    }
   });
 });

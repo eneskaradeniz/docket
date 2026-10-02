@@ -10,6 +10,7 @@ import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
 import { buildRouteEnvironment } from '../transports/sdk/route-env';
 import type { QueryFn } from '../transports/sdk/transport';
+import { EFFORT_LEVELS } from '../defs/provider-def';
 import type { CatalogError } from './model-catalog';
 
 export interface ClaudeCatalogConfig {
@@ -29,16 +30,7 @@ const DEFAULT_ROW_VALUE = 'default';
 
 /** The effort vocabulary a live row may advertise; anything else a server lists is not a level
  * Docket knows and is dropped rather than passed through. */
-export const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-  'ultra',
-];
+export const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = EFFORT_LEVELS;
 
 /** The input side of the listing query: an ended stream. The SDK never sees a user message, so no
  * model turn starts; the session lives only for the control request. */

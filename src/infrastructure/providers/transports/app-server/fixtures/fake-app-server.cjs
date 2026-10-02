@@ -100,6 +100,25 @@ const afterTurnStart = () => {
     finishTurn('completed');
     return;
   }
+  if (scenario === 'tools') {
+    note('item/started', { threadId: THREAD_ID, turnId: TURN_ID, item: { id: 'item_cmd', type: 'commandExecution', command: 'ls -la', status: 'inProgress' } });
+    note('item/completed', { threadId: THREAD_ID, turnId: TURN_ID, item: { id: 'item_cmd', type: 'commandExecution', command: 'ls -la', status: 'completed' } });
+    finishTurn('completed');
+    return;
+  }
+  if (scenario === 'steady') {
+    // Six deltas a quarter second apart: the turn outlasts a one-second watchdog while no
+    // single gap comes near it.
+    let sent = 0;
+    const timer = setInterval(() => {
+      sent += 1;
+      note('item/agentMessage/delta', { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'item_msg', delta: `chunk ${sent}` });
+      if (sent < 6) return;
+      clearInterval(timer);
+      finishTurn('completed');
+    }, 250);
+    return;
+  }
   if (scenario === 'steer') {
     note('item/agentMessage/delta', { threadId: THREAD_ID, turnId: TURN_ID, itemId: 'item_msg', delta: 'working' });
     return; // the turn completes once the steer request arrives

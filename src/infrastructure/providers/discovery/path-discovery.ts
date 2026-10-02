@@ -208,8 +208,17 @@ export function createPathDiscovery(
     }
     // Probes run in sequence on exactly the path that will be spawned; each carries its own timeout.
     const version = await probeVersion(spawnFn, def, binPath, timeoutMs, probeEnv);
-    const optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
-    const loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
+    // A command that may open a browser or start a login flow runs only once the login probe
+    // answered `true`; `false` and `null` (unknown) both keep it from starting.
+    let loggedIn: boolean | null;
+    let optionalFlags: readonly string[];
+    if (def.helpNeedsLogin === true) {
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
+      optionalFlags = loggedIn === true ? await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv) : [];
+    } else {
+      optionalFlags = await probeOptionalFlags(spawnFn, def, binPath, timeoutMs, probeEnv);
+      loggedIn = await probeAuth(spawnFn, def, binPath, timeoutMs, probeEnv);
+    }
     return { defId: def.id, binPath, version, loggedIn, optionalFlags };
   };
 
