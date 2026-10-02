@@ -2,7 +2,7 @@
 // sections 1–2 and 14. The registry data itself is infrastructure — provider names may not appear in
 // the domain — so every function here takes its input as a parameter and knows no provider id.
 import type { AuthMode } from '../quota/index';
-import type { Billing } from '../shared/index';
+import type { Billing, EffortLevel } from '../shared/index';
 import type { ProviderCapabilities } from './capabilities';
 
 export type Tier = 'strong' | 'balanced' | 'fast';
@@ -11,11 +11,8 @@ export type Tier = 'strong' | 'balanced' | 'fast';
 // shared (the module map lets quota import only shared).
 export type { Billing };
 
-/**
- * Effort levels in ascending order. `'none'` is the provider's thinking-off setting — the lowest
- * step, not the absence of the list — and `'ultra'` is the deepest step reported today.
- */
-export type EffortLevel = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+// Re-exported so the capability contract keeps naming it; the scale itself lives in shared.
+export type { EffortLevel };
 
 export type Thinking =
   | { readonly kind: 'none' }
