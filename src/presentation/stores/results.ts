@@ -38,6 +38,9 @@ export const KNOWN_FAILURE_CODES: readonly string[] = [
   'self_approval',
   'invalid_after',
   'binding_exists',
+  // The spend-consent commands' refusals (application use-cases/spend-consent.ts).
+  'invalid_model',
+  'invalid_cap',
   'not_a_deploy_gate',
   'no_approval',
   'confirmation_mismatch',

@@ -10,6 +10,7 @@ import type { Actor } from '../domain/index';
 import { ErrorBoundary } from './components/error-boundary';
 import { ShellScreen, type ShellScreenProps } from './screens/shell';
 import { createAccountsFrameStore } from './stores/accounts-frame';
+import { createAccountModelsStore } from './stores/account-models';
 import { createAccountViewStore } from './stores/account-view';
 import { createBoardStore } from './stores/board';
 import { createCockpitStore } from './stores/cockpit';
@@ -79,6 +80,8 @@ if (mount !== null) {
   const pane = createLivePaneStore({ api, changes, actor: USER });
   const detail = createWorkOrderDetailStore({ api, changes, actor: USER, pane });
   const settings = createSettingsStore({ api, changes, actor: USER, locale: locale.current, timeZone });
+  // The settings panel's per-account model list and its spend-consent flow (P-40).
+  const accountModels = createAccountModelsStore({ api, changes, actor: USER });
   const wizard = createWizardStore({
     api,
     actor: USER,
@@ -116,6 +119,7 @@ if (mount !== null) {
           detail={detail}
           accountView={accountView}
           settings={settings}
+          models={accountModels}
           marks={marks}
           update={update}
           wizard={wizard}
