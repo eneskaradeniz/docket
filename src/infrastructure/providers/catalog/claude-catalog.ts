@@ -24,6 +24,9 @@ export interface ClaudeCatalogConfig {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** The SDK's value for the row a run uses when no model is pinned. */
+const DEFAULT_ROW_VALUE = 'default';
+
 /** The effort vocabulary a live row may advertise; anything else a server lists is not a level
  * Docket knows and is dropped rather than passed through. */
 export const KNOWN_EFFORT_LEVELS: readonly EffortLevel[] = [
@@ -51,11 +54,15 @@ const knownEfforts = (levels: readonly string[] | undefined): readonly EffortLev
 };
 
 /** One row of the SDK answer to one live model: `value` is the id a run would send, kept verbatim
- * (a `[1m]` suffix is part of it), and efforts exist only when the row supports effort at all. */
+ * (a `[1m]` suffix is part of it, an alias stays an alias), `resolvedModel` is the canonical id an
+ * alias stands for, and efforts exist only when the row supports effort at all. */
 const toLiveModel = (row: ModelInfo): LiveModel => {
   const efforts = row.supportsEffort === false ? undefined : knownEfforts(row.supportedEffortLevels);
+  const resolved = row.resolvedModel;
   return {
     id: row.value,
+    ...(typeof resolved === 'string' && resolved !== '' ? { resolvedId: resolved } : {}),
+    ...(row.value === DEFAULT_ROW_VALUE ? { isDefault: true as const } : {}),
     ...(row.displayName === undefined ? {} : { displayName: row.displayName }),
     ...(efforts === undefined ? {} : { efforts }),
   };

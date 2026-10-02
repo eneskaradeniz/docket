@@ -152,6 +152,28 @@ describe('createModelCatalog (P-29)', () => {
     ]);
   });
 
+  it('P-42: alias rows resolve to the bundled records through the adapter — the alias stays selectable, no bundled duplicate, the default is marked', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const rows: readonly ModelInfo[] = [
+      { value: 'default', resolvedModel: 'claude-opus-5-5[1m]', displayName: 'Default', description: '' },
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5', displayName: 'Sonnet', description: '' },
+      { value: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001', displayName: 'Haiku', description: '' },
+      PRO_ROW,
+    ];
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([rows]).query), accounts });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.tier, model.billing, model.source])).toEqual([
+      ['default', 'strong', 'included', 'live'],
+      ['sonnet', 'balanced', 'included', 'live'],
+      ['haiku', 'fast', 'included', 'live'],
+      ['claude-fable-5-1[1m]', undefined, 'unknown', 'live'],
+    ]);
+    expect(listed.filter((model) => model.isDefault === true).map((model) => model.id)).toEqual(['default']);
+  });
+
   it('P-42: the same live-only opus row is metered on the API-key route kind, not included', async () => {
     const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-opus-5')]) }]);
     const accounts = createFakeAccountRepo();
