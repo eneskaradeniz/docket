@@ -15,6 +15,7 @@ export type Query =
   | { readonly type: 'repos.list' }
   | { readonly type: 'settings.accounts' }
   | { readonly type: 'providers.discovered' }
+  | { readonly type: 'accounts.candidates'; readonly refresh?: boolean }
   | { readonly type: 'providers.marks' }
   | { readonly type: 'run.events'; readonly runId: string }
   | { readonly type: 'permissions.open' }

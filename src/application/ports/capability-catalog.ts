@@ -9,6 +9,8 @@ export interface CapabilityCatalog {
   /** The route kind's fixed surface; `undefined` when the registry knows no such kind. */
   routeKind(id: string): {
     readonly id: string;
+    /** The provider the kind belongs to; adopting a discovered candidate needs it to name the account's provider. */
+    readonly providerId: string;
     readonly authMode: AuthMode;
     readonly endpointHost?: string;
     /** The billing of the CLI's own default model on this kind, when the kind fixes one (P-40). */

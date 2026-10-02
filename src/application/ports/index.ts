@@ -1,9 +1,11 @@
 // Ports barrel — see docs/v2/application.md § 1.
+export * from './account-discovery';
 export * from './account-repo';
 export * from './agent-transport';
 export * from './binding-repo';
 export * from './capability-catalog';
 export * from './clock';
+export * from './credential-importer';
 export * from './definition-store';
 export * from './deps';
 export * from './event-log';
