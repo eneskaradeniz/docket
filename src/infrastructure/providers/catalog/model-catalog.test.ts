@@ -138,6 +138,33 @@ afterAll(() => {
 });
 
 describe('createModelCatalog (P-29)', () => {
+  it('P-42: a live-only opus row is included on the subscription route kind, while a fable row stays unknown', async () => {
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A));
+    const opusRow: ModelInfo = { value: 'claude-opus-5', displayName: 'Opus', description: '' };
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[opusRow, PRO_ROW]]).query), accounts });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.billing])).toEqual([
+      ['claude-opus-5', 'included'],
+      ['claude-fable-5-1[1m]', 'unknown'],
+    ]);
+  });
+
+  it('P-42: the same live-only opus row is metered on the API-key route kind, not included', async () => {
+    const server = await pool.start([{ status: 200, body: endpointPage([endpointRow('claude-opus-5')]) }]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { authMode: 'api_key', secretRef: 'ref-key' }));
+    const secrets = createFakeSecretVault();
+    await secrets.put('ref-key', FAKE_MODEL_LIST_KEY);
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, secrets, apiBaseUrl: server.endpoint });
+
+    const listed = await catalog.list(ACCOUNT_A);
+
+    expect(listed.map((model) => [model.id, model.billing])).toEqual([['claude-opus-5', 'metered']]);
+  });
+
   it('P-29: a subscription account lists the live answer — the [1m] value verbatim, family-classified tiers from the pattern data', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A));

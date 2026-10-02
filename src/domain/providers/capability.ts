@@ -71,6 +71,9 @@ export interface RouteKindRecord {
   /** The route's verified billing for live models that report none (P-40): an API-key route
    * meters every model, so its live-only entries default to `metered`, never to `unknown`. */
   readonly defaultBilling?: Billing;
+  /** Billing per model family for live-only rows (P-42): an id containing `contains` bills as
+   * `billing`. Lists only the families the provider's plan covers on every plan. */
+  readonly familyBilling?: readonly { readonly contains: string; readonly billing: Billing }[];
   readonly models: readonly ModelRecord[];
 }
 

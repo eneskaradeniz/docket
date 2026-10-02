@@ -91,6 +91,11 @@ export const CAPABILITY_REGISTRY = {
       quotaProbe: 'sdk_usage',
       modelSource: 'sdk',
       liveIsAuthoritative: true,
+      familyBilling: [
+        { contains: 'opus', billing: 'included' },
+        { contains: 'sonnet', billing: 'included' },
+        { contains: 'haiku', billing: 'included' },
+      ],
       // The plan table covers the opus, sonnet and haiku families on every subscription tier, so
       // their current flagships are bundled as included — a pinned model on a plan no longer asks
       // for spend consent. The fable family splits per plan (inside the weekly limits on some,
