@@ -211,6 +211,10 @@ const probeAuth = async (
   }
   const outcome = await runProbe(spawn, binPath, [...def.authProbe.args], timeoutMs, env);
   if (outcome.timedOut || outcome.exitCode === null) return null;
+  if (def.authProbe.parse === 'logged-out-text') {
+    const text = def.authProbe.loggedOutText;
+    return outcome.exitCode === 0 && text !== undefined && `${outcome.stdout}\n${outcome.stderr}`.includes(text) ? false : null;
+  }
   if (def.authProbe.parse === 'credential-count') {
     return outcome.exitCode === 0 ? loggedInFromCredentialCount(outcome.stdout) : null;
   }

@@ -82,6 +82,7 @@ describe('model catalog data (P-29)', () => {
       'agy-subscription',
       'anthropic-api',
       'anthropic-subscription',
+      'atomcode-login',
       'codex-subscription',
       'copilot-subscription',
       'cursor-subscription',
@@ -293,12 +294,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo and hermes carries isolation evidence, and all three stay capped at experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes and atomcode carries isolation evidence, and all four stay capped at experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (provider.providerId === 'codex' || provider.providerId === 'kilo' || provider.providerId === 'hermes') {
+      if (['codex', 'kilo', 'hermes', 'atomcode'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -314,6 +315,7 @@ describe('isolation evidence (P-44)', () => {
       opencode: 'experimental',
       hermes: 'experimental',
       kilo: 'experimental',
+      atomcode: 'experimental',
     });
   });
 
@@ -322,6 +324,18 @@ describe('isolation evidence (P-44)', () => {
     expect((findProvider('hermes')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
     expect(findRouteKind('hermes-subscription')).toMatchObject({
       providerId: 'hermes',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
+  it('P-28: the atomcode record waives G5 with a written reason and its route kind lists session models with unknown billing', () => {
+    expect(findProvider('atomcode')?.gates.G5).toMatchObject({ kind: 'waived' });
+    expect((findProvider('atomcode')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
+    expect(findRouteKind('atomcode-login')).toMatchObject({
+      providerId: 'atomcode',
       modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
