@@ -14,6 +14,7 @@ export type Query =
   | { readonly type: 'project.spend'; readonly project: string }
   | { readonly type: 'repos.list' }
   | { readonly type: 'settings.accounts' }
+  | { readonly type: 'roles.list' }
   | { readonly type: 'providers.discovered' }
   | { readonly type: 'accounts.candidates'; readonly refresh?: boolean }
   | { readonly type: 'providers.marks' }
@@ -169,6 +170,10 @@ export interface SettingsMeterView {
   readonly observedAt: number;
   readonly source: string;
   readonly staleAfterMs: number | null;
+  /** The class R-49 puts the meter in (`reserveClassOf`). */
+  readonly reserveClass: 'short' | 'long' | 'larger';
+  /** The share that governs the meter (`reserveFor` with the account's reserve); 0 = none. */
+  readonly reserveShare: number;
 }
 
 /** A pool without its accountId: the owning account is the view entry it sits in. */
@@ -185,6 +190,18 @@ export interface SettingsAccountView {
   readonly label: string;
   readonly authMode: string;
   readonly plan: string | null;
+  readonly limitPolicy: 'wait_resume' | 'switch_pool' | 'fallback_account' | 'ask';
+  readonly reserve: { readonly short: number | null; readonly long: number | null };
+  readonly caps: readonly { readonly scope: 'account_day' | 'account_week' | 'account_month'; readonly amountUsd: number; readonly warnPercent: number }[];
+  /** '*' = the route's default model (P-40). */
+  readonly consentedModels: readonly string[];
+  readonly routeKind: string | null;
+  /** The stored path verbatim. */
+  readonly identityDir: string | null;
+  /** The host of `endpoint`, never the URL's path or query. */
+  readonly endpointHost: string | null;
+  /** `secretRef` is present; never the value. */
+  readonly hasSecret: boolean;
   readonly pools: readonly SettingsPoolView[];
   readonly meters: readonly SettingsMeterView[];
 }
@@ -198,12 +215,31 @@ export type SettingsBindingScope =
 export interface SettingsBindingView {
   readonly scope: SettingsBindingScope;
   readonly role: string;
+  readonly thinking: { readonly level: 'fast' | 'balanced' | 'deep' } | { readonly effort: string } | null;
+  readonly tier: 'strong' | 'balanced' | 'fast' | null;
   readonly accounts: readonly { readonly accountId: string; readonly model: string | null }[];
 }
 
 export interface SettingsAccountsView {
   readonly accounts: readonly SettingsAccountView[];
   readonly bindings: readonly SettingsBindingView[];
+}
+
+// --- roles.list (A-50) -------------------------------------------------------------------------------
+
+export interface RoleListItem {
+  readonly id: string;
+  readonly name: string;
+  readonly stages: readonly {
+    readonly flow: string;
+    readonly flowName: string;
+    readonly stage: string;
+    readonly stageName: string;
+    readonly tier: 'strong' | 'balanced' | 'fast' | null;
+    readonly thinking: { readonly level: string } | { readonly effort: string } | null;
+    readonly reviewOf: string | null;
+    readonly sameProviderReview: boolean;
+  }[];
 }
 
 // --- account.models (P-29, P-40) -----------------------------------------------------------------

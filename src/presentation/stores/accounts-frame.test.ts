@@ -9,6 +9,17 @@ import type { Query, SettingsAccountView, SettingsAccountsView, SettingsMeterVie
 import { WARN_PERCENT, accountCards, createAccountsFrameStore, windowKind } from './accounts-frame';
 import type { ShellChange, ShellChangeSignal } from './shell';
 
+const ACCOUNT_SETTINGS = {
+  limitPolicy: 'wait_resume',
+  reserve: { short: null, long: null },
+  caps: [],
+  consentedModels: [],
+  routeKind: null,
+  identityDir: null,
+  endpointHost: null,
+  hasSecret: false,
+} as const;
+
 const meter = (id: string, poolId: string, overrides: Partial<SettingsMeterView> = {}): SettingsMeterView => ({
   id,
   poolId,
@@ -24,6 +35,8 @@ const meter = (id: string, poolId: string, overrides: Partial<SettingsMeterView>
   observedAt: 0,
   source: 'polled',
   staleAfterMs: null,
+  reserveClass: 'long',
+  reserveShare: 0,
   ...overrides,
 });
 
@@ -33,6 +46,7 @@ const account = (id: string, label: string, meters: readonly SettingsMeterView[]
   label,
   authMode: 'api_key',
   plan: null,
+  ...ACCOUNT_SETTINGS,
   pools: [{ id: `pool-${id}`, label, kind: 'allowance', appliesTo: 'all' }],
   meters,
 });
