@@ -26,6 +26,7 @@ import {
   openAcpConnection,
   type AcpConnectionError,
   type AcpSpawn,
+  type NotLoggedInRule,
 } from '../transports/acp/index';
 import type { CatalogError } from './model-catalog';
 
@@ -44,6 +45,10 @@ const ACP_SESSION_LAUNCHES: Readonly<
       /** The model select exists only once the user configured an inference provider, so a session
        * without one is an empty list, not a malformed answer. */
       readonly modelOptionOptional?: true;
+      /** The refusal a logged-out session answers, pinned here for a CLI whose login is probed
+       * nowhere else: discovery reads no login state for it, so only this catalog path maps the
+       * refusal to the not-logged-in answer. */
+      readonly notLoggedIn?: NotLoggedInRule;
     }
   >
 > = {
@@ -72,6 +77,15 @@ const ACP_SESSION_LAUNCHES: Readonly<
     args: ['acp'],
     env: { KILO_DISABLE_CLAUDE_CODE: '1', KILO_DISABLE_CLAUDE_CODE_SKILLS: '1' },
     minTimeoutMs: 30_000,
+  },
+  // The catalog is the user's own configured providers, so a machine without one refuses the
+  // session with the live refusal below; a session that opens but carries no model select and no
+  // models object also means no provider is configured, not a malformed answer.
+  qwen: {
+    command: 'qwen',
+    args: ['--acp'],
+    notLoggedIn: { rpcCode: -32000, textContains: 'Authentication required' },
+    modelOptionOptional: true,
   },
 };
 
@@ -306,8 +320,10 @@ export async function listAcpSessionModels(
     const created = await connection.request('session/new', { cwd: scratch, mcpServers: [] });
     if (!created.ok) {
       // A logged-out CLI refuses the session: the list is empty and the caller shows the login
-      // state, not a transport failure.
-      const rule = notLoggedInRuleOf(account.provider);
+      // state, not a transport failure. The launch entry's rule wins — it exists for a CLI whose
+      // discovery probes no login — and otherwise the provider's own definition declares the
+      // refusal, the same rule its discovery probe reads.
+      const rule = launch.notLoggedIn ?? notLoggedInRuleOf(account.provider);
       if (rule !== undefined && loginStateOfSessionError(created.error, rule) === false) {
         return err({ code: 'not_logged_in', message: 'the provider has no login on this machine' });
       }

@@ -54,6 +54,9 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   reasonix: [],
   vibe: [],
   mimo: [],
+  // The CLI reads its credential from the environment variable the user's own settings name, so
+  // none is passed through here: an ambient key of another account never reaches a run.
+  qwen: [],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

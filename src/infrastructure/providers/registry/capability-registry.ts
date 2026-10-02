@@ -188,6 +188,20 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI's login and its model catalog live in
+      // the user's own settings under the CLI's home, no documented switch redirects them, and
+      // Docket neither reads nor writes that file, so the level stays capped at experimental. G3
+      // and G4 are absent: the permission request is unproven until an operator run, and the
+      // usage update carries context size only, so no cost is visible.
+      providerId: 'qwen',
+      gates: {
+        G1: { kind: 'test', name: 'P-4: probes run once each on exactly the resolved path, each under a timeout' },
+        G2: { kind: 'test', name: 'P-15: initialize → session/new (carrying the run-scoped config) → session/prompt; session/update maps to AgentEvents and an unknown update kind becomes a raw event, never an error' },
+        G5: { kind: 'waived', reason: 'provider reports no quota; a limit error maps to limit_hit (failed fast, not retried)' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -474,6 +488,24 @@ export const CAPABILITY_REGISTRY = {
       // (P-40) and stays a hand pick with spend consent; no quota channel exists.
       id: 'mimo-login',
       providerId: 'mimo',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The catalog is the user's own settings (the providers they configured), answered by the
+      // session as models.availableModels plus the model select; Docket never writes those
+      // settings and a logged-out machine's session is refused, which leaves the list empty.
+      // Whether a row rides the vendor's coding plan or the user's own key is not visible to a
+      // machine, so every row reads unknown (P-40) and stays a hand pick with spend consent; no
+      // quota channel exists.
+      id: 'qwen-login',
+      providerId: 'qwen',
       authMode: 'subscription',
       identity: 'machine_login',
       costKind: 'none',

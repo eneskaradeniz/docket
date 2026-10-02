@@ -53,6 +53,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | devin | — | — | — | — | — | planned |
 | Reasonix (`reasonix`) | `reasonix-login` | — | — | — | none | experimental |
 | MiMo Code (`mimo`) | `mimo-login` | — | — | — | none | experimental |
+| Qwen Code (`qwen`) | `qwen-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License
