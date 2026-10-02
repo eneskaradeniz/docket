@@ -436,7 +436,8 @@ belongs to the mobile app.
     narrows — identical (±0.5px) on every screen.
   - **L-2** No page-level horizontal scroll: `documentElement.scrollWidth <= innerWidth`.
   - **L-3** Every visible button, link and input lies fully inside the window and inside its nearest
-    clipping ancestor, except inside the declared Kanban scroller.
+    clipping ancestor, except inside the declared Kanban scroller; inside the Settings window's content
+    pane (`[data-settings-content]`, a vertical scroller) only sideways escape counts.
   - **L-4** Text whose `scrollWidth` exceeds its `clientWidth` by more than 1px uses
     `text-overflow: ellipsis` and carries its full text in `title`.
   - **L-5** The main column's content width is at most 1200px (cockpit), 1280px (detail) or 960px
