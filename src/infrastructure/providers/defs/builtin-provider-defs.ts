@@ -338,4 +338,46 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://x.ai/build' },
     mark: null,
   },
+  {
+    id: 'vibe',
+    displayName: 'Mistral Vibe',
+    // The ACP entry is its own binary and takes no arguments; the interactive `vibe` answers the
+    // same `--version` and `--help`, so the one binary serves launch and probes.
+    bins: ['vibe-acp'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // No authProbe: the CLI has no status command, so a login state is never guessed. The key
+    // lives in the CLI's own home file or an environment variable, and neither is read here.
+    transport: 'acp',
+    // The selector is named by its category `thinking` (not `thought_level`). The map names every
+    // level the CLI lists (off, low, medium, high, max), because a level without an entry is never
+    // offered or sent.
+    effortArg: { kind: 'session-option', category: 'thinking' },
+    levelNames: { none: 'off', low: 'low', medium: 'medium', high: 'high', max: 'max' },
+    // The CLI's home variable (`VIBE_HOME`) also holds the API key, so it is neither redirected to
+    // a run directory (the key would be lost) nor pointed at the user's real home: the variable is
+    // left unset and no isolation is claimed.
+    config: { mechanism: 'none' },
+    // Never `--yolo`, `--auto-approve` or the `auto-approve` agent: the default agent waits for
+    // approval of what it does not allow itself, and that request reaches the user.
+    buildLaunch: () => ({ args: [], env: {}, stdin: 'prompt' }),
+    // `session/load` is advertised by the live `initialize` answer; the transport falls back to a
+    // summary when a load is refused.
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      // The live `initialize` answer carries no MCP capability field.
+      mcp: 'unknown',
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      // The cost the CLI reports per session is known from source only, not from a live run.
+      costReport: 'none',
+    },
+    installHint: { url: 'https://github.com/mistralai/mistral-vibe' },
+    mark: null,
+  },
 ];
