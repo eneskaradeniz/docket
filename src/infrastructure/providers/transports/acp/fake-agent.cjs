@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-hermes-close';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -136,6 +136,33 @@ const opencodeModelsSession = () => ({
   ],
 });
 
+// The hermes-style session answer: a `models` object whose ids are `provider:model` and no
+// configOptions at all (so no thought_level).
+const hermesModelsSession = () => ({
+  sessionId: freshSessionId,
+  models: {
+    currentModelId: 'nous:hermes-4-405b',
+    availableModels: [
+      { modelId: 'nous:hermes-4-405b', name: 'Hermes 4 405B' },
+      { modelId: 'openrouter:vendor/some-model:free', name: 'some-model (free)' },
+      { modelId: 'custom:local:llama-3', name: 'llama-3' },
+    ],
+  },
+});
+
+// The refusal a machine with no configured inference provider answers session/new with: JSON-RPC
+// -32603 whose human-readable detail sits in `data`.
+const sendLoginRefusal = (id) =>
+  send({
+    jsonrpc: '2.0',
+    id,
+    error: {
+      code: -32603,
+      message: 'Internal error',
+      data: { details: 'Hermes is not connected to any AI provider yet. Run `hermes model` to choose one.' },
+    },
+  });
+
 process.on('SIGTERM', () => {
   // Drain what is already in the pipe, then leave; a hard hang would wedge stop(). The grace
   // is generous because the test suite runs many files in parallel on a loaded machine.
@@ -188,7 +215,25 @@ const runTurn = (promptBlocks) => {
     }, 250);
     return;
   }
-  if (scenario === 'permission') {
+  if (scenario === 'permission' || scenario === 'permission-hermes' || scenario === 'permission-hermes-standing') {
+    const permissionOptions =
+      scenario === 'permission'
+        ? [
+            { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+          ]
+        : scenario === 'permission-hermes'
+          ? [
+              { optionId: 'allow_session', name: 'Allow for this session', kind: 'allow_always' },
+              { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+              { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+            ]
+          : [
+              { optionId: 'allow_session', name: 'Allow for this session', kind: 'allow_always' },
+              { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+              { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+            ];
     update({
       sessionUpdate: 'tool_call',
       toolCallId: 'call_001',
@@ -207,10 +252,7 @@ const runTurn = (promptBlocks) => {
       params: {
         sessionId,
         toolCall: { toolCallId: 'call_001', name: 'edit_file', title: 'Editing config', kind: 'edit', status: 'pending', locations: [{ path: '/tmp/docket-acp-fixture/config.json', line: 1 }] },
-        options: [
-          { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
-        ],
+        options: permissionOptions,
       },
     });
     return; // the agent waits: nothing else happens until the client answers
@@ -255,6 +297,23 @@ const onLine = (line) => {
     }
     if (scenario === 'models-opencode') {
       respond(message.id, opencodeModelsSession());
+      return;
+    }
+    if (scenario === 'models-hermes' || scenario === 'models-hermes-close') {
+      respond(message.id, hermesModelsSession());
+      return;
+    }
+    if (scenario === 'session-login-refused') {
+      sendLoginRefusal(message.id);
+      return;
+    }
+    if (scenario === 'session-internal-error') {
+      // Same code as the login refusal, different text: not a login answer.
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'Internal error', data: { details: 'disk full' } } });
+      return;
+    }
+    if (scenario === 'session-garbled') {
+      send({ jsonrpc: '2.0', id: message.id, error: 'not an object' });
       return;
     }
     if (scenario === 'models-kilo') {

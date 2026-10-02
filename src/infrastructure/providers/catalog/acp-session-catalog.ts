@@ -13,12 +13,15 @@ import { join } from 'node:path';
 import type { AccountRecord } from '../../../application/index';
 import type { EffortLevel, LiveModel, Result } from '../../../domain/index';
 import { err, ok } from '../../../domain/index';
+import { BUILTIN_PROVIDER_DEFS } from '../defs/builtin-provider-defs';
 import { effortOfProviderLevel, type LevelNames } from '../defs/provider-def';
 import { buildChildEnv } from '../launch/index';
 import {
   ACP_INITIALIZE_PARAMS,
   ACP_PROTOCOL_VERSION,
+  closeAcpSession,
   isRecord,
+  loginStateOfSessionError,
   openAcpConnection,
   type AcpConnectionError,
   type AcpSpawn,
@@ -44,6 +47,8 @@ const ACP_SESSION_LAUNCHES: Readonly<
   // The documented switch keeps the listing from reading the user's own global instruction and
   // skill files, the same isolation the provider's run launch pins.
   opencode: { command: 'opencode', args: ['acp'], env: { OPENCODE_DISABLE_CLAUDE_CODE: '1' } },
+  // The CLI reads its own home; no run-scoped redirection exists for it.
+  hermes: { command: 'hermes', args: ['acp'] },
   // The switches are unverified (see the definition) but harmless; the cold start needs a longer wait.
   kilo: {
     command: 'kilo',
@@ -52,6 +57,11 @@ const ACP_SESSION_LAUNCHES: Readonly<
     minTimeoutMs: 30_000,
   },
 };
+
+/** The refusal a logged-out session answers, as the provider's own definition declares it — the
+ * one place that text lives. */
+const notLoggedInRuleOf = (provider: string) =>
+  BUILTIN_PROVIDER_DEFS.find((def) => def.id === provider)?.authProbe?.acpSession?.notLoggedIn;
 
 export interface AcpSessionCatalogConfig {
   /** Overrides the provider's launch command and ACP arguments (tests point it at a fixture). */
@@ -194,21 +204,21 @@ export async function listAcpSessionModels(
     }
 
     const created = await connection.request('session/new', { cwd: scratch, mcpServers: [] });
-    if (!created.ok) return err(toCatalogError(created.error));
+    if (!created.ok) {
+      // A logged-out CLI refuses the session: the list is empty and the caller shows the login
+      // state, not a transport failure.
+      const rule = notLoggedInRuleOf(account.provider);
+      if (rule !== undefined && loginStateOfSessionError(created.error, rule) === false) {
+        return err({ code: 'not_logged_in', message: 'the provider has no login on this machine' });
+      }
+      return err(toCatalogError(created.error));
+    }
     const parsed = parseSessionAnswer(created.value, config.levelNames);
     if (parsed === undefined) {
       return err({ code: 'malformed', message: 'the session answer carries no model list' });
     }
 
-    // The protocol lets only an agent that advertises sessionCapabilities.close be asked to close
-    // a session; the process group dies right after either way, so a refusal is not an error.
-    const capabilities = isRecord(agent['agentCapabilities']) ? agent['agentCapabilities'] : undefined;
-    const sessionCapabilities =
-      capabilities !== undefined && isRecord(capabilities['sessionCapabilities']) ? capabilities['sessionCapabilities'] : undefined;
-    const sessionId = isRecord(created.value) && typeof created.value['sessionId'] === 'string' ? created.value['sessionId'] : undefined;
-    if (sessionCapabilities !== undefined && 'close' in sessionCapabilities && sessionId !== undefined) {
-      await connection.request('session/close', { sessionId });
-    }
+    await closeAcpSession(connection, initialized.value, created.value);
     return ok(parsed.models.map((row) => ({ ...row, ...(parsed.efforts === undefined ? {} : { efforts: parsed.efforts }) })));
   } finally {
     connection.close();

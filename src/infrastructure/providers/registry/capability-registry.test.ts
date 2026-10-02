@@ -85,6 +85,7 @@ describe('model catalog data (P-29)', () => {
       'codex-subscription',
       'copilot-subscription',
       'cursor-subscription',
+      'hermes-subscription',
       'kilo-login',
       'opencode-subscription',
       'zai-glm',
@@ -292,11 +293,16 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but kilo carries isolation evidence, so the cap leaves their levels unchanged', () => {
-    for (const provider of CAPABILITY_REGISTRY.providers) {
-      // Kilo's isolation switches are unverified (names seen only in its binary), so it records none.
-      if (provider.providerId === 'kilo') continue;
-      expect(provider.isolation, provider.providerId).toBeDefined();
+  it('P-44: every built-in record but kilo and hermes carries isolation evidence, and both stay capped at experimental', () => {
+    // kilo's switches are unverified and hermes reads its own home with auto-injected instruction
+    // files; neither can evidence isolation, so their records carry none and the cap applies.
+    const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
+    for (const provider of records) {
+      if (provider.providerId === 'kilo' || provider.providerId === 'hermes') {
+        expect(provider.isolation, provider.providerId).toBeUndefined();
+      } else {
+        expect(provider.isolation, provider.providerId).toBeDefined();
+      }
     }
     const levels = Object.fromEntries(CAPABILITY_REGISTRY.providers.map((p) => [p.providerId, supportLevel(p)]));
     expect(levels).toEqual({
@@ -306,13 +312,27 @@ describe('isolation evidence (P-44)', () => {
       copilot: 'experimental',
       cursor: 'experimental',
       opencode: 'experimental',
+      hermes: 'experimental',
       kilo: 'experimental',
     });
   });
 
+  it('P-28: the hermes record waives G5 with a written reason and its route kind lists live models with unknown billing', () => {
+    expect(findProvider('hermes')?.gates.G5).toMatchObject({ kind: 'waived' });
+    expect((findProvider('hermes')?.gates.G5 as { reason: string }).reason.length).toBeGreaterThan(20);
+    expect(findRouteKind('hermes-subscription')).toMatchObject({
+      providerId: 'hermes',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      quotaProbe: 'none',
+    });
+  });
+
   it('P-44: a provider whose record has no isolation evidence is capped at experimental', () => {
-    for (const provider of CAPABILITY_REGISTRY.providers) {
-      const bare = { ...provider, isolation: undefined };
+    const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
+    for (const provider of records) {
+      const { isolation: _evidence, ...bare } = provider;
       expect(supportLevel(bare), provider.providerId).toBe('experimental');
     }
   });

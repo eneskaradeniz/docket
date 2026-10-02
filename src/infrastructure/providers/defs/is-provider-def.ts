@@ -82,6 +82,13 @@ function isIsolation(value: unknown): boolean {
   return runScopedHome === undefined || isNonEmptyString(runScopedHome);
 }
 
+function isAcpSessionProbe(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const rule = value['notLoggedIn'];
+  return isRecord(rule) && Number.isInteger(rule['rpcCode']) && isNonEmptyString(rule['textContains']);
+}
+
 function isTimeoutMs(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0);
 }
@@ -93,7 +100,9 @@ export function isProviderDef(value: unknown): value is ProviderDef {
   if (!isNonEmptyStringArray(value['bins'])) return false;
   if (!isNonEmptyStringArray(value['versionArgs'])) return false;
   const authProbe = value['authProbe'];
-  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']))) return false;
+  if (authProbe !== undefined && !(isRecord(authProbe) && isStringArray(authProbe['args']) && isAcpSessionProbe(authProbe['acpSession']))) {
+    return false;
+  }
   if (isRecord(authProbe) && authProbe['parse'] !== undefined && authProbe['parse'] !== 'credential-count') return false;
   const helpArgs = value['helpArgs'];
   if (helpArgs !== undefined && !isStringArray(helpArgs)) return false;

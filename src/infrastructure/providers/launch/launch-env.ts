@@ -46,6 +46,7 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   copilot: [],
   cursor: [],
   opencode: [],
+  hermes: [],
   kilo: [],
 };
 
