@@ -110,7 +110,10 @@ export interface ProviderAuthProbe {
   readonly args: string[];
   /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
    * output that names no count = unknown. */
-  readonly parse?: 'credential-count';
+  readonly parse?: 'credential-count' | 'logged-out-text';
+  /** `logged-out-text`: exit 0 with this text in the output = logged out; any other answer =
+   * unknown, never logged in (a user may run with an own key and never log in). */
+  readonly loggedOutText?: string;
   readonly acpSession?: {
     readonly notLoggedIn: { readonly rpcCode: number; readonly textContains: string };
   };

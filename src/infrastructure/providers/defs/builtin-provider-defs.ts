@@ -259,4 +259,41 @@ export const BUILTIN_PROVIDER_DEFS: readonly ProviderDef[] = [
     installHint: { url: 'https://kilo.ai/docs/code-with-ai/platforms/cli' },
     mark: null,
   },
+  {
+    id: 'atomcode',
+    displayName: 'AtomCode',
+    bins: ['atomcode'],
+    versionArgs: ['--version'],
+    helpArgs: ['--help'],
+    // `atomcode status` prints "Not logged in." with exit 0 when logged out and its logged-in
+    // wording is unconfirmed; a user may also run with an own API key and never log in, so
+    // anything but the logged-out text reads as unknown. The CLI's own login is never run.
+    authProbe: { args: ['status', '--no-telemetry'], parse: 'logged-out-text', loggedOutText: 'Not logged in' },
+    transport: 'acp',
+    // The option is found by its id here because the CLI names it; its levels are `off`, `high`
+    // and `max`, so only the names that differ from the level names are mapped besides the two
+    // that match: a level the CLI does not list (low, medium) is never offered or sent.
+    effortArg: { kind: 'session-option', configId: 'reasoning_effort' },
+    levelNames: { none: 'off', high: 'high', max: 'max' },
+    // The CLI documents no config-directory variable and its login lives in its own home, so the
+    // launch never sets this name and no run-scoped home is claimed (no isolation is declared).
+    config: { mechanism: 'env-var', name: 'ATOMCODE_HOME' },
+    telemetryOff: ['--no-telemetry'],
+    // Never `-y` / `--dangerously-skip-permissions`; the session stays in its default `build` mode.
+    buildLaunch: () => ({ args: ['acp', '--no-telemetry'], env: {}, stdin: 'prompt' }),
+    resume: 'protocol',
+    capabilities: {
+      structuredStream: true,
+      permissionAsk: 'unknown',
+      resume: true,
+      mcp: true,
+      hooks: 'unknown',
+      skills: 'unknown',
+      images: true,
+      quotaReport: 'none',
+      costReport: 'none',
+    },
+    installHint: { url: 'https://atomgit.com/atomgit_atomcode/atomcode' },
+    mark: null,
+  },
 ];

@@ -15,9 +15,9 @@ import {
 // non-empty bins/versionArgs, one of four transports, streamDialect exactly for stream-json,
 // a config mechanism the CLI really accepts, and a prompt that never travels via argv.
 const ALL_TRANSPORTS = ['sdk', 'app-server', 'acp', 'stream-json'] as const;
-const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo'] as const;
+const BUILTIN_IDS = ['claude-code', 'codex', 'agy', 'copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode'] as const;
 // Definitions whose vendor ships no mark file: `mark: null` is their honest state, never a redrawn stand-in.
-const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes'];
+const MARKLESS_IDS: readonly string[] = ['kilo', 'hermes', 'atomcode'];
 
 const PROMPT_SENTINEL = 'docket prompt sentinel 7f3a with "quotes" and\nnewlines';
 
@@ -103,7 +103,7 @@ describe('provider definitions (P-1)', () => {
     expect(defById('claude-code').transport).toBe('sdk');
     expect(defById('codex').transport).toBe('app-server');
     expect(defById('agy').transport).toBe('stream-json');
-    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo']) {
+    for (const id of ['copilot', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode']) {
       expect(defById(id).transport, id).toBe('acp');
     }
   });
@@ -130,6 +130,7 @@ describe('provider definitions (P-1)', () => {
       opencode: 'OPENCODE_CONFIG_DIR',
       hermes: 'HERMES_HOME',
       kilo: 'KILO_CONFIG_DIR',
+      atomcode: 'ATOMCODE_HOME',
     };
     for (const def of BUILTIN_PROVIDER_DEFS) {
       expect(def.config.mechanism, def.id).toBe('env-var');
@@ -210,6 +211,7 @@ describe('provider definitions (P-1)', () => {
       copilot: { kind: 'flag', flag: '--reasoning-effort' },
       opencode: { kind: 'session-option', category: 'thought_level' },
       kilo: { kind: 'session-option', configId: 'effort' },
+      atomcode: { kind: 'session-option', configId: 'reasoning_effort' },
     };
 
     it('P-41: each built-in declares exactly its documented effort parameter, and cursor and hermes declare none', () => {
@@ -233,7 +235,7 @@ describe('provider definitions (P-1)', () => {
     });
 
     it('P-41: a definition without a flag parameter ignores the effort and its launch is unchanged', () => {
-      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo']) {
+      for (const id of ['claude-code', 'codex', 'cursor', 'opencode', 'hermes', 'kilo', 'atomcode']) {
         const def = defById(id);
         expect(def.buildLaunch({ ...LAUNCH_INPUT, effort: 'high' }), id).toEqual(def.buildLaunch(LAUNCH_INPUT));
       }
@@ -478,8 +480,50 @@ describe('hermes definition (P-35)', () => {
   });
 });
 
+describe('atomcode definition (P-35)', () => {
+  const atomcode = (): ProviderDef => defById('atomcode');
+
+  it('P-35: atomcode launches its ACP subcommand with telemetry off, prompts over stdin and resumes through the protocol', () => {
+    expect(atomcode().bins).toEqual(['atomcode']);
+    expect(atomcode().versionArgs).toEqual(['--version']);
+    expect(atomcode().buildLaunch(LAUNCH_INPUT)).toEqual({ args: ['acp', '--no-telemetry'], env: {}, stdin: 'prompt' });
+    expect(atomcode().resume).toBe('protocol');
+    expect(isProviderDef(atomcode())).toBe(true);
+  });
+
+  it('P-44: the telemetry-off flag is declared and no launch ever carries an approval bypass, a bypass mode or a redirected home', () => {
+    expect(atomcode().telemetryOff).toEqual(['--no-telemetry']);
+    expect(atomcode().isolation).toBeUndefined();
+    for (const input of [LAUNCH_INPUT, { ...LAUNCH_INPUT, effort: 'max' as const, model: 'glm-5.2' }, { prompt: 'x', configDir: '/run/dir' }]) {
+      const launch = atomcode().buildLaunch(input);
+      expect(launch.args.join(' ')).not.toMatch(/-y\b|dangerously|skip-permissions|bypass|accept_edits/i);
+      expect(Object.keys(launch.env)).toEqual([]);
+    }
+  });
+
+  it('P-43: effort is the reasoning_effort session option and only none, high and max have CLI names', () => {
+    expect(atomcode().effortArg).toEqual({ kind: 'session-option', configId: 'reasoning_effort' });
+    expect(atomcode().levelNames).toEqual({ none: 'off', high: 'high', max: 'max' });
+  });
+
+  it('P-45: the login probe reads only the documented logged-out text, nothing here needs a login, and the CLI login is never a probe', () => {
+    expect(atomcode().authProbe).toEqual({ args: ['status', '--no-telemetry'], parse: 'logged-out-text', loggedOutText: 'Not logged in' });
+    expect(atomcode().helpNeedsLogin).toBeUndefined();
+    const base = createValidDef();
+    rejectsWith({ ...base, authProbe: { args: ['status'], parse: 'logged-out-text' } }, 'logged-out-text without its text');
+    rejectsWith({ ...base, authProbe: { args: ['status'], parse: 'logged-out-text', loggedOutText: '' } }, 'empty text');
+    for (const probe of [atomcode().authProbe, atomcode().versionArgs, atomcode().helpArgs]) {
+      expect(JSON.stringify(probe)).not.toMatch(/login|logout|upgrade|uninstall/);
+    }
+  });
+
+  it('P-1: permissionAsk stays unknown until a scripted request proves it, and no quota or cost is reported', () => {
+    expect(atomcode().capabilities).toMatchObject({ permissionAsk: 'unknown', quotaReport: 'none', costReport: 'none' });
+  });
+});
+
 describe('provider marks (P-25)', () => {
-  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes) carry null', () => {
+  it('P-25a: every provider with a mark file carries one — a single path in a 24×24 viewBox — and the markless built-ins (kilo, hermes, atomcode) carry null', () => {
     for (const def of BUILTIN_PROVIDER_DEFS) {
       const mark = defById(def.id).mark;
       if (MARKLESS_IDS.includes(def.id)) {

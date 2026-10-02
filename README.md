@@ -47,6 +47,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | opencode (`opencode`) | `opencode-subscription` | — | — | — | equivalent | experimental |
 | Hermes Agent (`hermes`) | `hermes-subscription` | — | — | — | none | experimental |
 | Kilo Code (`kilo`) | `kilo-login` | — | — | — | equivalent | experimental |
+| AtomCode (`atomcode`) | `atomcode-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License
