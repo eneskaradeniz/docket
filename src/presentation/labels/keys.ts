@@ -26,6 +26,9 @@ export const LABEL_KEYS = [
   'error.self_approval',
   'error.invalid_after',
   'error.binding_exists',
+  // Spend-consent refusals (application use-cases/spend-consent.ts, P-40).
+  'error.invalid_model',
+  'error.invalid_cap',
   // Deploy-gate errors (application deploy-gate.ts; confirmation_mismatch also reports the
   // detail store's E-8 refusal, U-4).
   'error.not_a_deploy_gate',
@@ -306,6 +309,33 @@ export const LABEL_KEYS = [
   'settings.discovery.failed',
   'settings.discovery.empty',
   'settings.discovery.flags',
+  // Settings panel, accounts section — the per-account model list and the spend-consent flow
+  // (P-40): billing marks, the stale note, the consent draft and its cap controls.
+  'settings.models.toggle',
+  'settings.models.default',
+  'settings.models.empty',
+  'settings.models.stale',
+  'settings.models.refresh',
+  'settings.models.metered',
+  'settings.models.unknown',
+  'settings.models.allowed',
+  'settings.models.revoke',
+  'settings.models.select',
+  'settings.models.consent.title',
+  'settings.models.consent.body',
+  'settings.models.consent.scope',
+  'settings.models.consent.amount',
+  'settings.models.consent.amountPlaceholder',
+  'settings.models.consent.amountHint',
+  'settings.models.consent.allow',
+  'settings.models.consent.cancel',
+  // The spend cap's account scopes (the record's closed set) and the model tiers' chip names.
+  'cap.scope.account_day',
+  'cap.scope.account_week',
+  'cap.scope.account_month',
+  'tier.strong',
+  'tier.balanced',
+  'tier.fast',
   // Settings screen (U-24): the phone section's honest "not linked yet" standing, and the
   // Güncelleme section's version line, status lines and check action.
   'settings.section.phone',

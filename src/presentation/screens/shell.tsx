@@ -45,6 +45,7 @@ import {
   type PaletteResult,
 } from '../stores/search-palette';
 import type { SettingsStore } from '../stores/settings';
+import type { AccountModelsStore } from '../stores/account-models';
 import type { ProviderMarksStore } from '../stores/provider-marks';
 import {
   CLOSED_SETTINGS_PANEL,
@@ -73,6 +74,8 @@ export interface ShellScreenProps {
   readonly detail: WorkOrderDetailStore;
   readonly accountView: AccountViewStore;
   readonly settings: SettingsStore;
+  /** The settings panel's per-account model list and its spend-consent flow (P-40). */
+  readonly models: AccountModelsStore;
   /** The provider marks every account badge resolves from (loaded once, session-cached). */
   readonly marks: ProviderMarksStore;
   /** The app-update standing the title bar's button and the panel's Güncelleme section read. */
@@ -136,6 +139,7 @@ export function ShellScreen({
   detail,
   accountView,
   settings,
+  models,
   marks,
   update,
   wizard,
@@ -464,6 +468,7 @@ export function ShellScreen({
         onSection={setSettingsSection}
         onClose={() => dispatchSettingsPanel({ type: 'close' })}
         store={settings}
+        models={models}
         marks={marks}
         update={update}
         locale={locale}

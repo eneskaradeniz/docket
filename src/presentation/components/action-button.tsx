@@ -25,16 +25,19 @@ export interface ActionButtonProps {
   readonly onClick?: () => void;
   /** The quiet hint a screen offers beside the label (the ⓘ grammar's hover text). */
   readonly title?: string;
+  /** A row that folds content (the account card's model list) speaks its standing. */
+  readonly ariaExpanded?: boolean;
   readonly children: ReactNode;
 }
 
-export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, children }: ActionButtonProps) {
+export function ActionButton({ variant = 'neutral', size = 'sm', disabled = false, onClick, title, ariaExpanded, children }: ActionButtonProps) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
       title={title}
+      aria-expanded={ariaExpanded}
       className={`inline-flex items-center justify-center gap-1.5 rounded-control border transition-[filter,background-color,color] duration-100 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${VARIANT_CLASS[variant]} ${SIZE_CLASS[size]}`}
     >
       {children}

@@ -9,7 +9,7 @@
 // The section is the shell's, not the panel's own: the sidebar's Telefon and Ayarlar rows open
 // the panel on a named section and read their current standing from it (U-24), so the panel
 // receives the section and reports every move.
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { LabelKey } from '../labels/keys';
 import { t, type Locale } from '../labels/t';
 import { ActionButton } from '../components/action-button';
@@ -17,6 +17,7 @@ import { ACTIVE_CLASS } from '../components/active-state';
 import { DiscoveryBadges } from '../components/discovery-badges';
 import { countedLabel } from '../components/counted-label';
 import { LocaleSwitcher } from '../components/locale-switcher';
+import { ModelList } from '../components/model-list';
 import { motionVars, MOTION } from '../components/motion';
 import { OutcomeNotice } from '../components/outcome-notice';
 import { ProviderMark, type ProviderMarkProps } from '../components/provider-mark';
@@ -24,6 +25,7 @@ import { SectionCard } from '../components/section-card';
 import { SourceBadge } from '../components/source-badge';
 import { StateBadge } from '../components/state-badge';
 import type { LocaleStore } from '../stores/locale';
+import type { AccountModelsStore, ModelRowDisplay } from '../stores/account-models';
 import { focusRestoredOnClose } from '../stores/search-palette';
 import type { SettingsPanelOrigin } from '../stores/settings-panel';
 import type {
@@ -51,6 +53,8 @@ export interface SettingsPanelProps {
   readonly store: SettingsStore;
   /** The provider marks the accounts list's badges resolve from (loaded once, session-cached). */
   readonly marks: ProviderMarksStore;
+  /** The per-account model list and its spend-consent flow (P-40), fed by `account.models`. */
+  readonly models: AccountModelsStore;
   /** The app-update standing the Güncelleme section reads (U-24). */
   readonly update: UpdateStore;
   readonly locale: Locale;
@@ -155,15 +159,22 @@ function AccountRow({
   locale,
   store,
   onRemove,
+  modelsOpen,
+  onToggleModels,
+  modelList,
 }: {
   readonly account: AccountDisplay;
   readonly mark: ProviderMarkProps['mark'];
   readonly locale: Locale;
   readonly store: SettingsStore;
   readonly onRemove: (accountId: string) => void;
+  /** The model list's fold standing and its toggle (P-40); the list itself arrives composed. */
+  readonly modelsOpen: boolean;
+  readonly onToggleModels: () => void;
+  readonly modelList: ReactNode;
 }) {
   return (
-    <li className="grid gap-2.5 rounded-card border border-hairline bg-surface px-4 py-3">
+    <li className="grid gap-2.5 rounded-card border border-hairline bg-surface px-4 py-3" data-account-row={account.id}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <ProviderMark mark={mark} className="self-center" />
@@ -172,9 +183,14 @@ function AccountRow({
           <AuthModeBadge mode={account.authMode} locale={locale} />
           {account.plan !== null ? <span className="font-mono text-[11px] text-inkdim">{account.plan}</span> : null}
         </div>
-        <ActionButton variant="neutral" onClick={() => onRemove(account.id)}>
-          {t(locale, 'settings.account.remove')}
-        </ActionButton>
+        <span className="flex items-center gap-2">
+          <ActionButton variant="neutral" ariaExpanded={modelsOpen} onClick={onToggleModels}>
+            {t(locale, 'settings.models.toggle')}
+          </ActionButton>
+          <ActionButton variant="neutral" onClick={() => onRemove(account.id)}>
+            {t(locale, 'settings.account.remove')}
+          </ActionButton>
+        </span>
       </div>
       {account.meters.length === 0 ? (
         <p className="text-[12.5px] text-inkdim">{t(locale, 'settings.meters.empty')}</p>
@@ -185,6 +201,7 @@ function AccountRow({
           ))}
         </ul>
       )}
+      {modelList}
     </li>
   );
 }
@@ -278,10 +295,12 @@ function usePaintedFlip(active: boolean): boolean {
 // same classes the search palette animates with, so the two overlays speak one motion language.
 const MOTION_STYLE = motionVars();
 
-export function SettingsPanel({ open, origin, section, onSection, onClose, store, marks, update, locale, localeStore }: SettingsPanelProps) {
+export function SettingsPanel({ open, origin, section, onSection, onClose, store, marks, models, update, locale, localeStore }: SettingsPanelProps) {
   const state = useSyncExternalStore(store.subscribe, store.state);
   // The marks land once, after the first paint; the subscription turns them into a re-render.
   useSyncExternalStore(marks.subscribe, marks.state);
+  // The model list of the one account whose fold is open (P-40) re-renders with its store.
+  const modelsState = useSyncExternalStore(models.subscribe, models.state);
   // The update standing is the shell's to load (the title bar reads it from startup); the panel
   // only subscribes.
   const updateState = useSyncExternalStore(update.subscribe, update.state);
@@ -297,6 +316,8 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
   const [editAccounts, setEditAccounts] = useState<readonly string[]>([]);
   const [newRole, setNewRole] = useState('');
   const [newAccounts, setNewAccounts] = useState<readonly string[]>([]);
+  // Which account's model list is folded open — one at a time, matching the store's single list.
+  const [modelsFor, setModelsFor] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLElement>(null);
   // Where focus stood before the panel opened — the panel gives it back on close, unless the
@@ -344,6 +365,38 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
   const confirmRemove = (accountId: string): void => {
     void store.confirmRemoveAccount(accountId);
   };
+
+  // The model list's fold (P-40): opening an account loads its catalog; switching to another
+  // account cancels any consent draft still open for the first — a draft never rides along.
+  const toggleModels = (accountId: string): void => {
+    if (modelsFor === accountId) {
+      setModelsFor(null);
+      return;
+    }
+    if (modelsFor !== null) models.cancel();
+    setModelsFor(accountId);
+    void models.load(accountId);
+  };
+  const selectModel = (row: ModelRowDisplay): void => {
+    models.beginConsent({ model: row.id, name: row.name, billing: row.billing });
+  };
+  const selectDefaultModel = (): void => {
+    models.beginConsent({ model: '*', name: null, billing: modelsState.defaultModel?.billing ?? 'included' });
+  };
+  const modelListOf = (accountId: string): ReactNode =>
+    modelsFor !== accountId ? null : (
+      <ModelList
+        locale={locale}
+        state={modelsState}
+        onSelect={selectModel}
+        onSelectDefault={selectDefaultModel}
+        onRefresh={() => void models.refresh()}
+        onEditCap={(input) => models.editCap(input)}
+        onAllow={() => void models.allow()}
+        onCancel={() => models.cancel()}
+        onRevoke={(model) => void models.revoke(model)}
+      />
+    );
 
   const accounts = view?.accounts ?? [];
   const toggle = (list: readonly string[], id: string): readonly string[] =>
@@ -528,7 +581,17 @@ export function SettingsPanel({ open, origin, section, onSection, onClose, store
                 ) : (
                   <ul className="grid gap-2">
                     {accounts.map((account) => (
-                      <AccountRow key={account.id} account={account} mark={marks.markFor(account.provider)} locale={locale} store={store} onRemove={remove} />
+                      <AccountRow
+                        key={account.id}
+                        account={account}
+                        mark={marks.markFor(account.provider)}
+                        locale={locale}
+                        store={store}
+                        onRemove={remove}
+                        modelsOpen={modelsFor === account.id}
+                        onToggleModels={() => toggleModels(account.id)}
+                        modelList={modelListOf(account.id)}
+                      />
                     ))}
                   </ul>
                 )}
