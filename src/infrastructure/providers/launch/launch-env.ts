@@ -46,6 +46,7 @@ const PROVIDER_ENV_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   copilot: [],
   cursor: [],
   opencode: [],
+  kilo: [],
 };
 
 /** Names that look like credentials. The match is deliberately broad: dropping a variable the

@@ -85,6 +85,7 @@ describe('model catalog data (P-29)', () => {
       'codex-subscription',
       'copilot-subscription',
       'cursor-subscription',
+      'kilo-login',
       'opencode-subscription',
       'zai-glm',
     ]);
@@ -291,8 +292,10 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record carries isolation evidence, so the cap leaves their levels unchanged', () => {
+  it('P-44: every built-in record but kilo carries isolation evidence, so the cap leaves their levels unchanged', () => {
     for (const provider of CAPABILITY_REGISTRY.providers) {
+      // Kilo's isolation switches are unverified (names seen only in its binary), so it records none.
+      if (provider.providerId === 'kilo') continue;
       expect(provider.isolation, provider.providerId).toBeDefined();
     }
     const levels = Object.fromEntries(CAPABILITY_REGISTRY.providers.map((p) => [p.providerId, supportLevel(p)]));
@@ -303,12 +306,13 @@ describe('isolation evidence (P-44)', () => {
       copilot: 'experimental',
       cursor: 'experimental',
       opencode: 'experimental',
+      kilo: 'experimental',
     });
   });
 
   it('P-44: a provider whose record has no isolation evidence is capped at experimental', () => {
     for (const provider of CAPABILITY_REGISTRY.providers) {
-      const { isolation: _evidence, ...bare } = provider;
+      const bare = { ...provider, isolation: undefined };
       expect(supportLevel(bare), provider.providerId).toBe('experimental');
     }
   });

@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -69,6 +69,42 @@ const cursorModelsSession = () => ({
     },
   ],
 });
+
+// The kilo shape: a very long model list whose default is an image model, a thought-level option
+// named `effort` whose levels depend on the selected model and are recomputed when the model
+// changes (only `thinking` for the default model), and a mode option.
+const KILO_DEFAULT_MODEL = 'kilo/google/gemini-3-pro-image';
+const KILO_MODELS = [
+  KILO_DEFAULT_MODEL,
+  'kilo/anthropic/claude-opus-5',
+  'kilo/z-ai/glm-5.1',
+  'kilo/kilo-auto/free',
+];
+const KILO_EFFORTS = {
+  [KILO_DEFAULT_MODEL]: ['thinking'],
+  'kilo/anthropic/claude-opus-5': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'kilo/z-ai/glm-5.1': ['instant', 'thinking'],
+  'kilo/kilo-auto/free': ['thinking'],
+};
+let kiloModel = KILO_DEFAULT_MODEL;
+let kiloEffort = 'thinking';
+const kiloConfigOptions = () => [
+  {
+    id: 'model',
+    category: 'model',
+    type: 'select',
+    currentValue: kiloModel,
+    options: KILO_MODELS.map((value) => ({ value, name: `Kilo Gateway/${value}` })),
+  },
+  {
+    id: 'effort',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: kiloEffort,
+    options: KILO_EFFORTS[kiloModel].map((value) => ({ value, name: value })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'code', options: [{ value: 'code', name: 'Code' }, { value: 'plan', name: 'Plan' }] },
+];
 
 const opencodeModelsSession = () => ({
   sessionId: freshSessionId,
@@ -221,12 +257,27 @@ const onLine = (line) => {
       respond(message.id, opencodeModelsSession());
       return;
     }
+    if (scenario === 'models-kilo') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: kiloConfigOptions() });
+      return;
+    }
     if (scenario === 'models-silent') return; // never answers: the client's timeout is under test
     if (scenario === 'models-die') process.exit(1);
     respond(message.id, { sessionId });
     return;
   }
   if (message.method === 'session/set_config_option') {
+    if (scenario === 'models-kilo') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && KILO_MODELS.includes(value)) {
+        kiloModel = value;
+        kiloEffort = KILO_EFFORTS[value][0];
+      } else if (configId === 'effort' && KILO_EFFORTS[kiloModel].includes(value)) {
+        kiloEffort = value;
+      }
+      respond(message.id, { configOptions: kiloConfigOptions() });
+      return;
+    }
     respond(message.id, { configOptions: [] });
     return;
   }

@@ -100,7 +100,11 @@ export type ProviderTransport = 'sdk' | 'app-server' | 'acp' | 'stream-json';
 export type ProviderResumeMode = 'specify' | 'capture' | 'protocol' | 'none';
 
 export interface ProviderAuthProbe {
-  readonly args: string[]; // exit 0 = logged in
+  /** Without `parse`, exit 0 = logged in. */
+  readonly args: string[];
+  /** `credential-count`: the command prints "<N> credentials"; N > 0 = logged in, 0 = not, an
+   * output that names no count = unknown. */
+  readonly parse?: 'credential-count';
 }
 
 export interface ProviderConfig {
