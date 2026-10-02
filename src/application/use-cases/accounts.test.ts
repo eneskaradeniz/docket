@@ -218,6 +218,23 @@ describe('saveAccount', () => {
     expect(await h.deps.accounts.list()).toHaveLength(1); // the same id upserts
   });
 
+  it('P-31: a foreign endpoint host and an identityDir on a non-subscription route kind are both rejected', async () => {
+    const h = makeHarness(ROUTE_KINDS);
+
+    const foreignHost = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', endpoint: 'https://api.other.example/v1' }),
+      actor: USER,
+    });
+    const dirOnApiKey = await saveAccount(h.deps, {
+      record: accountRecord({ authMode: 'api_key', identityDir: '/Users/op/.config/agent-a' }),
+      actor: USER,
+    });
+
+    expect(foreignHost).toEqual({ ok: false, error: 'endpoint_mismatch' });
+    expect(dirOnApiKey).toEqual({ ok: false, error: 'identity_dir_not_allowed' });
+    expect(await h.deps.accounts.list()).toEqual([]);
+  });
+
   it('A-43: an identityDir that is not an absolute path, or set on a non-subscription account, fails with identity_dir_not_allowed', async () => {
     const h = makeHarness(ROUTE_KINDS);
 
