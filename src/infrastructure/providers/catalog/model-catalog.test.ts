@@ -115,6 +115,7 @@ const baseConfig = (query: QueryFn) => ({
     { id: 'anthropic-subscription', authMode: 'subscription', provider: 'agent-cli' },
     { id: 'anthropic-api', authMode: 'api_key', provider: 'agent-cli' },
     { id: 'codex-subscription', authMode: 'subscription', provider: 'codex' },
+    { id: 'opencode-subscription', authMode: 'subscription', provider: 'opencode' },
   ]),
   query,
   ttlMs: 6 * 60 * 60 * 1000,
@@ -377,6 +378,44 @@ describe('createModelCatalog (P-29)', () => {
     ]);
   });
 
+  it('P-29: an acp-session route kind dispatches to the ACP adapter — a plan-authoritative list whose rows bill unknown without a verified default', async () => {
+    // The fake ACP agent rides on the node binary; its session/new answer is scripted.
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), '..', 'transports', 'acp', 'fake-agent.cjs');
+    const dir = mkdtempSync(join(tmpdir(), 'docket-model-catalog-acp-'));
+    const spawn = (_command: string, _args: readonly string[], _options: { readonly env?: Readonly<Record<string, string>>; readonly timeoutMs?: number }) =>
+      nodeSpawn(process.execPath, [fixture, 'models-opencode', join(dir, 'agent-log.jsonl')]);
+    const accounts = createFakeAccountRepo();
+    await accounts.save(account(ACCOUNT_A, { provider: 'opencode' }));
+    const catalog = createModelCatalog({ ...baseConfig(scriptedQuery([[]]).query), accounts, acp: { spawn } });
+
+    // No bundled records and no verified default billing: the live rows are the whole list and
+    // each reads unknown — never assumed free (P-40), because the provider's documentation ties
+    // no listed model to a covered plan.
+    expect(await catalog.list(ACCOUNT_A)).toEqual([
+      {
+        id: 'opencode/big-pickle',
+        displayName: 'opencode/Big Pickle',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/fledge-alpha-free',
+        displayName: 'opencode/Fledge Alpha Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+      {
+        id: 'opencode/space-bunny-free',
+        displayName: 'opencode/Space Bunny Free',
+        source: 'live',
+        thinking: { kind: 'levels', levels: ['low', 'high', 'max'] },
+        billing: 'unknown',
+      },
+    ]);
+  });
+
   it('P-29: a source no adapter covers answers from the bundled registry alone', async () => {
     const accounts = createFakeAccountRepo();
     await accounts.save(account(ACCOUNT_A));
@@ -412,7 +451,7 @@ describe('createModelCatalog (P-29)', () => {
   });
 
   it('P-29: the built-in adapter map covers exactly the sources with a live leg today', () => {
-    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['api', 'app-server', 'sdk']);
+    expect(Object.keys(MODEL_SOURCE_ADAPTERS).sort()).toEqual(['acp-session', 'api', 'app-server', 'sdk']);
   });
 
   it('P-29: an unknown account, or one whose provider resolves no route kind, answers an empty list', async () => {

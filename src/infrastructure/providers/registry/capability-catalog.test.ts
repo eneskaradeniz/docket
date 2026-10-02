@@ -12,6 +12,8 @@ describe('createCapabilityCatalog', () => {
     expect(catalog.routeKindOf({ provider: 'claude-code', authMode: 'subscription' })).toBe('anthropic-subscription');
     expect(catalog.routeKindOf({ provider: 'claude-code', authMode: 'api_key' })).toBe('anthropic-api');
     expect(catalog.routeKindOf({ provider: 'codex', authMode: 'subscription' })).toBe('codex-subscription');
+    expect(catalog.routeKindOf({ provider: 'cursor', authMode: 'subscription' })).toBe('cursor-subscription');
+    expect(catalog.routeKindOf({ provider: 'opencode', authMode: 'subscription' })).toBe('opencode-subscription');
   });
 
   it('A-44: an explicit routeKind wins over the default; an unknown provider resolves no kind', () => {
