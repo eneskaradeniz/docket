@@ -234,6 +234,23 @@ export const CAPABILITY_REGISTRY = {
         G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
       },
     },
+    {
+      // No isolation evidence on purpose (P-44): the CLI's login, config and sessions all live in
+      // its own ~/.kimi-code home (relocated only by the machine's own KIMI_CODE_HOME), no
+      // documented switch redirects them for a run, and Docket never writes that home, so the
+      // level stays capped at experimental. G3 and G4 are absent: the request_permission round
+      // trip is unproven until an operator run, and the ACP usage_update carries context size
+      // only — the CLI's quota channel is a local REST server no Docket leg starts, and the
+      // engine itself is documented to have no cost data. Instruction files: AGENTS.md is read
+      // natively, CLAUDE.md is not.
+      providerId: 'kimi',
+      gates: {
+        G1: { kind: 'test', name: 'P-45: the kimi login probe reads only whether a file exists under the CLI\'s credentials directory — true or false, never spawning the CLI and never reading a file' },
+        G2: { kind: 'test', name: 'P-15: the kimi session shape — model select plus a thinking thought_level select recomputed on a model change — opens a session, maps its turn and never sends a level the model does not list' },
+        G5: { kind: 'waived', reason: 'the provider\'s quota channel is only a local REST server; a limit error maps to limit_hit (failed fast, not retried)' },
+        G6: { kind: 'test', name: 'P-24: sdk, app-server and acp each run the identical work order to done with the same common event kinds and exactly one finished per run' },
+      },
+    },
   ],
   routeKinds: [
     {
@@ -593,6 +610,27 @@ export const CAPABILITY_REGISTRY = {
       costKind: 'none',
       quotaProbe: 'none',
       modelSource: 'cli-command',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      models: [],
+    },
+    {
+      // The model list is the login-gated session answer (initialize then session/new in a scratch
+      // directory, never a prompt): a machine without a login is refused with -32000, which the
+      // catalog maps to the not-logged-in answer, and no account-free listing channel exists, so
+      // the record bundles nothing — the live list is the only source and drops rows it does not
+      // contain (P-42). The membership's model coverage is undocumented, so every live row reads
+      // unknown (P-40) and stays a hand pick with spend consent; the Extra Usage pay-as-you-go
+      // wallet behind the membership is not a billing answer either. No cost kind is claimed —
+      // the ACP usage_update carries context size only — and the quota channel is a local REST
+      // server no Docket leg starts (G5 waived).
+      id: 'kimi-login',
+      providerId: 'kimi',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      costKind: 'none',
+      quotaProbe: 'none',
+      modelSource: 'acp-session',
       liveIsAuthoritative: true,
       defaultBilling: 'unknown',
       models: [],

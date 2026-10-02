@@ -56,6 +56,7 @@ from the capability registry; regenerate with `npm run gen:provider-matrix`.
 | Qwen Code (`qwen`) | `qwen-login` | — | — | — | none | experimental |
 | Qoder (`qoder`) | `qoder-login` | `auto` (balanced), `ultimate` (strong), `performance` (balanced), `efficient` (fast) | `low`, `medium`, `high`, `xhigh`, `max` | — | none | experimental |
 | Kiro (`kiro`) | `kiro-login` | — | — | — | none | experimental |
+| Kimi Code (`kimi`) | `kimi-login` | — | — | — | none | experimental |
 <!-- provider-matrix:end -->
 
 ## License

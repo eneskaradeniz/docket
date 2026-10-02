@@ -103,6 +103,7 @@ describe('model catalog data (P-29)', () => {
       'grok-build-login',
       'hermes-subscription',
       'kilo-login',
+      'kimi-login',
       'kiro-login',
       'mimo-login',
       'opencode-subscription',
@@ -315,12 +316,12 @@ describe('bundled model records (P-29, P-40)', () => {
 });
 
 describe('isolation evidence (P-44)', () => {
-  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro and devin carries isolation evidence, and all twelve stay capped at or below experimental', () => {
+  it('P-44: every built-in record but codex, kilo, hermes, atomcode, grok-build, reasonix, vibe, mimo, qwen, qoder, kiro, kimi and devin carries isolation evidence, and all thirteen stay capped at or below experimental', () => {
     // codex and hermes keep their login in their own home, which is left alone, and kilo's switches
     // are unverified; none can evidence isolation, so their records carry none and the cap applies.
     const records: readonly ProviderRecord[] = CAPABILITY_REGISTRY.providers;
     for (const provider of records) {
-      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'devin'].includes(provider.providerId)) {
+      if (['codex', 'kilo', 'hermes', 'atomcode', 'grok-build', 'reasonix', 'vibe', 'mimo', 'qwen', 'qoder', 'kiro', 'kimi', 'devin'].includes(provider.providerId)) {
         expect(provider.isolation, provider.providerId).toBeUndefined();
       } else {
         expect(provider.isolation, provider.providerId).toBeDefined();
@@ -344,6 +345,7 @@ describe('isolation evidence (P-44)', () => {
       qwen: 'experimental',
       qoder: 'experimental',
       kiro: 'experimental',
+      kimi: 'experimental',
       devin: 'planned',
     });
   });
@@ -465,6 +467,29 @@ describe('isolation evidence (P-44)', () => {
       ['performance', 'unknown'],
       ['efficient', 'unknown'],
     ]);
+  });
+
+  it('P-28: the kimi record waives G5 with the local-server reason, claims no permission gate, and its route kind lists the login-gated session models with unknown billing and no bundled fallback', () => {
+    const gates = findProvider('kimi')?.gates;
+    expect(gates?.G5).toMatchObject({
+      kind: 'waived',
+      reason: 'the provider\'s quota channel is only a local REST server; a limit error maps to limit_hit (failed fast, not retried)',
+    });
+    expect(gates?.G3).toBeUndefined();
+    expect(findRouteKind('kimi-login')).toMatchObject({
+      providerId: 'kimi',
+      authMode: 'subscription',
+      identity: 'machine_login',
+      modelSource: 'acp-session',
+      liveIsAuthoritative: true,
+      defaultBilling: 'unknown',
+      costKind: 'none',
+      quotaProbe: 'none',
+    });
+    // No model id is verified without a login (a logged-out session is refused), so the route
+    // bundles nothing: the live list is the only source, each row unknown (P-40) — a hand pick
+    // with spend consent.
+    expect(findRouteKind('kimi-login')?.models).toEqual([]);
   });
 
   it('P-28: the kiro record waives G5 with the limit_hit reason, claims no permission gate, and its route kind lists the login-gated CLI models with unknown billing', () => {

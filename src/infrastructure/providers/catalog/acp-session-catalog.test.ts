@@ -389,6 +389,41 @@ describe('listAcpSessionModels (P-29)', () => {
     expect(await exited(harness.children[0], 3_000)).toBe(true);
   }, 10_000);
 
+  it('P-29: a logged-in kimi session lists the model select rows with the default model\'s thinking levels — `off` names no level and is never offered — and never prompts', async () => {
+    const harness = makeSpawn('models-kimi');
+    const listed = await listAcpSessionModels(accountOf('kimi'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error('unreachable');
+    expect(harness.calls).toEqual([{ command: 'kimi', args: ['acp'] }]);
+    // The session answer carries config options only: the model select lists the ids the login's
+    // plan offers, and the `thinking` sibling (category thought_level) lists `off` plus the default
+    // model's own levels — `off` names no EffortLevel, so the offered set is the levels alone.
+    expect(listed.value).toEqual([
+      { id: 'kimi-code/kimi-for-coding', displayName: 'Kimi for Coding', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { id: 'kimi-code/k3', displayName: 'K3', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    ]);
+    // The live initialize advertises session close, so a listing that opened one closes it.
+    const methods = clientRequests(harness.logPath).map((entry) => entry.msg['method']);
+    expect(methods).toEqual(['initialize', 'session/new', 'session/close']);
+    expect(methods).not.toContain('session/prompt');
+    expect(methods).not.toContain('session/set_config_option');
+  });
+
+  it('P-45: a logged-out kimi session is the not-logged-in answer — an unavailable catalog, never a transport failure and never the agent text', async () => {
+    const harness = makeSpawn('models-kimi-loggedout');
+
+    const listed = await listAcpSessionModels(accountOf('kimi'), { baseEnv: {}, spawn: harness.spawn });
+
+    expect(listed).toEqual({
+      ok: false,
+      error: { code: 'not_logged_in', message: 'the provider has no login on this machine' },
+    });
+    expect(JSON.stringify(listed)).not.toContain('Authentication required');
+    expect(clientRequests(harness.logPath).map((entry) => entry.msg['method'])).toEqual(['initialize', 'session/new']);
+    expect(await exited(harness.children[0], 3_000)).toBe(true);
+  }, 10_000);
+
   it('P-29: a missing model option stays a malformed answer for a provider that always has one', async () => {
     const harness = makeSpawn('models-atomcode');
     const listed = await listAcpSessionModels(accountOf('kilo'), { baseEnv: {}, spawn: harness.spawn });

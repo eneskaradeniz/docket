@@ -41,7 +41,7 @@ const freshSessionId = scenario === 'load-fail' || scenario === 'load-unsupporte
 // answers with a models object plus a model config option; the other with config options only,
 // among them a thought_level select). The thought-level shape advertises sessionCapabilities.close
 // exactly as its live counterpart does; the available-models shape does not advertise it.
-const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo' || scenario === 'models-qoder' || scenario === 'models-qoder-loggedout';
+const advertiseSessionClose = scenario === 'models-opencode' || scenario === 'models-kilo' || scenario === 'models-reasonix' || scenario === 'models-hermes-close' || scenario === 'models-atomcode' || scenario === 'models-atomcode-configured' || scenario === 'models-vibe' || scenario === 'models-mimo' || scenario === 'models-qoder' || scenario === 'models-qoder-loggedout' || scenario === 'models-kimi' || scenario === 'models-kimi-loggedout';
 
 const cursorModelsSession = () => ({
   sessionId: freshSessionId,
@@ -236,6 +236,35 @@ const qoderConfigOptions = () => [
   { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'accept_edits', 'bypass_permissions', 'dont_ask', 'auto'].map((value) => ({ value, name: value })) },
 ];
 
+// The kimi shape: initialize offers the CLI's own terminal device-code login as the one auth
+// method, and a logged-in machine answers session/new with config options only — the model
+// select, a `thinking` select under the category `thought_level` whose values are recomputed for
+// the selected model (`off` plus the model's own efforts), and the mode list whose `auto`/`yolo`
+// far ends a launch never picks. A logged-out machine refuses the session outright (observed
+// live), so the model list exists only after a login.
+const KIMI_SCENARIOS = ['models-kimi', 'models-kimi-loggedout'];
+const KIMI_MODELS = [
+  { value: 'kimi-code/kimi-for-coding', name: 'Kimi for Coding' },
+  { value: 'kimi-code/k3', name: 'K3' },
+];
+const KIMI_EFFORTS = {
+  'kimi-code/kimi-for-coding': ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'kimi-code/k3': ['off', 'low', 'medium', 'high'],
+};
+let kimiModel = 'kimi-code/kimi-for-coding';
+let kimiThinking = 'high';
+const kimiConfigOptions = () => [
+  { id: 'model', category: 'model', type: 'select', currentValue: kimiModel, options: KIMI_MODELS },
+  {
+    id: 'thinking',
+    category: 'thought_level',
+    type: 'select',
+    currentValue: kimiThinking,
+    options: KIMI_EFFORTS[kimiModel].map((value) => ({ value, name: value === 'off' ? 'Thinking Off' : `Thinking ${value}` })),
+  },
+  { id: 'mode', category: 'mode', type: 'select', currentValue: 'default', options: ['default', 'plan', 'auto', 'yolo'].map((value) => ({ value, name: value })) },
+];
+
 // The kiro shape: initialize names the CLI's terminal login as its one auth method, and
 // session/new answers modes only — no configOptions, no models, the model list rides the CLI's
 // own listing command instead — followed by the CLI's own custom `_kiro.dev/*` notifications
@@ -343,7 +372,9 @@ const initializeResult = () => ({
           ? [{ id: 'openai', name: 'Use OpenAI API key', _meta: { type: 'terminal', args: ['--auth-type=openai'] } }]
           : QODER_SCENARIOS.includes(scenario)
             ? [{ id: 'qodercli-login', name: 'Use your existing qodercli login' }]
-            : [],
+            : KIMI_SCENARIOS.includes(scenario)
+              ? [{ id: 'login', type: 'terminal', name: "Run 'kimi login' in terminal" }]
+              : [],
   ...(scenario === 'models-grok' ? { _meta: { modelState: grokModelState() } } : {}),
 });
 
@@ -549,6 +580,20 @@ const onLine = (line) => {
       });
       return;
     }
+    if (scenario === 'models-kimi') {
+      respond(message.id, { sessionId: freshSessionId, configOptions: kimiConfigOptions() });
+      return;
+    }
+    // The refusal a machine without a login answers with (observed live): no session, so the
+    // model list the session would carry exists only after a login.
+    if (scenario === 'models-kimi-loggedout') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: 'Authentication required' },
+      });
+      return;
+    }
     if (scenario === 'models-vibe-nokey') {
       send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'Missing API key for mistral provider.' } });
       return;
@@ -602,6 +647,18 @@ const onLine = (line) => {
       const { configId, value } = message.params;
       if (configId === 'model' && QODER_TIERS.some((tier) => tier.value === value)) qoderModel = value;
       respond(message.id, { sessionId: freshSessionId, configOptions: qoderConfigOptions() });
+      return;
+    }
+    if (scenario === 'models-kimi') {
+      const { configId, value } = message.params;
+      if (configId === 'model' && KIMI_MODELS.some((model) => model.value === value)) {
+        kimiModel = value;
+        // The thinking levels belong to the selected model and are recomputed with it.
+        kimiThinking = KIMI_EFFORTS[value].includes('high') ? 'high' : KIMI_EFFORTS[value][1];
+      } else if (configId === 'thinking' && KIMI_EFFORTS[kimiModel].includes(value)) {
+        kimiThinking = value;
+      }
+      respond(message.id, { sessionId: freshSessionId, configOptions: kimiConfigOptions() });
       return;
     }
     if (scenario === 'models-kilo') {
