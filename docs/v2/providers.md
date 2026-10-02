@@ -15,7 +15,7 @@ named in code or comments.
 | --- | --- | --- |
 | `sdk` | Claude Code via the Agent SDK | Richest channel: permission callback, resume, usage, `rate_limit_event`, `get_usage` |
 | `app-server` | Codex (`codex app-server`, JSON-RPC over stdio) | Streaming deltas, approval requests, `account/rateLimits/read` + `updated`, thread resume. Do **not** use `codex exec --json` (no quota, no streaming deltas) |
-| `acp` | Agent Client Protocol agents (Gemini CLI, Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
+| `acp` | Agent Client Protocol agents (Copilot, Cursor, opencode, Kimi, Kiro, Qwen, Mistral Vibe, Goose, Droid, …) | `initialize` → `session/new` / `session/load` → `session/prompt`; `session/update` notifications; `session/request_permission` must be **answered by the user**, never auto-approved |
 | `stream-json` | CLIs with a JSON-lines output mode but no ACP (e.g. Antigravity `agy`, Amp) | One parser per stream dialect |
 
 Plain-text-only CLIs are supported in the `experimental` tier through `stream-json`'s raw passthrough
@@ -111,7 +111,7 @@ application.md for signatures.
   `transport` one of the four; `streamDialect` present exactly when `transport === 'stream-json'`;
   `config.mechanism` matches how the CLI accepts a config dir), and `buildLaunch` never places the
   prompt in `argv` — `stdin: 'prompt'` carries it. Initial set: `claude-code` (sdk), `codex`
-  (app-server), `agy` (stream-json, dialect `agy`), `gemini`, `copilot`, `cursor`, `opencode` (acp).
+  (app-server), `agy` (stream-json, dialect `agy`), `copilot`, `cursor`, `opencode` (acp).
   Flag accuracy is data, verified by operator probes; a wrong flag is a data fix, not a contract change.
 
 ### Discovery (P-2 … P-6)
